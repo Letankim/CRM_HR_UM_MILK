@@ -223,6 +223,9 @@ body {
   .ant-modal-content {
     padding: 12px 10px !important;
   }
+  .ant-modal-footer {
+    justify-content: center !important;
+  }
   .ant-drawer-right .ant-drawer-content-wrapper,
   .ant-drawer-bottom .ant-drawer-content-wrapper {
     width: 100vw !important;
