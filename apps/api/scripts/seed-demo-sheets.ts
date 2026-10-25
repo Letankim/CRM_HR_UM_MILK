@@ -69,6 +69,7 @@ async function main() {
   const now = nowIso();
 
   const sampleUsers = [
+    { username: 'admin', display_name: 'Quản trị hệ thống', role: 'ADMIN' as const, branch_scope: 'ALL', phone: '', password_hash: pwHash, employee_id: '', status: 'ACTIVE' as const, activated_by: 'seed', activated_at: now },
     { username: 'hr', display_name: 'Nguyễn Thị Nhân Sự', role: 'HR' as const, branch_scope: 'ALL', phone: '', password_hash: pwHash, employee_id: '', status: 'ACTIVE' as const, activated_by: 'seed', activated_at: now },
     { username: 'store1', display_name: 'Trần Văn Cửa Hàng', role: 'STORE' as const, branch_scope: cn1, phone: '', password_hash: pwHash, employee_id: '', status: 'ACTIVE' as const, activated_by: 'seed', activated_at: now },
     { username: 'finance', display_name: 'Lê Thị Kế Toán', role: 'FINANCE' as const, branch_scope: 'ALL', phone: '', password_hash: pwHash, employee_id: '', status: 'ACTIVE' as const, activated_by: 'seed', activated_at: now },
@@ -85,8 +86,20 @@ async function main() {
         { ...u, permissions_json: '[]', session_version: 1, failed_login_count: 0, locked_until: '', last_login_at: '', revoked_at: '', email: '', revoked_by: '', revoke_reason: '' },
         'seed',
       );
-    } else if ((u.phone && existing.phone !== u.phone) || (u.employee_id && existing.employee_id !== u.employee_id)) {
-      await db.users.update(existing.id, existing.version, { phone: u.phone || existing.phone, employee_id: u.employee_id || existing.employee_id }, 'seed');
+    } else {
+      await db.users.update(
+        existing.id,
+        existing.version,
+        {
+          password_hash: u.password_hash,
+          status: u.status,
+          failed_login_count: 0,
+          locked_until: '',
+          phone: u.phone || existing.phone,
+          employee_id: u.employee_id || existing.employee_id,
+        },
+        'seed',
+      );
     }
   }
 
