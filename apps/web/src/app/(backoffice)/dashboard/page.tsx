@@ -53,7 +53,7 @@ export default function DashboardPage() {
   });
   const payroll = useQuery({
     queryKey: ['dashboard-payroll'],
-    queryFn: () => api.get<{ runs: Record<string, unknown>[]; items: Record<string, unknown>[] }>('/admin/payroll/runs'),
+    queryFn: () => api.get<Record<string, unknown>[]>('/admin/payroll/periods'),
     enabled: can('payroll.read'),
   });
   const comms = useQuery({
@@ -162,7 +162,7 @@ export default function DashboardPage() {
             {can('payroll.read') && (
               <Col xs={12} md={6}>
                 <Card size="small" loading={payroll.isLoading}>
-                  <Statistic title="Kỳ lương hệ thống" value={payroll.data?.runs.length ?? 0} prefix={<DollarOutlined />} />
+                  <Statistic title="Kỳ lương hệ thống" value={Array.isArray(payroll.data) ? payroll.data.length : 0} prefix={<DollarOutlined />} />
                   <Link href="/admin/payroll" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Đối soát &amp; Hồ sơ lương</Link>
                 </Card>
               </Col>

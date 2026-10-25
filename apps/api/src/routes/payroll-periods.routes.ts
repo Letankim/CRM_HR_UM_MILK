@@ -38,6 +38,11 @@ const ALLOWED: Record<PayPeriodStatus, PayPeriodStatus[]> = {
 const withLabel = (p: PayPeriod) => ({ ...p, statusLabel: PAY_PERIOD_STATUS_LABELS[p.status] });
 
 export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext) {
+  app.get('/api/admin/payroll/runs', { preHandler: requirePermission('payroll.read') }, async (request) => {
+    const runs = ctx.db.payPeriods.all().sort((a, b) => b.from_date.localeCompare(a.from_date)).map(withLabel);
+    return sendSuccess(request, 'Lấy tổng quan kỳ lương thành công', { runs, items: ctx.db.payrollItems.all() });
+  });
+
   app.get('/api/admin/payroll/periods', { preHandler: requirePermission('payroll.read') }, async (request) => {
     const items = ctx.db.payPeriods.all().sort((a, b) => b.from_date.localeCompare(a.from_date)).map(withLabel);
     return sendSuccess(request, 'Lấy danh sách kỳ lương thành công', items);
