@@ -33,11 +33,11 @@ function renderCheckEventPane(ev: AttendanceEventRow | null | undefined, kind: '
         </div>
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          <div style={{ background: '#0F172A', borderRadius: 4, padding: 4, textAlign: 'center', border: `1px solid ${BRAND.border}` }}>
+          <div style={{ background: '#0F172A', borderRadius: 4, padding: 0, overflow: 'hidden', textAlign: 'center', border: `1px solid ${BRAND.border}` }}>
             {ev.photoUrl ? (
-              <FancyboxImage src={ev.photoUrl} alt={titleLabel} caption={`${titleLabel} — ${ev.employeeName || ''} (${ev.checkTimeFormatted || ev.checkTimeHm || ''})`} gallerySlides={gallerySlides} slideIndex={slideIdx} height={155} />
+              <FancyboxImage src={ev.photoUrl} alt={titleLabel} caption={`${titleLabel} — ${ev.employeeName || ''} (${ev.checkTimeFormatted || ev.checkTimeHm || ''})`} gallerySlides={gallerySlides} slideIndex={slideIdx} height={180} />
             ) : (
-              <div style={{ height: 155, display: 'grid', placeItems: 'center', color: '#94A3B8' }}><div><CameraOutlined style={{ fontSize: 24 }} /><div>Ảnh xác thực Camera</div></div></div>
+              <div style={{ height: 180, display: 'grid', placeItems: 'center', color: '#94A3B8' }}><div><CameraOutlined style={{ fontSize: 24 }} /><div>Ảnh xác thực Camera</div></div></div>
             )}
           </div>
           <Descriptions column={1} bordered size="small" styles={{ label: { width: 102, whiteSpace: 'nowrap', padding: '6px 10px' }, content: { padding: '6px 10px' } }}>

@@ -31,7 +31,7 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* Menu Sidebar gọn gàng: mục con chỉ lùi nhẹ 8px so với tiêu đề nhóm, không bị cắt chữ */
+/* Menu Sidebar gọn gàng: mục con chỉ lùi nhẹ 8px so với tiêu đề nhóm */
 .umbm-sider-menu.ant-menu-inline .ant-menu-submenu-title {
   padding-inline-start: 10px !important;
   padding-inline-end: 28px !important;
@@ -52,7 +52,7 @@ body {
   font-size: 13px;
 }
 
-/* Chế độ thu gọn Sidebar (Collapsed Icon Rail chuyên nghiệp) */
+/* Chế độ thu gọn Sidebar (Collapsed Icon Rail) */
 .umbm-sider-menu.ant-menu-inline-collapsed {
   width: 100% !important;
 }
@@ -144,16 +144,14 @@ body {
   border-color: #bfdbfe #bfdbfe transparent !important;
 }
 
-.ant-tabs-extra-content {
+.ant-tabs-extra-content,
+.ant-card,
+.ant-table-wrapper,
+.ant-descriptions-view {
   max-width: 100%;
 }
 
-/* Bảng dữ liệu luôn cuộn ngang mượt bên trong khung, không làm tràn Card/Trang trên Mobile */
-.ant-table-wrapper {
-  width: 100%;
-  max-width: 100%;
-}
-
+/* Bảng dữ liệu cuộn ngang mượt bên trong khung */
 .ant-table-content,
 .ant-table-body {
   overflow-x: auto !important;
@@ -170,59 +168,9 @@ body {
   height: 0 !important;
 }
 
-/* Chống tràn Card Header, Modal, Drawer, Descriptions, Alert trên Mobile & mọi độ phân giải */
-.ant-card {
-  max-width: 100%;
-}
-
-.ant-card-head-wrapper {
-  flex-wrap: wrap !important;
-  row-gap: 6px;
-  column-gap: 8px;
-}
-
-.ant-card-head-title {
-  white-space: normal !important;
-  min-width: 160px;
-  flex: 1 1 auto;
-  line-height: 1.35;
-  padding-block: 6px !important;
-}
-
-.ant-card-extra {
-  margin-inline-start: auto;
-  max-width: 100%;
-}
-
-.ant-modal {
-  max-width: calc(100vw - 20px) !important;
-}
-
-.ant-modal-content {
-  overflow: hidden;
-}
-
-.ant-drawer-header {
-  flex-wrap: wrap !important;
-  row-gap: 8px;
-}
-
-.ant-drawer-header-title {
-  min-width: 180px;
-  flex: 1 1 auto;
-}
-
-.ant-drawer-title {
-  white-space: normal !important;
-  word-break: break-word;
-  line-height: 1.35 !important;
-}
-
-.ant-drawer-extra {
-  margin-inline-start: auto;
-  max-width: 100%;
-}
-
+/* Chống tràn Card, Modal, Drawer, Descriptions, Tag */
+.ant-card-head-wrapper,
+.ant-drawer-header,
 .ant-modal-footer,
 .ant-modal-footer > .ant-space,
 .ant-drawer-extra > .ant-space,
@@ -233,15 +181,77 @@ body {
   gap: 6px;
 }
 
-.ant-descriptions-view {
-  overflow-x: auto !important;
+.ant-card-head-title,
+.ant-drawer-header-title {
+  white-space: normal !important;
+  min-width: 160px;
+  flex: 1 1 auto;
+  line-height: 1.35;
+}
+
+.ant-drawer-title,
+.ant-modal-title {
+  white-space: normal !important;
+  word-break: break-word;
+  line-height: 1.35 !important;
+}
+
+.ant-card-extra,
+.ant-drawer-extra {
+  margin-inline-start: auto;
+  max-width: 100%;
+}
+
+.ant-descriptions .ant-tag,
+.ant-modal-body .ant-tag,
+.ant-drawer-body .ant-tag {
+  white-space: normal !important;
+  word-break: break-word;
+  height: auto !important;
+  line-height: 1.35 !important;
   max-width: 100%;
 }
 
 @media (max-width: 767px) {
-  .ant-drawer-right .ant-drawer-content-wrapper {
+  .ant-modal {
+    width: 98vw !important;
+    max-width: 98vw !important;
+    margin: 6px auto !important;
+    top: 6px !important;
+    padding-bottom: 6px !important;
+  }
+  .ant-modal-content {
+    padding: 12px 10px !important;
+  }
+  .ant-drawer-right .ant-drawer-content-wrapper,
+  .ant-drawer-bottom .ant-drawer-content-wrapper {
     width: 100vw !important;
     max-width: 100vw !important;
+  }
+  .ant-drawer-header,
+  .ant-card-head {
+    padding: 10px 10px !important;
+  }
+  .ant-drawer-body,
+  .ant-card-body {
+    padding: 10px 8px !important;
+  }
+  .ant-descriptions-view table {
+    table-layout: fixed !important;
+    width: 100% !important;
+  }
+  .ant-descriptions-bordered .ant-descriptions-item-label {
+    width: 96px !important;
+    padding: 6px 8px !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+    font-size: 12px !important;
+  }
+  .ant-descriptions-bordered .ant-descriptions-item-content {
+    padding: 6px 8px !important;
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    font-size: 12px !important;
   }
   .ant-list-item {
     flex-wrap: wrap !important;

@@ -57,7 +57,7 @@ export default function MyPayslipsPage() {
   const lines = revisionDelta !== 0 ? [...baseLines, { label: 'Điều chỉnh sau phát hành', detail: `Phiếu điều chỉnh lần ${open!.revision}`, amount: revisionDelta }] : baseLines;
 
   return (
-    <div style={{ padding: isDesktop ? 0 : 16 }}>
+    <div style={{ padding: isDesktop ? 0 : '8px 6px', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
       <Card size="small" title={<span><FileTextOutlined /> Phiếu lương cá nhân đã phát hành</span>} styles={{ body: { padding: 0 } }}>
         {query.isLoading ? (
           <div style={{ padding: 24, textAlign: 'center' }}><Spin /></div>

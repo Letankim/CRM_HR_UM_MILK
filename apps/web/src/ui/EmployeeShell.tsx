@@ -196,10 +196,10 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
 
   return (
     <div style={{ minHeight: '100dvh', background: BRAND.layout, width: '100%', maxWidth: '100vw', overflowX: 'hidden' }}>
-      <div style={{ maxWidth: 480, width: '100%', margin: '0 auto', minHeight: '100dvh', background: BRAND.layout, position: 'relative', paddingBottom: 72, overflowX: 'hidden' }}>
+      <div style={{ width: '100%', margin: '0 auto', minHeight: '100dvh', background: BRAND.layout, position: 'relative', paddingBottom: 72, overflowX: 'hidden' }}>
         {activeMaint && <Alert type="warning" banner showIcon message={activeMaint.message || 'Hệ thống đang bảo trì nâng cấp định kỳ.'} />}
         {children}
-        <nav className="safe-bottom" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, background: '#fff', borderTop: `1px solid ${BRAND.border}`, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', zIndex: 20 }}>
+        <nav className="safe-bottom" style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', background: '#fff', borderTop: `1px solid ${BRAND.border}`, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', zIndex: 20 }}>
           {MOBILE_TABS.map((t) => {
             const active = t.href === '/nv' ? pathname === '/nv' : pathname.startsWith(t.href);
             return (

@@ -99,7 +99,7 @@ export default function EmployeeSection() {
   const isRefreshing = myQ.isFetching || testsQ.isFetching || commsQ.isFetching;
 
   return (
-    <div style={{ padding: isDesktop ? 0 : 12, width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{ padding: isDesktop ? 0 : '8px 6px', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
       <Card size="small" title={title} extra={section === 'lich' || section === 'them' ? undefined : <Button size="small" icon={<ReloadOutlined />} loading={isRefreshing} onClick={refreshSection}>Làm mới</Button>} style={{ marginBottom: 12 }}>
         {section === 'lich' && (
           <EmployeeScheduleAndLeaveCenter

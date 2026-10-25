@@ -112,13 +112,8 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
       try {
         const res = await api.get<{ shifts: Record<string, unknown>[] }>('/my-attendance');
         const matched = res.shifts?.find((s) => String(s.id) === String(shift?.id));
-        if (matched) {
-          setFreshShift(matched);
-          latestB = { lat: Number(matched.branchLat), lng: Number(matched.branchLng), radiusM: Number(matched.branchRadiusM || 100) };
-        }
-      } catch {
-        // Ignore
-      }
+        if (matched) { setFreshShift(matched); latestB = { lat: Number(matched.branchLat), lng: Number(matched.branchLng), radiusM: Number(matched.branchRadiusM || 100) }; }
+      } catch { /* ignore */ }
       await locateGps(latestB.lat, latestB.lng, latestB.radiusM);
     })();
     const timer = setInterval(() => setNowStr(dayjs().format('HH:mm:ss')), 1000);
@@ -131,7 +126,11 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     if (videoRef.current && cameraReady && videoRef.current.videoWidth > 0) {
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      const vw = videoRef.current.videoWidth, vh = videoRef.current.videoHeight;
+      const targetRatio = canvas.width / canvas.height, videoRatio = vw / vh;
+      const sw = videoRatio > targetRatio ? vh * targetRatio : vw;
+      const sh = videoRatio > targetRatio ? vh : vw / targetRatio;
+      ctx.drawImage(videoRef.current, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, canvas.width, canvas.height);
     } else {
       ctx.fillStyle = '#0F172A'; ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = '#1E293B'; ctx.beginPath(); ctx.arc(180, 108, 42, 0, Math.PI * 2); ctx.fill();
@@ -159,18 +158,18 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
 
   return (
     <Modal
-      open={open} onCancel={onClose} width={840} style={{ top: 24, maxWidth: '95vw' }} destroyOnHidden
+      open={open} onCancel={onClose} width={840} style={{ top: 12, maxWidth: '98vw' }} destroyOnHidden
       title={kind === 'CHECK_IN' ? 'Chụp ảnh Camera & Xác nhận Vào ca' : 'Chụp ảnh Camera & Xác nhận Ra ca'}
       footer={
-        <Space>
+        <Space wrap>
           <Button icon={<CloseOutlined />} onClick={onClose}>Hủy bỏ</Button>
           <Button type="primary" icon={<CheckCircleOutlined />} disabled={!photoDataUrl || !activeShift || !coords || !withinRadius || branchMismatch || locating} loading={loading} onClick={() => activeShift && coords && onConfirm({ assignment_id: String(activeShift.id), kind, lat: coords.lat, lng: coords.lng, accuracy_m: coords.accuracy, selfie_source: 'LIVE_CAMERA', photo_base64: photoDataUrl, enforce_shift_state: true }, photoDataUrl)}>{kind === 'CHECK_IN' ? 'Xác nhận Vào ca' : 'Xác nhận Ra ca'}</Button>
         </Space>
       }
     >
-      <Row gutter={[16, 14]} align="top">
+      <Row gutter={[12, 12]} align="top">
         <Col xs={24} md={13}>
-          <Descriptions size="small" bordered column={1} styles={{ label: { width: 118, whiteSpace: 'nowrap' }, content: { wordBreak: 'break-word' } }}>
+          <Descriptions size="small" bordered column={1} styles={{ label: { width: 96 }, content: { wordBreak: 'break-word' } }}>
             <Descriptions.Item label="Ca làm việc">
               <strong>{cleanShiftTitle} ({startAt} – {endAt})</strong> · Ngày {String(activeShift?.workDate ?? activeShift?.work_date ?? '')}
             </Descriptions.Item>
@@ -203,9 +202,9 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
           {gpsError && <Alert type="error" showIcon message={gpsError} style={{ marginTop: 10 }} />}
         </Col>
         <Col xs={24} md={11}>
-          <div style={{ position: 'relative', width: '100%', height: 225, background: '#0F172A', borderRadius: 4, overflow: 'hidden', display: 'grid', placeItems: 'center', marginBottom: 10, border: '1px solid #CBD5E1' }}>
-            {photoDataUrl ? <FancyboxImage src={photoDataUrl} alt="Ảnh chụp điểm danh" caption={`${kind === 'CHECK_IN' ? 'Ảnh Vào ca' : 'Ảnh Ra ca'} — ${branchName}`} height={225} /> : <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover', display: cameraReady ? 'block' : 'none' }} />}
-            {!photoDataUrl && !cameraReady && <div style={{ color: '#94A3B8', textAlign: 'center', padding: 12 }}><CameraOutlined style={{ fontSize: 30, marginBottom: 6, display: 'block' }} /><Typography.Text style={{ color: '#E2E8F0', fontSize: 12 }}>Khung chụp ảnh xác thực Camera trực tiếp</Typography.Text></div>}
+          <div style={{ position: 'relative', width: '100%', height: 250, background: '#0F172A', borderRadius: 4, overflow: 'hidden', marginBottom: 10, border: '1px solid #CBD5E1' }}>
+            {photoDataUrl ? <FancyboxImage src={photoDataUrl} alt="Ảnh chụp điểm danh" caption={`${kind === 'CHECK_IN' ? 'Ảnh Vào ca' : 'Ảnh Ra ca'} — ${branchName}`} height={250} /> : <video ref={videoRef} autoPlay playsInline muted style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: cameraReady ? 'block' : 'none' }} />}
+            {!photoDataUrl && !cameraReady && <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', textAlign: 'center', padding: 12 }}><CameraOutlined style={{ fontSize: 30, marginBottom: 6 }} /><Typography.Text style={{ color: '#E2E8F0', fontSize: 12 }}>Khung chụp ảnh xác thực Camera trực tiếp</Typography.Text></div>}
           </div>
           {!photoDataUrl ? (
             <Button type="primary" icon={<CameraOutlined />} block disabled={!coords || !withinRadius || branchMismatch || locating} onClick={handleCapture}>

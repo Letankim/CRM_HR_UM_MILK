@@ -85,7 +85,7 @@ export default function EmployeeHome() {
             const outEv = sEvs.find((e) => e.type === 'CHECK_OUT');
             const isTodayShift = String(s.workDate) === todayDate;
             return (
-              <div key={String(s.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#F8FAFC', border: `1px solid ${BRAND.border}`, borderRadius: 4 }}>
+              <div key={String(s.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '8px 10px', background: '#F8FAFC', border: `1px solid ${BRAND.border}`, borderRadius: 4 }}>
                 <div>
                   <div style={{ fontWeight: 600 }}>{String(s.shiftLabel || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim()} ({String(s.startAt || '07:00')} – {String(s.endAt || '12:00')})</div>
                   <div style={{ fontSize: 12, color: BRAND.textSecondary }}>Ngày {String(s.workDate)} · {String(s.branchName)}</div>
@@ -159,7 +159,7 @@ export default function EmployeeHome() {
   }
 
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ padding: '10px 6px', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 14 }}>
         <div style={{ minWidth: 0 }}>
           <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
