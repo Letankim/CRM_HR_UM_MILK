@@ -5,7 +5,7 @@
   "description": "Ụm Bò Milk HR System V5.1 — Auto Stack",
   "packageManager": "pnpm@10.34.5",
   "engines": {
-    "node": ">=22"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "pnpm -r --parallel --filter ./apps/* dev",
