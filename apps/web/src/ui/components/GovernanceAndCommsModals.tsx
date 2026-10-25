@@ -116,9 +116,9 @@ export function AnnouncementFormModal({
     >
       <Form form={form} layout="vertical" initialValues={{ priority: 'HIGH', publish_now: true }} onFinish={onSubmit}>
         <Row gutter={12}>
-          <Col span={12}><Form.Item name="title" label="Tiêu đề bản tin" rules={[{ required: true, message: 'Vui lòng nhập tiêu đề bản tin' }]}><Input placeholder="Nhập tiêu đề bản tin nội bộ..." /></Form.Item></Col>
-          <Col span={5}><Form.Item name="priority" label="Mức độ ưu tiên"><Select options={[{ value: 'NORMAL', label: 'Thông thường' }, { value: 'HIGH', label: 'Quan trọng' }, { value: 'URGENT', label: 'Khẩn cấp' }]} /></Form.Item></Col>
-          <Col span={7}><Form.Item name="publish_now" label="Trạng thái phát hành"><Select options={[{ value: true, label: 'Đã gửi (Đẩy thông báo toàn công ty)' }, { value: false, label: 'Chưa gửi (Lưu nháp)' }]} /></Form.Item></Col>
+          <Col xs={24} md={12}><Form.Item name="title" label="Tiêu đề bản tin" rules={[{ required: true, message: 'Vui lòng nhập tiêu đề bản tin' }]}><Input placeholder="Nhập tiêu đề bản tin nội bộ..." /></Form.Item></Col>
+          <Col xs={12} md={5}><Form.Item name="priority" label="Mức độ ưu tiên"><Select options={[{ value: 'NORMAL', label: 'Thông thường' }, { value: 'HIGH', label: 'Quan trọng' }, { value: 'URGENT', label: 'Khẩn cấp' }]} /></Form.Item></Col>
+          <Col xs={12} md={7}><Form.Item name="publish_now" label="Trạng thái phát hành"><Select options={[{ value: true, label: 'Đã gửi (Đẩy thông báo toàn công ty)' }, { value: false, label: 'Chưa gửi (Lưu nháp)' }]} /></Form.Item></Col>
         </Row>
         <Form.Item name="summary" label="Tóm tắt ngắn" rules={[{ required: true, message: 'Vui lòng nhập tóm tắt bản tin' }]}><Input placeholder="Tóm tắt hiển thị trên danh sách thông báo..." /></Form.Item>
         <Form.Item name="body_md" label="Nội dung chi tiết" rules={[{ required: true, message: 'Vui lòng nhập nội dung bản tin' }]}>
@@ -146,7 +146,7 @@ export function GovernanceDetailDrawer({
       open={Boolean(record)} width={wide ? '95vw' : '70vw'} onClose={onClose} destroyOnHidden
       title={record ? (kind === 'policy' ? `Chi tiết Chính sách & Quy định: ${record.key}` : `Chi tiết Bản tin Nội bộ: ${record.title}`) : 'Chi tiết'}
       extra={
-        <Space>
+        <Space wrap>
           {record && kind === 'policy' && onBroadcast && <Button size="small" icon={<SendOutlined />} onClick={() => onBroadcast(record)}>Phổ biến toàn công ty</Button>}
           {record && onEdit && <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { const r = record; onClose(); onEdit(r); }}>Chỉnh sửa</Button>}
           <Button size="small" icon={wide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setWide((v) => !v)}>{wide ? 'Thu gọn' : 'Mở rộng'}</Button>
@@ -156,7 +156,7 @@ export function GovernanceDetailDrawer({
     >
       {record && (
         <Space direction="vertical" size={14} style={{ width: '100%' }}>
-          <Descriptions size="small" bordered column={2}>
+          <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }}>
             <Descriptions.Item label="Mã định danh"><Tag color="geekblue">{String(record.key ?? record.announcement_code ?? record.code)}</Tag></Descriptions.Item>
             <Descriptions.Item label={kind === 'policy' ? 'Định mức / Giá trị áp dụng' : 'Trạng thái'}>{kind === 'policy' ? <Tag color="blue">{String(record.value_json)}</Tag> : <StatusTag value={isSent ? 'SENT' : 'UNSENT'} label={isSent ? 'Đã gửi' : 'Chưa gửi'} />}</Descriptions.Item>
             {kind === 'policy' && (

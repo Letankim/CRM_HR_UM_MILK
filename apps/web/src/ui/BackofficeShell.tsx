@@ -182,7 +182,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
         </Drawer>
       )}
 
-      <Layout style={{ minWidth: 0, flex: 1 }}>
+      <Layout style={{ minWidth: 0, flex: 1, overflowX: 'hidden' }}>
         <TopHeaderBar
           isMobile={isMobile}
           collapsed={collapsed}
@@ -192,7 +192,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
           user={data.user}
           onLogout={logout}
         />
-        <Layout.Content style={{ padding: isMobile ? 12 : 20, width: '100%' }}>
+        <Layout.Content style={{ padding: isMobile ? 12 : 20, width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
           {activeMaint && (
             <Alert
               type="warning"

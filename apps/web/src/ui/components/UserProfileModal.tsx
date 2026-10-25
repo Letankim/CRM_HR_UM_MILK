@@ -123,7 +123,7 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
       }
     >
       {p && (
-        <Descriptions size="small" bordered column={2} style={{ marginBottom: 12 }}>
+        <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }} style={{ marginBottom: 12 }}>
           <Descriptions.Item label="Tài khoản đăng nhập"><Tag color="geekblue" style={{ margin: 0 }}>@{p.username}</Tag></Descriptions.Item>
           <Descriptions.Item label="Vai trò hệ thống"><Tag color="blue" style={{ margin: 0 }}>{p.roleLabel}</Tag></Descriptions.Item>
           <Descriptions.Item label="Mã nhân sự liên kết">{p.employeeCode ? <Tag style={{ margin: 0 }}>{p.employeeCode}</Tag> : 'Tài khoản quản trị nội bộ'}</Descriptions.Item>
@@ -142,29 +142,29 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
             children: (
               <Form form={infoForm} layout="vertical" onFinish={(v) => updateInfoMut.mutate(v)} style={{ marginTop: 4 }}>
                 <Row gutter={12}>
-                  <Col span={12}>
+                  <Col xs={24} sm={12}>
                     <Form.Item name="display_name" label="Họ và tên" rules={[{ required: true, message: 'Vui lòng nhập họ và tên' }]}>
                       <Input prefix={<UserOutlined />} placeholder="Nhập họ và tên hiển thị" />
                     </Form.Item>
                   </Col>
-                  <Col span={12}>
+                  <Col xs={24} sm={12}>
                     <Form.Item name="phone" label="Số điện thoại">
                       <Input prefix={<PhoneOutlined />} placeholder="Ví dụ: 0901000001" />
                     </Form.Item>
                   </Col>
                 </Row>
                 <Row gutter={12}>
-                  <Col span={12}><Form.Item name="email" label="Email"><Input prefix={<MailOutlined />} placeholder="Ví dụ: ten.ban@umbomilk.vn" /></Form.Item></Col>
-                  <Col span={12}><Form.Item name="current_address" label="Chỗ ở hiện tại"><Input placeholder="Số nhà, đường, quận/huyện, TP. Hồ Chí Minh" /></Form.Item></Col>
+                  <Col xs={24} sm={12}><Form.Item name="email" label="Email"><Input prefix={<MailOutlined />} placeholder="Ví dụ: ten.ban@umbomilk.vn" /></Form.Item></Col>
+                  <Col xs={24} sm={12}><Form.Item name="current_address" label="Chỗ ở hiện tại"><Input placeholder="Số nhà, đường, quận/huyện, TP. Hồ Chí Minh" /></Form.Item></Col>
                 </Row>
                 <Row gutter={12}>
-                  <Col span={12}><Form.Item name="emergency_contact_name" label="Liên hệ khẩn cấp"><Input placeholder="Họ tên người thân liên hệ khi khẩn cấp" /></Form.Item></Col>
-                  <Col span={12}><Form.Item name="emergency_contact_phone" label="SĐT khẩn cấp"><Input placeholder="Ví dụ: 0909123456" /></Form.Item></Col>
+                  <Col xs={24} sm={12}><Form.Item name="emergency_contact_name" label="Liên hệ khẩn cấp"><Input placeholder="Họ tên người thân liên hệ khi khẩn cấp" /></Form.Item></Col>
+                  <Col xs={24} sm={12}><Form.Item name="emergency_contact_phone" label="SĐT khẩn cấp"><Input placeholder="Ví dụ: 0909123456" /></Form.Item></Col>
                 </Row>
                 <Row gutter={12}>
-                  <Col span={8}><Form.Item name="bank_name" label="Ngân hàng"><Input prefix={<BankOutlined />} placeholder="Techcombank" /></Form.Item></Col>
-                  <Col span={8}><Form.Item name="bank_account_number" label="Số tài khoản"><Input placeholder="Nhập số tài khoản" /></Form.Item></Col>
-                  <Col span={8}><Form.Item name="bank_account_holder" label="Chủ tài khoản"><Input placeholder="NGUYEN VAN A" /></Form.Item></Col>
+                  <Col xs={24} sm={8}><Form.Item name="bank_name" label="Ngân hàng"><Input prefix={<BankOutlined />} placeholder="Techcombank" /></Form.Item></Col>
+                  <Col xs={24} sm={8}><Form.Item name="bank_account_number" label="Số tài khoản"><Input placeholder="Nhập số tài khoản" /></Form.Item></Col>
+                  <Col xs={24} sm={8}><Form.Item name="bank_account_holder" label="Chủ tài khoản"><Input placeholder="NGUYEN VAN A" /></Form.Item></Col>
                 </Row>
               </Form>
             ),
@@ -183,12 +183,12 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
                   <Input.Password prefix={<LockOutlined />} placeholder="Nhập mật khẩu hoặc mã PIN đang sử dụng" />
                 </Form.Item>
                 <Row gutter={12}>
-                  <Col span={12}>
+                  <Col xs={24} sm={12}>
                     <Form.Item name="new_secret" label="Mật khẩu / Mã PIN mới" rules={[{ required: true, min: 6, message: 'Mật khẩu mới tối thiểu 6 ký tự' }]}>
                       <Input.Password prefix={<KeyOutlined />} placeholder="Nhập mật khẩu / mã PIN mới" />
                     </Form.Item>
                   </Col>
-                  <Col span={12}>
+                  <Col xs={24} sm={12}>
                     <Form.Item
                       name="confirm_secret" label="Xác nhận mật khẩu / Mã PIN mới"
                       dependencies={['new_secret']}

@@ -10,13 +10,14 @@ html,
 body {
   margin: 0;
   padding: 0;
+  max-width: 100vw;
+  overflow-x: hidden;
   background: #f8fafc;
   color: #0f172a;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Số liệu căn đều cột */
 .num {
   font-variant-numeric: tabular-nums;
 }
@@ -26,7 +27,6 @@ body {
   font-size: 12px;
 }
 
-/* Vùng an toàn cho thanh tab dưới đáy trên iPhone */
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -96,7 +96,6 @@ body {
   border-color: #e5e7eb !important;
 }
 
-/* Cụm nút Header & Khung Profile Login trên Header có viền mảnh và bo nhẹ tinh tế */
 .umbm-header-pill {
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
@@ -106,11 +105,13 @@ body {
   background-color: #f8fafc !important;
 }
 
-/* Tab & Segmented đang active có nền xanh nhạt (#EFF6FF), viền xanh (#BFDBFE) và chữ xanh đậm (#2563EB) */
+/* Tab & Segmented active */
 .ant-segmented {
   background-color: #f1f5f9 !important;
   padding: 3px !important;
   border: 1px solid #e2e8f0;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .ant-segmented .ant-segmented-item {
@@ -126,8 +127,13 @@ body {
   box-shadow: none !important;
 }
 
+.ant-tabs-top > .ant-tabs-nav {
+  flex-wrap: wrap !important;
+  row-gap: 6px;
+}
+
 .ant-tabs-top > .ant-tabs-nav .ant-tabs-tab {
-  padding: 8px 14px !important;
+  padding: 8px 12px !important;
   border-radius: 4px 4px 0 0 !important;
   border: 1px solid transparent;
   transition: all 0.15s ease;
@@ -138,9 +144,21 @@ body {
   border-color: #bfdbfe #bfdbfe transparent !important;
 }
 
-/* Ẩn thanh cuộn ngang thô bên dưới bảng, giữ cột NO và Thao tác (Xem chi tiết & ...) cố định sắc nét */
+.ant-tabs-extra-content {
+  max-width: 100%;
+}
+
+/* Bảng dữ liệu luôn cuộn ngang mượt bên trong khung, không làm tràn Card/Trang trên Mobile */
+.ant-table-wrapper {
+  width: 100%;
+  max-width: 100%;
+}
+
 .ant-table-content,
 .ant-table-body {
+  overflow-x: auto !important;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -152,43 +170,87 @@ body {
   height: 0 !important;
 }
 
-/* Chống tràn nút và nội dung trong Modal, Drawer, Alert trên mọi độ phân giải */
+/* Chống tràn Card Header, Modal, Drawer, Descriptions, Alert trên Mobile & mọi độ phân giải */
+.ant-card {
+  max-width: 100%;
+}
+
+.ant-card-head-wrapper {
+  flex-wrap: wrap !important;
+  row-gap: 6px;
+  column-gap: 8px;
+}
+
+.ant-card-head-title {
+  white-space: normal !important;
+  min-width: 160px;
+  flex: 1 1 auto;
+  line-height: 1.35;
+  padding-block: 6px !important;
+}
+
+.ant-card-extra {
+  margin-inline-start: auto;
+  max-width: 100%;
+}
+
 .ant-modal {
-  max-width: calc(100vw - 24px) !important;
+  max-width: calc(100vw - 20px) !important;
 }
 
 .ant-modal-content {
   overflow: hidden;
 }
 
-.ant-modal-footer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-}
-
-.ant-modal-footer > .ant-space,
-.ant-drawer-extra > .ant-space {
+.ant-drawer-header {
   flex-wrap: wrap !important;
-  max-width: 100%;
-  row-gap: 6px !important;
+  row-gap: 8px;
 }
 
-.ant-alert {
-  flex-wrap: wrap;
-  row-gap: 6px;
-}
-
-.ant-alert-content {
-  min-width: 200px;
+.ant-drawer-header-title {
+  min-width: 180px;
   flex: 1 1 auto;
 }
 
-.ant-alert-action {
+.ant-drawer-title {
+  white-space: normal !important;
+  word-break: break-word;
+  line-height: 1.35 !important;
+}
+
+.ant-drawer-extra {
   margin-inline-start: auto;
+  max-width: 100%;
+}
+
+.ant-modal-footer,
+.ant-modal-footer > .ant-space,
+.ant-drawer-extra > .ant-space,
+.ant-alert,
+.ant-alert-action {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: wrap !important;
   gap: 6px;
+}
+
+.ant-descriptions-view {
+  overflow-x: auto !important;
+  max-width: 100%;
+}
+
+@media (max-width: 767px) {
+  .ant-drawer-right .ant-drawer-content-wrapper {
+    width: 100vw !important;
+    max-width: 100vw !important;
+  }
+  .ant-list-item {
+    flex-wrap: wrap !important;
+    gap: 8px;
+  }
+  .ant-list-item-extra {
+    margin-inline-start: 0 !important;
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
+  }
 }

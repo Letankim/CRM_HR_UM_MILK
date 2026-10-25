@@ -66,9 +66,9 @@ export function TestAssignmentFormModal({
           </Form.Item>
         )}
         <Row gutter={12}>
-          <Col span={8}><Form.Item name="max_attempts" label="Số lần thi tối đa" rules={[{ required: true, message: 'Nhập số lần thi' }]}><InputNumber min={1} max={20} style={{ width: '100%' }} suffix="lần" /></Form.Item></Col>
-          <Col span={8}><Form.Item name="due_date" label="Ngày hạn nộp" rules={[{ required: true, message: 'Chọn ngày hạn nộp' }]}><DateStringPicker /></Form.Item></Col>
-          <Col span={8}><Form.Item name="due_time" label="Giờ hạn nộp" rules={[{ required: true, message: 'Chọn giờ hạn nộp' }]}><TimeSelect /></Form.Item></Col>
+          <Col xs={24} sm={8}><Form.Item name="max_attempts" label="Số lần thi tối đa" rules={[{ required: true, message: 'Nhập số lần thi' }]}><InputNumber min={1} max={20} style={{ width: '100%' }} suffix="lần" /></Form.Item></Col>
+          <Col xs={12} sm={8}><Form.Item name="due_date" label="Ngày hạn nộp" rules={[{ required: true, message: 'Chọn ngày hạn nộp' }]}><DateStringPicker /></Form.Item></Col>
+          <Col xs={12} sm={8}><Form.Item name="due_time" label="Giờ hạn nộp" rules={[{ required: true, message: 'Chọn giờ hạn nộp' }]}><TimeSelect /></Form.Item></Col>
         </Row>
         {editing && (
           <Form.Item name="reset_attempts" label="Đặt lại số lượt đã thi về 0 (Cấp lại lượt làm bài)" valuePropName="checked">
@@ -127,13 +127,13 @@ export function TestDetailDrawer({
         {viewingTest && (
           <Tabs
             items={[
-              { key: 'info', label: <span><SettingOutlined /> Cấu hình Kỳ thi</span>, children: <Descriptions size="small" bordered column={2}><Descriptions.Item label="Mã bộ đề"><Tag color="geekblue">{String(viewingTest.code)}</Tag></Descriptions.Item><Descriptions.Item label="Tên bộ đề">{String(viewingTest.title)}</Descriptions.Item><Descriptions.Item label="Nhóm vị trí">{String(viewingTest.staffGroupLabel ?? viewingTest.staff_group)}</Descriptions.Item><Descriptions.Item label="Thời gian làm bài">{String(viewingTest.duration_minutes)} phút</Descriptions.Item><Descriptions.Item label="Điểm chuẩn đạt">{String(viewingTest.pass_percent)}%</Descriptions.Item><Descriptions.Item label="Số lần làm tối đa">{String(viewingTest.max_attempts ?? 3)} lần</Descriptions.Item></Descriptions> },
+              { key: 'info', label: <span><SettingOutlined /> Cấu hình Kỳ thi</span>, children: <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }}><Descriptions.Item label="Mã bộ đề"><Tag color="geekblue">{String(viewingTest.code)}</Tag></Descriptions.Item><Descriptions.Item label="Tên bộ đề">{String(viewingTest.title)}</Descriptions.Item><Descriptions.Item label="Nhóm vị trí">{String(viewingTest.staffGroupLabel ?? viewingTest.staff_group)}</Descriptions.Item><Descriptions.Item label="Thời gian làm bài">{String(viewingTest.duration_minutes)} phút</Descriptions.Item><Descriptions.Item label="Điểm chuẩn đạt">{String(viewingTest.pass_percent)}%</Descriptions.Item><Descriptions.Item label="Số lần làm tối đa">{String(viewingTest.max_attempts ?? 3)} lần</Descriptions.Item></Descriptions> },
               {
                 key: 'qlist',
                 label: <span><UnorderedListOutlined /> Danh sách Câu hỏi ({parseQuestions(viewingTest.questions_json).length} câu)</span>,
                 children: (
                   <Table
-                    size="small" rowKey="id" pagination={false} dataSource={parseQuestions(viewingTest.questions_json)}
+                    size="small" rowKey="id" pagination={false} scroll={{ x: 'max-content' }} dataSource={parseQuestions(viewingTest.questions_json)}
                     columns={[
                       { title: 'STT', width: 70, render: (_, __, i) => `Câu ${i + 1}` },
                       { title: 'Nội dung câu hỏi', dataIndex: 'q' },
@@ -154,7 +154,7 @@ export function TestDetailDrawer({
         onClose={onCloseAssignment}
         destroyOnHidden
         extra={
-          <Space>
+          <Space wrap>
             {canManage && viewingAssignment && (
               <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { const a = viewingAssignment; onCloseAssignment(); onEditAssignment(a); }}>
                 Chỉnh sửa hạn nộp &amp; số lần thi
@@ -167,7 +167,7 @@ export function TestDetailDrawer({
       >
         {viewingAssignment && (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Descriptions size="small" bordered column={2}>
+            <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }}>
               <Descriptions.Item label="Mã đợt giao bài"><Tag color="geekblue">{String(viewingAssignment.assignment_code)}</Tag></Descriptions.Item>
               <Descriptions.Item label="Trạng thái"><StatusTag value={String(viewingAssignment.status)} /></Descriptions.Item>
               <Descriptions.Item label="Nhân sự nhận đề"><strong>{String(viewingAssignment.employeeName)}</strong></Descriptions.Item>

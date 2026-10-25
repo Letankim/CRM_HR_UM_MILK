@@ -16,21 +16,11 @@ import { BRAND } from '../theme';
 import { UserProfileModal } from './UserProfileModal';
 
 export interface TopHeaderBarProps {
-  isMobile: boolean;
-  collapsed: boolean;
-  onToggleNav: () => void;
-  breadcrumbGroup: string;
-  breadcrumbTitle: string;
-  user: PublicUser;
-  onLogout: () => Promise<void> | void;
+  isMobile: boolean; collapsed: boolean; onToggleNav: () => void;
+  breadcrumbGroup: string; breadcrumbTitle: string; user: PublicUser; onLogout: () => Promise<void> | void;
 }
 
-interface PendingAccountPreview {
-  id: string;
-  username: string;
-  displayName: string;
-  roleLabel: string;
-}
+interface PendingAccountPreview { id: string; username: string; displayName: string; roleLabel: string; }
 
 export function TopHeaderBar({
   isMobile, collapsed, onToggleNav, breadcrumbGroup, breadcrumbTitle, user, onLogout,
@@ -117,22 +107,28 @@ export function TopHeaderBar({
         paddingInline: 16,
       }}
     >
-      <Flex align="center" gap={12}>
+      <Flex align="center" gap={10} style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
         <Button
           size="small"
           className="umbm-header-pill"
           icon={isMobile ? <MenuOutlined /> : collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           onClick={onToggleNav}
-          style={{ width: 32, height: 32, borderRadius: 6, borderColor: BRAND.headerControlBorder }}
+          style={{ width: 32, height: 32, borderRadius: 6, borderColor: BRAND.headerControlBorder, flexShrink: 0 }}
           aria-label="Đóng mở thanh điều hướng"
         />
-        <Breadcrumb
-          items={[
-            { title: 'Quản trị' },
-            { title: breadcrumbGroup },
-            { title: <Typography.Text strong style={{ color: '#0F172A', fontSize: 13 }}>{breadcrumbTitle}</Typography.Text> },
-          ]}
-        />
+        {isMobile ? (
+          <Typography.Text strong ellipsis style={{ color: '#0F172A', fontSize: 13 }}>
+            {breadcrumbTitle}
+          </Typography.Text>
+        ) : (
+          <Breadcrumb
+            items={[
+              { title: 'Quản trị' },
+              { title: breadcrumbGroup },
+              { title: <Typography.Text strong style={{ color: '#0F172A', fontSize: 13 }}>{breadcrumbTitle}</Typography.Text> },
+            ]}
+          />
+        )}
       </Flex>
 
       <Space size={10}>

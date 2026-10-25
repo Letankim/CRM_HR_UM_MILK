@@ -117,7 +117,7 @@ export function EmployeeDetailDrawer({
                 const fixedTotal = (sp?.attendanceBonusVnd ?? 0) + (sp?.transportAllowanceVnd ?? 0) + (sp?.responsibilityAllowanceVnd ?? 0) + (sp?.otherAllowanceVnd ?? 0);
                 return (
                   <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    <Descriptions title="Hồ sơ mức lương & Định mức công" column={2} bordered size="small">
+                    <Descriptions title="Hồ sơ mức lương & Định mức công" column={{ xs: 1, sm: 2 }} bordered size="small">
                       <Descriptions.Item label="Trạng thái hồ sơ lương"><StatusTag value={employee.salaryStatus} label={employee.salaryStatusLabel} /></Descriptions.Item>
                       <Descriptions.Item label="Hình thức tính lương">{employee.salaryRateTypeLabel || 'Chưa thiết lập'}</Descriptions.Item>
                       <Descriptions.Item label="Lương cá nhân đang áp dụng" span={2}>
@@ -146,7 +146,7 @@ export function EmployeeDetailDrawer({
                       </Descriptions.Item>
                       <Descriptions.Item label="Hệ số tăng ca (OT)" span={2}><Tag color="blue" className="num">{sp ? `x${sp.otMultiplier} (${Math.round(sp.otMultiplier * 100)}% đơn giá)` : '—'}</Tag></Descriptions.Item>
                     </Descriptions>
-                    <Descriptions title="Thưởng & Phụ cấp cố định theo hồ sơ" column={2} bordered size="small">
+                    <Descriptions title="Thưởng & Phụ cấp cố định theo hồ sơ" column={{ xs: 1, sm: 2 }} bordered size="small">
                       <Descriptions.Item label="Phụ cấp ăn ca"><span className="num" style={{ fontWeight: 600 }}>{fmtVnd(sp?.mealAllowancePerShiftVnd ?? 0)}/ca</span></Descriptions.Item>
                       <Descriptions.Item label="Thưởng chuyên cần (đủ ca)"><span className="num" style={{ fontWeight: 600, color: '#16A34A' }}>{fmtVnd(sp?.attendanceBonusVnd ?? 0)}/kỳ</span></Descriptions.Item>
                       <Descriptions.Item label="Phụ cấp đi lại (xăng xe)"><span className="num">{fmtVnd(sp?.transportAllowanceVnd ?? 0)}/kỳ</span></Descriptions.Item>
@@ -156,7 +156,7 @@ export function EmployeeDetailDrawer({
                         <Tag color="green" className="num" style={{ fontWeight: 600 }}>{fmtVnd(fixedTotal)}/kỳ (+ {fmtVnd(sp?.mealAllowancePerShiftVnd ?? 0)}/ca)</Tag>
                       </Descriptions.Item>
                     </Descriptions>
-                    <Descriptions title="Tài khoản Ngân hàng nhận lương" column={2} bordered size="small">
+                    <Descriptions title="Tài khoản Ngân hàng nhận lương" column={{ xs: 1, sm: 2 }} bordered size="small">
                       <Descriptions.Item label="Ngân hàng nhận lương">{employee.bankName || 'Chưa cập nhật'}</Descriptions.Item>
                       <Descriptions.Item label="Số tài khoản ngân hàng"><span className="num" style={{ fontWeight: 600 }}>{employee.bankAccountNumber || 'Chưa cập nhật'}</span></Descriptions.Item>
                       <Descriptions.Item label="Chủ tài khoản" span={2}>{employee.bankAccountHolder || employee.fullName.toUpperCase()}</Descriptions.Item>

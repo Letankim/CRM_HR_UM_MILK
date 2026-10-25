@@ -59,7 +59,7 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, onAddAtCel
               <Tag style={{ borderRadius: 2, margin: 0 }}>Chế độ xem lịch (Chỉ đọc)</Tag>
             )}
           </Space>
-          <Space size={6}>
+          <Space size={6} wrap>
             <Button size="small" icon={<LeftOutlined />} onClick={() => onWeekStartChange((w) => w.subtract(7, 'day'))}>
               Tuần trước
             </Button>
@@ -73,7 +73,7 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, onAddAtCel
         </Flex>
       }
     >
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 920 }}>
           <thead>
             <tr>

@@ -83,7 +83,7 @@ export function EmployeeScheduleAndLeaveCenter({
                   <ScheduleViewsPanel mode={viewMode} todayDate={todayDate} assignments={shifts as unknown as ScheduleAssignmentItem[]} canEdit={false} onAddAtCell={() => setAddShiftOpen(true)} onEditItem={(item) => setDetailTarget({ kind: 'shift', record: item as unknown as Record<string, unknown> })} />
                 ) : (
                   <Table
-                    size="small" rowKey="id" pagination={false} dataSource={shifts}
+                    size="small" rowKey="id" pagination={false} dataSource={shifts} scroll={{ x: 'max-content' }}
                     locale={{ emptyText: 'Bạn chưa có ca làm việc nào được phân công trong kỳ này.' }}
                     columns={[
                       { title: 'Ngày làm việc', dataIndex: 'workDate', width: 145, render: (v: string) => <Space size={6}><span className="num" style={{ fontWeight: 600 }}>{dayjs(v).format('DD/MM/YYYY')}</span>{v === todayDate && <Tag color="blue" style={{ margin: 0 }}>Hôm nay</Tag>}</Space> },
@@ -118,7 +118,7 @@ export function EmployeeScheduleAndLeaveCenter({
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>Bấm biểu tượng con mắt ở từng dòng để xem chi tiết lý do và thời gian phê duyệt.</Typography.Text>
                 </Space>
                 <Table
-                  size="small" rowKey="id" pagination={false} dataSource={leaves}
+                  size="small" rowKey="id" pagination={false} dataSource={leaves} scroll={{ x: 'max-content' }}
                   locale={{ emptyText: 'Bạn chưa có đơn đăng ký nghỉ phép (OFF) nào trong kỳ.' }}
                   columns={[
                     { title: 'Mã đơn', dataIndex: 'request_code', width: 105, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
@@ -131,7 +131,7 @@ export function EmployeeScheduleAndLeaveCenter({
                 />
                 {emergencyLeaves.length > 0 && (
                   <Table
-                    size="small" rowKey="id" pagination={false} dataSource={emergencyLeaves}
+                    size="small" rowKey="id" pagination={false} dataSource={emergencyLeaves} scroll={{ x: 'max-content' }}
                     title={() => <span style={{ fontWeight: 600, fontSize: 13 }}>Báo cáo nghỉ khẩn cấp sát giờ ca (&lt;12h)</span>}
                     columns={[
                       { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 110, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
@@ -153,7 +153,7 @@ export function EmployeeScheduleAndLeaveCenter({
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 <Alert type="info" showIcon message="Quy trình đổi ca 3 bước: (1) Bạn tạo yêu cầu -> (2) Đồng nghiệp xác nhận nhận ca -> (3) Quản lý duyệt cập nhật lịch chính thức. Bấm nút con mắt để xem đầy đủ chi tiết & thời gian." />
                 <Table
-                  size="small" rowKey="id" pagination={false} dataSource={swaps}
+                  size="small" rowKey="id" pagination={false} dataSource={swaps} scroll={{ x: 'max-content' }}
                   locale={{ emptyText: 'Bạn chưa có yêu cầu đổi ca nội bộ nào. Bấm nút "Đổi ca" phía trên để gửi đề nghị đổi ca với đồng nghiệp.' }}
                   columns={[
                     { title: 'Mã đơn', dataIndex: 'swap_code', width: 100, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },

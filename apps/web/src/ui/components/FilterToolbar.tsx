@@ -88,7 +88,7 @@ export function FilterToolbar({
               if (nextVal === '') onSearchRef.current('');
             }}
             onPressEnter={() => onSearchRef.current(draft)}
-            style={{ width: 280 }}
+            style={{ width: 280, maxWidth: '100%' }}
           />
           {selects.map((sel) => (
             <Select
@@ -97,7 +97,7 @@ export function FilterToolbar({
               placeholder={sel.placeholder}
               options={sel.options}
               onChange={sel.onChange}
-              style={{ width: sel.width ?? 180 }}
+              style={{ width: sel.width ?? 180, maxWidth: '100%' }}
             />
           ))}
         </Space>

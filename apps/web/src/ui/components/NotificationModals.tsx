@@ -62,7 +62,7 @@ export function NotificationDetailDrawer({
       open={Boolean(record)} width={wide ? '92vw' : 680} onClose={onClose} destroyOnHidden
       title={record ? `Chi tiết Thông báo — ${record.code}` : 'Chi tiết Thông báo'}
       extra={
-        <Space>
+        <Space wrap>
           {record?.link && onNavigate && <Button size="small" type="primary" icon={<LinkOutlined />} onClick={() => { const l = record.link; onClose(); onNavigate(l); }}>Đi tới màn hình liên quan</Button>}
           <Button size="small" icon={wide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setWide((v) => !v)}>{wide ? 'Thu gọn' : 'Mở rộng'}</Button>
           <Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
@@ -71,7 +71,7 @@ export function NotificationDetailDrawer({
     >
       {record && (
         <Space direction="vertical" size={14} style={{ width: '100%' }}>
-          <Descriptions size="small" bordered column={2}>
+          <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }}>
             <Descriptions.Item label="Mã thông báo"><Tag color="geekblue">{record.code}</Tag></Descriptions.Item>
             <Descriptions.Item label="Phân loại"><Tag color="blue">{record.categoryLabel}</Tag></Descriptions.Item>
             <Descriptions.Item label="Mức độ ưu tiên"><Tag color={sevColor}>{record.severityLabel}</Tag></Descriptions.Item>
@@ -138,17 +138,17 @@ export function SendNotificationModal({
         onFinish={onSubmit}
       >
         <Row gutter={12}>
-          <Col span={8}>
+          <Col xs={24} sm={8}>
             <Form.Item name="category" label="Phân loại thông báo" rules={[{ required: true }]}>
               <Select options={NOTIFICATION_CATEGORY_OPTIONS.filter((o) => o.value !== 'ALL')} />
             </Form.Item>
           </Col>
-          <Col span={8}>
+          <Col xs={24} sm={8}>
             <Form.Item name="severity" label="Mức độ ưu tiên" rules={[{ required: true }]}>
               <Select options={NOTIFICATION_SEVERITY_OPTIONS.filter((o) => o.value !== 'ALL')} />
             </Form.Item>
           </Col>
-          <Col span={8}>
+          <Col xs={24} sm={8}>
             <Form.Item name="target_scope" label="Phạm vi người nhận" rules={[{ required: true }]}>
               <Select
                 options={[
