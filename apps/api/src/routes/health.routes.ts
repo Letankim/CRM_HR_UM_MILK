@@ -25,14 +25,24 @@ const zSendTestEmailBody = z.object({
 });
 
 export async function healthRoutes(app: FastifyInstance, ctx: AppContext) {
-  /** Health công khai: chỉ trạng thái tổng, không lộ chi tiết nội bộ. */
-  app.get('/api/health', async (request, reply) => {
+  /** Probe gốc cho Render port scanner (HEAD / hoặc GET /) — phản hồi tức thì, ẩn log định kỳ. */
+  app.get('/', { logLevel: 'silent' }, async (request) => {
     const ready = ctx.db.isReady();
-    reply.code(ready ? 200 : 503);
+    return sendSuccess(request, 'Hệ thống API Ụm Bò Milk HR V5.1 đang hoạt động', {
+      status: 'ok',
+      ready,
+      version: ctx.version,
+      time: nowIso(),
+    });
+  });
+
+  /** Health công khai: chỉ trạng thái tổng, không lộ chi tiết nội bộ. */
+  app.get('/api/health', { logLevel: 'silent' }, async (request) => {
+    const ready = ctx.db.isReady();
     return sendSuccess(
       request,
       ready ? 'Hệ thống hoạt động ổn định' : 'Hệ thống đang nạp dữ liệu khởi tạo',
-      { status: ready ? 'ok' : 'down', version: ctx.version, time: nowIso() },
+      { status: ready ? 'ok' : 'warming_up', ready, version: ctx.version, time: nowIso() },
     );
   });
 

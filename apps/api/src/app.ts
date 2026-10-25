@@ -52,6 +52,9 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
     if (request.method === 'OPTIONS') {
       return reply.code(204).send();
     }
+    if (request.url === '/' || request.url.startsWith('/api/health')) {
+      return;
+    }
     await ctx.db.waitReady();
   });
 
