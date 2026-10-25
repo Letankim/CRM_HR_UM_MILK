@@ -1,0 +1,2021 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auto Stack — Bảng Master Checklist Cho AI Focus Làm &amp; Test Toàn Hệ Thống</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap');
+    :root {
+      --slate-950: #020617;
+      --slate-900: #0f172a;
+      --slate-800: #1e293b;
+      --slate-700: #334155;
+      --slate-500: #64748b;
+      --slate-200: #e2e8f0;
+      --slate-100: #f1f5f9;
+      --blue: #2563eb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', 'Segoe UI', sans-serif;
+      background: #f1f5f9;
+      color: var(--slate-800);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      background: var(--slate-900);
+      color: #fff;
+      padding: 10px 24px;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+    }
+    .topbar-inner {
+      max-width: 1380px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #fff;
+      text-decoration: none;
+    }
+    .brand .logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #2563eb, #0ea5e9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .brand .title { font-weight: 800; font-size: 14px; letter-spacing: 0.6px; }
+    .brand .sub { font-size: 11px; color: #38bdf8; display: block; }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .role-select, .search-input {
+      background: rgba(255,255,255,0.09);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+    }
+    .role-select option { color: #0f172a; background: #fff; }
+    .progress-pill {
+      background: rgba(16, 185, 129, 0.16);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #34d399;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .container {
+      max-width: 1380px;
+      margin: 24px auto 60px auto;
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid var(--slate-200);
+      box-shadow: 0 8px 30px rgba(15,23,42,0.06);
+      overflow: hidden;
+    }
+    .hero {
+      background: linear-gradient(135deg, #090d16 0%, #0f172a 60%, #1e3a8a 100%);
+      color: #fff;
+      padding: 34px 40px;
+      border-bottom: 4px solid #38bdf8;
+    }
+    .hero h1 {
+      margin: 8px 0 8px 0;
+      font-size: 24px;
+      font-weight: 800;
+    }
+    .hero p {
+      margin: 0;
+      color: #cbd5e1;
+      font-size: 13.5px;
+      max-width: 980px;
+    }
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(255,255,255,0.14);
+    }
+    .sum-box {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      padding: 10px 14px;
+      border-radius: 8px;
+    }
+    .sum-box .v { font-size: 18px; font-weight: 800; color: #38bdf8; font-family: 'JetBrains Mono', monospace; }
+    .sum-box .l { font-size: 11.5px; color: #cbd5e1; margin-top: 2px; }
+    .content { padding: 30px 36px; }
+    .sec-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 28px 0 14px 0;
+      padding-bottom: 10px;
+      border-bottom: 2px solid var(--slate-900);
+    }
+    .sec-head-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .sec-head-left .icon-box {
+      width: 32px;
+      height: 32px;
+      border-radius: 7px;
+      background: var(--slate-900);
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .sec-head h2 {
+      margin: 0;
+      font-size: 16.5px;
+      font-weight: 800;
+      color: var(--slate-900);
+    }
+    .chk-table {
+      width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+      font-size: 12px;
+      border: 1px solid var(--slate-200);
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+    .chk-table thead th {
+      background: var(--slate-900);
+      color: #fff;
+      padding: 9px 8px;
+      font-size: 10.8px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      text-align: left;
+      border: 1px solid var(--slate-800);
+    }
+    .chk-table tbody td {
+      padding: 8px 8px;
+      border: 1px solid var(--slate-200);
+      vertical-align: top;
+    }
+    .chk-table tbody tr:nth-child(even) td { background: #f8fafc; }
+    .code-tag {
+      display: inline-block;
+      font-family: 'JetBrains Mono', Consolas, monospace;
+      font-size: 10.2px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .clean-list {
+      margin: 0;
+      padding-left: 15px;
+    }
+    .clean-list li { margin-bottom: 3px; }
+    .task-check {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      accent-color: #16a34a;
+    }
+    .footer {
+      background: var(--slate-900);
+      color: #94a3b8;
+      padding: 18px 36px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 11.5px;
+      border-top: 3px solid #2563eb;
+    }
+    .footer strong { color: #fff; }
+    @media print {
+      body { background: #fff; font-size: 10.5px; }
+      .topbar { display: none !important; }
+      .container { max-width: 100%; margin: 0; border: none; box-shadow: none; }
+      .hero { padding: 20px 24px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .content { padding: 16px 20px; }
+      .chk-table thead th, .code-tag, .sec-head-left .icon-box, .footer {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .chk-table tr { page-break-inside: avoid; break-inside: avoid; }
+      .sec-head { page-break-after: avoid; break-after: avoid; }
+      @page { size: A4 landscape; margin: 8mm 8mm; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="logo"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>
+        <div>
+          <span class="title">AUTO STACK — AI EXECUTION &amp; QA CHECKLIST</span>
+          <span class="sub">Ụm Bò Milk HR System V5.1 · Bảng Focus Triển Khai &amp; Kiểm Thử</span>
+        </div>
+      </div>
+      <div class="controls">
+        <select id="roleFilter" class="role-select" onchange="applyFilters()">
+          <option value="ALL">Tất cả phân hệ (102 Hạng mục)</option>
+          <option value="INFRA">Phần A: Hạ tầng kỹ thuật lõi (10)</option>
+          <option value="ADMIN">Role 1: ADMIN (12 Tab)</option>
+          <option value="HR">Role 2: HR (15 Tab)</option>
+          <option value="STORE">Role 3: STORE (10 Tab)</option>
+          <option value="FINANCE">Role 4: FINANCE (11 Tab)</option>
+          <option value="MKT">Role 5: MKT (9 Tab)</option>
+          <option value="THU_VIEC">Role 6: NV THỬ VIỆC (9 Tab)</option>
+          <option value="CHINH_THUC">Role 7: NV CHÍNH THỨC (9 Tab)</option>
+          <option value="FLOW">Phần C: 05 Luồng nghiệp vụ E2E (5)</option>
+          <option value="QA">Phần D: 12 Hạng mục Nghiệm thu IT (12)</option>
+        </select>
+        <input type="text" id="kwFilter" class="search-input" placeholder="Tìm mã task, tab, API..." onkeyup="applyFilters()">
+        <div class="progress-pill" id="progressText">Dev: 0/90 | Test: 0/102</div>
+        <button class="btn" onclick="window.print()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg> <span>Xuất PDF</span></button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:1.2px; color:#38bdf8; font-weight:700;">
+        AUTO STACK ENGINEERING — MASTER AI IMPLEMENTATION &amp; TESTING MATRIX
+      </div>
+      <h1>BẢNG TỔNG HỢP CHECKLIST ĐỂ AI FOCUS TRIỂN KHAI &amp; KIỂM THỬ TOÀN HỆ THỐNG</h1>
+      <p>
+        Tài liệu định hướng thực thi (Execution Blueprint) và kiểm thử tự động/thực tế (Test Verification Matrix) cho toàn bộ hệ thống <strong>Ụm Bò Milk / HR System V5.1</strong>. Mỗi hạng mục được gắn mã định danh duy nhất, tách rõ yêu cầu xây dựng Giao diện (Frontend), Nghiệp vụ/Bảo mật (Backend API) và Điều kiện kiểm thử đạt chuẩn (Test Assertion).
+      </p>
+      <div class="summary-strip">
+        <div class="sum-box"><div class="v">10 Core Modules</div><div class="l">Hạ tầng Auth, RBAC, Sheets, Socket, Snapshot</div></div>
+        <div class="sum-box"><div class="v">75 Feature Tabs</div><div class="l">Đầy đủ 07 nhóm tài khoản (57 Quản trị + 18 NV)</div></div>
+        <div class="sum-box"><div class="v">05 E2E Flows</div><div class="l">Máy trạng thái liên phòng ban &amp; bất biến dữ liệu</div></div>
+        <div class="sum-box"><div class="v">12 IT QA Gates</div><div class="l">Tiêu chuẩn nghiệm thu kỹ thuật &amp; bảo mật</div></div>
+        <div class="sum-box"><div class="v">102 Total Tasks</div><div class="l">Tổng số đầu việc AI Focus Build &amp; Test</div></div>
+      </div>
+    </section>
+
+    <div class="content">
+
+      <!-- PHẦN 1: HẠ TẦNG KỸ THUẬT LÕI -->
+      <div class="sec-head" style="margin-top:0;">
+        <div class="sec-head-left">
+          <div class="icon-box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg></div>
+          <h2>PHẦN 01. CHECKLIST 10 MODULE HẠ TẦNG KỸ THUẬT &amp; KIẾN TRÚC LÕI (AI-INFRA-01 .. 10)</h2>
+        </div>
+        <span class="code-tag" style="background:#f1f5f9; color:#0f172a;">Triển khai trước khi làm UI 75 Tab</span>
+      </div>
+
+      <table class="chk-table">
+        <colgroup>
+          <col style="width:4%;">
+          <col style="width:10%;">
+          <col style="width:16%;">
+          <col style="width:33%;">
+          <col style="width:27%;">
+          <col style="width:5%;">
+          <col style="width:5%;">
+        </colgroup>
+        <thead>
+          <tr>
+            <th style="text-align:center;">STT</th>
+            <th>Mã Task AI</th>
+            <th>Module Kỹ Thuật Lõi</th>
+            <th>Yêu Cầu AI Focus Xây Dựng (Implementation Spec)</th>
+            <th>Kịch Bản AI Focus Kiểm Thử (Test Assertion)</th>
+            <th style="text-align:center;">Dev</th>
+            <th style="text-align:center;">Test</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+        <tr class="filter-row" data-role="INFRA">
+          <td style="text-align:center; font-weight:700;">01</td>
+          <td><span class="code-tag" style="background:#dbeafe; color:#1e40af;">AI-INFRA-01</span></td>
+          <td style="font-weight:700; color:#0f172a;">Monorepo / Dual Web App Setup</td>
+          <td>Khởi tạo kiến trúc thống nhất gồm Backend API Server + 02 Web App dùng chung theo vai trò (Backoffice App cho Admin/HR/Store/Finance/MKT và Employee Mobile Web App cho Thử việc/Chính thức); đồng bộ biến môi trường và version build.</td>
+          <td style="background:#f8fafc;">Chạy health-check endpoint `/api/health` và kiểm tra version hiển thị khớp nhau trên cả 02 Web App và Backend.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="INFRA">
+          <td style="text-align:center; font-weight:700;">02</td>
+          <td><span class="code-tag" style="background:#dbeafe; color:#1e40af;">AI-INFRA-02</span></td>
+          <td style="font-weight:700; color:#0f172a;">Auth, Hash & Session Guard</td>
+          <td>Triển khai đăng nhập, băm mật khẩu/PIN bằng bcrypt/argon2 (tuyệt đối không lưu mật khẩu/PIN thô trên Google Sheets); quản lý phiên (JWT + Session Store) hỗ trợ thu hồi phiên tức thời.</td>
+          <td style="background:#f8fafc;">Kiểm tra dữ liệu trên Google Sheets không chứa plaintext password/PIN; thử dùng token của phiên đã bị thu hồi gọi API -> phải trả về `401 Unauthorized`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="INFRA">
+          <td style="text-align:center; font-weight:700;">03</td>
+          <td><span class="code-tag" style="background:#dbeafe; color:#1e40af;">AI-INFRA-03</span></td>
+          <td style="font-weight:700; color:#0f172a;">RBAC & branchScope Middleware</td>
+          <td>Xây dựng Backend Guard xác thực `ROLE`, `permissions` và `branchScope` trên 100% API routes. Chặn tuyệt đối truy cập chéo chi nhánh (Store), chéo nhân viên (Employee) và chéo vai trò (MKT không truy cập lương/GPS/ảnh).</td>
+          <td style="background:#f8fafc;">Automated API Test: Dùng token Store CN1 gọi dữ liệu CN2 -> `403`; dùng token NV A gọi phiếu lương NV B -> `403`; dùng token MKT gọi API lương/GPS -> `403`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="INFRA">
+          <td style="text-align:center; font-weight:700;">04</td>
+          <td><span class="code-tag" style="background:#dbeafe; color:#1e40af;">AI-INFRA-04</span></td>
+          <td style="font-weight:700; color:#0f172a;">Google Sheets Sync Engine & Write Queue</td>
+          <td>Triển khai lớp đọc/ghi Google Sheets có hàng đợi (Write Queue), cơ chế retry khi gặp lỗi quota/timeout, gắn cờ `NEEDS_RECONCILIATION` khi chưa đồng bộ xong. Chỉ trả kết quả thành công về UI sau khi Sheets xác nhận đã ghi.</td>
+          <td style="background:#f8fafc;">Giả lập lỗi timeout/quota từ Google Sheets API -> Backend không được báo `200 OK` ảo hay phát Socket thành công giả; bản ghi phải chuyển vào trạng thái `NEEDS_RECONCILIATION`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="INFRA">
+          <td style="text-align:center; font-weight:700;">05</td>
+          <td><span class="code-tag" style="background:#dbeafe; color:#1e40af;">AI-INFRA-05</span></td>
+          <td style="font-weight:700; color:#0f172a;">Socket.IO Realtime & forceLogout</td>
+          <td>Tích hợp Socket.IO có xác thực token và phân room theo `role`, `branchScope`, `employee_id`. Phát sự kiện `forceLogout` khi khóa/thu hồi tài khoản, và phát sự kiện realtime cho chấm công, đổi ca, nghỉ khẩn, kích hoạt TK.</td>
+          <td style="background:#f8fafc;">Mở phiên đăng nhập nhân viên trên trình duyệt -> Admin gọi API thu hồi TK -> Client nhận event `forceLogout` và đăng xuất ngay lập tức trong < 1 giây.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="INFRA">
+          <td style="text-align:center; font-weight:700;">06</td>
+          <td><span class="code-tag" style="background:#dbeafe; color:#1e40af;">AI-INFRA-06</span></td>
+          <td style="font-weight:700; color:#0f172a;">Immutable Audit Log Service</td>
+          <td>Xây dựng dịch vụ ghi Audit Log tự động (append-only) với đầy đủ các trường: `actor`, `action`, `entity`, `before_data`, `after_data`, `timestamp`, `ip/trace` cho mọi thao tác kích hoạt TK, phân quyền, cấu hình, lịch, công, lương.</td>
+          <td style="background:#f8fafc;">Thực hiện thay đổi quyền hoặc duyệt công -> Kiểm tra bảng Audit Log ghi nhận đúng dữ liệu trước/sau; xác nhận không có API nào cho phép sửa/xóa dòng Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="INFRA">
+          <td style="text-align:center; font-weight:700;">07</td>
+          <td><span class="code-tag" style="background:#dbeafe; color:#1e40af;">AI-INFRA-07</span></td>
+          <td style="font-weight:700; color:#0f172a;">Attendance Photo Storage & GPS Verifier</td>
+          <td>Triển khai module lưu trữ ảnh điểm danh (`photo-disk.store.ts` kết hợp đồng bộ/backup Google Drive theo cấu hình), bảo vệ URL ảnh bằng middleware phân quyền; hàm tính khoảng cách Haversine kiểm tra bán kính GPS và `accuracy`.</td>
+          <td style="background:#f8fafc;">Gửi ảnh base64/multipart kèm tọa độ GPS trong/ngoài bán kính -> Xác nhận tính đúng khoảng cách (m), lưu ảnh an toàn và chặn truy cập ảnh trái phép từ MKT hoặc chi nhánh khác.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="INFRA">
+          <td style="text-align:center; font-weight:700;">08</td>
+          <td><span class="code-tag" style="background:#dbeafe; color:#1e40af;">AI-INFRA-08</span></td>
+          <td style="font-weight:700; color:#0f172a;">Immutable Attendance & Adjustment Engine</td>
+          <td>Thiết kế cấu trúc lưu trữ sự kiện chấm công gốc (`raw attendance events`) ở chế độ bất biến (không UPDATE/DELETE). Mọi bổ sung/điều chỉnh công phải tạo bản ghi `adjustment` liên kết `event_id` hoặc `shift_assignment_id` kèm lý do và người duyệt.</td>
+          <td style="background:#f8fafc;">Duyệt 1 phiếu bổ sung công -> Kiểm tra DB/Sheets: bản ghi chấm công gốc không bị thay đổi, xuất hiện bản ghi `adjustment` mới và dòng Audit Log tương ứng.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="INFRA">
+          <td style="text-align:center; font-weight:700;">09</td>
+          <td><span class="code-tag" style="background:#dbeafe; color:#1e40af;">AI-INFRA-09</span></td>
+          <td style="font-weight:700; color:#0f172a;">Server-side TEST Countdown & Auto-Submit</td>
+          <td>Xây dựng bộ đếm thời gian làm bài TEST quản lý tại Server (`started_at`, `expires_at` từ Server clock), tự động thu bài và chấm điểm khi hết giờ theo ngưỡng đạt đã được phê duyệt.</td>
+          <td style="background:#f8fafc;">Bắt đầu bài thi -> Thử đổi đồng hồ hệ thống trên máy client -> Thời gian còn lại vẫn tính chuẩn theo Server; khi hết giờ hệ thống tự động khóa và nộp bài.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="INFRA">
+          <td style="text-align:center; font-weight:700;">10</td>
+          <td><span class="code-tag" style="background:#dbeafe; color:#1e40af;">AI-INFRA-10</span></td>
+          <td style="font-weight:700; color:#0f172a;">Payroll State Machine & Snapshot Engine</td>
+          <td>Triển khai máy trạng thái kỳ lương 5 bước (`DRAFT -> RECONCILE -> APPROVED -> PUBLISHED -> PAID`). Khi chốt lương tạo `Snapshot` đóng băng dữ liệu công và đơn giá (`effective rate`); khóa sửa đè phiếu lương đã `PUBLISHED` (chỉ cho phép tạo `revision`/`adjustment`).</td>
+          <td style="background:#f8fafc;">Chốt kỳ lương sang `PUBLISHED` -> Thử thay đổi đơn giá lương hoặc công nguồn -> Phiếu lương đã snapshot không bị biến động số tiền; thử gọi API sửa đè phiếu đã `PUBLISHED` -> bị chặn.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        </tbody>
+      </table>
+
+      <!-- PHẦN 2: 75 TAB CHỨC NĂNG -->
+      <div class="sec-head">
+        <div class="sec-head-left">
+          <div class="icon-box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg></div>
+          <h2>PHẦN 02. BẢNG CHECKLIST TRIỂN KHAI &amp; TEST TOÀN BỘ 75 TAB CHỨC NĂNG (AI-TAB-01 .. 75)</h2>
+        </div>
+        <span class="code-tag" style="background:#f1f5f9; color:#0f172a;">07 Nhóm Tài Khoản · 75 Màn Hình</span>
+      </div>
+
+      <table class="chk-table">
+        <colgroup>
+          <col style="width:4%;">
+          <col style="width:11%;">
+          <col style="width:13%;">
+          <col style="width:24%;">
+          <col style="width:19%;">
+          <col style="width:19%;">
+          <col style="width:5%;">
+          <col style="width:5%;">
+        </colgroup>
+        <thead>
+          <tr>
+            <th style="text-align:center;">#</th>
+            <th>Mã AI / Tab</th>
+            <th>Tên Tab Chức Năng</th>
+            <th>Yêu Cầu Frontend &amp; Hiển Thị (UI Focus)</th>
+            <th>Yêu Cầu Backend, RBAC &amp; Dữ Liệu (API Focus)</th>
+            <th>Kịch Bản Kiểm Thử Bắt Buộc (Test Focus)</th>
+            <th style="text-align:center;">Dev</th>
+            <th style="text-align:center;">Test</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+        <tr class="filter-row" data-role="ADMIN">
+          <td style="text-align:center; font-weight:700; color:#475569;">01</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-01</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DBEAFE; color:#1E3A8A;">ADM-01</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">ADMIN (01/12)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Dashboard</td>
+          <td><ul class="clean-list"><li>Tổng quan toàn hệ thống: tổng nhân sự, nhân viên mới, thử việc, chính thức, đang có mặt, vắng mặt và nhân viên chờ kích hoạt.</li><li>Hiển thị tình trạng nhân sự theo từng chi nhánh và ca đang diễn ra/ca sắp tới.</li><li>Hiển thị số phiếu hoặc sự kiện cần xử lý: kích hoạt tài khoản, lỗi đồng bộ, cảnh báo hệ thống.</li><li>Theo dõi trạng thái Google Sheets, Google Drive, Socket.IO và các dịch vụ tích hợp.</li><li>Cho phép lọc dữ liệu theo chi nhánh, trạng thái và khoảng thời gian.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `admin/adm-01`: Xác thực `ROLE=ADMIN` & `branchScope`; thực thi: Dữ liệu tổng hợp chuẩn xác theo bộ lọc chi nhánh/thời gian; hiển thị đúng trạng thái kết nối dịch vụ tích hợp.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Kiểm tra API trả đúng bộ chỉ số tổng hợp của `ADM-01` theo scope `ADMIN`; kiểm tra bộ lọc chi nhánh/thời gian và các danh sách sự kiện/nút thao tác nhanh hiển thị chính xác.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="ADMIN">
+          <td style="text-align:center; font-weight:700; color:#475569;">02</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-02</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DBEAFE; color:#1E3A8A;">ADM-02</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">ADMIN (02/12)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Tài khoản & Phân quyền</td>
+          <td><ul class="clean-list"><li>Tạo, sửa, khóa/mở khóa tài khoản nội bộ.</li><li>Gán vai trò Admin, HR, Store, Finance, MKT và các permission bổ sung nếu được phê duyệt.</li><li>Gán branchScope: ALL hoặc một/nhiều chi nhánh được phép thao tác.</li><li>Xem trạng thái tài khoản, lần đăng nhập gần nhất và lịch sử thay đổi quyền.</li><li>Không lưu mật khẩu/PIN thô trong Google Sheets.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `admin/adm-02`: Xác thực `ROLE=ADMIN` & `branchScope`; thực thi: Bắt buộc băm (hash) mật khẩu/PIN; mọi thay đổi quyền và branchScope phải ghi Audit Log và có hiệu lực ngay ở Backend.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test CRUD tài khoản nội bộ, gán `ROLE` + `branchScope`; kiểm tra Google Sheets lưu hash mật khẩu/PIN (không lưu thô) và sinh Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="ADMIN">
+          <td style="text-align:center; font-weight:700; color:#475569;">03</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-03</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DBEAFE; color:#1E3A8A;">ADM-03</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">ADMIN (03/12)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Kích hoạt tài khoản Nhân viên</td>
+          <td><ul class="clean-list"><li>Danh sách nhân viên thử việc/chính thức đang ở trạng thái PENDING_ACTIVATION.</li><li>Tìm theo mã nhân viên, họ tên hoặc SĐT chuẩn hóa.</li><li>Nút KÍCH HOẠT cập nhật trạng thái ACTIVE trên Google Sheets; chỉ báo thành công sau khi ghi được xác nhận.</li><li>Khóa/thu hồi tài khoản; khi thu hồi phải làm mất hiệu lực phiên và phát Socket forceLogout.</li><li>Xem activated_by, activated_at, revoked_at và audit liên quan.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `admin/adm-03`: Xác thực `ROLE=ADMIN` & `branchScope`; thực thi: Đồng bộ xác nhận ghi Google Sheets thành công trước khi báo UI; thu hồi tài khoản lập tức ngắt phiên và bắn sự kiện forceLogout.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test tìm kiếm NV `PENDING_ACTIVATION` theo mã/tên/SĐT chuẩn hóa; bấm KÍCH HOẠT -> xác nhận ghi Sheets thành công mới báo UI; bấm Thu hồi -> phát Socket `forceLogout`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="ADMIN">
+          <td style="text-align:center; font-weight:700; color:#475569;">04</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-04</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DBEAFE; color:#1E3A8A;">ADM-04</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">ADMIN (04/12)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Quản lý Nhân viên</td>
+          <td><ul class="clean-list"><li>Xem nhân viên mới, thử việc, chính thức, xưởng, văn phòng và sale.</li><li>Lọc theo chi nhánh, nhóm nhân sự, giai đoạn và trạng thái tài khoản.</li><li>Xem hồ sơ, mã NV, lịch sử giai đoạn, lịch sử chi nhánh/ca và trạng thái TEST.</li><li>Admin chủ yếu quản trị và quan sát; nghiệp vụ tuyển dụng/chuyển chính thức do HR thực hiện.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `admin/adm-04`: Xác thực `ROLE=ADMIN` & `branchScope`; thực thi: Phân tách rõ chức năng quan sát quản trị của Admin và quyền thực thi nghiệp vụ nhân sự của HR.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test lọc danh sách nhân sự (mới, thử việc, chính thức, xưởng, văn phòng, sale) theo chi nhánh/giai đoạn; xác nhận Admin chỉ quan sát hồ sơ, không thực thi tuyển dụng/chuyển chính thức.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="ADMIN">
+          <td style="text-align:center; font-weight:700; color:#475569;">05</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-05</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DBEAFE; color:#1E3A8A;">ADM-05</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">ADMIN (05/12)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Chi nhánh & Ca làm</td>
+          <td><ul class="clean-list"><li>Quản lý 4 chi nhánh và thông tin cấu hình.</li><li>Tọa độ GPS, bán kính điểm danh, timezone và trạng thái hoạt động.</li><li>Quản lý mẫu ca Sáng/Chiều/Tối, giờ bắt đầu/kết thúc và ngày hiệu lực.</li><li>Cấu hình định biên tối thiểu/tối đa theo chi nhánh và ca nếu đã được doanh nghiệp chốt.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `admin/adm-05`: Xác thực `ROLE=ADMIN` & `branchScope`; thực thi: Mọi thay đổi tọa độ, bán kính GPS và mẫu ca làm việc có ngày hiệu lực (effective date) và lưu vết Audit.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test cập nhật cấu hình 04 chi nhánh (tọa độ GPS, bán kính điểm danh, timezone), mẫu ca Sáng/Chiều/Tối và định biên tối thiểu/tối đa; kiểm tra lưu ngày hiệu lực và Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="ADMIN">
+          <td style="text-align:center; font-weight:700; color:#475569;">06</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-06</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DBEAFE; color:#1E3A8A;">ADM-06</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">ADMIN (06/12)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Chính sách hệ thống</td>
+          <td><ul class="clean-list"><li>Cấu hình cửa thời gian điểm danh, bán kính GPS, quy tắc OFF, TEST và tham số nghiệp vụ được phép cấu hình.</li><li>Mỗi chính sách có phiên bản, ngày hiệu lực và người phê duyệt.</li><li>Không tự thay đổi các chính sách lương/phạt/OT nếu chưa được chủ dự án phê duyệt.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `admin/adm-06`: Xác thực `ROLE=ADMIN` & `branchScope`; thực thi: Quản lý phiên bản (versioning) chính sách; khóa chỉnh sửa tùy tiện đối với tham số lương/phạt/OT chưa được phê duyệt.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test cấu hình cửa sổ thời gian điểm danh, quy tắc OFF, TEST có lưu phiên bản (version) và người phê duyệt; assert chặn tự ý thay đổi chính sách lương/phạt/OT chưa duyệt.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="ADMIN">
+          <td style="text-align:center; font-weight:700; color:#475569;">07</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-07</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DBEAFE; color:#1E3A8A;">ADM-07</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">ADMIN (07/12)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Thông báo hệ thống</td>
+          <td><ul class="clean-list"><li>Notification Center theo thời gian thực.</li><li>Nhận sự kiện kích hoạt tài khoản, lỗi đồng bộ, lỗi chấm công, thiếu ca và cảnh báo hệ thống.</li><li>Badge số lượng chưa đọc; đánh dấu đã đọc/chưa đọc; đi trực tiếp đến bản ghi cần xử lý.</li><li>Thông báo quan trọng phải có lịch sử, không chỉ phụ thuộc Socket.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `admin/adm-07`: Xác thực `ROLE=ADMIN` & `branchScope`; thực thi: Lưu trữ bền vững (persistent) lịch sử thông báo quan trọng, đảm bảo không mất thông báo khi rớt kết nối Socket.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test Notification Center thời gian thực, badge chưa đọc, đánh dấu đã đọc/chưa đọc, deep-link tới bản ghi cần xử lý; xác nhận thông báo quan trọng lưu lịch sử bền vững ngoài Socket.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="ADMIN">
+          <td style="text-align:center; font-weight:700; color:#475569;">08</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-08</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DBEAFE; color:#1E3A8A;">ADM-08</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">ADMIN (08/12)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Tích hợp & Đồng bộ</td>
+          <td><ul class="clean-list"><li>Theo dõi trạng thái Google Sheets API, Google Drive, Socket.IO và các Bot/API được cấp quyền.</li><li>Hiển thị hàng đợi ghi dữ liệu, retry, lỗi quota/timeout và trạng thái NEEDS_RECONCILIATION.</li><li>Cho phép kiểm tra sức khỏe tích hợp mà không làm thay đổi dữ liệu nghiệp vụ.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `admin/adm-08`: Xác thực `ROLE=ADMIN` & `branchScope`; thực thi: Kiểm soát hàng đợi ghi (write queue), cơ chế retry và gắn cờ NEEDS_RECONCILIATION khi quá hạn/lỗi đồng bộ.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test màn hình theo dõi Google Sheets API, Drive, Socket.IO; giả lập lỗi quota/timeout để kiểm tra hiển thị hàng đợi retry, cờ `NEEDS_RECONCILIATION` và nút health-check không làm đổi dữ liệu.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="ADMIN">
+          <td style="text-align:center; font-weight:700; color:#475569;">09</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-09</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DBEAFE; color:#1E3A8A;">ADM-09</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">ADMIN (09/12)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Bảo trì hệ thống</td>
+          <td><ul class="clean-list"><li>Bật/tắt bảo trì toàn hệ thống hoặc từng module.</li><li>Bảo trì riêng Web App Nhân viên hoặc một nhóm chức năng.</li><li>Hiển thị thông báo bảo trì thân thiện và thời gian dự kiến nếu có.</li><li>Không dùng bảo trì để che lỗi dữ liệu hoặc bỏ qua quy trình đối soát.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `admin/adm-09`: Xác thực `ROLE=ADMIN` & `branchScope`; thực thi: Cho phép bật/tắt chế độ bảo trì linh hoạt theo module/app; ghi nhận Audit Log người bật/tắt bảo trì.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test bật/tắt chế độ bảo trì toàn hệ thống hoặc riêng Web App Nhân viên / từng module; kiểm tra hiển thị thông báo bảo trì thân thiện kèm thời gian dự kiến và ghi Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="ADMIN">
+          <td style="text-align:center; font-weight:700; color:#475569;">10</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-10</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DBEAFE; color:#1E3A8A;">ADM-10</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">ADMIN (10/12)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Audit Log</td>
+          <td><ul class="clean-list"><li>Xem actor, action, entity, dữ liệu trước/sau, timestamp và thông tin truy vết.</li><li>Lọc theo tài khoản, module, thời gian và loại sự kiện.</li><li>Theo dõi lịch sử kích hoạt/khóa tài khoản, cấu hình, lịch, công và các hành động quản trị.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `admin/adm-10`: Xác thực `ROLE=ADMIN` & `branchScope`; thực thi: Audit Log chỉ đọc (append-only / immutable), không cho phép sửa hoặc xóa lịch sử truy vết.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test truy vấn và lọc Audit Log theo tài khoản, module, thời gian, loại sự kiện; kiểm tra hiển thị đủ `actor`, `action`, `entity`, `before/after`, `timestamp` và khóa sửa/xóa.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="ADMIN">
+          <td style="text-align:center; font-weight:700; color:#475569;">11</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-11</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DBEAFE; color:#1E3A8A;">ADM-11</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">ADMIN (11/12)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Backup & Recovery</td>
+          <td><ul class="clean-list"><li>Theo dõi snapshot/backup Google Sheets và Google Drive.</li><li>Xem lịch sử backup, trạng thái thành công/thất bại và lỗi.</li><li>Khôi phục chỉ theo quy trình được phê duyệt; ưu tiên thử trên môi trường non-production.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `admin/adm-11`: Xác thực `ROLE=ADMIN` & `branchScope`; thực thi: Có kiểm soát phê duyệt khi thực hiện Restore; đảm bảo kiểm thử khôi phục trên môi trường non-production.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test theo dõi lịch sử snapshot/backup Google Sheets & Drive (thành công/thất bại/lỗi); kiểm tra luồng khôi phục (Restore) yêu cầu quyền phê duyệt trên môi trường thử nghiệm.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="ADMIN">
+          <td style="text-align:center; font-weight:700; color:#475569;">12</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-12</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DBEAFE; color:#1E3A8A;">ADM-12</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">ADMIN (12/12)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Cài đặt hệ thống</td>
+          <td><ul class="clean-list"><li>Cấu hình tên hệ thống, logo, timezone, định dạng ngày giờ và các tham số giao diện chung.</li><li>Cấu hình timeout phiên, mức log và các tùy chọn kỹ thuật an toàn được phép chỉnh.</li><li>Không chứa secrets/API token trên giao diện hoặc Google Sheets.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `admin/adm-12`: Xác thực `ROLE=ADMIN` & `branchScope`; thực thi: Tuyệt đối ẩn biến môi trường nhạy cảm (secrets, private keys, API tokens) khỏi frontend và Google Sheets.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test cấu hình tên hệ thống, logo, timezone, định dạng ngày giờ, timeout phiên, mức log; kiểm tra DOM/Network/Sheets tuyệt đối không lộ `secrets` hay `API token`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">13</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-13</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-01</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (01/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Dashboard HR</td>
+          <td><ul class="clean-list"><li>Tổng nhân sự, ứng viên mới, lịch phỏng vấn hôm nay, NV thử việc, NV sắp hết thử việc.</li><li>Hiển thị nghỉ hôm nay, thiếu ca, chấm công bất thường và các phiếu cần xử lý.</li><li>Ưu tiên danh sách hành động cần làm thay vì chỉ hiển thị biểu đồ.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-01`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Thiết kế hướng hành động (Action-oriented): hiển thị rõ danh sách việc cần HR xử lý ngay trong ngày.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Kiểm tra API trả đúng bộ chỉ số tổng hợp của `HR-01` theo scope `HR`; kiểm tra bộ lọc chi nhánh/thời gian và các danh sách sự kiện/nút thao tác nhanh hiển thị chính xác.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">14</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-14</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-02</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (02/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Ứng viên mới</td>
+          <td><ul class="clean-list"><li>Nhận dữ liệu từ Google Form/FROM_NHAN_VIEN.</li><li>Xem hồ sơ, tìm kiếm, lọc, ghi chú HR và trạng thái xử lý.</li><li>Mở kênh liên hệ đã được tích hợp; không tự loại theo tiêu chí không liên quan công việc.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-02`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Đồng bộ tự động từ sheet FROM_NHAN_VIEN; không áp dụng bộ lọc tự động loại ứng viên trái quy định.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test đồng bộ danh sách ứng viên từ Google Form/`FROM_NHAN_VIEN`, tìm kiếm, lọc, lưu ghi chú HR, mở kênh liên hệ; assert không có bộ lọc tự động loại ứng viên trái quy định.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">15</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-15</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-03</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (03/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Phỏng vấn</td>
+          <td><ul class="clean-list"><li>Tạo lịch phỏng vấn 30 phút, kiểm tra trùng lịch và thời gian hợp lệ.</li><li>Tạo Google Meet/Calendar khi quyền tích hợp thật đã hoạt động.</li><li>Theo dõi xác nhận, trạng thái cần đổi lịch, chấm điểm/nhận xét và quyết định của HR.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-03`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Kiểm tra xung đột khung giờ phỏng vấn 30 phút; lưu đầy đủ kết quả đánh giá và quyết định tuyển dụng.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test tạo lịch phỏng vấn 30 phút, kiểm tra cảnh báo trùng lịch, tích hợp Google Meet/Calendar, cập nhật trạng thái xác nhận/đổi lịch, chấm điểm và lưu quyết định của HR.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">16</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-16</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-04</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (04/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Nhân viên Thử việc</td>
+          <td><ul class="clean-list"><li>Quản lý mã NV, SĐT, chi nhánh, ca, ngày bắt đầu/kết thúc và số ngày thử việc.</li><li>Xem trạng thái tài khoản, lịch thử việc, kết quả TEST và các yêu cầu liên quan.</li><li>Tạo/đề xuất hồ sơ tài khoản ở trạng thái chờ Admin kích hoạt.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-04`: Xác thực `ROLE=HR` & `branchScope`; thực thi: HR khởi tạo hồ sơ ở trạng thái PENDING_ACTIVATION; chỉ khi Admin kích hoạt ACTIVE nhân viên mới đăng nhập được.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test quản lý hồ sơ NV thử việc (mã NV, SĐT, chi nhánh, ca, ngày bắt đầu/kết thúc, số ngày TV); test tạo đề xuất tài khoản ở trạng thái `PENDING_ACTIVATION` chờ Admin kích hoạt.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">17</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-17</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-05</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (05/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Nhân viên Chính thức</td>
+          <td><ul class="clean-list"><li>Quản lý hồ sơ, chi nhánh, ca, ngày chính thức và trạng thái nhân sự.</li><li>Xem lịch sử giai đoạn, lịch làm việc, TEST và các thay đổi có hiệu lực.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-05`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Theo dõi xuyên suốt vòng đời nhân sự và lịch sử điều chuyển chi nhánh/ca làm việc.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test quản lý hồ sơ NV chính thức, lọc theo chi nhánh/ca/trạng thái; kiểm tra hiển thị đầy đủ lịch sử giai đoạn, lịch làm việc, kết quả TEST và các thay đổi có hiệu lực.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">18</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-18</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-06</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (06/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Chuyển Chính thức</td>
+          <td><ul class="clean-list"><li>Xem đánh giá, công thử việc, TEST và điều kiện nội bộ đã được phê duyệt.</li><li>HR thực hiện quyết định chuyển chính thức và ghi effective_from.</li><li>Không xóa lịch sử thử việc; employee_id giữ nguyên.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-06`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Bắt buộc bảo toàn employee_id và toàn bộ lịch sử công/TEST giai đoạn thử việc; ghi nhận mốc effective_from.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test chuyển trạng thái từ `THU_VIEC` sang `CHINH_THUC` có lưu `effective_from`; assert `employee_id` giữ nguyên 100% và lịch sử công/TEST thử việc không bị xóa.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">19</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-19</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-07</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (07/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Lịch làm việc</td>
+          <td><ul class="clean-list"><li>Tạo/xem lịch theo tuần, chi nhánh và ca.</li><li>Kiểm tra định biên, xung đột và trạng thái DRAFT/PUBLISHED.</li><li>Duyệt/phát lịch theo quyền; lịch chỉ có hiệu lực với nhân viên sau khi PUBLISHED.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-07`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Cảnh báo khi vi phạm định biên hoặc trùng ca; chỉ bản ghi trạng thái PUBLISHED mới hiển thị chính thức cho nhân viên.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test hiển thị/xử lý lịch tại `HR-07`; kiểm tra cảnh báo định biên & xung đột ca; assert nhân viên chỉ thấy và điểm danh được trên các ca có trạng thái `PUBLISHED`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">20</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-20</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-08</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (08/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Nghỉ OFF</td>
+          <td><ul class="clean-list"><li>Xem OFF thử việc và OFF hàng tuần của chính thức.</li><li>Kiểm tra định biên sau khi nghỉ; duyệt/từ chối và ghi lý do.</li><li>Theo dõi trạng thái phiếu và audit thay đổi.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-08`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Kiểm tra tự động định biên ca trước khi duyệt OFF; bắt buộc lưu lý do khi từ chối và ghi nhận Audit.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test tạo/lưu nháp/gửi/duyệt/từ chối phiếu OFF tại `HR-08`; kiểm tra giới hạn ngày OFF theo chính sách và kiểm tra định biên ca sau khi nghỉ; assert lưu lý do từ chối và Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">21</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-21</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-09</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (09/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Đổi ca</td>
+          <td><ul class="clean-list"><li>Theo dõi yêu cầu NV A -> NV B xác nhận -> HR/Store duyệt.</li><li>Xem ca cũ, ca mới, người thay, lý do và tình trạng xử lý.</li><li>Chỉ cập nhật lịch chính thức khi quy trình duyệt hoàn tất.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-09`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Đảm bảo đúng quy trình 3 bước (A tạo -> B xác nhận -> HR/Store duyệt) trước khi ghi đè lịch phân công.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test luồng 3 bước tại `HR-09` (`NV A gửi -> NV B xác nhận -> Store/HR duyệt`); assert lịch chính thức không đổi khi mới ở bước 1 hoặc 2, chỉ cập nhật sau bước duyệt cuối cùng.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">22</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-22</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-10</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (10/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Nghỉ đột xuất</td>
+          <td><ul class="clean-list"><li>Nhận yêu cầu nghỉ khẩn; ghi nhận lý do.</li><li>Theo dõi tìm người thay và tình trạng thiếu ca.</li><li>Không tự đồng nhất 'không tìm được người thay' với việc nhân viên bắt buộc phải đi làm; phải escalated để xử lý.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-10`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Cơ chế Escalation rõ ràng cho quản lý xử lý ca thiếu người; không tự động ép trạng thái bắt buộc đi làm.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test gửi và xử lý nghỉ khẩn tại `HR-10`; kiểm tra luồng tìm người thay và cờ `Escalated` khi thiếu người; assert không tự động gán trạng thái bắt buộc đi làm.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">23</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-23</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-11</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (11/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Chấm công</td>
+          <td><ul class="clean-list"><li>Xem check-in/check-out, giờ thực tế, đi trễ, về sớm và trạng thái bất thường.</li><li>Ảnh/GPS chỉ hiển thị theo quyền và scope phù hợp.</li><li>Cho phép mở hồ sơ ca để đối chiếu dữ liệu gốc.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-11`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Kiểm soát quyền truy cập ảnh điểm danh và tọa độ GPS theo đúng role & scope.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test hiển thị dữ liệu công tại `HR-11` (giờ vào/ra, đi trễ, về sớm, thiếu lượt, OT); kiểm tra phân quyền xem ảnh/GPS theo đúng scope `HR` và chế độ chỉ đọc (Read-only) đối với nhân viên.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">24</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-24</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-12</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (12/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Bổ sung / Điều chỉnh công</td>
+          <td><ul class="clean-list"><li>Nhận yêu cầu quên check-in/out, lỗi GPS/camera hoặc sự cố hợp lệ.</li><li>Kiểm tra bằng chứng, duyệt/từ chối và ghi lý do.</li><li>Không sửa/xóa event chấm công gốc; tạo adjustment có audit.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-12`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Bất biến sự kiện chấm công gốc (Immutable raw attendance events); mọi điều chỉnh phải tạo bản ghi adjustment riêng có truy vết.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test gửi/xác nhận/duyệt điều chỉnh công tại `HR-12`; assert bản ghi chấm công gốc (`raw event`) không bị sửa/xóa mà tạo bản ghi `adjustment` mới có Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">25</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-25</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-13</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (13/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">TEST nhân viên</td>
+          <td><ul class="clean-list"><li>Giao lịch TEST, theo dõi trạng thái làm bài và kết quả.</li><li>Xem điểm, thời gian làm, thi lại và lịch sử thi.</li><li>Ngân hàng câu hỏi và ngưỡng đạt chỉ bật khi đã được xác minh/phê duyệt.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-13`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Lưu đầy đủ lịch sử các lần thi; chỉ kích hoạt bộ đề và điểm chuẩn đã được phê duyệt.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test giao bài/làm bài TEST tại `HR-13`; kiểm tra đồng hồ đếm ngược đồng bộ từ Server (`server-side countdown`), tự động nộp bài khi hết giờ và lưu lịch sử các lần thi.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">26</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-26</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-14</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (14/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Báo cáo HR</td>
+          <td><ul class="clean-list"><li>Headcount, thử việc/chính thức, tuyển dụng, thiếu ca, đi trễ, vắng mặt và các chỉ số HR có đủ dữ liệu.</li><li>Lọc theo chi nhánh, thời gian và nhóm nhân sự.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-14`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Chỉ hiển thị các chỉ số có nguồn dữ liệu thực tế xác thực; lọc chính xác theo chi nhánh và kỳ báo cáo.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test số liệu báo cáo tại `HR-14` theo bộ lọc chi nhánh/thời gian/ca; kiểm tra phạm vi dữ liệu đúng với `HR` (riêng `Labor Cost %` tại `FIN-10` chỉ hiện khi có doanh thu đầu vào hợp lệ).</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="HR">
+          <td style="text-align:center; font-weight:700; color:#475569;">27</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-27</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#CCFBF1; color:#0F766E;">HR-15</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">HR (15/15)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Thông báo HR</td>
+          <td><ul class="clean-list"><li>Lịch phỏng vấn, nhân viên chờ xử lý, OFF, đổi ca, TEST, lỗi chấm công và các sự kiện HR.</li><li>Có badge và deep-link đến hồ sơ/phiếu tương ứng.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `hr/hr-15`: Xác thực `ROLE=HR` & `branchScope`; thực thi: Hỗ trợ điều hướng nhanh (deep-link) từ thông báo đến đúng phiếu hoặc hồ sơ nhân sự cần xử lý.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test danh sách thông báo nghiệp vụ tại `HR-15`, kiểm tra nhận realtime qua Socket + lưu lịch sử, badge số lượng chưa đọc và deep-link điều hướng đúng trong phạm vi `HR`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="STORE">
+          <td style="text-align:center; font-weight:700; color:#475569;">28</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-28</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FEF3C7; color:#B45309;">STR-01</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">STORE (01/10)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Dashboard Store</td>
+          <td><ul class="clean-list"><li>Số nhân viên thuộc chi nhánh, ai đang có mặt, ai chưa check-in và ca hiện tại/ca tiếp theo.</li><li>Hiển thị nghỉ hôm nay, thiếu người và cảnh báo vận hành theo chi nhánh.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `store/str-01`: Xác thực `ROLE=STORE` & `branchScope`; thực thi: Chỉ hiển thị số liệu vận hành trong phạm vi branchScope của cửa hàng phụ trách.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Kiểm tra API trả đúng bộ chỉ số tổng hợp của `STR-01` theo scope `STORE`; kiểm tra bộ lọc chi nhánh/thời gian và các danh sách sự kiện/nút thao tác nhanh hiển thị chính xác.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="STORE">
+          <td style="text-align:center; font-weight:700; color:#475569;">29</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-29</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FEF3C7; color:#B45309;">STR-02</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">STORE (02/10)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Nhân viên chi nhánh</td>
+          <td><ul class="clean-list"><li>Danh sách nhân viên thuộc branchScope của Store.</li><li>Xem trạng thái nhân sự, ca, thông tin vận hành cần thiết.</li><li>Không xem dữ liệu chi nhánh khác.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `store/str-02`: Xác thực `ROLE=STORE` & `branchScope`; thực thi: Backend chặn tuyệt đối API truy vấn nhân sự ngoài branchScope của tài khoản Store.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Kiểm tra hiển thị đầy đủ dữ liệu `STR-02` theo đúng quyền `STORE` và `branchScope`; kiểm thử truy cập trái phép qua API bị chặn `403 Forbidden`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="STORE">
+          <td style="text-align:center; font-weight:700; color:#475569;">30</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-30</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FEF3C7; color:#B45309;">STR-03</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">STORE (03/10)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Lịch làm việc</td>
+          <td><ul class="clean-list"><li>Xem lịch tuần của chi nhánh.</li><li>Kiểm tra đủ/thiếu nhân sự từng ca; đề xuất điều chỉnh.</li><li>Xác nhận dữ liệu vận hành trước khi HR phát lịch nếu quy trình yêu cầu.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `store/str-03`: Xác thực `ROLE=STORE` & `branchScope`; thực thi: Hiển thị trực quan tình trạng định biên (đủ/thiếu người) theo từng ca tại chi nhánh.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test hiển thị/xử lý lịch tại `STR-03`; kiểm tra cảnh báo định biên & xung đột ca; assert nhân viên chỉ thấy và điểm danh được trên các ca có trạng thái `PUBLISHED`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="STORE">
+          <td style="text-align:center; font-weight:700; color:#475569;">31</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-31</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FEF3C7; color:#B45309;">STR-04</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">STORE (04/10)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">OFF hàng tuần</td>
+          <td><ul class="clean-list"><li>Xem yêu cầu nghỉ của nhân viên chi nhánh.</li><li>Kiểm tra định biên và xung đột.</li><li>Duyệt/xác nhận theo permission được Admin/HR cấp.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `store/str-04`: Xác thực `ROLE=STORE` & `branchScope`; thực thi: Chỉ thao tác trên phiếu OFF thuộc chi nhánh quản lý và theo đúng permission được cấp.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test tạo/lưu nháp/gửi/duyệt/từ chối phiếu OFF tại `STR-04`; kiểm tra giới hạn ngày OFF theo chính sách và kiểm tra định biên ca sau khi nghỉ; assert lưu lý do từ chối và Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="STORE">
+          <td style="text-align:center; font-weight:700; color:#475569;">32</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-32</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FEF3C7; color:#B45309;">STR-05</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">STORE (05/10)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Đổi ca</td>
+          <td><ul class="clean-list"><li>Xem yêu cầu đổi ca trong chi nhánh.</li><li>Kiểm tra người thay, thời gian chồng ca và định biên.</li><li>Duyệt/xác nhận theo branchScope.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `store/str-05`: Xác thực `ROLE=STORE` & `branchScope`; thực thi: Tự động kiểm tra trùng ca (chồng ca) và định biên trước khi cho phép Store xác nhận/duyệt.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test luồng 3 bước tại `STR-05` (`NV A gửi -> NV B xác nhận -> Store/HR duyệt`); assert lịch chính thức không đổi khi mới ở bước 1 hoặc 2, chỉ cập nhật sau bước duyệt cuối cùng.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="STORE">
+          <td style="text-align:center; font-weight:700; color:#475569;">33</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-33</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FEF3C7; color:#B45309;">STR-06</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">STORE (06/10)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Nghỉ đột xuất</td>
+          <td><ul class="clean-list"><li>Nhận cảnh báo nghỉ khẩn.</li><li>Tìm/xác nhận người thay; báo HR khi không tìm được người thay.</li><li>Theo dõi trạng thái ca sau khi xử lý.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `store/str-06`: Xác thực `ROLE=STORE` & `branchScope`; thực thi: Hỗ trợ luồng báo cáo vượt cấp (escalate) sang HR ngay khi chi nhánh không bố trí được người thay.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test gửi và xử lý nghỉ khẩn tại `STR-06`; kiểm tra luồng tìm người thay và cờ `Escalated` khi thiếu người; assert không tự động gán trạng thái bắt buộc đi làm.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="STORE">
+          <td style="text-align:center; font-weight:700; color:#475569;">34</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-34</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FEF3C7; color:#B45309;">STR-07</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">STORE (07/10)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Chấm công realtime</td>
+          <td><ul class="clean-list"><li>Xem nhân viên đã/chưa check-in, check-out, đi trễ và bất thường.</li><li>Ảnh/GPS theo quyền và chỉ trong chi nhánh phụ trách.</li><li>Nhận cảnh báo realtime từ Socket khi có sự kiện cần quản lý xử lý.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `store/str-07`: Xác thực `ROLE=STORE` & `branchScope`; thực thi: Cập nhật tức thời qua Socket.IO; giới hạn xem ảnh/GPS nghiêm ngặt trong branchScope.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test hiển thị dữ liệu công tại `STR-07` (giờ vào/ra, đi trễ, về sớm, thiếu lượt, OT); kiểm tra phân quyền xem ảnh/GPS theo đúng scope `STORE` và chế độ chỉ đọc (Read-only) đối với nhân viên.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="STORE">
+          <td style="text-align:center; font-weight:700; color:#475569;">35</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-35</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FEF3C7; color:#B45309;">STR-08</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">STORE (08/10)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Xác nhận công</td>
+          <td><ul class="clean-list"><li>Đối chiếu công thực tế của nhân viên chi nhánh.</li><li>Xác nhận sự cố, ghi chú và chuyển dữ liệu đủ điều kiện sang HR/Finance.</li><li>Không tự thay đổi event chấm công gốc.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `store/str-08`: Xác thực `ROLE=STORE` & `branchScope`; thực thi: Bước chốt xác nhận công cấp cửa hàng để làm đầu vào cho HR/Finance đối soát; giữ nguyên event gốc.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test gửi/xác nhận/duyệt điều chỉnh công tại `STR-08`; assert bản ghi chấm công gốc (`raw event`) không bị sửa/xóa mà tạo bản ghi `adjustment` mới có Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="STORE">
+          <td style="text-align:center; font-weight:700; color:#475569;">36</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-36</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FEF3C7; color:#B45309;">STR-09</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">STORE (09/10)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Báo cáo chi nhánh</td>
+          <td><ul class="clean-list"><li>Ngày công, giờ làm, trễ, vắng, ca thiếu người, tỷ lệ phủ ca và nhân sự hiện tại.</li><li>Lọc theo tuần/tháng và ca.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `store/str-09`: Xác thực `ROLE=STORE` & `branchScope`; thực thi: Số liệu báo cáo giới hạn trong chi nhánh được phân quyền.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test số liệu báo cáo tại `STR-09` theo bộ lọc chi nhánh/thời gian/ca; kiểm tra phạm vi dữ liệu đúng với `STORE` (riêng `Labor Cost %` tại `FIN-10` chỉ hiện khi có doanh thu đầu vào hợp lệ).</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="STORE">
+          <td style="text-align:center; font-weight:700; color:#475569;">37</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-37</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FEF3C7; color:#B45309;">STR-10</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">STORE (10/10)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Thông báo Store</td>
+          <td><ul class="clean-list"><li>NV chưa điểm danh, thiếu người, đổi ca, nghỉ đột xuất, lỗi điểm danh và lịch tuần mới.</li><li>Thông báo chỉ trong branchScope được cấp.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `store/str-10`: Xác thực `ROLE=STORE` & `branchScope`; thực thi: Không nhận hoặc xem được thông báo vận hành của chi nhánh ngoài branchScope.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test danh sách thông báo nghiệp vụ tại `STR-10`, kiểm tra nhận realtime qua Socket + lưu lịch sử, badge số lượng chưa đọc và deep-link điều hướng đúng trong phạm vi `STORE`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FINANCE">
+          <td style="text-align:center; font-weight:700; color:#475569;">38</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-38</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0E7FF; color:#4338CA;">FIN-01</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">FINANCE (01/11)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Dashboard Finance</td>
+          <td><ul class="clean-list"><li>Tổng giờ công, quỹ lương dự kiến, headcount phục vụ payroll, công chưa khóa và lỗi công.</li><li>Trạng thái kỳ lương hiện tại, số phiếu lương chưa phát và sự kiện cần đối soát.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `finance/fin-01`: Xác thực `ROLE=FINANCE` & `branchScope`; thực thi: Cung cấp bức tranh tổng hợp phục vụ kiểm soát kỳ lương và các điểm nghẽn đối soát công.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Kiểm tra API trả đúng bộ chỉ số tổng hợp của `FIN-01` theo scope `FINANCE`; kiểm tra bộ lọc chi nhánh/thời gian và các danh sách sự kiện/nút thao tác nhanh hiển thị chính xác.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FINANCE">
+          <td style="text-align:center; font-weight:700; color:#475569;">39</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-39</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0E7FF; color:#4338CA;">FIN-02</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">FINANCE (02/11)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Bảng chấm công</td>
+          <td><ul class="clean-list"><li>Tổng hợp công theo nhân viên, chi nhánh và kỳ.</li><li>Ngày/giờ tiêu chuẩn, giờ thực tế, giờ tính lương, OT nếu có, trễ và lỗi.</li><li>Chỉ dùng dữ liệu công đã được xác nhận theo quy trình.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `finance/fin-02`: Xác thực `ROLE=FINANCE` & `branchScope`; thực thi: Tách biệt rõ giờ thực tế và giờ tính lương đã duyệt; không lấy công chưa qua xác nhận.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Kiểm tra hiển thị đầy đủ dữ liệu `FIN-02` theo đúng quyền `FINANCE` và `branchScope`; kiểm thử truy cập trái phép qua API bị chặn `403 Forbidden`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FINANCE">
+          <td style="text-align:center; font-weight:700; color:#475569;">40</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-40</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0E7FF; color:#4338CA;">FIN-03</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">FINANCE (03/11)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Đối soát công</td>
+          <td><ul class="clean-list"><li>Kiểm tra dữ liệu Store/HR đã xác nhận.</li><li>Phát hiện thiếu lượt check-in/out, adjustment đang chờ hoặc dữ liệu bất thường.</li><li>Không tự sửa event gốc.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `finance/fin-03`: Xác thực `ROLE=FINANCE` & `branchScope`; thực thi: Phát hiện và cảnh báo mọi bản ghi thiếu lượt hoặc đang chờ duyệt adjustment trước khi cho phép chốt kỳ lương.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test gửi/xác nhận/duyệt điều chỉnh công tại `FIN-03`; assert bản ghi chấm công gốc (`raw event`) không bị sửa/xóa mà tạo bản ghi `adjustment` mới có Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FINANCE">
+          <td style="text-align:center; font-weight:700; color:#475569;">41</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-41</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0E7FF; color:#4338CA;">FIN-04</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">FINANCE (04/11)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Kỳ lương</td>
+          <td><ul class="clean-list"><li>Tạo kỳ lương và chọn thời gian.</li><li>Trạng thái DRAFT -> RECONCILE -> APPROVED -> PUBLISHED -> PAID.</li><li>Lưu snapshot dữ liệu để tránh kết quả thay đổi khi dữ liệu nguồn sau này đổi.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `finance/fin-04`: Xác thực `ROLE=FINANCE` & `branchScope`; thực thi: Tuân thủ chặt chẽ máy trạng thái (State Machine) 5 bước và cơ chế đóng băng dữ liệu (Data Snapshot).</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test nghiệp vụ lương tại `FIN-04`; kiểm tra quy trình `DRAFT -> RECONCILE -> APPROVED -> PUBLISHED -> PAID`, lưu `Snapshot` công/rate, không tự áp phạt chưa duyệt, ghi nhận chứng từ khi `PAID`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FINANCE">
+          <td style="text-align:center; font-weight:700; color:#475569;">42</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-42</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0E7FF; color:#4338CA;">FIN-05</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">FINANCE (05/11)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Tính lương</td>
+          <td><ul class="clean-list"><li>Tính theo đơn giá có ngày hiệu lực và giờ được duyệt.</li><li>Tổng hợp OT, phụ cấp, thưởng và adjustment hợp lệ theo chính sách đã chốt.</li><li>Không tự áp dụng phạt/khấu trừ chưa được phê duyệt.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `finance/fin-05`: Xác thực `ROLE=FINANCE` & `branchScope`; thực thi: Áp dụng đúng đơn giá theo ngày hiệu lực (effective rate); chặn các khoản phạt/khấu trừ tự phát chưa phê duyệt.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test nghiệp vụ lương tại `FIN-05`; kiểm tra quy trình `DRAFT -> RECONCILE -> APPROVED -> PUBLISHED -> PAID`, lưu `Snapshot` công/rate, không tự áp phạt chưa duyệt, ghi nhận chứng từ khi `PAID`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FINANCE">
+          <td style="text-align:center; font-weight:700; color:#475569;">43</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-43</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0E7FF; color:#4338CA;">FIN-06</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">FINANCE (06/11)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Chi tiết lương NV</td>
+          <td><ul class="clean-list"><li>Breakdown từng nhân viên: giờ, đơn giá, phụ cấp, bonus, điều chỉnh và tổng.</li><li>Cho phép truy vết nguồn dữ liệu công/rate snapshot.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `finance/fin-06`: Xác thực `ROLE=FINANCE` & `branchScope`; thực thi: Mỗi dòng lương nhân viên đều có thể drill-down về bản ghi công và rate snapshot tại thời điểm chốt.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test nghiệp vụ lương tại `FIN-06`; kiểm tra quy trình `DRAFT -> RECONCILE -> APPROVED -> PUBLISHED -> PAID`, lưu `Snapshot` công/rate, không tự áp phạt chưa duyệt, ghi nhận chứng từ khi `PAID`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FINANCE">
+          <td style="text-align:center; font-weight:700; color:#475569;">44</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-44</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0E7FF; color:#4338CA;">FIN-07</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">FINANCE (07/11)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Phiếu lương</td>
+          <td><ul class="clean-list"><li>Tạo/kiểm tra phiếu lương cá nhân.</li><li>Chỉ phát phiếu sau trạng thái PUBLISHED.</li><li>Nhân viên chỉ được xem phiếu của chính mình.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `finance/fin-07`: Xác thực `ROLE=FINANCE` & `branchScope`; thực thi: Kiểm soát quyền riêng tư tuyệt đối: nhân viên chỉ truy cập được phiếu lương cá nhân khi kỳ lương đã PUBLISHED.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test truy cập phiếu lương tại `FIN-07`; assert chỉ hiển thị sau khi kỳ lương đạt trạng thái `PUBLISHED`, nhân viên chỉ xem được phiếu của chính mình (`403` nếu xem của người khác), không cho phép sửa đè phiếu đã phát.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FINANCE">
+          <td style="text-align:center; font-weight:700; color:#475569;">45</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-45</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0E7FF; color:#4338CA;">FIN-08</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">FINANCE (08/11)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Đối soát Phiếu lương</td>
+          <td><ul class="clean-list"><li>So sánh công đã khóa với tiền lương.</li><li>Tìm sai lệch và tạo revision/adjustment nếu cần.</li><li>Không sửa đè phiếu đã PUBLISHED.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `finance/fin-08`: Xác thực `ROLE=FINANCE` & `branchScope`; thực thi: Cấm ghi đè (overwrite) phiếu lương đã phát hành; mọi điều chỉnh sau PUBLISHED phải tạo revision/adjustment mới.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test truy cập phiếu lương tại `FIN-08`; assert chỉ hiển thị sau khi kỳ lương đạt trạng thái `PUBLISHED`, nhân viên chỉ xem được phiếu của chính mình (`403` nếu xem của người khác), không cho phép sửa đè phiếu đã phát.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FINANCE">
+          <td style="text-align:center; font-weight:700; color:#475569;">46</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-46</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0E7FF; color:#4338CA;">FIN-09</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">FINANCE (09/11)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Thanh toán</td>
+          <td><ul class="clean-list"><li>Đánh dấu PAID khi đáp ứng điều kiện và có chứng từ/ghi nhận phù hợp.</li><li>Lưu ngày thanh toán, người cập nhật và trạng thái.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `finance/fin-09`: Xác thực `ROLE=FINANCE` & `branchScope`; thực thi: Ghi nhận đầy đủ thông tin chứng từ, thời gian và người xác nhận hoàn tất thanh toán (PAID).</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test nghiệp vụ lương tại `FIN-09`; kiểm tra quy trình `DRAFT -> RECONCILE -> APPROVED -> PUBLISHED -> PAID`, lưu `Snapshot` công/rate, không tự áp phạt chưa duyệt, ghi nhận chứng từ khi `PAID`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FINANCE">
+          <td style="text-align:center; font-weight:700; color:#475569;">47</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-47</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0E7FF; color:#4338CA;">FIN-10</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">FINANCE (10/11)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Báo cáo Finance</td>
+          <td><ul class="clean-list"><li>Quỹ lương, chi phí nhân sự theo chi nhánh, tổng giờ và lịch sử kỳ lương.</li><li>Labor Cost % chỉ hiển thị nếu có dữ liệu doanh thu đầu vào đáng tin cậy.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `finance/fin-10`: Xác thực `ROLE=FINANCE` & `branchScope`; thực thi: Ẩn hoặc gắn ghi chú chỉ số Labor Cost % nếu chưa có nguồn doanh thu đầu vào được xác thực.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test số liệu báo cáo tại `FIN-10` theo bộ lọc chi nhánh/thời gian/ca; kiểm tra phạm vi dữ liệu đúng với `FINANCE` (riêng `Labor Cost %` tại `FIN-10` chỉ hiện khi có doanh thu đầu vào hợp lệ).</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FINANCE">
+          <td style="text-align:center; font-weight:700; color:#475569;">48</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-48</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0E7FF; color:#4338CA;">FIN-11</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">FINANCE (11/11)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Thông báo Finance</td>
+          <td><ul class="clean-list"><li>Công chưa chốt, lỗi calculation, adjustment, bảng lương cần xử lý và kỳ lương sắp tới.</li><li>Không gửi thông tin lương chi tiết vào kênh không riêng tư.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `finance/fin-11`: Xác thực `ROLE=FINANCE` & `branchScope`; thực thi: Bảo mật thông tin thu nhập: không phát nội dung số tiền lương chi tiết lên các kênh thông báo chung.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test danh sách thông báo nghiệp vụ tại `FIN-11`, kiểm tra nhận realtime qua Socket + lưu lịch sử, badge số lượng chưa đọc và deep-link điều hướng đúng trong phạm vi `FINANCE`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="MKT">
+          <td style="text-align:center; font-weight:700; color:#475569;">49</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-49</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FCE7F3; color:#BE185D;">MKT-01</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">MKT (01/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Dashboard MKT</td>
+          <td><ul class="clean-list"><li>Tin đang chạy, tin nháp, lịch phát, nhóm người nhận và trạng thái gửi.</li><li>Hiển thị các nội dung chờ duyệt/lỗi gửi nếu quy trình yêu cầu.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `mkt/mkt-01`: Xác thực `ROLE=MKT` & `branchScope`; thực thi: Tổng hợp đúng trạng thái các bản tin và chiến dịch truyền thông nội bộ.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Kiểm tra API trả đúng bộ chỉ số tổng hợp của `MKT-01` theo scope `MKT`; kiểm tra bộ lọc chi nhánh/thời gian và các danh sách sự kiện/nút thao tác nhanh hiển thị chính xác.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="MKT">
+          <td style="text-align:center; font-weight:700; color:#475569;">50</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-50</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FCE7F3; color:#BE185D;">MKT-02</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">MKT (02/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Tạo thông báo</td>
+          <td><ul class="clean-list"><li>Tạo tiêu đề, nội dung, ảnh/tệp đính kèm, CTA và mức độ thông báo.</li><li>Lưu DRAFT trước khi phát.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `mkt/mkt-02`: Xác thực `ROLE=MKT` & `branchScope`; thực thi: Mọi bản tin mới đều hỗ trợ lưu nháp (DRAFT) để rà soát trước khi phát chính thức.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test chức năng truyền thông `MKT-02` (lưu `DRAFT`, chọn nhóm nhận hợp lệ, đặt lịch `scheduled/sent/failed`, quản lý campaign/media); assert tài khoản MKT bị chặn (`403`) khi gọi API lương, GPS, ảnh điểm danh và hồ sơ nhạy cảm.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="MKT">
+          <td style="text-align:center; font-weight:700; color:#475569;">51</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-51</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FCE7F3; color:#BE185D;">MKT-03</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">MKT (03/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Nhóm người nhận</td>
+          <td><ul class="clean-list"><li>Chọn toàn công ty, theo chi nhánh, nhân viên thử việc/chính thức hoặc nhóm được cấu hình.</li><li>Không được truy cập các dữ liệu HR nhạy cảm để tạo nhóm ngoài phạm vi cho phép.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `mkt/mkt-03`: Xác thực `ROLE=MKT` & `branchScope`; thực thi: Chỉ chọn theo tiêu chí phân nhóm được phép (chi nhánh, giai đoạn); chặn truy vấn hồ sơ nhân sự nhạy cảm.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test chức năng truyền thông `MKT-03` (lưu `DRAFT`, chọn nhóm nhận hợp lệ, đặt lịch `scheduled/sent/failed`, quản lý campaign/media); assert tài khoản MKT bị chặn (`403`) khi gọi API lương, GPS, ảnh điểm danh và hồ sơ nhạy cảm.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="MKT">
+          <td style="text-align:center; font-weight:700; color:#475569;">52</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-52</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FCE7F3; color:#BE185D;">MKT-04</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">MKT (04/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Lịch phát thông báo</td>
+          <td><ul class="clean-list"><li>Phát ngay hoặc đặt lịch theo ngày/giờ.</li><li>Hiển thị trạng thái scheduled/sent/failed.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `mkt/mkt-04`: Xác thực `ROLE=MKT` & `branchScope`; thực thi: Quản lý lịch phát tự động và cập nhật đúng trạng thái thực thi (scheduled/sent/failed).</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test chức năng truyền thông `MKT-04` (lưu `DRAFT`, chọn nhóm nhận hợp lệ, đặt lịch `scheduled/sent/failed`, quản lý campaign/media); assert tài khoản MKT bị chặn (`403`) khi gọi API lương, GPS, ảnh điểm danh và hồ sơ nhạy cảm.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="MKT">
+          <td style="text-align:center; font-weight:700; color:#475569;">53</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-53</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FCE7F3; color:#BE185D;">MKT-05</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">MKT (05/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Nội dung đã phát</td>
+          <td><ul class="clean-list"><li>Danh sách thông báo, ngày gửi, người tạo, nhóm nhận và trạng thái.</li><li>Cho phép tra cứu lịch sử nội dung.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `mkt/mkt-05`: Xác thực `ROLE=MKT` & `branchScope`; thực thi: Lưu vết lịch sử các bản tin đã phát hành phục vụ tra cứu và kiểm tra.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test chức năng truyền thông `MKT-05` (lưu `DRAFT`, chọn nhóm nhận hợp lệ, đặt lịch `scheduled/sent/failed`, quản lý campaign/media); assert tài khoản MKT bị chặn (`403`) khi gọi API lương, GPS, ảnh điểm danh và hồ sơ nhạy cảm.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="MKT">
+          <td style="text-align:center; font-weight:700; color:#475569;">54</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-54</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FCE7F3; color:#BE185D;">MKT-06</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">MKT (06/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Notification Campaign</td>
+          <td><ul class="clean-list"><li>Gom nhiều thông báo theo chiến dịch truyền thông nội bộ.</li><li>Theo dõi tiến độ và trạng thái phát.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `mkt/mkt-06`: Xác thực `ROLE=MKT` & `branchScope`; thực thi: Quản lý theo chiến dịch (Campaign) và thống kê tiến độ phát tin.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test chức năng truyền thông `MKT-06` (lưu `DRAFT`, chọn nhóm nhận hợp lệ, đặt lịch `scheduled/sent/failed`, quản lý campaign/media); assert tài khoản MKT bị chặn (`403`) khi gọi API lương, GPS, ảnh điểm danh và hồ sơ nhạy cảm.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="MKT">
+          <td style="text-align:center; font-weight:700; color:#475569;">55</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-55</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FCE7F3; color:#BE185D;">MKT-07</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">MKT (07/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Media</td>
+          <td><ul class="clean-list"><li>Quản lý ảnh/tài liệu dùng cho thông báo theo quyền.</li><li>Tệp lưu Drive hoặc kho tệp được phê duyệt; không public dữ liệu nội bộ ngoài chủ đích.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `mkt/mkt-07`: Xác thực `ROLE=MKT` & `branchScope`; thực thi: Kiểm soát quyền truy cập kho lưu trữ tệp đính kèm; ngăn chặn rò rỉ tài liệu nội bộ ra public.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test chức năng truyền thông `MKT-07` (lưu `DRAFT`, chọn nhóm nhận hợp lệ, đặt lịch `scheduled/sent/failed`, quản lý campaign/media); assert tài khoản MKT bị chặn (`403`) khi gọi API lương, GPS, ảnh điểm danh và hồ sơ nhạy cảm.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="MKT">
+          <td style="text-align:center; font-weight:700; color:#475569;">56</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-56</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FCE7F3; color:#BE185D;">MKT-08</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">MKT (08/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Theo dõi gửi</td>
+          <td><ul class="clean-list"><li>Trạng thái Pending/Sent/Failed, số lần retry và lỗi gần nhất.</li><li>Không khẳng định người nhận đã đọc nếu nhà cung cấp không có receipt đọc.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `mkt/mkt-08`: Xác thực `ROLE=MKT` & `branchScope`; thực thi: Phân biệt minh bạch giữa trạng thái 'Đã gửi (Sent)' và 'Đã đọc (Read)' tùy theo năng lực kênh gửi.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test chức năng truyền thông `MKT-08` (lưu `DRAFT`, chọn nhóm nhận hợp lệ, đặt lịch `scheduled/sent/failed`, quản lý campaign/media); assert tài khoản MKT bị chặn (`403`) khi gọi API lương, GPS, ảnh điểm danh và hồ sơ nhạy cảm.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="MKT">
+          <td style="text-align:center; font-weight:700; color:#475569;">57</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-57</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#FCE7F3; color:#BE185D;">MKT-09</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">MKT (09/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Thông báo MKT</td>
+          <td><ul class="clean-list"><li>Báo lỗi phát tin, nội dung chờ duyệt và lịch phát sắp tới.</li><li>MKT không xem lương, GPS, ảnh điểm danh hoặc hồ sơ nhạy cảm.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `mkt/mkt-09`: Xác thực `ROLE=MKT` & `branchScope`; thực thi: Backend khóa toàn bộ API lương, GPS, ảnh điểm danh và hồ sơ cá nhân đối với tài khoản MKT.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test chức năng truyền thông `MKT-09` (lưu `DRAFT`, chọn nhóm nhận hợp lệ, đặt lịch `scheduled/sent/failed`, quản lý campaign/media); assert tài khoản MKT bị chặn (`403`) khi gọi API lương, GPS, ảnh điểm danh và hồ sơ nhạy cảm.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="THU_VIEC">
+          <td style="text-align:center; font-weight:700; color:#475569;">58</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-58</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0F2FE; color:#0369A1;">PRB-01</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">THU_VIEC (01/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Trang chủ</td>
+          <td><ul class="clean-list"><li>Hiển thị họ tên, mã NV, chi nhánh, trạng thái tài khoản và giai đoạn THỬ VIỆC.</li><li>Ca hôm nay/ca tiếp theo, trạng thái check-in/out, số ngày thử việc đã qua và còn lại.</li><li>Hiển thị OFF đã đăng ký, TEST sắp tới và yêu cầu đang chờ.</li><li>Nút hành động nhanh: Điểm danh, Xem lịch, Đăng ký OFF, TEST.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `thu_viec/prb-01`: Xác thực `ROLE=THU_VIEC` & `branchScope`; thực thi: Hiển thị rõ tiến độ thử việc (số ngày đã qua / còn lại) và 4 nút thao tác nhanh trên màn hình di động.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Kiểm tra API trả đúng bộ chỉ số tổng hợp của `PRB-01` theo scope `THU_VIEC`; kiểm tra bộ lọc chi nhánh/thời gian và các danh sách sự kiện/nút thao tác nhanh hiển thị chính xác.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="THU_VIEC">
+          <td style="text-align:center; font-weight:700; color:#475569;">59</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-59</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0F2FE; color:#0369A1;">PRB-02</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">THU_VIEC (02/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Lịch thử việc</td>
+          <td><ul class="clean-list"><li>Hiển thị chu kỳ thử việc theo chính sách đang áp dụng, ví dụ mẫu 12 ngày.</li><li>Mỗi ngày thể hiện WORKING/OFF, ca, chi nhánh và trạng thái lịch.</li><li>Chỉ lịch PUBLISHED mới được coi là lịch làm chính thức.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `thu_viec/prb-02`: Xác thực `ROLE=THU_VIEC` & `branchScope`; thực thi: Chỉ coi các ca có trạng thái PUBLISHED là lịch làm việc chính thức; hiển thị theo chu kỳ thử việc được cấu hình.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test hiển thị/xử lý lịch tại `PRB-02`; kiểm tra cảnh báo định biên & xung đột ca; assert nhân viên chỉ thấy và điểm danh được trên các ca có trạng thái `PUBLISHED`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="THU_VIEC">
+          <td style="text-align:center; font-weight:700; color:#475569;">60</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-60</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0F2FE; color:#0369A1;">PRB-03</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">THU_VIEC (03/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Đăng ký OFF thử việc</td>
+          <td><ul class="clean-list"><li>Chọn ngày OFF trong phạm vi giai đoạn thử việc theo chính sách được duyệt.</li><li>Lưu nháp, gửi yêu cầu và xem Pending/Approved/Rejected.</li><li>Hiển thị lý do từ chối nếu có.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `thu_viec/prb-03`: Xác thực `ROLE=THU_VIEC` & `branchScope`; thực thi: Kiểm tra số ngày OFF tối đa trong chu kỳ thử việc theo chính sách; hiển thị minh bạch lý do nếu bị từ chối.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test tạo/lưu nháp/gửi/duyệt/từ chối phiếu OFF tại `PRB-03`; kiểm tra giới hạn ngày OFF theo chính sách và kiểm tra định biên ca sau khi nghỉ; assert lưu lý do từ chối và Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="THU_VIEC">
+          <td style="text-align:center; font-weight:700; color:#475569;">61</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-61</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0F2FE; color:#0369A1;">PRB-04</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">THU_VIEC (04/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Điểm danh</td>
+          <td><ul class="clean-list"><li>Check-in/check-out theo assignment PUBLISHED.</li><li>Kiểm tra GPS/bán kính và accuracy theo cấu hình.</li><li>Mở camera trực tiếp getUserMedia; chụp ảnh theo quy trình.</li><li>Chỉ hiện thành công sau khi dữ liệu cần thiết được lưu/ghi nhận thành công.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `thu_viec/prb-04`: Xác thực `ROLE=THU_VIEC` & `branchScope`; thực thi: Bắt buộc chạy trên HTTPS để dùng GPS & getUserMedia; chỉ báo thành công sau khi Backend xác nhận đã lưu dữ liệu.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test trên HTTPS + thiết bị di động: mở camera `getUserMedia`, lấy GPS + `accuracy`; test đứng trong/ngoài bán kính và test lỗi mất mạng/từ chối camera (chuyển sang luồng ngoại lệ, không báo thành công ảo).</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="THU_VIEC">
+          <td style="text-align:center; font-weight:700; color:#475569;">62</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-62</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0F2FE; color:#0369A1;">PRB-05</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">THU_VIEC (05/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Công của tôi</td>
+          <td><ul class="clean-list"><li>Xem ngày làm, ca, check-in, check-out, tổng giờ và trạng thái công.</li><li>Hiển thị cờ đi trễ/về sớm/thiếu lượt hoặc sự cố.</li><li>Không được sửa trực tiếp dữ liệu công.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `thu_viec/prb-05`: Xác thực `ROLE=THU_VIEC` & `branchScope`; thực thi: Chế độ chỉ đọc (Read-only) đối với dữ liệu công; nếu sai lệch phải đi qua luồng Bổ sung công.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test hiển thị dữ liệu công tại `PRB-05` (giờ vào/ra, đi trễ, về sớm, thiếu lượt, OT); kiểm tra phân quyền xem ảnh/GPS theo đúng scope `THU_VIEC` và chế độ chỉ đọc (Read-only) đối với nhân viên.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="THU_VIEC">
+          <td style="text-align:center; font-weight:700; color:#475569;">63</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-63</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0F2FE; color:#0369A1;">PRB-06</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">THU_VIEC (06/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Đổi ca / Nghỉ khẩn</td>
+          <td><ul class="clean-list"><li>Gửi yêu cầu đổi ca theo điều kiện cho phép; theo dõi NV B xác nhận và HR/Store duyệt.</li><li>Gửi yêu cầu nghỉ đột xuất kèm lý do.</li><li>Theo dõi trạng thái người thay/ca chưa được phủ nếu có.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `thu_viec/prb-06`: Xác thực `ROLE=THU_VIEC` & `branchScope`; thực thi: Theo dõi minh bạch tiến trình duyệt đổi ca 3 bước và trạng thái xử lý ca nghỉ khẩn.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test luồng 3 bước tại `PRB-06` (`NV A gửi -> NV B xác nhận -> Store/HR duyệt`); assert lịch chính thức không đổi khi mới ở bước 1 hoặc 2, chỉ cập nhật sau bước duyệt cuối cùng.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="THU_VIEC">
+          <td style="text-align:center; font-weight:700; color:#475569;">64</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-64</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0F2FE; color:#0369A1;">PRB-07</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">THU_VIEC (07/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Bổ sung công</td>
+          <td><ul class="clean-list"><li>Báo quên check-in/check-out, GPS/camera lỗi hoặc sự cố liên quan.</li><li>Nhập lý do và bằng chứng nếu được yêu cầu.</li><li>Theo dõi kết quả HR/Store xử lý.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `thu_viec/prb-07`: Xác thực `ROLE=THU_VIEC` & `branchScope`; thực thi: Tạo phiếu yêu cầu bổ sung công kèm lý do/bằng chứng, không tác động trực tiếp vào event gốc.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test gửi/xác nhận/duyệt điều chỉnh công tại `PRB-07`; assert bản ghi chấm công gốc (`raw event`) không bị sửa/xóa mà tạo bản ghi `adjustment` mới có Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="THU_VIEC">
+          <td style="text-align:center; font-weight:700; color:#475569;">65</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-65</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0F2FE; color:#0369A1;">PRB-08</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">THU_VIEC (08/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Thi TEST</td>
+          <td><ul class="clean-list"><li>Xem bài TEST được giao và thời gian mở bài.</li><li>Làm bài có countdown server-side; tự nộp khi hết thời gian nếu cấu hình.</li><li>Xem điểm, kết quả, thi lại và lịch sử theo quyền.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `thu_viec/prb-08`: Xác thực `ROLE=THU_VIEC` & `branchScope`; thực thi: Đồng hồ đếm ngược đồng bộ từ Server (countdown server-side) chống chỉnh giờ thiết bị; hỗ trợ tự động nộp bài.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test giao bài/làm bài TEST tại `PRB-08`; kiểm tra đồng hồ đếm ngược đồng bộ từ Server (`server-side countdown`), tự động nộp bài khi hết giờ và lưu lịch sử các lần thi.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="THU_VIEC">
+          <td style="text-align:center; font-weight:700; color:#475569;">66</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-66</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#E0F2FE; color:#0369A1;">PRB-09</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">THU_VIEC (09/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Thông báo & Phiếu lương</td>
+          <td><ul class="clean-list"><li>Nhận lịch mới, kết quả OFF/đổi ca, TEST, công bất thường và thông báo công ty.</li><li>Xem phiếu lương cá nhân đã PUBLISHED nếu chức năng lương và quyền riêng tư đã được bật.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `thu_viec/prb-09`: Xác thực `ROLE=THU_VIEC` & `branchScope`; thực thi: Chỉ xem được phiếu lương của bản thân sau khi kỳ lương chuyển sang PUBLISHED.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test truy cập phiếu lương tại `PRB-09`; assert chỉ hiển thị sau khi kỳ lương đạt trạng thái `PUBLISHED`, nhân viên chỉ xem được phiếu của chính mình (`403` nếu xem của người khác), không cho phép sửa đè phiếu đã phát.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="CHINH_THUC">
+          <td style="text-align:center; font-weight:700; color:#475569;">67</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-67</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DCFCE7; color:#15803D;">OFF-01</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">CHINH_THUC (01/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Trang chủ</td>
+          <td><ul class="clean-list"><li>Hiển thị họ tên, mã NV, chi nhánh, trạng thái CHÍNH THỨC.</li><li>Ca hôm nay, trạng thái check-in/out, lịch ngày mai và OFF trong tuần.</li><li>Hiển thị yêu cầu đổi ca, thông báo mới và cảnh báo cần xử lý.</li><li>Nút nhanh ưu tiên Điểm danh, Lịch làm việc và OFF.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `chinh_thuc/off-01`: Xác thực `ROLE=CHINH_THUC` & `branchScope`; thực thi: Tối ưu thao tác nhanh hàng ngày cho nhân viên chính thức (Điểm danh, Lịch tuần, Đăng ký OFF).</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Kiểm tra API trả đúng bộ chỉ số tổng hợp của `OFF-01` theo scope `CHINH_THUC`; kiểm tra bộ lọc chi nhánh/thời gian và các danh sách sự kiện/nút thao tác nhanh hiển thị chính xác.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="CHINH_THUC">
+          <td style="text-align:center; font-weight:700; color:#475569;">68</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-68</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DCFCE7; color:#15803D;">OFF-02</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">CHINH_THUC (02/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Lịch làm việc</td>
+          <td><ul class="clean-list"><li>Xem lịch tuần T2-CN, ca Sáng/Chiều/Tối, OFF và chi nhánh.</li><li>Xem tuần hiện tại và tuần kế tiếp khi đã PUBLISHED.</li><li>Không tự sửa lịch đã phát.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `chinh_thuc/off-02`: Xác thực `ROLE=CHINH_THUC` & `branchScope`; thực thi: Chỉ hiển thị lịch tuần hiện tại và tuần kế tiếp ở trạng thái PUBLISHED; khóa chỉnh sửa trực tiếp.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test hiển thị/xử lý lịch tại `OFF-02`; kiểm tra cảnh báo định biên & xung đột ca; assert nhân viên chỉ thấy và điểm danh được trên các ca có trạng thái `PUBLISHED`.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="CHINH_THUC">
+          <td style="text-align:center; font-weight:700; color:#475569;">69</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-69</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DCFCE7; color:#15803D;">OFF-03</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">CHINH_THUC (03/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Đăng ký OFF tuần</td>
+          <td><ul class="clean-list"><li>Chọn ngày nghỉ theo chính sách áp dụng.</li><li>Kiểm tra giới hạn OFF và định biên; gửi yêu cầu.</li><li>Xem trạng thái Pending/Approved/Rejected và lý do.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `chinh_thuc/off-03`: Xác thực `ROLE=CHINH_THUC` & `branchScope`; thực thi: Ràng buộc số ngày OFF tuần theo chính sách và kiểm tra định biên ca trước khi gửi.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test tạo/lưu nháp/gửi/duyệt/từ chối phiếu OFF tại `OFF-03`; kiểm tra giới hạn ngày OFF theo chính sách và kiểm tra định biên ca sau khi nghỉ; assert lưu lý do từ chối và Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="CHINH_THUC">
+          <td style="text-align:center; font-weight:700; color:#475569;">70</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-70</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DCFCE7; color:#15803D;">OFF-04</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">CHINH_THUC (04/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Điểm danh</td>
+          <td><ul class="clean-list"><li>Check-in/check-out bằng GPS + camera theo ca đã PUBLISHED.</li><li>Hiển thị giờ ghi nhận, khoảng cách/trạng thái GPS và trạng thái sự kiện.</li><li>Có luồng ngoại lệ khi GPS/camera lỗi; không tự kết luận gian lận.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `chinh_thuc/off-04`: Xác thực `ROLE=CHINH_THUC` & `branchScope`; thực thi: Ghi nhận trung thực thông số GPS/khoảng cách; khi lỗi thiết bị chuyển sang luồng ngoại lệ để xác minh, không tự gắn nhãn gian lận.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test trên HTTPS + thiết bị di động: mở camera `getUserMedia`, lấy GPS + `accuracy`; test đứng trong/ngoài bán kính và test lỗi mất mạng/từ chối camera (chuyển sang luồng ngoại lệ, không báo thành công ảo).</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="CHINH_THUC">
+          <td style="text-align:center; font-weight:700; color:#475569;">71</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-71</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DCFCE7; color:#15803D;">OFF-05</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">CHINH_THUC (05/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Công của tôi</td>
+          <td><ul class="clean-list"><li>Xem công theo ngày/tuần/tháng, giờ vào/ra, tổng giờ và OT nếu có.</li><li>Hiển thị trễ, về sớm, thiếu lượt và trạng thái công.</li><li>Có nút yêu cầu bổ sung công khi phát hiện sai.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `chinh_thuc/off-05`: Xác thực `ROLE=CHINH_THUC` & `branchScope`; thực thi: Cho phép tra cứu công theo ngày/tuần/tháng và khởi tạo nhanh phiếu yêu cầu bổ sung công ngay trên dòng công lỗi.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test hiển thị dữ liệu công tại `OFF-05` (giờ vào/ra, đi trễ, về sớm, thiếu lượt, OT); kiểm tra phân quyền xem ảnh/GPS theo đúng scope `CHINH_THUC` và chế độ chỉ đọc (Read-only) đối với nhân viên.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="CHINH_THUC">
+          <td style="text-align:center; font-weight:700; color:#475569;">72</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-72</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DCFCE7; color:#15803D;">OFF-06</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">CHINH_THUC (06/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Đổi ca</td>
+          <td><ul class="clean-list"><li>Chọn ca cần đổi, đồng nghiệp và nội dung đổi.</li><li>Theo dõi timeline: gửi -> NV B xác nhận -> Store/HR duyệt -> hoàn tất.</li><li>Chỉ sau duyệt cuối cùng lịch mới được cập nhật.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `chinh_thuc/off-06`: Xác thực `ROLE=CHINH_THUC` & `branchScope`; thực thi: Hiển thị trực quan timeline 4 mốc; giữ nguyên lịch cũ cho đến khi Store/HR hoàn tất bước duyệt cuối.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test luồng 3 bước tại `OFF-06` (`NV A gửi -> NV B xác nhận -> Store/HR duyệt`); assert lịch chính thức không đổi khi mới ở bước 1 hoặc 2, chỉ cập nhật sau bước duyệt cuối cùng.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="CHINH_THUC">
+          <td style="text-align:center; font-weight:700; color:#475569;">73</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-73</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DCFCE7; color:#15803D;">OFF-07</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">CHINH_THUC (07/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Nghỉ khẩn & Bổ sung công</td>
+          <td><ul class="clean-list"><li>Gửi nghỉ đột xuất; theo dõi tình trạng tìm người thay/escalation.</li><li>Gửi yêu cầu bổ sung công khi quên check-in/out hoặc có sự cố.</li><li>Xem quyết định xử lý và lý do.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `chinh_thuc/off-07`: Xác thực `ROLE=CHINH_THUC` & `branchScope`; thực thi: Tích hợp quản lý phiếu nghỉ khẩn và phiếu bổ sung công kèm phản hồi chính thức từ cấp quản lý.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test gửi và xử lý nghỉ khẩn tại `OFF-07`; kiểm tra luồng tìm người thay và cờ `Escalated` khi thiếu người; assert không tự động gán trạng thái bắt buộc đi làm.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="CHINH_THUC">
+          <td style="text-align:center; font-weight:700; color:#475569;">74</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-74</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DCFCE7; color:#15803D;">OFF-08</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">CHINH_THUC (08/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">TEST / Đào tạo</td>
+          <td><ul class="clean-list"><li>Chỉ hiển thị bài TEST/đào tạo khi HR giao.</li><li>Xem lịch, làm bài, kết quả và lịch sử theo quyền.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `chinh_thuc/off-08`: Xác thực `ROLE=CHINH_THUC` & `branchScope`; thực thi: Ẩn hoặc để trống khi không có bài TEST/Đào tạo được HR phân công; lưu lịch sử kết quả đầy đủ.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test giao bài/làm bài TEST tại `OFF-08`; kiểm tra đồng hồ đếm ngược đồng bộ từ Server (`server-side countdown`), tự động nộp bài khi hết giờ và lưu lịch sử các lần thi.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="CHINH_THUC">
+          <td style="text-align:center; font-weight:700; color:#475569;">75</td>
+          <td>
+            <span class="code-tag" style="background:#0f172a; color:#38bdf8;">AI-TAB-75</span>
+            <div style="margin-top:4px;">
+              <span class="code-tag" style="background:#DCFCE7; color:#15803D;">OFF-09</span>
+            </div>
+            <div style="font-size:10.5px; color:#64748b; margin-top:3px; font-weight:600;">CHINH_THUC (09/09)</div>
+          </td>
+          <td style="font-weight:700; color:#0f172a;">Thông báo & Phiếu lương</td>
+          <td><ul class="clean-list"><li>Nhận lịch mới, OFF, đổi ca, công, thông báo nội bộ và phiếu lương.</li><li>Chỉ xem phiếu lương cá nhân đã PUBLISHED; có thể gửi phản hồi/báo sai nếu chức năng được bật.</li></ul></td>
+          <td style="font-size:11.8px; color:#1e293b; background:#f8fafc;">API `chinh_thuc/off-09`: Xác thực `ROLE=CHINH_THUC` & `branchScope`; thực thi: Bảo mật phiếu lương cá nhân (chỉ xem của chính mình khi đã PUBLISHED); hỗ trợ gửi phản hồi đối soát nếu bật.</td>
+          <td style="font-size:11.8px; color:#14532d; background:#f0fdf4;">Test truy cập phiếu lương tại `OFF-09`; assert chỉ hiển thị sau khi kỳ lương đạt trạng thái `PUBLISHED`, nhân viên chỉ xem được phiếu của chính mình (`403` nếu xem của người khác), không cho phép sửa đè phiếu đã phát.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        </tbody>
+      </table>
+
+      <!-- PHẦN 3: 05 LUỒNG NGHIỆP VỤ CỐT LÕI -->
+      <div class="sec-head">
+        <div class="sec-head-left">
+          <div class="icon-box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div>
+          <h2>PHẦN 03. CHECKLIST KIỂM THỬ TÍCH HỢP 05 LUỒNG NGHIỆP VỤ CỐT LÕI (FLOW-01 .. 05)</h2>
+        </div>
+        <span class="code-tag" style="background:#f1f5f9; color:#0f172a;">End-to-End State Machine</span>
+      </div>
+
+      <table class="chk-table">
+        <colgroup>
+          <col style="width:4%;">
+          <col style="width:9%;">
+          <col style="width:18%;">
+          <col style="width:35%;">
+          <col style="width:24%;">
+          <col style="width:5%;">
+          <col style="width:5%;">
+        </colgroup>
+        <thead>
+          <tr>
+            <th style="text-align:center;">STT</th>
+            <th>Mã Luồng</th>
+            <th>Tên Luồng &amp; Tác Nhân</th>
+            <th>Trình Tự Chuyển Trạng Thái Cần Đảm Bảo</th>
+            <th>Quy Tắc Bất Biến &amp; Toàn Vẹn Dữ Liệu Cần Assert</th>
+            <th style="text-align:center;">Dev</th>
+            <th style="text-align:center;">Test</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+        <tr class="filter-row" data-role="FLOW">
+          <td style="text-align:center; font-weight:700;">01</td>
+          <td><span class="code-tag" style="background:#ccfbf1; color:#0f766e;">FLOW-01</span></td>
+          <td style="font-weight:700; color:#0f172a;">
+            Luồng Tài khoản, Kích hoạt & Thu hồi (Account Lifecycle & Force Logout)
+            <div style="font-size:11px; color:#0f766e; margin-top:4px;">HR -> Admin -> Nhân viên (Thử việc / Chính thức)</div>
+          </td>
+          <td><ul class="clean-list"><li>Bước 1: HR tạo hoặc đề xuất hồ sơ nhân viên mới -> Hệ thống khởi tạo tài khoản ở trạng thái PENDING_ACTIVATION.</li><li>Bước 2: Admin kiểm tra danh sách chờ, nhấn KÍCH HOẠT -> Backend ghi trạng thái ACTIVE lên Google Sheets và chờ xác nhận thành công rồi mới báo UI.</li><li>Bước 3: Nhân viên đăng nhập và chỉ được truy cập đúng các API/tab thuộc giai đoạn (Thử việc hoặc Chính thức) và chi nhánh của mình.</li><li>Bước 4: Khi Admin Khóa/Thu hồi tài khoản -> Backend lập tức vô hiệu hóa phiên (invalidate session) và phát sự kiện Socket forceLogout để đăng xuất thiết bị tức thời.</li></ul></td>
+          <td style="background:#fffbeb; color:#78350f; font-size:11.8px;">Không lưu mật khẩu/PIN dạng thô trong Google Sheets; bắt buộc lưu activated_by, activated_at, revoked_at và Audit Log; khi chuyển từ Thử việc lên Chính thức phải giữ nguyên employee_id và toàn bộ lịch sử thử việc.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FLOW">
+          <td style="text-align:center; font-weight:700;">02</td>
+          <td><span class="code-tag" style="background:#ccfbf1; color:#0f766e;">FLOW-02</span></td>
+          <td style="font-weight:700; color:#0f172a;">
+            Luồng Lập lịch làm việc & Đổi ca 3 bước (Scheduling & Shift Swap)
+            <div style="font-size:11px; color:#0f766e; margin-top:4px;">HR / Store <-> Nhân viên A <-> Nhân viên B</div>
+          </td>
+          <td><ul class="clean-list"><li>Bước 1: HR/Store tạo lịch làm việc theo tuần/chu kỳ ở trạng thái DRAFT -> Hệ thống kiểm tra định biên (tối thiểu/tối đa) và xung đột ca.</li><li>Bước 2: Store xác nhận dữ liệu vận hành (nếu quy trình yêu cầu) -> HR duyệt và phát hành lịch sang trạng thái PUBLISHED.</li><li>Bước 3: Chỉ các phân công (assignment) có trạng thái PUBLISHED mới có hiệu lực hiển thị và cho phép nhân viên điểm danh.</li><li>Bước 4: Khi có nhu cầu đổi ca: Nhân viên A tạo yêu cầu -> Nhân viên B xác nhận đồng ý thay -> Store/HR kiểm tra chồng ca/định biên và duyệt cuối -> Hệ thống cập nhật lịch chính thức và ghi Audit Log.</li></ul></td>
+          <td style="background:#fffbeb; color:#78350f; font-size:11.8px;">Nhân viên không được tự sửa lịch đã phát; yêu cầu đổi ca chưa hoàn tất đủ 3 bước tuyệt đối không làm thay đổi lịch chính thức.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FLOW">
+          <td style="text-align:center; font-weight:700;">03</td>
+          <td><span class="code-tag" style="background:#ccfbf1; color:#0f766e;">FLOW-03</span></td>
+          <td style="font-weight:700; color:#0f172a;">
+            Luồng Điểm danh GPS + Camera & Bổ sung/Điều chỉnh công (Attendance & Adjustments)
+            <div style="font-size:11px; color:#0f766e; margin-top:4px;">Nhân viên -> Backend / Socket.IO -> Store / HR</div>
+          </td>
+          <td><ul class="clean-list"><li>Bước 1: Nhân viên mở màn hình Điểm danh (trên HTTPS), hệ thống kiểm tra ca PUBLISHED, lấy tọa độ GPS (kiểm tra bán kính & độ chính xác accuracy) và mở camera trực tiếp qua getUserMedia để chụp ảnh.</li><li>Bước 2: Backend xác thực ca làm, thông số GPS và dữ liệu ảnh -> Ghi nhận vào nguồn lưu trữ -> Chỉ sau khi ghi thành công mới trả kết quả thành công cho UI và phát Socket realtime cho Store/HR.</li><li>Bước 3: Trường hợp quên check-in/out hoặc lỗi GPS/camera/mất mạng -> Nhân viên gửi phiếu 'Bổ sung công' kèm lý do và bằng chứng (luồng ngoại lệ, hệ thống không tự kết luận gian lận).</li><li>Bước 4: Store xác nhận sự cố thực tế tại chi nhánh -> HR kiểm tra bằng chứng và Duyệt/Từ chối -> Hệ thống tạo bản ghi adjustment có truy vết.</li></ul></td>
+          <td style="background:#fffbeb; color:#78350f; font-size:11.8px;">NGUYÊN TẮC BẤT BIẾN: Tuyệt đối không sửa hoặc xóa sự kiện chấm công gốc (raw attendance event); mọi điều chỉnh phải tạo bản ghi adjustment liên kết với event gốc và ghi Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FLOW">
+          <td style="text-align:center; font-weight:700;">04</td>
+          <td><span class="code-tag" style="background:#ccfbf1; color:#0f766e;">FLOW-04</span></td>
+          <td style="font-weight:700; color:#0f172a;">
+            Luồng Đăng ký Nghỉ OFF & Nghỉ đột xuất / Khẩn (Leave & Emergency Escalation)
+            <div style="font-size:11px; color:#0f766e; margin-top:4px;">Nhân viên -> Store -> HR</div>
+          </td>
+          <td><ul class="clean-list"><li>Bước 1 (OFF định kỳ): Nhân viên chọn ngày OFF (theo chu kỳ thử việc hoặc OFF tuần chính thức) -> Hệ thống kiểm tra giới hạn ngày nghỉ, định biên ca và xung đột.</li><li>Bước 2: Cấp quản lý (Store/HR theo permission) duyệt hoặc từ chối (kèm lý do) -> Hệ thống đồng bộ lên lịch làm việc và phát thông báo.</li><li>Bước 3 (Nghỉ đột xuất): Nhân viên gửi yêu cầu nghỉ khẩn kèm lý do -> Hệ thống phát cảnh báo tức thời cho Store và HR.</li><li>Bước 4: Store/HR tìm và xác nhận người thay ca; nếu không tìm được người thay, hệ thống thực hiện Escalation (báo cáo vượt cấp) để quản lý xử lý phương án vận hành.</li></ul></td>
+          <td style="background:#fffbeb; color:#78350f; font-size:11.8px;">Hệ thống không tự đồng nhất việc 'không tìm được người thay' với việc nhân viên bắt buộc phải đi làm; mọi ca thiếu người phải được gắn cờ và escalated rõ ràng.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="FLOW">
+          <td style="text-align:center; font-weight:700;">05</td>
+          <td><span class="code-tag" style="background:#ccfbf1; color:#0f766e;">FLOW-05</span></td>
+          <td style="font-weight:700; color:#0f172a;">
+            Luồng Đối soát công, Tính lương Snapshot & Phát hành Phiếu lương (Payroll Lifecycle)
+            <div style="font-size:11px; color:#0f766e; margin-top:4px;">Store / HR -> Finance -> Nhân viên</div>
+          </td>
+          <td><ul class="clean-list"><li>Bước 1: Store đối chiếu và xác nhận công thực tế tại chi nhánh -> HR duyệt các phiếu bổ sung/điều chỉnh công.</li><li>Bước 2: Finance tạo kỳ lương (DRAFT) -> Chuyển sang RECONCILE để đối soát công (phát hiện thiếu lượt check-in/out, adjustment đang chờ hoặc bất thường).</li><li>Bước 3: Sau khi đối soát sạch, Finance thực hiện Tính lương theo đơn giá có ngày hiệu lực (effective rate) + giờ được duyệt + OT/phụ cấp/thưởng/adjustment hợp lệ -> Chuyển sang APPROVED và lưu SNAPSHOT dữ liệu.</li><li>Bước 4: Finance chuyển kỳ lương sang PUBLISHED để phát phiếu lương cá nhân cho nhân viên -> Khi hoàn tất chi trả và có chứng từ, đánh dấu PAID.</li></ul></td>
+          <td style="background:#fffbeb; color:#78350f; font-size:11.8px;">Bắt buộc lưu Snapshot dữ liệu công và đơn giá khi chốt lương để kết quả không bị biến động khi dữ liệu nguồn thay đổi về sau; không tự áp dụng phạt/khấu trừ chưa được phê duyệt; tuyệt đối không sửa đè phiếu lương đã PUBLISHED (nếu lệch phải tạo revision/adjustment).</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check dev-check" onchange="updateProgress()"></td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        </tbody>
+      </table>
+
+      <!-- PHẦN 4: 12 HẠNG MỤC NGHIỆM THU IT -->
+      <div class="sec-head">
+        <div class="sec-head-left">
+          <div class="icon-box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></div>
+          <h2>PHẦN 04. CHECKLIST 12 HẠNG MỤC KIỂM SOÁT CHẤT LƯỢNG &amp; NGHIỆM THU IT (IT-CHK-01 .. 12)</h2>
+        </div>
+        <span class="code-tag" style="background:#f1f5f9; color:#0f172a;">Final Release Gate</span>
+      </div>
+
+      <table class="chk-table">
+        <colgroup>
+          <col style="width:5%;">
+          <col style="width:10%;">
+          <col style="width:24%;">
+          <col style="width:30%;">
+          <col style="width:25%;">
+          <col style="width:6%;">
+        </colgroup>
+        <thead>
+          <tr>
+            <th style="text-align:center;">Mục</th>
+            <th>Mã QA</th>
+            <th>Hạng Mục Nghiệm Thu Kỹ Thuật IT</th>
+            <th>Phương Pháp Kiểm Thử Thực Tế</th>
+            <th>Tiêu Chí Đạt Chuẩn (Pass Criteria)</th>
+            <th style="text-align:center;">Pass</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+        <tr class="filter-row" data-role="QA">
+          <td style="text-align:center; font-weight:800; color:#1e40af;">01</td>
+          <td><span class="code-tag" style="background:#e0e7ff; color:#3730a3;">IT-CHK-01</span></td>
+          <td style="font-weight:700; color:#0f172a;">Xác nhận 02 Web App và backend chạy với phiên bản production thống nhất.</td>
+          <td>Kiểm tra thông tin build/commit hash, health-check API và giao diện 02 Web App (Backoffice & Employee App) kết nối cùng 1 Backend & Google Sheets production.</td>
+          <td style="background:#f0fdf4; color:#14532d;">Cả 02 Web App và Backend phản hồi ổn định, cùng phiên bản V5.1, không lệch cấu hình môi trường.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="QA">
+          <td style="text-align:center; font-weight:800; color:#1e40af;">02</td>
+          <td><span class="code-tag" style="background:#e0e7ff; color:#3730a3;">IT-CHK-02</span></td>
+          <td style="font-weight:700; color:#0f172a;">Đăng nhập và phân quyền chính xác cho cả 07 cấu hình tài khoản/giai đoạn.</td>
+          <td>Đăng nhập lần lượt bằng 07 tài khoản mẫu (Admin, HR, Store, Finance, MKT, NV Thử việc, NV Chính thức); kiểm tra số lượng tab và phạm vi dữ liệu hiển thị.</td>
+          <td style="background:#f0fdf4; color:#14532d;">Hiển thị đúng số tab (12, 15, 10, 11, 9, 9, 9) và đúng quyền hạn nghiệp vụ của từng vai trò.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="QA">
+          <td style="text-align:center; font-weight:800; color:#1e40af;">03</td>
+          <td><span class="code-tag" style="background:#e0e7ff; color:#3730a3;">IT-CHK-03</span></td>
+          <td style="font-weight:700; color:#0f172a;">Kiểm thử truy cập chéo chi nhánh, chéo nhân viên và chéo vai trò qua API.</td>
+          <td>Dùng Postman/cURL hoặc trình duyệt gửi request với JWT/Session của Store CN1 gọi dữ liệu CN2; NV A gọi phiếu lương NV B; MKT gọi API lương/GPS/ảnh điểm danh.</td>
+          <td style="background:#f0fdf4; color:#14532d;">100% các truy cập trái phép qua API đều bị Backend chặn (HTTP 403 Forbidden), không rò rỉ dữ liệu.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="QA">
+          <td style="text-align:center; font-weight:800; color:#1e40af;">04</td>
+          <td><span class="code-tag" style="background:#e0e7ff; color:#3730a3;">IT-CHK-04</span></td>
+          <td style="font-weight:700; color:#0f172a;">Kích hoạt/thu hồi tài khoản, vô hiệu hóa phiên và forceLogout.</td>
+          <td>HR tạo hồ sơ PENDING_ACTIVATION -> thử đăng nhập (phải bị chặn) -> Admin nhấn KÍCH HOẠT (ACTIVE) -> NV đăng nhập thành công -> Admin nhấn Thu hồi/Khóa khi NV đang mở app.</td>
+          <td style="background:#f0fdf4; color:#14532d;">Chỉ báo kích hoạt thành công sau khi Google Sheets xác nhận ghi; khi thu hồi, thiết bị của NV nhận sự kiện Socket forceLogout và bị đăng xuất ngay lập tức, token cũ mất hiệu lực.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="QA">
+          <td style="text-align:center; font-weight:800; color:#1e40af;">05</td>
+          <td><span class="code-tag" style="background:#e0e7ff; color:#3730a3;">IT-CHK-05</span></td>
+          <td style="font-weight:700; color:#0f172a;">Tạo, duyệt, công bố và đổi lịch; xử lý xung đột và định biên.</td>
+          <td>HR tạo lịch DRAFT -> kiểm tra NV chưa thấy lịch chính thức -> HR chuyển sang PUBLISHED -> thực hiện luồng đổi ca NV A -> NV B xác nhận -> Store/HR duyệt; thử tạo ca trùng hoặc thiếu định biên.</td>
+          <td style="background:#f0fdf4; color:#14532d;">Hệ thống cảnh báo chính xác xung đột/định biên; lịch chỉ có hiệu lực với NV khi PUBLISHED; đổi ca chỉ cập nhật lịch sau bước duyệt cuối và có Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="QA">
+          <td style="text-align:center; font-weight:800; color:#1e40af;">06</td>
+          <td><span class="code-tag" style="background:#e0e7ff; color:#3730a3;">IT-CHK-06</span></td>
+          <td style="font-weight:700; color:#0f172a;">GPS/camera/check-in/check-out trên điện thoại thật; kiểm thử lỗi mất mạng, GPS yếu, quyền camera bị từ chối.</td>
+          <td>Dùng smartphone thật (iOS Safari & Android Chrome) thực hiện check-in/out trong & ngoài bán kính GPS; thử tắt quyền Camera, giả lập GPS yếu hoặc ngắt mạng khi đang gửi.</td>
+          <td style="background:#f0fdf4; color:#14532d;">Camera trực tiếp getUserMedia và GPS hoạt động mượt qua HTTPS; khi lỗi mạng/GPS/camera hệ thống thông báo rõ ràng, không báo thành công ảo và dẫn sang luồng Bổ sung công.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="QA">
+          <td style="text-align:center; font-weight:800; color:#1e40af;">07</td>
+          <td><span class="code-tag" style="background:#e0e7ff; color:#3730a3;">IT-CHK-07</span></td>
+          <td style="font-weight:700; color:#0f172a;">OFF, nghỉ khẩn và bổ sung công; xác nhận không sửa event gốc.</td>
+          <td>NV gửi đăng ký OFF, báo nghỉ khẩn và gửi yêu cầu bổ sung công -> Store/HR xử lý -> Kiểm tra dữ liệu trong Google Sheets / Database.</td>
+          <td style="background:#f0fdf4; color:#14532d;">Luồng duyệt/từ chối/escalation hoạt động đúng; bản ghi chấm công gốc tuyệt đối không bị sửa/xóa, bản ghi adjustment mới được tạo kèm Audit Log.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="QA">
+          <td style="text-align:center; font-weight:800; color:#1e40af;">08</td>
+          <td><span class="code-tag" style="background:#e0e7ff; color:#3730a3;">IT-CHK-08</span></td>
+          <td style="font-weight:700; color:#0f172a;">Tính lương có snapshot, đối soát, duyệt, phát phiếu và revision.</td>
+          <td>Finance chạy quy trình kỳ lương DRAFT -> RECONCILE -> APPROVED -> PUBLISHED -> PAID; thử thay đổi đơn giá/công nguồn sau khi đã snapshot; thử tạo revision cho phiếu lương đã PUBLISHED.</td>
+          <td style="background:#f0fdf4; color:#14532d;">Snapshot bảo toàn nguyên vẹn số liệu lương đã chốt; NV chỉ xem được phiếu lương của mình sau khi PUBLISHED; không sửa đè phiếu đã phát mà tạo revision/adjustment.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="QA">
+          <td style="text-align:center; font-weight:800; color:#1e40af;">09</td>
+          <td><span class="code-tag" style="background:#e0e7ff; color:#3730a3;">IT-CHK-09</span></td>
+          <td style="font-weight:700; color:#0f172a;">Socket realtime hoạt động; dữ liệu ghi thất bại không báo thành công sai.</td>
+          <td>Kiểm tra thông báo realtime khi chấm công/đổi ca/kích hoạt TK; giả lập lỗi ghi Google Sheets (timeout/quota) và quan sát phản hồi UI + Socket.</td>
+          <td style="background:#f0fdf4; color:#14532d;">Socket cập nhật tức thời khi ghi thành công; khi ghi thất bại UI báo lỗi/trạng thái chờ đồng bộ (NEEDS_RECONCILIATION), tuyệt đối không báo thành công giả.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="QA">
+          <td style="text-align:center; font-weight:800; color:#1e40af;">10</td>
+          <td><span class="code-tag" style="background:#e0e7ff; color:#3730a3;">IT-CHK-10</span></td>
+          <td style="font-weight:700; color:#0f172a;">Kiểm thử backup, restore trên môi trường thử nghiệm và rollback triển khai.</td>
+          <td>Kiểm tra lịch sử snapshot/backup Google Sheets & Drive tại Tab ADM-11; thực hiện diễn tập khôi phục (restore) dữ liệu trên môi trường non-production và rollback bản build.</td>
+          <td style="background:#f0fdf4; color:#14532d;">Bản backup đầy đủ, khôi phục thành công trên môi trường thử nghiệm mà không làm hỏng cấu trúc dữ liệu; quy trình rollback hoạt động đúng.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="QA">
+          <td style="text-align:center; font-weight:800; color:#1e40af;">11</td>
+          <td><span class="code-tag" style="background:#e0e7ff; color:#3730a3;">IT-CHK-11</span></td>
+          <td style="font-weight:700; color:#0f172a;">Xác minh cấu hình SSL, secrets, logs, monitoring và giới hạn dữ liệu nhạy cảm.</td>
+          <td>Rà soát cấu hình HTTPS/SSL, kiểm tra biến môi trường, Google Sheets và bundle JS trên trình duyệt; kiểm tra phân quyền ảnh điểm danh và nội dung thông báo lương.</td>
+          <td style="background:#f0fdf4; color:#14532d;">Không lộ API tokens/secrets hay mật khẩu/PIN thô trên UI và Google Sheets; HTTPS hoạt động chuẩn; dữ liệu nhạy cảm (ảnh, GPS, lương) được bảo vệ đúng phân quyền.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        <tr class="filter-row" data-role="QA">
+          <td style="text-align:center; font-weight:800; color:#1e40af;">12</td>
+          <td><span class="code-tag" style="background:#e0e7ff; color:#3730a3;">IT-CHK-12</span></td>
+          <td style="font-weight:700; color:#0f172a;">Lưu biên bản UAT, danh sách lỗi tồn đọng và xác nhận người chịu trách nhiệm.</td>
+          <td>Tổng hợp kết quả chạy toàn bộ Test Cases UAT, lập danh sách lỗi tồn đọng (nếu có) kèm mức độ ưu tiên, thời hạn khắc phục và chữ ký của đại diện các bên.</td>
+          <td style="background:#f0fdf4; color:#14532d;">Biên bản UAT hoàn chỉnh, có đầy đủ chữ ký xác nhận của Chủ dự án / Khách hàng, QA và Phụ trách IT.</td>
+          <td style="text-align:center;"><input type="checkbox" class="task-check test-check" onchange="updateProgress()"></td>
+        </tr>
+        
+        </tbody>
+      </table>
+
+    </div>
+
+    <footer class="footer">
+      <div><strong>AUTO STACK</strong> — AI Implementation &amp; Automated QA Verification Matrix</div>
+      <div>Dự án: <strong>Ụm Bò Milk / HR System V5.1</strong> · Tổng cộng: 102 Đầu việc Build &amp; Test</div>
+    </footer>
+  </main>
+
+  <script>
+    function applyFilters() {
+      var role = document.getElementById('roleFilter').value;
+      var kw = document.getElementById('kwFilter').value.toLowerCase().trim();
+      var rows = document.querySelectorAll('.filter-row');
+      for (var i = 0; i < rows.length; i++) {
+        var rAttr = rows[i].getAttribute('data-role');
+        var txt = rows[i].innerText.toLowerCase();
+        var matchRole = (role === 'ALL' || rAttr === role);
+        var matchKw = (!kw || txt.indexOf(kw) > -1);
+        rows[i].style.display = (matchRole && matchKw) ? '' : 'none';
+      }
+    }
+
+    function updateProgress() {
+      var devAll = document.querySelectorAll('.dev-check');
+      var devDone = document.querySelectorAll('.dev-check:checked');
+      var testAll = document.querySelectorAll('.test-check');
+      var testDone = document.querySelectorAll('.test-check:checked');
+      document.getElementById('progressText').innerText =
+        'Dev: ' + devDone.length + '/' + devAll.length + ' | Test: ' + testDone.length + '/' + testAll.length;
+    }
+  </script>
+</body>
+</html>

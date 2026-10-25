@@ -1,0 +1,96 @@
+'use client';
+
+import { App } from 'antd';
+import { useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { io, type Socket } from 'socket.io-client';
+import { loginPath, type AppKind } from './auth';
+
+let socket: Socket | null = null;
+let currentToken: string | null = null;
+
+/**
+ * Hỗ trợ kết nối trực tiếp tới Render (`NEXT_PUBLIC_WS_URL`) khi Frontend đặt trên Vercel
+ * (do Vercel rewrites không proxy WebSocket upgrade), hoặc kết nối cùng origin khi chạy local/Docker.
+ */
+function getSocket(socketToken?: string | null): Socket {
+  const wsUrl = process.env.NEXT_PUBLIC_WS_URL?.trim() || undefined;
+  if (socket && socketToken && socketToken !== currentToken) {
+    currentToken = socketToken;
+    socket.auth = { token: socketToken };
+  }
+  if (!socket) {
+    currentToken = socketToken ?? null;
+    socket = io(wsUrl, {
+      path: '/socket.io',
+      withCredentials: true,
+      auth: socketToken ? { token: socketToken } : undefined,
+      transports: ['websocket', 'polling'],
+    });
+  }
+  return socket;
+}
+
+/**
+ * Kết nối realtime. Khi Admin thu hồi tài khoản, server phát auth:forceLogout
+ * -> xóa cache và chuyển về trang đăng nhập ngay (FLOW-01).
+ */
+export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string | null) {
+  const router = useRouter();
+  const qc = useQueryClient();
+  const { message } = App.useApp();
+
+  useEffect(() => {
+    if (!enabled) return;
+    const s = getSocket(socketToken);
+    const onForceLogout = (payload: { reason?: string }) => {
+      message.warning(payload?.reason ?? 'Phiên đăng nhập đã bị thu hồi');
+      qc.clear();
+      s.disconnect();
+      socket = null;
+      router.replace(loginPath(app));
+    };
+    const onMaintenance = (payload: { enabled?: boolean; message?: string }) => {
+      qc.setQueryData(['maintenance'], [payload]);
+      qc.invalidateQueries({ queryKey: ['maintenance'] });
+      if (payload?.enabled) {
+        message.warning(payload.message || 'Hệ thống đang chuyển sang chế độ bảo trì');
+      } else {
+        message.success('Hệ thống đã hoàn tất bảo trì và hoạt động bình thường trở lại');
+      }
+    };
+    const onNotification = (payload?: { kind?: string; title?: string; summary?: string; code?: string }) => {
+      ['notifications', 'mkt-comms', 'nv-comms'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      if (payload?.kind === 'ANNOUNCEMENT' && payload.title) {
+        message.info(`Bản tin mới (${payload.code || 'Nội bộ'}): ${payload.title}`);
+      }
+    };
+    const onAttendance = () => {
+      ['my-attendance', 'attendance-all', 'nv-attendance'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    };
+    const onSchedule = () => {
+      ['my-attendance', 'schedules', 'nv-schedules', 'nv-swaps'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    };
+    const onAccountPending = () => {
+      qc.invalidateQueries({ queryKey: ['accounts'] });
+    };
+    s.on('auth:forceLogout', onForceLogout);
+    s.on('system:maintenance', onMaintenance);
+    s.on('notification:new', onNotification);
+    s.on('attendance:event', onAttendance);
+    s.on('schedule:published', onSchedule);
+    s.on('swap:updated', onSchedule);
+    s.on('account:pending', onAccountPending);
+    if (!s.connected) s.connect();
+    return () => {
+      s.off('auth:forceLogout', onForceLogout);
+      s.off('system:maintenance', onMaintenance);
+      s.off('notification:new', onNotification);
+      s.off('attendance:event', onAttendance);
+      s.off('schedule:published', onSchedule);
+      s.off('swap:updated', onSchedule);
+      s.off('account:pending', onAccountPending);
+    };
+  }, [app, enabled, message, qc, router, socketToken]);
+}

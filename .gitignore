@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.next/
+out/
+coverage/
+*.log
+*.tsbuildinfo
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+
+# Local data
+storage/

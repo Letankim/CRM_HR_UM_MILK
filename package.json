@@ -1,0 +1,26 @@
+{
+  "name": "umbm-hr",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Ụm Bò Milk HR System V5.1 — Auto Stack",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter ./apps/* dev",
+    "dev:api": "pnpm --filter @umbm/api dev",
+    "dev:web": "pnpm --filter @umbm/web dev",
+    "dev:worker": "pnpm --filter @umbm/worker dev",
+    "build": "pnpm --filter @umbm/shared build && pnpm -r --filter ./apps/* build",
+    "typecheck": "pnpm --filter @umbm/shared build && pnpm -r typecheck",
+    "test": "pnpm --filter @umbm/shared build && pnpm -r test",
+    "google:auth": "pnpm --filter @umbm/api google:auth",
+    "google:doctor": "pnpm --filter @umbm/api google:doctor",
+    "sheets:bootstrap": "pnpm --filter @umbm/api sheets:bootstrap",
+    "seed:admin": "pnpm --filter @umbm/api seed:admin"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

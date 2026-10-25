@@ -1,0 +1,166 @@
+'use client';
+
+import { Alert, App, Button, Descriptions, Drawer, Form, Input, InputNumber, Modal, Space, Table, Tabs, Tag, Typography } from 'antd';
+import { CloseOutlined, EditOutlined, ExpandAltOutlined, FileExcelOutlined, FileTextOutlined, HistoryOutlined, IdcardOutlined, ShrinkOutlined } from '@ant-design/icons';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import dayjs from 'dayjs';
+import { useState } from 'react';
+import { api, ApiClientError } from '@/lib/api';
+import { useCan } from '@/lib/auth';
+import { exportToExcel } from '@/lib/export-excel';
+import { allowancesOf, deductionsOf, fmtVnd, type PayrollSnapshotItem } from './payroll-types';
+
+interface Line { label: string; detail: string; amount: number }
+
+/** Dựng các dòng phiếu lương (dùng chung cho Drawer và Xuất Excel phiếu lương) */
+export function payslipLines(s: PayrollSnapshotItem): Line[] {
+  const lines: Line[] = s.segments.map((seg) => ({
+    label: `Lương ${seg.stage === 'PROBATION' ? `thử việc (${seg.percent}%)` : 'chính thức'}`,
+    detail: `${seg.quantity} ${seg.unit} x ${fmtVnd(seg.unitRateVnd)} (${dayjs(seg.fromDate).format('DD/MM')} - ${dayjs(seg.toDate).format('DD/MM')}, ${seg.hours} giờ)`,
+    amount: seg.amountVnd,
+  }));
+  if (s.otPayVnd > 0) lines.push({ label: 'Tăng ca (OT)', detail: `${s.otHours} giờ x ${fmtVnd(s.otRateVnd)}`, amount: s.otPayVnd });
+  for (const a of s.allowanceLines) {
+    lines.push({ label: a.label, detail: a.code === 'ALLOWANCE_SWAP' ? `${s.shiftSwapCount} ca nhận đổi` : 'Theo hồ sơ lương / khoản mục đã duyệt', amount: a.amount });
+  }
+  if (s.kpiBonusVnd > 0) lines.push({ label: 'Thưởng KPI / Doanh số', detail: 'Khoản thưởng đã duyệt trong kỳ', amount: s.kpiBonusVnd });
+  if (s.positiveAdjustmentsVnd > 0) lines.push({ label: 'Điều chỉnh cộng', detail: 'Khoản bổ sung đã duyệt', amount: s.positiveAdjustmentsVnd });
+  if (deductionsOf(s) > 0) lines.push({ label: 'Khấu trừ & tạm ứng đã duyệt', detail: 'Chỉ áp dụng khoản đã phê duyệt', amount: -deductionsOf(s) });
+  return lines;
+}
+
+export function PayslipDrawer({ snapshot: s, onClose }: { snapshot: PayrollSnapshotItem | null; onClose: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [revModal, setRevModal] = useState(false);
+  const [revForm] = Form.useForm();
+  const qc = useQueryClient();
+  const can = useCan();
+  const canManage = can('payroll.manage');
+  const { message } = App.useApp();
+
+  const revsQ = useQuery({
+    queryKey: ['payslip-revisions', s?.id],
+    queryFn: () => api.get<Record<string, unknown>[]>(`/admin/payroll/payslips/${s!.id}/revisions`),
+    enabled: Boolean(s?.id),
+    retry: false,
+  });
+
+  const revMut = useMutation({
+    mutationFn: (v: Record<string, unknown>) => api.post(`/admin/payroll/payslips/${s!.id}/revisions`, v),
+    onSuccess: () => {
+      message.success('Đã tạo phiếu lương điều chỉnh mới (Phiếu lương gốc vẫn được giữ nguyên để đối chiếu)');
+      setRevModal(false);
+      qc.invalidateQueries({ queryKey: ['payslip-revisions', s?.id] });
+      qc.invalidateQueries({ queryKey: ['payroll-periods'] });
+    },
+    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Chỉ tạo được phiếu điều chỉnh sau khi kỳ lương đã được phát hành'),
+  });
+
+  const lines = s ? payslipLines(s) : [];
+  return (
+    <Drawer
+      title={s ? `Phiếu lương chi tiết — ${s.fullName} (${s.employeeCode})` : 'Phiếu lương'}
+      open={!!s} onClose={onClose} width={expanded ? '95vw' : '70vw'} destroyOnHidden
+      extra={
+        <Space size={8}>
+          {s && canManage && (
+            <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { revForm.resetFields(); setRevModal(true); }}>
+              Tạo bản điều chỉnh
+            </Button>
+          )}
+          {s && (
+            <Button
+              size="small" icon={<FileExcelOutlined style={{ color: '#15803D' }} />}
+              onClick={() =>
+                exportToExcel({
+                  fileName: `Phieu_Luong_${s.employeeCode}_${s.periodCode}.xls`,
+                  sheetTitle: `PHIẾU LƯƠNG CÁ NHÂN — ${s.fullName} (${s.employeeCode})`,
+                  subtitle: `Kỳ lương: ${s.periodCode} | Chi nhánh: ${s.branchName} | Hình thức: ${s.rateTypeLabel}`,
+                  columns: [{ header: 'Khoản mục', key: 'label' }, { header: 'Cách tính', key: 'detail' }, { header: 'Số tiền (VNĐ)', key: 'amount', isCurrency: true }],
+                  rows: lines,
+                  summaryRow: ['THỰC LĨNH', `${s.bankName || ''} ${s.bankAccountNumber || ''}`.trim(), s.netVnd],
+                })
+              }
+            >
+              Xuất phiếu lương Excel
+            </Button>
+          )}
+          <Button size="small" icon={expanded ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setExpanded((v) => !v)}>{expanded ? 'Thu gọn' : 'Mở rộng'}</Button>
+          <Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
+        </Space>
+      }
+    >
+      {s && (
+        <>
+          {!s.hasSalaryProfile && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Nhân sự chưa được thiết lập hồ sơ lương cá nhân. Vui lòng thiết lập tại tab Hồ sơ lương nhân sự rồi tính lại kỳ lương." />}
+          {s.missingProfileShifts > 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`Có ${s.missingProfileShifts} ca làm nằm ngoài thời gian hiệu lực của hồ sơ lương nên chưa được tính.`} />}
+          <Tabs
+            defaultActiveKey="lines"
+            items={[
+              {
+                key: 'lines', label: <span><FileTextOutlined /> Chi tiết Khoản mục Lương</span>,
+                children: (
+                  <Table<Line>
+                    size="small" rowKey={(r, i) => `${r.label}-${i}`} pagination={false} dataSource={lines}
+                    columns={[
+                      { title: 'Khoản mục', dataIndex: 'label', render: (v: string) => <Typography.Text strong>{v}</Typography.Text> },
+                      { title: 'Cách tính', dataIndex: 'detail', render: (v: string) => <span style={{ fontSize: 12, color: '#64748B' }}>{v}</span> },
+                      { title: 'Số tiền', dataIndex: 'amount', align: 'right', render: (v: number) => <span className="num" style={{ fontWeight: 600, color: v < 0 ? '#DC2626' : '#0F172A' }}>{fmtVnd(v)}</span> },
+                    ]}
+                    summary={() => (
+                      <>
+                        <Table.Summary.Row>
+                          <Table.Summary.Cell index={0} colSpan={2}>Tổng thu nhập · Phụ cấp {fmtVnd(allowancesOf(s))}</Table.Summary.Cell>
+                          <Table.Summary.Cell index={1} align="right"><span className="num" style={{ fontWeight: 700 }}>{fmtVnd(s.grossVnd)}</span></Table.Summary.Cell>
+                        </Table.Summary.Row>
+                        <Table.Summary.Row>
+                          <Table.Summary.Cell index={0} colSpan={2}><strong>THỰC LĨNH</strong> · {s.bankName || 'Chưa cập nhật ngân hàng'} {s.bankAccountNumber}</Table.Summary.Cell>
+                          <Table.Summary.Cell index={1} align="right"><span className="num" style={{ fontWeight: 800, color: '#15803D', fontSize: 15 }}>{fmtVnd(s.netVnd)}</span></Table.Summary.Cell>
+                        </Table.Summary.Row>
+                      </>
+                    )}
+                  />
+                ),
+              },
+              {
+                key: 'info', label: <span><IdcardOutlined /> Thông tin Công &amp; Ngân hàng</span>,
+                children: (
+                  <Descriptions column={1} bordered size="small">
+                    <Descriptions.Item label="Nhân sự">{s.fullName} ({s.employeeCode})</Descriptions.Item>
+                    <Descriptions.Item label="Chi nhánh">{s.branchName}</Descriptions.Item>
+                    <Descriptions.Item label="Giai đoạn">{s.stageLabel}</Descriptions.Item>
+                    <Descriptions.Item label="Hình thức lương">{s.rateTypeLabel}</Descriptions.Item>
+                    <Descriptions.Item label="Lương chính thức">{fmtVnd(s.rateVnd)}/{s.unitLabel}{s.probationPercent ? ` · Thử việc ${s.probationPercent}%` : ''}</Descriptions.Item>
+                    <Descriptions.Item label="Công trong kỳ">{s.totalShiftsCount} ca · {s.workedDays} ngày · {s.approvedHours} giờ</Descriptions.Item>
+                    <Descriptions.Item label="Nguồn công">{s.workSourceLabel || '—'}</Descriptions.Item>
+                    <Descriptions.Item label="Tài khoản nhận lương">{s.bankName || 'Chưa cập nhật'} · {s.bankAccountNumber || '—'}</Descriptions.Item>
+                  </Descriptions>
+                ),
+              },
+              {
+                key: 'revisions', label: <span><HistoryOutlined /> Lịch sử Điều chỉnh ({revsQ.data?.length ?? 0})</span>,
+                children: (
+                  <Table
+                    size="small" rowKey="id" pagination={false} dataSource={revsQ.data ?? []}
+                    columns={[
+                      { title: 'Lần điều chỉnh', dataIndex: 'revision', width: 130, render: (v: number) => <Tag color="geekblue">Lần #{v}</Tag> },
+                      { title: 'Chênh lệch (+/-)', dataIndex: 'delta_vnd', width: 150, render: (v: number) => <span className="num" style={{ fontWeight: 700, color: v >= 0 ? '#16A34A' : '#DC2626' }}>{v >= 0 ? `+${fmtVnd(v)}` : fmtVnd(v)}</span> },
+                      { title: 'Thực lĩnh mới', dataIndex: 'after_amount_vnd', width: 150, render: (v: number) => <span className="num" style={{ fontWeight: 700 }}>{fmtVnd(v)}</span> },
+                      { title: 'Lý do điều chỉnh', dataIndex: 'reason' },
+                    ]}
+                  />
+                ),
+              },
+            ]}
+          />
+          <Modal width={680} title="Tạo Phiếu Lương Điều Chỉnh Sau Phát Hành (Không sửa đè phiếu gốc)" open={revModal} onCancel={() => setRevModal(false)} onOk={() => revForm.submit()} okText="Tạo phiếu điều chỉnh" cancelText="Hủy bỏ" confirmLoading={revMut.isPending}>
+            <Form form={revForm} layout="vertical" onFinish={(v) => revMut.mutate(v)}>
+              <Form.Item name="delta_vnd" label="Số tiền điều chỉnh chênh lệch (+ cộng thêm / - khấu trừ)" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} step={50000} placeholder="VD: 150000 hoặc -50000" suffix="VNĐ" /></Form.Item>
+              <Form.Item name="reason" label="Lý do điều chỉnh phiếu lương (tối thiểu 5 ký tự)" rules={[{ required: true, min: 5 }]}><Input.TextArea rows={2} placeholder="VD: Bổ sung phụ cấp ca tối ngày 20/10 sau đối soát..." /></Form.Item>
+            </Form>
+          </Modal>
+        </>
+      )}
+    </Drawer>
+  );
+}

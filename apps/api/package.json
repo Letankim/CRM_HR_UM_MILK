@@ -1,0 +1,38 @@
+{
+  "name": "@umbm/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node --env-file-if-exists=../../.env dist/server.js",
+    "typecheck": "tsc -p tsconfig.check.json",
+    "test": "vitest run",
+    "google:auth": "tsx --env-file-if-exists=../../.env scripts/google-auth.ts",
+    "google:doctor": "tsx --env-file-if-exists=../../.env scripts/google-doctor.ts",
+    "sheets:bootstrap": "tsx --env-file-if-exists=../../.env scripts/bootstrap-sheets.ts",
+    "seed:admin": "tsx --env-file-if-exists=../../.env scripts/seed-admin.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.1",
+    "@fastify/helmet": "^13.0.0",
+    "@fastify/rate-limit": "^10.2.1",
+    "@umbm/google": "workspace:*",
+    "@umbm/shared": "workspace:*",
+    "argon2": "^0.41.1",
+    "dayjs": "^1.11.13",
+    "fastify": "^5.1.0",
+    "jose": "^5.9.6",
+    "socket.io": "^4.8.1",
+    "ulid": "^2.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "pino-pretty": "^13.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}

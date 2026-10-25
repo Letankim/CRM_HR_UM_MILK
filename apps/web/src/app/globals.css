@@ -1,0 +1,194 @@
+:root {
+  --font-sans: 'Be Vietnam Pro';
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #f8fafc;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Số liệu căn đều cột */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+}
+
+/* Vùng an toàn cho thanh tab dưới đáy trên iPhone */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Menu Sidebar gọn gàng: mục con chỉ lùi nhẹ 8px so với tiêu đề nhóm, không bị cắt chữ */
+.umbm-sider-menu.ant-menu-inline .ant-menu-submenu-title {
+  padding-inline-start: 10px !important;
+  padding-inline-end: 28px !important;
+  height: 34px !important;
+  line-height: 34px !important;
+  margin-block: 2px !important;
+}
+
+.umbm-sider-menu.ant-menu-inline .ant-menu-sub.ant-menu-inline > .ant-menu-item {
+  padding-inline-start: 18px !important;
+  padding-inline-end: 10px !important;
+  height: 36px !important;
+  line-height: 36px !important;
+  margin-block: 2px !important;
+}
+
+.umbm-sider-menu .ant-menu-title-content {
+  font-size: 13px;
+}
+
+/* Chế độ thu gọn Sidebar (Collapsed Icon Rail chuyên nghiệp) */
+.umbm-sider-menu.ant-menu-inline-collapsed {
+  width: 100% !important;
+}
+
+.umbm-sider-menu.ant-menu-inline-collapsed > .ant-menu-item {
+  width: 44px !important;
+  height: 40px !important;
+  margin: 4px auto !important;
+  padding: 0 !important;
+  border-radius: 6px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.umbm-sider-menu.ant-menu-inline-collapsed > .ant-menu-item .ant-menu-item-icon {
+  font-size: 18px !important;
+  line-height: 1 !important;
+  margin-inline-end: 0 !important;
+}
+
+.umbm-sider-menu.ant-menu-inline-collapsed > .ant-menu-item .ant-menu-title-content {
+  display: none !important;
+}
+
+.umbm-sider-menu.ant-menu-inline-collapsed > .ant-menu-item:hover {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+.umbm-sider-menu.ant-menu-inline-collapsed > .ant-menu-item-selected {
+  background-color: #eff6ff !important;
+  color: #2563eb !important;
+  border-color: #bfdbfe !important;
+}
+
+.umbm-sider-menu.ant-menu-inline-collapsed > .ant-menu-item-divider {
+  margin: 8px 14px !important;
+  border-color: #e5e7eb !important;
+}
+
+/* Cụm nút Header & Khung Profile Login trên Header có viền mảnh và bo nhẹ tinh tế */
+.umbm-header-pill {
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.umbm-header-pill:hover {
+  border-color: #93c5fd !important;
+  background-color: #f8fafc !important;
+}
+
+/* Tab & Segmented đang active có nền xanh nhạt (#EFF6FF), viền xanh (#BFDBFE) và chữ xanh đậm (#2563EB) */
+.ant-segmented {
+  background-color: #f1f5f9 !important;
+  padding: 3px !important;
+  border: 1px solid #e2e8f0;
+}
+
+.ant-segmented .ant-segmented-item {
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.ant-segmented .ant-segmented-item-selected {
+  background-color: #eff6ff !important;
+  color: #2563eb !important;
+  font-weight: 600 !important;
+  border: 1px solid #bfdbfe !important;
+  box-shadow: none !important;
+}
+
+.ant-tabs-top > .ant-tabs-nav .ant-tabs-tab {
+  padding: 8px 14px !important;
+  border-radius: 4px 4px 0 0 !important;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.ant-tabs-top > .ant-tabs-nav .ant-tabs-tab-active {
+  background-color: #eff6ff !important;
+  border-color: #bfdbfe #bfdbfe transparent !important;
+}
+
+/* Ẩn thanh cuộn ngang thô bên dưới bảng, giữ cột NO và Thao tác (Xem chi tiết & ...) cố định sắc nét */
+.ant-table-content,
+.ant-table-body {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ant-table-content::-webkit-scrollbar,
+.ant-table-body::-webkit-scrollbar {
+  display: none;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Chống tràn nút và nội dung trong Modal, Drawer, Alert trên mọi độ phân giải */
+.ant-modal {
+  max-width: calc(100vw - 24px) !important;
+}
+
+.ant-modal-content {
+  overflow: hidden;
+}
+
+.ant-modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.ant-modal-footer > .ant-space,
+.ant-drawer-extra > .ant-space {
+  flex-wrap: wrap !important;
+  max-width: 100%;
+  row-gap: 6px !important;
+}
+
+.ant-alert {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.ant-alert-content {
+  min-width: 200px;
+  flex: 1 1 auto;
+}
+
+.ant-alert-action {
+  margin-inline-start: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

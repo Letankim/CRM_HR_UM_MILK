@@ -1,0 +1,50 @@
+# Render Blueprint cho Ụm Bò Milk HR System V5.1 (Backend API + Socket.IO)
+# Phù hợp gói Render Free Tier, kết nối với Frontend trên Vercel và 1 tài khoản Google cá nhân duy nhất.
+services:
+  - type: web
+    name: umbm-hr-api
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @umbm/shared build && pnpm --filter @umbm/google build && pnpm --filter @umbm/api build
+    startCommand: node apps/api/dist/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_BACKEND
+        value: google
+      - key: API_PORT
+        value: 4000
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: API_PUBLIC_ORIGIN
+        sync: false # Điền URL Vercel, ví dụ: https://umbm-hr.vercel.app
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: INTERNAL_API_TOKEN
+        generateValue: true
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OAUTH_REFRESH_TOKEN
+        sync: false
+      - key: DRIVE_ROOT_FOLDER_ID
+        sync: false
+      - key: SHEET_ID_CORE
+        sync: false
+      - key: SHEET_ID_HR
+        sync: false
+      - key: SHEET_ID_SCHEDULE
+        sync: false
+      - key: SHEET_ID_ATTENDANCE
+        sync: false
+      - key: SHEET_ID_PAYROLL
+        sync: false
+      - key: SHEET_ID_COMMS
+        sync: false
+      - key: SHEET_ID_SYSTEM
+        sync: false

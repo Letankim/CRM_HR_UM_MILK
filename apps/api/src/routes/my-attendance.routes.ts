@@ -1,0 +1,218 @@
+import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+import { DEFAULT_SHIFT_LABELS, REQUEST_STATUS_LABELS, ROLE_LABELS, SHIFT_SWAP_STATUS_LABELS, type Employee, type User } from '@umbm/shared';
+import type { AppContext } from '../context.js';
+import { Errors } from '../lib/errors.js';
+import { sendSuccess } from '../lib/response.js';
+import { dayjs } from '../lib/time.js';
+import { auditContext, requireAuth } from '../plugins/auth-context.js';
+import { healBranchConsistency, resolveShiftTimeDetails } from './account-employee-sync.js';
+import { mapAttendanceEvent, migrateLegacyBase64Photos } from './attendance-helpers.js';
+import { mapShiftAssignment } from './schedules.routes.js';
+
+const zCreateMyShiftBody = z.object({
+  work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng ngày YYYY-MM-DD'),
+  shift_code: z.string().trim().default('CA_SANG'),
+  note: z.string().trim().max(300).optional().default('Đăng ký ca làm việc cá nhân'),
+});
+
+const SHIFT_DEFAULT_HOURS: Record<string, { start: string; end: string; hours: number }> = {
+  CA_SANG: { start: '07:00', end: '12:00', hours: 5 },
+  CA_CHIEU: { start: '12:00', end: '17:00', hours: 5 },
+  CA_TOI: { start: '17:00', end: '22:00', hours: 5 },
+  CA_HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
+};
+
+function getVnDateAndHm(): { todayStr: string; nowHm: string } {
+  const vnNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+  return { todayStr: dayjs(vnNow).format('YYYY-MM-DD'), nowHm: dayjs(vnNow).format('HH:mm') };
+}
+
+export async function ensurePersonalProfile(ctx: AppContext, user: User): Promise<Employee> {
+  const existing = ctx.db.employees.find(
+    (e) => e.user_id === user.id || Boolean(user.employee_id && (e.employee_code === user.employee_id || e.id === user.employee_id)),
+  );
+  if (existing) {
+    const autoShifts = ctx.db.shiftAssignments.filter(
+      (a) => (a.employee_id === existing.id || a.employee_id === existing.employee_code) && a.note === 'Ca làm việc cá nhân hôm nay',
+    );
+    for (const s of autoShifts) {
+      if (!ctx.db.attendanceEvents.find((e) => e.assignment_id === s.id)) {
+        await ctx.db.shiftAssignments.softDelete(s.id, s.version, user.id);
+      }
+    }
+    return existing;
+  }
+
+  const firstBranch = ctx.db.branches.all()[0];
+  const scopedBranchId = user.branch_scope && user.branch_scope !== 'ALL'
+    ? user.branch_scope.split(',')[0]?.trim() || firstBranch?.id || ''
+    : firstBranch?.id || '';
+  const nextCode = `NV${String(ctx.db.employees.all(true).length + 1).padStart(4, '0')}`;
+  const isProb = user.role === 'THU_VIEC';
+
+  const createdEmp = await ctx.db.employees.insert({
+    employee_code: nextCode, candidate_id: '', user_id: user.id, full_name: user.display_name, phone: user.phone || '0901000099', email: user.email || '',
+    date_of_birth: '1998-01-01', gender: 'Khác', citizen_id: '', citizen_issue_date: '', permanent_address: 'TP. Hồ Chí Minh', current_address: 'TP. Hồ Chí Minh',
+    emergency_contact_name: '', emergency_contact_phone: '', branch_id: scopedBranchId, staff_group: 'BACKOFFICE', position_title: ROLE_LABELS[user.role] || 'Nhân sự',
+    stage: isProb ? 'PROBATION' : 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: 'CA_SANG', probation_start: '2026-01-01', probation_end: '2026-01-12',
+    probation_cycle_days: 12, probation_work_days: 7, probation_off_days: 5, official_from: '2026-01-13', resigned_at: '', resign_reason: '', status: 'ACTIVE',
+    base_hourly_rate_vnd: 35000, bank_name: 'Techcombank', bank_account_number: '', bank_account_holder: user.display_name.toUpperCase(), tax_code: '',
+    note: 'Hồ sơ nhân sự liên kết tài khoản hệ thống',
+  }, user.id);
+  await ctx.db.users.update(user.id, user.version, { employee_id: createdEmp.employee_code }, user.id);
+  return createdEmp;
+}
+
+export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) {
+  app.get('/api/my-attendance', { preHandler: requireAuth() }, async (request) => {
+    await migrateLegacyBase64Photos(ctx);
+    await healBranchConsistency(ctx);
+    const user = request.auth!.user;
+    const emp = await ensurePersonalProfile(ctx, user);
+    const branch = ctx.db.branches.get(emp.branch_id) ?? ctx.db.branches.all()[0];
+    const { todayStr, nowHm } = getVnDateAndHm();
+
+    const myRawEvents = ctx.db.attendanceEvents
+      .filter((e) => e.employee_id === emp.id || e.employee_id === emp.employee_code)
+      .sort((a, b) => b.server_time.localeCompare(a.server_time));
+    const events = myRawEvents.map((e) => mapAttendanceEvent(e, ctx));
+
+    const myRawShifts = ctx.db.shiftAssignments
+      .filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code)
+      .sort((a, b) => b.work_date.localeCompare(a.work_date));
+
+    const shifts = myRawShifts.map((a) => {
+      const base = mapShiftAssignment(a, ctx);
+      const sEvs = events.filter((e) => e.assignment_id === a.id);
+      const inEv = sEvs.find((e) => e.type === 'CHECK_IN') ?? null;
+      const outEv = sEvs.find((e) => e.type === 'CHECK_OUT') ?? null;
+      const isToday = a.work_date === todayStr;
+      const isExpiredToday = isToday && !inEv && nowHm >= (a.end_at || '12:00');
+      const isPendingApproval = a.status !== 'PUBLISHED';
+      const attendanceStatusLabel = isPendingApproval
+        ? 'Chờ CH / HR duyệt phân ca'
+        : inEv && outEv ? 'Đã hoàn thành ca' : inEv ? `Đã vào ca (${String(inEv.checkTimeFormatted || '').slice(0, 5)})` : 'Chưa điểm danh';
+      const attendanceStatusColor = isPendingApproval
+        ? 'gold'
+        : inEv && outEv ? 'green' : inEv ? (inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : 'default';
+      return { ...base, isToday, isExpiredToday, checkInEvent: inEv, checkOutEvent: outEv, attendanceStatusLabel, attendanceStatusColor };
+    });
+
+    const leaves = ctx.db.leaveRequests
+      .filter((l) => l.employee_id === emp.id || l.employee_id === emp.employee_code)
+      .map((l) => ({ ...l, ...resolveShiftTimeDetails(ctx, l.shift_code, l.assignment_id), branchName: ctx.db.branches.get(l.branch_id)?.name ?? branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[l.status] }));
+
+    const emergencyLeaves = ctx.db.emergencyLeaves
+      .filter((el) => el.employee_id === emp.id || el.employee_id === emp.employee_code)
+      .map((el) => ({ ...el, ...resolveShiftTimeDetails(ctx, el.shift_code, el.assignment_id), branchName: ctx.db.branches.get(el.branch_id)?.name ?? branch?.name ?? 'Chi nhánh' }));
+
+    const swaps = ctx.db.shiftSwaps
+      .filter((s) => s.requester_id === emp.id || s.requester_id === emp.employee_code || s.peer_id === emp.id || s.peer_id === emp.employee_code)
+      .map((s) => {
+        const reqEmp = ctx.db.employees.get(s.requester_id) ?? ctx.db.employees.find((e) => e.employee_code === s.requester_id);
+        const peerEmp = ctx.db.employees.get(s.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === s.peer_id);
+        const sBranch = ctx.db.branches.get(s.branch_id) ?? (reqEmp ? ctx.db.branches.get(reqEmp.branch_id) : undefined) ?? branch;
+        return {
+          ...s, ...resolveShiftTimeDetails(ctx, s.from_shift_code, s.from_assignment_id),
+          branchName: sBranch?.name ?? 'Chi nhánh',
+          requesterCode: reqEmp?.employee_code ?? s.requester_id, peerCode: peerEmp?.employee_code ?? s.peer_id,
+          requesterName: reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id,
+          peerName: peerEmp ? `${peerEmp.full_name} (${peerEmp.employee_code})` : s.peer_id,
+          statusLabel: SHIFT_SWAP_STATUS_LABELS[s.status],
+        };
+      });
+
+    const branchPeers = ctx.db.employees
+      .filter((e) => e.id !== emp.id && e.status === 'ACTIVE' && e.branch_id === emp.branch_id)
+      .map((e) => {
+        const busyShiftsByDate: Record<string, string> = {};
+        for (const a of ctx.db.shiftAssignments.filter((x) => (x.employee_id === e.id || x.employee_id === e.employee_code) && x.day_type !== 'OFF' && x.status !== 'ON_LEAVE' && x.status !== 'ABSENT')) {
+          const meta = resolveShiftTimeDetails(ctx, a.shift_code, a.id);
+          busyShiftsByDate[a.work_date] = `${meta.shiftLabel} (${meta.shiftTimeRange})`;
+        }
+        return { id: e.id, employeeCode: e.employee_code, fullName: e.full_name, positionTitle: e.position_title || 'Nhân sự cửa hàng', branchName: ctx.db.branches.get(e.branch_id)?.name ?? '', busyShiftsByDate };
+      });
+
+    const adjustments = ctx.db.attendanceAdjustments
+      .filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code)
+      .map((a) => ({ ...a, ...resolveShiftTimeDetails(ctx, a.shift_code, a.assignment_id), branchName: ctx.db.branches.get(a.branch_id)?.name ?? branch?.name ?? 'Chi nhánh' }));
+
+    return sendSuccess(request, 'Lấy dữ liệu điểm danh và ca làm việc cá nhân thành công', {
+      todayDate: todayStr, nowTimeHm: nowHm,
+      profile: {
+        employeeId: emp.id, employeeCode: emp.employee_code, fullName: emp.full_name, role: user.role, roleLabel: ROLE_LABELS[user.role],
+        stage: emp.stage, branchId: branch?.id ?? emp.branch_id, branchName: branch?.name ?? 'Ụm Bò Milk Chi nhánh 1',
+        branchLat: branch?.lat ?? 10.7769, branchLng: branch?.lng ?? 106.7009, radiusM: branch?.radius_m ?? 100,
+      },
+      shifts, events, leaves, emergencyLeaves, swaps, branchPeers, adjustments,
+    });
+  });
+
+  app.post('/api/my-attendance/shifts', { preHandler: requireAuth() }, async (request, reply) => {
+    const user = request.auth!.user;
+    const body = zCreateMyShiftBody.parse(request.body);
+    const emp = await ensurePersonalProfile(ctx, user);
+    const { todayStr, nowHm } = getVnDateAndHm();
+
+    if (body.work_date < todayStr) {
+      throw Errors.fieldValidation('work_date', 'OUT_OF_RANGE', `Không được phép đăng ký ca làm việc cho ngày trong quá khứ (${dayjs(body.work_date).format('DD/MM/YYYY')}). Hôm nay là ${dayjs(todayStr).format('DD/MM/YYYY')}.`, body.work_date);
+    }
+
+    const tpl = ctx.db.shiftTemplates.find((s) => s.code === body.shift_code);
+    const fallback = SHIFT_DEFAULT_HOURS[body.shift_code] ?? SHIFT_DEFAULT_HOURS.CA_SANG!;
+    const startAt = tpl?.start_time ?? fallback.start;
+    const endAt = tpl?.end_time ?? fallback.end;
+
+    if (body.work_date === todayStr && nowHm >= endAt) {
+      throw Errors.fieldValidation('shift_code', 'OUT_OF_RANGE', `Khung ca này (${startAt} – ${endAt}) trong ngày hôm nay (${dayjs(todayStr).format('DD/MM/YYYY')}) đã trôi qua (hiện tại là ${nowHm}). Không được phép đăng ký ca đã kết thúc, vui lòng chọn ca chưa kết thúc hoặc đăng ký cho ngày tiếp theo.`, body.shift_code);
+    }
+
+    const dup = ctx.db.shiftAssignments.find(
+      (a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.shift_code === body.shift_code,
+    );
+    if (dup) {
+      throw Errors.fieldValidation('shift_code', 'DUPLICATE_VALUE', `Bạn đã đăng ký ca này trong ngày ${dayjs(body.work_date).format('DD/MM/YYYY')} rồi`, body.shift_code);
+    }
+
+    const created = await ctx.db.shiftAssignments.insert(
+      {
+        schedule_week_id: `WK-${body.work_date.slice(0, 7)}`, employee_id: emp.id, branch_id: emp.branch_id, work_date: body.work_date,
+        shift_template_id: tpl?.id ?? '', start_at: startAt, end_at: endAt, status: 'DRAFT', source: 'EMPLOYEE_REGISTER',
+        employee_stage: emp.stage, day_type: 'WORK', shift_code: body.shift_code, scheduled_hours: tpl?.standard_hours ?? fallback.hours,
+        swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: '', note: body.note,
+      },
+      user.id,
+    );
+
+    await ctx.audit.record(auditContext(request), {
+      action: 'schedule.create', entity: 'SHIFT_ASSIGNMENTS', entityId: created.id,
+      after: { employee_id: emp.employee_code, work_date: created.work_date, shift_code: created.shift_code, status: created.status },
+    });
+
+    reply.code(201);
+    return sendSuccess(
+      request,
+      'Đã gửi đăng ký ca làm việc. Ca đăng ký đang ở trạng thái Chờ duyệt — cần Quản lý cửa hàng hoặc HR duyệt phân ca trước khi chấm công.',
+      mapShiftAssignment(created, ctx),
+    );
+  });
+
+  app.delete('/api/my-attendance/shifts/:id', { preHandler: requireAuth() }, async (request) => {
+    const { id } = request.params as { id: string };
+    const user = request.auth!.user;
+    const emp = await ensurePersonalProfile(ctx, user);
+    const shift = ctx.db.shiftAssignments.get(id);
+    if (!shift || (shift.employee_id !== emp.id && shift.employee_id !== emp.employee_code)) {
+      throw Errors.forbidden('Bạn chỉ được phép hủy ca làm việc của chính mình');
+    }
+    if ( ctx.db.attendanceEvents.find((e) => e.assignment_id === shift.id)) {
+      throw Errors.badRequest('Ca làm việc này đã có dữ liệu điểm danh thực tế, không thể hủy ca');
+    }
+    if (shift.status !== 'DRAFT') {
+      throw Errors.badRequest('Ca làm việc này đã được Quản lý cửa hàng / HR duyệt phân ca chính thức. Nếu cần thay đổi, vui lòng gửi Đơn xin nghỉ OFF, Báo nghỉ khẩn cấp hoặc Yêu cầu đổi ca.');
+    }
+    await ctx.db.shiftAssignments.softDelete(shift.id, shift.version, user.id);
+    return sendSuccess(request, 'Đã hủy đăng ký ca làm việc đang chờ duyệt', { id });
+  });
+}

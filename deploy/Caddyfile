@@ -1,0 +1,30 @@
+# HTTPS tự động, KHÔNG cần mua tên miền.
+#
+# Đặt PUBLIC_HOST trong .env theo IP tĩnh của máy chủ, dùng dịch vụ DNS miễn phí sslip.io:
+#   IP 34.123.45.67  ->  PUBLIC_HOST=34-123-45-67.sslip.io
+# sslip.io chỉ phân giải tên -> IP, không lưu bất kỳ dữ liệu nào. Caddy tự xin chứng chỉ
+# Let's Encrypt cho tên này (bắt buộc HTTPS để camera và GPS hoạt động trên điện thoại).
+#
+# Một địa chỉ duy nhất:
+#   https://PUBLIC_HOST/        -> giao diện quản trị
+#   https://PUBLIC_HOST/nv      -> app nhân viên
+#   /api/* và /socket.io/*      -> service api (cùng origin, không cần CORS)
+
+{$PUBLIC_HOST} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy api:4000
+	}
+	handle /socket.io/* {
+		reverse_proxy api:4000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}

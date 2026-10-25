@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+**/dist
+**/.next
+.env
+.env.*
+secrets
+storage
+docs
+.git
