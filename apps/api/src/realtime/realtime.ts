@@ -31,7 +31,16 @@ export class Realtime {
   constructor(app: FastifyInstance, tokens: TokenService, auth: AuthService, corsOrigin: string) {
     this.io = new Server(app.server, {
       path: '/socket.io',
-      cors: { origin: corsOrigin, credentials: true },
+      cors: {
+        origin: (origin, callback) => {
+          if (!origin || origin === corsOrigin || origin.endsWith('.vercel.app') || origin.startsWith('http://localhost:')) {
+            callback(null, true);
+          } else {
+            callback(null, corsOrigin);
+          }
+        },
+        credentials: true,
+      },
       serveClient: false,
     });
 

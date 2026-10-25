@@ -43,7 +43,7 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
   // Hỗ trợ CORS cho mô hình triển khai Frontend trên Vercel + Backend trên Render
   app.addHook('onRequest', async (request, reply) => {
     const origin = request.headers.origin;
-    if (origin && (origin === ctx.env.API_PUBLIC_ORIGIN || isDev)) {
+    if (origin && (origin === ctx.env.API_PUBLIC_ORIGIN || origin.endsWith('.vercel.app') || isDev)) {
       reply.header('Access-Control-Allow-Origin', origin);
       reply.header('Access-Control-Allow-Credentials', 'true');
       reply.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');

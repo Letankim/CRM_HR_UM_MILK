@@ -6,8 +6,12 @@ const zEnv = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   /** google = dữ liệu thật trên Google Sheets; memory = dữ liệu mẫu trong RAM để dev giao diện. */
   DATA_BACKEND: z.enum(['google', 'memory']).default('google'),
+  PORT: z.coerce.number().int().optional(),
   API_PORT: z.coerce.number().int().default(4000),
-  API_PUBLIC_ORIGIN: z.string().url().default('http://localhost:3000'),
+  API_PUBLIC_ORIGIN: z
+    .string()
+    .default('http://localhost:3000')
+    .transform((v) => v.trim().replace(/\/+$/, '')),
   JWT_ACCESS_SECRET: zSecret,
   JWT_REFRESH_SECRET: zSecret,
   INTERNAL_API_TOKEN: zSecret,
@@ -56,6 +60,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   }
   if (parsed.data.NODE_ENV === 'production' && parsed.data.DATA_BACKEND !== 'google') {
     throw new Error('Production bắt buộc DATA_BACKEND=google.');
+  }
+  if (parsed.data.PORT) {
+    parsed.data.API_PORT = parsed.data.PORT;
   }
   return parsed.data;
 }
