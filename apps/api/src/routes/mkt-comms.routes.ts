@@ -7,7 +7,7 @@ import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
-import { buildConfiguredAudienceGroups, jobPositionsAndAudiencesRoutes } from './job-positions-and-audiences.routes.js';
+import { buildConfiguredAudienceGroups, doesUserMatchAudience, getMatchingUsersForAudience, jobPositionsAndAudiencesRoutes } from './job-positions-and-audiences.routes.js';
 
 const COMMS_PERMS = ['comms.manage', 'notification.send', 'employee.manage', 'system.config', 'payroll.manage', 'schedule.propose'] as const;
 const zCampaignBody = z.object({
@@ -44,6 +44,13 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
     if (scope === 'BRANCH') { const b = ctx.db.branches.get(target) ?? ctx.db.branches.find((x) => x.code === target); return `Chi nhánh: ${b ? `${b.code} — ${b.name}` : target}`; }
     if (scope === 'STAGE') return target === 'THU_VIEC' || target === 'PROBATION' ? 'Nhân viên Thử việc' : 'Nhân viên Chính thức';
     if (scope === 'STAFF_GROUP') return `Nhóm vị trí: ${STAFF_GROUP_LABELS[target as keyof typeof STAFF_GROUP_LABELS] ?? target}`;
+    if (scope === 'CUSTOM') {
+      const [bId = 'ALL', stg = 'ALL', grp = 'ALL'] = target.split('|'), parts: string[] = [];
+      if (bId !== 'ALL') { const b = ctx.db.branches.get(bId) ?? ctx.db.branches.find((x) => x.code === bId); parts.push(b ? b.code : bId); }
+      if (stg !== 'ALL') parts.push(stg === 'PROBATION' || stg === 'THU_VIEC' ? 'Thử việc' : 'Chính thức');
+      if (grp !== 'ALL') parts.push(STAFF_GROUP_LABELS[grp as keyof typeof STAFF_GROUP_LABELS] ?? grp);
+      return parts.length ? `Nhóm: ${parts.join(' · ')}` : 'Nhóm tùy chỉnh';
+    }
     return 'Toàn công ty (Tất cả nhân sự)';
   };
 
@@ -52,25 +59,35 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   const dispatchAnnouncement = async (anc: ReturnType<typeof ctx.db.announcements.all>[number], actorId: string) => {
     let target = 'ALL';
     try { target = JSON.parse(anc.audience_json || '{}').target || 'ALL'; } catch { target = 'ALL'; }
-    const notif = await ctx.db.notifications.insert({
-      recipient_user_id: 'ALL', category: 'ANNOUNCEMENT', title: anc.title, body: anc.summary || anc.title,
-      link: anc.cta_link || '/nv/ban-tin', severity: anc.priority === 'URGENT' ? 'CRITICAL' : anc.priority === 'HIGH' ? 'WARNING' : 'INFO',
-      read_at: '', recipient_role: anc.audience_scope === 'STAGE' ? target : 'ALL', branch_id: anc.audience_scope === 'BRANCH' ? target : 'ALL', entity_type: 'ANNOUNCEMENTS', entity_id: anc.id,
-    }, actorId);
-    if (ctx.db.deliveryLogs.filter((l) => l.announcement_id === anc.id).length === 0) {
-      for (const u of ctx.db.users.filter((u) => u.status === 'ACTIVE').slice(0, 6)) {
-        await ctx.db.deliveryLogs.insert({
-          announcement_id: anc.id, recipient_user_id: u.id, channel: 'IN_APP_SOCKET', status: 'SENT', attempts: 1, last_error: '',
-          branch_id: u.branch_scope === 'ALL' ? 'ALL' : u.branch_scope.split(',')[0] || 'ALL', sent_at: nowIso(), delivered_at: nowIso(), read_at: '', ack_at: '',
-        }, actorId);
-      }
+    const isGlobal = !anc.audience_scope || (anc.audience_scope === 'ALL' && target === 'ALL');
+    const matchedUsers = isGlobal ? ctx.db.users.filter((u) => u.status === 'ACTIVE') : getMatchingUsersForAudience(ctx, anc.audience_scope || 'ALL', anc.audience_json || target);
+    const recipientUserId = isGlobal ? 'ALL' : (matchedUsers.map((u) => u.id).join(',') || 'NONE');
+    const recipientRole = isGlobal ? 'ALL' : (anc.audience_scope === 'STAGE' ? (target === 'PROBATION' || target === 'THU_VIEC' ? 'THU_VIEC' : 'CHINH_THUC') : '');
+    const branchId = anc.audience_scope === 'BRANCH' ? target : 'ALL';
+    const existingNotif = ctx.db.notifications.find((n) => n.entity_type === 'ANNOUNCEMENTS' && n.entity_id === anc.id);
+    const notif = existingNotif
+      ? await ctx.db.notifications.update(existingNotif.id, existingNotif.version, { recipient_user_id: recipientUserId, recipient_role: recipientRole, branch_id: branchId, title: anc.title, body: anc.summary || anc.title }, actorId)
+      : await ctx.db.notifications.insert({ recipient_user_id: recipientUserId, category: 'ANNOUNCEMENT', title: anc.title, body: anc.summary || anc.title, link: anc.cta_link || '/nv/ban-tin', severity: anc.priority === 'URGENT' ? 'CRITICAL' : anc.priority === 'HIGH' ? 'WARNING' : 'INFO', read_at: '', recipient_role: recipientRole, branch_id: branchId, entity_type: 'ANNOUNCEMENTS', entity_id: anc.id }, actorId);
+    for (const oldLog of ctx.db.deliveryLogs.filter((l) => l.announcement_id === anc.id && !matchedUsers.some((u) => u.id === l.recipient_user_id))) {
+      await ctx.db.deliveryLogs.softDelete(oldLog.id, oldLog.version, actorId);
     }
-    ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, { kind: 'ANNOUNCEMENT', id: anc.id, notificationId: notif.id, code: anc.code, title: anc.title, summary: anc.summary, priority: anc.priority, sent_at: anc.sent_at });
+    const existingLogUserIds = new Set(ctx.db.deliveryLogs.filter((l) => l.announcement_id === anc.id).map((l) => l.recipient_user_id));
+    for (const u of matchedUsers) {
+      if (existingLogUserIds.has(u.id)) continue;
+      await ctx.db.deliveryLogs.insert({ announcement_id: anc.id, recipient_user_id: u.id, channel: 'IN_APP_SOCKET', status: 'SENT', attempts: 1, last_error: '', branch_id: u.branch_scope === 'ALL' ? 'ALL' : u.branch_scope.split(',')[0] || 'ALL', sent_at: nowIso(), delivered_at: nowIso(), read_at: '', ack_at: '' }, actorId);
+    }
+    const payload = { kind: 'ANNOUNCEMENT', id: anc.id, notificationId: notif.id, code: anc.code, title: anc.title, summary: anc.summary, priority: anc.priority, sent_at: anc.sent_at };
+    if (isGlobal) ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, payload);
+    else matchedUsers.forEach((u) => ctx.realtime()?.toUser(u.id, SocketEvents.NOTIFICATION, payload));
   };
 
-  const buildCommsPayload = (onlySent = false, u?: { id: string; role: string; username: string; display_name?: string }, branchScope: 'ALL' | string[] = 'ALL') => {
+  const buildCommsPayload = (onlySent = false, u?: { id: string; role: string; username: string; display_name?: string; employee_id?: string; branch_scope?: string }, branchScope: 'ALL' | string[] = 'ALL') => {
     const rawAncs = ctx.db.announcements.all(), allCampaigns = ctx.db.campaigns.all(), allMedia = ctx.db.mediaAssets.all();
+    const isGlobalManager = Boolean(u && ['ADMIN', 'MKT', 'HR'].includes(u.role) && !onlySent);
     const allAncs = rawAncs.filter((a) => {
+      if (isGlobalManager) return true;
+      if (u && (a.created_by === u.id || a.approved_by === u.username || a.approved_by === u.display_name)) return true;
+      if (u) return doesUserMatchAudience(ctx, u, a.audience_scope || 'ALL', a.audience_json);
       if (branchScope === 'ALL' || a.audience_scope !== 'BRANCH') return true;
       let target = 'ALL';
       try { target = JSON.parse(a.audience_json || '{}').target || 'ALL'; } catch { target = 'ALL'; }
@@ -110,8 +127,7 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.put('/api/mkt/campaigns/:id', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
-    const { id } = req.params as { id: string };
-    const body = zCampaignBody.parse(req.body), before = ctx.db.campaigns.get(id);
+    const { id } = req.params as { id: string }, body = zCampaignBody.parse(req.body), before = ctx.db.campaigns.get(id);
     if (!before) throw Errors.notFound('Chiến dịch truyền thông', id);
     if (!canModify(req.auth!.user, before)) throw Errors.forbidden('Bạn chỉ được phép chỉnh sửa chiến dịch do chính mình tạo ra (ngoại trừ Quản trị viên)');
     const updated = await ctx.db.campaigns.update(id, body.version ?? before.version, { code: body.code || body.campaign_code || before.code, name: body.name, status: body.status, start_at: body.start_at, end_at: body.end_at, description: body.description || body.note }, req.auth!.user.id);
@@ -119,8 +135,7 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.delete('/api/mkt/campaigns/:id', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
-    const { id } = req.params as { id: string };
-    const before = ctx.db.campaigns.get(id);
+    const { id } = req.params as { id: string }, before = ctx.db.campaigns.get(id);
     if (!before) throw Errors.notFound('Chiến dịch truyền thông', id);
     if (!canModify(req.auth!.user, before)) throw Errors.forbidden('Bạn chỉ được phép xóa chiến dịch do chính mình tạo ra (ngoại trừ Quản trị viên)');
     await ctx.db.campaigns.softDelete(id, before.version, req.auth!.user.id);
@@ -128,16 +143,13 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.post('/api/mkt/announcements', { preHandler: requirePermission(...COMMS_PERMS) }, async (req, reply) => {
-    const body = zAnnouncementBody.parse(req.body), actorId = req.auth!.user.id;
-    const status = body.status ?? (body.publish_now === false ? (body.scheduled_at ? 'SCHEDULED' : 'DRAFT') : 'SENT');
+    const body = zAnnouncementBody.parse(req.body), actorId = req.auth!.user.id, status = body.status ?? (body.publish_now === false ? (body.scheduled_at ? 'SCHEDULED' : 'DRAFT') : 'SENT');
     const content = body.body || body.body_md || body.summary || '<p>Nội dung bản tin</p>';
     const created = await ctx.db.announcements.insert({
-      code: `ANC-${String(ctx.db.announcements.all(true).length + 1).padStart(4, '0')}`,
-      campaign_id: body.campaign_id, title: body.title, summary: body.summary, body: content,
+      code: `ANC-${String(ctx.db.announcements.all(true).length + 1).padStart(4, '0')}`, campaign_id: body.campaign_id, title: body.title, summary: body.summary, body: content,
       cta_label: body.cta_label || 'Xem chi tiết', cta_link: body.cta_link || '/nv/ban-tin', media_ids: body.media_ids || '[]',
       audience_scope: body.audience_scope || 'ALL', audience_json: JSON.stringify({ scope: body.audience_scope || 'ALL', target: body.audience_target || 'ALL' }),
-      priority: body.priority, requires_ack: Boolean(body.requires_ack), scheduled_at: body.scheduled_at,
-      sent_at: status === 'SENT' ? nowIso() : '', status, approved_by: req.auth!.user.display_name || req.auth!.user.username,
+      priority: body.priority, requires_ack: Boolean(body.requires_ack), scheduled_at: body.scheduled_at, sent_at: status === 'SENT' ? nowIso() : '', status, approved_by: req.auth!.user.display_name || req.auth!.user.username,
     }, actorId);
     if (status === 'SENT') await dispatchAnnouncement(created, actorId);
     await ctx.audit.record(auditContext(req), { action: 'mkt.announcement.create', entity: 'ANNOUNCEMENTS', entityId: created.id, after: { code: created.code, status: created.status } });
@@ -146,8 +158,7 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.put('/api/mkt/announcements/:id', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
-    const { id } = req.params as { id: string };
-    const body = zAnnouncementBody.parse(req.body), actorId = req.auth!.user.id, before = ctx.db.announcements.get(id);
+    const { id } = req.params as { id: string }, body = zAnnouncementBody.parse(req.body), actorId = req.auth!.user.id, before = ctx.db.announcements.get(id);
     if (!before) throw Errors.notFound('Bản tin nội bộ', id);
     if (!canModify(req.auth!.user, before)) throw Errors.forbidden('Bạn chỉ được phép chỉnh sửa bản tin do chính mình tạo ra (ngoại trừ Quản trị viên)');
     const nextStatus = body.status ?? (body.publish_now === true ? 'SENT' : body.publish_now === false ? (body.scheduled_at ? 'SCHEDULED' : 'DRAFT') : before.status);
@@ -157,13 +168,12 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
       audience_scope: body.audience_scope || before.audience_scope, audience_json: JSON.stringify({ scope: body.audience_scope || before.audience_scope || 'ALL', target: body.audience_target || 'ALL' }),
       cta_label: body.cta_label || before.cta_label, cta_link: body.cta_link || before.cta_link, media_ids: body.media_ids ?? before.media_ids, requires_ack: body.requires_ack ?? before.requires_ack,
     }, actorId);
-    if (nextStatus === 'SENT' && before.status !== 'SENT') await dispatchAnnouncement(updated, actorId);
+    if (nextStatus === 'SENT') await dispatchAnnouncement(updated, actorId);
     return sendSuccess(req, nextStatus === 'SENT' ? 'Đã cập nhật & phát hành bản tin thành công' : 'Đã lưu cập nhật bản tin thành công', updated);
   });
 
   app.delete('/api/mkt/announcements/:id', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
-    const { id } = req.params as { id: string };
-    const before = ctx.db.announcements.get(id);
+    const { id } = req.params as { id: string }, before = ctx.db.announcements.get(id);
     if (!before) throw Errors.notFound('Bản tin nội bộ', id);
     if (!canModify(req.auth!.user, before)) throw Errors.forbidden('Bạn chỉ được phép xóa bản tin do chính mình tạo ra (ngoại trừ Quản trị viên)');
     await ctx.db.announcements.softDelete(id, before.version, req.auth!.user.id);
@@ -171,8 +181,7 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.post('/api/announcements/:id/ack', { preHandler: requireAuth() }, async (req) => {
-    const { id } = req.params as { id: string };
-    const uid = req.auth!.user.id, now = nowIso(), existing = ctx.db.deliveryLogs.find((l) => l.announcement_id === id && l.recipient_user_id === uid);
+    const { id } = req.params as { id: string }, uid = req.auth!.user.id, now = nowIso(), existing = ctx.db.deliveryLogs.find((l) => l.announcement_id === id && l.recipient_user_id === uid);
     if (existing) await ctx.db.deliveryLogs.update(existing.id, existing.version, { read_at: existing.read_at || now, ack_at: now, status: 'SENT' }, uid);
     else await ctx.db.deliveryLogs.insert({ announcement_id: id, recipient_user_id: uid, channel: 'IN_APP_PORTAL', status: 'SENT', attempts: 1, last_error: '', branch_id: 'ALL', sent_at: now, delivered_at: now, read_at: now, ack_at: now }, uid);
     return sendSuccess(req, 'Đã ghi nhận xác nhận đọc bản tin thành công', { id, ack_at: now });
@@ -186,8 +195,7 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.put('/api/mkt/media/:id', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
-    const { id } = req.params as { id: string };
-    const body = zMediaBody.parse(req.body), before = ctx.db.mediaAssets.get(id);
+    const { id } = req.params as { id: string }, body = zMediaBody.parse(req.body), before = ctx.db.mediaAssets.get(id);
     if (!before) throw Errors.notFound('Tệp Media', id);
     if (!canModify(req.auth!.user, before)) throw Errors.forbidden('Bạn chỉ được phép chỉnh sửa tệp Media do chính mình tải lên (ngoại trừ Quản trị viên)');
     const updated = await ctx.db.mediaAssets.update(id, body.version ?? before.version, { file_name: body.file_name, mime_type: body.mime_type, size_bytes: body.size_bytes, drive_file_id: body.drive_file_id || body.drive_url || before.drive_file_id, category: body.category, is_internal_only: body.is_internal_only }, req.auth!.user.id);
@@ -195,8 +203,7 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.delete('/api/mkt/media/:id', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
-    const { id } = req.params as { id: string };
-    const before = ctx.db.mediaAssets.get(id);
+    const { id } = req.params as { id: string }, before = ctx.db.mediaAssets.get(id);
     if (!before) throw Errors.notFound('Tệp Media', id);
     if (!canModify(req.auth!.user, before)) throw Errors.forbidden('Bạn chỉ được phép xóa tệp Media do chính mình tải lên (ngoại trừ Quản trị viên)');
     await ctx.db.mediaAssets.softDelete(id, before.version, req.auth!.user.id);
@@ -204,12 +211,10 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.post('/api/mkt/delivery-logs/:id/retry', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
-    const { id } = req.params as { id: string };
-    const log = ctx.db.deliveryLogs.get(id);
+    const { id } = req.params as { id: string }, log = ctx.db.deliveryLogs.get(id);
     if (!log) throw Errors.notFound('Nhật ký gửi thông báo', id);
     const updated = await ctx.db.deliveryLogs.update(id, log.version, { status: 'SENT', attempts: (log.attempts || 1) + 1, last_error: '', sent_at: nowIso(), delivered_at: nowIso() }, req.auth!.user.id);
     return sendSuccess(req, `Đã thử gửi lại thành công (Lần thử thứ ${updated.attempts})`, updated);
   });
-
   await jobPositionsAndAudiencesRoutes(app, ctx);
 }

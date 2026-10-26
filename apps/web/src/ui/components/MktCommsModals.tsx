@@ -32,7 +32,8 @@ export function MktAnnouncementModal({
         form={form} layout="vertical"
         initialValues={{ priority: 'HIGH', status: 'SENT', audience_key: 'ALL|ALL', requires_ack: true, media_list: [] }}
         onFinish={(vals) => {
-          const [audience_scope = 'ALL', audience_target = 'ALL'] = String(vals.audience_key || 'ALL|ALL').split('|');
+          const rawKey = String(vals.audience_key || 'ALL|ALL'), sep = rawKey.indexOf('|');
+          const audience_scope = sep >= 0 ? rawKey.slice(0, sep) : 'ALL', audience_target = sep >= 0 ? rawKey.slice(sep + 1) : 'ALL';
           const media_ids = Array.isArray(vals.media_list) ? vals.media_list.join(',') : String(vals.media_ids || '');
           onSubmit({ ...vals, audience_scope, audience_target, media_ids, publish_now: vals.status === 'SENT' });
         }}

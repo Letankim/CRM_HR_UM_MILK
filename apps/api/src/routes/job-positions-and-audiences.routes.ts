@@ -101,22 +101,54 @@ async function saveAudienceConfig(ctx: AppContext, list: AudienceGroupConfigItem
   else await ctx.db.systemSettings.insert({ key: 'MKT_AUDIENCE_GROUPS', value: json, label: 'Nhóm người nhận truyền thông', category: 'COMMS', value_type: 'JSON', note: 'Cấu hình nhóm người nhận MKT' }, actorId);
 }
 
-const zJobPosBody = z.object({
-  code: z.string().trim().min(2, 'Mã vị trí tối thiểu 2 ký tự').max(40),
-  label: z.string().trim().min(2, 'Tên vị trí công việc tối thiểu 2 ký tự').max(80),
-  department: z.string().trim().max(80).optional().default('Cửa hàng (Vận hành)'),
-  description: z.string().trim().max(250).optional().default(''),
-});
+export function doesUserMatchAudience(ctx: AppContext, u: { id: string; role: string; employee_id?: string; branch_scope?: string }, rawScope: string, rawJsonOrTarget: string): boolean {
+  let scope = rawScope || 'ALL', target = 'ALL', branch_id = 'ALL', stage = 'ALL', staff_group = 'ALL';
+  if (rawJsonOrTarget?.trim().startsWith('{')) {
+    try {
+      const obj = JSON.parse(rawJsonOrTarget);
+      if (obj.scope) scope = String(obj.scope);
+      if (obj.target) target = String(obj.target);
+      if (obj.branch_id) branch_id = String(obj.branch_id);
+      if (obj.stage) stage = String(obj.stage);
+      if (obj.staff_group) staff_group = String(obj.staff_group);
+    } catch { target = rawJsonOrTarget; }
+  } else if (rawJsonOrTarget) target = rawJsonOrTarget;
+  if (scope === 'CUSTOM' && target.includes('|')) {
+    const [b = 'ALL', s = 'ALL', g = 'ALL'] = target.split('|');
+    branch_id = b; stage = s; staff_group = g;
+  }
+  if (!scope || scope === 'ALL') return true;
+  const emp = (u.employee_id ? (ctx.db.employees.get(u.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === u.employee_id)) : undefined) ?? ctx.db.employees.find((e) => e.user_id === u.id);
+  const matchBranch = (bt: string) => {
+    if (!bt || bt === 'ALL') return true;
+    const br = ctx.db.branches.get(bt) ?? ctx.db.branches.find((x) => x.code === bt);
+    const tokens = new Set([bt, br?.id, br?.code].filter(Boolean) as string[]);
+    if (emp?.branch_id) return tokens.has(emp.branch_id);
+    if (u.branch_scope && u.branch_scope !== 'ALL') return u.branch_scope.split(',').map((s) => s.trim()).some((x) => tokens.has(x));
+    return false;
+  };
+  const matchStage = (st: string) => !st || st === 'ALL' ? true : (st === 'THU_VIEC' || st === 'PROBATION') ? (emp ? emp.stage === 'PROBATION' : u.role === 'THU_VIEC') : (st === 'CHINH_THUC' || st === 'OFFICIAL') ? (emp ? emp.stage === 'OFFICIAL' : u.role === 'CHINH_THUC') : (emp?.stage === st || u.role === st);
+  const matchGroup = (gt: string) => !gt || gt === 'ALL' ? true : emp ? emp.staff_group === gt : gt === 'STORE_MANAGER' ? u.role === 'STORE' : gt === 'BACKOFFICE' ? ['HR', 'FINANCE', 'MKT'].includes(u.role) : false;
+  if (scope === 'BRANCH') return matchBranch(target);
+  if (scope === 'STAGE') return matchStage(target);
+  if (scope === 'STAFF_GROUP') return matchGroup(target);
+  if (scope === 'CUSTOM') return matchBranch(branch_id) && matchStage(stage) && matchGroup(staff_group);
+  return true;
+}
 
+export function getMatchingUsersForAudience(ctx: AppContext, scope: string, rawJsonOrTarget: string) {
+  return ctx.db.users.filter((u) => u.status === 'ACTIVE' && doesUserMatchAudience(ctx, u, scope, rawJsonOrTarget));
+}
+
+const zJobPosBody = z.object({
+  code: z.string().trim().min(2, 'Mã vị trí tối thiểu 2 ký tự').max(40), label: z.string().trim().min(2, 'Tên vị trí công việc tối thiểu 2 ký tự').max(80),
+  department: z.string().trim().max(80).optional().default('Cửa hàng (Vận hành)'), description: z.string().trim().max(250).optional().default(''),
+});
 const zAudienceBody = z.object({
-  id: z.string().trim().optional(),
-  label: z.string().trim().min(2, 'Tên nhóm người nhận tối thiểu 2 ký tự').max(120),
-  scope: z.enum(['ALL', 'BRANCH', 'STAGE', 'STAFF_GROUP', 'CUSTOM']).default('CUSTOM'),
-  target: z.string().trim().optional().default('ALL'),
-  branch_id: z.string().trim().optional().default('ALL'),
-  stage: z.string().trim().optional().default('ALL'),
-  staff_group: z.string().trim().optional().default('ALL'),
-  note: z.string().trim().max(250).optional().default(''),
+  id: z.string().trim().optional(), label: z.string().trim().min(2, 'Tên nhóm người nhận tối thiểu 2 ký tự').max(120),
+  scope: z.enum(['ALL', 'BRANCH', 'STAGE', 'STAFF_GROUP', 'CUSTOM']).default('CUSTOM'), target: z.string().trim().optional().default('ALL'),
+  branch_id: z.string().trim().optional().default('ALL'), stage: z.string().trim().optional().default('ALL'),
+  staff_group: z.string().trim().optional().default('ALL'), note: z.string().trim().max(250).optional().default(''),
 });
 
 export async function jobPositionsAndAudiencesRoutes(app: FastifyInstance, ctx: AppContext) {
@@ -127,12 +159,9 @@ export async function jobPositionsAndAudiencesRoutes(app: FastifyInstance, ctx: 
     sendSuccess(req, 'Lấy danh mục vị trí công việc thành công', getJobPositions(ctx)));
 
   app.post('/api/admin/job-positions', { preHandler: requirePermission(...POS_PERMS) }, async (req, reply) => {
-    const body = zJobPosBody.parse(req.body);
-    const code = body.code.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
-    const row = ctx.db.systemSettings.find((s) => s.key === 'JOB_POSITIONS_CONFIG');
-    const list: JobPositionConfigItem[] = row?.value ? JSON.parse(row.value) : [];
-    const idx = list.findIndex((x) => x.code === code);
-    const item: JobPositionConfigItem = { code, label: body.label, department: body.department, description: body.description, deleted: false };
+    const body = zJobPosBody.parse(req.body), code = body.code.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+    const row = ctx.db.systemSettings.find((s) => s.key === 'JOB_POSITIONS_CONFIG'), list: JobPositionConfigItem[] = row?.value ? JSON.parse(row.value) : [];
+    const idx = list.findIndex((x) => x.code === code), item: JobPositionConfigItem = { code, label: body.label, department: body.department, description: body.description, deleted: false };
     if (idx >= 0) list[idx] = item; else list.push(item);
     (STAFF_GROUP_LABELS as Record<string, string>)[code] = body.label;
     await saveJobPositionsConfig(ctx, list, req.auth!.user.id);
@@ -141,12 +170,10 @@ export async function jobPositionsAndAudiencesRoutes(app: FastifyInstance, ctx: 
   });
 
   app.put('/api/admin/job-positions/:code', { preHandler: requirePermission(...POS_PERMS) }, async (req) => {
-    const { code } = req.params as { code: string };
-    const body = zJobPosBody.partial().parse(req.body);
+    const { code } = req.params as { code: string }, body = zJobPosBody.partial().parse(req.body);
     const current = getJobPositions(ctx).find((p) => p.code === code);
     if (!current) throw Errors.notFound('Vị trí công việc', code);
-    const row = ctx.db.systemSettings.find((s) => s.key === 'JOB_POSITIONS_CONFIG');
-    const list: JobPositionConfigItem[] = row?.value ? JSON.parse(row.value) : [];
+    const row = ctx.db.systemSettings.find((s) => s.key === 'JOB_POSITIONS_CONFIG'), list: JobPositionConfigItem[] = row?.value ? JSON.parse(row.value) : [];
     const updated: JobPositionConfigItem = { code, label: body.label || current.label, department: body.department ?? current.department, description: body.description ?? current.description, deleted: false };
     const idx = list.findIndex((x) => x.code === code);
     if (idx >= 0) list[idx] = updated; else list.push(updated);
@@ -156,50 +183,39 @@ export async function jobPositionsAndAudiencesRoutes(app: FastifyInstance, ctx: 
   });
 
   app.delete('/api/admin/job-positions/:code', { preHandler: requirePermission(...POS_PERMS) }, async (req) => {
-    const { code } = req.params as { code: string };
-    const row = ctx.db.systemSettings.find((s) => s.key === 'JOB_POSITIONS_CONFIG');
-    const list: JobPositionConfigItem[] = row?.value ? JSON.parse(row.value) : [];
-    const idx = list.findIndex((x) => x.code === code);
-    if (idx >= 0) list[idx] = { ...list[idx]!, deleted: true };
-    else list.push({ code, label: code, department: '', description: '', deleted: true });
+    const { code } = req.params as { code: string }, row = ctx.db.systemSettings.find((s) => s.key === 'JOB_POSITIONS_CONFIG');
+    const list: JobPositionConfigItem[] = row?.value ? JSON.parse(row.value) : [], idx = list.findIndex((x) => x.code === code);
+    if (idx >= 0) list[idx] = { ...list[idx]!, deleted: true }; else list.push({ code, label: code, department: '', description: '', deleted: true });
     await saveJobPositionsConfig(ctx, list, req.auth!.user.id);
     return sendSuccess(req, `Đã xóa vị trí công việc "${code}"`, getJobPositions(ctx));
   });
 
-  app.post('/api/mkt/audience-groups', { preHandler: requirePermission(...AUD_PERMS) }, async (req, reply) => {
-    const body = zAudienceBody.parse(req.body);
+  const upsertAudienceGroup = async (id: string, body: z.infer<typeof zAudienceBody>, actorId: string) => {
     const target = body.scope === 'BRANCH' ? body.branch_id : body.scope === 'STAGE' ? body.stage : body.scope === 'STAFF_GROUP' ? body.staff_group : body.target || `${body.branch_id}|${body.stage}|${body.staff_group}`;
-    const id = body.id || `CUSTOM:${Date.now().toString(36).toUpperCase()}`;
-    const row = ctx.db.systemSettings.find((s) => s.key === 'MKT_AUDIENCE_GROUPS');
-    const list: AudienceGroupConfigItem[] = row?.value ? JSON.parse(row.value) : [];
-    const item: AudienceGroupConfigItem = { id, key: id, scope: body.scope, target, branch_id: body.branch_id, stage: body.stage, staff_group: body.staff_group, label: body.label, note: body.note || 'Nhóm người nhận được cấu hình (ẩn 100% lương/GPS/CCCD)', isCustom: true, deleted: false };
+    const row = ctx.db.systemSettings.find((s) => s.key === 'MKT_AUDIENCE_GROUPS'), list: AudienceGroupConfigItem[] = row?.value ? JSON.parse(row.value) : [];
+    const item: AudienceGroupConfigItem = { id, key: id, scope: body.scope, target, branch_id: body.branch_id, stage: body.stage, staff_group: body.staff_group, label: body.label, note: body.note || 'Nhóm người nhận được cấu hình', isCustom: true, deleted: false };
     const idx = list.findIndex((x) => x.id === id);
     if (idx >= 0) list[idx] = item; else list.push(item);
-    await saveAudienceConfig(ctx, list, req.auth!.user.id);
+    await saveAudienceConfig(ctx, list, actorId);
+  };
+
+  app.post('/api/mkt/audience-groups', { preHandler: requirePermission(...AUD_PERMS) }, async (req, reply) => {
+    const body = zAudienceBody.parse(req.body), id = body.id || `CUSTOM:${Date.now().toString(36).toUpperCase()}`;
+    await upsertAudienceGroup(id, body, req.auth!.user.id);
     reply.code(201);
     return sendSuccess(req, `Đã lưu cấu hình nhóm người nhận "${body.label}"`, buildConfiguredAudienceGroups(ctx));
   });
 
   app.put('/api/mkt/audience-groups/:id', { preHandler: requirePermission(...AUD_PERMS) }, async (req) => {
-    const { id } = req.params as { id: string };
-    const body = zAudienceBody.parse(req.body);
-    const target = body.scope === 'BRANCH' ? body.branch_id : body.scope === 'STAGE' ? body.stage : body.scope === 'STAFF_GROUP' ? body.staff_group : body.target || `${body.branch_id}|${body.stage}|${body.staff_group}`;
-    const row = ctx.db.systemSettings.find((s) => s.key === 'MKT_AUDIENCE_GROUPS');
-    const list: AudienceGroupConfigItem[] = row?.value ? JSON.parse(row.value) : [];
-    const item: AudienceGroupConfigItem = { id, key: id, scope: body.scope, target, branch_id: body.branch_id, stage: body.stage, staff_group: body.staff_group, label: body.label, note: body.note || 'Nhóm người nhận được cấu hình', isCustom: true, deleted: false };
-    const idx = list.findIndex((x) => x.id === id);
-    if (idx >= 0) list[idx] = item; else list.push(item);
-    await saveAudienceConfig(ctx, list, req.auth!.user.id);
+    const { id } = req.params as { id: string }, body = zAudienceBody.parse(req.body);
+    await upsertAudienceGroup(id, body, req.auth!.user.id);
     return sendSuccess(req, `Đã cập nhật nhóm người nhận "${body.label}"`, buildConfiguredAudienceGroups(ctx));
   });
 
   app.delete('/api/mkt/audience-groups/:id', { preHandler: requirePermission(...AUD_PERMS) }, async (req) => {
-    const { id } = req.params as { id: string };
-    const row = ctx.db.systemSettings.find((s) => s.key === 'MKT_AUDIENCE_GROUPS');
-    const list: AudienceGroupConfigItem[] = row?.value ? JSON.parse(row.value) : [];
-    const idx = list.findIndex((x) => x.id === id);
-    if (idx >= 0) list[idx] = { ...list[idx]!, deleted: true };
-    else list.push({ id, key: id, scope: 'CUSTOM', target: 'ALL', label: id, note: '', deleted: true });
+    const { id } = req.params as { id: string }, row = ctx.db.systemSettings.find((s) => s.key === 'MKT_AUDIENCE_GROUPS');
+    const list: AudienceGroupConfigItem[] = row?.value ? JSON.parse(row.value) : [], idx = list.findIndex((x) => x.id === id);
+    if (idx >= 0) list[idx] = { ...list[idx]!, deleted: true }; else list.push({ id, key: id, scope: 'CUSTOM', target: 'ALL', label: id, note: '', deleted: true });
     await saveAudienceConfig(ctx, list, req.auth!.user.id);
     return sendSuccess(req, 'Đã xóa nhóm người nhận khỏi danh sách cấu hình', buildConfiguredAudienceGroups(ctx));
   });

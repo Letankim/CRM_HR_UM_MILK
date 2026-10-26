@@ -114,12 +114,11 @@ export async function createMemoryGateway(): Promise<InMemorySheetsGateway> {
 
   const empHeaders = SPREADSHEETS.HR.tabs.EMPLOYEES;
   const employees = [
-    { employee_code: 'NV0001', user_id: users[5]!.id, full_name: 'Võ Thị Thử Việc', phone: '0901000001', stage: 'PROBATION', branch_id: cn1, position_title: 'Pha chế', probation_start: '2026-10-01', probation_end: '2026-10-12', official_from: '', base_hourly_rate_vnd: 22000 },
-    { employee_code: 'NV0002', user_id: users[6]!.id, full_name: 'Đặng Văn Chính Thức', phone: '0901000002', stage: 'OFFICIAL', branch_id: cn1, position_title: 'Thu ngân', probation_start: '2026-08-01', probation_end: '2026-08-12', official_from: '2026-08-13', base_hourly_rate_vnd: 28000 },
-    { employee_code: 'NV0003', user_id: users[7]!.id, full_name: 'Bùi Thị Mới', phone: '0901000003', stage: 'PROBATION', branch_id: cn1, position_title: 'Phục vụ', probation_start: '', probation_end: '', official_from: '', base_hourly_rate_vnd: 22000 },
+    { employee_code: 'NV0001', user_id: users[5]!.id, full_name: 'Võ Thị Thử Việc', phone: '0901000001', stage: 'PROBATION', branch_id: cn1, staff_group: 'BARISTA', position_title: 'Pha chế', probation_start: '2026-10-01', probation_end: '2026-10-12', official_from: '', base_hourly_rate_vnd: 22000 },
+    { employee_code: 'NV0002', user_id: users[6]!.id, full_name: 'Đặng Văn Chính Thức', phone: '0901000002', stage: 'OFFICIAL', branch_id: cn1, staff_group: 'CASHIER', position_title: 'Thu ngân', probation_start: '2026-08-01', probation_end: '2026-08-12', official_from: '2026-08-13', base_hourly_rate_vnd: 28000 },
+    { employee_code: 'NV0003', user_id: users[7]!.id, full_name: 'Bùi Thị Mới', phone: '0901000003', stage: 'PROBATION', branch_id: cn1, staff_group: 'SERVICE', position_title: 'Phục vụ', probation_start: '', probation_end: '', official_from: '', base_hourly_rate_vnd: 22000 },
   ].map((e) => ({
     ...sys(newId()),
-    staff_group: 'BARISTA',
     status: 'ACTIVE',
     candidate_id: '',
     email: '',

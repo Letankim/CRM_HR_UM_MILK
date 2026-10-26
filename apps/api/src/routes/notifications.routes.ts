@@ -8,6 +8,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { doesUserMatchAudience, getMatchingUsersForAudience } from './job-positions-and-audiences.routes.js';
 
 export const NOTIFICATION_CATEGORY_LABELS: Record<string, string> = {
   ANNOUNCEMENT: 'Bản tin truyền thông nội bộ', WORKFLOW: 'Lịch ca, Nghỉ phép & Đổi ca',
@@ -33,16 +34,11 @@ const zListQuery = z.object({
 });
 
 const zCreateNotificationBody = z.object({
-  title: z.string().trim().min(3, 'Tiêu đề thông báo tối thiểu 3 ký tự'),
-  body: z.string().trim().min(3, 'Nội dung thông báo tối thiểu 3 ký tự'),
+  title: z.string().trim().min(3, 'Tiêu đề thông báo tối thiểu 3 ký tự'), body: z.string().trim().min(3, 'Nội dung thông báo tối thiểu 3 ký tự'),
   category: z.enum(['ANNOUNCEMENT', 'WORKFLOW', 'ATTENDANCE', 'PAYROLL', 'HR', 'SYSTEM']).default('SYSTEM'),
-  severity: z.enum(['INFO', 'WARNING', 'CRITICAL']).default('INFO'),
-  target_scope: z.enum(['ALL', 'ROLE', 'USER']).default('ALL'),
-  recipient_role: z.string().optional().default(''),
-  recipient_roles: z.array(z.string()).optional().default([]),
-  recipient_user_id: z.string().optional().default(''),
-  recipient_user_ids: z.array(z.string()).optional().default([]),
-  link: z.string().optional().default('/dashboard'),
+  severity: z.enum(['INFO', 'WARNING', 'CRITICAL']).default('INFO'), target_scope: z.enum(['ALL', 'ROLE', 'USER']).default('ALL'),
+  recipient_role: z.string().optional().default(''), recipient_roles: z.array(z.string()).optional().default([]),
+  recipient_user_id: z.string().optional().default(''), recipient_user_ids: z.array(z.string()).optional().default([]), link: z.string().optional().default('/dashboard'),
 });
 
 const zBulkIdsBody = z.object({ ids: z.array(z.string()).optional() });
@@ -55,7 +51,11 @@ async function ensureSyncedNotifications(ctx: AppContext, actorId: string) {
 
   for (const anc of ctx.db.announcements.all()) {
     if (anc.status === 'SENT' && !hasKey('ANNOUNCEMENTS', anc.id)) {
-      await ctx.db.notifications.insert({ recipient_user_id: 'ALL', recipient_role: 'ALL', branch_id: 'ALL', category: 'ANNOUNCEMENT', title: anc.title, body: anc.summary || anc.title, link: '/admin/integrations?section=comms', severity: anc.priority === 'URGENT' ? 'CRITICAL' : anc.priority === 'HIGH' ? 'WARNING' : 'INFO', read_at: '', entity_type: 'ANNOUNCEMENTS', entity_id: anc.id }, actorId);
+      let target = 'ALL';
+      try { target = JSON.parse(anc.audience_json || '{}').target || 'ALL'; } catch { target = 'ALL'; }
+      const isGlobal = !anc.audience_scope || (anc.audience_scope === 'ALL' && target === 'ALL');
+      const matched = isGlobal ? [] : getMatchingUsersForAudience(ctx, anc.audience_scope || 'ALL', anc.audience_json || target);
+      await ctx.db.notifications.insert({ recipient_user_id: isGlobal ? 'ALL' : (matched.map((u) => u.id).join(',') || 'NONE'), recipient_role: isGlobal ? 'ALL' : (anc.audience_scope === 'STAGE' ? (target === 'PROBATION' || target === 'THU_VIEC' ? 'THU_VIEC' : 'CHINH_THUC') : ''), branch_id: anc.audience_scope === 'BRANCH' ? target : 'ALL', category: 'ANNOUNCEMENT', title: anc.title, body: anc.summary || anc.title, link: '/admin/integrations?section=comms', severity: anc.priority === 'URGENT' ? 'CRITICAL' : anc.priority === 'HIGH' ? 'WARNING' : 'INFO', read_at: '', entity_type: 'ANNOUNCEMENTS', entity_id: anc.id }, actorId);
     }
   }
   for (const u of users) {
@@ -118,27 +118,34 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
     const splitCsv = (raw: string) => (raw || '').split(',').map((s) => s.trim()).filter(Boolean);
 
     const visible = ctx.db.notifications.all().filter((n) => {
-      if (user.role === 'ADMIN') return true;
-      const userIds = splitCsv(n.recipient_user_id);
-      const roles = splitCsv(n.recipient_role);
+      if (user.role === 'ADMIN' || n.created_by === user.id) return true;
+      if (n.entity_type === 'ANNOUNCEMENTS' && n.entity_id) {
+        const anc = ancsMap.get(n.entity_id);
+        if (anc) return doesUserMatchAudience(ctx, user, anc.audience_scope || 'ALL', anc.audience_json);
+      }
+      const userIds = splitCsv(n.recipient_user_id), roles = splitCsv(n.recipient_role);
+      if (userIds.includes('NONE')) return false;
       const isPersonal = userIds.includes(user.id);
+      if (userIds.length > 0 && !userIds.includes('ALL')) return isPersonal;
       const inBranch = branchScope === 'ALL' || !n.branch_id || n.branch_id === 'ALL' || branchScope.includes(n.branch_id);
-      if (!inBranch && !isPersonal) return false;
-      const isBroadcast = (userIds.length === 0 || userIds.includes('ALL')) && (roles.length === 0 || roles.includes('ALL'));
-      const isRoleMatch = roles.includes(user.role) || (user.role === 'HR' && roles.includes('STORE'));
-      return isBroadcast || isPersonal || isRoleMatch;
+      if (!inBranch) return false;
+      if (roles.length > 0 && !roles.includes('ALL')) return roles.includes(user.role);
+      return userIds.includes('ALL') || roles.includes('ALL');
     });
 
     const enriched = visible.map((n, idx) => {
       const anc = n.entity_type === 'ANNOUNCEMENTS' ? ancsMap.get(n.entity_id) : undefined;
-      const userIds = splitCsv(n.recipient_user_id).filter((x) => x !== 'ALL');
+      const userIds = splitCsv(n.recipient_user_id).filter((x) => x !== 'ALL' && x !== 'NONE');
       const roles = splitCsv(n.recipient_role).filter((x) => x !== 'ALL');
-      const isPersonal = userIds.length > 0;
-      const isBroadcast = !isPersonal && roles.length === 0;
+      const isAncGroup = Boolean(anc && anc.audience_scope && anc.audience_scope !== 'ALL');
+      const isPersonal = !isAncGroup && userIds.length > 0;
+      const isBroadcast = !isAncGroup && !isPersonal && roles.length === 0;
       const scopeType = isPersonal ? 'PERSONAL' : isBroadcast ? 'BROADCAST' : 'ROLE';
       const userNames = userIds.map((uid) => { const u = usersMap.get(uid); return u?.display_name || u?.username || uid; });
       const roleLabels = roles.map((r) => ROLE_LABELS[r as Role] ?? r);
-      const targetLabel = isPersonal ? `Cá nhân (${userNames.length}): ${userNames.join(', ')}` : isBroadcast ? 'Toàn hệ thống (Tất cả vai trò)' : `Nhóm nhân sự: ${roleLabels.join(', ')}`;
+      const targetLabel = isAncGroup
+        ? `Nhóm nhận (${userIds.length}): ${userNames.join(', ') || 'Theo nhóm cấu hình'}`
+        : isPersonal ? `Cá nhân (${userNames.length}): ${userNames.join(', ')}` : isBroadcast ? 'Toàn hệ thống (Tất cả vai trò)' : `Nhóm nhân sự: ${roleLabels.join(', ')}`;
       const userReadAt = getUserReadAt(n.read_at, user.id);
       const readStatus = userReadAt ? 'READ' : 'UNREAD';
       return {
@@ -160,10 +167,11 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
   });
 
   app.post('/api/notifications', { preHandler: requirePermission('notification.send', 'comms.manage') }, async (request, reply) => {
-    const body = zCreateNotificationBody.parse(request.body);
-    const actorId = request.auth!.user.id;
+    const body = zCreateNotificationBody.parse(request.body), actorId = request.auth!.user.id;
     const pickedUsers = body.recipient_user_ids.length ? body.recipient_user_ids : (body.recipient_user_id && body.recipient_user_id !== 'ALL' ? [body.recipient_user_id] : []);
     const pickedRoles = (body.recipient_roles.length ? body.recipient_roles : (body.recipient_role && body.recipient_role !== 'ALL' ? [body.recipient_role] : [])).filter((r) => ROLES.includes(r as Role));
+    if (body.target_scope === 'USER' && !pickedUsers.length) throw Errors.badRequest('Vui lòng chọn ít nhất 1 cá nhân nhận thông báo');
+    if (body.target_scope === 'ROLE' && !pickedRoles.length) throw Errors.badRequest('Vui lòng chọn ít nhất 1 nhóm nhân sự nhận thông báo');
     const recipientUserId = body.target_scope === 'USER' ? pickedUsers.join(',') : body.target_scope === 'ALL' ? 'ALL' : '';
     const recipientRole = body.target_scope === 'ROLE' ? pickedRoles.join(',') : body.target_scope === 'ALL' ? 'ALL' : '';
     const created = await ctx.db.notifications.insert({
@@ -172,17 +180,15 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
       severity: body.severity, read_at: '', entity_type: 'MANUAL', entity_id: '',
     }, actorId);
     const payload = { kind: 'ANNOUNCEMENT', id: created.id, code: 'NTF', title: created.title, summary: created.body, priority: created.severity === 'CRITICAL' ? 'URGENT' : 'NORMAL' };
-    if (body.target_scope === 'USER' && pickedUsers.length) pickedUsers.forEach((uid) => ctx.realtime()?.toUser(uid, SocketEvents.NOTIFICATION, payload));
-    else if (body.target_scope === 'ROLE' && pickedRoles.length) pickedRoles.forEach((r) => ctx.realtime()?.toRole(r, SocketEvents.NOTIFICATION, payload));
+    if (body.target_scope === 'USER') pickedUsers.forEach((uid) => ctx.realtime()?.toUser(uid, SocketEvents.NOTIFICATION, payload));
+    else if (body.target_scope === 'ROLE') pickedRoles.forEach((r) => ctx.realtime()?.toRole(r, SocketEvents.NOTIFICATION, payload));
     else ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, payload);
     reply.code(201);
     return sendSuccess(request, 'Đã gửi thông báo thành công', created);
   });
 
   const handleMarkRead = async (request: FastifyRequest) => {
-    const { id } = request.params as { id: string };
-    const userId = request.auth!.user.id;
-    const notif = ctx.db.notifications.get(id);
+    const { id } = request.params as { id: string }, userId = request.auth!.user.id, notif = ctx.db.notifications.get(id);
     if (!notif) throw Errors.notFound('Thông báo', id);
     const map = parseReadMap(notif.read_at);
     if (!map[userId]) map[userId] = nowIso();
@@ -193,23 +199,18 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
   app.post('/api/notifications/:id/read', { preHandler: requireAuth() }, handleMarkRead);
 
   app.post('/api/notifications/mark-all-read', { preHandler: requireAuth() }, async (request) => {
-    const body = zBulkIdsBody.parse(request.body ?? {});
-    const user = request.auth!.user;
+    const body = zBulkIdsBody.parse(request.body ?? {}), user = request.auth!.user, now = nowIso();
     const targets = ctx.db.notifications.all().filter((n) => !getUserReadAt(n.read_at, user.id) && (!body.ids?.length || body.ids.includes(n.id)));
-    let count = 0;
-    const now = nowIso();
     for (const n of targets) {
       const map = parseReadMap(n.read_at);
       map[user.id] = now;
       await ctx.db.notifications.update(n.id, n.version, { read_at: JSON.stringify(map) }, user.id);
-      count++;
     }
-    return sendSuccess(request, `Đã đánh dấu đã đọc ${count} thông báo`, { updatedCount: count });
+    return sendSuccess(request, `Đã đánh dấu đã đọc ${targets.length} thông báo`, { updatedCount: targets.length });
   });
 
   app.delete('/api/notifications/:id', { preHandler: requireAuth() }, async (request) => {
-    const { id } = request.params as { id: string };
-    const notif = ctx.db.notifications.get(id);
+    const { id } = request.params as { id: string }, notif = ctx.db.notifications.get(id);
     if (!notif) throw Errors.notFound('Thông báo', id);
     await ctx.db.notifications.softDelete(id, notif.version, request.auth!.user.id);
     return sendSuccess(request, 'Đã xóa thông báo thành công', { id });
