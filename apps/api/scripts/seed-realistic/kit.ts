@@ -107,11 +107,15 @@ export const TABLES = {
   operationJournal: { key: 'SYSTEM', tab: 'OPERATION_JOURNAL', schema: zOperationJournalRow },
 } as const;
 export type TableKey = keyof typeof TABLES;
-/** Thứ tự ghi: bảng cha trước, bảng con sau — nếu gián đoạn giữa chừng vẫn không sinh khóa ngoại mồ côi ngược. */
+/**
+ * Thứ tự ghi: hồ sơ / tài khoản trước; Điểm danh, Phiếu bổ sung, Đơn nghỉ / đổi ca / nghỉ khẩn ghi TRƯỚC bảng Ca làm.
+ * Lý do: máy chủ đang chạy sẽ làm mới cache và quét "ca đã qua giờ chưa điểm danh -> Vắng mặt" ngay khi thấy ca mới;
+ * nếu ca xuất hiện trước dữ liệu điểm danh, hàng loạt ca sẽ bị chuyển nhầm sang Vắng mặt.
+ */
 export const WRITE_ORDER: TableKey[] = [
   'shiftTemplates', 'staffingRules', 'users', 'employees', 'payRates', 'employeeStageHistory', 'testAssignments',
-  'candidates', 'interviews', 'shiftAssignments', 'leaveRequests', 'shiftSwaps', 'emergencyLeaves',
-  'attendanceEvents', 'attendanceAdjustments',
+  'candidates', 'interviews', 'attendanceEvents', 'attendanceAdjustments', 'leaveRequests', 'shiftSwaps', 'emergencyLeaves',
+  'shiftAssignments',
 ];
 
 export type SeedOutput = Record<TableKey, Rec[]>;

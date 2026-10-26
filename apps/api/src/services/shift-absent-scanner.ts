@@ -1,5 +1,9 @@
 import type { Database } from '../data/database.js';
 import { dayjs } from '../lib/time.js';
+import { singleFlight, tolerantWrite } from './background-write.js';
+
+type SweepResult = { markedAbsent: number; restoredCompleted: number };
+const sweepsInFlight = new WeakMap<Database, Promise<SweepResult>>();
 
 export function getVnNowDateAndHm(): { todayStr: string; nowHm: string } {
   const vnNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
@@ -11,12 +15,22 @@ export function getVnNowDateAndHm(): { todayStr: string; nowHm: string } {
  * (ví dụ ca 07:00 - 12:00 mà hiện tại là 12:30 vẫn chưa có CHECK_IN và chưa có Phiếu bổ sung công được duyệt)
  * để khóa điểm danh và chuyển trạng thái sang Vắng mặt (ABSENT).
  * Đồng thời tự động khôi phục sang Đã hoàn thành (COMPLETED) nếu đã có Phiếu bổ sung công được HR phê duyệt.
+ * Chỉ một lượt quét chạy tại một thời điểm; dòng bị xung đột phiên bản được bỏ qua và xử lý ở lượt sau.
  */
-export async function sweepExpiredShiftsAndMarkAbsent(
+export function sweepExpiredShiftsAndMarkAbsent(
   db: Database,
   actorId = 'auto-absent-scanner',
   options?: { nowDate?: string; nowHm?: string; includeSeedInTests?: boolean },
-): Promise<{ markedAbsent: number; restoredCompleted: number }> {
+): Promise<SweepResult> {
+  if (options) return runSweep(db, actorId, options);
+  return singleFlight(sweepsInFlight, db, () => runSweep(db, actorId));
+}
+
+async function runSweep(
+  db: Database,
+  actorId: string,
+  options?: { nowDate?: string; nowHm?: string; includeSeedInTests?: boolean },
+): Promise<SweepResult> {
   const vn = getVnNowDateAndHm();
   const todayStr = options?.nowDate ?? vn.todayStr;
   const nowHm = options?.nowHm ?? vn.nowHm;
@@ -47,17 +61,17 @@ export async function sweepExpiredShiftsAndMarkAbsent(
     );
 
     if (a.status === 'ABSENT' && (approvedAdj || (hasIn && hasOut))) {
-      await db.shiftAssignments.update(
+      const restored = await tolerantWrite(() => db.shiftAssignments.update(
         a.id,
-        a.version,
+        db.shiftAssignments.get(a.id)?.version ?? a.version,
         {
           status: 'COMPLETED',
           scheduled_hours: approvedAdj?.requested_hours ?? a.scheduled_hours,
           note: approvedAdj ? `Đã bù công theo phiếu ${approvedAdj.adjustment_code}` : 'Đã hoàn thành điểm danh Vào/Ra ca',
         },
         actorId,
-      );
-      restoredCompleted++;
+      ));
+      if (restored) restoredCompleted++;
       continue;
     }
 
@@ -68,16 +82,16 @@ export async function sweepExpiredShiftsAndMarkAbsent(
     const isExpired = a.work_date < todayStr || (a.work_date === todayStr && nowHm > endAt);
     if (!isExpired) continue;
 
-    await db.shiftAssignments.update(
+    const marked = await tolerantWrite(() => db.shiftAssignments.update(
       a.id,
-      a.version,
+      db.shiftAssignments.get(a.id)?.version ?? a.version,
       {
         status: 'ABSENT',
         note: a.note && a.note.includes('Vắng mặt') ? a.note : 'Quá giờ kết thúc ca chưa điểm danh — Tự động chuyển Vắng mặt',
       },
       actorId,
-    );
-    markedAbsent++;
+    ));
+    if (marked) markedAbsent++;
   }
 
   return { markedAbsent, restoredCompleted };

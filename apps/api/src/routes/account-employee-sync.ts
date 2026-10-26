@@ -1,5 +1,6 @@
 import { DEFAULT_SHIFT_LABELS, type Employee, type EmployeeStage, type Role, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
+import { singleFlight, tolerantWrite } from '../services/background-write.js';
 import { today } from '../services/salary-profile.service.js';
 import { sweepExpiredShiftsAndMarkAbsent } from '../services/shift-absent-scanner.js';
 import { findLinkedEmployeeForUser, findLinkedUserForEmployee } from './employee-mapper.js';
@@ -71,30 +72,30 @@ export async function cascadeEmployeeBranchChange(
 ): Promise<void> {
   if (!newBranchId) return;
   const matchEmp = (eid: string) => eid === emp.id || eid.trim().toUpperCase() === emp.employee_code.trim().toUpperCase();
+  const move = <T extends { id: string; version: number }>(store: { update: (id: string, v: number, p: { branch_id: string }, a: string) => Promise<T> }, row: T) =>
+    tolerantWrite(() => store.update(row.id, row.version, { branch_id: newBranchId }, actorId));
 
-  for (const a of ctx.db.shiftAssignments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) {
-    await ctx.db.shiftAssignments.update(a.id, a.version, { branch_id: newBranchId }, actorId);
-  }
-  for (const l of ctx.db.leaveRequests.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) {
-    await ctx.db.leaveRequests.update(l.id, l.version, { branch_id: newBranchId }, actorId);
-  }
-  for (const s of ctx.db.shiftSwaps.filter((x) => matchEmp(x.requester_id) && x.branch_id !== newBranchId)) {
-    await ctx.db.shiftSwaps.update(s.id, s.version, { branch_id: newBranchId }, actorId);
-  }
-  for (const e of ctx.db.emergencyLeaves.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) {
-    await ctx.db.emergencyLeaves.update(e.id, e.version, { branch_id: newBranchId }, actorId);
-  }
-  for (const ev of ctx.db.attendanceEvents.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) {
-    await ctx.db.attendanceEvents.update(ev.id, ev.version, { branch_id: newBranchId }, actorId);
-  }
-  for (const adj of ctx.db.attendanceAdjustments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) {
-    await ctx.db.attendanceAdjustments.update(adj.id, adj.version, { branch_id: newBranchId }, actorId);
-  }
+  for (const a of ctx.db.shiftAssignments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) await move(ctx.db.shiftAssignments, a);
+  for (const l of ctx.db.leaveRequests.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) await move(ctx.db.leaveRequests, l);
+  for (const s of ctx.db.shiftSwaps.filter((x) => matchEmp(x.requester_id) && x.branch_id !== newBranchId)) await move(ctx.db.shiftSwaps, s);
+  for (const e of ctx.db.emergencyLeaves.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) await move(ctx.db.emergencyLeaves, e);
+  for (const ev of ctx.db.attendanceEvents.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) await move(ctx.db.attendanceEvents, ev);
+  for (const adj of ctx.db.attendanceAdjustments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) await move(ctx.db.attendanceAdjustments, adj);
 }
 
-/** Tự động đồng bộ & làm sạch lệch chi nhánh giữa Tài khoản <-> Hồ sơ nhân sự <-> Lịch phân ca & Điểm danh */
-export async function healBranchConsistency(ctx: AppContext, actorId = 'system-sync'): Promise<void> {
-  for (const emp of ctx.db.employees.all()) {
+const healsInFlight = new WeakMap<object, Promise<void>>();
+
+/**
+ * Tự động đồng bộ & làm sạch lệch chi nhánh giữa Tài khoản <-> Hồ sơ nhân sự <-> Lịch phân ca & Điểm danh.
+ * Chỉ một lượt chạy tại một thời điểm (các request GET song song dùng chung), dòng xung đột được bỏ qua ở lượt này.
+ */
+export function healBranchConsistency(ctx: AppContext, actorId = 'system-sync'): Promise<void> {
+  return singleFlight(healsInFlight, ctx.db, () => runHeal(ctx, actorId));
+}
+
+async function runHeal(ctx: AppContext, actorId: string): Promise<void> {
+  for (const snap of ctx.db.employees.all()) {
+    const emp = ctx.db.employees.get(snap.id) ?? snap;
     let effectiveBranchId = emp.branch_id;
     const linkedUser = findLinkedUserForEmployee(emp, ctx);
     if (linkedUser) {
@@ -104,12 +105,12 @@ export async function healBranchConsistency(ctx: AppContext, actorId = 'system-s
       if (userBranchId && userBranchId !== emp.branch_id) {
         if ((linkedUser.updated_at ?? '') >= (emp.updated_at ?? '')) {
           effectiveBranchId = userBranchId;
-          await ctx.db.employees.update(emp.id, emp.version, { branch_id: userBranchId }, actorId);
+          await tolerantWrite(() => ctx.db.employees.update(emp.id, emp.version, { branch_id: userBranchId }, actorId));
         } else if (isBranchRole || linkedUser.branch_scope !== 'ALL') {
-          await ctx.db.users.update(linkedUser.id, linkedUser.version, { branch_scope: emp.branch_id }, actorId);
+          await tolerantWrite(() => ctx.db.users.update(linkedUser.id, linkedUser.version, { branch_scope: emp.branch_id }, actorId));
         }
       } else if (!userBranchId && isBranchRole && emp.branch_id) {
-        await ctx.db.users.update(linkedUser.id, linkedUser.version, { branch_scope: emp.branch_id }, actorId);
+        await tolerantWrite(() => ctx.db.users.update(linkedUser.id, linkedUser.version, { branch_scope: emp.branch_id }, actorId));
       }
     }
     if (effectiveBranchId) await cascadeEmployeeBranchChange(ctx, emp, effectiveBranchId, actorId);
@@ -118,7 +119,7 @@ export async function healBranchConsistency(ctx: AppContext, actorId = 'system-s
     const emp = ctx.db.employees.get(l.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === l.employee_id);
     const matchEmp = (eid: string) => eid === l.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
     for (const s of ctx.db.shiftAssignments.filter((a) => matchEmp(a.employee_id) && a.work_date === l.leave_date)) {
-      if (!ctx.db.attendanceEvents.find((ev) => ev.assignment_id === s.id)) await ctx.db.shiftAssignments.softDelete(s.id, s.version, actorId);
+      if (!ctx.db.attendanceEvents.find((ev) => ev.assignment_id === s.id)) await tolerantWrite(() => ctx.db.shiftAssignments.softDelete(s.id, s.version, actorId));
     }
   }
   await sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId);

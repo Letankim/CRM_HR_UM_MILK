@@ -5,6 +5,7 @@
  *   pnpm --filter @umbm/api seed:realistic -- --apply           # Ghi dữ liệu lên Google Sheets
  *   pnpm --filter @umbm/api seed:realistic -- --purge           # Xem trước số dòng mẫu sẽ gỡ
  *   pnpm --filter @umbm/api seed:realistic -- --purge --apply   # Gỡ sạch (xóa mềm) toàn bộ dữ liệu mẫu
+ *   pnpm --filter @umbm/api seed:realistic -- --repair --apply  # Sửa ca mẫu bị chuyển nhầm Vắng mặt trong lúc ghi
  *
  * Tham số: --per-branch 8  --days-back 21  --days-ahead 14  --seed 2026
  * Toàn bộ bản ghi mang created_by = seed-realistic. Mật khẩu nhân viên = PIN demo, quản lý cửa hàng = mật khẩu demo.
@@ -26,6 +27,7 @@ import { appendTable, headersOf, SEED_ACTOR, TABLES, validateAll, WRITE_ORDER } 
 import { buildPeople } from './people.js';
 import { purgeSeed } from './purge.js';
 import { buildRecruitment } from './recruitment.js';
+import { repairSeedShifts } from './repair.js';
 import { buildRoster } from './roster.js';
 import { createContext } from './setup.js';
 
@@ -71,6 +73,11 @@ async function main() {
   console.log('Đang tải dữ liệu hiện có từ Google Sheets...');
   const db = new Database(gw, new WriteQueue(), ids);
   await db.loadAll();
+  if (flag('repair')) {
+    const r = await repairSeedShifts(db, apply);
+    console.log(`Ca mẫu bị chuyển nhầm Vắng mặt: ${r.toCompleted} ca -> Đã hoàn thành, ${r.toPublished} ca -> Đã phân ca.${apply ? ' Đã sửa xong.' : ' Thêm --apply để sửa.'}`);
+    return;
+  }
   const already = db.employees.all().filter((e) => e.created_by === SEED_ACTOR).length;
   if (already > 0 && !flag('force')) {
     throw new Error(`Đã có ${already} nhân sự mẫu từ lần chạy trước. Chạy "--purge --apply" để gỡ trước, hoặc thêm --force để sinh bổ sung.`);
