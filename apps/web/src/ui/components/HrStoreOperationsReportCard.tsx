@@ -45,12 +45,12 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
   });
   const shiftsQ = useQuery({
     queryKey: ['report-shifts'],
-    queryFn: () => api.list<Record<string, unknown>>('/admin/schedules?per_page=100'),
+    queryFn: () => api.list<Record<string, unknown>>('/admin/schedules?per_page=300'),
     enabled: canViewReport,
   });
   const eventsQ = useQuery({
     queryKey: ['report-events'],
-    queryFn: () => api.list<Record<string, unknown>>('/admin/attendance-events?per_page=100'),
+    queryFn: () => api.list<Record<string, unknown>>('/admin/attendance/events?per_page=100'),
     enabled: canViewReport,
   });
 

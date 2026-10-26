@@ -38,27 +38,39 @@ async function runSweep(
 
   const allEvents = db.attendanceEvents.all();
   const allAdjustments = db.attendanceAdjustments.all();
+  const empByCode = new Map(db.employees.all().map((e) => [e.employee_code, e]));
+  const resolveCanonicalEmpId = (rawId: string) =>
+    db.employees.get(rawId)?.id ?? empByCode.get(rawId)?.id ?? rawId;
+
+  const hasInKeys = new Set<string>();
+  const hasOutKeys = new Set<string>();
+  for (const ev of allEvents) {
+    const targetSet = ev.type === 'CHECK_OUT' ? hasOutKeys : hasInKeys;
+    if (ev.assignment_id) targetSet.add(`asg:${ev.assignment_id}`);
+    const eid = resolveCanonicalEmpId(ev.employee_id);
+    targetSet.add(`emp:${eid}:${ev.work_date}:${ev.shift_code}`);
+  }
+
+  const approvedAdjMap = new Map<string, (typeof allAdjustments)[number]>();
+  for (const adj of allAdjustments) {
+    if (adj.status !== 'APPROVED') continue;
+    if (adj.assignment_id) approvedAdjMap.set(`asg:${adj.assignment_id}`, adj);
+    const eid = resolveCanonicalEmpId(adj.employee_id);
+    approvedAdjMap.set(`emp:${eid}:${adj.work_date}:${adj.shift_code}`, adj);
+  }
+
   let markedAbsent = 0;
   let restoredCompleted = 0;
 
   for (const a of db.shiftAssignments.all()) {
     if (a.day_type === 'OFF' || a.status === 'ON_LEAVE') continue;
 
-    const emp = db.employees.get(a.employee_id) ?? db.employees.find((e) => e.employee_code === a.employee_id);
-    const matchEmp = (eid: string) =>
-      eid === a.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
-
-    const shiftEvs = allEvents.filter(
-      (ev) => ev.assignment_id === a.id || (matchEmp(ev.employee_id) && ev.work_date === a.work_date && ev.shift_code === a.shift_code),
-    );
-    const hasIn = shiftEvs.some((ev) => ev.type === 'CHECK_IN');
-    const hasOut = shiftEvs.some((ev) => ev.type === 'CHECK_OUT');
-
-    const approvedAdj = allAdjustments.find(
-      (adj) =>
-        adj.status === 'APPROVED' &&
-        (adj.assignment_id === a.id || (matchEmp(adj.employee_id) && adj.work_date === a.work_date && adj.shift_code === a.shift_code)),
-    );
+    const eid = resolveCanonicalEmpId(a.employee_id);
+    const asgKey = `asg:${a.id}`;
+    const empKey = `emp:${eid}:${a.work_date}:${a.shift_code}`;
+    const hasIn = hasInKeys.has(asgKey) || hasInKeys.has(empKey);
+    const hasOut = hasOutKeys.has(asgKey) || hasOutKeys.has(empKey);
+    const approvedAdj = approvedAdjMap.get(asgKey) ?? approvedAdjMap.get(empKey);
 
     if (a.status === 'ABSENT' && (approvedAdj || (hasIn && hasOut))) {
       const restored = await tolerantWrite(() => db.shiftAssignments.update(

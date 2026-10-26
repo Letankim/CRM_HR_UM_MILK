@@ -33,17 +33,17 @@ export function PayrollAttendanceReconcileCard({ period, snapshots, loading, onO
 
   const eventsQ = useQuery({
     queryKey: ['payroll-reconcile-events', period?.id],
-    queryFn: () => api.list<Record<string, unknown>>('/admin/attendance-events?per_page=100'),
+    queryFn: () => api.list<Record<string, unknown>>('/admin/attendance/events?per_page=100'),
     enabled: Boolean(period?.id),
   });
   const adjQ = useQuery({
     queryKey: ['payroll-reconcile-adjustments', period?.id],
-    queryFn: () => api.list<Record<string, unknown>>('/admin/attendance-adjustments?per_page=100'),
+    queryFn: () => api.list<Record<string, unknown>>('/admin/attendance/adjustments?per_page=100'),
     enabled: Boolean(period?.id),
   });
   const shiftsQ = useQuery({
     queryKey: ['payroll-reconcile-shifts', period?.id],
-    queryFn: () => api.list<Record<string, unknown>>('/admin/schedules?per_page=100'),
+    queryFn: () => api.list<Record<string, unknown>>('/admin/schedules?per_page=300'),
     enabled: Boolean(period?.id),
   });
 
@@ -137,8 +137,8 @@ export function PayrollAttendanceReconcileCard({ period, snapshots, loading, onO
       <Row gutter={[12, 12]}>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Nhân sự trong bảng công" value={rows.length} suffix="NV" /></Card></Col>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Tổng giờ công tính lương" value={totalApprovedHours} suffix="giờ" prefix={<ClockCircleOutlined />} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="Ca thiếu In/Out hoặc Vắng" value={totalMissingPunches} valueStyle={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }} prefix={<WarningOutlined />} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="Phiếu điều chỉnh chờ duyệt" value={totalPendingAdjs} valueStyle={{ color: totalPendingAdjs > 0 ? '#D97706' : '#16A34A' }} prefix={<SafetyCertificateOutlined />} /></Card></Col>
+        <Col xs={12} md={6}><Card size="small"><Statistic title="Ca thiếu In/Out hoặc Vắng" value={totalMissingPunches} formatter={(v) => <span style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }}>{v}</span>} prefix={<WarningOutlined style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }} />} /></Card></Col>
+        <Col xs={12} md={6}><Card size="small"><Statistic title="Phiếu điều chỉnh chờ duyệt" value={totalPendingAdjs} formatter={(v) => <span style={{ color: totalPendingAdjs > 0 ? '#D97706' : '#16A34A' }}>{v}</span>} prefix={<SafetyCertificateOutlined style={{ color: totalPendingAdjs > 0 ? '#D97706' : '#16A34A' }} />} /></Card></Col>
       </Row>
 
       {(totalPendingAdjs > 0 || totalMissingPunches > 0) && (

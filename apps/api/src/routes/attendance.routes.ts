@@ -9,38 +9,30 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { applyApprovedAdjustmentToShift, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
-import { calculateHaversineMeters, describePunctuality, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto } from './attendance-helpers.js';
+import { buildPaginatedAttendanceSessions, calculateHaversineMeters, describePunctuality, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto } from './attendance-helpers.js';
 
 export { calculateHaversineMeters } from './attendance-helpers.js';
 
 const zCheckInOutBody = z.object({
   assignment_id: z.string({ required_error: 'Vui lòng chọn ca làm việc đã phát hành' }).trim().min(1),
   type: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(), kind: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(),
-  lat: z.coerce.number().min(-90).max(90), lng: z.coerce.number().min(-180).max(180),
-  accuracy_m: z.coerce.number().min(0).max(5000).default(15),
+  lat: z.coerce.number().min(-90).max(90), lng: z.coerce.number().min(-180).max(180), accuracy_m: z.coerce.number().min(0).max(5000).default(15),
   selfie_source: z.enum(['LIVE_CAMERA'], { message: 'Chỉ cho phép chụp ảnh trực tiếp từ Camera (LIVE_CAMERA), cấm tải ảnh từ thư viện' }).default('LIVE_CAMERA'),
   photo_base64: z.string().min(10, 'Vui lòng chụp ảnh khuôn mặt trực tiếp từ Camera').default('data:image/jpeg;base64,umbm_live_camera_selfie'),
   device_info: z.string().trim().max(200).optional().default('Mobile Browser HTTPS'),
   enforce_shift_state: z.boolean().optional().default(false), idempotency_key: z.string().trim().optional(),
 });
-
 const zUpdateAttendanceEventBody = z.object({
-  version: z.coerce.number().int().min(1), type: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(),
-  work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), shift_code: z.string().trim().optional(),
-  check_time_hm: z.string().regex(/^\d{2}:\d{2}$/).optional(), distance_m: z.coerce.number().int().min(0).max(5000).optional(),
-  note: z.string().trim().max(300).optional(),
+  version: z.coerce.number().int().min(1), type: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(), work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  shift_code: z.string().trim().optional(), check_time_hm: z.string().regex(/^\d{2}:\d{2}$/).optional(), distance_m: z.coerce.number().int().min(0).max(5000).optional(), note: z.string().trim().max(300).optional(),
 });
-
 const zCreateAdjustmentBody = z.object({
-  employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'),
-  assignment_id: z.string().trim().optional().default(''), event_id: z.string().trim().optional().default(''),
+  employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'), assignment_id: z.string().trim().optional().default(''), event_id: z.string().trim().optional().default(''),
   work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng ngày YYYY-MM-DD'), shift_code: z.string().default('CA_SANG'),
   kind: z.enum(['FORGOT_CHECK_IN', 'FORGOT_CHECK_OUT', 'GPS_ERROR', 'CAMERA_ERROR', 'OTHER']).default('FORGOT_CHECK_OUT'),
-  requested_check_in_at: z.string().default('07:00'), requested_check_out_at: z.string().default('12:00'),
-  requested_hours: z.coerce.number().min(0.5).max(24).default(5),
+  requested_check_in_at: z.string().default('07:00'), requested_check_out_at: z.string().default('12:00'), requested_hours: z.coerce.number().min(0.5).max(24).default(5),
   reason: z.string().trim().min(3, 'Vui lòng nhập lý do bổ sung / điều chỉnh công').max(300),
 });
-
 const zDecideAdjustmentBody = z.object({ version: z.coerce.number().int().min(1), action: z.enum(['STORE_CONFIRM', 'HR_APPROVE', 'HR_REJECT']), decision_reason: z.string().trim().max(300).optional().default('') });
 
 export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
@@ -54,7 +46,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/attendance', { preHandler: requirePermission('attendance.read', 'self.attendance') }, async (request) => {
     await migrateLegacyBase64Photos(ctx);
     await healBranchConsistency(ctx);
-    const rawEvents = [...filterByBranch(request, ctx.db.attendanceEvents.all(), (e) => resolveEmployeeBranchId(ctx, e.employee_id, e.branch_id))].sort((a, b) => b.server_time.localeCompare(a.server_time));
+    const rawEvents = [...filterByBranch(request, ctx.db.attendanceEvents.all(), (e) => resolveEmployeeBranchId(ctx, e.employee_id, e.branch_id))].sort((a, b) => b.server_time.localeCompare(a.server_time)).slice(0, 200);
     const events = rawEvents.map((e) => mapAttendanceEvent(e, ctx));
     const adjustments = filterByBranch(request, ctx.db.attendanceAdjustments.all(), (a) => resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id)).map((a) => {
       const emp = ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === a.employee_id);
@@ -64,12 +56,23 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(request, 'Lấy dữ liệu sự kiện chấm công gốc và phiếu bổ sung công thành công', { events, adjustments });
   });
 
-  app.get('/api/admin/attendance/events', { preHandler: requirePermission('attendance.read') }, async (request) => {
-    const query = zListQueryBase.parse(request.query);
+  app.get('/api/admin/attendance/sessions', { preHandler: requirePermission('attendance.read', 'schedule.read', 'self.attendance') }, async (request) => {
+    const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), shift_code: z.string().trim().optional(), status: z.string().trim().optional(), from_date: z.string().trim().optional(), to_date: z.string().trim().optional(), refresh: z.string().trim().optional() }).parse(request.query ?? {});
+    if (query.refresh === '1') await ctx.db.attendanceEvents.load();
+    await migrateLegacyBase64Photos(ctx);
+    await healBranchConsistency(ctx);
     const scoped = filterByBranch(request, ctx.db.attendanceEvents.all(), (e) => resolveEmployeeBranchId(ctx, e.employee_id, e.branch_id));
-    const mapped = scoped.map((e) => mapAttendanceEvent(e, ctx));
-    return sendPaginated(request, 'Lấy danh sách sự kiện chấm công thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'server_time', defaultSortOrder: 'desc', allowedSortFields: ['server_time', 'work_date', 'distance_m'], q: query.q, searchExtractor: (i) => [i.employeeCode, i.employeeName, i.branchName, i.work_date, i.result] }));
+    return sendPaginated(request, 'Lấy danh sách điểm danh Vào/Ra ca theo phiên làm việc thành công', buildPaginatedAttendanceSessions(ctx, scoped, query));
   });
+
+  const handleGetEvents = async (request: Parameters<typeof sendPaginated>[0]) => {
+    const query = zListQueryBase.parse(request.query ?? {});
+    const scoped = filterByBranch(request, ctx.db.attendanceEvents.all(), (e) => resolveEmployeeBranchId(ctx, e.employee_id, e.branch_id));
+    const pageRes = paginateAndSort(scoped, { page: query.page, perPage: query.per_page, defaultSortBy: 'server_time', defaultSortOrder: 'desc', allowedSortFields: ['server_time', 'work_date', 'distance_m'], q: query.q, searchExtractor: (i) => { const emp = ctx.db.employees.get(i.employee_id); return [i.employee_id, emp?.employee_code, emp?.full_name, i.work_date, i.shift_code, i.result]; } });
+    return sendPaginated(request, 'Lấy danh sách sự kiện chấm công thành công', { items: pageRes.items.map((e) => mapAttendanceEvent(e, ctx)), meta: pageRes.meta });
+  };
+  app.get('/api/admin/attendance/events', { preHandler: requirePermission('attendance.read', 'schedule.read') }, handleGetEvents);
+  app.get('/api/admin/attendance-events', { preHandler: requirePermission('attendance.read', 'schedule.read') }, handleGetEvents);
 
   app.post('/api/attendance/check', { preHandler: requireAuth() }, async (request, reply) => {
     if (request.auth!.user.role === 'MKT') throw Errors.forbidden('Tài khoản Truyền thông (MKT) không được phép truy cập chức năng điểm danh GPS');
@@ -77,9 +80,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const checkType = body.type ?? body.kind ?? 'CHECK_IN';
     const assign = ctx.db.shiftAssignments.get(body.assignment_id);
     if (!assign) throw Errors.fieldValidation('assignment_id', 'INVALID_VALUE', 'Không tìm thấy ca phân công', body.assignment_id);
-    if (assign.status === 'ABSENT') {
-      throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'} ngày ${dayjs(assign.work_date).format('DD/MM/YYYY')}) đã quá giờ kết thúc ca mà chưa điểm danh vào ca nên đã bị khóa và chuyển sang trạng thái Vắng mặt. Nếu muốn bù công, vui lòng gửi Phiếu bổ sung công.`);
-    }
+    if (assign.status === 'ABSENT') throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'} ngày ${dayjs(assign.work_date).format('DD/MM/YYYY')}) đã quá giờ kết thúc ca mà chưa điểm danh vào ca nên đã bị khóa và chuyển sang trạng thái Vắng mặt. Nếu muốn bù công, vui lòng gửi Phiếu bổ sung công.`);
     if (assign.status !== 'PUBLISHED' && assign.status !== 'COMPLETED') throw Errors.badRequest('Ca đăng ký này đang ở trạng thái Chờ duyệt. Phải được Quản lý cửa hàng (chi nhánh trực thuộc) hoặc HR duyệt sang Đã phân ca chính thức thì mới được phép chấm công Vào/Ra ca.');
     const findBranch = (raw?: string) => raw ? (ctx.db.branches.get(raw) ?? ctx.db.branches.find((b) => b.code === raw)) : undefined;
     const empRecord = ctx.db.employees.get(assign.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === assign.employee_id);
@@ -114,12 +115,10 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       const distLabel = distanceM >= 1000 ? `${(distanceM / 1000).toFixed(2).replace('.', ',')} km` : `${distanceM}m`;
       throw Errors.fieldValidation('lat', 'OUT_OF_RANGE', `Vị trí hiện tại cách ${branch.name} ${distLabel}, vượt quá bán kính cho phép (${branch.radius_m}m). Bạn bắt buộc phải có mặt đúng tại ${branch.name} để Vào/Ra ca (hoặc gửi Phiếu bổ sung công nếu thiết bị lỗi GPS).`, `${body.lat},${body.lng}`);
     }
-    const accuracyOk = body.accuracy_m <= branch.max_accuracy_m;
-    const result = !accuracyOk ? 'LOW_ACCURACY' : 'VALID';
+    const accuracyOk = body.accuracy_m <= branch.max_accuracy_m, result = !accuracyOk ? 'LOW_ACCURACY' : 'VALID';
     const serverNow = nowIso(), actualMins = parseHm(dayjs(serverNow).format('HH:mm'));
     const schedTime = checkType === 'CHECK_IN' ? assign.start_at : assign.end_at, schedMins = parseHm(schedTime);
-    const lateMinutes = checkType === 'CHECK_IN' ? Math.max(0, actualMins - schedMins) : 0;
-    const earlyLeaveMinutes = checkType === 'CHECK_OUT' ? Math.max(0, schedMins - actualMins) : 0;
+    const lateMinutes = checkType === 'CHECK_IN' ? Math.max(0, actualMins - schedMins) : 0, earlyLeaveMinutes = checkType === 'CHECK_OUT' ? Math.max(0, schedMins - actualMins) : 0;
     const punc = describePunctuality(checkType, lateMinutes, earlyLeaveMinutes);
     const uploadedPhoto = await persistAttendancePhoto(ctx, { base64: body.photo_base64, employeeCode: empRecord.employee_code, checkType, workDate: assign.work_date });
 
@@ -130,10 +129,8 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       photo_id: `photo_${Date.now()}`, photo_sha256: uploadedPhoto.sha256, device_info: body.device_info, result,
       work_date: assign.work_date, shift_code: assign.shift_code, scheduled_time: schedTime, late_minutes: lateMinutes,
       early_leave_minutes: earlyLeaveMinutes, allowed_radius_m: branch.radius_m, gps_status: accuracyOk ? 'OK' : 'WARNING',
-      photo_drive_file_id: uploadedPhoto.fileId, ip_address: request.ip, anomaly_flags_json: '[]',
-      note: `${punc.punctualityLabel} · Khoảng cách GPS ${distanceM}m`,
+      photo_drive_file_id: uploadedPhoto.fileId, ip_address: request.ip, anomaly_flags_json: '[]', note: `${punc.punctualityLabel} · Khoảng cách GPS ${distanceM}m`,
     }, request.auth!.user.id);
-
     await ctx.audit.record(auditContext(request), { action: checkType === 'CHECK_IN' ? 'attendance.check_in' : 'attendance.check_out', entity: 'ATTENDANCE_EVENTS', entityId: created.id, after: { type: created.type, distance_m: distanceM, within_radius: withinRadius, result, late_minutes: lateMinutes, early_leave_minutes: earlyLeaveMinutes } });
     ctx.realtime()?.toBranch(branch.id, 'attendance:event', { id: created.id, type: created.type, result, distanceM });
     reply.code(201);
@@ -169,7 +166,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(request, 'Đã xóa bản ghi điểm danh', { id });
   });
 
-  app.get('/api/admin/attendance/adjustments', { preHandler: requirePermission('attendance.read', 'adjustment.approve', 'attendance.confirm', 'self.adjustment') }, async (request) => {
+  const handleGetAdjustments = async (request: Parameters<typeof sendPaginated>[0]) => {
     const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), status: z.string().trim().optional() }).parse(request.query ?? {});
     const scoped = filterByBranch(request, ctx.db.attendanceAdjustments.all(), (a) => resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id));
     const mapped = scoped.map((a) => {
@@ -178,7 +175,9 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       return { ...a, ...resolveShiftTimeDetails(ctx, a.shift_code, a.assignment_id), branch_id: branch?.id ?? a.branch_id, employeeCode: emp?.employee_code ?? a.employee_id, employeeName: emp ? `${emp.full_name} (${emp.employee_code})` : a.employee_id, branchName: branch?.name ?? 'Chi nhánh' };
     }).filter((a) => (!query.branch_id || query.branch_id === 'ALL' || a.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || a.status === query.status));
     return sendPaginated(request, 'Lấy danh sách phiếu bổ sung và điều chỉnh công thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'work_date', 'status'], q: query.q, searchExtractor: (i) => [i.adjustment_code, i.employeeCode, i.employeeName, i.reason, i.work_date], filters: { branch_id: query.branch_id, status: query.status } }));
-  });
+  };
+  app.get('/api/admin/attendance/adjustments', { preHandler: requirePermission('attendance.read', 'adjustment.approve', 'attendance.confirm', 'self.adjustment') }, handleGetAdjustments);
+  app.get('/api/admin/attendance-adjustments', { preHandler: requirePermission('attendance.read', 'adjustment.approve', 'attendance.confirm', 'self.adjustment') }, handleGetAdjustments);
 
   app.post('/api/admin/attendance/adjustments', { preHandler: requireAuth() }, async (request, reply) => {
     const body = zCreateAdjustmentBody.parse(request.body);

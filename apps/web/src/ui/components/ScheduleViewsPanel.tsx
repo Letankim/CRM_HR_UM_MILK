@@ -1,7 +1,7 @@
 'use client';
 
 import dayjs, { type Dayjs } from 'dayjs';
-import { useEffect, useState } from 'react';
+import { type Dispatch, type SetStateAction, useState } from 'react';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
 import { ScheduleMonthCalendar } from './ScheduleMonthCalendar';
 import { getMonday, ScheduleWeekMatrix } from './ScheduleWeekMatrix';
@@ -13,6 +13,10 @@ export interface ScheduleViewsPanelProps {
   canEdit: boolean;
   onAddAtCell: (dateStr: string, shiftCode?: string) => void;
   onEditItem: (item: ScheduleAssignmentItem) => void;
+  weekStart?: Dayjs;
+  onWeekStartChange?: Dispatch<SetStateAction<Dayjs>>;
+  calMonth?: Dayjs;
+  onMonthChange?: Dispatch<SetStateAction<Dayjs>>;
 }
 
 export function ScheduleViewsPanel({
@@ -22,15 +26,19 @@ export function ScheduleViewsPanel({
   canEdit,
   onAddAtCell,
   onEditItem,
+  weekStart: controlledWeekStart,
+  onWeekStartChange,
+  calMonth: controlledCalMonth,
+  onMonthChange,
 }: ScheduleViewsPanelProps) {
   const effectiveToday = todayDate || dayjs().format('YYYY-MM-DD');
-  const [weekStart, setWeekStart] = useState<Dayjs>(() => getMonday(dayjs(effectiveToday)));
-  const [calMonth, setCalMonth] = useState<Dayjs>(() => dayjs(effectiveToday));
+  const [innerWeekStart, setInnerWeekStart] = useState<Dayjs>(() => getMonday(dayjs(effectiveToday)));
+  const [innerCalMonth, setInnerCalMonth] = useState<Dayjs>(() => dayjs(effectiveToday));
 
-  useEffect(() => {
-    setWeekStart(getMonday(dayjs(effectiveToday)));
-    setCalMonth(dayjs(effectiveToday));
-  }, [mode, effectiveToday]);
+  const weekStart = controlledWeekStart ?? innerWeekStart;
+  const setWeekStart = onWeekStartChange ?? setInnerWeekStart;
+  const calMonth = controlledCalMonth ?? innerCalMonth;
+  const setCalMonth = onMonthChange ?? setInnerCalMonth;
 
   if (mode === 'CALENDAR') {
     return (

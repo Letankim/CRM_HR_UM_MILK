@@ -84,13 +84,28 @@ export async function cascadeEmployeeBranchChange(
 }
 
 const healsInFlight = new WeakMap<object, Promise<void>>();
+const lastHealSig = new WeakMap<object, string>();
+
+function computeHealSig(ctx: AppContext): string {
+  const verSum = (rows: readonly { version: number }[]) => {
+    let s = rows.length;
+    for (let i = 0; i < rows.length; i++) s += rows[i]!.version;
+    return s;
+  };
+  return `${Math.floor(Date.now() / 60_000)}:${verSum(ctx.db.users.all())}:${verSum(ctx.db.employees.all())}:${verSum(ctx.db.shiftAssignments.all())}:${verSum(ctx.db.leaveRequests.all())}:${verSum(ctx.db.attendanceEvents.all())}:${verSum(ctx.db.attendanceAdjustments.all())}`;
+}
 
 /**
  * Tự động đồng bộ & làm sạch lệch chi nhánh giữa Tài khoản <-> Hồ sơ nhân sự <-> Lịch phân ca & Điểm danh.
- * Chỉ một lượt chạy tại một thời điểm (các request GET song song dùng chung), dòng xung đột được bỏ qua ở lượt này.
+ * Bỏ qua tức thì nếu dữ liệu trong bộ nhớ đệm không thay đổi trong cùng phút hiện tại.
  */
 export function healBranchConsistency(ctx: AppContext, actorId = 'system-sync'): Promise<void> {
-  return singleFlight(healsInFlight, ctx.db, () => runHeal(ctx, actorId));
+  const sig = computeHealSig(ctx);
+  if (lastHealSig.get(ctx.db) === sig) return Promise.resolve();
+  return singleFlight(healsInFlight, ctx.db, async () => {
+    await runHeal(ctx, actorId);
+    lastHealSig.set(ctx.db, computeHealSig(ctx));
+  });
 }
 
 async function runHeal(ctx: AppContext, actorId: string): Promise<void> {
@@ -100,8 +115,7 @@ async function runHeal(ctx: AppContext, actorId: string): Promise<void> {
     const linkedUser = findLinkedUserForEmployee(emp, ctx);
     if (linkedUser) {
       const userBranchId = resolveSingleBranchId(ctx, linkedUser.branch_scope);
-      const isBranchRole =
-        linkedUser.role === 'THU_VIEC' || linkedUser.role === 'CHINH_THUC' || linkedUser.role === 'STORE';
+      const isBranchRole = linkedUser.role === 'THU_VIEC' || linkedUser.role === 'CHINH_THUC' || linkedUser.role === 'STORE';
       if (userBranchId && userBranchId !== emp.branch_id) {
         if ((linkedUser.updated_at ?? '') >= (emp.updated_at ?? '')) {
           effectiveBranchId = userBranchId;
@@ -115,49 +129,34 @@ async function runHeal(ctx: AppContext, actorId: string): Promise<void> {
     }
     if (effectiveBranchId) await cascadeEmployeeBranchChange(ctx, emp, effectiveBranchId, actorId);
   }
+  const hasEventAssignIds = new Set(ctx.db.attendanceEvents.all().map((ev) => ev.assignment_id));
   for (const l of ctx.db.leaveRequests.filter((x) => x.status === 'APPROVED')) {
     const emp = ctx.db.employees.get(l.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === l.employee_id);
     const matchEmp = (eid: string) => eid === l.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
     for (const s of ctx.db.shiftAssignments.filter((a) => matchEmp(a.employee_id) && a.work_date === l.leave_date)) {
-      if (!ctx.db.attendanceEvents.find((ev) => ev.assignment_id === s.id)) await tolerantWrite(() => ctx.db.shiftAssignments.softDelete(s.id, s.version, actorId));
+      if (!hasEventAssignIds.has(s.id)) await tolerantWrite(() => ctx.db.shiftAssignments.softDelete(s.id, s.version, actorId));
     }
   }
   await sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId);
 }
 
 export interface SyncEmployeeFromAccountParams {
-  userId: string;
-  prevEmp?: Employee;
-  targetEmp?: Employee;
-  displayName?: string;
-  phone?: string;
-  email?: string;
-  role?: Role;
-  branchScope?: string;
-  actorId: string;
+  userId: string; prevEmp?: Employee; targetEmp?: Employee; displayName?: string;
+  phone?: string; email?: string; role?: Role; branchScope?: string; actorId: string;
 }
 
-export async function syncEmployeeFromAccount(
-  ctx: AppContext,
-  params: SyncEmployeeFromAccountParams,
-): Promise<string> {
+export async function syncEmployeeFromAccount(ctx: AppContext, params: SyncEmployeeFromAccountParams): Promise<string> {
   const { userId, prevEmp, targetEmp, displayName, phone, email, role, branchScope, actorId } = params;
-
   if (prevEmp && prevEmp.id !== targetEmp?.id && prevEmp.user_id === userId) {
     await ctx.db.employees.update(prevEmp.id, prevEmp.version, { user_id: '' }, actorId);
   }
   if (!targetEmp) return '';
-
   if (targetEmp.user_id && targetEmp.user_id !== userId) {
     const oldUser = ctx.db.users.get(targetEmp.user_id);
-    if (oldUser && oldUser.id !== userId) {
-      await ctx.db.users.update(oldUser.id, oldUser.version, { employee_id: '' }, actorId);
-    }
+    if (oldUser && oldUser.id !== userId) await ctx.db.users.update(oldUser.id, oldUser.version, { employee_id: '' }, actorId);
   }
-
   const resolvedBranchId = resolveSingleBranchId(ctx, branchScope);
   const empPatch: Record<string, unknown> = { user_id: userId };
-
   if (resolvedBranchId && resolvedBranchId !== targetEmp.branch_id) empPatch.branch_id = resolvedBranchId;
   if (displayName && displayName !== targetEmp.full_name) empPatch.full_name = displayName;
   if (phone !== undefined && phone !== '' && phone !== targetEmp.phone) empPatch.phone = phone;
@@ -168,53 +167,32 @@ export async function syncEmployeeFromAccount(
   } else if (role === 'THU_VIEC' && targetEmp.stage !== 'PROBATION') {
     empPatch.stage = 'PROBATION';
   }
-
   const updatedEmp = await ctx.db.employees.update(targetEmp.id, targetEmp.version, empPatch, actorId);
   await cascadeEmployeeBranchChange(ctx, updatedEmp, updatedEmp.branch_id, actorId);
   return updatedEmp.employee_code;
 }
 
 export interface SyncAccountFromEmployeeParams {
-  empId: string;
-  employeeCode: string;
-  prevUser?: User;
-  targetUser?: User;
-  fullName?: string;
-  phone?: string;
-  email?: string;
-  branchId?: string;
-  stage?: EmployeeStage;
-  pinPatch?: Record<string, unknown>;
-  actorId: string;
+  empId: string; employeeCode: string; prevUser?: User; targetUser?: User; fullName?: string;
+  phone?: string; email?: string; branchId?: string; stage?: EmployeeStage; pinPatch?: Record<string, unknown>; actorId: string;
 }
 
-export async function syncAccountFromEmployee(
-  ctx: AppContext,
-  params: SyncAccountFromEmployeeParams,
-): Promise<string> {
+export async function syncAccountFromEmployee(ctx: AppContext, params: SyncAccountFromEmployeeParams): Promise<string> {
   const { empId, employeeCode, prevUser, targetUser, fullName, phone, email, branchId, stage, pinPatch, actorId } = params;
-
-  if (prevUser && prevUser.id !== targetUser?.id) {
-    await ctx.db.users.update(prevUser.id, prevUser.version, { employee_id: '' }, actorId);
-  }
+  if (prevUser && prevUser.id !== targetUser?.id) await ctx.db.users.update(prevUser.id, prevUser.version, { employee_id: '' }, actorId);
   if (!targetUser) return '';
-
   const otherEmp = findLinkedEmployeeForUser(targetUser, ctx);
   if (otherEmp && otherEmp.id !== empId && otherEmp.user_id === targetUser.id) {
     await ctx.db.employees.update(otherEmp.id, otherEmp.version, { user_id: '' }, actorId);
   }
-
-  const isBranchScopedRole =
-    targetUser.role === 'THU_VIEC' || targetUser.role === 'CHINH_THUC' || targetUser.role === 'STORE';
+  const isBranchScopedRole = targetUser.role === 'THU_VIEC' || targetUser.role === 'CHINH_THUC' || targetUser.role === 'STORE';
   const userPatch: Record<string, unknown> = { employee_id: employeeCode, ...(pinPatch ?? {}) };
-
   if (fullName && fullName !== targetUser.display_name) userPatch.display_name = fullName;
   if (phone && phone !== targetUser.phone) userPatch.phone = phone;
   if (email !== undefined && email !== targetUser.email) userPatch.email = email;
   if (branchId && (isBranchScopedRole || targetUser.branch_scope !== 'ALL')) userPatch.branch_scope = branchId;
   if (stage === 'OFFICIAL' && targetUser.role === 'THU_VIEC') userPatch.role = 'CHINH_THUC';
   else if (stage === 'PROBATION' && targetUser.role === 'CHINH_THUC') userPatch.role = 'THU_VIEC';
-
   await ctx.db.users.update(targetUser.id, targetUser.version, userPatch, actorId);
   return targetUser.id;
 }

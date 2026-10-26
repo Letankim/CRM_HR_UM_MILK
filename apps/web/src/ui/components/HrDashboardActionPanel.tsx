@@ -50,9 +50,9 @@ export function HrDashboardActionPanel() {
     queryFn: () => api.get<{ id: string; work_date: string; status: string; shift_coverage_status: string }[]>('/admin/emergency-leaves'),
     enabled: can('schedule.read'),
   });
-  const attQ = useQuery({
-    queryKey: ['dashboard-attendance'],
-    queryFn: () => api.get<{ events: { id: string; result: string }[]; adjustments: { id: string; status: string }[] }>('/admin/attendance'),
+  const adjQ = useQuery({
+    queryKey: ['dashboard-attendance-adjustments'],
+    queryFn: () => api.list<{ id: string; status: string }>('/admin/attendance/adjustments?per_page=50'),
     enabled: can('attendance.read', 'schedule.read'),
   });
 
@@ -86,8 +86,8 @@ export function HrDashboardActionPanel() {
   const emergencies = emgQ.data ?? [];
   const uncoveredEmergenciesCount = emergencies.filter((e) => e.status === 'REPORTED' || e.status === 'ESCALATED' || e.shift_coverage_status !== 'COVERED').length;
 
-  const pendingAdjustmentsCount = (attQ.data?.adjustments ?? []).filter((a) => a.status === 'PENDING' || a.status === 'STORE_CONFIRMED').length;
-  const abnormalEventsCount = (attQ.data?.events ?? []).filter((ev) => ev.result !== 'VALID').length + absentShiftsCount + pendingAdjustmentsCount;
+  const pendingAdjustmentsCount = (adjQ.data?.data ?? []).filter((a) => a.status === 'PENDING' || a.status === 'STORE_CONFIRMED').length;
+  const abnormalEventsCount = absentShiftsCount + pendingAdjustmentsCount;
 
   const actionItems = [
     ...(uncoveredEmergenciesCount > 0 ? [{ key: 'emg', priority: 'KHẨN CẤP', color: 'error', title: `${uncoveredEmergenciesCount} ca báo nghỉ đột xuất / thiếu ca cần điều phối (hoặc đã Escalated)`, desc: 'Kiểm tra người thay thế hoặc điều phối nhân sự chi nhánh, không ép nhân viên nghỉ khẩn đi làm.', link: '/admin/schedules?section=workflows', btn: 'Xử lý thiếu ca' }] : []),

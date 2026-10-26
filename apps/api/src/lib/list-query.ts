@@ -8,6 +8,7 @@ export interface PaginatedResult<T> {
 export interface ListQueryOptions<T> {
   page?: number;
   perPage?: number;
+  maxPerPage?: number;
   sortBy?: string;
   sortOrder?: SortOrder;
   defaultSortBy: string;
@@ -40,7 +41,7 @@ export function paginateAndSort<T extends object>(
   options: ListQueryOptions<T>,
 ): PaginatedResult<T> {
   const page = Math.max(1, Math.floor(options.page ?? 1));
-  const perPage = Math.min(100, Math.max(1, Math.floor(options.perPage ?? 12)));
+  const perPage = Math.min(options.maxPerPage ?? 100, Math.max(1, Math.floor(options.perPage ?? 12)));
   const sortOrder: SortOrder = options.sortOrder ?? options.defaultSortOrder ?? 'desc';
   const requestedSortBy = options.sortBy?.trim() || options.defaultSortBy;
   const sortBy =

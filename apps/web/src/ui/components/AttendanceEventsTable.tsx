@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { App, Button, Flex, Input, Select, Space, Table, Tag, Typography } from 'antd';
 import { CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -25,20 +25,29 @@ export interface AttendanceEventRow {
   checkInEvent?: AttendanceEventRow | null; checkOutEvent?: AttendanceEventRow | null;
 }
 
+export const ATTENDANCE_SESSION_STATUS_OPTIONS = [
+  { value: 'COMPLETED', label: 'Hoàn thành Vào & Ra ca' },
+  { value: 'IN_PROGRESS', label: 'Đang trong ca (Chưa ra)' },
+  { value: 'LATE_EARLY', label: 'Vào trễ / Ra sớm' },
+];
+
 export function groupAttendanceEventsByShift(events: AttendanceEventRow[]): AttendanceEventRow[] {
   const map = new Map<string, { inEv: AttendanceEventRow | null; outEv: AttendanceEventRow | null }>();
-    for (const ev of events) {
-      const key = ev.assignment_id ? `asg_${ev.assignment_id}` : `emp_${ev.employeeId || ev.employeeCode || ev.employeeName || ''}_${ev.work_date || ''}_${ev.shift_code || ''}`;
-      const cur = map.get(key) ?? { inEv: null, outEv: null };
-      if (ev.type === 'CHECK_OUT') { if (!cur.outEv) cur.outEv = ev; }
-      else if (!cur.inEv) { cur.inEv = ev; }
-      map.set(key, cur);
+  for (const ev of events) {
+    if (ev.checkInEvent !== undefined || ev.checkOutEvent !== undefined) {
+      map.set(`ses_${ev.id}`, { inEv: ev.checkInEvent ?? null, outEv: ev.checkOutEvent ?? null });
+      continue;
     }
+    const key = ev.assignment_id ? `asg_${ev.assignment_id}` : `emp_${ev.employeeId || ev.employeeCode || ev.employeeName || ''}_${ev.work_date || ''}_${ev.shift_code || ''}`;
+    const cur = map.get(key) ?? { inEv: null, outEv: null };
+    if (ev.type === 'CHECK_OUT') { if (!cur.outEv) cur.outEv = ev; }
+    else if (!cur.inEv) { cur.inEv = ev; }
+    map.set(key, cur);
+  }
   const result: AttendanceEventRow[] = [];
   for (const [, { inEv, outEv }] of map.entries()) {
     const base = inEv ?? outEv;
-    if (!base) continue;
-    result.push({ ...base, id: inEv?.id ?? outEv!.id, checkInEvent: inEv, checkOutEvent: outEv });
+    if (base) result.push({ ...base, id: inEv?.id ?? outEv!.id, checkInEvent: inEv, checkOutEvent: outEv });
   }
   return result;
 }
@@ -80,38 +89,31 @@ export function renderShiftCheckInOutSummary(r: AttendanceEventRow) {
         {inEv ? (
           <>
             <span className="num" style={{ fontWeight: 600 }}>{inEv.checkTimeHm || String(inEv.checkTimeFormatted || '').slice(0, 5)}</span>
-            <Tag color={inEv.punctualityStatus === 'LATE' ? 'volcano' : 'green'} icon={inEv.punctualityStatus === 'LATE' ? <ClockCircleOutlined /> : <CheckCircleOutlined />} style={{ margin: 0 }}>
-              {inEv.punctualityLabel || 'Vào đúng giờ'}
-            </Tag>
+            <Tag color={inEv.punctualityStatus === 'LATE' ? 'volcano' : 'green'} icon={inEv.punctualityStatus === 'LATE' ? <ClockCircleOutlined /> : <CheckCircleOutlined />} style={{ margin: 0 }}>{inEv.punctualityLabel || 'Vào đúng giờ'}</Tag>
           </>
-        ) : (
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>Chưa vào ca</Typography.Text>
-        )}
+        ) : <Typography.Text type="secondary" style={{ fontSize: 12 }}>Chưa vào ca</Typography.Text>}
       </Space>
       <Space size={6} wrap>
         <Tag color="purple" style={{ margin: 0, minWidth: 54, textAlign: 'center' }}>Ra ca</Tag>
         {outEv ? (
           <>
             <span className="num" style={{ fontWeight: 600 }}>{outEv.checkTimeHm || String(outEv.checkTimeFormatted || '').slice(0, 5)}</span>
-            <Tag color={outEv.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} icon={outEv.punctualityStatus === 'EARLY_LEAVE' ? <ClockCircleOutlined /> : <CheckCircleOutlined />} style={{ margin: 0 }}>
-              {outEv.punctualityLabel || 'Ra đúng giờ'}
-            </Tag>
+            <Tag color={outEv.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} icon={outEv.punctualityStatus === 'EARLY_LEAVE' ? <ClockCircleOutlined /> : <CheckCircleOutlined />} style={{ margin: 0 }}>{outEv.punctualityLabel || 'Ra đúng giờ'}</Tag>
           </>
-        ) : (
-          <Tag color="default" style={{ margin: 0 }}>Chưa ra ca</Tag>
-        )}
+        ) : <Tag color="default" style={{ margin: 0 }}>Chưa ra ca</Tag>}
       </Space>
     </Space>
   );
 }
 
 interface Props {
-  events: AttendanceEventRow[];
+  events?: AttendanceEventRow[];
   assignments?: Record<string, unknown>[];
   loading?: boolean;
+  externalFilters?: { q: string; branchId: string; shiftCode: string; status: string };
 }
 
-export function AttendanceEventsTable({ events, loading }: Props) {
+export function AttendanceEventsTable({ externalFilters }: Props) {
   const qc = useQueryClient();
   const can = useCan();
   const canManageEvents = can('system.config');
@@ -119,102 +121,110 @@ export function AttendanceEventsTable({ events, loading }: Props) {
   const [detailRow, setDetailRow] = useState<AttendanceEventRow | null>(null);
   const [editRow, setEditRow] = useState<AttendanceEventRow | null>(null);
   const [searchInput, setSearchInput] = useState('');
-  const debouncedQ = useDebouncedValue(searchInput, 400);
+  const debouncedLocalQ = useDebouncedValue(searchInput, 400);
   const [branchFilter, setBranchFilter] = useState('ALL');
   const [shiftFilter, setShiftFilter] = useState('ALL');
   const [stateFilter, setStateFilter] = useState('ALL');
-  const { options: shiftOptions } = useShiftTemplates(branchFilter);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(15);
+
+  const effQ = externalFilters ? externalFilters.q : debouncedLocalQ;
+  const effBranch = externalFilters ? externalFilters.branchId : branchFilter;
+  const effShift = externalFilters ? externalFilters.shiftCode : shiftFilter;
+  const effState = externalFilters ? externalFilters.status : stateFilter;
+  const { options: shiftOptions } = useShiftTemplates(effBranch);
+
+  useEffect(() => { setPage(1); }, [effQ, effBranch, effShift, effState]);
 
   const branchesQ = useQuery({
     queryKey: ['branches', 'select'],
     queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'),
+    enabled: !externalFilters,
   });
 
-  const allGrouped = useMemo(() => groupAttendanceEventsByShift(events), [events]);
+  const sessionsUrl = useMemo(() => {
+    const sp = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+    if (effBranch && effBranch !== 'ALL') sp.set('branch_id', effBranch);
+    if (effShift && effShift !== 'ALL') sp.set('shift_code', effShift);
+    if (effState && effState !== 'ALL') sp.set('status', effState);
+    if (effQ.trim()) sp.set('q', effQ.trim());
+    return `/admin/attendance/sessions?${sp}`;
+  }, [page, perPage, effBranch, effShift, effState, effQ]);
 
-  const filteredRows = useMemo(() => {
-    const qLower = debouncedQ.trim().toLowerCase();
-    return allGrouped.filter((r) => {
-      if (branchFilter !== 'ALL' && r.branch_id !== branchFilter && r.branchName !== branchFilter) return false;
-      if (shiftFilter !== 'ALL' && r.shift_code !== shiftFilter) return false;
-      if (stateFilter === 'COMPLETED' && (!r.checkInEvent || !r.checkOutEvent)) return false;
-      if (stateFilter === 'IN_PROGRESS' && (!r.checkInEvent || Boolean(r.checkOutEvent))) return false;
-      if (stateFilter === 'LATE_EARLY' && r.checkInEvent?.punctualityStatus !== 'LATE' && r.checkOutEvent?.punctualityStatus !== 'EARLY_LEAVE') return false;
-      if (qLower) {
-        const hay = `${r.employeeName || ''} ${r.employeeCode || ''} ${r.branchName || ''} ${r.work_date || ''} ${r.shiftLabel || ''}`.toLowerCase();
-        if (!hay.includes(qLower)) return false;
-      }
-      return true;
-    });
-  }, [allGrouped, branchFilter, shiftFilter, stateFilter, debouncedQ]);
+  const sessionsQ = useQuery({
+    queryKey: ['attendance-sessions', effBranch, effShift, effState, effQ, page, perPage],
+    queryFn: () => api.list<AttendanceEventRow>(sessionsUrl),
+  });
 
   const refreshAttendance = () => {
-    ['attendance-all', 'nv-attendance', 'my-attendance', 'schedules', 'nv-schedules'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    ['attendance-sessions', 'attendance-all', 'nv-attendance', 'my-attendance', 'schedules', 'nv-schedules'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   };
 
   const deleteMut = useMutation({
     mutationFn: async (r: AttendanceEventRow) => {
       const targets = [r.checkInEvent, r.checkOutEvent].filter((x): x is AttendanceEventRow => Boolean(x));
       if (targets.length === 0) targets.push(r);
-      for (const t of targets) {
-        await api.delete(`/admin/attendance/events/${t.id}`, { version: t.version ?? 1 });
-      }
+      for (const t of targets) await api.delete(`/admin/attendance/events/${t.id}`, { version: t.version ?? 1 });
     },
     onSuccess: () => { message.success('Đã xóa bản ghi điểm danh của ca làm việc'); refreshAttendance(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa thất bại'),
   });
 
+  const handleExportExcel = async () => {
+    const sp = new URLSearchParams({ page: '1', per_page: '100' });
+    if (effBranch && effBranch !== 'ALL') sp.set('branch_id', effBranch);
+    if (effShift && effShift !== 'ALL') sp.set('shift_code', effShift);
+    if (effState && effState !== 'ALL') sp.set('status', effState);
+    if (effQ.trim()) sp.set('q', effQ.trim());
+    const res = await api.list<AttendanceEventRow>(`/admin/attendance/sessions?${sp}`);
+    exportAttendanceEventsExcel(res.data);
+  };
+
   const branchList = branchesQ.data?.data ?? [];
-  const branchOptions = useMemo(
-    () => branchList.length === 1 ? [{ value: 'ALL', label: `${branchList[0]!.code} — ${branchList[0]!.name}` }] : [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branchList.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))],
-    [branchList],
-  );
-  const completedCount = filteredRows.filter((r) => r.checkInEvent && r.checkOutEvent).length;
-  const inProgressCount = filteredRows.filter((r) => r.checkInEvent && !r.checkOutEvent).length;
+  const branchOptions = useMemo(() => branchList.length === 1 ? [{ value: 'ALL', label: `${branchList[0]!.code} — ${branchList[0]!.name}` }] : [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branchList.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))], [branchList]);
+  const rows = sessionsQ.data?.data ?? [];
+  const totalCount = sessionsQ.data?.meta.pagination.total ?? rows.length;
+  const completedCount = Number(sessionsQ.data?.meta.filters?.completed_count ?? 0);
+  const inProgressCount = Number(sessionsQ.data?.meta.filters?.in_progress_count ?? 0);
+  const lateEarlyCount = Number(sessionsQ.data?.meta.filters?.late_early_count ?? 0);
 
   return (
-    <>
-      <div style={{ background: '#F8FAFC', border: `1px solid ${BRAND.border}`, borderRadius: 4, padding: '14px 16px', marginTop: 4, marginBottom: 16 }}>
-        <Flex justify="space-between" align="center" wrap gap={12}>
-          <Space size={10} wrap>
-            <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm tên nhân sự, mã NV, ngày..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 240 }} />
-            <Select value={branchFilter} onChange={setBranchFilter} style={{ width: 195 }} options={branchOptions} />
-            <Select value={shiftFilter} onChange={setShiftFilter} style={{ width: 175 }} options={[{ value: 'ALL', label: 'Tất cả khung ca' }, ...shiftOptions]} />
-            <Select value={stateFilter} onChange={setStateFilter} style={{ width: 175 }} options={[{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'COMPLETED', label: 'Hoàn thành Vào & Ra ca' }, { value: 'IN_PROGRESS', label: 'Đang trong ca (Chưa ra)' }, { value: 'LATE_EARLY', label: 'Vào trễ / Ra sớm' }]} />
-          </Space>
-          <Space size={10} wrap>
-            <Tag color="blue" style={{ margin: 0, padding: '3px 10px', fontSize: 12 }}>Tổng: {filteredRows.length} ca</Tag>
+    <div style={{ background: '#FFFFFF', border: `1px solid ${BRAND.border}`, borderRadius: 4, padding: externalFilters ? '12px 16px' : 0 }}>
+      <div style={{ background: '#F8FAFC', border: `1px solid ${BRAND.border}`, borderRadius: 4, padding: '10px 14px', marginBottom: 12 }}>
+        <Flex justify="space-between" align="center" wrap gap={10}>
+          {!externalFilters ? (
+            <Space size={10} wrap>
+              <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm tên nhân sự, mã NV, ngày..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 230 }} />
+              <Select value={branchFilter} onChange={setBranchFilter} style={{ width: 190 }} options={branchOptions} />
+              <Select value={shiftFilter} onChange={setShiftFilter} style={{ width: 170 }} options={[{ value: 'ALL', label: 'Tất cả khung ca' }, ...shiftOptions]} />
+              <Select value={stateFilter} onChange={setStateFilter} style={{ width: 175 }} options={[{ value: 'ALL', label: 'Tất cả trạng thái' }, ...ATTENDANCE_SESSION_STATUS_OPTIONS]} />
+            </Space>
+          ) : (
+            <Typography.Text type="secondary" style={{ fontSize: 13 }}>Tổng hợp phiên điểm danh Vào/Ra ca theo bộ lọc hiện tại (Phân trang trực tiếp từ máy chủ):</Typography.Text>
+          )}
+          <Space size={8} wrap>
+            <Tag color="blue" style={{ margin: 0, padding: '3px 10px', fontSize: 12 }}>Tổng: {totalCount} ca</Tag>
             <Tag color="green" style={{ margin: 0, padding: '3px 10px', fontSize: 12 }}>Hoàn thành: {completedCount}</Tag>
             {inProgressCount > 0 && <Tag color="gold" style={{ margin: 0, padding: '3px 10px', fontSize: 12 }}>Đang trong ca: {inProgressCount}</Tag>}
-            <Button icon={<ReloadOutlined />} onClick={refreshAttendance}>Làm mới</Button>
-            <Button icon={<DownloadOutlined />} onClick={() => exportAttendanceEventsExcel(filteredRows)}>Xuất Excel</Button>
+            {lateEarlyCount > 0 && <Tag color="volcano" style={{ margin: 0, padding: '3px 10px', fontSize: 12 }}>Vào trễ / Ra sớm: {lateEarlyCount}</Tag>}
+            {!externalFilters && <Button icon={<ReloadOutlined />} loading={sessionsQ.isFetching} onClick={refreshAttendance}>Làm mới</Button>}
+            {!externalFilters && <Button icon={<DownloadOutlined />} onClick={handleExportExcel}>Xuất Excel</Button>}
           </Space>
         </Flex>
       </div>
       <Table<AttendanceEventRow>
-        size="small" rowKey="id" loading={loading} pagination={{ pageSize: 15, showSizeChanger: false }}
-        dataSource={filteredRows} locale={{ emptyText: 'Chưa có dữ liệu điểm danh Vào ca / Ra ca phù hợp bộ lọc.' }}
+        size="small" rowKey="id" loading={sessionsQ.isLoading || sessionsQ.isFetching}
+        pagination={{ current: page, pageSize: perPage, total: totalCount, showSizeChanger: true, pageSizeOptions: ['10', '15', '20', '50'], showTotal: (t) => `Tổng ${t} ca điểm danh`, onChange: (p, ps) => { setPage(p); setPerPage(ps); } }}
+        dataSource={rows} locale={{ emptyText: 'Chưa có dữ liệu điểm danh Vào ca / Ra ca phù hợp bộ lọc.' }}
         columns={[
-          { title: 'Nhân sự điểm danh', width: 205, render: (_, r) => <div><Typography.Text strong>{r.employeeName}</Typography.Text>{r.branchName && <div style={{ fontSize: 11, color: BRAND.textSecondary }}>{r.branchName}</div>}</div> },
-          { title: 'Ngày & Khung ca', width: 185, render: (_, r) => <div><div style={{ fontWeight: 600 }}>{r.shiftLabel || 'Ca làm việc'} ({r.shiftTimeRange || '07:00 – 12:00'})</div><div className="num" style={{ fontSize: 12, color: BRAND.textSecondary }}>Ngày: {r.work_date ? dayjs(r.work_date).format('DD/MM/YYYY') : '—'}</div></div> },
+          { title: 'Nhân sự điểm danh', width: 215, render: (_, r) => <div><Typography.Text strong>{r.employeeName}</Typography.Text>{r.branchName && <div style={{ fontSize: 11, color: BRAND.textSecondary }}>{r.branchName}</div>}</div> },
+          { title: 'Ngày & Khung ca', width: 195, render: (_, r) => <div><div style={{ fontWeight: 600 }}>{r.shiftLabel || 'Ca làm việc'} ({r.shiftTimeRange || '07:00 – 12:00'})</div><div className="num" style={{ fontSize: 12, color: BRAND.textSecondary }}>Ngày: {r.work_date ? dayjs(r.work_date).format('DD/MM/YYYY') : '—'}</div></div> },
           { title: 'Vào ca / Ra ca', render: (_, r) => renderShiftCheckInOutSummary(r) },
-          {
-            title: 'Thao tác', width: 90, fixed: 'right', align: 'right',
-            render: (_, r) => (
-              <RowActionButtons
-                detailTooltip="Xem chi tiết điểm danh Vào/Ra ca"
-                onViewDetail={() => setDetailRow(r)}
-                menuItems={canManageEvents ? [
-                  { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa điểm danh', onClick: () => setEditRow(r) },
-                  { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa bản ghi điểm danh', onClick: () => modal.confirm({ title: `Xác nhận xóa điểm danh ca của ${r.employeeName}?`, content: `Toàn bộ lượt Vào ca / Ra ca thuộc ${r.shiftLabel} ngày ${r.work_date} sẽ bị xóa.`, okText: 'Xác nhận xóa', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelText: 'Hủy bỏ', cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => deleteMut.mutateAsync(r) }) },
-                ] : []}
-              />
-            ),
-          },
+          { title: 'Thao tác', width: 90, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết điểm danh Vào/Ra ca" onViewDetail={() => setDetailRow(r)} menuItems={canManageEvents ? [{ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa điểm danh', onClick: () => setEditRow(r) }, { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa bản ghi điểm danh', onClick: () => modal.confirm({ title: `Xác nhận xóa điểm danh ca của ${r.employeeName}?`, content: `Toàn bộ lượt Vào ca / Ra ca thuộc ${r.shiftLabel} ngày ${r.work_date} sẽ bị xóa.`, okText: 'Xác nhận xóa', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelText: 'Hủy bỏ', cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => deleteMut.mutateAsync(r) }) }] : []} /> },
         ]}
       />
       <AttendanceEventDetailModal event={detailRow} onClose={() => setDetailRow(null)} />
       <AttendanceEventEditModal event={editRow} onClose={() => setEditRow(null)} onSuccess={refreshAttendance} />
-    </>
+    </div>
   );
 }

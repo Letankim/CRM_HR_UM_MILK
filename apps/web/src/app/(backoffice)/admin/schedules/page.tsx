@@ -3,16 +3,18 @@
 import { Alert, App, Button, Flex, Segmented, Space } from 'antd';
 import { AppstoreOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, DeleteOutlined, EnvironmentOutlined, TableOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import dayjs, { type Dayjs } from 'dayjs';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useMemo, useState } from 'react';
 import { SHIFT_ASSIGNMENT_STATUS_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
-import { AttendanceEventsTable, groupAttendanceEventsByShift, type AttendanceEventRow } from '@/ui/components/AttendanceEventsTable';
+import { ATTENDANCE_SESSION_STATUS_OPTIONS, AttendanceEventsTable, exportAttendanceEventsExcel, type AttendanceEventRow } from '@/ui/components/AttendanceEventsTable';
 import { DataTableCard } from '@/ui/components/DataTableCard';
 import { FilterToolbar } from '@/ui/components/FilterToolbar';
 import { ScheduleFormModal, type ScheduleAssignmentItem } from '@/ui/components/ScheduleFormModal';
 import { ScheduleViewsPanel } from '@/ui/components/ScheduleViewsPanel';
+import { getMonday } from '@/ui/components/ScheduleWeekMatrix';
 import { ScheduleWorkflowsTabs } from '@/ui/components/ScheduleWorkflowsTabs';
 import { buildScheduleColumns, exportScheduleExcel } from '@/ui/components/schedule-table-columns';
 import { useScheduleBulkActions } from '@/ui/hooks/useScheduleBulkActions';
@@ -34,7 +36,9 @@ function SchedulesView() {
   const [shiftCode, setShiftCode] = useState('ALL');
   const [status, setStatus] = useState('ALL');
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(50);
+  const [perPage, setPerPage] = useState(15);
+  const [weekStart, setWeekStart] = useState<Dayjs>(() => getMonday(dayjs()));
+  const [calMonth, setCalMonth] = useState<Dayjs>(() => dayjs());
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<ScheduleAssignmentItem | null>(null);
   const [presetDate, setPresetDate] = useState<string | undefined>();
@@ -51,33 +55,53 @@ function SchedulesView() {
   });
   const { options: shiftFilterOptions } = useShiftTemplates(branchId);
 
-  const attQ = useQuery({
-    queryKey: ['attendance-all'],
-    queryFn: () => api.get<{ events: AttendanceEventRow[]; adjustments: Record<string, unknown>[] }>('/admin/attendance'),
+  const attCountQ = useQuery({
+    queryKey: ['attendance-sessions-count', branchId],
+    queryFn: () => api.list<AttendanceEventRow>(`/admin/attendance/sessions?page=1&per_page=1${branchId !== 'ALL' ? `&branch_id=${branchId}` : ''}`),
   });
 
+  const dateRangeParams = useMemo(() => {
+    if (viewMode === 'WEEK_MATRIX') {
+      return { from: weekStart.format('YYYY-MM-DD'), to: weekStart.add(6, 'day').format('YYYY-MM-DD'), limit: 300 };
+    }
+    if (viewMode === 'CALENDAR') {
+      return { from: calMonth.startOf('month').subtract(7, 'day').format('YYYY-MM-DD'), to: calMonth.endOf('month').add(7, 'day').format('YYYY-MM-DD'), limit: 1000 };
+    }
+    return { from: '', to: '', limit: perPage };
+  }, [viewMode, weekStart, calMonth, perPage]);
+
   const buildUrl = (force = false) => {
-    const sp = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+    const sp = new URLSearchParams({
+      page: viewMode === 'TABLE' ? String(page) : '1',
+      per_page: String(dateRangeParams.limit),
+    });
     if (branchId !== 'ALL') sp.set('branch_id', branchId);
     if (shiftCode !== 'ALL') sp.set('shift_code', shiftCode);
-    if (status !== 'ALL') sp.set('status', status);
+    if (status !== 'ALL' && viewMode !== 'ATTENDANCE') sp.set('status', status);
+    if (dateRangeParams.from) sp.set('from_date', dateRangeParams.from);
+    if (dateRangeParams.to) sp.set('to_date', dateRangeParams.to);
     if (q.trim()) sp.set('q', q.trim());
     if (force) sp.set('refresh', '1');
     return `/admin/schedules?${sp}`;
   };
 
   const query = useQuery({
-    queryKey: ['schedules', branchId, shiftCode, status, q, page, perPage],
+    queryKey: ['schedules', viewMode, branchId, shiftCode, status, q, page, dateRangeParams.from, dateRangeParams.to, dateRangeParams.limit],
     queryFn: () => api.list<ScheduleAssignmentItem>(buildUrl(false)),
+    enabled: section === 'schedules' && viewMode !== 'ATTENDANCE',
   });
 
   const handleManualRefresh = async () => {
     setManualRefreshing(true);
     const hide = message.loading('Đang đồng bộ lịch phân ca và điểm danh...', 0);
     try {
-      const fresh = await api.list<ScheduleAssignmentItem>(buildUrl(true));
-      qc.setQueryData(['schedules', branchId, shiftCode, status, q, page, perPage], fresh);
-      await qc.invalidateQueries({ queryKey: ['attendance-all'] });
+      if (viewMode === 'ATTENDANCE') {
+        await api.list<AttendanceEventRow>('/admin/attendance/sessions?page=1&per_page=15&refresh=1');
+      } else {
+        const fresh = await api.list<ScheduleAssignmentItem>(buildUrl(true));
+        qc.setQueryData(['schedules', viewMode, branchId, shiftCode, status, q, page, dateRangeParams.from, dateRangeParams.to, dateRangeParams.limit], fresh);
+      }
+      await Promise.all([qc.invalidateQueries({ queryKey: ['attendance-sessions'] }), qc.invalidateQueries({ queryKey: ['attendance-sessions-count'] })]);
       message.success('Đã cập nhật lịch làm việc và dữ liệu điểm danh mới nhất');
     } catch (e) {
       message.error(e instanceof ApiClientError ? e.message : 'Làm mới thất bại');
@@ -103,76 +127,65 @@ function SchedulesView() {
   });
 
   const { bulkActions } = useScheduleBulkActions({ canEdit });
-
-  const employeeOptions = useMemo(
-    () => (employeesQuery.data?.data ?? []).map((e) => ({ value: e.id, label: `${e.employeeCode} — ${e.fullName} (${e.branchName})`, branchId: e.branchId })),
-    [employeesQuery.data],
-  );
-
-  const attEvents = attQ.data?.events ?? [];
-  const items = useMemo(() => {
-    return (query.data?.data ?? []).map((item) => {
-      if (item.status === 'DRAFT') return { ...item, attendanceStatusLabel: 'Chờ CH / HR duyệt phân ca', attendanceStatusColor: 'gold' };
-      if (item.status === 'ABSENT') return { ...item, attendanceStatusLabel: 'Vắng mặt (Quá giờ ca — Cần bổ sung công)', attendanceStatusColor: 'red' };
-      if (item.status === 'COMPLETED') return { ...item, attendanceStatusLabel: 'Đã hoàn thành ca', attendanceStatusColor: 'green' };
-      if (item.status === 'ON_LEAVE' || item.dayType === 'OFF') return { ...item, attendanceStatusLabel: 'Nghỉ phép OFF', attendanceStatusColor: 'default' };
-      const sEvs = attEvents.filter((e) => String(e.assignment_id) === String(item.id));
-      const inEv = sEvs.find((e) => e.type === 'CHECK_IN');
-      const outEv = sEvs.find((e) => e.type === 'CHECK_OUT');
-      const attendanceStatusLabel = inEv && outEv ? 'Đã hoàn thành ca' : inEv ? `Đã vào ca (${String(inEv.checkTimeFormatted || '').slice(0, 5)} · ${inEv.punctualityLabel || 'Đúng giờ'})` : 'Chưa điểm danh';
-      const attendanceStatusColor = inEv && outEv ? 'green' : inEv ? (inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : 'default';
-      return { ...item, attendanceStatusLabel, attendanceStatusColor };
-    });
-  }, [query.data, attEvents]);
+  const employeeOptions = useMemo(() => (employeesQuery.data?.data ?? []).map((e) => ({ value: e.id, label: `${e.employeeCode} — ${e.fullName} (${e.branchName})`, branchId: e.branchId })), [employeesQuery.data]);
+  const items = query.data?.data ?? [];
   const draftItems = useMemo(() => items.filter((i) => i.status === 'DRAFT'), [items]);
+  const totalDraftCount = Number(query.data?.meta.filters?.draft_count ?? draftItems.length);
+  const attTotalSessions = attCountQ.data?.meta.pagination.total ?? 0;
 
   const branchList = branchesQuery.data?.data ?? [];
   const branchSelectOptions = branchList.length === 1
     ? [{ value: 'ALL', label: `${branchList[0]!.code} — ${branchList[0]!.name}` }]
     : [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branchList.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))];
   const openEdit = (r: ScheduleAssignmentItem) => { setEditingRow(r); setModalOpen(true); };
+  const statusOptions = viewMode === 'ATTENDANCE' ? [{ value: 'ALL', label: 'Tất cả trạng thái' }, ...ATTENDANCE_SESSION_STATUS_OPTIONS] : [{ value: 'ALL', label: 'Tất cả trạng thái' }, ...SHIFT_ASSIGNMENT_STATUS_OPTIONS];
 
   return (
     <>
       {section === 'schedules' ? (
         <>
           <FilterToolbar
-            searchPlaceholder="Tìm tên nhân viên, mã NV, ngày 2026-10-24..."
+            searchPlaceholder="Tìm tên nhân viên, mã NV, ngày 2026-10-26..."
             searchValue={q}
             onSearchChange={(val) => { setPage(1); setQ(val); }}
             selects={[
               { key: 'branch', value: branchId, width: 195, options: branchSelectOptions, onChange: (v) => { setPage(1); setBranchId(v); } },
               { key: 'shift', value: shiftCode, width: 185, options: [{ value: 'ALL', label: 'Tất cả khung ca' }, ...shiftFilterOptions], onChange: (v) => { setPage(1); setShiftCode(v); } },
-              { key: 'status', value: status, width: 175, options: [{ value: 'ALL', label: 'Tất cả trạng thái' }, ...SHIFT_ASSIGNMENT_STATUS_OPTIONS], onChange: (v) => { setPage(1); setStatus(v); } },
+              { key: 'status', value: status, width: 185, options: statusOptions, onChange: (v) => { setPage(1); setStatus(v); } },
             ]}
             extraRight={
               <Segmented
                 value={viewMode}
-                onChange={(v) => setViewMode(v as ViewMode)}
+                onChange={(v) => { setStatus('ALL'); setPage(1); setViewMode(v as ViewMode); }}
                 options={[
                   { value: 'WEEK_MATRIX', icon: <AppstoreOutlined />, label: 'Lưới Lịch Tuần' },
                   { value: 'CALENDAR', icon: <CalendarOutlined />, label: 'Lịch Tháng' },
                   { value: 'TABLE', icon: <TableOutlined />, label: 'Bảng Phân Ca' },
-                  { value: 'ATTENDANCE', icon: <EnvironmentOutlined />, label: `Danh Sách Điểm Danh (${groupAttendanceEventsByShift(attEvents).length})` },
+                  { value: 'ATTENDANCE', icon: <EnvironmentOutlined />, label: `Danh Sách Điểm Danh (${attTotalSessions})` },
                 ]}
               />
             }
-            onExportExcel={() => exportScheduleExcel(items)}
+            onExportExcel={async () => {
+              if (viewMode === 'ATTENDANCE') {
+                const res = await api.list<AttendanceEventRow>(`/admin/attendance/sessions?page=1&per_page=100${branchId !== 'ALL' ? `&branch_id=${branchId}` : ''}`);
+                exportAttendanceEventsExcel(res.data);
+              } else exportScheduleExcel(items);
+            }}
             onRefresh={handleManualRefresh}
             refreshing={manualRefreshing}
             primaryActionLabel={canEdit ? 'Phân ca mới' : undefined}
             onPrimaryAction={canEdit ? () => { setEditingRow(null); setPresetDate(undefined); setPresetShift(undefined); setModalOpen(true); } : undefined}
           />
 
-          {canEdit && draftItems.length > 0 && (
+          {canEdit && totalDraftCount > 0 && viewMode !== 'ATTENDANCE' && (
             <Alert
               type="warning" showIcon style={{ marginBottom: 12 }}
               message={
                 <Flex justify="space-between" align="center" wrap="wrap" gap={8}>
-                  <span>Có <strong>{draftItems.length} ca làm việc</strong> đang ở trạng thái <strong>Chờ duyệt phân ca</strong>. Nhân sự chỉ có thể chấm công Vào/Ra ca sau khi Quản lý cửa hàng hoặc HR duyệt sang Đã phân ca chính thức.</span>
+                  <span>Có <strong>{totalDraftCount} ca làm việc</strong> đang ở trạng thái <strong>Chờ duyệt phân ca</strong>. Nhân sự chỉ có thể chấm công Vào/Ra ca sau khi Quản lý cửa hàng hoặc HR duyệt sang Đã phân ca chính thức.</span>
                   <Space wrap size={8}>
                     <Button size="small" onClick={() => { setStatus('DRAFT'); setViewMode('TABLE'); }}>Xem danh sách chờ duyệt</Button>
-                    <Button size="small" type="primary" icon={<CheckOutlined />} loading={approveBulkMut.isPending} onClick={() => approveBulkMut.mutate(draftItems)}>Duyệt &amp; Phát hành tất cả ({draftItems.length} ca)</Button>
+                    {draftItems.length > 0 && <Button size="small" type="primary" icon={<CheckOutlined />} loading={approveBulkMut.isPending} onClick={() => approveBulkMut.mutate(draftItems)}>Duyệt &amp; Phát hành ({draftItems.length} ca đang hiển thị)</Button>}
                   </Space>
                 </Flex>
               }
@@ -180,24 +193,19 @@ function SchedulesView() {
           )}
 
           {viewMode === 'ATTENDANCE' ? (
-            <AttendanceEventsTable events={attEvents} assignments={items as unknown as Record<string, unknown>[]} loading={attQ.isLoading} />
+            <AttendanceEventsTable externalFilters={{ q, branchId, shiftCode, status }} />
           ) : viewMode !== 'TABLE' ? (
-            <ScheduleViewsPanel mode={viewMode} assignments={items} canEdit={canEdit} onAddAtCell={(dateStr, sCode) => { setEditingRow(null); setPresetDate(dateStr); setPresetShift(sCode); setModalOpen(true); }} onEditItem={openEdit} />
+            <ScheduleViewsPanel mode={viewMode} assignments={items} canEdit={canEdit} weekStart={weekStart} onWeekStartChange={setWeekStart} calMonth={calMonth} onMonthChange={setCalMonth} onAddAtCell={(dateStr, sCode) => { setEditingRow(null); setPresetDate(dateStr); setPresetShift(sCode); setModalOpen(true); }} onEditItem={openEdit} />
           ) : (
             <DataTableCard<ScheduleAssignmentItem>
               columns={buildScheduleColumns({
                 canEdit, onApprove: (r) => approveSingle.mutate(r), onEdit: openEdit,
-                onDelete: (r) => modal.confirm({
-                  title: `Xác nhận xóa phân công ca của ${r.employeeName}?`, content: `Ca ${r.shiftLabel} ngày ${r.workDate} sẽ bị xóa khỏi lịch làm việc.`,
-                  okText: 'Xác nhận xóa', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelText: 'Hủy bỏ', cancelButtonProps: { icon: <CloseOutlined /> },
-                  onOk: () => deleteSingle.mutateAsync(r),
-                }),
+                onDelete: (r) => modal.confirm({ title: `Xác nhận xóa phân công ca của ${r.employeeName}?`, content: `Ca ${r.shiftLabel} ngày ${r.workDate} sẽ bị xóa khỏi lịch làm việc.`, okText: 'Xác nhận xóa', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelText: 'Hủy bỏ', cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => deleteSingle.mutateAsync(r) }),
               })}
               dataSource={items} meta={query.data?.meta} loading={query.isLoading || query.isFetching || manualRefreshing}
               codeExtractor={(r) => r.employeeCode} onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }} bulkActions={bulkActions}
             />
           )}
-
           <ScheduleFormModal open={modalOpen} editing={editingRow} presetDate={presetDate} presetShiftCode={presetShift} employees={employeeOptions} canEdit={canEdit} onClose={() => { setModalOpen(false); setEditingRow(null); }} />
         </>
       ) : (

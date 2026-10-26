@@ -155,6 +155,15 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
       payload: { assignment_id: registered.id, kind: 'CHECK_IN', lat: branch.lat, lng: branch.lng, selfie_source: 'LIVE_CAMERA' },
     });
     expect(checkAfterApprove.statusCode).toBe(201);
+
+    const sessionsRes = await app.inject({
+      method: 'GET',
+      url: '/api/admin/attendance/sessions?page=1&per_page=5',
+      headers: hrHeaders,
+    });
+    expect(sessionsRes.statusCode).toBe(200);
+    expect(sessionsRes.json().meta.pagination.per_page).toBe(5);
+    expect(sessionsRes.json().data.length).toBeGreaterThanOrEqual(1);
   });
 
   it('rejects creating a Shift Swap when the peer already has a shift on the same work_date', async () => {

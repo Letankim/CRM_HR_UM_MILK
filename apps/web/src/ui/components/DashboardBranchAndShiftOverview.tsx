@@ -22,16 +22,15 @@ interface Props {
   deadLettersCount: number;
 }
 
-/**
- * Khối giám sát trực tiếp theo Chi nhánh, Ca đang diễn ra/sắp tới (ADM-01 / STR-01)
- * và Tổng quan Quỹ lương & Đối soát công cho Kế toán (FIN-01).
- */
 export function DashboardBranchAndShiftOverview({
   branchFilter, stageFilter, periodFilter, pendingAccountsCount, deadLettersCount,
 }: Props) {
   const can = useCan();
   const canSchedule = can('schedule.read', 'attendance.read');
   const canPayroll = can('payroll.read');
+  const todayStr = dayjs().format('YYYY-MM-DD');
+  const monthStartStr = dayjs().startOf('month').format('YYYY-MM-DD');
+  const monthEndStr = dayjs().endOf('month').add(7, 'day').format('YYYY-MM-DD');
 
   const branchesQ = useQuery({
     queryKey: ['dashboard-branches'],
@@ -43,18 +42,13 @@ export function DashboardBranchAndShiftOverview({
     enabled: can('employee.read'),
   });
   const shiftsQ = useQuery({
-    queryKey: ['dashboard-shifts-full'],
-    queryFn: () => api.list<Record<string, unknown>>('/admin/schedules?per_page=100'),
-    enabled: canSchedule,
-  });
-  const eventsQ = useQuery({
-    queryKey: ['dashboard-attendance-events'],
-    queryFn: () => api.list<Record<string, unknown>>('/admin/attendance-events?per_page=100'),
+    queryKey: ['dashboard-shifts-full', monthStartStr, monthEndStr],
+    queryFn: () => api.list<Record<string, unknown>>(`/admin/schedules?from_date=${monthStartStr}&to_date=${monthEndStr}&per_page=1000`),
     enabled: canSchedule,
   });
   const adjustmentsQ = useQuery({
     queryKey: ['dashboard-attendance-adjustments'],
-    queryFn: () => api.list<Record<string, unknown>>('/admin/attendance-adjustments?per_page=100'),
+    queryFn: () => api.list<Record<string, unknown>>('/admin/attendance/adjustments?per_page=100'),
     enabled: canSchedule,
   });
   const leavesQ = useQuery({
@@ -68,7 +62,6 @@ export function DashboardBranchAndShiftOverview({
     enabled: canPayroll,
   });
 
-  const todayStr = dayjs().format('YYYY-MM-DD');
   const nowHm = dayjs().format('HH:mm');
   const currentShiftLabel = nowHm < '12:00'
     ? 'Ca sáng (07:00–12:00) · Sắp tới: Ca chiều (12:00–17:00)'
@@ -92,14 +85,9 @@ export function DashboardBranchAndShiftOverview({
     });
     const allShifts = (shiftsQ.data?.data ?? []).filter((s) => inPeriod(String(s.workDate || '')));
     const todayShifts = (shiftsQ.data?.data ?? []).filter((s) => String(s.workDate || '') === todayStr);
-    const evs = eventsQ.data?.data ?? [];
     const leaves = (leavesQ.data?.data ?? []).filter((l) => String(l.leave_date || '') === todayStr && l.status === 'APPROVED');
 
-    let presentTotal = 0;
-    let notCheckedInTotal = 0;
-    let absentTotal = 0;
-    let offTodayTotal = 0;
-    let understaffedBranches = 0;
+    let presentTotal = 0, notCheckedInTotal = 0, absentTotal = 0, offTodayTotal = 0, understaffedBranches = 0;
 
     const rows = branches.map((b) => {
       const bEmps = emps.filter((e) => (e.branchId ?? e.branch_id) === b.id);
@@ -108,55 +96,28 @@ export function DashboardBranchAndShiftOverview({
       const bTodayShifts = todayShifts.filter((s) => (s.branchId ?? s.branch_id) === b.id);
       const bPeriodShifts = allShifts.filter((s) => (s.branchId ?? s.branch_id) === b.id);
 
-      let present = 0;
-      let notCheckedIn = 0;
-      let absent = 0;
+      let present = 0, notCheckedIn = 0, absent = 0;
       for (const s of bTodayShifts) {
-        const hasCheckIn = evs.some((e) => String(e.assignment_id) === String(s.id) && e.type === 'CHECK_IN');
-        if (hasCheckIn || s.status === 'COMPLETED') present += 1;
-        else if (s.status === 'ABSENT' || (nowHm > String(s.endAt || '12:00'))) absent += 1;
+        const attCol = String(s.attendanceStatusColor || '');
+        const hasCheckIn = attCol === 'green' || attCol === 'processing' || attCol === 'volcano' || s.status === 'COMPLETED';
+        if (hasCheckIn) present += 1;
+        else if (s.status === 'ABSENT' || nowHm > String(s.endAt || '12:00')) absent += 1;
         else notCheckedIn += 1;
       }
       const offCount = leaves.filter((l) => l.branch_id === b.id).length;
       const isUnderstaffed = bTodayShifts.length < 2 || absent > 0;
       if (isUnderstaffed) understaffedBranches += 1;
 
-      presentTotal += present;
-      notCheckedInTotal += notCheckedIn;
-      absentTotal += absent;
-      offTodayTotal += offCount;
-
+      presentTotal += present; notCheckedInTotal += notCheckedIn; absentTotal += absent; offTodayTotal += offCount;
       return {
-        id: b.id,
-        code: b.code,
-        name: b.name,
-        totalStaff: bEmps.length,
-        probationCount: bProbation,
-        officialCount: bOfficial,
-        todayShiftCount: bTodayShifts.length,
-        periodShiftCount: bPeriodShifts.length,
-        present,
-        notCheckedIn,
-        absent,
-        offCount,
-        isUnderstaffed,
+        id: b.id, code: b.code, name: b.name, totalStaff: bEmps.length, probationCount: bProbation, officialCount: bOfficial,
+        todayShiftCount: bTodayShifts.length, periodShiftCount: bPeriodShifts.length, present, notCheckedIn, absent, offCount, isUnderstaffed,
       };
     });
 
     const newHireCount = emps.filter((e) => e.stage === 'NEW' || e.status === 'PENDING_ACTIVATION').length + pendingAccountsCount;
-    return {
-      branchRows: rows,
-      totals: {
-        totalStaff: emps.length,
-        newHireCount,
-        presentTotal,
-        notCheckedInTotal,
-        absentTotal,
-        offTodayTotal,
-        understaffedBranches,
-      },
-    };
-  }, [branchesQ.data, employeesQ.data, shiftsQ.data, eventsQ.data, leavesQ.data, branchFilter, stageFilter, periodFilter, todayStr, nowHm, pendingAccountsCount]);
+    return { branchRows: rows, totals: { totalStaff: emps.length, newHireCount, presentTotal, notCheckedInTotal, absentTotal, offTodayTotal, understaffedBranches } };
+  }, [branchesQ.data, employeesQ.data, shiftsQ.data, leavesQ.data, branchFilter, stageFilter, periodFilter, todayStr, nowHm, pendingAccountsCount]);
 
   const periods = payrollQ.data ?? [];
   const activePeriod = periods[0];
@@ -168,26 +129,22 @@ export function DashboardBranchAndShiftOverview({
       {canSchedule && (
         <Row gutter={[12, 12]}>
           <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Nhân sự mới / Chờ KH" value={totals.newHireCount} prefix={<TeamOutlined />} /></Card></Col>
-          <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Đang có mặt hôm nay" value={totals.presentTotal} valueStyle={{ color: '#16A34A' }} prefix={<CheckCircleOutlined />} /></Card></Col>
-          <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Chưa Check-in ca" value={totals.notCheckedInTotal} valueStyle={{ color: '#2563EB' }} prefix={<ClockCircleOutlined />} /></Card></Col>
-          <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Vắng mặt hôm nay" value={totals.absentTotal} valueStyle={{ color: totals.absentTotal > 0 ? '#DC2626' : '#16A34A' }} prefix={<WarningOutlined />} /></Card></Col>
+          <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Đang có mặt hôm nay" value={totals.presentTotal} formatter={(v) => <span style={{ color: '#16A34A' }}>{v}</span>} prefix={<CheckCircleOutlined style={{ color: '#16A34A' }} />} /></Card></Col>
+          <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Chưa Check-in ca" value={totals.notCheckedInTotal} formatter={(v) => <span style={{ color: '#2563EB' }}>{v}</span>} prefix={<ClockCircleOutlined style={{ color: '#2563EB' }} />} /></Card></Col>
+          <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Vắng mặt hôm nay" value={totals.absentTotal} formatter={(v) => <span style={{ color: totals.absentTotal > 0 ? '#DC2626' : '#16A34A' }}>{v}</span>} prefix={<WarningOutlined style={{ color: totals.absentTotal > 0 ? '#DC2626' : '#16A34A' }} />} /></Card></Col>
           <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Nghỉ OFF hôm nay" value={totals.offTodayTotal} prefix={<CalendarOutlined />} /></Card></Col>
-          <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Cảnh báo / Lỗi đồng bộ" value={deadLettersCount + totals.understaffedBranches} valueStyle={{ color: deadLettersCount + totals.understaffedBranches > 0 ? '#D97706' : '#16A34A' }} prefix={<AlertOutlined />} /></Card></Col>
+          <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Cảnh báo / Lỗi đồng bộ" value={deadLettersCount + totals.understaffedBranches} formatter={(v) => <span style={{ color: deadLettersCount + totals.understaffedBranches > 0 ? '#D97706' : '#16A34A' }}>{v}</span>} prefix={<AlertOutlined style={{ color: deadLettersCount + totals.understaffedBranches > 0 ? '#D97706' : '#16A34A' }} />} /></Card></Col>
         </Row>
       )}
 
       {canPayroll && (
-        <Card
-          size="small"
-          title={<span><DollarOutlined /> Tổng quan Quỹ lương, Giờ công &amp; Đối soát Kế toán (FIN-01)</span>}
-          extra={<Link href="/admin/payroll"><Button size="small" type="primary" icon={<DollarOutlined />}>Mở Bảng lương &amp; Đối soát</Button></Link>}
-        >
+        <Card size="small" title={<span><DollarOutlined /> Tổng quan Quỹ lương, Giờ công &amp; Đối soát Kế toán (FIN-01)</span>} extra={<Link href="/admin/payroll"><Button size="small" type="primary" icon={<DollarOutlined />}>Mở Bảng lương &amp; Đối soát</Button></Link>}>
           <Row gutter={[12, 12]}>
             <Col xs={12} md={4}><Statistic title="Headcount tính lương" value={activePeriod?.total_employees ?? totals.totalStaff} suffix="NV" /></Col>
             <Col xs={12} md={4}><Statistic title="Tổng giờ công kỳ hiện tại" value={activePeriod?.total_approved_hours ?? 0} suffix="giờ" /></Col>
-            <Col xs={12} md={5}><Statistic title="Quỹ lương dự kiến (Gross)" value={fmtVnd(activePeriod?.total_gross_vnd ?? 0)} valueStyle={{ fontSize: 16, fontWeight: 700, color: '#2563EB' }} /></Col>
-            <Col xs={12} md={5}><Statistic title="Thực lĩnh dự kiến (Net)" value={fmtVnd(activePeriod?.total_net_vnd ?? 0)} valueStyle={{ fontSize: 16, fontWeight: 700, color: '#16A34A' }} /></Col>
-            <Col xs={12} md={3}><Statistic title="Công chờ khóa / Bù công" value={pendingAdjsCount} suffix="đơn" valueStyle={{ color: pendingAdjsCount > 0 ? '#D97706' : '#16A34A' }} /></Col>
+            <Col xs={12} md={5}><Statistic title="Quỹ lương dự kiến (Gross)" value={fmtVnd(activePeriod?.total_gross_vnd ?? 0)} formatter={(v) => <span style={{ fontSize: 16, fontWeight: 700, color: '#2563EB' }}>{v}</span>} /></Col>
+            <Col xs={12} md={5}><Statistic title="Thực lĩnh dự kiến (Net)" value={fmtVnd(activePeriod?.total_net_vnd ?? 0)} formatter={(v) => <span style={{ fontSize: 16, fontWeight: 700, color: '#16A34A' }}>{v}</span>} /></Col>
+            <Col xs={12} md={3}><Statistic title="Công chờ khóa / Bù công" value={pendingAdjsCount} suffix="đơn" formatter={(v) => <span style={{ color: pendingAdjsCount > 0 ? '#D97706' : '#16A34A' }}>{v}</span>} /></Col>
             <Col xs={12} md={3}>
               <div style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>Trạng thái kỳ lương</div>
               {activePeriod ? <StatusTag value={activePeriod.status} label={activePeriod.statusLabel} /> : <Tag>Chưa mở kỳ</Tag>}
@@ -198,11 +155,7 @@ export function DashboardBranchAndShiftOverview({
       )}
 
       {canSchedule && (
-        <Card
-          size="small"
-          title={<span><EnvironmentOutlined /> Tình trạng Nhân sự, Điểm danh &amp; Ca đang diễn ra theo Chi nhánh (ADM-01 / STR-01)</span>}
-          extra={<Tag color="blue">{currentShiftLabel}</Tag>}
-        >
+        <Card size="small" title={<span><EnvironmentOutlined /> Tình trạng Nhân sự, Điểm danh &amp; Ca đang diễn ra theo Chi nhánh (ADM-01 / STR-01)</span>} extra={<Tag color="blue">{currentShiftLabel}</Tag>}>
           <Table
             size="small" rowKey="id" pagination={false} loading={branchesQ.isLoading || shiftsQ.isLoading} dataSource={branchRows} scroll={{ x: 960 }}
             locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có chi nhánh phù hợp bộ lọc" /> }}
@@ -213,21 +166,8 @@ export function DashboardBranchAndShiftOverview({
               { title: 'Đang có mặt', dataIndex: 'present', width: 110, align: 'center', render: (v: number) => <Tag color="green">{v} có mặt</Tag> },
               { title: 'Chưa Check-in', dataIndex: 'notCheckedIn', width: 120, align: 'center', render: (v: number) => <Tag color="blue">{v} chờ vào ca</Tag> },
               { title: 'Nghỉ OFF / Vắng', width: 135, align: 'center', render: (_, r) => <Space size={4}><Tag>{r.offCount} OFF</Tag>{r.absent > 0 && <Tag color="red">{r.absent} vắng</Tag>}</Space> },
-              {
-                title: 'Cảnh báo vận hành', width: 150,
-                render: (_, r) => r.isUnderstaffed
-                  ? <Badge status="warning" text={<Tag color="volcano">Cần bổ sung ca</Tag>} />
-                  : <Badge status="success" text={<Tag color="green">Đủ định biên ca</Tag>} />,
-              },
-              {
-                title: 'Thao tác', width: 180, align: 'right',
-                render: () => (
-                  <Space size={6}>
-                    <Link href="/admin/schedules"><Button size="small" icon={<CalendarOutlined />}>Lịch ca</Button></Link>
-                    <Link href="/admin/schedules?section=workflows"><Button size="small" icon={<SafetyCertificateOutlined />}>Điểm danh</Button></Link>
-                  </Space>
-                ),
-              },
+              { title: 'Cảnh báo vận hành', width: 150, render: (_, r) => r.isUnderstaffed ? <Badge status="warning" text={<Tag color="volcano">Cần bổ sung ca</Tag>} /> : <Badge status="success" text={<Tag color="green">Đủ định biên ca</Tag>} /> },
+              { title: 'Thao tác', width: 180, align: 'right', render: () => <Space size={6}><Link href="/admin/schedules"><Button size="small" icon={<CalendarOutlined />}>Lịch ca</Button></Link><Link href="/admin/schedules?section=workflows"><Button size="small" icon={<SafetyCertificateOutlined />}>Điểm danh</Button></Link></Space> },
             ]}
           />
         </Card>

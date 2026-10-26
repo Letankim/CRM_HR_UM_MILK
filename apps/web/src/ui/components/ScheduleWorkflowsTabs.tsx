@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
-import { AttendanceEventsTable, groupAttendanceEventsByShift, type AttendanceEventRow } from './AttendanceEventsTable';
+import { AttendanceEventsTable, type AttendanceEventRow } from './AttendanceEventsTable';
 import { GuardButton, usePermissionGuard } from './GuardButton';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
 import { ScheduleWorkflowModals, type WorkflowAssignmentOption } from './ScheduleWorkflowModals';
@@ -43,10 +43,10 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
   const leavesQ = useQuery({ queryKey: ['leave-requests', wfParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/leave-requests?${wfParams}`) });
   const swapsQ = useQuery({ queryKey: ['shift-swaps', wfParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/shift-swaps?${wfParams}`) });
   const emgQ = useQuery({ queryKey: ['emergency-leaves', wfParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/emergency-leaves?${wfParams}`) });
-  const attQ = useQuery({ queryKey: ['attendance-all'], queryFn: () => api.get<{ events: AttendanceEventRow[]; adjustments: Record<string, unknown>[] }>('/admin/attendance') });
+  const attCountQ = useQuery({ queryKey: ['attendance-sessions-count', branchFilter], queryFn: () => api.list<AttendanceEventRow>(`/admin/attendance/sessions?page=1&per_page=1${branchFilter !== 'ALL' ? `&branch_id=${branchFilter}` : ''}`) });
 
-  const refreshAll = () => ['attendance-adjustments', 'leave-requests', 'shift-swaps', 'emergency-leaves', 'attendance-all', 'schedules', 'my-attendance'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-  const isRefreshing = adjQ.isFetching || leavesQ.isFetching || swapsQ.isFetching || emgQ.isFetching || attQ.isFetching;
+  const refreshAll = () => ['attendance-adjustments', 'leave-requests', 'shift-swaps', 'emergency-leaves', 'attendance-sessions', 'attendance-sessions-count', 'schedules', 'my-attendance'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+  const isRefreshing = adjQ.isFetching || leavesQ.isFetching || swapsQ.isFetching || emgQ.isFetching || attCountQ.isFetching;
 
   const actMut = useMutation({
     mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body),
@@ -86,8 +86,8 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
         items={[
           {
             key: 'attendance',
-            label: <span><EnvironmentOutlined /> Lịch sử Điểm danh Vào/Ra ca ({groupAttendanceEventsByShift(attQ.data?.events ?? []).length})</span>,
-            children: <AttendanceEventsTable events={attQ.data?.events ?? []} assignments={assignments as unknown as Record<string, unknown>[]} loading={attQ.isLoading} />,
+            label: <span><EnvironmentOutlined /> Lịch sử Điểm danh Vào/Ra ca ({attCountQ.data?.meta.pagination.total ?? 0})</span>,
+            children: <AttendanceEventsTable assignments={assignments as unknown as Record<string, unknown>[]} />,
           },
           {
             key: 'adjustments',
