@@ -14,8 +14,17 @@ let currentToken: string | null = null;
  * Hỗ trợ kết nối trực tiếp tới Render (`NEXT_PUBLIC_WS_URL`) khi Frontend đặt trên Vercel
  * (do Vercel rewrites không proxy WebSocket upgrade), hoặc kết nối cùng origin khi chạy local/Docker.
  */
+function resolveWsOrigin(): string | undefined {
+  const configured = process.env.NEXT_PUBLIC_WS_URL?.trim();
+  if (configured) return configured;
+  if (typeof window !== 'undefined' && window.location.hostname.endsWith('.vercel.app')) {
+    return 'https://crm-hr-um-milk-api.onrender.com';
+  }
+  return undefined;
+}
+
 function getSocket(socketToken?: string | null): Socket {
-  const wsUrl = process.env.NEXT_PUBLIC_WS_URL?.trim() || undefined;
+  const wsUrl = resolveWsOrigin();
   if (socket && socketToken && socketToken !== currentToken) {
     currentToken = socketToken;
     socket.auth = { token: socketToken };
@@ -26,7 +35,9 @@ function getSocket(socketToken?: string | null): Socket {
       path: '/socket.io',
       withCredentials: true,
       auth: socketToken ? { token: socketToken } : undefined,
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
+      reconnectionAttempts: 5,
+      reconnectionDelay: 3000,
     });
   }
   return socket;
@@ -42,7 +53,8 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
   const { message } = App.useApp();
 
   useEffect(() => {
-    if (!enabled) return;
+    const wsUrl = resolveWsOrigin();
+    if (!enabled || (wsUrl && !socketToken)) return;
     const s = getSocket(socketToken);
     const onForceLogout = (payload: { reason?: string }) => {
       message.warning(payload?.reason ?? 'Phiên đăng nhập đã bị thu hồi');

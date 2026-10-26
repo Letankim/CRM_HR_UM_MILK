@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   output: process.env.VERCEL ? undefined : 'standalone',
   transpilePackages: ['@umbm/shared'],
+  env: {
+    NEXT_PUBLIC_WS_URL:
+      process.env.NEXT_PUBLIC_WS_URL ||
+      (process.env.API_INTERNAL_URL?.startsWith('https://') ? process.env.API_INTERNAL_URL : ''),
+  },
   // Socket.IO dùng đường dẫn "/socket.io/" (có dấu "/" cuối). Next.js mặc định redirect 308
   // để bỏ dấu "/" cuối, làm hỏng bước bắt tay của Socket.IO — tắt hành vi đó.
   skipTrailingSlashRedirect: true,

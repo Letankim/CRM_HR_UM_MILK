@@ -74,7 +74,7 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, onAddAtCel
       }
     >
       <div style={{ overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 920 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1040 }}>
           <thead>
             <tr>
               <th style={{ width: 145, padding: '10px 12px', background: '#F8FAFC', border: `1px solid ${BRAND.border}`, textAlign: 'left' }}>
@@ -122,15 +122,17 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, onAddAtCel
                             <div
                               onClick={() => onEditItem(item)}
                               style={{
-                                padding: '5px 8px',
+                                padding: '6px 8px',
                                 borderRadius: 4,
                                 cursor: 'pointer',
+                                overflow: 'hidden',
+                                wordBreak: 'break-word',
                                 background: item.status === 'PUBLISHED' ? '#EFF6FF' : '#FFFBEB',
                                 border: `1px solid ${item.status === 'PUBLISHED' ? '#93C5FD' : '#FCD34D'}`,
                               }}
                             >
-                              <div style={{ fontWeight: 600, fontSize: 12, color: '#0F172A' }}>{item.employeeName}</div>
-                              <Flex justify="space-between" align="center" style={{ marginTop: 2 }}>
+                              <div style={{ fontWeight: 600, fontSize: 12, color: '#0F172A', lineHeight: 1.35 }}>{item.employeeName}</div>
+                              <Flex justify="space-between" align="center" wrap gap={4} style={{ marginTop: 3 }}>
                                 <Tag color={item.employeeStage === 'OFFICIAL' ? 'green' : 'blue'} style={{ margin: 0, borderRadius: 2, fontSize: 10 }}>
                                   {item.employeeCode}
                                 </Tag>
@@ -138,11 +140,11 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, onAddAtCel
                               </Flex>
                               {item.status === 'DRAFT' ? (
                                 <div style={{ marginTop: 4 }}>
-                                  <Tag color="gold" style={{ margin: 0, borderRadius: 2, fontSize: 10 }}>Chờ duyệt phân ca</Tag>
+                                  <Tag color="gold" style={{ margin: 0, borderRadius: 2, fontSize: 10, whiteSpace: 'normal', maxWidth: '100%', lineHeight: 1.3 }}>Chờ duyệt phân ca</Tag>
                                 </div>
                               ) : item.attendanceStatusLabel && item.attendanceStatusColor !== 'default' ? (
                                 <div style={{ marginTop: 4 }}>
-                                  <Tag color={item.attendanceStatusColor} style={{ margin: 0, borderRadius: 2, fontSize: 10, whiteSpace: 'normal' }}>
+                                  <Tag color={item.attendanceStatusColor} style={{ margin: 0, borderRadius: 2, fontSize: 10, whiteSpace: 'normal', maxWidth: '100%', lineHeight: 1.3 }}>
                                     {item.attendanceStatusLabel}
                                   </Tag>
                                 </div>

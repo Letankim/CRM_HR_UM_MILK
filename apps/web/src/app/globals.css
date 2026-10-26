@@ -209,6 +209,7 @@ body {
 }
 
 .ant-descriptions .ant-tag,
+.ant-card-body .ant-tag,
 .ant-modal-body .ant-tag,
 .ant-drawer-body .ant-tag {
   white-space: normal !important;
@@ -216,6 +217,14 @@ body {
   height: auto !important;
   line-height: 1.35 !important;
   max-width: 100%;
+}
+
+/* Lịch Tháng: tự giãn chiều cao ô ngày theo số ca, ẩn thanh cuộn dọc thừa trong từng ô */
+.ant-picker-calendar-full .ant-picker-panel .ant-picker-calendar-date-content {
+  height: auto !important;
+  min-height: 76px;
+  max-height: none !important;
+  overflow-y: visible !important;
 }
 
 @media (max-width: 767px) {

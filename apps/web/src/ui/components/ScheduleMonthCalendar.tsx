@@ -59,7 +59,7 @@ export function ScheduleMonthCalendar({ todayDate, assignments, canEdit, onAddAt
               const dateStr = current.format('YYYY-MM-DD');
               const dayItems = assignments.filter((a) => a.workDate === dateStr);
               return (
-                <div style={{ minHeight: 84, padding: 2 }}>
+                <div style={{ padding: '2px 0' }}>
                   {canEdit && (
                     <div style={{ textAlign: 'right', marginBottom: 2 }}>
                       <Button
