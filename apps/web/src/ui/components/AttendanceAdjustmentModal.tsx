@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, App, Col, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
-import { CloseOutlined, SendOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Col, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
+import { CloseOutlined, LockOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { DEFAULT_SHIFT_OPTIONS } from '@umbm/shared';
@@ -55,6 +55,12 @@ export function AttendanceAdjustmentModal({
   );
 
   const watchedDate = Form.useWatch('work_date', form) || dayjs().format('YYYY-MM-DD');
+  const watchedAssignId = Form.useWatch('assignment_id', form) || '';
+  const selectedShift = useMemo(
+    () => (watchedAssignId ? allShifts.find((s) => String(s.id) === String(watchedAssignId)) ?? null : null),
+    [allShifts, watchedAssignId],
+  );
+  const isShiftLocked = Boolean(selectedShift);
 
   const shiftsForSelectedDate = useMemo(() => {
     return allShifts
@@ -87,18 +93,11 @@ export function AttendanceAdjustmentModal({
       ?? absentShifts[0]
       ?? allShifts.find(isShiftIncomplete)
       ?? allShifts[0];
-    if (preset) {
-      applyShiftToForm(preset);
-    } else {
+    if (preset) applyShiftToForm(preset);
+    else {
       form.setFieldsValue({
-        assignment_id: '',
-        work_date: dayjs().format('YYYY-MM-DD'),
-        shift_code: 'CA_SANG',
-        kind: 'FORGOT_CHECK_IN',
-        requested_check_in_at: '07:00',
-        requested_check_out_at: '12:00',
-        requested_hours: 5,
-        reason: 'Bổ sung công ca làm việc thực tế tại cửa hàng',
+        assignment_id: '', work_date: dayjs().format('YYYY-MM-DD'), shift_code: 'CA_SANG', kind: 'FORGOT_CHECK_IN',
+        requested_check_in_at: '07:00', requested_check_out_at: '12:00', requested_hours: 5, reason: 'Bổ sung công ca làm việc thực tế tại cửa hàng',
       });
     }
   }, [open, initialShiftId, allShifts.length]);
@@ -106,22 +105,11 @@ export function AttendanceAdjustmentModal({
   const shiftSelectOptions = useMemo(() => {
     const formatShiftOption = (s: Record<string, unknown>) => {
       const wDate = dayjs(String(s.workDate || s.work_date)).format('DD/MM/YYYY');
-      const stateTag = isShiftAbsent(s)
-        ? '[Vắng mặt — Cần bù công]'
-        : !s.checkInEvent
-          ? '[Chưa điểm danh Vào ca]'
-          : !s.checkOutEvent
-            ? '[Thiếu điểm danh Ra ca]'
-            : '[Đã hoàn thành]';
-      return {
-        value: String(s.id),
-        label: `${stateTag} ${wDate} · ${cleanShiftName(s.shiftLabel || s.shift_code)} (${String(s.startAt || '07:00')} – ${String(s.endAt || '12:00')} · ${Number(s.scheduledHours || 5)}h)`,
-      };
+      const stateTag = isShiftAbsent(s) ? '[Vắng mặt — Cần bù công]' : !s.checkInEvent ? '[Chưa điểm danh Vào ca]' : !s.checkOutEvent ? '[Thiếu điểm danh Ra ca]' : '[Đã hoàn thành]';
+      return { value: String(s.id), label: `${stateTag} ${wDate} · ${cleanShiftName(s.shiftLabel || s.shift_code)} (${String(s.startAt || '07:00')} – ${String(s.endAt || '12:00')} · ${Number(s.scheduledHours || 5)}h)` };
     };
     const onDate = shiftsForSelectedDate.map(formatShiftOption);
-    const otherAbsent = absentShifts
-      .filter((s) => String(s.workDate || s.work_date) !== watchedDate)
-      .map(formatShiftOption);
+    const otherAbsent = absentShifts.filter((s) => String(s.workDate || s.work_date) !== watchedDate).map(formatShiftOption);
     return [...onDate, ...otherAbsent];
   }, [shiftsForSelectedDate, absentShifts, watchedDate]);
 
@@ -131,35 +119,23 @@ export function AttendanceAdjustmentModal({
       setLoading(true);
       await api.post('/admin/attendance/adjustments', { ...vals, employee_id: employeeId });
       message.success('Đã gửi phiếu đề nghị bổ sung công thành công');
-      form.resetFields();
-      onSuccess();
-      onClose();
-    } catch (e) {
-      if (e instanceof ApiClientError) message.error(e.message);
-    } finally {
-      setLoading(false);
-    }
+      form.resetFields(); onSuccess(); onClose();
+    } catch (e) { if (e instanceof ApiClientError) message.error(e.message); }
+    finally { setLoading(false); }
   };
 
   return (
     <Modal width={660} open={open} forceRender title="Gửi phiếu bổ sung công (Bù ca Vắng mặt / Quên chấm công)" onCancel={onClose} onOk={handleSubmit} confirmLoading={loading} okText="Gửi phiếu bổ sung công" cancelText="Đóng" okButtonProps={{ icon: <SendOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}>
       <Alert
         type={absentShifts.length > 0 ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
-        message={
-          absentShifts.length > 0
-            ? `Bạn đang có ${absentShifts.length} ca làm việc ở trạng thái Vắng mặt (do quá giờ ca chưa điểm danh). Hãy chọn ngày hoặc chọn ca vắng mặt bên dưới để gửi phiếu bổ sung công.`
-            : 'Chọn ngày làm việc để hệ thống tự động tải các ca vắng mặt hoặc thiếu chấm công trong ngày đó.'
-        }
+        message={absentShifts.length > 0 ? `Bạn đang có ${absentShifts.length} ca làm việc ở trạng thái Vắng mặt. Khi đã chọn ca bù công, Ngày công và Thời gian ca sẽ được khóa cố định theo đúng ca đó để tránh sai lệch dữ liệu.` : 'Chọn ngày làm việc để tải ca vắng mặt hoặc chọn trực tiếp ca cần bổ sung công bên dưới.'}
       />
       {absentShifts.length > 0 && (
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>Chọn nhanh ca Vắng mặt cần bù công:</div>
           <Space size={6} wrap>
             {absentShifts.slice(0, 6).map((s) => (
-              <Tag
-                key={String(s.id)} color="red" style={{ margin: 0, cursor: 'pointer', fontWeight: 600 }}
-                onClick={() => applyShiftToForm(s)}
-              >
+              <Tag key={String(s.id)} color={String(s.id) === String(watchedAssignId) ? 'blue' : 'red'} style={{ margin: 0, cursor: 'pointer', fontWeight: 600 }} onClick={() => applyShiftToForm(s)}>
                 {dayjs(String(s.workDate || s.work_date)).format('DD/MM/YYYY')} · {cleanShiftName(s.shiftLabel || s.shift_code)} ({String(s.startAt || '07:00')}–{String(s.endAt || '12:00')})
               </Tag>
             ))}
@@ -169,13 +145,10 @@ export function AttendanceAdjustmentModal({
       <Form
         form={form} layout="vertical"
         onValuesChange={(changed) => {
-          if (changed.work_date) {
-            const matching = allShifts
-              .filter((s) => String(s.workDate || s.work_date) === String(changed.work_date))
-              .sort((a, b) => (isShiftAbsent(b) ? 1 : 0) - (isShiftAbsent(a) ? 1 : 0));
+          if (changed.work_date && !isShiftLocked) {
+            const matching = allShifts.filter((s) => String(s.workDate || s.work_date) === String(changed.work_date)).sort((a, b) => (isShiftAbsent(b) ? 1 : 0) - (isShiftAbsent(a) ? 1 : 0));
             if (matching[0]) applyShiftToForm(matching[0]);
-            else form.setFieldValue('assignment_id', '');
-          } else if (changed.assignment_id) {
+          } else if (changed.assignment_id !== undefined) {
             const found = allShifts.find((s) => String(s.id) === String(changed.assignment_id));
             if (found) applyShiftToForm(found);
           }
@@ -183,47 +156,34 @@ export function AttendanceAdjustmentModal({
       >
         <Row gutter={12}>
           <Col xs={24} md={10}>
-            <Form.Item name="work_date" label="1. Chọn ngày cần bổ sung công" rules={[{ required: true, message: 'Vui lòng chọn ngày công' }]}>
-              <DateStringPicker />
+            <Form.Item
+              name="work_date"
+              label={<Space size={6}><span>1. Ngày công</span>{isShiftLocked && <Button type="link" size="small" icon={<ReloadOutlined />} style={{ padding: 0, height: 18, fontSize: 11 }} onClick={() => form.setFieldValue('assignment_id', '')}>Chọn ngày khác</Button>}</Space>}
+              rules={[{ required: true, message: 'Vui lòng chọn ngày công' }]}
+            >
+              <DateStringPicker disabled={isShiftLocked} />
             </Form.Item>
           </Col>
           <Col xs={24} md={14}>
-            <Form.Item name="assignment_id" label={`2. Ca vắng mặt / Ca trong ngày (${shiftsForSelectedDate.length} ca)`}>
-              <Select
-                allowClear showSearch optionFilterProp="label" options={shiftSelectOptions}
-                placeholder={shiftsForSelectedDate.length > 0 ? 'Chọn ca cần bổ sung công' : 'Không có ca phân công trong ngày này — chọn ngày khác hoặc chọn khung ca bên dưới'}
-              />
+            <Form.Item name="assignment_id" label={`2. Ca vắng mặt / Ca cần bù công (${shiftSelectOptions.length} ca)`}>
+              <Select allowClear showSearch optionFilterProp="label" options={shiftSelectOptions} placeholder="Chọn ca vắng mặt / ca cần bổ sung công" />
             </Form.Item>
           </Col>
         </Row>
+        {isShiftLocked && (
+          <div style={{ marginBottom: 12, padding: '6px 10px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 4, fontSize: 12, color: '#1E40AF' }}>
+            <LockOutlined style={{ marginRight: 6 }} />
+            Đã khóa cứng <strong>Ngày công ({dayjs(watchedDate).format('DD/MM/YYYY')})</strong>, <strong>Khung ca</strong> và <strong>Thời gian ca ({String(selectedShift?.startAt || '07:00')} – {String(selectedShift?.endAt || '12:00')} · {Number(selectedShift?.scheduledHours || 5)}h)</strong> theo đúng ca bù đã chọn.
+          </div>
+        )}
         <Row gutter={12}>
-          <Col xs={24} md={12}>
-            <Form.Item name="shift_code" label="Khung ca bổ sung" rules={[{ required: true }]}>
-              <Select options={SHIFT_OPTIONS} />
-            </Form.Item>
-          </Col>
-          <Col xs={24} md={12}>
-            <Form.Item name="kind" label="Phân loại bổ sung công" rules={[{ required: true }]}>
-              <Select options={KIND_OPTIONS} />
-            </Form.Item>
-          </Col>
+          <Col xs={24} md={12}><Form.Item name="shift_code" label="Khung ca (Cố định theo ca bù)" rules={[{ required: true }]}><Select options={SHIFT_OPTIONS} disabled={isShiftLocked} /></Form.Item></Col>
+          <Col xs={24} md={12}><Form.Item name="kind" label="Phân loại bổ sung công" rules={[{ required: true }]}><Select options={KIND_OPTIONS} /></Form.Item></Col>
         </Row>
         <Row gutter={12}>
-          <Col xs={12} md={8}>
-            <Form.Item name="requested_check_in_at" label="Giờ vào thực tế" rules={[{ required: true }]}>
-              <TimeStringPicker />
-            </Form.Item>
-          </Col>
-          <Col xs={12} md={8}>
-            <Form.Item name="requested_check_out_at" label="Giờ ra thực tế" rules={[{ required: true }]}>
-              <TimeStringPicker />
-            </Form.Item>
-          </Col>
-          <Col xs={24} md={8}>
-            <Form.Item name="requested_hours" label="Số giờ công đề nghị" rules={[{ required: true }]}>
-              <InputNumber min={0.5} max={16} step={0.5} style={{ width: '100%' }} suffix="giờ" />
-            </Form.Item>
-          </Col>
+          <Col xs={12} md={8}><Form.Item name="requested_check_in_at" label="Giờ vào ca (Cố định)" rules={[{ required: true }]}><TimeStringPicker disabled={isShiftLocked} /></Form.Item></Col>
+          <Col xs={12} md={8}><Form.Item name="requested_check_out_at" label="Giờ ra ca (Cố định)" rules={[{ required: true }]}><TimeStringPicker disabled={isShiftLocked} /></Form.Item></Col>
+          <Col xs={24} md={8}><Form.Item name="requested_hours" label="Giờ công (Cố định)" rules={[{ required: true }]}><InputNumber min={0.5} max={16} step={0.5} style={{ width: '100%' }} suffix="giờ" disabled={isShiftLocked} /></Form.Item></Col>
         </Row>
         <Form.Item name="reason" label="Lý do giải trình bổ sung công" rules={[{ required: true, message: 'Vui lòng nhập lý do giải trình' }]}>
           <Input.TextArea rows={2} placeholder="Nêu rõ lý do cần bù ca vắng mặt hoặc quên chấm công để Cửa hàng xác nhận và HR phê duyệt..." />

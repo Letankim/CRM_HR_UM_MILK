@@ -79,6 +79,8 @@ export function ScheduleMonthCalendar({ todayDate, assignments, canEdit, onAddAt
                   <Space direction="vertical" size={4} style={{ width: '100%' }}>
                     {dayItems.map((item) => {
                       const isDraft = item.status === 'DRAFT';
+                      const isAbsent = item.status === 'ABSENT';
+                      const isDone = item.status === 'COMPLETED';
                       const isOff = item.dayType === 'OFF' || item.status === 'ON_LEAVE';
                       return (
                         <div
@@ -92,8 +94,8 @@ export function ScheduleMonthCalendar({ todayDate, assignments, canEdit, onAddAt
                             borderRadius: 4,
                             fontSize: 11,
                             cursor: 'pointer',
-                            background: isOff ? '#FEF2F2' : isDraft ? '#FFFBEB' : '#EFF6FF',
-                            border: `1px solid ${isOff ? '#FECACA' : isDraft ? '#FDE68A' : '#BFDBFE'}`,
+                            background: isOff || isAbsent ? '#FEF2F2' : isDone ? '#F0FDF4' : isDraft ? '#FFFBEB' : '#EFF6FF',
+                            border: `1px solid ${isOff || isAbsent ? '#FECACA' : isDone ? '#BBF7D0' : isDraft ? '#FDE68A' : '#BFDBFE'}`,
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',

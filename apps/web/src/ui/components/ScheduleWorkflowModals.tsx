@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { Alert, Col, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
-import { AlertOutlined, CloseOutlined, FileAddOutlined, PlusOutlined, SwapOutlined } from '@ant-design/icons';
+import { AlertOutlined, CloseOutlined, FileAddOutlined, LockOutlined, PlusOutlined, SwapOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { DEFAULT_SHIFT_OPTIONS } from '@umbm/shared';
 import { DateStringPicker, TimeStringPicker } from './DateTimePickers';
@@ -67,6 +67,13 @@ export function ScheduleWorkflowModals({
   });
 
   const watchedAdjEmpId = Form.useWatch('employee_id', adjForm) || '';
+  const watchedAdjAssignId = Form.useWatch('assignment_id', adjForm) || '';
+  const selectedAdjAssign = useMemo(
+    () => (watchedAdjAssignId ? assignments.find((a) => a.id === String(watchedAdjAssignId)) ?? null : null),
+    [assignments, watchedAdjAssignId],
+  );
+  const isAdjShiftLocked = Boolean(selectedAdjAssign);
+
   const isAbsentAssign = (a: WorkflowAssignmentOption) =>
     a.status === 'ABSENT' || String(a.attendanceStatusLabel || '').includes('Vắng mặt');
 
@@ -95,15 +102,8 @@ export function ScheduleWorkflowModals({
 
   const adjShiftOptions = useMemo(() => {
     return empAssignments.map((a) => {
-      const stateTag = isAbsentAssign(a)
-        ? '[Vắng mặt — Cần bù công]'
-        : a.attendanceStatusLabel
-          ? `[${a.attendanceStatusLabel}]`
-          : `[${a.statusLabel || a.status}]`;
-      return {
-        value: a.id,
-        label: `${stateTag} ${dayjs(a.workDate).format('DD/MM/YYYY')} · ${cleanShiftName(a.shiftLabel)} (${a.startAt || '07:00'} – ${a.endAt || '12:00'} · ${a.scheduledHours || 5}h)`,
-      };
+      const stateTag = isAbsentAssign(a) ? '[Vắng mặt — Cần bù công]' : a.attendanceStatusLabel ? `[${a.attendanceStatusLabel}]` : `[${a.statusLabel || a.status}]`;
+      return { value: a.id, label: `${stateTag} ${dayjs(a.workDate).format('DD/MM/YYYY')} · ${cleanShiftName(a.shiftLabel)} (${a.startAt || '07:00'} – ${a.endAt || '12:00'} · ${a.scheduledHours || 5}h)` };
     });
   }, [empAssignments]);
 
@@ -135,7 +135,7 @@ export function ScheduleWorkflowModals({
       </Modal>
 
       <Modal width={680} open={adjModal} forceRender title="Tạo phiếu bổ sung / điều chỉnh công theo Nhân sự" okText="Tạo phiếu bổ sung" cancelText="Hủy bỏ" okButtonProps={{ icon: <FileAddOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseAdj} onOk={() => adjForm.submit()}>
-        <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Chọn Nhân sự để hệ thống tự động tải danh sách các ca làm việc của nhân sự đó (ưu tiên các ca Vắng mặt quá giờ chưa điểm danh)." />
+        <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Chọn Nhân sự để tải danh sách ca vắng mặt. Khi đã chọn ca bù công, Ngày công, Khung ca và Thời gian ca sẽ được khóa cố định theo đúng ca đó để tránh sai lệch dữ liệu." />
         <Form
           form={adjForm} layout="vertical"
           initialValues={{ work_date: dayjs().format('YYYY-MM-DD'), shift_code: 'CA_SANG', kind: 'FORGOT_CHECK_IN', requested_check_in_at: '07:00', requested_check_out_at: '12:00', requested_hours: 5 }}
@@ -147,12 +147,9 @@ export function ScheduleWorkflowModals({
                 .sort((a, b) => (isAbsentAssign(b) ? 1 : 0) - (isAbsentAssign(a) ? 1 : 0) || b.workDate.localeCompare(a.workDate));
               if (empShifts[0]) applyAssignToAdjForm(empShifts[0]);
               else adjForm.setFieldValue('assignment_id', '');
-            } else if (changed.assignment_id) {
+            } else if (changed.assignment_id !== undefined) {
               const found = assignments.find((a) => a.id === String(changed.assignment_id));
               if (found) applyAssignToAdjForm(found);
-            } else if (changed.work_date && watchedAdjEmpId) {
-              const onDate = empAssignments.find((a) => a.workDate === String(changed.work_date));
-              if (onDate) applyAssignToAdjForm(onDate);
             }
           }}
         >
@@ -161,10 +158,10 @@ export function ScheduleWorkflowModals({
           </Form.Item>
           {watchedAdjEmpId && empAbsentAssignments.length > 0 && (
             <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>Ca Vắng mặt của nhân sự này (bấm để điền nhanh):</div>
+              <div style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>Ca Vắng mặt của nhân sự này (bấm để chọn bù công):</div>
               <Space size={6} wrap>
                 {empAbsentAssignments.slice(0, 6).map((a) => (
-                  <Tag key={a.id} color="red" style={{ margin: 0, cursor: 'pointer', fontWeight: 600 }} onClick={() => applyAssignToAdjForm(a)}>
+                  <Tag key={a.id} color={a.id === watchedAdjAssignId ? 'blue' : 'red'} style={{ margin: 0, cursor: 'pointer', fontWeight: 600 }} onClick={() => applyAssignToAdjForm(a)}>
                     {dayjs(a.workDate).format('DD/MM/YYYY')} · {cleanShiftName(a.shiftLabel)} ({a.startAt || '07:00'}–{a.endAt || '12:00'})
                   </Tag>
                 ))}
@@ -174,18 +171,24 @@ export function ScheduleWorkflowModals({
           <Form.Item name="assignment_id" label={`2. Ca làm việc của nhân sự đã chọn (${empAssignments.length} ca)`}>
             <Select
               allowClear showSearch optionFilterProp="label" options={adjShiftOptions} disabled={!watchedAdjEmpId}
-              placeholder={!watchedAdjEmpId ? 'Vui lòng chọn nhân sự ở mục 1 trước' : empAssignments.length > 0 ? 'Chọn ca vắng mặt / ca cần bổ sung của nhân sự' : 'Nhân sự chưa có ca phát hành nào — chọn ngày & khung ca bên dưới'}
+              placeholder={!watchedAdjEmpId ? 'Vui lòng chọn nhân sự ở mục 1 trước' : empAssignments.length > 0 ? 'Chọn ca vắng mặt / ca cần bổ sung của nhân sự' : 'Nhân sự chưa có ca phát hành nào'}
             />
           </Form.Item>
+          {isAdjShiftLocked && selectedAdjAssign && (
+            <div style={{ marginBottom: 12, padding: '6px 10px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 4, fontSize: 12, color: '#1E40AF' }}>
+              <LockOutlined style={{ marginRight: 6 }} />
+              Đã khóa cố định <strong>Ngày công ({dayjs(selectedAdjAssign.workDate).format('DD/MM/YYYY')})</strong>, <strong>Khung ca</strong> và <strong>Thời gian ca ({selectedAdjAssign.startAt || '07:00'} – {selectedAdjAssign.endAt || '12:00'} · {selectedAdjAssign.scheduledHours || 5}h)</strong> theo đúng ca bù đã chọn.
+            </div>
+          )}
           <Row gutter={12}>
-            <Col xs={24} md={8}><Form.Item name="work_date" label="Ngày công" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col>
-            <Col xs={24} md={8}><Form.Item name="shift_code" label="Khung ca" rules={[{ required: true }]}><Select options={DEFAULT_SHIFT_OPTIONS} /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="work_date" label="Ngày công (Cố định)" rules={[{ required: true }]}><DateStringPicker disabled={isAdjShiftLocked} /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="shift_code" label="Khung ca (Cố định)" rules={[{ required: true }]}><Select options={DEFAULT_SHIFT_OPTIONS} disabled={isAdjShiftLocked} /></Form.Item></Col>
             <Col xs={24} md={8}><Form.Item name="kind" label="Phân loại" rules={[{ required: true }]}><Select options={KIND_OPTIONS} /></Form.Item></Col>
           </Row>
           <Row gutter={12}>
-            <Col xs={12} md={8}><Form.Item name="requested_check_in_at" label="Giờ vào thực tế"><TimeStringPicker /></Form.Item></Col>
-            <Col xs={12} md={8}><Form.Item name="requested_check_out_at" label="Giờ ra thực tế"><TimeStringPicker /></Form.Item></Col>
-            <Col xs={24} md={8}><Form.Item name="requested_hours" label="Giờ công đề nghị" rules={[{ required: true }]}><InputNumber min={0.5} max={16} step={0.5} style={{ width: '100%' }} suffix="giờ" /></Form.Item></Col>
+            <Col xs={12} md={8}><Form.Item name="requested_check_in_at" label="Giờ vào ca (Cố định)"><TimeStringPicker disabled={isAdjShiftLocked} /></Form.Item></Col>
+            <Col xs={12} md={8}><Form.Item name="requested_check_out_at" label="Giờ ra ca (Cố định)"><TimeStringPicker disabled={isAdjShiftLocked} /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="requested_hours" label="Giờ công (Cố định)" rules={[{ required: true }]}><InputNumber min={0.5} max={16} step={0.5} style={{ width: '100%' }} suffix="giờ" disabled={isAdjShiftLocked} /></Form.Item></Col>
           </Row>
           <Form.Item name="reason" label="Giải trình lý do bổ sung công" rules={[{ required: true }]}><Input.TextArea rows={2} /></Form.Item>
         </Form>

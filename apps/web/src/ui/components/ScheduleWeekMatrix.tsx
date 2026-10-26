@@ -127,8 +127,8 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, onAddAtCel
                                 cursor: 'pointer',
                                 overflow: 'hidden',
                                 wordBreak: 'break-word',
-                                background: item.status === 'PUBLISHED' ? '#EFF6FF' : '#FFFBEB',
-                                border: `1px solid ${item.status === 'PUBLISHED' ? '#93C5FD' : '#FCD34D'}`,
+                                background: item.status === 'ABSENT' ? '#FEF2F2' : item.status === 'COMPLETED' ? '#F0FDF4' : item.status === 'DRAFT' ? '#FFFBEB' : '#EFF6FF',
+                                border: `1px solid ${item.status === 'ABSENT' ? '#FECACA' : item.status === 'COMPLETED' ? '#BBF7D0' : item.status === 'DRAFT' ? '#FCD34D' : '#93C5FD'}`,
                               }}
                             >
                               <div style={{ fontWeight: 600, fontSize: 12, color: '#0F172A', lineHeight: 1.35 }}>{item.employeeName}</div>

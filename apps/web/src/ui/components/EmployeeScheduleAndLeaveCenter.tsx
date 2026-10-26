@@ -71,8 +71,11 @@ export function EmployeeScheduleAndLeaveCenter({
             label: <span><CalendarOutlined /> Lịch làm việc ({shifts.length})</span>,
             children: (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                {shifts.some((s) => s.status !== 'PUBLISHED') && (
+                {shifts.some((s) => s.status === 'DRAFT') && (
                   <Alert type="warning" showIcon message="Bạn có ca đăng ký đang Chờ Quản lý cửa hàng / HR duyệt phân ca. Chỉ những ca đã được phê duyệt sang Đã phân ca chính thức mới được phép chấm công Vào/Ra ca và Đổi ca." />
+                )}
+                {shifts.some((s) => s.status === 'ABSENT' || Boolean(s.isAbsentShift)) && (
+                  <Alert type="error" showIcon message="Bạn có ca làm việc ở trạng thái Vắng mặt (do quá giờ kết thúc ca chưa điểm danh). Để bù công cho ca vắng mặt, vui lòng gửi Phiếu bổ sung công." />
                 )}
                 <Flex justify="space-between" align="center" wrap gap={8}>
                   <Typography.Text type="secondary">Chuyển đổi chế độ xem Lưới Tuần, Lịch Tháng hoặc Bảng chi tiết ca làm việc của bạn.</Typography.Text>
