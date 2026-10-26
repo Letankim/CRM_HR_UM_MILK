@@ -3,6 +3,7 @@
 import { App, Button, Col, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tag } from 'antd';
 import { CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DeleteOutlined, EditOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import { useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
@@ -47,6 +48,9 @@ export function RecruitmentInterviewsPane({ branches, onOpenScheduleModal }: Pro
   const [reschedTarget, setReschedTarget] = useState<Record<string, unknown> | null>(null);
   const [evalForm] = Form.useForm();
   const [reschedForm] = Form.useForm();
+  const reschedDate = Form.useWatch('interview_date', reschedForm);
+  const todayStr = dayjs().format('YYYY-MM-DD');
+  const nowTimeStr = dayjs().format('HH:mm');
 
   const queryParams = new URLSearchParams();
   if (q) queryParams.set('q', q);
@@ -118,7 +122,7 @@ export function RecruitmentInterviewsPane({ branches, onOpenScheduleModal }: Pro
         onRefresh={refreshAll}
         refreshing={ivQ.isFetching}
         onExportExcel={() => exportToExcel({ fileName: 'Lich_phong_van.xls', sheetTitle: 'Danh sách Lịch Phỏng vấn & Kết quả HR', rows, columns: [{ header: 'Mã UV', key: 'candidateCode' }, { header: 'Ứng viên', key: 'candidateName' }, { header: 'Chi nhánh', key: 'branchName' }, { header: 'Người phỏng vấn', key: 'interviewerLabel' }, { header: 'Thời gian', key: 'scheduled_at' }, { header: 'Thời lượng (phút)', key: 'duration_minutes' }, { header: 'Google Meet', key: 'meet_link' }, { header: 'Điểm', key: 'score' }, { header: 'Quyết định HR', key: 'decision' }, { header: 'Nhận xét', key: 'comment' }] })}
-        primaryActionLabel={canManageRec ? 'Đặt lịch phỏng vấn 30 phút' : undefined}
+        primaryActionLabel={canManageRec ? 'Đặt lịch phỏng vấn' : undefined}
         onPrimaryAction={canManageRec ? onOpenScheduleModal : undefined}
       />
 
@@ -189,12 +193,12 @@ export function RecruitmentInterviewsPane({ branches, onOpenScheduleModal }: Pro
       </Modal>
 
       <Modal width={560} open={Boolean(reschedTarget)} forceRender destroyOnHidden title="Cập nhật Xác nhận / Yêu cầu Đổi lịch Phỏng vấn" okText="Lưu cập nhật" cancelText="Hủy bỏ" okButtonProps={{ loading: putMut.isPending }} onCancel={() => setReschedTarget(null)} onOk={() => reschedForm.submit()}>
-        <Form form={reschedForm} layout="vertical" onFinish={(v) => putMut.mutate({ url: `/admin/interviews/${reschedTarget!.id}/evaluate`, body: { version: reschedTarget!.version, candidate_confirmed: Boolean(v.candidate_confirmed), reschedule_requested: Boolean(v.reschedule_requested), reschedule_reason: v.reschedule_reason, scheduled_at: `${v.interview_date}T${v.interview_slot}:00.000Z` } })}>
+        <Form form={reschedForm} layout="vertical" onFinish={(v) => putMut.mutate({ url: `/admin/interviews/${reschedTarget!.id}/evaluate`, body: { version: reschedTarget!.version, candidate_confirmed: Boolean(v.candidate_confirmed), reschedule_requested: Boolean(v.reschedule_requested), reschedule_reason: v.reschedule_reason, scheduled_at: `${v.interview_date}T${v.interview_slot}:00+07:00` } })}>
           <Row gutter={12}>
             <Col span={12}><Form.Item name="candidate_confirmed" label="Trạng thái xác nhận"><Select options={[{ value: true, label: 'Ứng viên đã xác nhận tham gia' }, { value: false, label: 'Chưa xác nhận' }]} /></Form.Item></Col>
             <Col span={12}><Form.Item name="reschedule_requested" label="Yêu cầu đổi lịch"><Select options={[{ value: false, label: 'Giữ lịch bình thường' }, { value: true, label: 'Ứng viên xin đổi lịch phỏng vấn' }]} /></Form.Item></Col>
-            <Col span={12}><Form.Item name="interview_date" label="Ngày phỏng vấn"><DateStringPicker /></Form.Item></Col>
-            <Col span={12}><Form.Item name="interview_slot" label="Giờ bắt đầu (30 phút)"><TimeSelect /></Form.Item></Col>
+            <Col span={12}><Form.Item name="interview_date" label="Ngày phỏng vấn"><DateStringPicker minDate={todayStr} /></Form.Item></Col>
+            <Col span={12}><Form.Item name="interview_slot" label="Giờ bắt đầu"><TimeSelect minTime={reschedDate === todayStr ? nowTimeStr : undefined} /></Form.Item></Col>
             <Col span={24}><Form.Item name="reschedule_reason" label="Lý do cần đổi lịch / Ghi chú xác nhận"><Input.TextArea rows={2} placeholder="Ví dụ: Ứng viên bận lịch thi ở trường buổi sáng, xin dời sang 14:30..." /></Form.Item></Col>
           </Row>
         </Form>

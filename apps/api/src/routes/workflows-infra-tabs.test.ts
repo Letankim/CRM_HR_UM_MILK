@@ -137,31 +137,30 @@ describe('Workflows, Infrastructure & Full Tab APIs (AI-INFRA-07..09, FLOW-02..0
     expect(filteredCands.statusCode).toBe(200);
     expect(filteredCands.json().data.length).toBeGreaterThanOrEqual(1);
 
-    const conflictIv = await app.inject({
-      method: 'POST', url: '/api/admin/interviews', headers: hrHeaders,
-      payload: { candidate_id: seededCand.id, interviewer_id: seededIv.interviewer_id, scheduled_at: seededIv.start_at },
-    });
+    const conflictIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: seededCand.id, interviewer_id: seededIv.interviewer_id, scheduled_at: seededIv.start_at } });
     expect(conflictIv.statusCode).toBe(400);
     expect(conflictIv.json().errors.details[0].code).toBe('DUPLICATE_VALUE');
 
-    const startTest = await app.inject({
-      method: 'POST', url: `/api/tests/assignments/${seededTestAsg.id}/start`, headers: hrHeaders, payload: {},
-    });
+    const pastIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: seededCand.id, interviewer_ids: ['hr', 'store1'], scheduled_at: '2025-01-01T09:00:00+07:00' } });
+    expect(pastIv.statusCode).toBe(400);
+    expect(pastIv.json().errors.details[0].code).toBe('OUT_OF_RANGE');
+
+    const validIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: seededCand.id, interviewer_ids: ['hr', 'store1'], scheduled_at: '2027-01-15T10:00:00+07:00' } });
+    expect(validIv.statusCode).toBe(201);
+    const ivNotif = db.notifications.find((n) => n.entity_type === 'INTERVIEWS' && n.entity_id === validIv.json().data.id);
+    expect(ivNotif).toBeDefined();
+    expect(ivNotif!.recipient_user_id.split(',')).toHaveLength(2);
+
+    const startTest = await app.inject({ method: 'POST', url: `/api/tests/assignments/${seededTestAsg.id}/start`, headers: hrHeaders, payload: {} });
     expect(startTest.statusCode).toBe(201);
     const attemptId = startTest.json().data.id as string;
 
-    const submitTest = await app.inject({
-      method: 'POST', url: `/api/tests/attempts/${attemptId}/submit`, headers: hrHeaders,
-      payload: { version: 1, answers: { q1: 0, q2: 1 } },
-    });
+    const submitTest = await app.inject({ method: 'POST', url: `/api/tests/attempts/${attemptId}/submit`, headers: hrHeaders, payload: { version: 1, answers: { q1: 0, q2: 1 } } });
     expect(submitTest.statusCode).toBe(200);
     expect(submitTest.json().data.score_percent).toBe(100);
     expect(submitTest.json().data.passed).toBe(true);
 
-    const blockedPol = await app.inject({
-      method: 'PUT', url: `/api/admin/policies/${lockedPol.id}`, headers: adminHeaders,
-      payload: { version: 1, value_json: '15', owner_override_approved: false },
-    });
+    const blockedPol = await app.inject({ method: 'PUT', url: `/api/admin/policies/${lockedPol.id}`, headers: adminHeaders, payload: { version: 1, value_json: '15', owner_override_approved: false } });
     expect(blockedPol.statusCode).toBe(400);
 
     const mktAnc = await app.inject({

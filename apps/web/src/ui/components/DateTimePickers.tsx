@@ -79,6 +79,7 @@ export function TimeSelect({
   onChange,
   slotRange = false,
   placeholder = 'Chọn giờ',
+  minTime,
   size,
   style,
 }: {
@@ -86,11 +87,16 @@ export function TimeSelect({
   onChange?: (val: string) => void;
   slotRange?: boolean;
   placeholder?: string;
+  minTime?: string;
   size?: 'small' | 'middle' | 'large';
   style?: CSSProperties;
 }) {
-  const baseOpts = TIME_30M_OPTIONS.map((o) => ({ value: o.value, label: slotRange ? o.slotLabel : o.label }));
-  const options = value && !baseOpts.some((o) => o.value === value) ? [{ value, label: value }, ...baseOpts] : baseOpts;
+  const baseOpts = TIME_30M_OPTIONS.map((o) => ({
+    value: o.value,
+    label: slotRange ? o.slotLabel : o.label,
+    disabled: Boolean(minTime && o.value < minTime),
+  }));
+  const options = value && !baseOpts.some((o) => o.value === value) ? [{ value, label: value, disabled: Boolean(minTime && value < minTime) }, ...baseOpts] : baseOpts;
   return (
     <Select
       showSearch

@@ -141,7 +141,7 @@ export function RecruitmentCandidatesPane({ branches, onScheduleInterview }: Pro
                 onViewDetail={() => setViewingCand(r)}
                 menuItems={canManageRec ? [
                   ...(r.status === 'NEW' ? [{ key: 'contacted', icon: <CheckCircleOutlined style={{ color: '#2563EB' }} />, label: 'Đánh dấu Đã liên hệ ứng viên', onClick: () => saveMut.mutate({ url: `/admin/candidates/${r.id}`, method: 'PUT', body: { version: r.version, status: 'CONTACTED' } }) }] : []),
-                  { key: 'interview', icon: <CalendarOutlined />, label: 'Đặt lịch phỏng vấn 30 phút', onClick: () => onScheduleInterview(String(r.id)) },
+                  { key: 'interview', icon: <CalendarOutlined />, label: 'Đặt lịch phỏng vấn', onClick: () => onScheduleInterview(String(r.id)) },
                   { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa hồ sơ & ghi chú HR', onClick: () => openEditCand(r) },
                   { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa hồ sơ ứng viên', onClick: () => modal.confirm({ title: `Xóa hồ sơ ứng viên "${r.full_name}"?`, content: 'Hồ sơ ứng viên sẽ được chuyển sang trạng thái xóa mềm.', okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => delMut.mutateAsync({ url: `/admin/candidates/${r.id}`, body: { version: r.version } }) }) },
                 ] : []}
