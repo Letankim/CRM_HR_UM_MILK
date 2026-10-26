@@ -1,14 +1,30 @@
 'use client';
 
-import { Col, Form, Input, InputNumber, Modal, Row, Select } from 'antd';
+import { useMemo } from 'react';
+import { Alert, Col, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
 import { AlertOutlined, CloseOutlined, FileAddOutlined, PlusOutlined, SwapOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { DEFAULT_SHIFT_OPTIONS } from '@umbm/shared';
-import { DateStringPicker } from './DateTimePickers';
+import { DateStringPicker, TimeStringPicker } from './DateTimePickers';
+
+export interface WorkflowAssignmentOption {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  workDate: string;
+  shiftCode: string;
+  shiftLabel: string;
+  startAt?: string;
+  endAt?: string;
+  scheduledHours?: number;
+  status?: string;
+  statusLabel?: string;
+  attendanceStatusLabel?: string;
+}
 
 interface Props {
   employees: { value: string; label: string }[];
-  assignments: { id: string; employeeId: string; employeeName: string; workDate: string; shiftCode: string; shiftLabel: string }[];
+  assignments: WorkflowAssignmentOption[];
   leaveModal: boolean;
   swapModal: boolean;
   emgModal: boolean;
@@ -19,6 +35,16 @@ interface Props {
   onCloseAdj: () => void;
   onSubmitAction: (url: string, body: unknown) => void;
 }
+
+const KIND_OPTIONS = [
+  { value: 'FORGOT_CHECK_IN', label: 'Bù ca Vắng mặt / Quên chấm công Vào ca' },
+  { value: 'FORGOT_CHECK_OUT', label: 'Quên chấm công Ra ca' },
+  { value: 'GPS_ERROR', label: 'Thiết bị lỗi định vị GPS tại cửa hàng' },
+  { value: 'CAMERA_ERROR', label: 'Thiết bị lỗi Camera không chụp được ảnh' },
+  { value: 'OTHER', label: 'Lý do công việc / Điều động khác' },
+];
+
+const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
 
 export function ScheduleWorkflowModals({
   employees, assignments, leaveModal, swapModal, emgModal, adjModal,
@@ -39,6 +65,47 @@ export function ScheduleWorkflowModals({
       label: isRequester ? `${e.label} — Người xin đổi ca` : busyOnDate ? `${e.label} — Đã có ${busyOnDate.shiftLabel} ngày ${selectedSwapAssign.workDate} (Không thể nhận ca)` : e.label,
     };
   });
+
+  const watchedAdjEmpId = Form.useWatch('employee_id', adjForm) || '';
+  const isAbsentAssign = (a: WorkflowAssignmentOption) =>
+    a.status === 'ABSENT' || String(a.attendanceStatusLabel || '').includes('Vắng mặt');
+
+  const empAssignments = useMemo(() => {
+    if (!watchedAdjEmpId) return [];
+    return assignments
+      .filter((a) => a.employeeId === watchedAdjEmpId && a.status !== 'DRAFT' && a.status !== 'ON_LEAVE')
+      .sort((a, b) => (isAbsentAssign(b) ? 1 : 0) - (isAbsentAssign(a) ? 1 : 0) || b.workDate.localeCompare(a.workDate));
+  }, [assignments, watchedAdjEmpId]);
+
+  const empAbsentAssignments = useMemo(() => empAssignments.filter(isAbsentAssign), [empAssignments]);
+
+  const applyAssignToAdjForm = (a: WorkflowAssignmentOption) => {
+    const absent = isAbsentAssign(a);
+    adjForm.setFieldsValue({
+      assignment_id: a.id,
+      work_date: a.workDate,
+      shift_code: a.shiftCode,
+      kind: absent ? 'FORGOT_CHECK_IN' : 'FORGOT_CHECK_OUT',
+      requested_check_in_at: a.startAt || '07:00',
+      requested_check_out_at: a.endAt || '12:00',
+      requested_hours: a.scheduledHours || 5,
+      reason: adjForm.getFieldValue('reason') || (absent ? 'Bổ sung công bù ca Vắng mặt do nhân sự quên điểm danh đúng giờ' : 'Bổ sung công thực tế tại cửa hàng'),
+    });
+  };
+
+  const adjShiftOptions = useMemo(() => {
+    return empAssignments.map((a) => {
+      const stateTag = isAbsentAssign(a)
+        ? '[Vắng mặt — Cần bù công]'
+        : a.attendanceStatusLabel
+          ? `[${a.attendanceStatusLabel}]`
+          : `[${a.statusLabel || a.status}]`;
+      return {
+        value: a.id,
+        label: `${stateTag} ${dayjs(a.workDate).format('DD/MM/YYYY')} · ${cleanShiftName(a.shiftLabel)} (${a.startAt || '07:00'} – ${a.endAt || '12:00'} · ${a.scheduledHours || 5}h)`,
+      };
+    });
+  }, [empAssignments]);
 
   return (
     <>
@@ -67,12 +134,60 @@ export function ScheduleWorkflowModals({
         </Form>
       </Modal>
 
-      <Modal width={640} open={adjModal} forceRender title="Tạo phiếu bổ sung / điều chỉnh công" okText="Tạo phiếu bổ sung" cancelText="Hủy bỏ" okButtonProps={{ icon: <FileAddOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseAdj} onOk={() => adjForm.submit()}>
-        <Form form={adjForm} layout="vertical" initialValues={{ work_date: dayjs().format('YYYY-MM-DD'), shift_code: 'CA_SANG', requested_hours: 5 }} onFinish={(v) => { onSubmitAction('/admin/attendance/adjustments', v); onCloseAdj(); }}>
-          <Form.Item name="employee_id" label="Nhân sự" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" placeholder="Chọn nhân sự" options={employees} /></Form.Item>
-          <Row gutter={12}><Col span={12}><Form.Item name="work_date" label="Ngày công" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col><Col span={12}><Form.Item name="shift_code" label="Khung ca"><Select options={DEFAULT_SHIFT_OPTIONS} /></Form.Item></Col></Row>
-          <Form.Item name="requested_hours" label="Số giờ công thực tế đề nghị" rules={[{ required: true }]}><InputNumber min={0.5} max={16} step={0.5} style={{ width: '100%' }} suffix="giờ" /></Form.Item>
-          <Form.Item name="reason" label="Giải trình lý do" rules={[{ required: true }]}><Input.TextArea rows={2} /></Form.Item>
+      <Modal width={680} open={adjModal} forceRender title="Tạo phiếu bổ sung / điều chỉnh công theo Nhân sự" okText="Tạo phiếu bổ sung" cancelText="Hủy bỏ" okButtonProps={{ icon: <FileAddOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseAdj} onOk={() => adjForm.submit()}>
+        <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Chọn Nhân sự để hệ thống tự động tải danh sách các ca làm việc của nhân sự đó (ưu tiên các ca Vắng mặt quá giờ chưa điểm danh)." />
+        <Form
+          form={adjForm} layout="vertical"
+          initialValues={{ work_date: dayjs().format('YYYY-MM-DD'), shift_code: 'CA_SANG', kind: 'FORGOT_CHECK_IN', requested_check_in_at: '07:00', requested_check_out_at: '12:00', requested_hours: 5 }}
+          onFinish={(v) => { onSubmitAction('/admin/attendance/adjustments', v); onCloseAdj(); }}
+          onValuesChange={(changed) => {
+            if (changed.employee_id) {
+              const empShifts = assignments
+                .filter((a) => a.employeeId === String(changed.employee_id) && a.status !== 'DRAFT' && a.status !== 'ON_LEAVE')
+                .sort((a, b) => (isAbsentAssign(b) ? 1 : 0) - (isAbsentAssign(a) ? 1 : 0) || b.workDate.localeCompare(a.workDate));
+              if (empShifts[0]) applyAssignToAdjForm(empShifts[0]);
+              else adjForm.setFieldValue('assignment_id', '');
+            } else if (changed.assignment_id) {
+              const found = assignments.find((a) => a.id === String(changed.assignment_id));
+              if (found) applyAssignToAdjForm(found);
+            } else if (changed.work_date && watchedAdjEmpId) {
+              const onDate = empAssignments.find((a) => a.workDate === String(changed.work_date));
+              if (onDate) applyAssignToAdjForm(onDate);
+            }
+          }}
+        >
+          <Form.Item name="employee_id" label="1. Chọn nhân sự cần bổ sung công" rules={[{ required: true, message: 'Vui lòng chọn nhân sự' }]}>
+            <Select showSearch optionFilterProp="label" placeholder="Chọn nhân sự để tải danh sách ca làm việc" options={employees} />
+          </Form.Item>
+          {watchedAdjEmpId && empAbsentAssignments.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>Ca Vắng mặt của nhân sự này (bấm để điền nhanh):</div>
+              <Space size={6} wrap>
+                {empAbsentAssignments.slice(0, 6).map((a) => (
+                  <Tag key={a.id} color="red" style={{ margin: 0, cursor: 'pointer', fontWeight: 600 }} onClick={() => applyAssignToAdjForm(a)}>
+                    {dayjs(a.workDate).format('DD/MM/YYYY')} · {cleanShiftName(a.shiftLabel)} ({a.startAt || '07:00'}–{a.endAt || '12:00'})
+                  </Tag>
+                ))}
+              </Space>
+            </div>
+          )}
+          <Form.Item name="assignment_id" label={`2. Ca làm việc của nhân sự đã chọn (${empAssignments.length} ca)`}>
+            <Select
+              allowClear showSearch optionFilterProp="label" options={adjShiftOptions} disabled={!watchedAdjEmpId}
+              placeholder={!watchedAdjEmpId ? 'Vui lòng chọn nhân sự ở mục 1 trước' : empAssignments.length > 0 ? 'Chọn ca vắng mặt / ca cần bổ sung của nhân sự' : 'Nhân sự chưa có ca phát hành nào — chọn ngày & khung ca bên dưới'}
+            />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col xs={24} md={8}><Form.Item name="work_date" label="Ngày công" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="shift_code" label="Khung ca" rules={[{ required: true }]}><Select options={DEFAULT_SHIFT_OPTIONS} /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="kind" label="Phân loại" rules={[{ required: true }]}><Select options={KIND_OPTIONS} /></Form.Item></Col>
+          </Row>
+          <Row gutter={12}>
+            <Col xs={12} md={8}><Form.Item name="requested_check_in_at" label="Giờ vào thực tế"><TimeStringPicker /></Form.Item></Col>
+            <Col xs={12} md={8}><Form.Item name="requested_check_out_at" label="Giờ ra thực tế"><TimeStringPicker /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="requested_hours" label="Giờ công đề nghị" rules={[{ required: true }]}><InputNumber min={0.5} max={16} step={0.5} style={{ width: '100%' }} suffix="giờ" /></Form.Item></Col>
+          </Row>
+          <Form.Item name="reason" label="Giải trình lý do bổ sung công" rules={[{ required: true }]}><Input.TextArea rows={2} /></Form.Item>
         </Form>
       </Modal>
     </>

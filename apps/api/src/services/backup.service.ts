@@ -14,6 +14,7 @@ import { sheetIds } from '../config/env.js';
 import type { Database } from '../data/database.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import type { ReconciliationService } from './reconciliation.service.js';
+import { sweepExpiredShiftsAndMarkAbsent } from './shift-absent-scanner.js';
 
 export type BackupKind = 'DAILY' | 'CRITICAL' | 'WEEKLY' | 'MONTHLY' | 'PRE_OPERATION';
 
@@ -129,66 +130,28 @@ export class BackupService {
         filesCount = plan.keys.length * (plan.exportXlsx ? 2 : 1);
       }
 
-      const updated = await this.db.backupLog.update(
-        logRow.id,
-        logRow.version,
-        {
-          status: 'SUCCESS',
-          finished_at: nowIso(),
-          drive_folder_id: folderId,
-          files_count: filesCount,
-          rows_json: JSON.stringify(rows),
-          error: '',
-        },
-        actorId,
-      );
+      const updated = await this.db.backupLog.update(logRow.id, logRow.version, { status: 'SUCCESS', finished_at: nowIso(), drive_folder_id: folderId, files_count: filesCount, rows_json: JSON.stringify(rows), error: '' }, actorId);
       return updated;
     } catch (err) {
       const errMsg = (err as Error).message || 'Lỗi sao lưu không xác định';
-      await this.db.backupLog
-        .update(
-          logRow.id,
-          logRow.version,
-          {
-            status: 'FAILED',
-            finished_at: nowIso(),
-            drive_folder_id: folderId,
-            files_count: filesCount,
-            rows_json: JSON.stringify(rows),
-            error: errMsg.slice(0, 2000),
-          },
-          actorId,
-        )
-        .catch(() => undefined);
+      await this.db.backupLog.update(logRow.id, logRow.version, { status: 'FAILED', finished_at: nowIso(), drive_folder_id: folderId, files_count: filesCount, rows_json: JSON.stringify(rows), error: errMsg.slice(0, 2000) }, actorId).catch(() => undefined);
       throw err;
     }
   }
 
   async applyRetention() {
-    if (!this.googleClients || this.env.DATA_BACKEND !== 'google' || !this.env.DRIVE_ROOT_FOLDER_ID) {
-      return { cleaned: 0, mode: this.env.DATA_BACKEND };
-    }
+    if (!this.googleClients || this.env.DATA_BACKEND !== 'google' || !this.env.DRIVE_ROOT_FOLDER_ID) return { cleaned: 0, mode: this.env.DATA_BACKEND };
     let cleaned = 0;
-    const policies: [string, number][] = [
-      ['daily', 30],
-      ['weekly', 12],
-      ['monthly', 24],
-    ];
+    const policies: [string, number][] = [['daily', 30], ['weekly', 12], ['monthly', 24]];
     for (const [sub, keep] of policies) {
       const parent = await ensureFolderPath(this.googleClients.drive, this.env.DRIVE_ROOT_FOLDER_ID, [DRIVE_FOLDERS.BACKUPS, sub]);
       const folders = (await listChildFolders(this.googleClients.drive, parent)).sort((a, b) => b.name.localeCompare(a.name));
-      for (const f of folders.slice(keep)) {
-        await trashFile(this.googleClients.drive, f.id);
-        cleaned++;
-      }
+      for (const f of folders.slice(keep)) { await trashFile(this.googleClients.drive, f.id); cleaned++; }
     }
     const criticalParent = await ensureFolderPath(this.googleClients.drive, this.env.DRIVE_ROOT_FOLDER_ID, [DRIVE_FOLDERS.BACKUPS, 'critical']);
     const cutoff = dayjs().subtract(7, 'day').format('YYYY-MM-DD');
     for (const f of await listChildFolders(this.googleClients.drive, criticalParent)) {
-      if (f.name.slice(0, 10) < cutoff) {
-        await trashFile(this.googleClients.drive, f.id);
-        cleaned++;
-      }
+      if (f.name.slice(0, 10) < cutoff) { await trashFile(this.googleClients.drive, f.id); cleaned++; }
     }
     return { cleaned, mode: 'google' };
   }
@@ -198,28 +161,18 @@ export class BackupService {
     if (this.timer) return;
     this.timer = setInterval(async () => {
       if (this.running) return;
-      const now = dayjs();
-      const slot = now.format('YYYY-MM-DD HH:mm');
-      if (slot === this.lastTriggeredSlot) return;
-      const hhmm = now.format('HH:mm');
       this.running = true;
       try {
-        if (hhmm === '01:00') {
-          this.lastTriggeredSlot = slot;
-          await this.runBackup('DAILY', ' embedded-cron');
-        } else if (['06:00', '10:00', '14:00', '18:00', '22:00'].includes(hhmm)) {
-          this.lastTriggeredSlot = slot;
-          await this.runBackup('CRITICAL', 'embedded-cron');
-        } else if (hhmm === '02:00' && now.day() === 0) {
-          this.lastTriggeredSlot = slot;
-          await this.runBackup('WEEKLY', 'embedded-cron');
-        } else if (hhmm === '03:00' && now.date() === 1) {
-          this.lastTriggeredSlot = slot;
-          await this.runBackup('MONTHLY', 'embedded-cron');
-        } else if (hhmm === '04:00') {
-          this.lastTriggeredSlot = slot;
-          await this.applyRetention();
-          await this.reconciliation.scanAndRepair({ autoFix: true, actorId: 'embedded-cron' });
+        await sweepExpiredShiftsAndMarkAbsent(this.db, 'embedded-absent-scanner');
+        const now = dayjs();
+        const slot = now.format('YYYY-MM-DD HH:mm');
+        if (slot !== this.lastTriggeredSlot) {
+          const hhmm = now.format('HH:mm');
+          if (hhmm === '01:00') { this.lastTriggeredSlot = slot; await this.runBackup('DAILY', 'embedded-cron'); }
+          else if (['06:00', '10:00', '14:00', '18:00', '22:00'].includes(hhmm)) { this.lastTriggeredSlot = slot; await this.runBackup('CRITICAL', 'embedded-cron'); }
+          else if (hhmm === '02:00' && now.day() === 0) { this.lastTriggeredSlot = slot; await this.runBackup('WEEKLY', 'embedded-cron'); }
+          else if (hhmm === '03:00' && now.date() === 1) { this.lastTriggeredSlot = slot; await this.runBackup('MONTHLY', 'embedded-cron'); }
+          else if (hhmm === '04:00') { this.lastTriggeredSlot = slot; await this.applyRetention(); await this.reconciliation.scanAndRepair({ autoFix: true, actorId: 'embedded-cron' }); }
         }
       } catch (err) {
         log.error({ err }, 'Lỗi chạy tác vụ lập lịch nội bộ');
@@ -228,13 +181,10 @@ export class BackupService {
       }
     }, 60_000);
     this.timer.unref?.();
-    log.info('Đã kích hoạt bộ lập lịch sao lưu & đối soát tự động tích hợp sẵn trong API (Embedded Worker)');
+    log.info('Đã kích hoạt bộ lập lịch sao lưu & quét tự động khóa ca vắng mặt quá giờ (Embedded Worker)');
   }
 
   stopEmbeddedScheduler() {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
   }
 }

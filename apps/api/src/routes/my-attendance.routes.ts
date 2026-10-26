@@ -88,15 +88,15 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       const inEv = sEvs.find((e) => e.type === 'CHECK_IN') ?? null;
       const outEv = sEvs.find((e) => e.type === 'CHECK_OUT') ?? null;
       const isToday = a.work_date === todayStr;
-      const isExpiredToday = isToday && !inEv && nowHm >= (a.end_at || '12:00');
-      const isPendingApproval = a.status !== 'PUBLISHED';
-      const attendanceStatusLabel = isPendingApproval
-        ? 'Chờ CH / HR duyệt phân ca'
-        : inEv && outEv ? 'Đã hoàn thành ca' : inEv ? `Đã vào ca (${String(inEv.checkTimeFormatted || '').slice(0, 5)})` : 'Chưa điểm danh';
-      const attendanceStatusColor = isPendingApproval
-        ? 'gold'
-        : inEv && outEv ? 'green' : inEv ? (inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : 'default';
-      return { ...base, isToday, isExpiredToday, checkInEvent: inEv, checkOutEvent: outEv, attendanceStatusLabel, attendanceStatusColor };
+      const isExpiredToday = isToday && !inEv && nowHm > (a.end_at || '12:00');
+      const isAbsentShift = a.status === 'ABSENT' || (!inEv && a.status === 'PUBLISHED' && (a.work_date < todayStr || isExpiredToday));
+      const isPendingApproval = a.status === 'DRAFT';
+      const isDone = a.status === 'COMPLETED' || Boolean(inEv && outEv);
+      const attendanceStatusLabel = isAbsentShift
+        ? 'Vắng mặt (Quá giờ ca — Cần bổ sung công)'
+        : isPendingApproval ? 'Chờ CH / HR duyệt phân ca' : isDone ? 'Đã hoàn thành ca' : inEv ? `Đã vào ca (${String(inEv.checkTimeFormatted || '').slice(0, 5)})` : 'Chưa điểm danh';
+      const attendanceStatusColor = isAbsentShift ? 'red' : isPendingApproval ? 'gold' : isDone ? 'green' : inEv ? (inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : 'default';
+      return { ...base, isToday, isExpiredToday, isAbsentShift, checkInEvent: inEv, checkOutEvent: outEv, attendanceStatusLabel, attendanceStatusColor };
     });
 
     const leaves = ctx.db.leaveRequests

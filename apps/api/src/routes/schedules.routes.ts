@@ -65,7 +65,7 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
 
     let scoped = filterByBranch(request, ctx.db.shiftAssignments.all(), (a) => resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id));
     if (isEmployeeRole(request.auth!.user.role)) {
-      scoped = scoped.filter((a) => a.status === 'PUBLISHED');
+      scoped = scoped.filter((a) => a.status !== 'DRAFT');
     }
     if (query.from_date) scoped = scoped.filter((a) => a.work_date >= query.from_date!);
     if (query.to_date) scoped = scoped.filter((a) => a.work_date <= query.to_date!);

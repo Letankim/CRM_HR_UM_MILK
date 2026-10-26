@@ -46,6 +46,7 @@ export default function MyAttendancePage() {
   const [detailReq, setDetailReq] = useState<ScheduleDetailTarget | null>(null);
   const [addShiftOpen, setAddShiftOpen] = useState(false);
   const [adjOpen, setAdjOpen] = useState(false);
+  const [presetAdjShiftId, setPresetAdjShiftId] = useState<string | undefined>();
 
   const myQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<MyAttendanceResponse>('/my-attendance') });
   const refreshAll = () => ['my-attendance', 'attendance-all', 'schedules', 'nv-attendance', 'nv-schedules', 'nv-swaps'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
@@ -65,10 +66,11 @@ export default function MyAttendancePage() {
   const adjustments = myQ.data?.adjustments ?? [];
   const activeShift = shifts.find((s) => String(s.id) === selectedShiftId) ?? shifts.find((s) => s.workDate === todayDate && s.status === 'PUBLISHED') ?? shifts.find((s) => s.workDate === todayDate) ?? shifts[0] ?? null;
   const isSelectedToday = Boolean(activeShift && activeShift.workDate === todayDate);
-  const isSelectedApproved = Boolean(activeShift && activeShift.status === 'PUBLISHED');
   const checkInEvent = activeShift?.checkInEvent ?? null;
   const checkOutEvent = activeShift?.checkOutEvent ?? null;
-  const isSelectedExpired = Boolean(activeShift && isSelectedToday && !checkInEvent && (activeShift.isExpiredToday || nowHm >= (activeShift.endAt || '12:00')));
+  const isSelectedDone = Boolean(activeShift && (activeShift.status === 'COMPLETED' || (checkInEvent && checkOutEvent)));
+  const isSelectedExpired = Boolean(activeShift && (activeShift.status === 'ABSENT' || activeShift.isAbsentShift || (!checkInEvent && activeShift.status === 'PUBLISHED' && (activeShift.workDate < todayDate || (isSelectedToday && (activeShift.isExpiredToday || nowHm > (activeShift.endAt || '12:00')))))));
+  const isSelectedApproved = Boolean(activeShift && activeShift.status !== 'DRAFT');
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -98,16 +100,16 @@ export default function MyAttendancePage() {
               <Select
                 style={{ width: '100%' }} value={activeShift ? String(activeShift.id) : undefined} onChange={setSelectedShiftId}
                 options={shifts.map((s) => {
-                  const exp = s.workDate === todayDate && !s.checkInEvent && (s.isExpiredToday || nowHm >= (s.endAt || '12:00'));
-                  const state = s.status !== 'PUBLISHED' ? 'Chờ CH / HR duyệt phân ca' : s.checkInEvent && s.checkOutEvent ? 'Đã hoàn thành ca' : s.checkInEvent ? 'Đã vào ca' : exp ? 'Đã qua giờ ca hôm nay' : s.workDate === todayDate ? 'Đã duyệt · Chưa vào ca' : 'Đã duyệt · Khác ngày hôm nay';
+                  const exp = s.status === 'ABSENT' || Boolean(s.isAbsentShift) || (!s.checkInEvent && s.status === 'PUBLISHED' && (s.workDate < todayDate || (s.workDate === todayDate && (s.isExpiredToday || nowHm > (s.endAt || '12:00')))));
+                  const state = s.status === 'DRAFT' ? 'Chờ CH / HR duyệt phân ca' : (s.status === 'COMPLETED' || (s.checkInEvent && s.checkOutEvent)) ? 'Đã hoàn thành ca' : exp ? 'Vắng mặt (Quá giờ ca — Cần bù công)' : s.checkInEvent ? 'Đã vào ca' : s.workDate === todayDate ? 'Đã duyệt · Chưa vào ca' : 'Đã duyệt · Chưa tới ngày';
                   return { value: String(s.id), label: `${dayjs(s.workDate).format('DD/MM/YYYY')} · ${cleanShiftName(s.shiftLabel)} (${s.startAt || '07:00'} – ${s.endAt || '12:00'}) · ${state}` };
                 })}
               />
               {activeShift && (
                 <Space size={8} wrap style={{ marginTop: 8 }}>
-                  <StatusTag value={String(activeShift.status || 'PUBLISHED')} label={String(activeShift.statusLabel || '') || undefined} />
-                  <Tag color={!isSelectedApproved ? 'gold' : isSelectedExpired ? 'red' : isSelectedToday ? 'blue' : 'gold'} style={{ margin: 0 }}>
-                    {!isSelectedApproved ? 'Đang chờ Quản lý cửa hàng / HR duyệt phân ca' : isSelectedExpired ? `Khung ca đã kết thúc lúc ${activeShift.endAt}` : isSelectedToday ? 'Đúng ngày hôm nay (Được phép điểm danh)' : `Ca ngày ${dayjs(activeShift.workDate).format('DD/MM/YYYY')} (Chưa đến / Đã qua ngày)`}
+                  <StatusTag value={String(isSelectedExpired ? 'ABSENT' : isSelectedDone ? 'COMPLETED' : activeShift.status || 'PUBLISHED')} label={isSelectedExpired ? 'Vắng mặt' : isSelectedDone ? 'Đã hoàn thành' : String(activeShift.statusLabel || '') || undefined} />
+                  <Tag color={!isSelectedApproved ? 'gold' : isSelectedExpired ? 'red' : isSelectedDone ? 'green' : isSelectedToday ? 'blue' : 'gold'} style={{ margin: 0 }}>
+                    {!isSelectedApproved ? 'Đang chờ Quản lý cửa hàng / HR duyệt phân ca' : isSelectedExpired ? `Quá giờ ca (${activeShift.endAt}) chưa điểm danh — Đã khóa Vào ca` : isSelectedDone ? 'Ca làm việc đã hoàn thành' : isSelectedToday ? 'Đúng ngày hôm nay (Được phép điểm danh)' : `Ca ngày ${dayjs(activeShift.workDate).format('DD/MM/YYYY')}`}
                   </Tag>
                   {checkInEvent && <Tag color={checkInEvent.punctualityStatus === 'LATE' ? 'volcano' : 'green'} style={{ margin: 0, fontWeight: 600 }}>Vào: {String(checkInEvent.checkTimeFormatted || '').slice(0, 5)} ({checkInEvent.punctualityLabel})</Tag>}
                   {checkOutEvent && <Tag color={checkOutEvent.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} style={{ margin: 0, fontWeight: 600 }}>Ra: {String(checkOutEvent.checkTimeFormatted || '').slice(0, 5)} ({checkOutEvent.punctualityLabel})</Tag>}
@@ -117,10 +119,15 @@ export default function MyAttendancePage() {
             <Col xs={24} md={10}>
               {!isSelectedApproved ? (
                 <Alert type="warning" showIcon message="Ca đăng ký này đang chờ Quản lý cửa hàng hoặc HR phê duyệt. Chỉ được phép chấm công Vào/Ra ca sau khi đã chuyển sang Đã phân ca chính thức." />
+              ) : isSelectedDone ? (
+                <Alert type="success" showIcon message="Bạn đã hoàn thành đầy đủ ca làm việc này." />
+              ) : isSelectedExpired ? (
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <Alert type="error" showIcon message={`Ca làm việc (${activeShift?.startAt} – ${activeShift?.endAt}) đã qua giờ kết thúc ca mà chưa điểm danh nên đã khóa Vào ca và chuyển sang Vắng mặt.`} />
+                  <Button type="primary" danger block icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(String(activeShift?.id)); setAdjOpen(true); }}>Làm phiếu bổ sung công bù ca vắng mặt này</Button>
+                </Space>
               ) : !isSelectedToday ? (
                 <Alert type="warning" showIcon message={`Chỉ được điểm danh đúng ngày đăng ký ca (${dayjs(activeShift?.workDate).format('DD/MM/YYYY')}).`} />
-              ) : isSelectedExpired ? (
-                <Alert type="warning" showIcon message={`Khung ca này (${activeShift?.startAt} – ${activeShift?.endAt}) đã trôi qua, không thể Vào ca.`} />
               ) : !checkInEvent ? (
                 <Button type="primary" size="large" block icon={<CameraOutlined />} onClick={() => setCameraKind('CHECK_IN')}>Vào ca của bạn (Chụp ảnh Camera &amp; GPS)</Button>
               ) : !checkOutEvent ? (
@@ -167,7 +174,7 @@ export default function MyAttendancePage() {
               label: <span><FileAddOutlined /> Phiếu bổ sung công của bạn ({adjustments.length})</span>,
               children: (
                 <>
-                  <Flex justify="space-between" align="center" style={{ marginBottom: 10 }}><Typography.Text type="secondary">Danh sách phiếu giải trình / bổ sung công cá nhân của bạn.</Typography.Text><Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setAdjOpen(true)}>Gửi phiếu bổ sung công</Button></Flex>
+                  <Flex justify="space-between" align="center" style={{ marginBottom: 10 }}><Typography.Text type="secondary">Danh sách phiếu giải trình / bổ sung công cá nhân của bạn.</Typography.Text><Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => { setPresetAdjShiftId(undefined); setAdjOpen(true); }}>Gửi phiếu bổ sung công</Button></Flex>
                   <Table
                     size="small" rowKey="id" pagination={false} dataSource={adjustments} locale={{ emptyText: 'Bạn chưa có phiếu bổ sung công nào.' }}
                     columns={[
@@ -191,7 +198,7 @@ export default function MyAttendancePage() {
       <AttendanceCameraModal open={Boolean(cameraKind)} kind={cameraKind ?? 'CHECK_IN'} shift={activeShift} loading={checkMut.isPending} onClose={() => setCameraKind(null)} onConfirm={(payload) => checkMut.mutate(payload)} />
       <AttendanceEventDetailModal event={detailEvent} onClose={() => setDetailEvent(null)} />
       <ScheduleRequestDetailModal target={detailReq} onClose={() => setDetailReq(null)} />
-      <AttendanceAdjustmentModal open={adjOpen} employeeId={profile?.employeeId || ''} onClose={() => setAdjOpen(false)} onSuccess={refreshAll} />
+      <AttendanceAdjustmentModal open={adjOpen} employeeId={profile?.employeeId || ''} shifts={shifts as unknown as Record<string, unknown>[]} initialShiftId={presetAdjShiftId} onClose={() => setAdjOpen(false)} onSuccess={refreshAll} />
     </Space>
   );
 }

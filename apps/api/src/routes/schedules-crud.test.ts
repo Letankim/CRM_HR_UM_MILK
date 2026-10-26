@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Database } from '../data/database.js';
+import { sweepExpiredShiftsAndMarkAbsent } from '../services/shift-absent-scanner.js';
 import { buildTestApp, type TestAppContext } from '../test-utils/build-test-app.js';
 
 let t: TestAppContext;
@@ -53,18 +54,8 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
     const branchId = emp.branch_id;
 
     const createRes = await app.inject({
-      method: 'POST',
-      url: '/api/admin/schedules',
-      headers,
-      payload: {
-        branch_id: branchId,
-        employee_id: emp.id,
-        work_date: '2026-10-26',
-        shift_code: 'CA_TOI',
-        status: 'DRAFT',
-        day_type: 'WORK',
-        note: 'Phân ca tối cuối tuần',
-      },
+      method: 'POST', url: '/api/admin/schedules', headers,
+      payload: { branch_id: branchId, employee_id: emp.id, work_date: '2026-10-26', shift_code: 'CA_TOI', status: 'DRAFT', day_type: 'WORK', note: 'Phân ca tối cuối tuần' },
     });
     expect(createRes.statusCode).toBe(201);
     const created = createRes.json().data;
@@ -72,33 +63,57 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
     expect(created.status).toBe('DRAFT');
 
     const updRes = await app.inject({
-      method: 'PUT',
-      url: `/api/admin/schedules/${created.id}`,
-      headers,
+      method: 'PUT', url: `/api/admin/schedules/${created.id}`, headers,
       payload: { version: created.version, note: 'Đã xác nhận ca tối' },
     });
     expect(updRes.statusCode).toBe(200);
     expect(updRes.json().data.note).toBe('Đã xác nhận ca tối');
 
     const bulkPub = await app.inject({
-      method: 'POST',
-      url: '/api/admin/schedules/bulk-action',
-      headers,
-      payload: {
-        action: 'PUBLISH',
-        items: [{ id: created.id, version: updRes.json().data.version }],
-      },
+      method: 'POST', url: '/api/admin/schedules/bulk-action', headers,
+      payload: { action: 'PUBLISH', items: [{ id: created.id, version: updRes.json().data.version }] },
     });
     expect(bulkPub.statusCode).toBe(200);
     expect(bulkPub.json().data.processedCount).toBe(1);
 
-    const listRes = await app.inject({
-      method: 'GET',
-      url: `/api/admin/schedules?from_date=2026-10-01&to_date=2026-10-31`,
-      headers,
-    });
+    const listRes = await app.inject({ method: 'GET', url: `/api/admin/schedules?from_date=2026-10-01&to_date=2026-10-31`, headers });
     expect(listRes.statusCode).toBe(200);
     expect(listRes.json().data.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('auto-marks expired un-checked-in shifts as ABSENT, locks check-in, and restores to COMPLETED when adjustment is HR_APPROVE', async () => {
+    const hrHeaders = await loginHeaders('hr');
+    const emp = db.employees.all()[0]!;
+    const branch = db.branches.get(emp.branch_id) ?? db.branches.all()[0]!;
+    const createRes = await app.inject({
+      method: 'POST', url: '/api/admin/schedules', headers: hrHeaders,
+      payload: { branch_id: branch.id, employee_id: emp.id, work_date: '2026-10-20', shift_code: 'CA_SANG', status: 'PUBLISHED', day_type: 'WORK' },
+    });
+    const shiftId = createRes.json().data.id as string;
+
+    await sweepExpiredShiftsAndMarkAbsent(db, 'test-scanner', { nowDate: '2026-10-20', nowHm: '12:30' });
+    expect(db.shiftAssignments.get(shiftId)?.status).toBe('ABSENT');
+
+    const lockedCheckIn = await app.inject({
+      method: 'POST', url: '/api/attendance/check', headers: hrHeaders,
+      payload: { assignment_id: shiftId, kind: 'CHECK_IN', lat: branch.lat, lng: branch.lng, selfie_source: 'LIVE_CAMERA' },
+    });
+    expect(lockedCheckIn.statusCode).toBe(400);
+
+    const adjRes = await app.inject({
+      method: 'POST', url: '/api/admin/attendance/adjustments', headers: hrHeaders,
+      payload: { employee_id: emp.id, work_date: '2026-10-20', shift_code: 'CA_SANG', kind: 'FORGOT_CHECK_IN', requested_hours: 5, reason: 'Quên điểm danh vào ca sáng' },
+    });
+    expect(adjRes.statusCode).toBe(201);
+    const adj = adjRes.json().data;
+    expect(adj.assignment_id).toBe(shiftId);
+
+    const decideRes = await app.inject({
+      method: 'POST', url: `/api/admin/attendance/adjustments/${adj.id}/decide`, headers: hrHeaders,
+      payload: { version: adj.version, action: 'HR_APPROVE', decision_reason: 'HR duyệt bù công ca vắng mặt' },
+    });
+    expect(decideRes.statusCode).toBe(200);
+    expect(db.shiftAssignments.get(shiftId)?.status).toBe('COMPLETED');
   });
 
   it('requires Store Manager (STORE) or HR approval before employee-registered shifts become PUBLISHED and allow Check-In/Swap', async () => {
@@ -149,25 +164,19 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
     const busyPeer = emps[1]!;
 
     const reqShiftRes = await app.inject({
-      method: 'POST',
-      url: '/api/admin/schedules',
-      headers: hrHeaders,
+      method: 'POST', url: '/api/admin/schedules', headers: hrHeaders,
       payload: { branch_id: reqEmp.branch_id, employee_id: reqEmp.id, work_date: '2027-11-20', shift_code: 'CA_SANG', status: 'PUBLISHED', day_type: 'WORK', note: 'Ca cần đổi' },
     });
     expect(reqShiftRes.statusCode).toBe(201);
     const reqShift = reqShiftRes.json().data;
 
     await app.inject({
-      method: 'POST',
-      url: '/api/admin/schedules',
-      headers: hrHeaders,
+      method: 'POST', url: '/api/admin/schedules', headers: hrHeaders,
       payload: { branch_id: busyPeer.branch_id, employee_id: busyPeer.id, work_date: '2027-11-20', shift_code: 'CA_CHIEU', status: 'PUBLISHED', day_type: 'WORK', note: 'Đã có ca chiều cùng ngày' },
     });
 
     const swapConflictRes = await app.inject({
-      method: 'POST',
-      url: '/api/admin/shift-swaps',
-      headers: hrHeaders,
+      method: 'POST', url: '/api/admin/shift-swaps', headers: hrHeaders,
       payload: { requester_id: reqEmp.id, peer_id: busyPeer.id, from_assignment_id: reqShift.id, reason: 'Thử đổi sang người đã có ca ngày đó' },
     });
     expect(swapConflictRes.statusCode).toBe(400);
@@ -181,9 +190,7 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
     const shiftTpl = db.shiftTemplates.all()[0]!;
 
     const createRule = await app.inject({
-      method: 'POST',
-      url: '/api/admin/staffing-rules',
-      headers,
+      method: 'POST', url: '/api/admin/staffing-rules', headers,
       payload: { branch_id: branch.id, shift_template_id: shiftTpl.id, min_staff: 3, max_staff: 7, enforcement: 'HARD_BLOCK', note: 'Định biên riêng cho chi nhánh Quận 1' },
     });
     expect(createRule.statusCode).toBe(201);
@@ -192,20 +199,14 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
     expect(rule.branchName).toContain(branch.name);
 
     const updateRule = await app.inject({
-      method: 'PUT',
-      url: `/api/admin/staffing-rules/${rule.id}`,
-      headers,
+      method: 'PUT', url: `/api/admin/staffing-rules/${rule.id}`, headers,
       payload: { version: rule.version, min_staff: 4, max_staff: 8, enforcement: 'SOFT_WARN', note: 'Tăng định biên cuối tuần' },
     });
     expect(updateRule.statusCode).toBe(200);
     expect(updateRule.json().data.min_staff).toBe(4);
     expect(updateRule.json().data.max_staff).toBe(8);
 
-    const delRule = await app.inject({
-      method: 'DELETE',
-      url: `/api/admin/staffing-rules/${rule.id}`,
-      headers,
-    });
+    const delRule = await app.inject({ method: 'DELETE', url: `/api/admin/staffing-rules/${rule.id}`, headers });
     expect(delRule.statusCode).toBe(200);
   });
 });

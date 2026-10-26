@@ -17,7 +17,7 @@ describe('Workflows, Infrastructure & Full Tab APIs (AI-INFRA-07..09, FLOW-02..0
     for (let i = currentUsed; i < 5; i++) {
       const okLeave = await app.inject({
         method: 'POST', url: '/api/admin/leave-requests', headers: hrHeaders,
-        payload: { employee_id: probEmp.id, leave_date: `2026-10-${25 + i}`, shift_code: 'CA_SANG', reason: `Nghỉ phép ngày ${i + 1}` },
+        payload: { employee_id: probEmp.id, leave_date: `2026-10-${26 + i}`, shift_code: 'CA_SANG', reason: `Nghỉ phép ngày ${i + 1}` },
       });
       expect(okLeave.statusCode).toBe(201);
     }

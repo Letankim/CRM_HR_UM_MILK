@@ -51,6 +51,7 @@ export default function EmployeeSection() {
   if (!title) notFound();
 
   const [adjOpen, setAdjOpen] = useState(false);
+  const [presetAdjShiftId, setPresetAdjShiftId] = useState<string | undefined>();
   const [profileTab, setProfileTab] = useState<'info' | 'password' | null>(null);
   const [cameraModalKind, setCameraModalKind] = useState<'CHECK_IN' | 'CHECK_OUT' | null>(null);
   const [selectedShiftId, setSelectedShiftId] = useState<string>('');
@@ -77,11 +78,13 @@ export default function EmployeeSection() {
   const publishedShifts = myQ.data?.shifts ?? [];
   const activeShift = publishedShifts.find((s) => String(s.id) === selectedShiftId) ?? publishedShifts.find((s) => String(s.workDate) === todayDate && s.status === 'PUBLISHED') ?? publishedShifts.find((s) => String(s.workDate) === todayDate) ?? publishedShifts[0] ?? null;
   const isSelectedToday = Boolean(activeShift && String(activeShift.workDate) === todayDate);
-  const isSelectedApproved = Boolean(activeShift && activeShift.status === 'PUBLISHED');
+  const isSelectedApproved = Boolean(activeShift && activeShift.status !== 'DRAFT');
   const allEvents = myQ.data?.events ?? [];
   const shiftEvents = allEvents.filter((e) => activeShift && String(e.assignment_id) === String(activeShift.id));
   const checkInEvent = shiftEvents.find((e) => e.type === 'CHECK_IN');
   const checkOutEvent = shiftEvents.find((e) => e.type === 'CHECK_OUT');
+  const isSelectedDone = Boolean(activeShift && (activeShift.status === 'COMPLETED' || (checkInEvent && checkOutEvent)));
+  const isSelectedAbsent = Boolean(activeShift && (activeShift.status === 'ABSENT' || activeShift.isAbsentShift || (!checkInEvent && activeShift.status === 'PUBLISHED' && (String(activeShift.workDate) < todayDate || Boolean(activeShift.isExpiredToday)))));
   const myAdjustments = myQ.data?.adjustments ?? [];
   const mySwaps = myQ.data?.swaps ?? [];
   const myTests = (testsQ.data?.assignments ?? []).filter((a) => Boolean(a.isMine) || Boolean(empId && (a.employee_id === empId || a.employeeCode === empCode)));
@@ -118,13 +121,13 @@ export default function EmployeeSection() {
                   <Alert type="info" showIcon message="Bạn chưa có ca làm việc nào được phân công trong kỳ này để điểm danh." />
                 ) : (
                   <>
-                    <Select style={{ width: '100%', marginBottom: 10 }} value={String(activeShift?.id ?? '')} onChange={setSelectedShiftId} options={publishedShifts.map((s) => { const sEvs = allEvents.filter((e) => String(e.assignment_id) === String(s.id)); const stateTag = s.status !== 'PUBLISHED' ? 'Chờ CH / HR duyệt ca' : sEvs.some((e) => e.type === 'CHECK_IN') && sEvs.some((e) => e.type === 'CHECK_OUT') ? 'Hoàn thành' : sEvs.some((e) => e.type === 'CHECK_IN') ? 'Đã vào ca' : 'Đã duyệt · Chưa vào ca'; return { value: String(s.id), label: `${dayjs(String(s.workDate)).format('DD/MM/YYYY')} · ${cleanShiftName(s.shiftLabel)} (${s.startAt || '07:00'}–${s.endAt || '12:00'}) · ${stateTag}` }; })} />
+                    <Select style={{ width: '100%', marginBottom: 10 }} value={String(activeShift?.id ?? '')} onChange={setSelectedShiftId} options={publishedShifts.map((s) => { const sEvs = allEvents.filter((e) => String(e.assignment_id) === String(s.id)); const isAbs = s.status === 'ABSENT' || Boolean(s.isAbsentShift); const stateTag = s.status === 'DRAFT' ? 'Chờ CH / HR duyệt ca' : (s.status === 'COMPLETED' || (sEvs.some((e) => e.type === 'CHECK_IN') && sEvs.some((e) => e.type === 'CHECK_OUT'))) ? 'Hoàn thành' : isAbs ? 'Vắng mặt (Cần bù công)' : sEvs.some((e) => e.type === 'CHECK_IN') ? 'Đã vào ca' : 'Đã duyệt · Chưa vào ca'; return { value: String(s.id), label: `${dayjs(String(s.workDate)).format('DD/MM/YYYY')} · ${cleanShiftName(s.shiftLabel)} (${s.startAt || '07:00'}–${s.endAt || '12:00'}) · ${stateTag}` }; })} />
                     {activeShift && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                         <span style={{ fontSize: 13, fontWeight: 600 }}>{cleanShiftName(activeShift.shiftLabel)} ({String(activeShift.startAt || '07:00')} – {String(activeShift.endAt || '12:00')})</span>
                         <Space size={4} wrap>
-                          <StatusTag value={String(activeShift.status)} label={String(activeShift.statusLabel || '') || undefined} />
-                          {isSelectedApproved && !checkInEvent && <Tag style={{ margin: 0 }}>Chưa vào ca</Tag>}
+                          <StatusTag value={String(isSelectedAbsent ? 'ABSENT' : isSelectedDone ? 'COMPLETED' : activeShift.status)} label={isSelectedAbsent ? 'Vắng mặt' : isSelectedDone ? 'Đã hoàn thành' : String(activeShift.statusLabel || '') || undefined} />
+                          {isSelectedApproved && !isSelectedAbsent && !checkInEvent && <Tag style={{ margin: 0 }}>Chưa vào ca</Tag>}
                           {checkInEvent && <Tag color={checkInEvent.punctualityStatus === 'LATE' ? 'volcano' : 'green'} style={{ margin: 0 }}>Vào: {String(checkInEvent.checkTimeFormatted || '').slice(0, 5)} ({String(checkInEvent.punctualityLabel)})</Tag>}
                           {checkOutEvent && <Tag color={checkOutEvent.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} style={{ margin: 0 }}>Ra: {String(checkOutEvent.checkTimeFormatted || '').slice(0, 5)} ({String(checkOutEvent.punctualityLabel)})</Tag>}
                         </Space>
@@ -132,6 +135,13 @@ export default function EmployeeSection() {
                     )}
                     {!isSelectedApproved ? (
                       <Alert type="warning" showIcon message="Ca đăng ký này đang chờ Quản lý cửa hàng hoặc HR duyệt phân ca. Chỉ được phép chấm công Vào/Ra ca sau khi ca đã chuyển sang Đã phân ca chính thức." />
+                    ) : isSelectedDone ? (
+                      <Alert type="success" showIcon message="Đã hoàn thành đầy đủ ca làm việc này." />
+                    ) : isSelectedAbsent ? (
+                      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                        <Alert type="error" showIcon message={`Ca làm việc (${String(activeShift?.startAt || '07:00')} – ${String(activeShift?.endAt || '12:00')}) đã qua giờ kết thúc ca mà chưa điểm danh nên đã khóa Vào ca và chuyển sang Vắng mặt.`} />
+                        <Button type="primary" danger block icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(String(activeShift?.id)); setAdjOpen(true); }}>Làm phiếu bổ sung công bù ca vắng mặt này</Button>
+                      </Space>
                     ) : !isSelectedToday ? (
                       <Alert type="warning" showIcon message={`Ca đang chọn thuộc ngày ${dayjs(String(activeShift?.workDate)).format('DD/MM/YYYY')}. Chỉ được điểm danh đúng ngày đăng ký ca (Hôm nay: ${dayjs(todayDate).format('DD/MM/YYYY')}).`} />
                     ) : !checkInEvent ? (
@@ -163,7 +173,7 @@ export default function EmployeeSection() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
               <Typography.Text type="secondary">Nếu quên chấm công ra ca, vui lòng gửi Phiếu bổ sung công. Bấm nút con mắt để xem chi tiết.</Typography.Text>
-              <Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => setAdjOpen(true)}>Gửi phiếu bổ sung công</Button>
+              <Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(undefined); setAdjOpen(true); }}>Gửi phiếu bổ sung công</Button>
             </div>
             <Table size="small" rowKey="id" pagination={false} scroll={{ x: 'max-content' }} dataSource={myAdjustments} columns={[{ title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 105, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> }, { title: 'Ngày công', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> }, { title: 'Khung ca & Giờ ca', width: 215, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{String(r.shiftTimeRange || '07:00 – 12:00')}</Tag></Space> }, { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 105, render: (v: number) => <strong>{v} giờ</strong> }, { title: 'Lý do giải trình', dataIndex: 'reason', ellipsis: true }, { title: 'Trạng thái', dataIndex: 'status', width: 140, render: (v: string) => <StatusTag value={v} /> }, { title: 'Chi tiết', width: 70, align: 'center', render: (_, r) => <Tooltip title="Xem chi tiết phiếu bổ sung"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailReq({ kind: 'adjustment', record: r })} /></Tooltip> }]} />
           </>
@@ -172,32 +182,22 @@ export default function EmployeeSection() {
         {section === 'bai-kiem-tra' && <EmployeeTestCenterView assignments={myTests} attempts={myAttempts} tests={testsQ.data?.tests ?? []} onRefresh={() => qc.invalidateQueries({ queryKey: ['nv-tests'] })} />}
         {section === 'thong-bao' && <NotificationsCenterView portal="employee" />}
         {section === 'ban-tin' && (
-          <Tabs
-            items={[
-              {
-                key: 'announcements',
-                label: <span><NotificationOutlined /> Bản tin Truyền thông Nội bộ ({(commsQ.data?.announcements ?? []).length})</span>,
-                children: (commsQ.data?.announcements ?? []).length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có bản tin truyền thông nội bộ nào mới" /> : (
-                  <List size="small" bordered dataSource={commsQ.data?.announcements ?? []} renderItem={(a) => (
-                    <List.Item extra={<Space size={4}><Button size="small" icon={<CheckCircleOutlined />} onClick={() => postMut.mutate({ url: `/announcements/${a.id}/ack`, body: {} })}>Đã đọc</Button><Tooltip title="Xem chi tiết bản tin"><Button size="small" icon={<EyeOutlined />} onClick={() => setViewingDoc({ kind: 'announcement', record: a })} /></Tooltip></Space>}>
-                      <List.Item.Meta title={<Space size={6} wrap><Tag color="geekblue" style={{ margin: 0 }}>{String(a.code || a.announcement_code || 'BẢN TIN')}</Tag><Tag color={a.priority === 'URGENT' || a.priority === 'HIGH' ? 'red' : 'blue'} style={{ margin: 0 }}>{a.priority === 'URGENT' ? 'Khẩn cấp' : a.priority === 'HIGH' ? 'Quan trọng' : 'Thông thường'}</Tag><Typography.Link strong onClick={() => setViewingDoc({ kind: 'announcement', record: a })}>{String(a.title)}</Typography.Link></Space>} description={<div><div>{String(a.summary || '')}</div>{a.sent_at ? <div style={{ fontSize: 11, color: BRAND.textSecondary, marginTop: 2 }}>Phát hành lúc: {dayjs(String(a.sent_at)).format('HH:mm DD/MM/YYYY')}</div> : null}</div>} />
-                    </List.Item>
-                  )} />
-                ),
-              },
-              {
-                key: 'policies',
-                label: <span><FileProtectOutlined /> Chính sách &amp; Quy định Công ty ({(commsQ.data?.policies ?? []).length})</span>,
-                children: (commsQ.data?.policies ?? []).length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có chính sách quy định nào được phổ biến" /> : (
-                  <List size="small" bordered dataSource={commsQ.data?.policies ?? []} renderItem={(p) => (
-                    <List.Item extra={<Tooltip title="Xem chi tiết chính sách"><Button size="small" icon={<EyeOutlined />} onClick={() => setViewingDoc({ kind: 'policy', record: p })} /></Tooltip>}>
-                      <List.Item.Meta title={<Space size={6} wrap><Tag color="blue" style={{ margin: 0 }}>{POLICY_CATEGORY_LABELS[String(p.category || 'GENERAL')] ?? String(p.category || 'Quy định chung')}</Tag><Typography.Link strong onClick={() => setViewingDoc({ kind: 'policy', record: p })}>{String(p.title || p.key)}</Typography.Link><Tag color="cyan" style={{ margin: 0 }}>{String(p.value)}</Tag></Space>} description={<div>{String(p.description || '')}</div>} />
-                    </List.Item>
-                  )} />
-                ),
-              },
-            ]}
-          />
+          <Tabs items={[
+            { key: 'announcements', label: <span><NotificationOutlined /> Bản tin Truyền thông Nội bộ ({(commsQ.data?.announcements ?? []).length})</span>, children: (commsQ.data?.announcements ?? []).length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có bản tin truyền thông nội bộ nào mới" /> : (
+              <List size="small" bordered dataSource={commsQ.data?.announcements ?? []} renderItem={(a) => (
+                <List.Item extra={<Space size={4}><Button size="small" icon={<CheckCircleOutlined />} onClick={() => postMut.mutate({ url: `/announcements/${a.id}/ack`, body: {} })}>Đã đọc</Button><Tooltip title="Xem chi tiết bản tin"><Button size="small" icon={<EyeOutlined />} onClick={() => setViewingDoc({ kind: 'announcement', record: a })} /></Tooltip></Space>}>
+                  <List.Item.Meta title={<Space size={6} wrap><Tag color="geekblue" style={{ margin: 0 }}>{String(a.code || a.announcement_code || 'BẢN TIN')}</Tag><Tag color={a.priority === 'URGENT' || a.priority === 'HIGH' ? 'red' : 'blue'} style={{ margin: 0 }}>{a.priority === 'URGENT' ? 'Khẩn cấp' : a.priority === 'HIGH' ? 'Quan trọng' : 'Thông thường'}</Tag><Typography.Link strong onClick={() => setViewingDoc({ kind: 'announcement', record: a })}>{String(a.title)}</Typography.Link></Space>} description={<div><div>{String(a.summary || '')}</div>{a.sent_at ? <div style={{ fontSize: 11, color: BRAND.textSecondary, marginTop: 2 }}>Phát hành lúc: {dayjs(String(a.sent_at)).format('HH:mm DD/MM/YYYY')}</div> : null}</div>} />
+                </List.Item>
+              )} />
+            ) },
+            { key: 'policies', label: <span><FileProtectOutlined /> Chính sách &amp; Quy định Công ty ({(commsQ.data?.policies ?? []).length})</span>, children: (commsQ.data?.policies ?? []).length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có chính sách quy định nào được phổ biến" /> : (
+              <List size="small" bordered dataSource={commsQ.data?.policies ?? []} renderItem={(p) => (
+                <List.Item extra={<Tooltip title="Xem chi tiết chính sách"><Button size="small" icon={<EyeOutlined />} onClick={() => setViewingDoc({ kind: 'policy', record: p })} /></Tooltip>}>
+                  <List.Item.Meta title={<Space size={6} wrap><Tag color="blue" style={{ margin: 0 }}>{POLICY_CATEGORY_LABELS[String(p.category || 'GENERAL')] ?? String(p.category || 'Quy định chung')}</Tag><Typography.Link strong onClick={() => setViewingDoc({ kind: 'policy', record: p })}>{String(p.title || p.key)}</Typography.Link><Tag color="cyan" style={{ margin: 0 }}>{String(p.value)}</Tag></Space>} description={<div>{String(p.description || '')}</div>} />
+                </List.Item>
+              )} />
+            ) },
+          ]} />
         )}
         {section === 'them' && (
           <Row gutter={[12, 12]}>
@@ -211,7 +211,7 @@ export default function EmployeeSection() {
       <AttendanceCameraModal open={Boolean(cameraModalKind)} kind={cameraModalKind ?? 'CHECK_IN'} shift={activeShift} loading={postMut.isPending} onClose={() => setCameraModalKind(null)} onConfirm={(payload) => postMut.mutate({ url: '/attendance/check', body: payload })} />
       <AttendanceEventDetailModal event={detailEvent} onClose={() => setDetailEvent(null)} />
       <ScheduleRequestDetailModal target={detailReq} onClose={() => setDetailReq(null)} />
-      <AttendanceAdjustmentModal open={adjOpen} employeeId={empId} onClose={() => setAdjOpen(false)} onSuccess={() => qc.invalidateQueries({ queryKey: ['my-attendance'] })} />
+      <AttendanceAdjustmentModal open={adjOpen} employeeId={empId} shifts={publishedShifts} initialShiftId={presetAdjShiftId} onClose={() => setAdjOpen(false)} onSuccess={() => qc.invalidateQueries({ queryKey: ['my-attendance'] })} />
       <GovernanceDetailDrawer record={viewingDoc?.record ?? null} kind={viewingDoc?.kind ?? 'announcement'} onClose={() => setViewingDoc(null)} />
       <UserProfileModal open={profileTab !== null} initialTab={profileTab ?? 'info'} onClose={() => setProfileTab(null)} />
     </div>

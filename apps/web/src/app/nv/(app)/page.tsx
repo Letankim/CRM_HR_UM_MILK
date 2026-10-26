@@ -96,10 +96,12 @@ export default function EmployeeHome() {
                     </Space>
                   )}
                 </div>
-                {s.status !== 'PUBLISHED' ? (
+                {s.status === 'DRAFT' ? (
                   <Tag color="gold" style={{ margin: 0 }}>Chờ CH / HR duyệt ca</Tag>
-                ) : inEv && outEv ? (
+                ) : (s.status === 'COMPLETED' || (inEv && outEv)) ? (
                   <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>Đã hoàn thành ca</Tag>
+                ) : (s.status === 'ABSENT' || Boolean(s.isAbsentShift)) ? (
+                  <Space size={6}><Tag color="red" style={{ margin: 0 }}>Vắng mặt (Quá giờ ca)</Tag><Link href="/nv/cong"><Button size="small" danger>Bổ sung công</Button></Link></Space>
                 ) : !isTodayShift ? (
                   <Tag color="gold" style={{ margin: 0 }}>Ca ngày {dayjs(String(s.workDate)).format('DD/MM')}</Tag>
                 ) : !inEv ? (

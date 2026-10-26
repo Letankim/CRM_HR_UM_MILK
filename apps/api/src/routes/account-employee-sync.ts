@@ -1,6 +1,7 @@
 import { DEFAULT_SHIFT_LABELS, type Employee, type EmployeeStage, type Role, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { today } from '../services/salary-profile.service.js';
+import { sweepExpiredShiftsAndMarkAbsent } from '../services/shift-absent-scanner.js';
 import { findLinkedEmployeeForUser, findLinkedUserForEmployee } from './employee-mapper.js';
 
 const SHIFT_FALLBACK: Record<string, { start: string; end: string; hours: number }> = {
@@ -120,6 +121,7 @@ export async function healBranchConsistency(ctx: AppContext, actorId = 'system-s
       if (!ctx.db.attendanceEvents.find((ev) => ev.assignment_id === s.id)) await ctx.db.shiftAssignments.softDelete(s.id, s.version, actorId);
     }
   }
+  await sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId);
 }
 
 export interface SyncEmployeeFromAccountParams {

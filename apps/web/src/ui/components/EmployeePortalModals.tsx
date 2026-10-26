@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Alert, App, Form, Input, InputNumber, Modal, Select } from 'antd';
+import { Alert, App, Form, Input, Modal, Select } from 'antd';
 import { CloseOutlined, PlusOutlined, SendOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { DEFAULT_SHIFT_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { DateStringPicker } from './DateTimePickers';
+
+export { AttendanceAdjustmentModal } from './AttendanceAdjustmentModal';
 
 const SHIFT_OPTIONS = [...DEFAULT_SHIFT_OPTIONS];
 const SHIFT_END_HM: Record<string, string> = { CA_SANG: '12:00', CA_CHIEU: '17:00', CA_TOI: '22:00', CA_HANH_CHINH: '17:30' };
@@ -98,36 +100,6 @@ export function LeaveRequestModal({
         <Form.Item name="leave_date" label="Ngày xin nghỉ" rules={[{ required: true, message: 'Chọn ngày nghỉ' }]}><DateStringPicker minDate={dayjs().format('YYYY-MM-DD')} /></Form.Item>
         <Form.Item name="shift_code" label="Khung ca" rules={[{ required: true }]}><Select options={SHIFT_OPTIONS} /></Form.Item>
         <Form.Item name="reason" label="Lý do xin nghỉ" rules={[{ required: true, message: 'Nhập lý do' }]}><Input.TextArea rows={2} placeholder="Nêu rõ lý do xin nghỉ phép hoặc sự cố khẩn cấp..." /></Form.Item>
-      </Form>
-    </Modal>
-  );
-}
-
-export function AttendanceAdjustmentModal({
-  open, employeeId, onClose, onSuccess,
-}: { open: boolean; employeeId: string; onClose: () => void; onSuccess: () => void }) {
-  const { message } = App.useApp();
-  const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async () => {
-    try {
-      const vals = await form.validateFields();
-      setLoading(true);
-      await api.post('/admin/attendance/adjustments', { ...vals, employee_id: employeeId });
-      message.success('Đã gửi phiếu đề nghị bổ sung công thành công');
-      form.resetFields(); onSuccess(); onClose();
-    } catch (e) { if (e instanceof ApiClientError) message.error(e.message); }
-    finally { setLoading(false); }
-  };
-
-  return (
-    <Modal width={640} open={open} forceRender title="Gửi phiếu bổ sung công" onCancel={onClose} onOk={handleSubmit} confirmLoading={loading} okText="Gửi phiếu bổ sung" cancelText="Đóng" okButtonProps={{ icon: <SendOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}>
-      <Form form={form} layout="vertical" initialValues={{ work_date: dayjs().format('YYYY-MM-DD'), shift_code: 'CA_SANG', requested_hours: 5, reason: 'Quên chấm công ra ca do điện thoại hết pin' }}>
-        <Form.Item name="work_date" label="Ngày làm việc" rules={[{ required: true }]}><DateStringPicker /></Form.Item>
-        <Form.Item name="shift_code" label="Khung ca" rules={[{ required: true }]}><Select options={SHIFT_OPTIONS} /></Form.Item>
-        <Form.Item name="requested_hours" label="Số giờ công đề nghị" rules={[{ required: true }]}><InputNumber min={0.5} max={16} step={0.5} style={{ width: '100%' }} suffix="giờ" /></Form.Item>
-        <Form.Item name="reason" label="Lý do bổ sung công" rules={[{ required: true, message: 'Nhập lý do' }]}><Input.TextArea rows={2} placeholder="Nêu rõ lý do quên chấm công hoặc sự cố thiết bị..." /></Form.Item>
       </Form>
     </Modal>
   );

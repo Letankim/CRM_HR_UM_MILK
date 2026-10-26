@@ -11,9 +11,9 @@ import { StatusTag } from '../StatusTag';
 import { AttendanceEventsTable, groupAttendanceEventsByShift, type AttendanceEventRow } from './AttendanceEventsTable';
 import { GuardButton, usePermissionGuard } from './GuardButton';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
-import { ScheduleWorkflowModals } from './ScheduleWorkflowModals';
+import { ScheduleWorkflowModals, type WorkflowAssignmentOption } from './ScheduleWorkflowModals';
 
-interface Props { employees: { value: string; label: string }[]; assignments: { id: string; employeeId: string; employeeName: string; workDate: string; shiftCode: string; shiftLabel: string }[] }
+interface Props { employees: { value: string; label: string }[]; assignments: WorkflowAssignmentOption[] }
 const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
 const fmtShiftTime = (r: Record<string, unknown>) => `${String(r.startAt || r.start_at || '07:00')} – ${String(r.endAt || r.end_at || '12:00')}${r.scheduledHours || r.scheduled_hours ? ` (${r.scheduledHours || r.scheduled_hours}h)` : ''}`;
 const fmtDate = (raw: unknown) => (raw ? dayjs(String(raw)).format('DD/MM/YYYY') : '—');

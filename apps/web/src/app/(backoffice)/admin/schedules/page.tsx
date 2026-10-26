@@ -110,9 +110,10 @@ function SchedulesView() {
   const attEvents = attQ.data?.events ?? [];
   const items = useMemo(() => {
     return (query.data?.data ?? []).map((item) => {
-      if (item.status !== 'PUBLISHED') {
-        return { ...item, attendanceStatusLabel: 'Chờ CH / HR duyệt phân ca', attendanceStatusColor: 'gold' };
-      }
+      if (item.status === 'DRAFT') return { ...item, attendanceStatusLabel: 'Chờ CH / HR duyệt phân ca', attendanceStatusColor: 'gold' };
+      if (item.status === 'ABSENT') return { ...item, attendanceStatusLabel: 'Vắng mặt (Quá giờ ca — Cần bổ sung công)', attendanceStatusColor: 'red' };
+      if (item.status === 'COMPLETED') return { ...item, attendanceStatusLabel: 'Đã hoàn thành ca', attendanceStatusColor: 'green' };
+      if (item.status === 'ON_LEAVE' || item.dayType === 'OFF') return { ...item, attendanceStatusLabel: 'Nghỉ phép OFF', attendanceStatusColor: 'default' };
       const sEvs = attEvents.filter((e) => String(e.assignment_id) === String(item.id));
       const inEv = sEvs.find((e) => e.type === 'CHECK_IN');
       const outEv = sEvs.find((e) => e.type === 'CHECK_OUT');
