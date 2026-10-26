@@ -161,12 +161,10 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
       open={open} onCancel={onClose} width={840} style={{ top: 12, maxWidth: '98vw' }} destroyOnHidden
       title={kind === 'CHECK_IN' ? 'Chụp ảnh Camera & Xác nhận Vào ca' : 'Chụp ảnh Camera & Xác nhận Ra ca'}
       footer={
-        <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
-          <Space wrap style={{ justifyContent: 'center' }}>
-            <Button icon={<CloseOutlined />} onClick={onClose}>Hủy bỏ</Button>
-            <Button type="primary" icon={<CheckCircleOutlined />} disabled={!photoDataUrl || !activeShift || !coords || !withinRadius || branchMismatch || locating} loading={loading} onClick={() => activeShift && coords && onConfirm({ assignment_id: String(activeShift.id), kind, lat: coords.lat, lng: coords.lng, accuracy_m: coords.accuracy, selfie_source: 'LIVE_CAMERA', photo_base64: photoDataUrl, enforce_shift_state: true }, photoDataUrl)}>{kind === 'CHECK_IN' ? 'Xác nhận Vào ca' : 'Xác nhận Ra ca'}</Button>
-          </Space>
-        </div>
+        <Space wrap>
+          <Button icon={<CloseOutlined />} onClick={onClose}>Hủy bỏ</Button>
+          <Button type="primary" icon={<CheckCircleOutlined />} disabled={!photoDataUrl || !activeShift || !coords || !withinRadius || branchMismatch || locating} loading={loading} onClick={() => activeShift && coords && onConfirm({ assignment_id: String(activeShift.id), kind, lat: coords.lat, lng: coords.lng, accuracy_m: coords.accuracy, selfie_source: 'LIVE_CAMERA', photo_base64: photoDataUrl, enforce_shift_state: true }, photoDataUrl)}>{kind === 'CHECK_IN' ? 'Xác nhận Vào ca' : 'Xác nhận Ra ca'}</Button>
+        </Space>
       }
     >
       <Row gutter={[12, 12]} align="top">

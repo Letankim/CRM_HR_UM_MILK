@@ -178,7 +178,13 @@ body {
 .ant-alert-action {
   display: flex;
   flex-wrap: wrap !important;
-  gap: 6px;
+  gap: 8px;
+}
+
+.ant-modal-footer,
+.ant-modal-footer > .ant-space {
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .ant-card-head-title,
@@ -223,7 +229,8 @@ body {
   .ant-modal-content {
     padding: 12px 10px !important;
   }
-  .ant-modal-footer {
+  .ant-modal-footer,
+  .ant-modal-footer > .ant-space {
     justify-content: center !important;
   }
   .ant-drawer-right .ant-drawer-content-wrapper,
