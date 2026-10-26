@@ -19,7 +19,8 @@ import { BRAND } from '@/ui/theme';
 import { UserProfileModal } from '@/ui/components/UserProfileModal';
 
 interface MyAttendanceData {
-  todayDate: string; profile: { employeeId: string; employeeCode: string; fullName: string };
+  todayDate: string;
+  profile: { employeeId: string; employeeCode: string; fullName: string; branchName?: string; probationStart?: string; probationEnd?: string; probationCycleDays?: number; probationDaysPassed?: number; probationDaysRemaining?: number };
   shifts: Record<string, unknown>[]; events: Record<string, unknown>[]; leaves: Record<string, unknown>[];
 }
 
@@ -48,17 +49,19 @@ export default function EmployeeHome() {
   const myLeaves = myQ.data?.leaves ?? [];
   const pendingSwaps = (swapsQ.data?.data ?? []).filter((s) => (s.requester_id === empId || s.requesterCode === empCode || s.peer_id === empId || s.peerCode === empCode) && (s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED'));
   const myTests = (testsQ.data?.assignments ?? []).filter((a) => !empId || a.employee_id === empId || a.employeeCode === empCode);
-  const probationDaysTotal = SYSTEM_CONFIG.defaults.probationCycleDays;
-  const probationDaysPassed = 7;
+  const probationDaysTotal = myQ.data?.profile.probationCycleDays || SYSTEM_CONFIG.defaults.probationCycleDays;
+  const probationDaysPassed = myQ.data?.profile.probationDaysPassed ?? 7;
   const probationOffLimit = SYSTEM_CONFIG.defaults.probationOffDays;
   const usedOffCount = myLeaves.filter((l) => l.status !== 'REJECTED').length;
+  const branchName = myQ.data?.profile.branchName || 'Chi nhánh Ụm Bò Milk';
 
   const summaryCard = (
     <Card size="small" style={{ marginBottom: isDesktop ? 0 : 12, background: '#EFF6FF', borderColor: '#BFDBFE', overflow: 'hidden' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px 12px' }}>
-        <div style={{ minWidth: 0 }}><div style={{ fontSize: 11, color: BRAND.textSecondary, marginBottom: 2 }}>Mã nhân sự</div><div className="mono" style={{ fontSize: 14, fontWeight: 700, color: BRAND.primary, lineHeight: '22px' }}>{empCode}</div></div>
+        <div style={{ minWidth: 0 }}><div style={{ fontSize: 11, color: BRAND.textSecondary, marginBottom: 2 }}>Nhân sự &amp; Mã NV</div><div className="mono" style={{ fontSize: 13, fontWeight: 700, color: BRAND.primary, lineHeight: '20px' }}>{u.displayName} ({empCode})</div></div>
+        <div style={{ minWidth: 0 }}><div style={{ fontSize: 11, color: BRAND.textSecondary, marginBottom: 2 }}>Chi nhánh</div><div style={{ fontSize: 12, fontWeight: 600 }}>{branchName}</div></div>
         <div style={{ minWidth: 0 }}><div style={{ fontSize: 11, color: BRAND.textSecondary, marginBottom: 2 }}>Giai đoạn</div><Tag color={isProbation ? 'gold' : 'blue'} style={{ margin: 0, fontWeight: 600 }}>{ROLE_LABELS[u.role]}</Tag></div>
-        <div style={{ minWidth: 0 }}><div style={{ fontSize: 11, color: BRAND.textSecondary, marginBottom: 2 }}>Tài khoản</div><StatusTag value={u.status} /></div>
+        <div style={{ minWidth: 0 }}><div style={{ fontSize: 11, color: BRAND.textSecondary, marginBottom: 2 }}>Tài khoản &amp; OFF</div><Space size={4}><StatusTag value={u.status} /><Tag color="cyan" style={{ margin: 0 }}>OFF: {usedOffCount} ngày</Tag></Space></div>
       </div>
     </Card>
   );
@@ -164,14 +167,11 @@ export default function EmployeeHome() {
     <div style={{ padding: '10px 6px', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 14 }}>
         <div style={{ minWidth: 0 }}>
-          <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-            {dayjs().format('DD/MM/YYYY')} · Cổng Nhân viên {SYSTEM_CONFIG.brandName}
-          </Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>{dayjs().format('DD/MM/YYYY')} · Cổng Nhân viên {SYSTEM_CONFIG.brandName}</Typography.Text>
           <Typography.Title level={5} style={{ margin: 0, fontWeight: 700 }}>{u.displayName}</Typography.Title>
         </div>
         <Dropdown
-          trigger={['click']}
-          placement="bottomRight"
+          trigger={['click']} placement="bottomRight"
           menu={{
             items: [
               { key: 'role', icon: <UserSwitchOutlined />, label: `${u.displayName} (${ROLE_LABELS[u.role]})`, disabled: true },
@@ -185,9 +185,7 @@ export default function EmployeeHome() {
           }}
         >
           <div className="umbm-header-pill" style={{ height: 34, display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px 0 6px', border: `1px solid ${BRAND.headerControlBorder}`, borderRadius: 8, cursor: 'pointer', background: '#F8FAFC', flexShrink: 0 }}>
-            <Avatar size={22} style={{ background: BRAND.primaryBg, color: BRAND.primary, border: '1px solid #93C5FD', fontWeight: 700, fontSize: 11 }}>
-              {(u.displayName || u.username).charAt(0).toUpperCase()}
-            </Avatar>
+            <Avatar size={22} style={{ background: BRAND.primaryBg, color: BRAND.primary, border: '1px solid #93C5FD', fontWeight: 700, fontSize: 11 }}>{(u.displayName || u.username).charAt(0).toUpperCase()}</Avatar>
             <Tag color="blue" style={{ margin: 0, borderRadius: 4, fontSize: 11, lineHeight: '18px', paddingInline: 6, fontWeight: 600 }}>{ROLE_SHORT_LABELS[u.role]}</Tag>
             <DownOutlined style={{ fontSize: 10, color: '#64748B' }} />
           </div>

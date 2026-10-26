@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Button, Card, Descriptions, Drawer, Empty, Form, Grid, Input, List, Modal, Space, Spin, Tag } from 'antd';
-import { CheckCircleOutlined, ExclamationCircleOutlined, FileTextOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, CloseOutlined, ExclamationCircleOutlined, FileTextOutlined, SendOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useState } from 'react';
@@ -129,7 +129,7 @@ export default function MyPayslipsPage() {
         )}
       </Drawer>
 
-      <Modal width={640} title="Gửi Phản Hồi / Thắc Mắc Phiếu Lương" open={disputeModal} onCancel={() => setDisputeModal(false)} onOk={() => form.submit()} okText="Gửi phản hồi" cancelText="Hủy bỏ" confirmLoading={disputeMut.isPending}>
+      <Modal width={640} title="Gửi Phản Hồi / Thắc Mắc Phiếu Lương" open={disputeModal} onCancel={() => setDisputeModal(false)} onOk={() => form.submit()} okText="Gửi phản hồi" cancelText="Hủy bỏ" okButtonProps={{ icon: <SendOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} confirmLoading={disputeMut.isPending}>
         <Form form={form} layout="vertical" onFinish={(v) => open && disputeMut.mutate({ id: open.id, reason: String(v.reason || '') })}>
           <Form.Item name="reason" label="Nội dung thắc mắc / đối chiếu công lương" rules={[{ required: true, min: 5, message: 'Vui lòng nhập tối thiểu 5 ký tự' }]}>
             <Input.TextArea rows={3} placeholder="VD: Em xin kiểm tra lại công ca tối ngày 18/10 và phụ cấp nhận ca thay..." />

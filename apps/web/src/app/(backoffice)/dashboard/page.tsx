@@ -1,20 +1,22 @@
 'use client';
 
-import { App, Button, Card, Col, Descriptions, List, Row, Skeleton, Space, Spin, Statistic, Tag, Typography } from 'antd';
+import { App, Button, Card, Col, Descriptions, Flex, List, Row, Select, Skeleton, Space, Spin, Statistic, Tag, Typography } from 'antd';
 import {
-  CalendarOutlined, DollarOutlined, NotificationOutlined, ReloadOutlined,
+  CalendarOutlined, DollarOutlined, FilterOutlined, NotificationOutlined, ReloadOutlined,
   SafetyCertificateOutlined, TeamOutlined, UserSwitchOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 import { ROLE_LABELS, type Health } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
 import { PageHeader } from '@/ui/PageHeader';
 import { StatusTag } from '@/ui/StatusTag';
+import { DashboardBranchAndShiftOverview } from '@/ui/components/DashboardBranchAndShiftOverview';
 import { HrDashboardActionPanel } from '@/ui/components/HrDashboardActionPanel';
+import { HrStoreOperationsReportCard } from '@/ui/components/HrStoreOperationsReportCard';
 
 const CHECK_LABELS: Record<string, string> = {
   google: 'Google API',
@@ -31,7 +33,14 @@ export default function DashboardPage() {
   const qc = useQueryClient();
   const { message } = App.useApp();
   const [refreshing, setRefreshing] = useState(false);
+  const [branchFilter, setBranchFilter] = useState('ALL');
+  const [stageFilter, setStageFilter] = useState('ALL');
+  const [periodFilter, setPeriodFilter] = useState<'TODAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'ALL'>('ALL');
 
+  const branches = useQuery({
+    queryKey: ['dashboard-branches'],
+    queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'),
+  });
   const accounts = useQuery({
     queryKey: ['accounts', 'all'],
     queryFn: () => api.list<{ id: string; status: string }>('/admin/accounts?per_page=100'),
@@ -39,17 +48,17 @@ export default function DashboardPage() {
   });
   const employees = useQuery({
     queryKey: ['dashboard-employees'],
-    queryFn: () => api.list<{ id: string; stage: string; status: string }>('/admin/employees?per_page=100'),
+    queryFn: () => api.list<{ id: string; stage: string; status: string; branchId?: string; branch_id?: string }>('/admin/employees?per_page=100'),
     enabled: can('employee.read'),
   });
   const schedules = useQuery({
     queryKey: ['dashboard-schedules'],
-    queryFn: () => api.list<{ id: string; status: string }>('/admin/schedules?per_page=100'),
+    queryFn: () => api.list<{ id: string; status: string; branchId?: string; branch_id?: string }>('/admin/schedules?per_page=100'),
     enabled: can('schedule.read'),
   });
   const leaves = useQuery({
     queryKey: ['dashboard-leaves'],
-    queryFn: () => api.list<{ id: string; status: string }>('/admin/leave-requests?per_page=50'),
+    queryFn: () => api.list<{ id: string; status: string; branch_id?: string }>('/admin/leave-requests?per_page=50'),
     enabled: can('schedule.read'),
   });
   const payroll = useQuery({
@@ -86,24 +95,61 @@ export default function DashboardPage() {
   };
 
   const countAcc = (s: string) => accounts.data?.data.filter((a) => a.status === s).length ?? 0;
-  const empList = employees.data?.data ?? [];
+  const empList = useMemo(() => {
+    return (employees.data?.data ?? []).filter((e) => {
+      if (branchFilter !== 'ALL' && e.branchId !== branchFilter && e.branch_id !== branchFilter) return false;
+      if (stageFilter !== 'ALL' && e.stage !== stageFilter && e.status !== stageFilter) return false;
+      return true;
+    });
+  }, [employees.data, branchFilter, stageFilter]);
+
   const probationCount = empList.filter((e) => e.stage === 'PROBATION' || e.stage === 'THU_VIEC').length;
   const officialCount = empList.filter((e) => e.stage === 'OFFICIAL' || e.stage === 'CHINH_THUC').length;
-  const publishedShifts = (schedules.data?.data ?? []).filter((s) => s.status === 'PUBLISHED').length;
-  const pendingLeaves = (leaves.data?.data ?? []).filter((l) => l.status === 'PENDING').length;
+  const publishedShifts = (schedules.data?.data ?? []).filter((s) => s.status === 'PUBLISHED' && (branchFilter === 'ALL' || (s.branchId ?? s.branch_id) === branchFilter)).length;
+  const pendingLeaves = (leaves.data?.data ?? []).filter((l) => l.status === 'PENDING' && (branchFilter === 'ALL' || l.branch_id === branchFilter)).length;
   const isAllBranches = me?.user.branchScope === 'ALL';
+  const branchOptions = useMemo(() => [
+    { value: 'ALL', label: 'Tất cả chi nhánh được phân quyền' },
+    ...(branches.data?.data ?? []).map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` })),
+  ], [branches.data]);
 
   return (
     <>
       <PageHeader
         title={`Xin chào, ${me?.user.displayName ?? ''}`}
         description={`${me ? ROLE_LABELS[me.user.role] : ''} · ${dayjs().format('dddd, DD/MM/YYYY')}`}
-        extra={
-          <Button icon={<ReloadOutlined />} onClick={handleRefreshAll} loading={refreshing}>
-            Làm mới số liệu
-          </Button>
-        }
+        extra={<Button icon={<ReloadOutlined />} onClick={handleRefreshAll} loading={refreshing}>Làm mới số liệu</Button>}
       />
+
+      <Card size="small" style={{ marginBottom: 16 }}>
+        <Flex justify="space-between" align="center" wrap gap={10}>
+          <Space wrap size={10}>
+            <Typography.Text strong><FilterOutlined /> Bộ lọc Tổng quan:</Typography.Text>
+            <Select value={branchFilter} onChange={setBranchFilter} style={{ width: 250 }} options={branchOptions} />
+            <Select
+              value={stageFilter} onChange={setStageFilter} style={{ width: 210 }}
+              options={[
+                { value: 'ALL', label: 'Tất cả giai đoạn / trạng thái' },
+                { value: 'PROBATION', label: 'Nhân viên Thử việc' },
+                { value: 'OFFICIAL', label: 'Nhân viên Chính thức' },
+                { value: 'ACTIVE', label: 'Đang làm việc' },
+              ]}
+            />
+            <Select
+              value={periodFilter} onChange={setPeriodFilter} style={{ width: 190 }}
+              options={[
+                { value: 'TODAY', label: 'Thời gian: Hôm nay' },
+                { value: 'THIS_WEEK', label: 'Thời gian: Tuần này' },
+                { value: 'THIS_MONTH', label: 'Thời gian: Tháng này' },
+                { value: 'ALL', label: 'Thời gian: Toàn bộ kỳ' },
+              ]}
+            />
+          </Space>
+          {(branchFilter !== 'ALL' || stageFilter !== 'ALL' || periodFilter !== 'ALL') && (
+            <Button size="small" onClick={() => { setBranchFilter('ALL'); setStageFilter('ALL'); setPeriodFilter('ALL'); }}>Đặt lại bộ lọc</Button>
+          )}
+        </Flex>
+      </Card>
 
       <Spin spinning={refreshing} tip="Đang đồng bộ số liệu mới nhất...">
         <div>
@@ -147,52 +193,34 @@ export default function DashboardPage() {
             )}
             {can('schedule.read') && (
               <>
-                <Col xs={12} md={6}>
-                  <Card size="small" loading={schedules.isLoading}>
-                    <Statistic title="Ca làm việc đã phát hành" value={publishedShifts} prefix={<CalendarOutlined />} />
-                    <Link href="/admin/schedules" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Mở lịch phân ca</Link>
-                  </Card>
-                </Col>
-                <Col xs={12} md={6}>
-                  <Card size="small" loading={leaves.isLoading}>
-                    <Statistic title="Đơn nghỉ OFF chờ duyệt" value={pendingLeaves} prefix={<SafetyCertificateOutlined />} />
-                    <Link href="/admin/schedules?section=workflows" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Xử lý đơn nghỉ &amp; đổi ca</Link>
-                  </Card>
-                </Col>
+                <Col xs={12} md={6}><Card size="small" loading={schedules.isLoading}><Statistic title="Ca làm việc đã phát hành" value={publishedShifts} prefix={<CalendarOutlined />} /><Link href="/admin/schedules" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Mở lịch phân ca</Link></Card></Col>
+                <Col xs={12} md={6}><Card size="small" loading={leaves.isLoading}><Statistic title="Đơn nghỉ OFF chờ duyệt" value={pendingLeaves} prefix={<SafetyCertificateOutlined />} /><Link href="/admin/schedules?section=workflows" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Xử lý đơn nghỉ &amp; đổi ca</Link></Card></Col>
               </>
             )}
             {can('payroll.read') && (
-              <Col xs={12} md={6}>
-                <Card size="small" loading={payroll.isLoading}>
-                  <Statistic title="Kỳ lương hệ thống" value={Array.isArray(payroll.data) ? payroll.data.length : 0} prefix={<DollarOutlined />} />
-                  <Link href="/admin/payroll" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Đối soát &amp; Hồ sơ lương</Link>
-                </Card>
-              </Col>
+              <Col xs={12} md={6}><Card size="small" loading={payroll.isLoading}><Statistic title="Kỳ lương hệ thống" value={Array.isArray(payroll.data) ? payroll.data.length : 0} prefix={<DollarOutlined />} /><Link href="/admin/payroll" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Đối soát &amp; Hồ sơ lương</Link></Card></Col>
             )}
             {!!me && (
-              <Col xs={12} md={6}>
-                <Card size="small" loading={comms.isLoading}>
-                  <Statistic title="Bản tin nội bộ" value={comms.data?.announcements.length ?? 0} prefix={<NotificationOutlined />} />
-                  <Link href="/admin/integrations?section=comms" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Xem &amp; Quản lý bản tin</Link>
-                </Card>
-              </Col>
+              <Col xs={12} md={6}><Card size="small" loading={comms.isLoading}><Statistic title="Bản tin nội bộ" value={comms.data?.announcements.length ?? 0} prefix={<NotificationOutlined />} /><Link href="/admin/integrations?section=comms" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Xem &amp; Quản lý bản tin</Link></Card></Col>
             )}
           </Row>
 
+          <DashboardBranchAndShiftOverview
+            branchFilter={branchFilter}
+            stageFilter={stageFilter}
+            periodFilter={periodFilter}
+            pendingAccountsCount={countAcc('PENDING_ACTIVATION')}
+            deadLettersCount={health.data?.checks?.deadLetters?.status === 'ok' ? 0 : 1}
+          />
+
+          <HrStoreOperationsReportCard branchFilter={branchFilter} periodFilter={periodFilter} />
+
           {can('integration.read') && (
             <Card title="Tình trạng kết nối & Toàn vẹn dữ liệu" size="small" style={{ marginBottom: 16 }} extra={health.data && <StatusTag value={health.data.status} />}>
-              {health.isLoading ? (
-                <Skeleton active paragraph={{ rows: 4 }} />
-              ) : (
-                <List
-                  size="small"
-                  dataSource={Object.entries(health.data?.checks ?? {})}
-                  renderItem={([key, c]) => (
-                    <List.Item extra={<StatusTag value={c.status} />}>
-                      <List.Item.Meta title={<span style={{ fontWeight: 500 }}>{CHECK_LABELS[key] ?? key}</span>} description={c.detail} />
-                    </List.Item>
-                  )}
-                />
+              {health.isLoading ? <Skeleton active paragraph={{ rows: 4 }} /> : (
+                <List size="small" dataSource={Object.entries(health.data?.checks ?? {})} renderItem={([key, c]) => (
+                  <List.Item extra={<StatusTag value={c.status} />}><List.Item.Meta title={<span style={{ fontWeight: 500 }}>{CHECK_LABELS[key] ?? key}</span>} description={c.detail} /></List.Item>
+                )} />
               )}
             </Card>
           )}
@@ -205,11 +233,6 @@ export default function DashboardPage() {
                 <Descriptions.Item label="Phạm vi chi nhánh">{me.user.branchScope === 'ALL' ? 'Toàn chuỗi (4 chi nhánh)' : `${me.user.branchScope.length} chi nhánh được phân công`}</Descriptions.Item>
                 <Descriptions.Item label="Trạng thái tài khoản"><StatusTag value={me.user.status} /></Descriptions.Item>
               </Descriptions>
-              <Space wrap style={{ marginTop: 10 }}>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  Hệ thống tự động hiển thị các mục menu bên trái và điều hướng trang làm việc tương ứng với quyền hạn của vai trò {ROLE_LABELS[me.user.role]}.
-                </Typography.Text>
-              </Space>
             </Card>
           )}
         </div>

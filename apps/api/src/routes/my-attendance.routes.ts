@@ -141,12 +141,18 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       .filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code)
       .map((a) => ({ ...a, ...resolveShiftTimeDetails(ctx, a.shift_code, a.assignment_id), branchName: ctx.db.branches.get(a.branch_id)?.name ?? branch?.name ?? 'Chi nhánh' }));
 
+    const cycleDays = emp.probation_cycle_days || 12;
+    const rawDiff = emp.probation_start ? dayjs(todayStr).diff(dayjs(emp.probation_start), 'day') + 1 : (emp.probation_work_days || 7);
+    const probationDaysPassed = Math.min(cycleDays, Math.max(1, rawDiff > cycleDays ? (emp.probation_work_days || 7) : rawDiff));
+
     return sendSuccess(request, 'Lấy dữ liệu điểm danh và ca làm việc cá nhân thành công', {
       todayDate: todayStr, nowTimeHm: nowHm,
       profile: {
         employeeId: emp.id, employeeCode: emp.employee_code, fullName: emp.full_name, role: user.role, roleLabel: ROLE_LABELS[user.role],
         stage: emp.stage, branchId: branch?.id ?? emp.branch_id, branchName: branch?.name ?? 'Ụm Bò Milk Chi nhánh 1',
         branchLat: branch?.lat ?? 10.7769, branchLng: branch?.lng ?? 106.7009, radiusM: branch?.radius_m ?? 100,
+        probationStart: emp.probation_start, probationEnd: emp.probation_end, officialFrom: emp.official_from,
+        probationCycleDays: cycleDays, probationDaysPassed, probationDaysRemaining: Math.max(0, cycleDays - probationDaysPassed),
       },
       shifts, events, leaves, emergencyLeaves, swaps, branchPeers, adjustments,
     });
