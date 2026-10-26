@@ -32,10 +32,6 @@ export const SPREADSHEETS = {
         'candidate_code', 'source_channel', 'email', 'birth_year', 'gender', 'staff_group',
         'shift_pref', 'experience_note', 'cv_file_id', 'assigned_hr_id', 'contacted_at',
       ),
-      FROM_NHAN_VIEN: cols(
-        'submitted_at', 'full_name', 'phone', 'email', 'position', 'branch_pref', 'shift_pref',
-        'birth_year', 'gender', 'experience_note', 'synced_candidate_id', 'synced_at',
-      ),
       INTERVIEWS: cols(
         'candidate_id', 'start_at', 'end_at', 'meet_link', 'interviewer_id', 'status', 'score', 'comment', 'decision',
         'branch_id', 'duration_minutes', 'calendar_event_id', 'candidate_confirmed', 'reschedule_requested',

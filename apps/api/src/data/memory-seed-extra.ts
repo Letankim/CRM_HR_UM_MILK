@@ -29,16 +29,9 @@ export function seedExtraTables(gw: InMemorySheetsGateway, ctx: { cn1: string; e
   const candId = newId();
   const candH = SPREADSHEETS.HR.tabs.CANDIDATES;
   const candidates = [
-    { ...sys(candId), candidate_code: 'UV0001', source_row: 'F-101', full_name: 'Lê Hoàng Bảo Ngọc', phone: '0901000088', email: 'baongoc.uv@gmail.com', position: 'Pha chế', staff_group: 'BARISTA', branch_pref: ctx.cn1, shift_pref: 'CA_SANG', status: 'INTERVIEW_SCHEDULED', source_channel: 'GOOGLE_FORM', birth_year: '2004', gender: 'Nữ', experience_note: '1 năm pha chế trà sữa', hr_note: 'Ứng viên tiềm năng, hẹn phỏng vấn 30 phút', cv_file_id: '', assigned_hr_id: 'hr', contacted_at: now },
+    { ...sys(candId), candidate_code: 'UV0001', source_row: 'WEB-101', full_name: 'Lê Hoàng Bảo Ngọc', phone: '0901000088', email: 'baongoc.uv@gmail.com', position: 'Pha chế', staff_group: 'BARISTA', branch_pref: ctx.cn1, shift_pref: 'CA_SANG', status: 'INTERVIEW_SCHEDULED', source_channel: 'WEB', birth_year: '2004', gender: 'Nữ', experience_note: '1 năm pha chế trà sữa', hr_note: 'Ứng viên tiềm năng, hẹn phỏng vấn 30 phút', cv_file_id: '', assigned_hr_id: 'hr', contacted_at: now },
   ];
   gw.seed(MEMORY_IDS.HR, 'CANDIDATES', [[...candH], ...candidates.map((c) => row(candH, c))]);
-
-  const formH = SPREADSHEETS.HR.tabs.FROM_NHAN_VIEN;
-  const formRows = [
-    { ...sys('form_row_101'), submitted_at: now, full_name: 'Lê Hoàng Bảo Ngọc', phone: '0901000088', email: 'baongoc.uv@gmail.com', position: 'BARISTA', branch_pref: ctx.cn1, shift_pref: 'CA_SANG', birth_year: '2004', gender: 'Nữ', experience_note: '1 năm pha chế trà sữa', synced_candidate_id: candId, synced_at: now },
-    { ...sys('form_row_102'), submitted_at: now, full_name: 'Đặng Minh Khôi', phone: '0901000089', email: 'minhkhoi.uv@gmail.com', position: 'CASHIER', branch_pref: ctx.cn1, shift_pref: 'CA_TOI', birth_year: '2005', gender: 'Nam', experience_note: 'Từng làm thu ngân cửa hàng tiện lợi 6 tháng', synced_candidate_id: '', synced_at: '' },
-  ];
-  gw.seed(MEMORY_IDS.HR, 'FROM_NHAN_VIEN', [[...formH], ...formRows.map((f) => row(formH, f))]);
 
   const histH = SPREADSHEETS.HR.tabs.EMPLOYEE_STAGE_HISTORY;
   const stageHist = [

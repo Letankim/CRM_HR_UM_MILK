@@ -126,12 +126,11 @@ describe('Workflows, Infrastructure & Full Tab APIs (AI-INFRA-07..09, FLOW-02..0
     const seededTestAsg = db.testAssignments.all()[0]!;
     const lockedPol = db.policies.find((p) => p.is_locked_policy)!;
 
-    const formSync = await app.inject({
-      method: 'POST', url: '/api/admin/candidates/sync-form', headers: hrHeaders,
-      payload: { full_name: 'Phạm Hồng Nhung', phone: '0901777888', position: 'BARISTA', branch_pref: seededCand.branch_pref },
+    const createCand = await app.inject({
+      method: 'POST', url: '/api/admin/candidates', headers: hrHeaders,
+      payload: { full_name: 'Phạm Hồng Nhung', phone: '0901777888', applied_position: 'BARISTA', applied_branch_id: seededCand.branch_pref },
     });
-    expect(formSync.statusCode).toBe(200);
-    expect(formSync.json().data.syncedCount).toBeGreaterThanOrEqual(1);
+    expect(createCand.statusCode).toBe(201);
     const filteredCands = await app.inject({
       method: 'GET', url: `/api/admin/candidates?branch_id=${seededCand.branch_pref}&status=NEW`, headers: hrHeaders,
     });

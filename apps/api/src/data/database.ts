@@ -32,7 +32,6 @@ export class Database {
   readonly systemSettings: TableStore<S.SystemSetting>;
   readonly maintenance: TableStore<S.Maintenance>;
   readonly candidates: TableStore<S.Candidate>;
-  readonly formNhanVien: TableStore<S.FormNhanVienRow>;
   readonly interviews: TableStore<S.Interview>;
   readonly employees: TableStore<S.Employee>;
   readonly employeeStageHistory: TableStore<S.EmployeeStageHistory>;
@@ -80,7 +79,6 @@ export class Database {
     this.maintenance = new TableStore(gateway, queue, { spreadsheetKey: 'CORE', spreadsheetId: ids.CORE, tab: 'MAINTENANCE', headers: core.MAINTENANCE, schema: S.zMaintenance });
 
     this.candidates = new TableStore(gateway, queue, { spreadsheetKey: 'HR', spreadsheetId: ids.HR, tab: 'CANDIDATES', headers: hr.CANDIDATES, schema: S.zCandidate });
-    this.formNhanVien = new TableStore(gateway, queue, { spreadsheetKey: 'HR', spreadsheetId: ids.HR, tab: 'FROM_NHAN_VIEN', headers: hr.FROM_NHAN_VIEN, schema: S.zFormNhanVienRow });
     this.interviews = new TableStore(gateway, queue, { spreadsheetKey: 'HR', spreadsheetId: ids.HR, tab: 'INTERVIEWS', headers: hr.INTERVIEWS, schema: S.zInterview });
     this.employees = new TableStore(gateway, queue, { spreadsheetKey: 'HR', spreadsheetId: ids.HR, tab: 'EMPLOYEES', headers: hr.EMPLOYEES, schema: S.zEmployee });
     this.employeeStageHistory = new TableStore(gateway, queue, { spreadsheetKey: 'HR', spreadsheetId: ids.HR, tab: 'EMPLOYEE_STAGE_HISTORY', headers: hr.EMPLOYEE_STAGE_HISTORY, schema: S.zEmployeeStageHistory });
@@ -118,7 +116,7 @@ export class Database {
   private get stores() {
     return [
       this.users, this.branches, this.shiftTemplates, this.staffingRules, this.policies, this.systemSettings, this.maintenance,
-      this.candidates, this.formNhanVien, this.interviews, this.employees, this.employeeStageHistory, this.testBank, this.testAssignments, this.testAttempts,
+      this.candidates, this.interviews, this.employees, this.employeeStageHistory, this.testBank, this.testAssignments, this.testAttempts,
       this.shiftAssignments, this.leaveRequests, this.shiftSwaps, this.emergencyLeaves,
       this.attendanceEvents, this.attendanceAdjustments,
       this.payRates, this.payPeriods, this.payrollItems, this.payrollSnapshots, this.payslips, this.payslipRevisions, this.revenueInputs,

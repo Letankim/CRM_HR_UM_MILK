@@ -14,7 +14,6 @@ import { sheetIds } from '../config/env.js';
 import type { Database } from '../data/database.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import type { ReconciliationService } from './reconciliation.service.js';
-import { syncCandidatesFromGoogleForm } from './google-form-sync.js';
 import { sweepExpiredShiftsAndMarkAbsent } from './shift-absent-scanner.js';
 
 export type BackupKind = 'DAILY' | 'CRITICAL' | 'WEEKLY' | 'MONTHLY' | 'PRE_OPERATION';
@@ -165,7 +164,6 @@ export class BackupService {
       this.running = true;
       try {
         await sweepExpiredShiftsAndMarkAbsent(this.db, 'embedded-absent-scanner');
-        await syncCandidatesFromGoogleForm(this.db, 'embedded-form-sync');
         const now = dayjs();
         const slot = now.format('YYYY-MM-DD HH:mm');
         if (slot !== this.lastTriggeredSlot) {

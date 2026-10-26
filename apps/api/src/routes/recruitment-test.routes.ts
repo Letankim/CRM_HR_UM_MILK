@@ -7,22 +7,13 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
-import { syncCandidatesFromGoogleForm } from '../services/google-form-sync.js';
 import { interviewRoutes } from './interviews.routes.js';
 import { testBankRoutes } from './test-bank.routes.js';
-
-const SOURCE_CHANNEL_LABELS: Record<string, string> = {
-  GOOGLE_FORM: 'Google Form (FROM_NHAN_VIEN)',
-  WEB: 'Nhập trực tiếp trên Web',
-  REFERRAL: 'Nhân viên nội bộ giới thiệu',
-  SOCIAL: 'Kênh mạng xã hội / QR Cửa hàng',
-};
 
 const zCandidateListQuery = zListQueryBase.extend({
   branch_id: z.string().trim().optional(),
   status: z.string().trim().optional(),
   staff_group: z.string().trim().optional(),
-  source_channel: z.string().trim().optional(),
   refresh: z.enum(['0', '1', 'true', 'false']).optional(),
 });
 
@@ -38,7 +29,7 @@ const zCreateCandidateBody = z.object({
   birth_year: z.string().default('2003'),
   gender: z.string().default(''),
   experience_note: z.string().max(400).optional().default(''),
-  source_channel: z.string().default('GOOGLE_FORM'),
+  source_channel: z.string().default('WEB'),
   hr_note: z.string().max(400).optional().default(''),
 });
 
@@ -58,29 +49,13 @@ const zUpdateCandidateBody = z.object({
   hr_note: z.string().max(400).optional(),
 });
 
-const zSyncGoogleFormBody = z
-  .object({
-    full_name: z.string().trim().optional(),
-    phone: z.string().trim().optional(),
-    email: z.string().trim().optional(),
-    position: z.string().trim().optional(),
-    branch_pref: z.string().trim().optional(),
-    shift_pref: z.string().trim().optional(),
-    birth_year: z.string().trim().optional(),
-    gender: z.string().trim().optional(),
-    experience_note: z.string().trim().optional(),
-  })
-  .optional();
-
 const zDeleteBody = z.object({ version: z.coerce.number().int().min(1).optional() });
 
 export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/candidates', { preHandler: requirePermission('candidate.manage', 'employee.read', 'system.config') }, async (request) => {
     const query = zCandidateListQuery.parse(request.query);
-    const isRefresh = query.refresh === '1' || query.refresh === 'true';
-    const hasUnsyncedFormRow = ctx.db.formNhanVien.all().some((r) => !r.synced_candidate_id);
-    if (isRefresh || hasUnsyncedFormRow) {
-      await syncCandidatesFromGoogleForm(ctx.db, request.auth?.user.id || 'candidate-list-sync', isRefresh);
+    if (query.refresh === '1' || query.refresh === 'true') {
+      await ctx.db.candidates.refreshIfIdle();
     }
     const items = ctx.db.candidates.all().map((c) => ({
       ...c,
@@ -88,7 +63,6 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
       branchName: ctx.db.branches.get(c.branch_pref)?.name ?? (c.branch_pref || 'Chưa chọn chi nhánh'),
       positionLabel: STAFF_GROUP_LABELS[c.staff_group as keyof typeof STAFF_GROUP_LABELS] ?? c.position,
       shiftPrefLabel: DEFAULT_SHIFT_LABELS[c.shift_pref as keyof typeof DEFAULT_SHIFT_LABELS] ?? c.shift_pref,
-      sourceChannelLabel: SOURCE_CHANNEL_LABELS[c.source_channel] ?? c.source_channel,
     }));
     return sendPaginated(
       request,
@@ -102,60 +76,18 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
         defaultSortOrder: 'desc',
         allowedSortFields: ['created_at', 'full_name', 'status', 'candidate_code'],
         q: query.q,
-        searchExtractor: (i) => [i.candidate_code, i.full_name, i.phone, i.email, i.branchName, i.positionLabel, i.hr_note, i.source_row],
+        searchExtractor: (i) => [i.candidate_code, i.full_name, i.phone, i.email, i.branchName, i.positionLabel, i.hr_note],
         filters: {
           branch_id: query.branch_id,
           status: query.status,
           staff_group: query.staff_group,
-          source_channel: query.source_channel,
         },
         filterPredicates: {
           branch_id: (item, val) => item.branch_pref === val,
           status: (item, val) => item.status === val,
           staff_group: (item, val) => item.staff_group === val,
-          source_channel: (item, val) => item.source_channel === val,
         },
       }),
-    );
-  });
-
-  app.post('/api/admin/candidates/sync-form', { preHandler: requirePermission('candidate.manage', 'system.config') }, async (request) => {
-    const body = zSyncGoogleFormBody.parse(request.body ?? {});
-    const actorId = request.auth!.user.id;
-    if (body?.full_name && body?.phone) {
-      const phone = normalizePhone(body.phone);
-      if (!phone) throw Errors.fieldValidation('phone', 'INVALID_PHONE', 'Số điện thoại gửi từ Google Form không hợp lệ (10 số bắt đầu bằng 0)', body.phone);
-      await ctx.db.formNhanVien.insert(
-        {
-          submitted_at: nowIso(),
-          full_name: body.full_name,
-          phone,
-          email: body.email || '',
-          position: body.position || 'BARISTA',
-          branch_pref: body.branch_pref || ctx.db.branches.all()[0]?.id || '',
-          shift_pref: body.shift_pref || 'CA_SANG',
-          birth_year: body.birth_year || '2004',
-          gender: body.gender || '',
-          experience_note: body.experience_note || '',
-          synced_candidate_id: '',
-          synced_at: '',
-        },
-        actorId,
-      );
-    }
-    const res = await syncCandidatesFromGoogleForm(ctx.db, actorId, true);
-    await ctx.audit.record(auditContext(request), {
-      action: 'candidate.sync_google_form',
-      entity: 'FROM_NHAN_VIEN',
-      entityId: `sync-${Date.now()}`,
-      after: { syncedCount: res.syncedCount, skippedCount: res.skippedCount, totalFormRows: res.totalFormRows },
-    });
-    return sendSuccess(
-      request,
-      res.syncedCount > 0
-        ? `Đã đồng bộ thành công ${res.syncedCount} hồ sơ ứng viên mới từ biểu mẫu Google Form (FROM_NHAN_VIEN)`
-        : `Đã kiểm tra biểu mẫu Google Form (FROM_NHAN_VIEN): toàn bộ ${res.totalFormRows} phản hồi đều đã được đồng bộ đầy đủ`,
-      res,
     );
   });
 
@@ -173,7 +105,7 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
     const staffGroup = body.applied_position || body.staff_group || 'BARISTA';
     const created = await ctx.db.candidates.insert({
       candidate_code: `UV${String(ctx.db.candidates.all(true).length + 1).padStart(4, '0')}`,
-      source_row: body.source_channel === 'GOOGLE_FORM' ? `F-${Date.now()}` : `WEB-${Date.now()}`,
+      source_row: `WEB-${Date.now()}`,
       full_name: body.full_name, phone, email: body.email,
       position: STAFF_GROUP_LABELS[staffGroup as keyof typeof STAFF_GROUP_LABELS] ?? staffGroup,
       staff_group: staffGroup, branch_pref: branchId, shift_pref: body.shift_pref,
