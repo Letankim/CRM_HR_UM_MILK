@@ -131,6 +131,9 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
           const meta = resolveShiftTimeDetails(ctx, a.shift_code, a.id);
           busyShiftsByDate[a.work_date] = `${meta.shiftLabel} (${meta.shiftTimeRange})`;
         }
+        for (const l of ctx.db.leaveRequests.filter((x) => (x.employee_id === e.id || x.employee_id === e.employee_code) && (x.status === 'APPROVED' || x.status === 'PENDING'))) {
+          busyShiftsByDate[l.leave_date] = 'Đang nghỉ OFF';
+        }
         return { id: e.id, employeeCode: e.employee_code, fullName: e.full_name, positionTitle: e.position_title || 'Nhân sự cửa hàng', branchName: ctx.db.branches.get(e.branch_id)?.name ?? '', busyShiftsByDate };
       });
 
@@ -158,6 +161,10 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     if (body.work_date < todayStr) {
       throw Errors.fieldValidation('work_date', 'OUT_OF_RANGE', `Không được phép đăng ký ca làm việc cho ngày trong quá khứ (${dayjs(body.work_date).format('DD/MM/YYYY')}). Hôm nay là ${dayjs(todayStr).format('DD/MM/YYYY')}.`, body.work_date);
     }
+    const leaveOnDate = ctx.db.leaveRequests.find((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.leave_date === body.work_date && (l.status === 'APPROVED' || l.status === 'PENDING'));
+    if (leaveOnDate) {
+      throw Errors.fieldValidation('work_date', 'DUPLICATE_VALUE', `Bạn đã đăng ký nghỉ OFF trong ngày ${dayjs(body.work_date).format('DD/MM/YYYY')}, không thể đăng ký ca làm việc trùng ngày nghỉ.`, body.work_date);
+    }
 
     const tpl = ctx.db.shiftTemplates.find((s) => s.code === body.shift_code);
     const fallback = SHIFT_DEFAULT_HOURS[body.shift_code] ?? SHIFT_DEFAULT_HOURS.CA_SANG!;
@@ -168,34 +175,19 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       throw Errors.fieldValidation('shift_code', 'OUT_OF_RANGE', `Khung ca này (${startAt} – ${endAt}) trong ngày hôm nay (${dayjs(todayStr).format('DD/MM/YYYY')}) đã trôi qua (hiện tại là ${nowHm}). Không được phép đăng ký ca đã kết thúc, vui lòng chọn ca chưa kết thúc hoặc đăng ký cho ngày tiếp theo.`, body.shift_code);
     }
 
-    const dup = ctx.db.shiftAssignments.find(
-      (a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.shift_code === body.shift_code,
-    );
-    if (dup) {
-      throw Errors.fieldValidation('shift_code', 'DUPLICATE_VALUE', `Bạn đã đăng ký ca này trong ngày ${dayjs(body.work_date).format('DD/MM/YYYY')} rồi`, body.shift_code);
-    }
+    const dup = ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.shift_code === body.shift_code);
+    if (dup) throw Errors.fieldValidation('shift_code', 'DUPLICATE_VALUE', `Bạn đã đăng ký ca này trong ngày ${dayjs(body.work_date).format('DD/MM/YYYY')} rồi`, body.shift_code);
 
-    const created = await ctx.db.shiftAssignments.insert(
-      {
-        schedule_week_id: `WK-${body.work_date.slice(0, 7)}`, employee_id: emp.id, branch_id: emp.branch_id, work_date: body.work_date,
-        shift_template_id: tpl?.id ?? '', start_at: startAt, end_at: endAt, status: 'DRAFT', source: 'EMPLOYEE_REGISTER',
-        employee_stage: emp.stage, day_type: 'WORK', shift_code: body.shift_code, scheduled_hours: tpl?.standard_hours ?? fallback.hours,
-        swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: '', note: body.note,
-      },
-      user.id,
-    );
+    const created = await ctx.db.shiftAssignments.insert({
+      schedule_week_id: `WK-${body.work_date.slice(0, 7)}`, employee_id: emp.id, branch_id: emp.branch_id, work_date: body.work_date,
+      shift_template_id: tpl?.id ?? '', start_at: startAt, end_at: endAt, status: 'DRAFT', source: 'EMPLOYEE_REGISTER',
+      employee_stage: emp.stage, day_type: 'WORK', shift_code: body.shift_code, scheduled_hours: tpl?.standard_hours ?? fallback.hours,
+      swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: '', note: body.note,
+    }, user.id);
 
-    await ctx.audit.record(auditContext(request), {
-      action: 'schedule.create', entity: 'SHIFT_ASSIGNMENTS', entityId: created.id,
-      after: { employee_id: emp.employee_code, work_date: created.work_date, shift_code: created.shift_code, status: created.status },
-    });
-
+    await ctx.audit.record(auditContext(request), { action: 'schedule.create', entity: 'SHIFT_ASSIGNMENTS', entityId: created.id, after: { employee_id: emp.employee_code, work_date: created.work_date, shift_code: created.shift_code, status: created.status } });
     reply.code(201);
-    return sendSuccess(
-      request,
-      'Đã gửi đăng ký ca làm việc. Ca đăng ký đang ở trạng thái Chờ duyệt — cần Quản lý cửa hàng hoặc HR duyệt phân ca trước khi chấm công.',
-      mapShiftAssignment(created, ctx),
-    );
+    return sendSuccess(request, 'Đã gửi đăng ký ca làm việc. Ca đăng ký đang ở trạng thái Chờ duyệt — cần Quản lý cửa hàng hoặc HR duyệt phân ca trước khi chấm công.', mapShiftAssignment(created, ctx));
   });
 
   app.delete('/api/my-attendance/shifts/:id', { preHandler: requireAuth() }, async (request) => {

@@ -9,14 +9,7 @@ import { nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 
-const zCreateLeaveBody = z.object({
-  employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'),
-  leave_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày nghỉ phải theo định dạng YYYY-MM-DD'),
-  kind: z.enum(['PROBATION_OFF', 'WEEKLY_OFF', 'UNPAID_LEAVE']).default('WEEKLY_OFF'),
-  shift_code: z.string().default('CA_SANG'),
-  reason: z.string().trim().min(2, 'Vui lòng nhập lý do xin nghỉ').max(300),
-  status: z.enum(['DRAFT', 'PENDING']).default('PENDING'),
-});
+const zCreateLeaveBody = z.object({ employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'), leave_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày nghỉ phải theo định dạng YYYY-MM-DD'), kind: z.enum(['PROBATION_OFF', 'WEEKLY_OFF', 'UNPAID_LEAVE']).default('WEEKLY_OFF'), shift_code: z.string().default('CA_SANG'), reason: z.string().trim().min(2, 'Vui lòng nhập lý do xin nghỉ').max(300), status: z.enum(['DRAFT', 'PENDING']).default('PENDING') });
 const zDecideLeaveBody = z.object({ version: z.coerce.number().int().min(1), decision: z.enum(['APPROVED', 'REJECTED']), decision_reason: z.string().trim().max(300).optional().default('') });
 const zCreateSwapBody = z.object({ requester_id: z.string().trim().min(1), peer_id: z.string().trim().min(1), from_assignment_id: z.string().trim().min(1), to_assignment_id: z.string().trim().optional().default(''), reason: z.string().trim().min(2).max(300) });
 const zPeerRespondBody = z.object({ version: z.coerce.number().int().min(1), accept: z.boolean(), peer_note: z.string().trim().max(200).optional().default('') });
@@ -42,20 +35,19 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     const emp = ctx.db.employees.get(body.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === body.employee_id);
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy nhân sự', body.employee_id);
     assertBranchAccess(request, emp.branch_id);
-    const usedCount = ctx.db.leaveRequests.filter((l) => l.employee_id === emp.id && l.status !== 'REJECTED' && l.status !== 'CANCELLED').length;
+    const dupLeave = ctx.db.leaveRequests.find((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.leave_date === body.leave_date && l.status !== 'REJECTED' && l.status !== 'CANCELLED');
+    if (dupLeave) throw Errors.fieldValidation('leave_date', 'DUPLICATE_VALUE', `Nhân sự đã có đơn đăng ký nghỉ OFF trong ngày ${body.leave_date}`, body.leave_date);
+    const usedCount = ctx.db.leaveRequests.filter((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.status !== 'REJECTED' && l.status !== 'CANCELLED').length;
     const limit = emp.stage === 'PROBATION' ? SYSTEM_CONFIG.defaults.probationOffDays : 4;
     if (usedCount >= limit) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', `Nhân sự đã dùng hết định mức ${limit} ngày nghỉ OFF trong chu kỳ`, body.leave_date);
+    const existingShift = ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.leave_date && a.day_type !== 'OFF');
     const created = await ctx.db.leaveRequests.insert({
-      request_code: `OFF-${String(ctx.db.leaveRequests.all(true).length + 1).padStart(4, '0')}`,
-      employee_id: emp.id, branch_id: emp.branch_id, leave_date: body.leave_date, kind: body.kind,
-      shift_code: body.shift_code, reason: body.reason, status: body.status, employee_stage: emp.stage,
-      schedule_week_id: `WK-${body.leave_date.slice(0, 7)}`, assignment_id: '',
-      quota_cycle_used: usedCount + 1, quota_cycle_limit: limit, staffing_after_leave: 3, min_staff_required: 2,
-      submitted_at: nowIso(), store_reviewed_by: '', store_reviewed_at: '', decided_by: '', decision_reason: '', decided_at: '',
+      request_code: `OFF-${String(ctx.db.leaveRequests.all(true).length + 1).padStart(4, '0')}`, employee_id: emp.id, branch_id: emp.branch_id, leave_date: body.leave_date, kind: body.kind,
+      shift_code: existingShift?.shift_code || body.shift_code, reason: body.reason, status: body.status, employee_stage: emp.stage, schedule_week_id: `WK-${body.leave_date.slice(0, 7)}`,
+      assignment_id: existingShift?.id ?? '', quota_cycle_used: usedCount + 1, quota_cycle_limit: limit, staffing_after_leave: 3, min_staff_required: 2, submitted_at: nowIso(), store_reviewed_by: '', store_reviewed_at: '', decided_by: '', decision_reason: '', decided_at: '',
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'leave.create', entity: 'LEAVE_REQUESTS', entityId: created.id, after: { request_code: created.request_code, leave_date: created.leave_date, status: created.status } });
-    reply.code(201);
-    return sendSuccess(request, 'Đã gửi đơn đăng ký nghỉ OFF thành công', created);
+    return reply.code(201), sendSuccess(request, 'Đã gửi đơn đăng ký nghỉ OFF thành công', created);
   });
 
   app.post('/api/admin/leave-requests/:id/decide', { preHandler: requirePermission('leave.approve') }, async (request) => {
@@ -66,9 +58,26 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
     if (body.decision === 'REJECTED' && !body.decision_reason.trim()) throw Errors.fieldValidation('decision_reason', 'REQUIRED_FIELD', 'Vui lòng nhập lý do từ chối đơn xin nghỉ OFF', '');
     const actorId = request.auth!.user.id;
-    const updated = await ctx.db.leaveRequests.update(id, body.version, { status: body.decision, decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso() }, actorId);
+    const emp = ctx.db.employees.get(before.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === before.employee_id);
+    const isTargetEmp = (eid: string) => eid === before.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
+    const updated = await ctx.reconciliation.executeSaga({
+      sagaKey: `leave-decide-${id}-v${body.version}`, operation: 'DECIDE_LEAVE_REQUEST', actorId, initialContext: { leave: before },
+      steps: [
+        { name: 'UPDATE_LEAVE_STATUS', run: async (s) => { s.leave = await ctx.db.leaveRequests.update(id, body.version, { status: body.decision, decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso() }, actorId); } },
+        { name: 'REMOVE_CONFLICTING_SHIFTS_ON_APPROVE', run: async () => {
+          if (body.decision !== 'APPROVED') return;
+          for (const a of ctx.db.shiftAssignments.filter((x) => isTargetEmp(x.employee_id) && x.work_date === before.leave_date)) {
+            if (!ctx.db.attendanceEvents.find((ev) => ev.assignment_id === a.id)) await ctx.db.shiftAssignments.softDelete(a.id, a.version, actorId);
+          }
+          for (const sw of ctx.db.shiftSwaps.filter((x) => x.from_work_date === before.leave_date && (isTargetEmp(x.requester_id) || isTargetEmp(x.peer_id)) && (x.status === 'PENDING_PEER' || x.status === 'PEER_ACCEPTED'))) {
+            await ctx.db.shiftSwaps.update(sw.id, sw.version, { status: 'REJECTED', decided_by: actorId, decision_reason: 'Tự động hủy do đơn nghỉ OFF đã được phê duyệt', decided_at: nowIso() }, actorId);
+          }
+        } },
+      ],
+      resultSelector: (s) => s.leave,
+    });
     await ctx.audit.record(auditContext(request), { action: 'leave.decide', entity: 'LEAVE_REQUESTS', entityId: id, before: { status: before.status }, after: { status: updated.status, decision_reason: updated.decision_reason } });
-    return sendSuccess(request, body.decision === 'APPROVED' ? 'Đã phê duyệt đơn nghỉ OFF' : 'Đã từ chối đơn nghỉ OFF', updated);
+    return sendSuccess(request, body.decision === 'APPROVED' ? 'Đã phê duyệt đơn nghỉ OFF và tự động gỡ ca làm việc trùng ngày' : 'Đã từ chối đơn nghỉ OFF', updated);
   });
 
   app.get('/api/admin/shift-swaps', { preHandler: requirePermission('schedule.read', 'swap.approve', 'self.swap') }, async (request) => {
@@ -91,34 +100,21 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     const reqEmp = ctx.db.employees.get(body.requester_id) ?? ctx.db.employees.find((e) => e.employee_code === body.requester_id);
     const peerEmp = ctx.db.employees.get(body.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === body.peer_id);
     if (!peerEmp) throw Errors.fieldValidation('peer_id', 'INVALID_VALUE', 'Không tìm thấy đồng nghiệp nhận ca thay', body.peer_id);
-    if (body.requester_id === body.peer_id || (reqEmp && reqEmp.id === peerEmp.id)) {
-      throw Errors.fieldValidation('peer_id', 'INVALID_VALUE', 'Người nhận đổi ca phải khác người xin đổi ca', body.peer_id);
-    }
-    const peerConflict = ctx.db.shiftAssignments.find(
-      (a) => (a.employee_id === peerEmp.id || a.employee_id === peerEmp.employee_code) && a.work_date === fromAssign.work_date && a.day_type !== 'OFF' && a.status !== 'ON_LEAVE' && a.status !== 'ABSENT',
-    );
+    if (body.requester_id === body.peer_id || (reqEmp && reqEmp.id === peerEmp.id)) throw Errors.fieldValidation('peer_id', 'INVALID_VALUE', 'Người nhận đổi ca phải khác người xin đổi ca', body.peer_id);
+    const peerConflict = ctx.db.shiftAssignments.find((a) => (a.employee_id === peerEmp.id || a.employee_id === peerEmp.employee_code) && a.work_date === fromAssign.work_date && a.day_type !== 'OFF' && a.status !== 'ON_LEAVE' && a.status !== 'ABSENT');
     if (peerConflict) {
       const shiftName = DEFAULT_SHIFT_LABELS[peerConflict.shift_code as keyof typeof DEFAULT_SHIFT_LABELS] ?? peerConflict.shift_code;
-      throw Errors.fieldValidation(
-        'peer_id', 'DUPLICATE_VALUE',
-        `Đồng nghiệp ${peerEmp.full_name} (${peerEmp.employee_code}) đã có ca làm việc (${shiftName}) trong ngày ${fromAssign.work_date}. Bắt buộc người nhận ca thay phải không có ca làm việc nào trong ngày hôm đó.`,
-        body.peer_id,
-      );
+      throw Errors.fieldValidation('peer_id', 'DUPLICATE_VALUE', `Đồng nghiệp ${peerEmp.full_name} (${peerEmp.employee_code}) đã có ca làm việc (${shiftName}) trong ngày ${fromAssign.work_date}. Bắt buộc người nhận ca thay phải không có ca làm việc nào trong ngày hôm đó.`, body.peer_id);
     }
-    const dupPending = ctx.db.shiftSwaps.find(
-      (s) => (s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED') && (s.from_assignment_id === fromAssign.id || ((s.peer_id === peerEmp.id || s.peer_id === peerEmp.employee_code) && s.from_work_date === fromAssign.work_date)),
-    );
-    if (dupPending) {
-      throw Errors.fieldValidation('peer_id', 'DUPLICATE_VALUE', dupPending.from_assignment_id === fromAssign.id ? 'Ca làm việc này đang có yêu cầu đổi ca chờ xử lý' : `Đồng nghiệp ${peerEmp.full_name} đang có yêu cầu nhận ca khác chờ duyệt trong ngày ${fromAssign.work_date}`, body.peer_id);
-    }
+    const peerOnLeave = ctx.db.leaveRequests.find((l) => (l.employee_id === peerEmp.id || l.employee_id === peerEmp.employee_code) && l.leave_date === fromAssign.work_date && (l.status === 'APPROVED' || l.status === 'PENDING'));
+    if (peerOnLeave) throw Errors.fieldValidation('peer_id', 'DUPLICATE_VALUE', `Đồng nghiệp ${peerEmp.full_name} (${peerEmp.employee_code}) đã đăng ký nghỉ OFF trong ngày ${fromAssign.work_date}, không thể nhận ca thay.`, body.peer_id);
+    const dupPending = ctx.db.shiftSwaps.find((s) => (s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED') && (s.from_assignment_id === fromAssign.id || ((s.peer_id === peerEmp.id || s.peer_id === peerEmp.employee_code) && s.from_work_date === fromAssign.work_date)));
+    if (dupPending) throw Errors.fieldValidation('peer_id', 'DUPLICATE_VALUE', dupPending.from_assignment_id === fromAssign.id ? 'Ca làm việc này đang có yêu cầu đổi ca chờ xử lý' : `Đồng nghiệp ${peerEmp.full_name} đang có yêu cầu nhận ca khác chờ duyệt trong ngày ${fromAssign.work_date}`, body.peer_id);
     const created = await ctx.db.shiftSwaps.insert({
-      swap_code: `SWP-${String(ctx.db.shiftSwaps.all(true).length + 1).padStart(4, '0')}`,
-      requester_id: reqEmp?.id ?? body.requester_id, peer_id: peerEmp.id, from_assignment_id: fromAssign.id, to_assignment_id: body.to_assignment_id,
-      branch_id: fromAssign.branch_id, from_work_date: fromAssign.work_date, from_shift_code: fromAssign.shift_code,
-      to_work_date: fromAssign.work_date, to_shift_code: fromAssign.shift_code, reason: body.reason,
-      status: 'PENDING_PEER', has_conflict: false, staffing_valid: true, requested_at: nowIso(),
-      peer_responded_at: '', peer_note: '', decided_by: '', decision_reason: '', decided_at: '',
-      allowance_eligible: false, allowance_amount_vnd: SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd,
+      swap_code: `SWP-${String(ctx.db.shiftSwaps.all(true).length + 1).padStart(4, '0')}`, requester_id: reqEmp?.id ?? body.requester_id, peer_id: peerEmp.id,
+      from_assignment_id: fromAssign.id, to_assignment_id: body.to_assignment_id, branch_id: fromAssign.branch_id, from_work_date: fromAssign.work_date, from_shift_code: fromAssign.shift_code,
+      to_work_date: fromAssign.work_date, to_shift_code: fromAssign.shift_code, reason: body.reason, status: 'PENDING_PEER', has_conflict: false, staffing_valid: true, requested_at: nowIso(),
+      peer_responded_at: '', peer_note: '', decided_by: '', decision_reason: '', decided_at: '', allowance_eligible: false, allowance_amount_vnd: SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd,
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'swap.create', entity: 'SHIFT_SWAPS', entityId: created.id, after: { swap_code: created.swap_code, status: created.status } });
     reply.code(201);
@@ -134,6 +130,8 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       const peerEmp = ctx.db.employees.get(before.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === before.peer_id);
       const conflict = peerEmp && ctx.db.shiftAssignments.find((a) => (a.employee_id === peerEmp.id || a.employee_id === peerEmp.employee_code) && a.work_date === before.from_work_date && a.day_type !== 'OFF' && a.status !== 'ON_LEAVE' && a.status !== 'ABSENT');
       if (conflict) throw Errors.badRequest(`Không thể nhận ca thay vì đã có lịch làm việc trong ngày ${before.from_work_date}`);
+      const onLeave = peerEmp && ctx.db.leaveRequests.find((l) => (l.employee_id === peerEmp.id || l.employee_id === peerEmp.employee_code) && l.leave_date === before.from_work_date && l.status === 'APPROVED');
+      if (onLeave) throw Errors.badRequest(`Không thể nhận ca thay vì đã có đơn nghỉ OFF được duyệt trong ngày ${before.from_work_date}`);
     }
     const nextStatus = body.accept ? 'PEER_ACCEPTED' : 'PEER_DECLINED';
     const updated = await ctx.db.shiftSwaps.update(id, body.version, { status: nextStatus, peer_responded_at: nowIso(), peer_note: body.peer_note }, request.auth!.user.id);
@@ -152,13 +150,12 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       const peerEmp = ctx.db.employees.get(before.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === before.peer_id);
       const conflict = peerEmp && ctx.db.shiftAssignments.find((a) => (a.employee_id === peerEmp.id || a.employee_id === peerEmp.employee_code) && a.work_date === before.from_work_date && a.day_type !== 'OFF' && a.status !== 'ON_LEAVE' && a.status !== 'ABSENT');
       if (conflict) throw Errors.badRequest(`Đồng nghiệp nhận ca đã có lịch làm việc trong ngày ${before.from_work_date}, không thể duyệt đổi ca trùng ngày`);
+      const onLeave = peerEmp && ctx.db.leaveRequests.find((l) => (l.employee_id === peerEmp.id || l.employee_id === peerEmp.employee_code) && l.leave_date === before.from_work_date && l.status === 'APPROVED');
+      if (onLeave) throw Errors.badRequest(`Đồng nghiệp nhận ca đã được duyệt nghỉ OFF trong ngày ${before.from_work_date}, không thể duyệt đổi ca`);
     }
     const actorId = request.auth!.user.id;
     const updated = await ctx.reconciliation.executeSaga({
-      sagaKey: `swap-decide-${id}-v${body.version}`,
-      operation: 'APPROVE_SHIFT_SWAP',
-      actorId,
-      initialContext: { swap: before },
+      sagaKey: `swap-decide-${id}-v${body.version}`, operation: 'APPROVE_SHIFT_SWAP', actorId, initialContext: { swap: before },
       steps: [
         { name: 'UPDATE_SWAP_STATUS', run: async (s) => { s.swap = await ctx.db.shiftSwaps.update(id, body.version, { status: body.decision, decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), allowance_eligible: body.decision === 'APPROVED' }, actorId); } },
         { name: 'APPLY_TO_OFFICIAL_SCHEDULE_ON_APPROVE', run: async () => {
@@ -188,12 +185,11 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     const body = zCreateEmergencyBody.parse(request.body);
     const emp = ctx.db.employees.get(body.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === body.employee_id);
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy nhân sự', body.employee_id);
+    const existingShift = (body.assignment_id ? ctx.db.shiftAssignments.get(body.assignment_id) : undefined) ?? ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.day_type !== 'OFF');
     const created = await ctx.db.emergencyLeaves.insert({
-      emergency_code: `EMG-${String(ctx.db.emergencyLeaves.all(true).length + 1).padStart(4, '0')}`,
-      employee_id: emp.id, assignment_id: body.assignment_id, branch_id: emp.branch_id, work_date: body.work_date, shift_code: body.shift_code,
-      reason: body.reason, replacement_id: '', status: 'REPORTED', escalated: false, handled_by: '', reported_at: nowIso(),
-      minutes_before_shift: 60, evidence_file_id: '', replacement_confirmed_at: '', shift_coverage_status: 'UNCOVERED',
-      escalated_at: '', escalated_to_role: '', handled_at: '', resolution_note: '',
+      emergency_code: `EMG-${String(ctx.db.emergencyLeaves.all(true).length + 1).padStart(4, '0')}`, employee_id: emp.id, assignment_id: existingShift?.id || body.assignment_id,
+      branch_id: emp.branch_id, work_date: body.work_date, shift_code: existingShift?.shift_code || body.shift_code, reason: body.reason, replacement_id: '', status: 'REPORTED',
+      escalated: false, handled_by: '', reported_at: nowIso(), minutes_before_shift: 60, evidence_file_id: '', replacement_confirmed_at: '', shift_coverage_status: 'UNCOVERED', escalated_at: '', escalated_to_role: '', handled_at: '', resolution_note: '',
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'emergency.create', entity: 'EMERGENCY_LEAVES', entityId: created.id, after: { emergency_code: created.emergency_code, status: created.status } });
     reply.code(201);
@@ -210,7 +206,15 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     const isEscalate = body.action === 'ESCALATE';
     const nextStatus = body.action === 'ASSIGN_REPLACEMENT' ? 'REPLACEMENT_FOUND' : isEscalate ? 'ESCALATED' : 'RESOLVED';
     const updated = await ctx.db.emergencyLeaves.update(id, body.version, { status: nextStatus, escalated: isEscalate || before.escalated, replacement_id: body.replacement_id || before.replacement_id, shift_coverage_status: body.replacement_id ? 'COVERED' : isEscalate ? 'SHORT_STAFFED_ESCALATED' : 'RESOLVED', escalated_at: isEscalate ? nowIso() : before.escalated_at, escalated_to_role: isEscalate ? 'HR' : before.escalated_to_role, handled_by: actorId, handled_at: nowIso(), resolution_note: body.resolution_note }, actorId);
+    if (!isEscalate) {
+      const emp = ctx.db.employees.get(before.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === before.employee_id);
+      const targetShift = (before.assignment_id ? ctx.db.shiftAssignments.get(before.assignment_id) : undefined) ?? ctx.db.shiftAssignments.find((a) => (a.employee_id === before.employee_id || Boolean(emp && (a.employee_id === emp.id || a.employee_id === emp.employee_code))) && a.work_date === before.work_date);
+      if (targetShift && !ctx.db.attendanceEvents.find((ev) => ev.assignment_id === targetShift.id)) {
+        if (body.replacement_id) await ctx.db.shiftAssignments.update(targetShift.id, targetShift.version, { employee_id: body.replacement_id, replacement_for_employee_id: before.employee_id, status: 'PUBLISHED', note: `Thay ca nghỉ đột xuất ${before.emergency_code}` }, actorId);
+        else await ctx.db.shiftAssignments.softDelete(targetShift.id, targetShift.version, actorId);
+      }
+    }
     await ctx.audit.record(auditContext(request), { action: 'emergency.handle', entity: 'EMERGENCY_LEAVES', entityId: id, before: { status: before.status }, after: { status: updated.status, escalated: updated.escalated } });
-    return sendSuccess(request, isEscalate ? 'Đã chuyển cảnh báo thiếu ca lên cấp trên (Escalated) để điều phối vận hành' : 'Đã cập nhật phương án xử lý ca nghỉ đột xuất', updated);
+    return sendSuccess(request, isEscalate ? 'Đã chuyển cảnh báo thiếu ca lên cấp trên (Escalated) để điều phối vận hành' : 'Đã cập nhật phương án xử lý ca nghỉ đột xuất và đồng bộ lịch ca', updated);
   });
 }

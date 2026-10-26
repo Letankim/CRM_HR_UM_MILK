@@ -98,6 +98,13 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
     const branchId = body.branch_id || emp.branch_id;
     assertBranchAccess(request, branchId);
 
+    if (body.day_type !== 'OFF' && body.status !== 'ON_LEAVE') {
+      const approvedLeave = ctx.db.leaveRequests.find((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.leave_date === body.work_date && l.status === 'APPROVED');
+      if (approvedLeave) {
+        throw Errors.fieldValidation('work_date', 'DUPLICATE_VALUE', `Nhân sự ${emp.full_name} (${emp.employee_code}) đã có đơn xin nghỉ OFF được duyệt trong ngày ${body.work_date}, không thể phân ca làm việc trùng ngày nghỉ.`, body.work_date);
+      }
+    }
+
     const conflict = ctx.db.shiftAssignments.find(
       (a) => a.employee_id === emp.id && a.work_date === body.work_date && a.shift_code === body.shift_code,
     );
@@ -149,6 +156,12 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
     const nextEmp = patch.employee_id ? (ctx.db.employees.get(patch.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === patch.employee_id)) : undefined;
     if (patch.employee_id && !nextEmp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy hồ sơ nhân sự được chọn', patch.employee_id);
     if (nextEmp) assertBranchAccess(request, nextEmp.branch_id);
+    const targetEmp = nextEmp ?? ctx.db.employees.get(before.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === before.employee_id);
+    const targetDate = patch.work_date ?? before.work_date;
+    if ((patch.day_type ?? before.day_type) !== 'OFF' && (patch.status ?? before.status) !== 'ON_LEAVE' && targetEmp) {
+      const approvedLeave = ctx.db.leaveRequests.find((l) => (l.employee_id === targetEmp.id || l.employee_id === targetEmp.employee_code) && l.leave_date === targetDate && l.status === 'APPROVED');
+      if (approvedLeave) throw Errors.fieldValidation('work_date', 'DUPLICATE_VALUE', `Nhân sự ${targetEmp.full_name} (${targetEmp.employee_code}) đã có đơn xin nghỉ OFF được duyệt trong ngày ${targetDate}, không thể xếp ca làm việc trùng ngày nghỉ.`, targetDate);
+    }
     const tpl = patch.shift_code ? findBranchShiftTemplate(ctx, patch.shift_code, nextEmp?.branch_id ?? before.branch_id) : undefined;
     const updated = await ctx.db.shiftAssignments.update(
       id,

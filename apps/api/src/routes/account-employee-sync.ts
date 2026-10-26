@@ -111,8 +111,13 @@ export async function healBranchConsistency(ctx: AppContext, actorId = 'system-s
         await ctx.db.users.update(linkedUser.id, linkedUser.version, { branch_scope: emp.branch_id }, actorId);
       }
     }
-    if (effectiveBranchId) {
-      await cascadeEmployeeBranchChange(ctx, emp, effectiveBranchId, actorId);
+    if (effectiveBranchId) await cascadeEmployeeBranchChange(ctx, emp, effectiveBranchId, actorId);
+  }
+  for (const l of ctx.db.leaveRequests.filter((x) => x.status === 'APPROVED')) {
+    const emp = ctx.db.employees.get(l.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === l.employee_id);
+    const matchEmp = (eid: string) => eid === l.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
+    for (const s of ctx.db.shiftAssignments.filter((a) => matchEmp(a.employee_id) && a.work_date === l.leave_date)) {
+      if (!ctx.db.attendanceEvents.find((ev) => ev.assignment_id === s.id)) await ctx.db.shiftAssignments.softDelete(s.id, s.version, actorId);
     }
   }
 }

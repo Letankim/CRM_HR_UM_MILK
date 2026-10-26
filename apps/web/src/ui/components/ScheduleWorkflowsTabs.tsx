@@ -40,7 +40,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
   const emgQ = useQuery({ queryKey: ['emergency-leaves'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/emergency-leaves') });
   const attQ = useQuery({ queryKey: ['attendance-all'], queryFn: () => api.get<{ events: AttendanceEventRow[]; adjustments: Record<string, unknown>[] }>('/admin/attendance') });
 
-  const refreshAll = () => ['leave-requests', 'shift-swaps', 'emergency-leaves', 'attendance-all', 'schedules'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+  const refreshAll = () => ['leave-requests', 'shift-swaps', 'emergency-leaves', 'attendance-all', 'schedules', 'my-attendance'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const isRefreshing = leavesQ.isFetching || swapsQ.isFetching || emgQ.isFetching || attQ.isFetching;
 
   const actMut = useMutation({
