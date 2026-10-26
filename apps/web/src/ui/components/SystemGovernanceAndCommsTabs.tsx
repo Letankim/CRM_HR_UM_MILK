@@ -10,7 +10,7 @@ import { useCan, useMe } from '@/lib/auth';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
 import { TimeSelect } from './DateTimePickers';
-import { GovernanceDetailDrawer, POLICY_CATEGORY_LABELS, POLICY_CATEGORY_OPTIONS, PolicyFormModal } from './GovernanceAndCommsModals';
+import { BackupDetailDrawer, GovernanceDetailDrawer, POLICY_CATEGORY_LABELS, POLICY_CATEGORY_OPTIONS, PolicyFormModal } from './GovernanceAndCommsModals';
 import { MktCommsCenter } from './MktCommsCenter';
 import { RowActionButtons } from './RowActionButtons';
 
@@ -29,6 +29,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
   const [polModal, setPolModal] = useState(false);
   const [editingPol, setEditingPol] = useState<Record<string, unknown> | null>(null);
   const [viewing, setViewing] = useState<Record<string, unknown> | null>(null);
+  const [viewingBackup, setViewingBackup] = useState<Record<string, unknown> | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const debouncedQ = useDebouncedValue(searchInput, 400);
   const [catFilter, setCatFilter] = useState('ALL');
@@ -180,11 +181,13 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
         pagination={{ current: bkpPage, pageSize: bkpPerPage, total: bkpTotal, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} bản sao lưu`, onChange: (p, ps) => { setBkpPage(p); setBkpPerPage(ps); } }}
         dataSource={filteredBackups}
         columns={[
-          { title: 'Mã sao lưu', dataIndex: 'backup_code', width: 130, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
-          { title: 'Loại sao lưu', dataIndex: 'kindLabel' },
-          { title: 'Thời điểm thực hiện', dataIndex: 'started_at', width: 210, render: (v: string) => <span className="num">{v ? dayjs(v).format('HH:mm:ss DD/MM/YYYY') : '—'}</span> },
-          { title: 'Diễn tập khôi phục', dataIndex: 'verified_restore', width: 150, render: (v: boolean) => v ? <Tag color="green">Đã kiểm chứng</Tag> : <Tag>Bản sao lưu</Tag> },
-          { title: 'Trạng thái', dataIndex: 'status', width: 130, render: (v: string) => <StatusTag value={v} /> },
+          { title: 'Mã sao lưu', dataIndex: 'backup_code', width: 120, render: (v: string, r) => <Typography.Link strong onClick={() => setViewingBackup(r)}><Tag color="geekblue">{v}</Tag></Typography.Link> },
+          { title: 'Loại sao lưu', dataIndex: 'kindLabel', render: (v: string, r) => <Typography.Link strong onClick={() => setViewingBackup(r)}>{v}</Typography.Link> },
+          { title: 'Thực hiện bởi', dataIndex: 'actorName', width: 190, render: (v: string) => <Tag color="cyan">{v || 'Tự động theo lịch hệ thống'}</Tag> },
+          { title: 'Thời điểm thực hiện', dataIndex: 'started_at', width: 185, render: (v: string) => <span className="num">{v ? dayjs(v).format('HH:mm:ss DD/MM/YYYY') : '—'}</span> },
+          { title: 'Diễn tập khôi phục', dataIndex: 'verified_restore', width: 145, render: (v: boolean) => v ? <Tag color="green">Đã kiểm chứng</Tag> : <Tag>Bản sao lưu</Tag> },
+          { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag value={v} /> },
+          { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết bản sao lưu & thống kê các bảng" onViewDetail={() => setViewingBackup(r)} /> },
         ]}
       />
     </Card>
@@ -202,6 +205,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
       </Card>
       <PolicyFormModal open={polModal} editing={editingPol} form={polForm} isAdmin={isAdmin} loading={postMut.isPending || putMut.isPending} onClose={() => setPolModal(false)} onSubmit={(v) => { if (editingPol) putMut.mutate({ url: `/admin/policies/${editingPol.id}`, body: { ...v, version: editingPol.version, owner_override_approved: true } }); else postMut.mutate({ url: '/admin/policies', body: v }); setPolModal(false); }} />
       <GovernanceDetailDrawer record={viewing} kind="policy" onClose={() => setViewing(null)} onEdit={canEditViewing && canManagePolicies ? openEditPolicy : undefined} onBroadcast={canEditViewing && canManagePolicies ? (r) => postMut.mutate({ url: `/admin/policies/${r.id}/broadcast`, body: {} }) : undefined} />
+      <BackupDetailDrawer record={viewingBackup} onClose={() => setViewingBackup(null)} />
     </>
   );
 }

@@ -153,11 +153,17 @@ export async function systemCommsRoutes(app: FastifyInstance, ctx: AppContext) {
     const query = zListQueryBase.extend({ status: z.string().trim().optional() }).parse(request.query ?? {});
     const items = ctx.db.backupLog
       .all()
-      .map((b, idx) => ({ ...b, backup_code: `BKP-${idx + 1}`, verified_restore: b.rows_json.includes('VERIFIED'), kindLabel: BACKUP_KIND_LABELS[b.kind as keyof typeof BACKUP_KIND_LABELS] ?? b.kind }));
+      .map((b, idx) => ({
+        ...b,
+        backup_code: `BKP-${idx + 1}`,
+        verified_restore: b.rows_json.includes('VERIFIED'),
+        kindLabel: BACKUP_KIND_LABELS[b.kind as keyof typeof BACKUP_KIND_LABELS] ?? b.kind,
+        actorName: !b.created_by || b.created_by === 'embedded-cron' || b.created_by === 'system' ? 'Tự động theo lịch hệ thống' : (ctx.db.users.get(b.created_by)?.display_name || 'Quản trị hệ thống'),
+      }));
     return sendPaginated(request, 'Lấy lịch sử sao lưu & khôi phục dữ liệu thành công', paginateAndSort(items, {
       page: query.page, perPage: query.per_page, defaultSortBy: 'started_at', defaultSortOrder: 'desc',
       allowedSortFields: ['started_at', 'backup_code', 'status'], q: query.q,
-      searchExtractor: (b) => [b.backup_code, b.kindLabel, b.started_at, b.status],
+      searchExtractor: (b) => [b.backup_code, b.kindLabel, b.started_at, b.status, b.actorName],
       filters: { status: query.status },
       filterPredicates: { status: (b, val) => (val === 'VERIFIED' ? b.verified_restore : b.status === val) },
     }));

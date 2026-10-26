@@ -1,10 +1,11 @@
 'use client';
 
-import { Button, Col, Descriptions, Drawer, Form, Input, Modal, Row, Select, Space, Switch, Tag } from 'antd';
+import { Button, Col, Descriptions, Drawer, Form, Input, Modal, Row, Select, Space, Switch, Table, Tag } from 'antd';
 import type { FormInstance } from 'antd';
-import { CloseOutlined, EditOutlined, ExpandAltOutlined, PlusOutlined, SaveOutlined, SendOutlined, ShrinkOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, CloseOutlined, EditOutlined, ExpandAltOutlined, FolderOpenOutlined, SaveOutlined, SendOutlined, ShrinkOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useState } from 'react';
+import { TABLE_DISPLAY_LABELS } from '@umbm/shared';
 import { StatusTag } from '../StatusTag';
 import { DateStringPicker } from './DateTimePickers';
 import { RichHtmlEditor } from './RichHtmlEditor';
@@ -67,32 +68,22 @@ export function PolicyFormModal({
         <Row gutter={12}>
           <Col xs={24} md={10}>
             <Form.Item name="key" label="Mã chính sách / quy định" rules={[{ required: true, message: 'Vui lòng nhập mã chính sách' }]}>
-              <Input
-                placeholder="VD: POL_CHAM_CONG_01"
-                suffix={
-                  <span style={{ cursor: 'pointer', userSelect: 'none', fontWeight: 600, fontSize: 12, color: '#2563EB', background: '#EFF6FF', padding: '1px 6px', borderRadius: 2 }} onClick={() => form.setFieldValue('key', `POL_${Math.floor(100 + Math.random() * 900)}`)}>
-                    <ThunderboltOutlined /> Tự sinh
-                  </span>
-                }
-              />
+              <Input placeholder="VD: POL_CHAM_CONG_01" suffix={<span style={{ cursor: 'pointer', userSelect: 'none', fontWeight: 600, fontSize: 12, color: '#2563EB', background: '#EFF6FF', padding: '1px 6px', borderRadius: 2 }} onClick={() => form.setFieldValue('key', `POL_${Math.floor(100 + Math.random() * 900)}`)}><ThunderboltOutlined /> Tự sinh</span>} />
             </Form.Item>
           </Col>
           <Col xs={24} md={9}><Form.Item name="category" label="Nhóm quy định / Bộ phận" rules={[{ required: true }]}><Select options={POLICY_CATEGORY_OPTIONS} /></Form.Item></Col>
           <Col xs={24} md={5}><Form.Item name="policy_version" label="Phiên bản" rules={[{ required: true }]}><Input placeholder="v5.1" /></Form.Item></Col>
         </Row>
-
         <Row gutter={12}>
           <Col xs={24} md={14}><Form.Item name="description" label="Tiêu đề chính sách / Quy định phổ biến" rules={[{ required: true, message: 'Vui lòng nhập tiêu đề chính sách' }]}><Input placeholder="Ví dụ: Quy định đồng phục, chấm công GPS & tác phong làm việc tại cửa hàng" /></Form.Item></Col>
           <Col xs={24} md={10}><Form.Item name="value_json" label="Định mức / Giá trị áp dụng tóm tắt" rules={[{ required: true, message: 'Nhập giá trị áp dụng' }]}><Input placeholder="Ví dụ: 5 phút / 100m / Toàn công ty" /></Form.Item></Col>
         </Row>
-
         <Row gutter={12}>
           <Col xs={24} md={isAdmin ? 6 : 8}><Form.Item name="effective_from" label="Ngày bắt đầu hiệu lực" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col>
           <Col xs={24} md={isAdmin ? 6 : 8}><Form.Item name="effective_to" label="Ngày hết hiệu lực"><DateStringPicker placeholder="Không thời hạn" /></Form.Item></Col>
           <Col xs={12} md={isAdmin ? 6 : 8}><Form.Item name="broadcast_company" label="Phổ biến cho toàn công ty" valuePropName="checked"><Switch checkedChildren="Gửi thông báo toàn CTy" unCheckedChildren="Chỉ lưu bảng" /></Form.Item></Col>
           {isAdmin && <Col xs={12} md={6}><Form.Item name="is_locked_policy" label="Khóa bảo vệ cốt lõi" valuePropName="checked"><Switch checkedChildren="Khóa cốt lõi" unCheckedChildren="Linh hoạt" /></Form.Item></Col>}
         </Row>
-
         <Form.Item name="content_html" label="Nội dung văn bản chính sách & hướng dẫn thực hiện chi tiết">
           <RichHtmlEditor placeholder="Nhập nội dung chính sách, quy định của HR / Cửa hàng / Kế toán / Quản trị để phổ biến cho toàn thể nhân sự..." />
         </Form.Item>
@@ -101,31 +92,63 @@ export function PolicyFormModal({
   );
 }
 
-export function AnnouncementFormModal({
-  open, editing, form, loading, onClose, onSubmit,
-}: {
-  open: boolean; editing: Record<string, unknown> | null; form: FormInstance; loading?: boolean; onClose: () => void; onSubmit: (values: Record<string, unknown>) => void;
-}) {
+const MODULE_GROUP_LABELS: Record<string, string> = {
+  CORE: 'Quản trị & Cấu hình lõi', HR: 'Hồ sơ Nhân sự & Tuyển dụng', SCHEDULE: 'Lịch làm việc & Đơn từ',
+  ATTENDANCE: 'Chấm công GPS & Camera', PAYROLL: 'Lương, Thưởng & Phiếu lương', COMMS: 'Truyền thông & Thông báo', SYSTEM: 'Hệ thống & Đối soát',
+};
+
+export function BackupDetailDrawer({ record, onClose }: { record: Record<string, unknown> | null; onClose: () => void }) {
+  const [wide, setWide] = useState(false);
+  const parsed = (() => { try { return JSON.parse(String(record?.rows_json || '{}')) as Record<string, unknown>; } catch { return {}; } })();
+  const isVerifyOnly = parsed.status === 'VERIFIED' && typeof parsed.issuesFound === 'number';
+  const tableRows = Object.entries(parsed)
+    .filter(([, v]) => typeof v === 'number')
+    .map(([key, v]) => ({ key, moduleLabel: MODULE_GROUP_LABELS[key.split('.')[0] || 'SYSTEM'] ?? 'Hệ thống', tableLabel: TABLE_DISPLAY_LABELS[key] ?? 'Bảng dữ liệu nghiệp vụ', count: Number(v) }))
+    .sort((a, b) => b.count - a.count || a.moduleLabel.localeCompare(b.moduleLabel));
+  const totalRecords = tableRows.reduce((s, r) => s + r.count, 0), activeTables = tableRows.filter((r) => r.count > 0).length;
+  const folderId = String(record?.drive_folder_id || ''), hasDriveLink = Boolean(folderId && !folderId.startsWith('memory://'));
+  const durSec = record?.started_at && record?.finished_at ? Math.max(1, dayjs(String(record.finished_at)).diff(dayjs(String(record.started_at)), 'second')) : 1;
+  const actorLabel = String(record?.actorName || (!record?.created_by || record?.created_by === 'embedded-cron' ? 'Tự động theo lịch hệ thống' : 'Quản trị hệ thống'));
+
   return (
-    <Modal
-      open={open} forceRender width="70vw"
-      title={editing ? `Chỉnh sửa Bản tin Nội bộ — ${editing.announcement_code ?? editing.code}` : 'Phát hành Bản tin Truyền thông Nội bộ mới'}
-      okText={editing ? 'Lưu cập nhật bản tin' : 'Phát hành bản tin'} cancelText="Hủy bỏ"
-      okButtonProps={{ icon: editing ? <SaveOutlined /> : <PlusOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }}
-      onCancel={onClose} onOk={() => form.submit()}
+    <Drawer
+      open={Boolean(record)} width={wide ? '95vw' : '72vw'} onClose={onClose} destroyOnHidden
+      title={record ? `Chi tiết Bản Sao lưu & Khôi phục: ${String(record.backup_code)}` : 'Chi tiết bản sao lưu'}
+      extra={<Space wrap>{hasDriveLink && <Button size="small" type="primary" icon={<FolderOpenOutlined />} href={`https://drive.google.com/drive/folders/${folderId}`} target="_blank">Mở thư mục Google Drive</Button>}<Button size="small" icon={wide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setWide((v) => !v)}>{wide ? 'Thu gọn' : 'Mở rộng'}</Button><Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button></Space>}
     >
-      <Form form={form} layout="vertical" initialValues={{ priority: 'HIGH', publish_now: true }} onFinish={onSubmit}>
-        <Row gutter={12}>
-          <Col xs={24} md={12}><Form.Item name="title" label="Tiêu đề bản tin" rules={[{ required: true, message: 'Vui lòng nhập tiêu đề bản tin' }]}><Input placeholder="Nhập tiêu đề bản tin nội bộ..." /></Form.Item></Col>
-          <Col xs={12} md={5}><Form.Item name="priority" label="Mức độ ưu tiên"><Select options={[{ value: 'NORMAL', label: 'Thông thường' }, { value: 'HIGH', label: 'Quan trọng' }, { value: 'URGENT', label: 'Khẩn cấp' }]} /></Form.Item></Col>
-          <Col xs={12} md={7}><Form.Item name="publish_now" label="Trạng thái phát hành"><Select options={[{ value: true, label: 'Đã gửi (Đẩy thông báo toàn công ty)' }, { value: false, label: 'Chưa gửi (Lưu nháp)' }]} /></Form.Item></Col>
-        </Row>
-        <Form.Item name="summary" label="Tóm tắt ngắn" rules={[{ required: true, message: 'Vui lòng nhập tóm tắt bản tin' }]}><Input placeholder="Tóm tắt hiển thị trên danh sách thông báo..." /></Form.Item>
-        <Form.Item name="body_md" label="Nội dung chi tiết" rules={[{ required: true, message: 'Vui lòng nhập nội dung bản tin' }]}>
-          <RichHtmlEditor placeholder="Nhập nội dung bản tin truyền thông nội bộ..." />
-        </Form.Item>
-      </Form>
-    </Modal>
+      {record && (
+        <Space direction="vertical" size={14} style={{ width: '100%' }}>
+          <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }}>
+            <Descriptions.Item label="Mã bản sao lưu"><Tag color="geekblue">{String(record.backup_code)}</Tag></Descriptions.Item>
+            <Descriptions.Item label="Trạng thái thực thi"><Space size={6}><StatusTag value={String(record.status)} />{Boolean(record.verified_restore) ? <Tag color="green" icon={<CheckCircleOutlined />}>Đã diễn tập khôi phục</Tag> : <Tag color="blue">Bản sao lưu Google Drive</Tag>}</Space></Descriptions.Item>
+            <Descriptions.Item label="Loại sao lưu"><strong>{String(record.kindLabel || 'Sao lưu định kỳ')}</strong></Descriptions.Item>
+            <Descriptions.Item label="Tiến trình / Người thực hiện"><Tag color="cyan">{actorLabel}</Tag></Descriptions.Item>
+            <Descriptions.Item label="Thời điểm bắt đầu"><span className="num">{record.started_at ? dayjs(String(record.started_at)).format('HH:mm:ss DD/MM/YYYY') : '—'}</span></Descriptions.Item>
+            <Descriptions.Item label="Thời điểm hoàn tất"><span className="num">{record.finished_at ? `${dayjs(String(record.finished_at)).format('HH:mm:ss DD/MM/YYYY')} (${durSec} giây)` : '—'}</span></Descriptions.Item>
+            <Descriptions.Item label="Số tệp bảng tính sao lưu"><Tag color="geekblue">{Number(record.files_count ?? 0)} tệp dữ liệu</Tag></Descriptions.Item>
+            <Descriptions.Item label="Tổng khối lượng bản ghi">{isVerifyOnly ? <Tag color="green">Kiểm chứng toàn vẹn hệ thống</Tag> : <Space size={6}><Tag color="blue">{totalRecords} bản ghi</Tag><Tag>{activeTables}/{tableRows.length} bảng có dữ liệu</Tag></Space>}</Descriptions.Item>
+            <Descriptions.Item label="Thư mục lưu trữ Google Drive">{hasDriveLink ? <Button size="small" type="link" icon={<FolderOpenOutlined />} href={`https://drive.google.com/drive/folders/${folderId}`} target="_blank" style={{ padding: 0, height: 'auto' }}>Mở thư mục sao lưu trên Google Drive</Button> : 'Kho lưu trữ dự phòng hệ thống'}</Descriptions.Item>
+            <Descriptions.Item label="Kiểm tra toàn vẹn dữ liệu">{record.error ? <Tag color="red">{String(record.error)}</Tag> : <Tag color="green">Nguyên vẹn 100% — Không có lỗi phát sinh</Tag>}</Descriptions.Item>
+          </Descriptions>
+          {isVerifyOnly ? (
+            <Descriptions size="small" bordered title="Kết quả diễn tập khôi phục & đối soát toàn vẹn" column={2}>
+              <Descriptions.Item label="Số điểm lệch phát hiện"><Tag color={Number(parsed.issuesFound) > 0 ? 'orange' : 'green'}>{Number(parsed.issuesFound ?? 0)} mục</Tag></Descriptions.Item>
+              <Descriptions.Item label="Đã tự động đồng bộ & sửa chữa"><Tag color="blue">{Number(parsed.autoRepaired ?? 0)} mục</Tag></Descriptions.Item>
+            </Descriptions>
+          ) : (
+            <Table
+              size="small" bordered rowKey="key" dataSource={tableRows}
+              pagination={{ pageSize: 12, showSizeChanger: true, pageSizeOptions: ['12', '20', '50'], showTotal: (t) => `Tổng ${t} bảng dữ liệu được sao lưu` }}
+              columns={[
+                { title: 'Phân hệ nghiệp vụ', dataIndex: 'moduleLabel', width: 210, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
+                { title: 'Tên bảng dữ liệu đã sao lưu', dataIndex: 'tableLabel', render: (v: string) => <strong>{v}</strong> },
+                { title: 'Số bản ghi lưu trữ', dataIndex: 'count', width: 160, align: 'right', render: (v: number) => <Tag color={v > 0 ? 'blue' : 'default'} className="num">{v} bản ghi</Tag> },
+              ]}
+            />
+          )}
+        </Space>
+      )}
+    </Drawer>
   );
 }
 
