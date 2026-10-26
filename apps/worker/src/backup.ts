@@ -12,7 +12,7 @@ import {
   withRetry,
   type GoogleClients,
 } from '@umbm/google';
-import { DRIVE_FOLDERS, SPREADSHEETS, type SpreadsheetKey } from '@umbm/shared';
+import { DRIVE_FOLDERS, MONTHLY_TABS, monthlyTabName, SPREADSHEETS, type SpreadsheetKey } from '@umbm/shared';
 import type { WorkerEnv } from './env.js';
 import { alert, type InternalApi } from './internal-api.js';
 
@@ -54,11 +54,14 @@ export function planFor(kind: BackupKind, at = now()): BackupPlan {
 /** Đếm số dòng dữ liệu (trừ header) của từng tab — dùng để phát hiện mất dữ liệu bất thường. */
 async function countRows(google: GoogleClients, spreadsheetId: string, key: SpreadsheetKey): Promise<Record<string, number>> {
   const tabs = Object.keys(SPREADSHEETS[key].tabs);
-  const res = await withRetry(() =>
-    google.sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges: tabs.map((t) => `'${t}'!A:A`) }),
-  );
+  const monthlySet = new Set(MONTHLY_TABS[key] ?? []);
+  const ranges = tabs.map((t) => `'${monthlySet.has(t) ? monthlyTabName(t) : t}'!A:A`);
   const out: Record<string, number> = {};
-  res.data.valueRanges?.forEach((vr, i) => {
+  for (const t of tabs) out[`${key}.${t}`] = 0;
+  const res = await withRetry(() =>
+    google.sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges }),
+  ).catch(() => null);
+  res?.data.valueRanges?.forEach((vr, i) => {
     out[`${key}.${tabs[i]}`] = Math.max(0, (vr.values?.length ?? 0) - 1);
   });
   return out;

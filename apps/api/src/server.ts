@@ -158,7 +158,7 @@ async function main() {
 
   const shutdown = async (signal: string) => {
     app.log.info(`Nhận ${signal}, đang dừng — chờ hàng đợi ghi hoàn tất...`);
-    backup.stopEmbeddedScheduler();
+    await backup.stopEmbeddedScheduler();
     db.stopAutoRefresh();
     await realtime?.close();
     await app.close();

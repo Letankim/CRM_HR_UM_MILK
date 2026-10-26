@@ -151,11 +151,7 @@ export async function systemCommsRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.get('/api/admin/backups', { preHandler: requireAuth() }, async (request) => {
     const query = zListQueryBase.extend({ status: z.string().trim().optional() }).parse(request.query ?? {});
-    for (const b of ctx.db.backupLog.all()) {
-      if (b.status === 'FAILED' && b.error.includes("Unable to parse range: 'AUDIT_LOG'")) {
-        await ctx.db.backupLog.update(b.id, b.version, { status: 'SUCCESS', error: '', files_count: Math.max(b.files_count || 7, 14) }, 'system').catch(() => undefined);
-      }
-    }
+    await ctx.backup.healInterruptedBackups().catch(() => undefined);
     const items = ctx.db.backupLog
       .all()
       .map((b, idx) => ({
