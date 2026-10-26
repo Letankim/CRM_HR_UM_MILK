@@ -51,6 +51,41 @@ export const zEmployee = zSystemColumns.extend({
 });
 export type Employee = z.infer<typeof zEmployee>;
 
+export const zEmployeeStageHistory = zSystemColumns.extend({
+  employee_id: z.string(),
+  from_stage: z.string().default('PROBATION'),
+  to_stage: z.string().default('OFFICIAL'),
+  effective_from: z.string(),
+  decided_by: z.string().default(''),
+  note: z.string().default(''),
+  change_type: z.string().default('PROMOTE_OFFICIAL'),
+  from_branch_id: z.string().default(''),
+  to_branch_id: z.string().default(''),
+  from_shift_code: z.string().default(''),
+  to_shift_code: z.string().default(''),
+  probation_hours_completed: z.coerce.number().default(0),
+  test_score_percent: z.coerce.number().default(0),
+  evaluation_summary: z.string().default(''),
+  approved_by: z.string().default(''),
+});
+export type EmployeeStageHistory = z.infer<typeof zEmployeeStageHistory>;
+
+export const zFormNhanVienRow = zSystemColumns.extend({
+  submitted_at: z.string().default(''),
+  full_name: z.string().default(''),
+  phone: z.string().default(''),
+  email: z.string().default(''),
+  position: z.string().default('Pha chế'),
+  branch_pref: z.string().default(''),
+  shift_pref: z.string().default('CA_SANG'),
+  birth_year: z.string().default(''),
+  gender: z.string().default(''),
+  experience_note: z.string().default(''),
+  synced_candidate_id: z.string().default(''),
+  synced_at: z.string().default(''),
+});
+export type FormNhanVienRow = z.infer<typeof zFormNhanVienRow>;
+
 /**
  * Hồ sơ lương CÁ NHÂN theo từng nhân sự (bảng PAY_RATES), có ngày hiệu lực (effective-dated).
  * - amount_vnd: mức lương CHÍNH THỨC theo đơn vị (giờ / tháng / ca).

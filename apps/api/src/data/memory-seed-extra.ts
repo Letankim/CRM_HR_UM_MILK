@@ -33,6 +33,19 @@ export function seedExtraTables(gw: InMemorySheetsGateway, ctx: { cn1: string; e
   ];
   gw.seed(MEMORY_IDS.HR, 'CANDIDATES', [[...candH], ...candidates.map((c) => row(candH, c))]);
 
+  const formH = SPREADSHEETS.HR.tabs.FROM_NHAN_VIEN;
+  const formRows = [
+    { ...sys('form_row_101'), submitted_at: now, full_name: 'Lê Hoàng Bảo Ngọc', phone: '0901000088', email: 'baongoc.uv@gmail.com', position: 'BARISTA', branch_pref: ctx.cn1, shift_pref: 'CA_SANG', birth_year: '2004', gender: 'Nữ', experience_note: '1 năm pha chế trà sữa', synced_candidate_id: candId, synced_at: now },
+    { ...sys('form_row_102'), submitted_at: now, full_name: 'Đặng Minh Khôi', phone: '0901000089', email: 'minhkhoi.uv@gmail.com', position: 'CASHIER', branch_pref: ctx.cn1, shift_pref: 'CA_TOI', birth_year: '2005', gender: 'Nam', experience_note: 'Từng làm thu ngân cửa hàng tiện lợi 6 tháng', synced_candidate_id: '', synced_at: '' },
+  ];
+  gw.seed(MEMORY_IDS.HR, 'FROM_NHAN_VIEN', [[...formH], ...formRows.map((f) => row(formH, f))]);
+
+  const histH = SPREADSHEETS.HR.tabs.EMPLOYEE_STAGE_HISTORY;
+  const stageHist = [
+    { ...sys(), employee_id: ctx.emp2Id, from_stage: 'PROBATION', to_stage: 'OFFICIAL', effective_from: '2026-08-01', decided_by: 'hr', note: 'Hoàn thành xuất sắc 12 ngày thử việc và đạt 90% bài thi TEST SOP', change_type: 'PROMOTE_OFFICIAL', from_branch_id: ctx.cn1, to_branch_id: ctx.cn1, from_shift_code: 'CA_CHIEU', to_shift_code: 'CA_CHIEU', probation_hours_completed: 60, test_score_percent: 90, evaluation_summary: 'Đạt chuẩn kỹ năng pha chế & thu ngân V5.1', approved_by: 'hr' },
+  ];
+  gw.seed(MEMORY_IDS.HR, 'EMPLOYEE_STAGE_HISTORY', [[...histH], ...stageHist.map((h) => row(histH, h))]);
+
   const intH = SPREADSHEETS.HR.tabs.INTERVIEWS;
   const interviews = [
     { ...sys(), candidate_id: candId, branch_id: ctx.cn1, start_at: '2026-10-25T09:00:00+07:00', end_at: '2026-10-25T09:30:00+07:00', duration_minutes: 30, meet_link: 'https://meet.google.com/umb-hr-v51', interviewer_id: 'hr', status: 'CONFIRMED', candidate_confirmed: true, reschedule_requested: false, reschedule_reason: '', appearance_score: 9, attitude_score: 9, skill_score: 8, score: 8.7, comment: 'Thái độ tốt, nắm vững quy trình vệ sinh quầy', decision: 'PASS', calendar_event_id: 'cal_01', decided_at: now },

@@ -126,6 +126,18 @@ describe('Workflows, Infrastructure & Full Tab APIs (AI-INFRA-07..09, FLOW-02..0
     const seededTestAsg = db.testAssignments.all()[0]!;
     const lockedPol = db.policies.find((p) => p.is_locked_policy)!;
 
+    const formSync = await app.inject({
+      method: 'POST', url: '/api/admin/candidates/sync-form', headers: hrHeaders,
+      payload: { full_name: 'Phạm Hồng Nhung', phone: '0901777888', position: 'BARISTA', branch_pref: seededCand.branch_pref },
+    });
+    expect(formSync.statusCode).toBe(200);
+    expect(formSync.json().data.syncedCount).toBeGreaterThanOrEqual(1);
+    const filteredCands = await app.inject({
+      method: 'GET', url: `/api/admin/candidates?branch_id=${seededCand.branch_pref}&status=NEW`, headers: hrHeaders,
+    });
+    expect(filteredCands.statusCode).toBe(200);
+    expect(filteredCands.json().data.length).toBeGreaterThanOrEqual(1);
+
     const conflictIv = await app.inject({
       method: 'POST', url: '/api/admin/interviews', headers: hrHeaders,
       payload: { candidate_id: seededCand.id, interviewer_id: seededIv.interviewer_id, scheduled_at: seededIv.start_at },

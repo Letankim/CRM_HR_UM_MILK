@@ -15,6 +15,7 @@ import {
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { currentProfile, isOfficialAt, mapSalaryProfile, probationAmount, profilesOf, profileStatus, today } from '../services/salary-profile.service.js';
+import { buildEmployeeDossierSummary } from './employee-dossier-summary.js';
 
 export interface UniquePersonalCheckInput {
   phone?: string;
@@ -48,49 +49,31 @@ export function assertUniquePersonalIdentifiers(ctx: AppContext, input: UniquePe
   if (input.phone) {
     const p = input.phone.trim();
     const dupUser = ctx.db.users.find((u) => u.id !== excludeUserId && Boolean(u.phone && u.phone.trim() === p));
-    if (dupUser) {
-      throw Errors.fieldValidation(phoneField, 'DUPLICATE_VALUE', `Số điện thoại ${p} đã được sử dụng bởi tài khoản ${dupUser.display_name} (@${dupUser.username})`, p);
-    }
+    if (dupUser) throw Errors.fieldValidation(phoneField, 'DUPLICATE_VALUE', `Số điện thoại ${p} đã được sử dụng bởi tài khoản ${dupUser.display_name} (@${dupUser.username})`, p);
     const dupEmp = ctx.db.employees.find((e) => e.id !== excludeEmployeeId && Boolean(e.phone && e.phone.trim() === p));
-    if (dupEmp) {
-      throw Errors.fieldValidation(phoneField, 'DUPLICATE_VALUE', `Số điện thoại ${p} đã được đăng ký cho nhân sự ${dupEmp.full_name} (${dupEmp.employee_code})`, p);
-    }
+    if (dupEmp) throw Errors.fieldValidation(phoneField, 'DUPLICATE_VALUE', `Số điện thoại ${p} đã được đăng ký cho nhân sự ${dupEmp.full_name} (${dupEmp.employee_code})`, p);
   }
-
   if (input.email) {
     const em = input.email.trim().toLowerCase();
     const dupUser = ctx.db.users.find((u) => u.id !== excludeUserId && Boolean(u.email && u.email.trim().toLowerCase() === em));
-    if (dupUser) {
-      throw Errors.fieldValidation('email', 'DUPLICATE_VALUE', `Địa chỉ email ${input.email.trim()} đã được sử dụng bởi tài khoản ${dupUser.display_name} (@${dupUser.username})`, input.email);
-    }
+    if (dupUser) throw Errors.fieldValidation('email', 'DUPLICATE_VALUE', `Địa chỉ email ${input.email.trim()} đã được sử dụng bởi tài khoản ${dupUser.display_name} (@${dupUser.username})`, input.email);
     const dupEmp = ctx.db.employees.find((e) => e.id !== excludeEmployeeId && Boolean(e.email && e.email.trim().toLowerCase() === em));
-    if (dupEmp) {
-      throw Errors.fieldValidation('email', 'DUPLICATE_VALUE', `Địa chỉ email ${input.email.trim()} đã được đăng ký cho nhân sự ${dupEmp.full_name} (${dupEmp.employee_code})`, input.email);
-    }
+    if (dupEmp) throw Errors.fieldValidation('email', 'DUPLICATE_VALUE', `Địa chỉ email ${input.email.trim()} đã được đăng ký cho nhân sự ${dupEmp.full_name} (${dupEmp.employee_code})`, input.email);
   }
-
   if (input.citizen_id) {
     const cid = input.citizen_id.trim();
     const dupEmp = ctx.db.employees.find((e) => e.id !== excludeEmployeeId && Boolean(e.citizen_id && e.citizen_id.trim() === cid));
-    if (dupEmp) {
-      throw Errors.fieldValidation('citizen_id', 'DUPLICATE_VALUE', `Số CCCD/CMND ${cid} đã được đăng ký cho nhân sự ${dupEmp.full_name} (${dupEmp.employee_code})`, input.citizen_id);
-    }
+    if (dupEmp) throw Errors.fieldValidation('citizen_id', 'DUPLICATE_VALUE', `Số CCCD/CMND ${cid} đã được đăng ký cho nhân sự ${dupEmp.full_name} (${dupEmp.employee_code})`, input.citizen_id);
   }
-
   if (input.tax_code) {
     const tax = input.tax_code.trim().toUpperCase();
     const dupEmp = ctx.db.employees.find((e) => e.id !== excludeEmployeeId && Boolean(e.tax_code && e.tax_code.trim().toUpperCase() === tax));
-    if (dupEmp) {
-      throw Errors.fieldValidation('tax_code', 'DUPLICATE_VALUE', `Mã số thuế cá nhân ${input.tax_code.trim()} đã được đăng ký cho nhân sự ${dupEmp.full_name} (${dupEmp.employee_code})`, input.tax_code);
-    }
+    if (dupEmp) throw Errors.fieldValidation('tax_code', 'DUPLICATE_VALUE', `Mã số thuế cá nhân ${input.tax_code.trim()} đã được đăng ký cho nhân sự ${dupEmp.full_name} (${dupEmp.employee_code})`, input.tax_code);
   }
-
   if (input.bank_account_number) {
     const bankAcc = input.bank_account_number.trim();
     const dupEmp = ctx.db.employees.find((e) => e.id !== excludeEmployeeId && Boolean(e.bank_account_number && e.bank_account_number.trim() === bankAcc));
-    if (dupEmp) {
-      throw Errors.fieldValidation('bank_account_number', 'DUPLICATE_VALUE', `Số tài khoản ngân hàng ${bankAcc} đã được đăng ký cho nhân sự ${dupEmp.full_name} (${dupEmp.employee_code})`, input.bank_account_number);
-    }
+    if (dupEmp) throw Errors.fieldValidation('bank_account_number', 'DUPLICATE_VALUE', `Số tài khoản ngân hàng ${bankAcc} đã được đăng ký cho nhân sự ${dupEmp.full_name} (${dupEmp.employee_code})`, input.bank_account_number);
   }
 }
 
@@ -205,6 +188,7 @@ export function mapEmployeeRecord(e: Employee, ctx: AppContext) {
     probationWorkDays: e.probation_work_days,
     probationOffDays: e.probation_off_days,
     ...salarySummary(e, ctx),
+    ...buildEmployeeDossierSummary(e, ctx),
     bankName: e.bank_name,
     bankAccountNumber: e.bank_account_number,
     bankAccountHolder: e.bank_account_holder,

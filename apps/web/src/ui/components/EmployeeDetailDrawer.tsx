@@ -1,9 +1,10 @@
 'use client';
 
 import { Alert, Button, Descriptions, Drawer, Space, Tabs, Tag } from 'antd';
-import { CloseOutlined, ContactsOutlined, DollarOutlined, EditOutlined, ExpandAltOutlined, IdcardOutlined, RiseOutlined, ShrinkOutlined, UserOutlined, UserSwitchOutlined } from '@ant-design/icons';
+import { CalendarOutlined, CloseOutlined, ContactsOutlined, DollarOutlined, EditOutlined, ExpandAltOutlined, IdcardOutlined, RiseOutlined, ShrinkOutlined, UserOutlined, UserSwitchOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { StatusTag } from '../StatusTag';
+import { EmployeeDossierHistoryTab } from './EmployeeDossierHistoryTab';
 import { fmtEmployeeSalary, type EmployeeRowItem } from './employee-table-columns';
 import { fmtVnd } from './payroll-types';
 
@@ -27,34 +28,19 @@ export function EmployeeDetailDrawer({
       extra={
         <Space size={8}>
           {employee && canManage && onEdit && (
-            <Button
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => {
-                onClose();
-                onEdit(employee);
-              }}
-            >
+            <Button size="small" icon={<EditOutlined />} onClick={() => { onClose(); onEdit(employee); }}>
               Sửa hồ sơ &amp; Liên kết TK
             </Button>
           )}
           {employee && canPromote && employee.stage === 'PROBATION' && (
-            <Button
-              size="small"
-              type="primary"
-              icon={<RiseOutlined />}
-              loading={promoting}
-              onClick={() => onPromoteOfficial(employee)}
-            >
+            <Button size="small" type="primary" icon={<RiseOutlined />} loading={promoting} onClick={() => onPromoteOfficial(employee)}>
               Chuyển Chính thức
             </Button>
           )}
           <Button size="small" icon={expanded ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setExpanded((v) => !v)}>
             {expanded ? 'Thu gọn' : 'Mở rộng'}
           </Button>
-          <Button size="small" icon={<CloseOutlined />} onClick={onClose}>
-            Đóng
-          </Button>
+          <Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
         </Space>
       }
     >
@@ -194,6 +180,11 @@ export function EmployeeDetailDrawer({
                   )}
                 </Space>
               ),
+            },
+            {
+              key: 'history',
+              label: <span><CalendarOutlined /> Lịch sử giai đoạn, Lịch ca &amp; TEST</span>,
+              children: <EmployeeDossierHistoryTab employee={employee} />,
             },
           ]}
         />

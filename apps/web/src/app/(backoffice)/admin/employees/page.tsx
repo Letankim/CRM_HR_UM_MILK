@@ -11,6 +11,7 @@ import { useCan } from '@/lib/auth';
 import { DataTableCard } from '@/ui/components/DataTableCard';
 import { EmployeeCreateModal } from '@/ui/components/EmployeeCreateModal';
 import { EmployeeDetailDrawer } from '@/ui/components/EmployeeDetailDrawer';
+import { PromoteOfficialModal } from '@/ui/components/EmployeeDossierHistoryTab';
 import { GuardButton } from '@/ui/components/GuardButton';
 import { JobPositionsManagerModal, useJobPositions } from '@/ui/components/JobPositionsManagerModal';
 import { RecruitmentAndTestTabs } from '@/ui/components/RecruitmentAndTestTabs';
@@ -37,6 +38,7 @@ function EmployeesView() {
   const [posModalOpen, setPosModalOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<EmployeeRowItem | null>(null);
   const [detailRow, setDetailRow] = useState<EmployeeRowItem | null>(null);
+  const [promotingRow, setPromotingRow] = useState<EmployeeRowItem | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const { options: jobPositionOptions } = useJobPositions();
@@ -83,12 +85,13 @@ function EmployeesView() {
   };
 
   const promoteSingle = useMutation({
-    mutationFn: async (row: EmployeeRowItem) => {
-      setProcessingId(row.id);
-      return api.post<EmployeeRowItem>(`/admin/employees/${row.id}/promote-official`, { version: row.version });
+    mutationFn: async (input: { row: EmployeeRowItem; official_from: string; evaluation_summary: string }) => {
+      setProcessingId(input.row.id);
+      return api.post<EmployeeRowItem>(`/admin/employees/${input.row.id}/promote-official`, { version: input.row.version, official_from: input.official_from, evaluation_summary: input.evaluation_summary });
     },
     onSuccess: (updated) => {
       message.success(`Đã chuyển chính thức cho ${updated.fullName} (Giữ nguyên mã ${updated.employeeCode})`);
+      setPromotingRow(null);
       setDetailRow((prev) => (prev?.id === updated.id ? updated : prev));
       qc.invalidateQueries({ queryKey: ['employees'] });
       qc.invalidateQueries({ queryKey: ['accounts'] });
@@ -129,15 +132,13 @@ function EmployeesView() {
         processingId,
         onViewDetail: (r) => setDetailRow(r),
         onEdit: (r) => { setEditingRow(r); setModalOpen(true); },
-        onPromoteOfficial: (r) => promoteSingle.mutate(r),
+        onPromoteOfficial: (r) => setPromotingRow(r),
         onDelete: (r) =>
           modal.confirm({
             title: `Xóa hồ sơ nhân sự ${r.fullName} (${r.employeeCode})?`,
             content: 'Bản ghi sẽ được đánh dấu xóa và lưu vết vào Nhật ký kiểm toán.',
-            okText: 'Xác nhận xóa',
-            okButtonProps: { danger: true, icon: <DeleteOutlined /> },
-            cancelText: 'Hủy bỏ',
-            cancelButtonProps: { icon: <CloseOutlined /> },
+            okText: 'Xác nhận xóa', okButtonProps: { danger: true, icon: <DeleteOutlined /> },
+            cancelText: 'Hủy bỏ', cancelButtonProps: { icon: <CloseOutlined /> },
             onOk: () => deleteSingle.mutateAsync(r),
           }),
       }),
@@ -188,6 +189,7 @@ function EmployeesView() {
           />
           <EmployeeCreateModal open={modalOpen} editing={editingRow} existingCodes={existingCodes} branches={branchOptions} onClose={() => { setModalOpen(false); setEditingRow(null); }} />
           <JobPositionsManagerModal open={posModalOpen} onClose={() => setPosModalOpen(false)} />
+          <PromoteOfficialModal employee={promotingRow} loading={promoteSingle.isPending} onClose={() => setPromotingRow(null)} onConfirm={(v) => promotingRow && promoteSingle.mutate({ row: promotingRow, ...v })} />
           <EmployeeDetailDrawer
             employee={detailRow}
             canManage={canManage}
@@ -195,7 +197,7 @@ function EmployeesView() {
             canSeeSalary={canSeeSalary}
             promoting={promoteSingle.isPending}
             onEdit={(r) => { setEditingRow(r); setModalOpen(true); }}
-            onPromoteOfficial={(r) => promoteSingle.mutate(r)}
+            onPromoteOfficial={(r) => setPromotingRow(r)}
             onClose={() => setDetailRow(null)}
           />
         </>

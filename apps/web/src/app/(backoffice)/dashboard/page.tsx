@@ -14,6 +14,7 @@ import { api } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
 import { PageHeader } from '@/ui/PageHeader';
 import { StatusTag } from '@/ui/StatusTag';
+import { HrDashboardActionPanel } from '@/ui/components/HrDashboardActionPanel';
 
 const CHECK_LABELS: Record<string, string> = {
   google: 'Google API',
@@ -106,6 +107,7 @@ export default function DashboardPage() {
 
       <Spin spinning={refreshing} tip="Đang đồng bộ số liệu mới nhất...">
         <div>
+          <HrDashboardActionPanel />
           {can('account.read') && (
             <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
               {[

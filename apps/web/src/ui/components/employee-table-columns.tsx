@@ -27,6 +27,11 @@ export interface EmployeeRowItem {
   bankName: string; bankAccountNumber: string; bankAccountHolder: string;
   userId: string | null; username: string | null; userDisplayName?: string | null; userRole?: string | null; userRoleLabel?: string | null;
   accountStatus: string | null; accountStatusLabel: string;
+  probationHoursCompleted?: number; totalShiftsCount?: number;
+  recentShifts?: { id: string; work_date: string; shift_code: string; shiftLabel: string; start_at: string; end_at: string; scheduled_hours: number; status: string }[];
+  testBestScorePercent?: number; testPassed?: boolean; testAssignedCount?: number; testAttemptsCount?: number;
+  leaveRequestsCount?: number; swapRequestsCount?: number;
+  stageHistory?: { id: string; fromStage: string; fromStageLabel: string; toStage: string; toStageLabel: string; effectiveFrom: string; decidedBy: string; probationHoursCompleted: number; testScorePercent: number; evaluationSummary: string; note: string }[];
   note?: string; version: number; created_at: string; updated_at: string;
 }
 
