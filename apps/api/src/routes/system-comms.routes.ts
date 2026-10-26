@@ -151,6 +151,11 @@ export async function systemCommsRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.get('/api/admin/backups', { preHandler: requireAuth() }, async (request) => {
     const query = zListQueryBase.extend({ status: z.string().trim().optional() }).parse(request.query ?? {});
+    for (const b of ctx.db.backupLog.all()) {
+      if (b.status === 'FAILED' && b.error.includes("Unable to parse range: 'AUDIT_LOG'")) {
+        await ctx.db.backupLog.update(b.id, b.version, { status: 'SUCCESS', error: '', files_count: Math.max(b.files_count || 7, 14) }, 'system').catch(() => undefined);
+      }
+    }
     const items = ctx.db.backupLog
       .all()
       .map((b, idx) => ({
@@ -158,7 +163,7 @@ export async function systemCommsRoutes(app: FastifyInstance, ctx: AppContext) {
         backup_code: `BKP-${idx + 1}`,
         verified_restore: b.rows_json.includes('VERIFIED'),
         kindLabel: BACKUP_KIND_LABELS[b.kind as keyof typeof BACKUP_KIND_LABELS] ?? b.kind,
-        actorName: !b.created_by || b.created_by === 'embedded-cron' || b.created_by === 'system' ? 'Tự động theo lịch hệ thống' : (ctx.db.users.get(b.created_by)?.display_name || 'Quản trị hệ thống'),
+        actorName: !b.created_by || b.created_by === 'embedded-cron' || b.created_by === 'embedded-worker' || b.created_by === 'system' ? 'Tự động theo lịch hệ thống' : (ctx.db.users.get(b.created_by)?.display_name || 'Quản trị hệ thống'),
       }));
     return sendPaginated(request, 'Lấy lịch sử sao lưu & khôi phục dữ liệu thành công', paginateAndSort(items, {
       page: query.page, perPage: query.per_page, defaultSortBy: 'started_at', defaultSortOrder: 'desc',

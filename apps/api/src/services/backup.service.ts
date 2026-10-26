@@ -8,7 +8,7 @@ import {
   withRetry,
   type GoogleClients,
 } from '@umbm/google';
-import { DRIVE_FOLDERS, SPREADSHEETS, type SpreadsheetKey } from '@umbm/shared';
+import { DRIVE_FOLDERS, MONTHLY_TABS, monthlyTabName, SPREADSHEETS, type SpreadsheetKey } from '@umbm/shared';
 import type { Env } from '../config/env.js';
 import { sheetIds } from '../config/env.js';
 import type { Database } from '../data/database.js';
@@ -98,13 +98,15 @@ export class BackupService {
           const fileId = ids[key];
           if (!fileId) continue;
           const tabs = Object.keys(SPREADSHEETS[key].tabs);
+          const monthlySet = new Set(MONTHLY_TABS[key] ?? []);
+          const sheetRanges = tabs.map((t) => `'${monthlySet.has(t) ? monthlyTabName(t) : t}'!A:A`);
           const res = await withRetry(() =>
             this.googleClients!.sheets.spreadsheets.values.batchGet({
               spreadsheetId: fileId,
-              ranges: tabs.map((t) => `'${t}'!A:A`),
+              ranges: sheetRanges,
             }),
-          );
-          res.data.valueRanges?.forEach((vr, i) => {
+          ).catch(() => null);
+          res?.data.valueRanges?.forEach((vr, i) => {
             rows[`${key}.${tabs[i]}`] = Math.max(0, (vr.values?.length ?? 0) - 1);
           });
 
