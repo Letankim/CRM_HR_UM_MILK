@@ -131,25 +131,42 @@ describe('Workflows, Infrastructure & Full Tab APIs (AI-INFRA-07..09, FLOW-02..0
       payload: { full_name: 'Phạm Hồng Nhung', phone: '0901777888', applied_position: 'BARISTA', applied_branch_id: seededCand.branch_pref },
     });
     expect(createCand.statusCode).toBe(201);
+    const newCandId = createCand.json().data.id as string;
     const filteredCands = await app.inject({
       method: 'GET', url: `/api/admin/candidates?branch_id=${seededCand.branch_pref}&status=NEW`, headers: hrHeaders,
     });
     expect(filteredCands.statusCode).toBe(200);
     expect(filteredCands.json().data.length).toBeGreaterThanOrEqual(1);
 
-    const conflictIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: seededCand.id, interviewer_id: seededIv.interviewer_id, scheduled_at: seededIv.start_at } });
+    // Chặn tạo thêm lịch phỏng vấn cho ứng viên đã có lịch (chỉ cho phép chỉnh sửa)
+    const dupCandIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: seededCand.id, interviewer_ids: ['hr'], scheduled_at: '2027-02-01T09:00:00+07:00' } });
+    expect(dupCandIv.statusCode).toBe(400);
+    expect(dupCandIv.json().errors.details[0].field).toBe('candidate_id');
+    expect(dupCandIv.json().errors.details[0].code).toBe('DUPLICATE_VALUE');
+
+    const conflictIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: newCandId, interviewer_id: seededIv.interviewer_id, scheduled_at: seededIv.start_at } });
     expect(conflictIv.statusCode).toBe(400);
     expect(conflictIv.json().errors.details[0].code).toBe('DUPLICATE_VALUE');
 
-    const pastIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: seededCand.id, interviewer_ids: ['hr', 'store1'], scheduled_at: '2025-01-01T09:00:00+07:00' } });
+    const pastIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: newCandId, interviewer_ids: ['hr', 'store1'], scheduled_at: '2025-01-01T09:00:00+07:00' } });
     expect(pastIv.statusCode).toBe(400);
     expect(pastIv.json().errors.details[0].code).toBe('OUT_OF_RANGE');
 
-    const validIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: seededCand.id, interviewer_ids: ['hr', 'store1'], scheduled_at: '2027-01-15T10:00:00+07:00' } });
+    const validIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: newCandId, interviewer_ids: ['hr', 'store1'], scheduled_at: '2027-01-15T10:00:00+07:00' } });
     expect(validIv.statusCode).toBe(201);
-    const ivNotif = db.notifications.find((n) => n.entity_type === 'INTERVIEWS' && n.entity_id === validIv.json().data.id);
+    const createdIvId = validIv.json().data.id as string;
+    const ivNotif = db.notifications.find((n) => n.entity_type === 'INTERVIEWS' && n.entity_id === createdIvId);
     expect(ivNotif).toBeDefined();
     expect(ivNotif!.recipient_user_id.split(',')).toHaveLength(2);
+
+    const editIv = await app.inject({
+      method: 'PUT', url: `/api/admin/interviews/${createdIvId}/evaluate`, headers: hrHeaders,
+      payload: { version: 1, interviewer_ids: ['hr', 'store1', 'admin'], scheduled_at: '2027-01-16T14:00:00+07:00', duration_minutes: 45, reschedule_requested: true, reschedule_reason: 'Dời sang chiều theo lịch ứng viên' },
+    });
+    expect(editIv.statusCode).toBe(200);
+    const editNotifs = db.notifications.filter((n) => n.entity_type === 'INTERVIEWS' && n.entity_id === createdIvId);
+    expect(editNotifs.length).toBe(2);
+    expect(editNotifs[1]!.recipient_user_id.split(',')).toHaveLength(3);
 
     const startTest = await app.inject({ method: 'POST', url: `/api/tests/assignments/${seededTestAsg.id}/start`, headers: hrHeaders, payload: {} });
     expect(startTest.statusCode).toBe(201);
