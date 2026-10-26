@@ -12,7 +12,8 @@
     "google:auth": "tsx --env-file-if-exists=../../.env scripts/google-auth.ts",
     "google:doctor": "tsx --env-file-if-exists=../../.env scripts/google-doctor.ts",
     "sheets:bootstrap": "tsx --env-file-if-exists=../../.env scripts/bootstrap-sheets.ts",
-    "seed:admin": "tsx --env-file-if-exists=../../.env scripts/seed-admin.ts"
+    "seed:admin": "tsx --env-file-if-exists=../../.env scripts/seed-admin.ts",
+    "seed:realistic": "tsx --env-file-if-exists=../../.env scripts/seed-realistic/index.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.1",
