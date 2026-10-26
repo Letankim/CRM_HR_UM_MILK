@@ -124,7 +124,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
 
       <Table
         size="small" rowKey="id" loading={candQ.isLoading}
-        pagination={{ current: page, pageSize: perPage, total: candQ.data?.meta.pagination.total ?? rows.length, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} ứng viên`, onChange: (p, ps) => { setPage(p); setPerPage(ps); } }}
+        pagination={{ current: page, pageSize: perPage, total: candQ.data?.meta.pagination.total ?? rows.length, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t) => `Tổng ${t} ứng viên`, onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } }}
         dataSource={rows}
         columns={[
           { title: 'Mã UV', dataIndex: 'candidate_code', width: 100, render: (v: string) => <Tag color="geekblue">{v}</Tag> },

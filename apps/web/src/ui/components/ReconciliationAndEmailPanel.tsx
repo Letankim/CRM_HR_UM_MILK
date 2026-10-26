@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { EMAIL_TEMPLATE_CODES, EMAIL_TEMPLATE_LABELS, TABLE_DISPLAY_LABELS, type EmailTemplateCode } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
 
 interface ReconciliationIssue {
@@ -39,6 +40,7 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplateCode>('ACCOUNT_ACTIVATED');
   const [recipientEmail, setRecipientEmail] = useState('nhanvien@umbomilk.vn');
   const [recipientName, setRecipientName] = useState('Nguyễn Văn An');
+  const issuesPag = useClientPagination(10, 'cảnh báo');
 
   const reconcileQuery = useQuery({
     queryKey: ['integrations', 'reconcile'],
@@ -106,7 +108,7 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
                 <Table<ReconciliationIssue>
                   size="small"
                   rowKey="id"
-                  pagination={{ pageSize: 8 }}
+                  pagination={issuesPag}
                   dataSource={report.issues}
                   columns={[
                     { title: 'Bảng dữ liệu', dataIndex: 'table', width: 240, render: (v: string) => <Typography.Text strong>{TABLE_DISPLAY_LABELS[v] ?? v}</Typography.Text> },

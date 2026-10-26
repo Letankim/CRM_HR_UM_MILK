@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
 import { useMe } from '@/lib/auth';
+import { useClientPagination } from '@/ui/hooks/useClientPagination';
 import { StatusTag } from '@/ui/StatusTag';
 import { BRAND } from '@/ui/theme';
 import { AttendanceCameraModal } from '@/ui/components/AttendanceCameraModal';
@@ -55,9 +56,9 @@ export default function EmployeeSection() {
   const [profileTab, setProfileTab] = useState<'info' | 'password' | null>(null);
   const [cameraModalKind, setCameraModalKind] = useState<'CHECK_IN' | 'CHECK_OUT' | null>(null);
   const [selectedShiftId, setSelectedShiftId] = useState<string>('');
-  const [detailEvent, setDetailEvent] = useState<AttendanceEventRow | null>(null);
-  const [detailReq, setDetailReq] = useState<ScheduleDetailTarget | null>(null);
+  const [detailEvent, setDetailEvent] = useState<AttendanceEventRow | null>(null), [detailReq, setDetailReq] = useState<ScheduleDetailTarget | null>(null);
   const [viewingDoc, setViewingDoc] = useState<{ kind: 'policy' | 'announcement'; record: Record<string, unknown> } | null>(null);
+  const attPag = useClientPagination(10, 'ca'), adjPag = useClientPagination(10, 'phiếu');
 
   const myQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<MyAttendanceData>('/my-attendance'), enabled: !!session.data });
   const testsQ = useQuery({ queryKey: ['nv-tests'], queryFn: () => api.get<{ tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts: Record<string, unknown>[] }>('/admin/tests/bank'), enabled: section === 'bai-kiem-tra' });
@@ -158,7 +159,7 @@ export default function EmployeeSection() {
             <Col xs={24} lg={isDesktop ? 15 : 24}>
               <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Lịch sử điểm danh Vào ca &amp; Ra ca của bạn</div>
               <Table<AttendanceEventRow>
-                size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (t) => `Tổng ${t} ca` }} scroll={{ x: 'max-content' }} dataSource={groupAttendanceEventsByShift(allEvents)} locale={{ emptyText: 'Bạn chưa có lượt điểm danh nào trong kỳ.' }}
+                size="small" rowKey="id" pagination={attPag} scroll={{ x: 'max-content' }} dataSource={groupAttendanceEventsByShift(allEvents)} locale={{ emptyText: 'Bạn chưa có lượt điểm danh nào trong kỳ.' }}
                 columns={[
                   { title: 'Ngày & Ca làm việc', width: 165, render: (_, r) => <div><div style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)} ({String(r.shiftTimeRange || '07:00 – 12:00')})</div><div className="num" style={{ fontSize: 12, color: BRAND.textSecondary }}>Ngày: {r.work_date ? dayjs(r.work_date).format('DD/MM/YYYY') : '—'}</div></div> },
                   { title: 'Vào ca / Ra ca', render: (_, r) => renderShiftCheckInOutSummary(r) },
@@ -175,7 +176,7 @@ export default function EmployeeSection() {
               <Typography.Text type="secondary">Nếu quên chấm công ra ca, vui lòng gửi Phiếu bổ sung công. Bấm nút con mắt để xem chi tiết.</Typography.Text>
               <Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(undefined); setAdjOpen(true); }}>Gửi phiếu bổ sung công</Button>
             </div>
-            <Table size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (t) => `Tổng ${t} phiếu` }} scroll={{ x: 'max-content' }} dataSource={myAdjustments} columns={[{ title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 105, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> }, { title: 'Ngày công', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> }, { title: 'Khung ca & Giờ ca', width: 215, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{String(r.shiftTimeRange || '07:00 – 12:00')}</Tag></Space> }, { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 105, render: (v: number) => <strong>{v} giờ</strong> }, { title: 'Lý do giải trình', dataIndex: 'reason', ellipsis: true }, { title: 'Trạng thái', dataIndex: 'status', width: 140, render: (v: string) => <StatusTag value={v} /> }, { title: 'Chi tiết', width: 70, align: 'center', render: (_, r) => <Tooltip title="Xem chi tiết phiếu bổ sung"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailReq({ kind: 'adjustment', record: r })} /></Tooltip> }]} />
+            <Table size="small" rowKey="id" pagination={adjPag} scroll={{ x: 'max-content' }} dataSource={myAdjustments} columns={[{ title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 105, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> }, { title: 'Ngày công', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> }, { title: 'Khung ca & Giờ ca', width: 215, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{String(r.shiftTimeRange || '07:00 – 12:00')}</Tag></Space> }, { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 105, render: (v: number) => <strong>{v} giờ</strong> }, { title: 'Lý do giải trình', dataIndex: 'reason', ellipsis: true }, { title: 'Trạng thái', dataIndex: 'status', width: 140, render: (v: string) => <StatusTag value={v} /> }, { title: 'Chi tiết', width: 70, align: 'center', render: (_, r) => <Tooltip title="Xem chi tiết phiếu bổ sung"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailReq({ kind: 'adjustment', record: r })} /></Tooltip> }]} />
           </>
         )}
 

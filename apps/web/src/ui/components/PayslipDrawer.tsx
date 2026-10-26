@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { allowancesOf, deductionsOf, fmtVnd, type PayrollSnapshotItem, type ShiftPayrollLog } from './payroll-types';
 
 interface Line { label: string; detail: string; amount: number }
@@ -44,6 +45,8 @@ export function PayslipDrawer({ snapshot: s, onClose }: { snapshot: PayrollSnaps
   const [expanded, setExpanded] = useState(false);
   const [revModal, setRevModal] = useState(false);
   const [revForm] = Form.useForm();
+  const logPag = useClientPagination(10, 'ca');
+  const revPag = useClientPagination(10, 'lần điều chỉnh');
   const qc = useQueryClient();
   const can = useCan();
   const canManage = can('payroll.manage');
@@ -148,7 +151,7 @@ export function PayslipDrawer({ snapshot: s, onClose }: { snapshot: PayrollSnaps
                 key: 'attendance-logs', label: <span><CalendarOutlined /> Đối soát Chấm công, Nghỉ OFF &amp; Đổi ca ({(s.shiftLogs ?? []).length})</span>,
                 children: (
                   <Table<ShiftPayrollLog>
-                    size="small" rowKey={(r, i) => `${r.date}-${r.shiftCode}-${i}`} pagination={{ pageSize: 10 }} dataSource={s.shiftLogs ?? []}
+                    size="small" rowKey={(r, i) => `${r.date}-${r.shiftCode}-${i}`} pagination={logPag} dataSource={s.shiftLogs ?? []}
                     columns={[
                       { title: 'Ngày', dataIndex: 'date', width: 105, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
                       { title: 'Ca làm việc', width: 165, render: (_, r) => <div><strong>{r.shiftLabel}</strong><div style={{ fontSize: 11, color: '#64748B' }}>{r.shiftTime}</div></div> },
@@ -176,7 +179,7 @@ export function PayslipDrawer({ snapshot: s, onClose }: { snapshot: PayrollSnaps
                 key: 'revisions', label: <span><HistoryOutlined /> Lịch sử Điều chỉnh ({revsQ.data?.length ?? 0})</span>,
                 children: (
                   <Table
-                    size="small" rowKey="id" pagination={{ pageSize: 8, showSizeChanger: false }} dataSource={revsQ.data ?? []}
+                    size="small" rowKey="id" pagination={revPag} dataSource={revsQ.data ?? []}
                     columns={[
                       { title: 'Lần điều chỉnh', dataIndex: 'revision', width: 130, render: (v: number) => <Tag color="geekblue">Lần #{v}</Tag> },
                       { title: 'Chênh lệch (+/-)', dataIndex: 'delta_vnd', width: 150, render: (v: number) => <span className="num" style={{ fontWeight: 700, color: v >= 0 ? '#16A34A' : '#DC2626' }}>{v >= 0 ? `+${fmtVnd(v)}` : fmtVnd(v)}</span> },

@@ -58,24 +58,13 @@ export function exportAttendanceEventsExcel(rows: AttendanceEventRow[]) {
     fileName: `Lich_Su_Diem_Danh_UmBoMilk_${dayjs().format('YYYYMMDD_HHmm')}.xls`,
     sheetTitle: 'Danh Sách Điểm Danh Vào Ca & Ra Ca (GPS & Camera)',
     columns: [
-      { header: 'Nhân sự', key: 'employeeName' },
-      { header: 'Chi nhánh', key: 'branchName' },
-      { header: 'Ngày làm việc', key: 'work_date' },
-      { header: 'Ca làm việc', key: 'shiftLabel' },
-      { header: 'Khung giờ quy định', key: 'shiftTimeRange' },
-      { header: 'Giờ Vào ca', key: 'checkInTime' },
-      { header: 'Đánh giá Vào ca', key: 'checkInPunctuality' },
-      { header: 'Giờ Ra ca', key: 'checkOutTime' },
-      { header: 'Đánh giá Ra ca', key: 'checkOutPunctuality' },
-      { header: 'Khoảng cách GPS (m)', key: 'distance_m', align: 'right' },
+      { header: 'Nhân sự', key: 'employeeName' }, { header: 'Chi nhánh', key: 'branchName' },
+      { header: 'Ngày làm việc', key: 'work_date' }, { header: 'Ca làm việc', key: 'shiftLabel' },
+      { header: 'Khung giờ quy định', key: 'shiftTimeRange' }, { header: 'Giờ Vào ca', key: 'checkInTime' },
+      { header: 'Đánh giá Vào ca', key: 'checkInPunctuality' }, { header: 'Giờ Ra ca', key: 'checkOutTime' },
+      { header: 'Đánh giá Ra ca', key: 'checkOutPunctuality' }, { header: 'Khoảng cách GPS (m)', key: 'distance_m', align: 'right' },
     ],
-    rows: grouped.map((r) => ({
-      ...r,
-      checkInTime: r.checkInEvent?.checkTimeHm || '—',
-      checkInPunctuality: r.checkInEvent?.punctualityLabel || 'Chưa vào ca',
-      checkOutTime: r.checkOutEvent?.checkTimeHm || '—',
-      checkOutPunctuality: r.checkOutEvent?.punctualityLabel || 'Chưa ra ca',
-    })),
+    rows: grouped.map((r) => ({ ...r, checkInTime: r.checkInEvent?.checkTimeHm || '—', checkInPunctuality: r.checkInEvent?.punctualityLabel || 'Chưa vào ca', checkOutTime: r.checkOutEvent?.checkTimeHm || '—', checkOutPunctuality: r.checkOutEvent?.punctualityLabel || 'Chưa ra ca' })),
   });
 }
 
@@ -214,7 +203,7 @@ export function AttendanceEventsTable({ externalFilters }: Props) {
       </div>
       <Table<AttendanceEventRow>
         size="small" rowKey="id" loading={sessionsQ.isLoading || sessionsQ.isFetching}
-        pagination={{ current: page, pageSize: perPage, total: totalCount, showSizeChanger: true, pageSizeOptions: ['10', '15', '20', '50'], showTotal: (t) => `Tổng ${t} ca điểm danh`, onChange: (p, ps) => { setPage(p); setPerPage(ps); } }}
+        pagination={{ current: page, pageSize: perPage, total: totalCount, showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'], showTotal: (t) => `Tổng ${t} ca điểm danh`, onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } }}
         dataSource={rows} locale={{ emptyText: 'Chưa có dữ liệu điểm danh Vào ca / Ra ca phù hợp bộ lọc.' }}
         columns={[
           { title: 'Nhân sự điểm danh', width: 215, render: (_, r) => <div><Typography.Text strong>{r.employeeName}</Typography.Text>{r.branchName && <div style={{ fontSize: 11, color: BRAND.textSecondary }}>{r.branchName}</div>}</div> },

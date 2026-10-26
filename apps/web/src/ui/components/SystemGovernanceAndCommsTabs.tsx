@@ -118,7 +118,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
       </div>
       <Table
         size="small" rowKey="id" loading={polQ.isLoading}
-        pagination={{ current: polPage, pageSize: polPerPage, total: polTotal, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} chính sách`, onChange: (p, ps) => { setPolPage(p); setPolPerPage(ps); } }}
+        pagination={{ current: polPage, pageSize: polPerPage, total: polTotal, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t) => `Tổng ${t} chính sách`, onChange: (p, ps) => { setPolPage(ps !== polPerPage ? 1 : p); setPolPerPage(ps); } }}
         dataSource={filteredPolicies} scroll={{ x: 'max-content' }}
         columns={[
           { title: 'Mã chính sách', dataIndex: 'key', width: 165, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
@@ -178,7 +178,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
       </Flex>
       <Table
         size="small" rowKey="id" loading={bkpQ.isLoading}
-        pagination={{ current: bkpPage, pageSize: bkpPerPage, total: bkpTotal, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} bản sao lưu`, onChange: (p, ps) => { setBkpPage(p); setBkpPerPage(ps); } }}
+        pagination={{ current: bkpPage, pageSize: bkpPerPage, total: bkpTotal, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t) => `Tổng ${t} bản sao lưu`, onChange: (p, ps) => { setBkpPage(ps !== bkpPerPage ? 1 : p); setBkpPerPage(ps); } }}
         dataSource={filteredBackups}
         columns={[
           { title: 'Mã sao lưu', dataIndex: 'backup_code', width: 120, render: (v: string, r) => <Typography.Link strong onClick={() => setViewingBackup(r)}><Tag color="geekblue">{v}</Tag></Typography.Link> },

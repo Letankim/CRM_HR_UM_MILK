@@ -14,6 +14,7 @@ import { exportPayrollSheet, PayrollSheetCard } from '@/ui/components/PayrollShe
 import { fmtVnd, MONEY_INPUT_PROPS, type PayPeriodRow, type PayrollItemRow, type PayrollSnapshotItem } from '@/ui/components/payroll-types';
 import { PayslipDrawer } from '@/ui/components/PayslipDrawer';
 import { SalaryProfilesTab } from '@/ui/components/SalaryProfilesTab';
+import { useClientPagination } from '@/ui/hooks/useClientPagination';
 import { StatusTag } from '@/ui/StatusTag';
 
 type TabKey = 'SHEET' | 'RECONCILE' | 'ITEMS' | 'SALARY' | 'REPORTS';
@@ -34,6 +35,8 @@ function PayrollView() {
   const [editingItem, setEditingItem] = useState<PayrollItemRow | null>(null);
   const [payslipSnap, setPayslipSnap] = useState<PayrollSnapshotItem | null>(null);
   const [revForm] = Form.useForm();
+  const revPagination = useClientPagination(12, 'bản ghi');
+  const perPagination = useClientPagination(12, 'kỳ lương');
 
   const periodsQuery = useQuery({ queryKey: ['payroll-periods'], queryFn: () => api.get<PayPeriodRow[]>('/admin/payroll/periods') });
   const periods = periodsQuery.data ?? [];
@@ -146,7 +149,7 @@ function PayrollView() {
                 label: <span><BarChartOutlined /> Đối chiếu Chi phí Lương / Doanh thu ({(revInputsQuery.data ?? []).length})</span>,
                 children: (
                   <Table
-                    size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} bản ghi` }} loading={revInputsQuery.isLoading} dataSource={revInputsQuery.data ?? []}
+                    size="small" rowKey="id" pagination={revPagination} loading={revInputsQuery.isLoading} dataSource={revInputsQuery.data ?? []}
                     locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có dữ liệu đối chiếu doanh thu. Nhấn 'Nhập Doanh thu đối chiếu' để thêm báo cáo." /> }}
                     columns={[
                       { title: 'Kỳ lương đối chiếu', dataIndex: 'periodName', render: (v: string) => <strong>{v || 'Kỳ lương hiện hành'}</strong> },
@@ -164,7 +167,7 @@ function PayrollView() {
                 label: <span><CalendarOutlined /> Tổng hợp Quỹ lương theo Kỳ lương ({periods.length})</span>,
                 children: (
                   <Table<PayPeriodRow>
-                    size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} kỳ lương` }} loading={periodsQuery.isLoading} dataSource={periods}
+                    size="small" rowKey="id" pagination={perPagination} loading={periodsQuery.isLoading} dataSource={periods}
                     locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có kỳ lương nào. Hãy thiết lập hồ sơ lương cho nhân sự, sau đó tạo kỳ lương mới." /> }}
                     columns={[
                       { title: 'Mã kỳ', dataIndex: 'period_code', width: 140, render: (v: string) => <Tag color="geekblue">{v}</Tag> },

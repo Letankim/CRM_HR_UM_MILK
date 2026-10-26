@@ -11,6 +11,7 @@ import { useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
 import { type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
 
@@ -30,6 +31,7 @@ export function PayrollAttendanceReconcileCard({ period, snapshots, loading, onO
   const debouncedQ = useDebouncedValue(searchInput, 400);
   const [branchFilter, setBranchFilter] = useState('ALL');
   const [anomalyFilter, setAnomalyFilter] = useState<'ALL' | 'ANOMALY' | 'CLEAN'>('ALL');
+  const pagination = useClientPagination(12, 'nhân sự');
 
   const eventsQ = useQuery({
     queryKey: ['payroll-reconcile-events', period?.id],
@@ -175,7 +177,7 @@ export function PayrollAttendanceReconcileCard({ period, snapshots, loading, onO
         </Flex>
 
         <Table
-          size="small" rowKey="employeeId" loading={loading || eventsQ.isLoading} dataSource={filtered} pagination={{ pageSize: 12 }} scroll={{ x: 1180 }}
+          size="small" rowKey="employeeId" loading={loading || eventsQ.isLoading} dataSource={filtered} pagination={pagination} scroll={{ x: 1180 }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có dữ liệu chấm công trong kỳ" /> }}
           columns={[
             { title: 'Nhân sự', width: 210, fixed: 'left', render: (_, r) => <div><strong>{r.fullName}</strong><div style={{ fontSize: 12, color: '#64748B' }}>{r.employeeCode} · {r.branchName}</div></div> },

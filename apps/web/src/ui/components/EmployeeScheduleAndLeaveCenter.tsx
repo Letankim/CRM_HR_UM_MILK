@@ -11,6 +11,7 @@ import dayjs from 'dayjs';
 import { SYSTEM_CONFIG } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { StatusTag } from '../StatusTag';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { LeaveRequestModal, MyShiftRegisterModal, ShiftSwapRequestModal } from './EmployeePortalModals';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
@@ -37,6 +38,10 @@ export function EmployeeScheduleAndLeaveCenter({
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [swapOpen, setSwapOpen] = useState(false);
   const [detailTarget, setDetailTarget] = useState<ScheduleDetailTarget | null>(null);
+  const shiftsPag = useClientPagination(10, 'ca');
+  const leavesPag = useClientPagination(10, 'đơn');
+  const emgPag = useClientPagination(10, 'báo cáo');
+  const swapsPag = useClientPagination(10, 'yêu cầu');
 
   const peerRespondMut = useMutation({
     mutationFn: ({ id, version, accept }: { id: string; version: number; accept: boolean }) =>
@@ -86,7 +91,7 @@ export function EmployeeScheduleAndLeaveCenter({
                   <ScheduleViewsPanel mode={viewMode} todayDate={todayDate} assignments={shifts as unknown as ScheduleAssignmentItem[]} canEdit={false} onAddAtCell={() => setAddShiftOpen(true)} onEditItem={(item) => setDetailTarget({ kind: 'shift', record: item as unknown as Record<string, unknown> })} />
                 ) : (
                   <Table
-                    size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} ca` }} dataSource={shifts} scroll={{ x: 'max-content' }}
+                    size="small" rowKey="id" pagination={shiftsPag} dataSource={shifts} scroll={{ x: 'max-content' }}
                     locale={{ emptyText: 'Bạn chưa có ca làm việc nào được phân công trong kỳ này.' }}
                     columns={[
                       { title: 'Ngày làm việc', dataIndex: 'workDate', width: 145, render: (v: string) => <Space size={6}><span className="num" style={{ fontWeight: 600 }}>{dayjs(v).format('DD/MM/YYYY')}</span>{v === todayDate && <Tag color="blue" style={{ margin: 0 }}>Hôm nay</Tag>}</Space> },
@@ -121,7 +126,7 @@ export function EmployeeScheduleAndLeaveCenter({
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>Bấm biểu tượng con mắt ở từng dòng để xem chi tiết lý do và thời gian phê duyệt.</Typography.Text>
                 </Space>
                 <Table
-                  size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} đơn` }} dataSource={leaves} scroll={{ x: 'max-content' }}
+                  size="small" rowKey="id" pagination={leavesPag} dataSource={leaves} scroll={{ x: 'max-content' }}
                   locale={{ emptyText: 'Bạn chưa có đơn đăng ký nghỉ phép (OFF) nào trong kỳ.' }}
                   columns={[
                     { title: 'Mã đơn', dataIndex: 'request_code', width: 105, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
@@ -134,7 +139,7 @@ export function EmployeeScheduleAndLeaveCenter({
                 />
                 {emergencyLeaves.length > 0 && (
                   <Table
-                    size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: false }} dataSource={emergencyLeaves} scroll={{ x: 'max-content' }}
+                    size="small" rowKey="id" pagination={emgPag} dataSource={emergencyLeaves} scroll={{ x: 'max-content' }}
                     title={() => <span style={{ fontWeight: 600, fontSize: 13 }}>Báo cáo nghỉ khẩn cấp sát giờ ca (&lt;12h)</span>}
                     columns={[
                       { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 110, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
@@ -156,7 +161,7 @@ export function EmployeeScheduleAndLeaveCenter({
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 <Alert type="info" showIcon message="Quy trình đổi ca 3 bước: (1) Bạn tạo yêu cầu -> (2) Đồng nghiệp xác nhận nhận ca -> (3) Quản lý duyệt cập nhật lịch chính thức. Bấm nút con mắt để xem đầy đủ chi tiết & thời gian." />
                 <Table
-                  size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} yêu cầu` }} dataSource={swaps} scroll={{ x: 'max-content' }}
+                  size="small" rowKey="id" pagination={swapsPag} dataSource={swaps} scroll={{ x: 'max-content' }}
                   locale={{ emptyText: 'Bạn chưa có yêu cầu đổi ca nội bộ nào. Bấm nút "Đổi ca" phía trên để gửi đề nghị đổi ca với đồng nghiệp.' }}
                   columns={[
                     { title: 'Mã đơn', dataIndex: 'swap_code', width: 100, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },

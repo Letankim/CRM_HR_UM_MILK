@@ -17,6 +17,7 @@ import { exportAttendanceEventsExcel, groupAttendanceEventsByShift, renderShiftC
 import { AttendanceAdjustmentModal, MyShiftRegisterModal } from '@/ui/components/EmployeePortalModals';
 import { EmployeeScheduleAndLeaveCenter } from '@/ui/components/EmployeeScheduleAndLeaveCenter';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from '@/ui/components/ScheduleRequestDetailModal';
+import { useClientPagination } from '@/ui/hooks/useClientPagination';
 
 interface MyShiftRow extends Record<string, unknown> {
   id: string; workDate: string; shiftCode: string; shiftLabel: string; startAt: string; endAt: string; branchName: string;
@@ -47,6 +48,8 @@ export default function MyAttendancePage() {
   const [addShiftOpen, setAddShiftOpen] = useState(false);
   const [adjOpen, setAdjOpen] = useState(false);
   const [presetAdjShiftId, setPresetAdjShiftId] = useState<string | undefined>();
+  const myEventsPag = useClientPagination(10, 'ca');
+  const myAdjPag = useClientPagination(10, 'phiếu');
 
   const myQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<MyAttendanceResponse>('/my-attendance') });
   const refreshAll = () => ['my-attendance', 'attendance-all', 'schedules', 'nv-attendance', 'nv-schedules', 'nv-swaps'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
@@ -159,7 +162,7 @@ export default function MyAttendancePage() {
                 <>
                   <Flex justify="space-between" align="center" style={{ marginBottom: 10 }}><Typography.Text type="secondary">Danh sách điểm danh Vào ca &amp; Ra ca theo từng ca làm việc của riêng bạn.</Typography.Text><Button size="small" icon={<DownloadOutlined />} onClick={() => exportAttendanceEventsExcel(events)}>Xuất Excel Điểm danh của bạn</Button></Flex>
                   <Table<AttendanceEventRow>
-                    size="small" rowKey="id" pagination={{ pageSize: 10 }} dataSource={groupAttendanceEventsByShift(events)} locale={{ emptyText: 'Bạn chưa có lượt điểm danh nào trong kỳ.' }}
+                    size="small" rowKey="id" pagination={myEventsPag} dataSource={groupAttendanceEventsByShift(events)} locale={{ emptyText: 'Bạn chưa có lượt điểm danh nào trong kỳ.' }}
                     columns={[
                       { title: 'Ngày & Ca làm việc', width: 220, render: (_, r) => <div><div style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)} ({r.shiftTimeRange || '07:00 – 12:00'})</div><div className="num" style={{ fontSize: 12, color: BRAND.textSecondary }}>Ngày: {r.work_date ? dayjs(r.work_date).format('DD/MM/YYYY') : '—'}</div></div> },
                       { title: 'Vào ca / Ra ca', render: (_, r) => renderShiftCheckInOutSummary(r) },
@@ -176,7 +179,7 @@ export default function MyAttendancePage() {
                 <>
                   <Flex justify="space-between" align="center" style={{ marginBottom: 10 }}><Typography.Text type="secondary">Danh sách phiếu giải trình / bổ sung công cá nhân của bạn.</Typography.Text><Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => { setPresetAdjShiftId(undefined); setAdjOpen(true); }}>Gửi phiếu bổ sung công</Button></Flex>
                   <Table
-                    size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} phiếu` }} dataSource={adjustments} locale={{ emptyText: 'Bạn chưa có phiếu bổ sung công nào.' }}
+                    size="small" rowKey="id" pagination={myAdjPag} dataSource={adjustments} locale={{ emptyText: 'Bạn chưa có phiếu bổ sung công nào.' }}
                     columns={[
                       { title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
                       { title: 'Ngày công', dataIndex: 'work_date', width: 120, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> },

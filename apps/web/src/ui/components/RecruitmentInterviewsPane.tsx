@@ -133,7 +133,7 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
 
       <Table
         size="small" rowKey="id" loading={ivQ.isLoading}
-        pagination={{ current: page, pageSize: perPage, total: ivQ.data?.meta.pagination.total ?? rows.length, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} lịch phỏng vấn`, onChange: (p, ps) => { setPage(p); setPerPage(ps); } }}
+        pagination={{ current: page, pageSize: perPage, total: ivQ.data?.meta.pagination.total ?? rows.length, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t) => `Tổng ${t} lịch phỏng vấn`, onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } }}
         dataSource={rows}
         columns={[
           { title: 'Ứng viên phỏng vấn', dataIndex: 'candidateName', ellipsis: true, render: (v: string, r) => <span style={{ fontWeight: 600 }}>{v} {r.candidateCode ? `(${r.candidateCode})` : ''}</span> },

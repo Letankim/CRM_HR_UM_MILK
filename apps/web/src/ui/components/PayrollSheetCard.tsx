@@ -6,6 +6,7 @@ import { EyeOutlined, SearchOutlined, WarningOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { allowancesOf, bonusesOf, deductionsOf, fmtVnd, type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
 
 const sum = (rows: PayrollSnapshotItem[], f: (r: PayrollSnapshotItem) => number) => rows.reduce((s, r) => s + f(r), 0);
@@ -49,6 +50,7 @@ export function PayrollSheetCard({ rows, loading, onOpenPayslip }: { rows: Payro
   const debouncedQ = useDebouncedValue(searchInput, 400);
   const [branchFilter, setBranchFilter] = useState('ALL');
   const [rateFilter, setRateFilter] = useState('ALL');
+  const pagination = useClientPagination(12, 'nhân sự');
 
   const branchOptions = useMemo(() => {
     const names = Array.from(new Set(rows.map((r) => r.branchName).filter(Boolean)));
@@ -85,7 +87,7 @@ export function PayrollSheetCard({ rows, loading, onOpenPayslip }: { rows: Payro
       </div>
       <Table<PayrollSnapshotItem>
         size="small" rowKey="id" loading={loading} dataSource={filteredRows}
-        pagination={{ pageSize: 12, showSizeChanger: true, pageSizeOptions: ['12', '24', '50', '100'], showTotal: (t) => `Tổng ${t} nhân sự` }}
+        pagination={pagination}
         scroll={{ x: 'max-content' }}
         columns={[
           {

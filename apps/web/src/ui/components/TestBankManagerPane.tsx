@@ -6,6 +6,7 @@ import { BookOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FileDoneOutl
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
 import { AttemptHistoryTable, AttemptReviewModal } from './ExamTestCenter';
 import { useJobPositions } from './JobPositionsManagerModal';
@@ -30,6 +31,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
   const [historySearch, setHistorySearch] = useState(''), [historyEmpId, setHistoryEmpId] = useState('ALL'), [historyTestId, setHistoryTestId] = useState('ALL'), [historyResult, setHistoryResult] = useState('ALL');
   const [questions, setQuestions] = useState<QuestionRow[]>(DEFAULT_QUESTIONS);
   const [bankForm] = Form.useForm(), [asgForm] = Form.useForm();
+  const bankPag = useClientPagination(10, 'bộ đề'), asgPag = useClientPagination(10, 'đợt giao');
   const refresh = () => ['tests-bank', 'nv-tests'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const handleManualRefresh = async () => { setRefreshing(true); try { await api.get('/admin/tests/bank?refresh=1'); refresh(); message.success('Đã đồng bộ dữ liệu bộ đề, đợt giao bài & lịch sử thi mới nhất'); } finally { setRefreshing(false); } };
 
@@ -99,7 +101,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
   const bankTable = (
     <Card size="small" title="Ngân hàng Bộ đề Kiểm tra" extra={<Space><Button size="small" icon={<ReloadOutlined />} loading={refreshing} onClick={() => void handleManualRefresh()}>Làm mới</Button>{canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={openCreateBank}>Tạo bộ đề mới</Button>}</Space>}>
       <Table
-        size="small" rowKey="id" pagination={{ pageSize: 10 }} dataSource={tests}
+        size="small" rowKey="id" pagination={bankPag} dataSource={tests}
         columns={[
           { title: 'Mã bộ đề', dataIndex: 'code', width: 130, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
           { title: 'Tên bộ đề kiểm tra', dataIndex: 'title', ellipsis: true },
@@ -131,7 +133,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
   const assignmentsTable = (
     <Card size="small" title="Đợt giao bài & Kết quả thi" extra={<Space><Button size="small" icon={<ReloadOutlined />} loading={refreshing} onClick={() => void handleManualRefresh()}>Làm mới</Button>{canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => openCreateAssignment()}>Giao bài kiểm tra</Button>}</Space>}>
       <Table
-        size="small" rowKey="id" pagination={{ pageSize: 10 }} dataSource={assignments}
+        size="small" rowKey="id" pagination={asgPag} dataSource={assignments}
         columns={[
           { title: 'Mã đợt giao', dataIndex: 'assignment_code', width: 115, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
           { title: 'Nhân sự nhận đề', dataIndex: 'employeeName', width: 165, ellipsis: true },

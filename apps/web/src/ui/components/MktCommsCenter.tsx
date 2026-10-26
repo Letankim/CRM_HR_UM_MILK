@@ -7,6 +7,7 @@ import dayjs from 'dayjs';
 import { useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
 import { GovernanceDetailDrawer } from './GovernanceAndCommsModals';
@@ -42,10 +43,8 @@ export function MktCommsCenter() {
   const [medModal, setMedModal] = useState(false);
   const [editingMed, setEditingMed] = useState<Record<string, unknown> | null>(null);
   const [viewingAnc, setViewingAnc] = useState<Record<string, unknown> | null>(null);
-  const [ancForm] = Form.useForm();
-  const [audForm] = Form.useForm();
-  const [cmpForm] = Form.useForm();
-  const [medForm] = Form.useForm();
+  const [ancForm] = Form.useForm(), [audForm] = Form.useForm(), [cmpForm] = Form.useForm(), [medForm] = Form.useForm();
+  const ancPag = useClientPagination(10, 'bản tin'), audPag = useClientPagination(10, 'nhóm'), cmpPag = useClientPagination(10, 'chiến dịch'), medPag = useClientPagination(10, 'tệp'), dlvPag = useClientPagination(10, 'lượt gửi');
 
   const { options: jobPositionOptions } = useJobPositions();
   const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
@@ -127,7 +126,7 @@ export function MktCommsCenter() {
         </Flex>
       </div>
       <Table
-        size="small" rowKey="id" loading={mktQ.isLoading} pagination={{ pageSize: 10 }} dataSource={filteredAnc} scroll={{ x: 'max-content' }}
+        size="small" rowKey="id" loading={mktQ.isLoading} pagination={ancPag} dataSource={filteredAnc} scroll={{ x: 'max-content' }}
         columns={[
           { title: 'Mã tin', dataIndex: 'announcement_code', width: 95, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
           { title: 'Tiêu đề thông báo', dataIndex: 'title', width: 260, ellipsis: true, render: (v: string, r) => <Typography.Link strong onClick={() => setViewingAnc(r)}>{v}</Typography.Link> },
@@ -172,7 +171,7 @@ export function MktCommsCenter() {
                   <Space size={8}><GuardButton perms={['employee.manage', 'system.config']} roles={['ADMIN', 'HR']} icon={<SettingOutlined />} onClick={() => setPosModal(true)}>Quản lý Vị trí công việc</GuardButton><GuardButton type="primary" perms={['comms.manage', 'employee.manage', 'system.config']} icon={<PlusOutlined />} onClick={openCreateAud}>Cấu hình nhóm người nhận mới</GuardButton></Space>
                 </Flex>
                 <Table
-                  size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (t) => `Tổng ${t} nhóm` }} dataSource={data?.audienceGroups ?? []}
+                  size="small" rowKey="id" pagination={audPag} dataSource={data?.audienceGroups ?? []}
                   columns={[
                     { title: 'Tên nhóm người nhận được cấu hình', dataIndex: 'label', render: (v: string, r) => <Space size={6}><Typography.Link strong onClick={() => setViewingAud(r)}>{v}</Typography.Link>{Boolean(r.isCustom) && <Tag color="purple">Đã cấu hình</Tag>}</Space> },
                     { title: 'Quy mô dự kiến', dataIndex: 'recipientCount', width: 140, render: (v: number) => <Tag color="blue">{v} nhân sự</Tag> },
@@ -187,7 +186,7 @@ export function MktCommsCenter() {
             children: (
               <>
                 <Flex justify="flex-end" style={{ marginBottom: 10 }}><Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingCmp(null); cmpForm.resetFields(); cmpForm.setFieldsValue({ campaign_code: `CMP-2026-${Math.floor(10 + Math.random() * 89)}`, channel: 'IN_APP', audience_scope: 'ALL', status: 'RUNNING', scheduled_at: dayjs().format('YYYY-MM-DD') }); setCmpModal(true); }}>Tạo chiến dịch mới</Button></Flex>
-                <Table size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (t) => `Tổng ${t} chiến dịch` }} dataSource={data?.campaigns ?? []} columns={[{ title: 'Mã chiến dịch', dataIndex: 'campaign_code', width: 130, render: (v: string) => <Tag color="geekblue">{v}</Tag> }, { title: 'Tên chiến dịch truyền thông', dataIndex: 'name', render: (v: string) => <strong>{v}</strong> }, { title: 'Kênh phát', dataIndex: 'channel', width: 130, render: (v: string) => <Tag>{v === 'EMAIL' ? 'Email Doanh nghiệp' : 'Cổng Nội bộ'}</Tag> }, { title: 'Tiến độ phát bản tin', width: 200, render: (_, r) => <Progress percent={Number(r.totalAnnouncements) > 0 ? Math.round((Number(r.sentCount) / Number(r.totalAnnouncements)) * 100) : 100} size="small" /> }, { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag value={v} /> }, { title: 'Thao tác', width: 88, align: 'right', render: (_, r) => canEditRow(r) ? <RowActionButtons menuItems={[{ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa chiến dịch', onClick: () => { setEditingCmp(r); cmpForm.setFieldsValue(r); setCmpModal(true); } }, { key: 'del', icon: <DeleteOutlined />, danger: true, label: 'Xóa chiến dịch', onClick: () => delMut.mutate({ url: `/mkt/campaigns/${r.id}`, body: { version: r.version } }) }]} /> : null }]} />
+                <Table size="small" rowKey="id" pagination={cmpPag} dataSource={data?.campaigns ?? []} columns={[{ title: 'Mã chiến dịch', dataIndex: 'campaign_code', width: 130, render: (v: string) => <Tag color="geekblue">{v}</Tag> }, { title: 'Tên chiến dịch truyền thông', dataIndex: 'name', render: (v: string) => <strong>{v}</strong> }, { title: 'Kênh phát', dataIndex: 'channel', width: 130, render: (v: string) => <Tag>{v === 'EMAIL' ? 'Email Doanh nghiệp' : 'Cổng Nội bộ'}</Tag> }, { title: 'Tiến độ phát bản tin', width: 200, render: (_, r) => <Progress percent={Number(r.totalAnnouncements) > 0 ? Math.round((Number(r.sentCount) / Number(r.totalAnnouncements)) * 100) : 100} size="small" /> }, { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag value={v} /> }, { title: 'Thao tác', width: 88, align: 'right', render: (_, r) => canEditRow(r) ? <RowActionButtons menuItems={[{ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa chiến dịch', onClick: () => { setEditingCmp(r); cmpForm.setFieldsValue(r); setCmpModal(true); } }, { key: 'del', icon: <DeleteOutlined />, danger: true, label: 'Xóa chiến dịch', onClick: () => delMut.mutate({ url: `/mkt/campaigns/${r.id}`, body: { version: r.version } }) }]} /> : null }]} />
               </>
             ),
           },
@@ -196,13 +195,13 @@ export function MktCommsCenter() {
             children: (
               <>
                 <Flex justify="flex-end" style={{ marginBottom: 10 }}><Button type="primary" icon={<CloudUploadOutlined />} onClick={() => { setEditingMed(null); medForm.resetFields(); medForm.setFieldsValue({ mime_type: 'image/png', size_bytes: 245000, is_internal_only: true }); setMedModal(true); }}>Thêm Ảnh / Tài liệu vào Kho Media</Button></Flex>
-                <Table size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (t) => `Tổng ${t} tệp` }} dataSource={data?.mediaAssets ?? []} columns={[{ title: 'Tên tệp / Tài liệu', dataIndex: 'file_name', render: (v: string) => <strong>{v}</strong> }, { title: 'Định dạng', dataIndex: 'mime_type', width: 150, render: (v: string) => <Tag color="blue">{v}</Tag> }, { title: 'Kho lưu trữ phê duyệt (Drive)', dataIndex: 'drive_url', ellipsis: true }, { title: 'Phạm vi bảo mật', dataIndex: 'is_internal_only', width: 170, render: (v: boolean) => v ? <Tag color="green">Chỉ lưu hành nội bộ</Tag> : <Tag color="orange">Đã duyệt</Tag> }, { title: 'Thao tác', width: 88, align: 'right', render: (_, r) => canEditRow(r) ? <RowActionButtons menuItems={[{ key: 'edit', icon: <EditOutlined />, label: 'Cập nhật tệp', onClick: () => { setEditingMed(r); medForm.setFieldsValue(r); setMedModal(true); } }, { key: 'del', icon: <DeleteOutlined />, danger: true, label: 'Xóa tệp Media', onClick: () => delMut.mutate({ url: `/mkt/media/${r.id}`, body: { version: r.version } }) }]} /> : null }]} />
+                <Table size="small" rowKey="id" pagination={medPag} dataSource={data?.mediaAssets ?? []} columns={[{ title: 'Tên tệp / Tài liệu', dataIndex: 'file_name', render: (v: string) => <strong>{v}</strong> }, { title: 'Định dạng', dataIndex: 'mime_type', width: 150, render: (v: string) => <Tag color="blue">{v}</Tag> }, { title: 'Kho lưu trữ phê duyệt (Drive)', dataIndex: 'drive_url', ellipsis: true }, { title: 'Phạm vi bảo mật', dataIndex: 'is_internal_only', width: 170, render: (v: boolean) => v ? <Tag color="green">Chỉ lưu hành nội bộ</Tag> : <Tag color="orange">Đã duyệt</Tag> }, { title: 'Thao tác', width: 88, align: 'right', render: (_, r) => canEditRow(r) ? <RowActionButtons menuItems={[{ key: 'edit', icon: <EditOutlined />, label: 'Cập nhật tệp', onClick: () => { setEditingMed(r); medForm.setFieldsValue(r); setMedModal(true); } }, { key: 'del', icon: <DeleteOutlined />, danger: true, label: 'Xóa tệp Media', onClick: () => delMut.mutate({ url: `/mkt/media/${r.id}`, body: { version: r.version } }) }]} /> : null }]} />
               </>
             ),
           },
           {
             key: 'delivery', label: <span><RetweetOutlined /> Theo dõi gửi &amp; Xác nhận đọc ({data?.deliveryLogs?.length ?? 0})</span>,
-            children: <Table size="small" rowKey="id" pagination={{ pageSize: 10 }} dataSource={data?.deliveryLogs ?? []} columns={[{ title: 'Thông báo phát', dataIndex: 'announcementTitle', render: (v: string, r) => <div><strong>{v}</strong> <Tag color="geekblue">{String(r.announcementCode || '')}</Tag></div> }, { title: 'Người nhận', dataIndex: 'recipientName', width: 175, render: (v: string) => <Tag color="blue">{v || '—'}</Tag> }, { title: 'Kênh gửi', dataIndex: 'channel', width: 125, render: () => <Tag>Cổng Nội bộ</Tag> }, { title: 'Trạng thái gửi', dataIndex: 'status', width: 115, render: (v: string) => <StatusTag value={v} /> }, { title: 'Số lần gửi lại', dataIndex: 'attempts', width: 120, render: (v: number) => <span className="num">{v ?? 1} lần</span> }, { title: 'Trạng thái xác nhận đọc', dataIndex: 'readReceiptLabel', render: (v: string, r) => <Tag color={r.ack_at ? 'green' : 'default'}>{v}</Tag> }, { title: 'Lỗi gần nhất', dataIndex: 'last_error', width: 170, render: (v: string) => v ? <Tag color="red">{v}</Tag> : <span style={{ color: '#94A3B8' }}>Không có lỗi</span> }, { title: 'Thao tác', width: 125, align: 'right', render: (_, r) => <Button size="small" icon={<RetweetOutlined />} onClick={() => postMut.mutate({ url: `/mkt/delivery-logs/${r.id}/retry`, body: {} })}>Thử gửi lại</Button> }]} />,
+            children: <Table size="small" rowKey="id" pagination={dlvPag} dataSource={data?.deliveryLogs ?? []} columns={[{ title: 'Thông báo phát', dataIndex: 'announcementTitle', render: (v: string, r) => <div><strong>{v}</strong> <Tag color="geekblue">{String(r.announcementCode || '')}</Tag></div> }, { title: 'Người nhận', dataIndex: 'recipientName', width: 175, render: (v: string) => <Tag color="blue">{v || '—'}</Tag> }, { title: 'Kênh gửi', dataIndex: 'channel', width: 125, render: () => <Tag>Cổng Nội bộ</Tag> }, { title: 'Trạng thái gửi', dataIndex: 'status', width: 115, render: (v: string) => <StatusTag value={v} /> }, { title: 'Số lần gửi lại', dataIndex: 'attempts', width: 120, render: (v: number) => <span className="num">{v ?? 1} lần</span> }, { title: 'Trạng thái xác nhận đọc', dataIndex: 'readReceiptLabel', render: (v: string, r) => <Tag color={r.ack_at ? 'green' : 'default'}>{v}</Tag> }, { title: 'Lỗi gần nhất', dataIndex: 'last_error', width: 170, render: (v: string) => v ? <Tag color="red">{v}</Tag> : <span style={{ color: '#94A3B8' }}>Không có lỗi</span> }, { title: 'Thao tác', width: 125, align: 'right', render: (_, r) => <Button size="small" icon={<RetweetOutlined />} onClick={() => postMut.mutate({ url: `/mkt/delivery-logs/${r.id}/retry`, body: {} })}>Thử gửi lại</Button> }]} />,
           }] : []),
         ]}
       />

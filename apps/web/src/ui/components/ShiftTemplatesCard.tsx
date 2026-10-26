@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { generateShiftCode } from '@/lib/auto-generate';
 import { StatusTag } from '@/ui/StatusTag';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
 import { RowActionButtons } from './RowActionButtons';
 
@@ -33,6 +34,8 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
   const [viewingShift, setViewingShift] = useState<ShiftTemplateItem | null>(null);
   const [shiftForm] = Form.useForm();
   const [ruleForm] = Form.useForm();
+  const shiftsPag = useClientPagination(10, 'khung ca');
+  const rulesPag = useClientPagination(10, 'định biên');
 
   const branchesQuery = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
   const shiftsQuery = useQuery({ queryKey: ['shift-templates'], queryFn: () => api.get<ShiftTemplateItem[]>('/admin/shift-templates') });
@@ -80,7 +83,7 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
 
   const shiftPane = (
     <Table<ShiftTemplateItem>
-      size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} khung ca` }} loading={shiftsQuery.isLoading} dataSource={filteredShifts}
+      size="small" rowKey="id" pagination={shiftsPag} loading={shiftsQuery.isLoading} dataSource={filteredShifts}
       columns={[
         { title: 'Tên ca làm việc', dataIndex: 'name', render: (v: string) => <Typography.Text strong>{v}</Typography.Text> },
         { title: 'Chi nhánh áp dụng', dataIndex: 'branchName', render: (v: string, r) => <Tag color={!r.branchId || r.branchId === 'ALL' ? 'default' : 'blue'}>{v || 'Tất cả chi nhánh'}</Tag> },
@@ -107,22 +110,14 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
 
   const rulesPane = (
     <Table<StaffingRuleItem>
-      size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} định biên` }} loading={rulesQuery.isLoading} dataSource={filteredRules}
+      size="small" rowKey="id" pagination={rulesPag} loading={rulesQuery.isLoading} dataSource={filteredRules}
       columns={[
         { title: 'Chi nhánh áp dụng', dataIndex: 'branchName', render: (v: string, r) => <Tag color={r.branchId === 'ALL' ? 'default' : 'blue'}><strong>{v}</strong></Tag> },
         { title: 'Khung ca áp dụng', dataIndex: 'shiftName', render: (v: string) => <Tag color="geekblue">{v}</Tag> },
         { title: 'Định biên Tối thiểu – Tối đa', render: (_, r) => <span className="num"><strong>{String(r.min_staff)}</strong> – <strong>{String(r.max_staff)}</strong> nhân sự/ca</span> },
         { title: 'Chế độ kiểm soát', dataIndex: 'enforcement', render: (v: string) => <Tag color={v === 'HARD_BLOCK' ? 'red' : 'orange'}>{v === 'HARD_BLOCK' ? 'Chặn cứng khi thiếu định biên' : 'Cảnh báo mềm khi thiếu người'}</Tag> },
         { title: 'Ghi chú', dataIndex: 'note', ellipsis: true },
-        {
-          title: 'Thao tác', width: 100, align: 'right',
-          render: (_, r) => canConfig ? (
-            <Space size={4}>
-              <Button size="small" icon={<EditOutlined />} onClick={() => openEditRule(r)} />
-              <Button size="small" danger icon={<DeleteOutlined />} onClick={() => modal.confirm({ title: `Xóa định biên của "${r.branchName}" (${r.shiftName})?`, okText: 'Xóa định biên', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => deleteRule.mutateAsync(String(r.id)) })} />
-            </Space>
-          ) : null,
-        },
+        { title: 'Thao tác', width: 100, align: 'right', render: (_, r) => canConfig ? <Space size={4}><Button size="small" icon={<EditOutlined />} onClick={() => openEditRule(r)} /><Button size="small" danger icon={<DeleteOutlined />} onClick={() => modal.confirm({ title: `Xóa định biên của "${r.branchName}" (${r.shiftName})?`, okText: 'Xóa định biên', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => deleteRule.mutateAsync(String(r.id)) })} /></Space> : null },
       ]}
     />
   );

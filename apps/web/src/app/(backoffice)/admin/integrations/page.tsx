@@ -13,6 +13,7 @@ import { PageHeader } from '@/ui/PageHeader';
 import { StatusTag } from '@/ui/StatusTag';
 import { ReconciliationAndEmailPanel } from '@/ui/components/ReconciliationAndEmailPanel';
 import { SystemGovernanceAndCommsTabs } from '@/ui/components/SystemGovernanceAndCommsTabs';
+import { useClientPagination } from '@/ui/hooks/useClientPagination';
 
 interface TableStat {
   table: string;
@@ -48,6 +49,7 @@ function IntegrationsView() {
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<'health' | 'reconcile' | 'email'>('health');
   const [healthSubTab, setHealthSubTab] = useState<'tables' | 'queue'>('tables');
+  const tablesPagination = useClientPagination(15, 'bảng');
 
   const section = params.get('section') as 'governance' | 'comms' | null;
 
@@ -112,7 +114,7 @@ function IntegrationsView() {
             <Table<TableStat>
               size="small"
               rowKey="table"
-              pagination={{ pageSize: 15, showSizeChanger: true, pageSizeOptions: ['15', '30', '50'], showTotal: (t) => `Tổng ${t} bảng` }}
+              pagination={tablesPagination}
               dataSource={d.data.tables}
               scroll={{ x: 640 }}
               columns={[

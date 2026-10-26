@@ -24,7 +24,7 @@ export interface DataTableCardProps<TRecord extends { id: string }> {
  * Bảng dữ liệu chuẩn mẫu 3DO ADMIN:
  * - Tự động sinh cột NO (số thứ tự đậm + mã định danh in hoa monospace phía dưới).
  * - Khi chọn nhiều dòng, tự động hiển thị BulkActionBar để xử lý hàng loạt.
- * - Hiển thị trạng thái loading rõ ràng mỗi khi tải hoặc làm mới dữ liệu.
+ * - Hỗ trợ đầy đủ đổi trang và đổi số dòng hiển thị (10, 12, 15, 20, 50, 100 dòng/trang).
  */
 export function DataTableCard<TRecord extends { id: string }>({
   columns,
@@ -38,20 +38,31 @@ export function DataTableCard<TRecord extends { id: string }>({
   bulkActions = [],
 }: DataTableCardProps<TRecord>) {
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
+  const [localPage, setLocalPage] = useState(1);
+  const [localPerPage, setLocalPerPage] = useState(12);
+  const [localTotal, setLocalTotal] = useState(0);
 
   useEffect(() => {
     const validIds = new Set(dataSource.map((r) => r.id));
     setSelectedRowKeys((prev) => prev.filter((k) => validIds.has(String(k))));
   }, [dataSource]);
 
+  useEffect(() => {
+    if (meta?.pagination) {
+      setLocalPage(meta.pagination.page);
+      setLocalPerPage(meta.pagination.per_page);
+      setLocalTotal(meta.pagination.total);
+    }
+  }, [meta?.pagination]);
+
   const selectedRows = useMemo(() => {
     const keySet = new Set(selectedRowKeys.map(String));
     return dataSource.filter((r) => keySet.has(r.id));
   }, [dataSource, selectedRowKeys]);
 
-  const page = meta?.pagination.page ?? 1;
-  const perPage = meta?.pagination.per_page ?? 12;
-  const total = meta?.pagination.total ?? dataSource.length;
+  const page = meta?.pagination.page ?? localPage;
+  const perPage = meta?.pagination.per_page ?? localPerPage;
+  const total = meta?.pagination.total ?? (localTotal > 0 && loading ? localTotal : dataSource.length);
 
   const fullColumns: ColumnsType<TRecord> = useMemo(() => {
     const noColumn: ColumnsType<TRecord>[number] = {
@@ -99,9 +110,14 @@ export function DataTableCard<TRecord extends { id: string }>({
     pageSize: perPage,
     total,
     showSizeChanger: true,
-    pageSizeOptions: ['10', '12', '20', '50'],
+    pageSizeOptions: ['10', '12', '15', '20', '50', '100'],
     showTotal: (t) => `Tổng ${t} bản ghi`,
-    onChange: (nextPage, nextSize) => onPageChange?.(nextPage, nextSize),
+    onChange: (nextPage, nextSize) => {
+      const targetPage = nextSize !== perPage ? 1 : nextPage;
+      setLocalPage(targetPage);
+      setLocalPerPage(nextSize);
+      onPageChange?.(targetPage, nextSize);
+    },
     style: { paddingInline: 16, marginBottom: 12, marginTop: 12 },
   };
 

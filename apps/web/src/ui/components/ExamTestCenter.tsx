@@ -5,6 +5,7 @@ import { App, Button, Card, Col, Descriptions, Empty, Modal, Row, Select, Space,
 import { BookOutlined, CheckCircleOutlined, CloseCircleOutlined, CloseOutlined, DeleteOutlined, EyeOutlined, HistoryOutlined, PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
 import { BRAND } from '../theme';
 import { ExamFullscreenModal } from './ExamFullscreenModal';
@@ -15,9 +16,7 @@ export interface AttemptReviewItem {
 }
 
 export function formatDurationSec(sec: unknown): string {
-  const s = Math.max(1, Number(sec || 0));
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
+  const s = Math.max(1, Number(sec || 0)), m = Math.floor(s / 60), rem = s % 60;
   return m > 0 ? `${m} phút ${String(rem).padStart(2, '0')} giây` : `${rem} giây`;
 }
 
@@ -95,9 +94,10 @@ export function AttemptHistoryTable({
   attempts: Record<string, unknown>[]; showEmployee?: boolean; canDelete?: boolean;
   onViewAttempt: (att: Record<string, unknown>) => void; onDeleteAttempt?: (att: Record<string, unknown>) => void;
 }) {
+  const attPag = useClientPagination(10, 'lượt thi');
   return (
     <Table
-      size="small" rowKey="id" pagination={{ pageSize: 10 }} dataSource={attempts}
+      size="small" rowKey="id" pagination={attPag} dataSource={attempts}
       locale={{ emptyText: 'Chưa có lịch sử lượt làm bài nào được ghi nhận.' }}
       columns={[
         { title: 'Lượt thi', dataIndex: 'attempt_no', width: 95, render: (v: number) => <Tag color="blue" style={{ margin: 0 }}>Lần #{v ?? 1}</Tag> },
@@ -138,8 +138,8 @@ export function EmployeeTestCenterView({
   const [activeAttempt, setActiveAttempt] = useState<Record<string, unknown> | null>(null);
   const [activeTestRec, setActiveTestRec] = useState<Record<string, unknown> | null>(null);
   const [reviewingAttempt, setReviewingAttempt] = useState<Record<string, unknown> | null>(null);
-  const [startingId, setStartingId] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [startingId, setStartingId] = useState<string | null>(null), [refreshing, setRefreshing] = useState(false);
+  const asgPag = useClientPagination(10, 'bài kiểm tra');
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -163,7 +163,7 @@ export function EmployeeTestCenterView({
 
   const assignmentsPane = (
     <Table
-      size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (t) => `Tổng ${t} bài kiểm tra` }} dataSource={assignments}
+      size="small" rowKey="id" pagination={asgPag} dataSource={assignments}
       locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Hiện chưa có bài kiểm tra nghiệp vụ nào được giao cho bạn." /> }}
       columns={[
         { title: 'Mã đợt giao', dataIndex: 'assignment_code', width: 115, render: (v: string) => <Tag color="geekblue">{v}</Tag> },

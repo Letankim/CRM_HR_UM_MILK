@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { fmtVnd, type PayrollItemRow } from './payroll-types';
 import { RowActionButtons } from './RowActionButtons';
 
@@ -31,6 +32,7 @@ export function PayrollItemsCard({
   const [searchInput, setSearchInput] = useState('');
   const [directionFilter, setDirectionFilter] = useState('ALL');
   const q = useDebouncedValue(searchInput, 400);
+  const pagination = useClientPagination(12, 'khoản mục');
 
   const filteredItems = useMemo(() => {
     const keyword = q.trim().toLowerCase();
@@ -101,7 +103,7 @@ export function PayrollItemsCard({
           size="small"
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} khoản mục` }}
+          pagination={pagination}
           dataSource={filteredItems}
           locale={{ emptyText: 'Chưa có khoản thưởng, phụ cấp hoặc khấu trừ phù hợp bộ lọc' }}
           columns={[

@@ -61,7 +61,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
   const filteredLeaves = leavesQ.data?.data ?? [];
   const filteredSwaps = swapsQ.data?.data ?? [];
   const filteredEmg = emgQ.data?.data ?? [];
-  const mkPag = (total?: number) => ({ current: page, pageSize: perPage, total: total ?? 0, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t: number) => `Tổng ${t} đơn`, onChange: (p: number, ps: number) => { setPage(p); setPerPage(ps); } });
+  const mkPag = (total?: number) => ({ current: page, pageSize: perPage, total: total ?? 0, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t: number) => `Tổng ${t} đơn`, onChange: (p: number, ps: number) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } });
 
   const renderSubFilterBar = (actionBtn: React.ReactNode) => (
     <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '14px 16px', marginTop: 4, marginBottom: 16 }}>

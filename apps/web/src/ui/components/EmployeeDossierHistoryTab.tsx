@@ -4,6 +4,7 @@ import { Alert, Card, Col, Descriptions, Empty, Form, Input, Modal, Row, Space, 
 import { CheckCircleOutlined, CloseOutlined, RiseOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useEffect } from 'react';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
 import { DateStringPicker } from './DateTimePickers';
 import type { EmployeeRowItem } from './employee-table-columns';
@@ -11,6 +12,8 @@ import type { EmployeeRowItem } from './employee-table-columns';
 export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowItem }) {
   const historyRows = employee.stageHistory ?? [];
   const shiftRows = employee.recentShifts ?? [];
+  const histPag = useClientPagination(10, 'lần chuyển');
+  const shiftPag = useClientPagination(10, 'ca');
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -42,7 +45,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
           <Table
             size="small"
             rowKey="id"
-            pagination={{ pageSize: 8, showSizeChanger: false }}
+            pagination={histPag}
             dataSource={historyRows}
             columns={[
               { title: 'Từ giai đoạn', dataIndex: 'fromStage', width: 130, render: (v: string) => <StatusTag value={v} /> },
@@ -63,7 +66,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
           <Table
             size="small"
             rowKey="id"
-            pagination={{ pageSize: 8, showSizeChanger: false }}
+            pagination={shiftPag}
             dataSource={shiftRows}
             columns={[
               { title: 'Ngày làm việc', dataIndex: 'work_date', width: 120, render: (v: string) => <span className="num" style={{ fontWeight: 600 }}>{v}</span> },

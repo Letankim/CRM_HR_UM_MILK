@@ -7,6 +7,7 @@ import dayjs from 'dayjs';
 import { useState } from 'react';
 import { TABLE_DISPLAY_LABELS } from '@umbm/shared';
 import { StatusTag } from '../StatusTag';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { DateStringPicker } from './DateTimePickers';
 import { RichHtmlEditor } from './RichHtmlEditor';
 
@@ -99,6 +100,7 @@ const MODULE_GROUP_LABELS: Record<string, string> = {
 
 export function BackupDetailDrawer({ record, onClose }: { record: Record<string, unknown> | null; onClose: () => void }) {
   const [wide, setWide] = useState(false);
+  const bkpTablesPag = useClientPagination(12, 'bảng dữ liệu được sao lưu');
   const parsed = (() => { try { return JSON.parse(String(record?.rows_json || '{}')) as Record<string, unknown>; } catch { return {}; } })();
   const isVerifyOnly = parsed.status === 'VERIFIED' && typeof parsed.issuesFound === 'number';
   const tableRows = Object.entries(parsed)
@@ -136,7 +138,7 @@ export function BackupDetailDrawer({ record, onClose }: { record: Record<string,
           ) : (
             <Table
               size="small" bordered rowKey="key" dataSource={tableRows}
-              pagination={{ pageSize: 12, showSizeChanger: true, pageSizeOptions: ['12', '20', '50'], showTotal: (t) => `Tổng ${t} bảng dữ liệu được sao lưu` }}
+              pagination={bkpTablesPag}
               columns={[
                 { title: 'Phân hệ nghiệp vụ', dataIndex: 'moduleLabel', width: 210, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
                 { title: 'Tên bảng dữ liệu đã sao lưu', dataIndex: 'tableLabel', render: (v: string) => <strong>{v}</strong> },

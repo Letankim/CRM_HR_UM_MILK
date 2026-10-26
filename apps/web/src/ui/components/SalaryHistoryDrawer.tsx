@@ -7,6 +7,7 @@ import dayjs from 'dayjs';
 import { useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { StatusTag } from '@/ui/StatusTag';
+import { useClientPagination } from '../hooks/useClientPagination';
 import { fmtVnd, type SalaryProfile } from './payroll-types';
 import { RowActionButtons } from './RowActionButtons';
 
@@ -123,6 +124,7 @@ export function SalaryHistoryDrawer({
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [viewing, setViewing] = useState<SalaryProfile | null>(null);
+  const histPag = useClientPagination(10, 'mức lương');
 
   const historyQuery = useQuery({
     queryKey: ['salary-history', employee?.id],
@@ -166,7 +168,7 @@ export function SalaryHistoryDrawer({
           rowKey="id"
           loading={historyQuery.isLoading}
           dataSource={historyQuery.data ?? []}
-          pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (t) => `Tổng ${t} mức lương` }}
+          pagination={histPag}
           columns={[
             { title: 'Hiệu lực', key: 'eff', width: 155, render: (_, p) => <div><strong>{fmtDate(p.effectiveFrom)}</strong><div style={{ fontSize: 12, color: '#64748B' }}>đến {fmtDate(p.effectiveTo)}</div></div> },
             { title: 'Hình thức', dataIndex: 'rateTypeLabel', width: 115, render: (v: string, p) => <Tag color={p.rateType === 'MONTHLY' ? 'purple' : p.rateType === 'SHIFT' ? 'cyan' : 'blue'} style={{ borderRadius: 2 }}>{v}</Tag> },
