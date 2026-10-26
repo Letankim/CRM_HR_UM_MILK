@@ -32,15 +32,34 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
   const [searchInput, setSearchInput] = useState('');
   const debouncedQ = useDebouncedValue(searchInput, 400);
   const [catFilter, setCatFilter] = useState('ALL');
+  const [polPage, setPolPage] = useState(1);
+  const [polPerPage, setPolPerPage] = useState(10);
   const [bkpSearch, setBkpSearch] = useState('');
+  const debouncedBkpQ = useDebouncedValue(bkpSearch, 400);
   const [bkpStatusFilter, setBkpStatusFilter] = useState('ALL');
+  const [bkpPage, setBkpPage] = useState(1);
+  const [bkpPerPage, setBkpPerPage] = useState(10);
   const [mntScope, setMntScope] = useState('ALL');
   const [mntExpectedEnd, setMntExpectedEnd] = useState('');
   const [polForm] = Form.useForm();
 
-  const polQ = useQuery({ queryKey: ['policies'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/policies'), enabled: mode === 'governance', retry: false });
+  const polParams = useMemo(() => {
+    const p = new URLSearchParams({ page: String(polPage), per_page: String(polPerPage) });
+    if (debouncedQ) p.set('q', debouncedQ);
+    if (catFilter !== 'ALL') p.set('category', catFilter);
+    return p.toString();
+  }, [polPage, polPerPage, debouncedQ, catFilter]);
+
+  const bkpParams = useMemo(() => {
+    const p = new URLSearchParams({ page: String(bkpPage), per_page: String(bkpPerPage) });
+    if (debouncedBkpQ) p.set('q', debouncedBkpQ);
+    if (bkpStatusFilter !== 'ALL') p.set('status', bkpStatusFilter);
+    return p.toString();
+  }, [bkpPage, bkpPerPage, debouncedBkpQ, bkpStatusFilter]);
+
+  const polQ = useQuery({ queryKey: ['policies', polParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/policies?${polParams}`), enabled: mode === 'governance', retry: false });
   const mntQ = useQuery({ queryKey: ['maintenance'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/maintenance'), enabled: mode === 'governance', retry: false });
-  const bkpQ = useQuery({ queryKey: ['backups'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/backups'), enabled: mode === 'governance' && canBackupOrMaint, retry: false });
+  const bkpQ = useQuery({ queryKey: ['backups', bkpParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/backups?${bkpParams}`), enabled: mode === 'governance' && canBackupOrMaint, retry: false });
 
   const refreshAll = () => ['policies', 'maintenance', 'backups', 'mkt-comms', 'nv-comms', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const onErr = (fallback: string) => (e: unknown) => message.error(e instanceof ApiClientError ? e.message : fallback);
@@ -63,20 +82,10 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
     setPolModal(true);
   };
 
-  const filteredPolicies = useMemo(() => {
-    const q = debouncedQ.trim().toLowerCase();
-    return (polQ.data ?? []).filter((p) => (catFilter === 'ALL' || p.category === catFilter) && (!q || `${p.key || ''} ${p.description || ''} ${p.title || ''} ${p.value_json || ''} ${p.approved_by || ''}`.toLowerCase().includes(q)));
-  }, [polQ.data, catFilter, debouncedQ]);
-
-  const filteredBackups = useMemo(() => {
-    const q = bkpSearch.trim().toLowerCase();
-    return (bkpQ.data ?? []).filter((b) => {
-      if (bkpStatusFilter === 'VERIFIED' && !b.verified_restore) return false;
-      if (bkpStatusFilter !== 'ALL' && bkpStatusFilter !== 'VERIFIED' && b.status !== bkpStatusFilter) return false;
-      if (q && !`${b.backup_code || ''} ${b.kindLabel || ''} ${b.started_at || ''}`.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [bkpQ.data, bkpSearch, bkpStatusFilter]);
+  const filteredPolicies = polQ.data?.data ?? [];
+  const filteredBackups = bkpQ.data?.data ?? [];
+  const polTotal = polQ.data?.meta.pagination.total ?? filteredPolicies.length;
+  const bkpTotal = bkpQ.data?.meta.pagination.total ?? filteredBackups.length;
 
   const mnt = mntQ.data?.[0];
   const savedEndTime = useMemo(() => {
@@ -97,8 +106,8 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
       <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '14px 16px', marginTop: 4, marginBottom: 16 }}>
         <Flex justify="space-between" align="center" wrap gap={12}>
           <Space size={10} wrap>
-            <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm mã chính sách, tiêu đề, người ban hành..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 260 }} />
-            <Select value={catFilter} onChange={setCatFilter} style={{ width: 240 }} options={[{ value: 'ALL', label: 'Tất cả nhóm quy định / bộ phận' }, ...POLICY_CATEGORY_OPTIONS]} />
+            <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm mã chính sách, tiêu đề, người ban hành..." value={searchInput} onChange={(e) => { setSearchInput(e.target.value); setPolPage(1); }} style={{ width: 260 }} />
+            <Select value={catFilter} onChange={(v) => { setCatFilter(v); setPolPage(1); }} style={{ width: 240 }} options={[{ value: 'ALL', label: 'Tất cả nhóm quy định / bộ phận' }, ...POLICY_CATEGORY_OPTIONS]} />
           </Space>
           <Space size={10} wrap>
             <Button icon={<ReloadOutlined />} loading={polQ.isFetching} onClick={refreshAll}>Làm mới</Button>
@@ -108,7 +117,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
       </div>
       <Table
         size="small" rowKey="id" loading={polQ.isLoading}
-        pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} chính sách` }}
+        pagination={{ current: polPage, pageSize: polPerPage, total: polTotal, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} chính sách`, onChange: (p, ps) => { setPolPage(p); setPolPerPage(ps); } }}
         dataSource={filteredPolicies} scroll={{ x: 'max-content' }}
         columns={[
           { title: 'Mã chính sách', dataIndex: 'key', width: 165, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
@@ -161,14 +170,14 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
       </Flex>
       <Flex justify="space-between" align="center" wrap gap={10} style={{ marginBottom: 12 }}>
         <Space size={8} wrap>
-          <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm mã BKP, loại sao lưu, ngày giờ..." value={bkpSearch} onChange={(e) => setBkpSearch(e.target.value)} style={{ width: 250 }} />
-          <Select value={bkpStatusFilter} onChange={setBkpStatusFilter} style={{ width: 205 }} options={[{ value: 'ALL', label: 'Tất cả trạng thái sao lưu' }, { value: 'SUCCESS', label: 'Thành công' }, { value: 'FAILED', label: 'Thất bại' }, { value: 'VERIFIED', label: 'Đã diễn tập kiểm chứng' }]} />
+          <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm mã BKP, loại sao lưu, ngày giờ..." value={bkpSearch} onChange={(e) => { setBkpSearch(e.target.value); setBkpPage(1); }} style={{ width: 250 }} />
+          <Select value={bkpStatusFilter} onChange={(v) => { setBkpStatusFilter(v); setBkpPage(1); }} style={{ width: 205 }} options={[{ value: 'ALL', label: 'Tất cả trạng thái sao lưu' }, { value: 'SUCCESS', label: 'Thành công' }, { value: 'FAILED', label: 'Thất bại' }, { value: 'VERIFIED', label: 'Đã diễn tập kiểm chứng' }]} />
         </Space>
         <Button size="small" icon={<ReloadOutlined />} loading={bkpQ.isFetching} onClick={refreshAll}>Làm mới lịch sử</Button>
       </Flex>
       <Table
         size="small" rowKey="id" loading={bkpQ.isLoading}
-        pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} bản sao lưu` }}
+        pagination={{ current: bkpPage, pageSize: bkpPerPage, total: bkpTotal, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} bản sao lưu`, onChange: (p, ps) => { setBkpPage(p); setBkpPerPage(ps); } }}
         dataSource={filteredBackups}
         columns={[
           { title: 'Mã sao lưu', dataIndex: 'backup_code', width: 130, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
@@ -187,8 +196,8 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
     <>
       <Card size="small" styles={{ body: { padding: '12px 20px 20px' } }}>
         <Tabs activeKey={govSubTab} onChange={(k) => setGovSubTab(k as 'policies' | 'backups')} items={[
-          { key: 'policies', label: <span><FileProtectOutlined /> Chính sách Vận hành &amp; Quy định ({filteredPolicies.length})</span>, children: policiesPane },
-          ...(canBackupOrMaint ? [{ key: 'backups', label: <span><CloudDownloadOutlined /> Bảo trì &amp; Sao lưu ({bkpQ.data?.length ?? 0})</span>, children: backupsPane }] : []),
+          { key: 'policies', label: <span><FileProtectOutlined /> Chính sách Vận hành &amp; Quy định ({polTotal})</span>, children: policiesPane },
+          ...(canBackupOrMaint ? [{ key: 'backups', label: <span><CloudDownloadOutlined /> Bảo trì &amp; Sao lưu ({bkpTotal})</span>, children: backupsPane }] : []),
         ]} />
       </Card>
       <PolicyFormModal open={polModal} editing={editingPol} form={polForm} isAdmin={isAdmin} loading={postMut.isPending || putMut.isPending} onClose={() => setPolModal(false)} onSubmit={(v) => { if (editingPol) putMut.mutate({ url: `/admin/policies/${editingPol.id}`, body: { ...v, version: editingPol.version, owner_override_approved: true } }); else postMut.mutate({ url: '/admin/policies', body: v }); setPolModal(false); }} />

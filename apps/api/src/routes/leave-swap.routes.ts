@@ -17,17 +17,19 @@ const zDecideSwapBody = z.object({ version: z.coerce.number().int().min(1), deci
 const zCreateEmergencyBody = z.object({ employee_id: z.string().trim().min(1), assignment_id: z.string().trim().optional().default(''), work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), shift_code: z.string().default('CA_SANG'), reason: z.string().trim().min(2).max(300) });
 const zHandleEmergencyBody = z.object({ version: z.coerce.number().int().min(1), action: z.enum(['ASSIGN_REPLACEMENT', 'ESCALATE', 'RESOLVE']), replacement_id: z.string().trim().optional().default(''), resolution_note: z.string().trim().max(300).optional().default('') });
 
+const zWorkflowQuery = zListQueryBase.extend({ branch_id: z.string().trim().optional(), status: z.string().trim().optional() });
+
 export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/leave-requests', { preHandler: requirePermission('schedule.read', 'leave.approve', 'self.leave') }, async (request) => {
     await healBranchConsistency(ctx);
-    const query = zListQueryBase.parse(request.query);
+    const query = zWorkflowQuery.parse(request.query ?? {});
     const scoped = filterByBranch(request, ctx.db.leaveRequests.all(), (r) => resolveEmployeeBranchId(ctx, r.employee_id, r.branch_id));
     const mapped = scoped.map((r) => {
       const emp = ctx.db.employees.get(r.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === r.employee_id);
       const branch = (emp ? ctx.db.branches.get(emp.branch_id) : undefined) ?? ctx.db.branches.get(r.branch_id);
       return { ...r, ...resolveShiftTimeDetails(ctx, r.shift_code, r.assignment_id), branch_id: branch?.id ?? r.branch_id, employeeId: emp?.id ?? r.employee_id, employeeCode: emp?.employee_code ?? r.employee_id, employeeName: emp?.full_name ?? 'Nhân sự', branchName: branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[r.status] };
-    });
-    return sendPaginated(request, 'Lấy danh sách đơn đăng ký nghỉ OFF thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'leave_date', 'status'], q: query.q, searchExtractor: (i) => [i.request_code, i.employeeCode, i.employeeName, i.reason, i.leave_date] }));
+    }).filter((r) => (!query.branch_id || query.branch_id === 'ALL' || r.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || r.status === query.status));
+    return sendPaginated(request, 'Lấy danh sách đơn đăng ký nghỉ OFF thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'leave_date', 'status'], q: query.q, searchExtractor: (i) => [i.request_code, i.employeeCode, i.employeeName, i.reason, i.leave_date], filters: { branch_id: query.branch_id, status: query.status } }));
   });
 
   app.post('/api/admin/leave-requests', { preHandler: requireAuth() }, async (request, reply) => {
@@ -81,15 +83,15 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.get('/api/admin/shift-swaps', { preHandler: requirePermission('schedule.read', 'swap.approve', 'self.swap') }, async (request) => {
-    const query = zListQueryBase.parse(request.query);
+    const query = zWorkflowQuery.parse(request.query ?? {});
     const scoped = filterByBranch(request, ctx.db.shiftSwaps.all(), (s) => resolveEmployeeBranchId(ctx, s.requester_id, s.branch_id));
     const mapped = scoped.map((s) => {
       const reqEmp = ctx.db.employees.get(s.requester_id) ?? ctx.db.employees.find((e) => e.employee_code === s.requester_id);
       const peerEmp = ctx.db.employees.get(s.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === s.peer_id);
       const branch = (reqEmp ? ctx.db.branches.get(reqEmp.branch_id) : undefined) ?? ctx.db.branches.get(s.branch_id);
-      return { ...s, ...resolveShiftTimeDetails(ctx, s.from_shift_code, s.from_assignment_id), branchName: branch?.name ?? 'Chi nhánh', requesterCode: reqEmp?.employee_code ?? s.requester_id, peerCode: peerEmp?.employee_code ?? s.peer_id, requesterName: reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id, peerName: peerEmp ? `${peerEmp.full_name} (${peerEmp.employee_code})` : s.peer_id, statusLabel: SHIFT_SWAP_STATUS_LABELS[s.status] };
-    });
-    return sendPaginated(request, 'Lấy danh sách yêu cầu đổi ca 3 bước thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'from_work_date', 'status'], q: query.q, searchExtractor: (i) => [i.swap_code, i.requesterName, i.peerName, i.reason] }));
+      return { ...s, ...resolveShiftTimeDetails(ctx, s.from_shift_code, s.from_assignment_id), branch_id: branch?.id ?? s.branch_id, branchName: branch?.name ?? 'Chi nhánh', requesterCode: reqEmp?.employee_code ?? s.requester_id, peerCode: peerEmp?.employee_code ?? s.peer_id, requesterName: reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id, peerName: peerEmp ? `${peerEmp.full_name} (${peerEmp.employee_code})` : s.peer_id, statusLabel: SHIFT_SWAP_STATUS_LABELS[s.status] };
+    }).filter((s) => (!query.branch_id || query.branch_id === 'ALL' || s.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || s.status === query.status));
+    return sendPaginated(request, 'Lấy danh sách yêu cầu đổi ca 3 bước thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'from_work_date', 'status'], q: query.q, searchExtractor: (i) => [i.swap_code, i.requesterName, i.peerName, i.reason], filters: { branch_id: query.branch_id, status: query.status } }));
   });
 
   app.post('/api/admin/shift-swaps', { preHandler: requireAuth() }, async (request, reply) => {
@@ -171,14 +173,15 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.get('/api/admin/emergency-leaves', { preHandler: requirePermission('schedule.read', 'emergency.handle', 'self.leave') }, async (request) => {
+    const query = zWorkflowQuery.parse(request.query ?? {});
     const scoped = filterByBranch(request, ctx.db.emergencyLeaves.all(), (e) => resolveEmployeeBranchId(ctx, e.employee_id, e.branch_id));
     const mapped = scoped.map((e) => {
       const emp = ctx.db.employees.get(e.employee_id);
       const rep = e.replacement_id ? ctx.db.employees.get(e.replacement_id) : undefined;
       const branch = (emp ? ctx.db.branches.get(emp.branch_id) : undefined) ?? ctx.db.branches.get(e.branch_id);
-      return { ...e, ...resolveShiftTimeDetails(ctx, e.shift_code, e.assignment_id), branchName: branch?.name ?? 'Chi nhánh', employeeName: emp ? `${emp.full_name} (${emp.employee_code})` : e.employee_id, replacementName: rep ? `${rep.full_name} (${rep.employee_code})` : null };
-    });
-    return sendSuccess(request, 'Lấy danh sách báo nghỉ đột xuất thành công', mapped);
+      return { ...e, ...resolveShiftTimeDetails(ctx, e.shift_code, e.assignment_id), branch_id: branch?.id ?? e.branch_id, branchName: branch?.name ?? 'Chi nhánh', employeeName: emp ? `${emp.full_name} (${emp.employee_code})` : e.employee_id, replacementName: rep ? `${rep.full_name} (${rep.employee_code})` : null };
+    }).filter((e) => (!query.branch_id || query.branch_id === 'ALL' || e.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || e.status === query.status));
+    return sendPaginated(request, 'Lấy danh sách báo nghỉ đột xuất thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'work_date', 'status'], q: query.q, searchExtractor: (i) => [i.emergency_code, i.employeeName, i.reason, i.work_date], filters: { branch_id: query.branch_id, status: query.status } }));
   });
 
   app.post('/api/admin/emergency-leaves', { preHandler: requireAuth() }, async (request, reply) => {
@@ -197,13 +200,10 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.post('/api/admin/emergency-leaves/:id/handle', { preHandler: requirePermission('emergency.handle') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const body = zHandleEmergencyBody.parse(request.body);
-    const before = ctx.db.emergencyLeaves.get(id);
+    const { id } = request.params as { id: string }, body = zHandleEmergencyBody.parse(request.body), before = ctx.db.emergencyLeaves.get(id);
     if (!before) throw Errors.notFound('Báo nghỉ đột xuất', id);
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
-    const actorId = request.auth!.user.id;
-    const isEscalate = body.action === 'ESCALATE';
+    const actorId = request.auth!.user.id, isEscalate = body.action === 'ESCALATE';
     const nextStatus = body.action === 'ASSIGN_REPLACEMENT' ? 'REPLACEMENT_FOUND' : isEscalate ? 'ESCALATED' : 'RESOLVED';
     const updated = await ctx.db.emergencyLeaves.update(id, body.version, { status: nextStatus, escalated: isEscalate || before.escalated, replacement_id: body.replacement_id || before.replacement_id, shift_coverage_status: body.replacement_id ? 'COVERED' : isEscalate ? 'SHORT_STAFFED_ESCALATED' : 'RESOLVED', escalated_at: isEscalate ? nowIso() : before.escalated_at, escalated_to_role: isEscalate ? 'HR' : before.escalated_to_role, handled_by: actorId, handled_at: nowIso(), resolution_note: body.resolution_note }, actorId);
     if (!isEscalate) {

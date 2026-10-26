@@ -98,7 +98,9 @@ export function DataTableCard<TRecord extends { id: string }>({
     current: page,
     pageSize: perPage,
     total,
-    showSizeChanger: false,
+    showSizeChanger: true,
+    pageSizeOptions: ['10', '12', '20', '50'],
+    showTotal: (t) => `Tổng ${t} bản ghi`,
     onChange: (nextPage, nextSize) => onPageChange?.(nextPage, nextSize),
     style: { paddingInline: 16, marginBottom: 12, marginTop: 12 },
   };

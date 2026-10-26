@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { ROLE_LABELS, type Role } from '@umbm/shared';
+import { ROLE_LABELS, zListQueryBase, type Role } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
-import { sendSuccess } from '../lib/response.js';
+import { paginateAndSort } from '../lib/list-query.js';
+import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
@@ -42,8 +43,7 @@ function parseRawInterviewers(ids?: string[], singleOrArr?: string | string[], f
 }
 
 function resolveInterviewerRecipients(ctx: AppContext, rawIds: string[]): { userIds: string[]; roles: string[] } {
-  const userIds = new Set<string>();
-  const roles = new Set<string>();
+  const userIds = new Set<string>(), roles = new Set<string>();
   for (const raw of rawIds) {
     const id = raw.trim();
     if (!id) continue;
@@ -92,11 +92,10 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     }).join(', ');
 
   app.get('/api/admin/interviews', { preHandler: requirePermission('interview.manage', 'employee.read', 'system.config') }, async (request) => {
-    const query = z.object({ q: z.string().trim().optional(), branch_id: z.string().trim().optional(), decision: z.string().trim().optional(), status: z.string().trim().optional() }).parse(request.query ?? {});
+    const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), decision: z.string().trim().optional(), status: z.string().trim().optional() }).parse(request.query ?? {});
     const items = ctx.db.interviews.all().map((iv) => {
       const cand = ctx.db.candidates.get(iv.candidate_id) ?? ctx.db.candidates.find((c) => c.candidate_code === iv.candidate_id);
-      const branchId = iv.branch_id || cand?.branch_pref || '';
-      const branch = ctx.db.branches.get(branchId);
+      const branchId = iv.branch_id || cand?.branch_pref || '', branch = ctx.db.branches.get(branchId);
       return {
         ...iv, branch_id: branchId, branchName: branch?.name ?? (branchId || 'Chưa phân chi nhánh'),
         scheduled_at: iv.start_at, candidateName: cand?.full_name ?? iv.candidate_id, candidateCode: cand?.candidate_code ?? '',
@@ -104,53 +103,40 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
         positionLabel: cand ? resolveStaffGroupLabel(ctx, cand.staff_group, cand.position) : '',
         interviewerLabel: resolveInterviewerLabel(iv.interviewer_id),
       };
-    }).filter((item) => {
-      if (query.branch_id && query.branch_id !== 'ALL' && item.branch_id !== query.branch_id) return false;
-      if (query.decision && query.decision !== 'ALL' && item.decision !== query.decision) return false;
-      if (query.status && query.status !== 'ALL' && item.status !== query.status) return false;
-      if (query.q) {
-        const hay = [item.candidateName, item.candidateCode, item.candidatePhone, item.interviewerLabel, item.branchName, item.comment].join(' ').toLowerCase();
-        if (!hay.includes(query.q.toLowerCase())) return false;
-      }
-      return true;
-    });
-    return sendSuccess(request, 'Lấy danh sách lịch phỏng vấn thành công', items);
+    }).filter((item) => (!query.branch_id || query.branch_id === 'ALL' || item.branch_id === query.branch_id) && (!query.decision || query.decision === 'ALL' || item.decision === query.decision) && (!query.status || query.status === 'ALL' || item.status === query.status));
+    return sendPaginated(request, 'Lấy danh sách lịch phỏng vấn thành công', paginateAndSort(items, {
+      page: query.page, perPage: query.per_page ?? 20, defaultSortBy: 'start_at', defaultSortOrder: 'desc',
+      allowedSortFields: ['start_at', 'created_at', 'score', 'decision'], q: query.q,
+      searchExtractor: (i) => [i.candidateName, i.candidateCode, i.candidatePhone, i.interviewerLabel, i.branchName, i.comment],
+      filters: { branch_id: query.branch_id, status: query.status, decision: query.decision },
+    }));
   });
 
   app.post('/api/admin/interviews', { preHandler: requirePermission('interview.manage', 'system.config') }, async (request, reply) => {
     const body = zCreateInterviewBody.parse(request.body);
     const cand = ctx.db.candidates.get(body.candidate_id) ?? ctx.db.candidates.find((c) => c.candidate_code === body.candidate_id);
     if (!cand) throw Errors.fieldValidation('candidate_id', 'INVALID_VALUE', 'Không tìm thấy ứng viên', body.candidate_id);
-    const existingForCand = ctx.db.interviews.find((iv) => (iv.candidate_id === cand.id || iv.candidate_id === cand.candidate_code) && iv.status !== 'CANCELLED');
-    if (existingForCand) {
+    if (ctx.db.interviews.find((iv) => (iv.candidate_id === cand.id || iv.candidate_id === cand.candidate_code) && iv.status !== 'CANCELLED')) {
       throw Errors.fieldValidation('candidate_id', 'DUPLICATE_VALUE', 'Ứng viên này đã có lịch phỏng vấn. Vui lòng chỉnh sửa lịch phỏng vấn hiện có.', body.candidate_id);
     }
     const rawInterviewers = parseRawInterviewers(body.interviewer_ids, body.interviewer_id);
     if (rawInterviewers.length === 0) throw Errors.fieldValidation('interviewer_id', 'REQUIRED_FIELD', 'Vui lòng chọn ít nhất 1 người phỏng vấn', '');
-    const startAt = body.start_at || body.scheduled_at || '';
-    const startMs = Date.parse(startAt);
+    const startAt = body.start_at || body.scheduled_at || '', startMs = Date.parse(startAt);
     if (Number.isNaN(startMs)) throw Errors.fieldValidation('scheduled_at', 'INVALID_VALUE', 'Thời gian bắt đầu phỏng vấn không hợp lệ', startAt);
-    const endMs = startMs + body.duration_minutes * 60_000;
-    const endAt = new Date(endMs).toISOString();
+    const endMs = startMs + body.duration_minutes * 60_000, endAt = new Date(endMs).toISOString();
 
     const conflict = ctx.db.interviews.find((iv) => {
-      if (iv.status === 'CANCELLED') return false;
-      const sharesInterviewer = rawInterviewers.some((id) => iv.interviewer_id.split(',').map((s) => s.trim()).includes(id));
-      if (!sharesInterviewer) return false;
+      if (iv.status === 'CANCELLED' || !rawInterviewers.some((id) => iv.interviewer_id.split(',').map((s) => s.trim()).includes(id))) return false;
       if (iv.start_at === startAt) return true;
-      const exStart = Date.parse(iv.start_at);
-      const exEnd = Number.isNaN(exStart) ? NaN : exStart + (iv.duration_minutes || 30) * 60_000;
+      const exStart = Date.parse(iv.start_at), exEnd = Number.isNaN(exStart) ? NaN : exStart + (iv.duration_minutes || 30) * 60_000;
       return !Number.isNaN(exStart) && startMs < exEnd && endMs > exStart;
     });
     if (conflict) throw Errors.fieldValidation('scheduled_at', 'DUPLICATE_VALUE', 'Khung giờ phỏng vấn này đã trùng lịch của người phỏng vấn', startAt);
 
     const slotLocal = startAt.slice(0, 16).replace('T', ' ');
-    if (slotLocal < dayjs().format('YYYY-MM-DD HH:mm')) {
-      throw Errors.fieldValidation('scheduled_at', 'OUT_OF_RANGE', 'Không được chọn thời gian phỏng vấn trong quá khứ', startAt);
-    }
+    if (slotLocal < dayjs().format('YYYY-MM-DD HH:mm')) throw Errors.fieldValidation('scheduled_at', 'OUT_OF_RANGE', 'Không được chọn thời gian phỏng vấn trong quá khứ', startAt);
 
-    const meetLink = body.meet_link || 'https://meet.google.com/umb-milk-hr';
-    const actorId = request.auth!.user.id;
+    const meetLink = body.meet_link || 'https://meet.google.com/umb-milk-hr', actorId = request.auth!.user.id;
     const created = await ctx.db.interviews.insert({
       candidate_id: cand.id, branch_id: cand.branch_pref, start_at: startAt, end_at: endAt, duration_minutes: body.duration_minutes,
       meet_link: meetLink, interviewer_id: rawInterviewers.join(', '), status: 'SCHEDULED', candidate_confirmed: true, reschedule_requested: false,

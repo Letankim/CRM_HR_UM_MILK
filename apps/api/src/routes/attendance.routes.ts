@@ -170,14 +170,14 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.get('/api/admin/attendance/adjustments', { preHandler: requirePermission('attendance.read', 'adjustment.approve', 'attendance.confirm', 'self.adjustment') }, async (request) => {
-    const query = zListQueryBase.parse(request.query);
+    const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), status: z.string().trim().optional() }).parse(request.query ?? {});
     const scoped = filterByBranch(request, ctx.db.attendanceAdjustments.all(), (a) => resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id));
     const mapped = scoped.map((a) => {
       const emp = ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === a.employee_id);
       const branch = (emp ? ctx.db.branches.get(emp.branch_id) : undefined) ?? ctx.db.branches.get(a.branch_id);
-      return { ...a, ...resolveShiftTimeDetails(ctx, a.shift_code, a.assignment_id), branch_id: branch?.id ?? a.branch_id, employeeCode: emp?.employee_code ?? a.employee_id, employeeName: emp?.full_name ?? 'Nhân sự', branchName: branch?.name ?? 'Chi nhánh' };
-    });
-    return sendPaginated(request, 'Lấy danh sách phiếu bổ sung và điều chỉnh công thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'work_date', 'status'], q: query.q, searchExtractor: (i) => [i.adjustment_code, i.employeeCode, i.employeeName, i.reason, i.work_date] }));
+      return { ...a, ...resolveShiftTimeDetails(ctx, a.shift_code, a.assignment_id), branch_id: branch?.id ?? a.branch_id, employeeCode: emp?.employee_code ?? a.employee_id, employeeName: emp ? `${emp.full_name} (${emp.employee_code})` : a.employee_id, branchName: branch?.name ?? 'Chi nhánh' };
+    }).filter((a) => (!query.branch_id || query.branch_id === 'ALL' || a.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || a.status === query.status));
+    return sendPaginated(request, 'Lấy danh sách phiếu bổ sung và điều chỉnh công thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'work_date', 'status'], q: query.q, searchExtractor: (i) => [i.adjustment_code, i.employeeCode, i.employeeName, i.reason, i.work_date], filters: { branch_id: query.branch_id, status: query.status } }));
   });
 
   app.post('/api/admin/attendance/adjustments', { preHandler: requireAuth() }, async (request, reply) => {

@@ -24,24 +24,29 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
   const canApproveLeave = usePermissionGuard({ perms: ['leave.approve'] });
   const canApproveSwap = usePermissionGuard({ perms: ['swap.approve'] });
   const canHandleEmg = usePermissionGuard({ perms: ['emergency.handle'] });
-  const [leaveModal, setLeaveModal] = useState(false);
-  const [swapModal, setSwapModal] = useState(false);
-  const [emgModal, setEmgModal] = useState(false);
-  const [adjModal, setAdjModal] = useState(false);
+  const [leaveModal, setLeaveModal] = useState(false), [swapModal, setSwapModal] = useState(false), [emgModal, setEmgModal] = useState(false), [adjModal, setAdjModal] = useState(false);
   const [detailTarget, setDetailTarget] = useState<ScheduleDetailTarget | null>(null);
-  const [searchInput, setSearchInput] = useState('');
-  const debouncedQ = useDebouncedValue(searchInput, 400);
-  const [branchFilter, setBranchFilter] = useState('ALL');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [searchInput, setSearchInput] = useState(''), debouncedQ = useDebouncedValue(searchInput, 400);
+  const [branchFilter, setBranchFilter] = useState('ALL'), [statusFilter, setStatusFilter] = useState('ALL');
+  const [page, setPage] = useState(1), [perPage, setPerPage] = useState(10);
+
+  const wfParams = useMemo(() => {
+    const p = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+    if (debouncedQ) p.set('q', debouncedQ);
+    if (branchFilter !== 'ALL') p.set('branch_id', branchFilter);
+    if (statusFilter !== 'ALL') p.set('status', statusFilter);
+    return p.toString();
+  }, [page, perPage, debouncedQ, branchFilter, statusFilter]);
 
   const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
-  const leavesQ = useQuery({ queryKey: ['leave-requests'], queryFn: () => api.list<Record<string, unknown>>('/admin/leave-requests?per_page=50') });
-  const swapsQ = useQuery({ queryKey: ['shift-swaps'], queryFn: () => api.list<Record<string, unknown>>('/admin/shift-swaps?per_page=50') });
-  const emgQ = useQuery({ queryKey: ['emergency-leaves'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/emergency-leaves') });
+  const adjQ = useQuery({ queryKey: ['attendance-adjustments', wfParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/attendance/adjustments?${wfParams}`) });
+  const leavesQ = useQuery({ queryKey: ['leave-requests', wfParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/leave-requests?${wfParams}`) });
+  const swapsQ = useQuery({ queryKey: ['shift-swaps', wfParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/shift-swaps?${wfParams}`) });
+  const emgQ = useQuery({ queryKey: ['emergency-leaves', wfParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/emergency-leaves?${wfParams}`) });
   const attQ = useQuery({ queryKey: ['attendance-all'], queryFn: () => api.get<{ events: AttendanceEventRow[]; adjustments: Record<string, unknown>[] }>('/admin/attendance') });
 
-  const refreshAll = () => ['leave-requests', 'shift-swaps', 'emergency-leaves', 'attendance-all', 'schedules', 'my-attendance'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-  const isRefreshing = leavesQ.isFetching || swapsQ.isFetching || emgQ.isFetching || attQ.isFetching;
+  const refreshAll = () => ['attendance-adjustments', 'leave-requests', 'shift-swaps', 'emergency-leaves', 'attendance-all', 'schedules', 'my-attendance'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+  const isRefreshing = adjQ.isFetching || leavesQ.isFetching || swapsQ.isFetching || emgQ.isFetching || attQ.isFetching;
 
   const actMut = useMutation({
     mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body),
@@ -51,27 +56,20 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
 
   const branchList = branchesQ.data?.data ?? [];
   const branchOptions = useMemo(() => branchList.length === 1 ? [{ value: 'ALL', label: `${branchList[0]!.code} — ${branchList[0]!.name}` }] : [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branchList.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))], [branchList]);
-  const matchRow = (r: Record<string, unknown>) => {
-    if (branchFilter !== 'ALL' && r.branch_id !== branchFilter && r.branchId !== branchFilter && r.branchName !== branchFilter) return false;
-    if (statusFilter !== 'ALL' && r.status !== statusFilter) return false;
-    const q = debouncedQ.trim().toLowerCase();
-    if (!q) return true;
-    const hay = `${r.employeeName || ''} ${r.employeeCode || ''} ${r.requesterName || ''} ${r.peerName || ''} ${r.adjustment_code || ''} ${r.request_code || ''} ${r.swap_code || ''} ${r.emergency_code || ''} ${r.reason || ''} ${r.work_date || ''} ${r.leave_date || ''}`.toLowerCase();
-    return hay.includes(q);
-  };
 
-  const filteredAdjustments = useMemo(() => (attQ.data?.adjustments ?? []).filter(matchRow), [attQ.data?.adjustments, branchFilter, statusFilter, debouncedQ]);
-  const filteredLeaves = useMemo(() => (leavesQ.data?.data ?? []).filter(matchRow), [leavesQ.data?.data, branchFilter, statusFilter, debouncedQ]);
-  const filteredSwaps = useMemo(() => (swapsQ.data?.data ?? []).filter(matchRow), [swapsQ.data?.data, branchFilter, statusFilter, debouncedQ]);
-  const filteredEmg = useMemo(() => (emgQ.data ?? []).filter(matchRow), [emgQ.data, branchFilter, statusFilter, debouncedQ]);
+  const filteredAdjustments = adjQ.data?.data ?? [];
+  const filteredLeaves = leavesQ.data?.data ?? [];
+  const filteredSwaps = swapsQ.data?.data ?? [];
+  const filteredEmg = emgQ.data?.data ?? [];
+  const mkPag = (total?: number) => ({ current: page, pageSize: perPage, total: total ?? 0, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t: number) => `Tổng ${t} đơn`, onChange: (p: number, ps: number) => { setPage(p); setPerPage(ps); } });
 
   const renderSubFilterBar = (actionBtn: React.ReactNode) => (
     <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '14px 16px', marginTop: 4, marginBottom: 16 }}>
       <Flex justify="space-between" align="center" wrap gap={12}>
         <Space size={10} wrap>
-          <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm tên nhân sự, mã đơn, ngày, lý do..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 250 }} />
-          <Select value={branchFilter} onChange={setBranchFilter} style={{ width: 200 }} options={branchOptions} />
-          <Select value={statusFilter} onChange={setStatusFilter} style={{ width: 175 }} options={[{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'PENDING', label: 'Chờ duyệt' }, { value: 'STORE_CONFIRMED', label: 'CH đã xác nhận' }, { value: 'APPROVED', label: 'Đã phê duyệt' }, { value: 'REJECTED', label: 'Đã từ chối' }]} />
+          <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm tên nhân sự, mã đơn, ngày, lý do..." value={searchInput} onChange={(e) => { setSearchInput(e.target.value); setPage(1); }} style={{ width: 250 }} />
+          <Select value={branchFilter} onChange={(v) => { setBranchFilter(v); setPage(1); }} style={{ width: 200 }} options={branchOptions} />
+          <Select value={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1); }} style={{ width: 175 }} options={[{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'PENDING', label: 'Chờ duyệt' }, { value: 'STORE_CONFIRMED', label: 'CH đã xác nhận' }, { value: 'APPROVED', label: 'Đã phê duyệt' }, { value: 'REJECTED', label: 'Đã từ chối' }]} />
         </Space>
         <Space size={10} wrap>
           <Button icon={<ReloadOutlined />} loading={isRefreshing} onClick={refreshAll}>Làm mới</Button>
@@ -84,6 +82,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
   return (
     <Card size="small" styles={{ body: { padding: '12px 20px 20px' } }}>
       <Tabs
+        onChange={() => setPage(1)}
         items={[
           {
             key: 'attendance',
@@ -92,12 +91,12 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
           },
           {
             key: 'adjustments',
-            label: <span><FileAddOutlined /> Phiếu bổ sung công ({filteredAdjustments.length})</span>,
+            label: <span><FileAddOutlined /> Phiếu bổ sung công ({adjQ.data?.meta.pagination.total ?? filteredAdjustments.length})</span>,
             children: (
               <>
                 {renderSubFilterBar(<GuardButton type="primary" icon={<FileAddOutlined />} perms={['attendance.confirm', 'adjustment.approve']} onClick={() => setAdjModal(true)}>Tạo phiếu bổ sung công</GuardButton>)}
                 <Table
-                  size="small" rowKey="id" pagination={{ pageSize: 12 }} dataSource={filteredAdjustments}
+                  size="small" rowKey="id" loading={adjQ.isLoading} pagination={mkPag(adjQ.data?.meta.pagination.total)} dataSource={filteredAdjustments}
                   columns={[
                     { title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 105, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Nhân sự', ellipsis: true, render: (_, r) => <strong>{String(r.employeeName || '')}</strong> },
@@ -124,12 +123,12 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
           },
           {
             key: 'leave',
-            label: <span><CalendarOutlined /> Đơn xin nghỉ phép (OFF) ({filteredLeaves.length})</span>,
+            label: <span><CalendarOutlined /> Đơn xin nghỉ phép (OFF) ({leavesQ.data?.meta.pagination.total ?? filteredLeaves.length})</span>,
             children: (
               <>
                 {renderSubFilterBar(<GuardButton type="primary" icon={<PlusOutlined />} perms={['leave.approve']} onClick={() => setLeaveModal(true)}>Đăng ký nghỉ OFF</GuardButton>)}
                 <Table
-                  size="small" rowKey="id" pagination={{ pageSize: 12 }} dataSource={filteredLeaves}
+                  size="small" rowKey="id" loading={leavesQ.isLoading} pagination={mkPag(leavesQ.data?.meta.pagination.total)} dataSource={filteredLeaves}
                   columns={[
                     { title: 'Mã đơn', dataIndex: 'request_code', width: 105, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Nhân sự', ellipsis: true, render: (_, r) => <strong>{String(r.employeeName)} ({String(r.employeeCode)})</strong> },
@@ -154,12 +153,12 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
           },
           {
             key: 'swap',
-            label: <span><SwapOutlined /> Đơn xin đổi ca ({filteredSwaps.length})</span>,
+            label: <span><SwapOutlined /> Đơn xin đổi ca ({swapsQ.data?.meta.pagination.total ?? filteredSwaps.length})</span>,
             children: (
               <>
                 {renderSubFilterBar(<GuardButton type="primary" icon={<PlusOutlined />} perms={['swap.approve']} onClick={() => setSwapModal(true)}>Tạo yêu cầu đổi ca</GuardButton>)}
                 <Table
-                  size="small" rowKey="id" pagination={{ pageSize: 12 }} dataSource={filteredSwaps}
+                  size="small" rowKey="id" loading={swapsQ.isLoading} pagination={mkPag(swapsQ.data?.meta.pagination.total)} dataSource={filteredSwaps}
                   columns={[
                     { title: 'Mã đơn', dataIndex: 'swap_code', width: 105, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Ngày ca', dataIndex: 'from_work_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
@@ -184,12 +183,12 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
           },
           {
             key: 'emergency',
-            label: <span><AlertOutlined /> Báo nghỉ đột xuất ({filteredEmg.length})</span>,
+            label: <span><AlertOutlined /> Báo nghỉ đột xuất ({emgQ.data?.meta.pagination.total ?? filteredEmg.length})</span>,
             children: (
               <>
                 {renderSubFilterBar(<GuardButton danger icon={<AlertOutlined />} perms={['emergency.handle']} onClick={() => setEmgModal(true)}>Báo nghỉ khẩn</GuardButton>)}
                 <Table
-                  size="small" rowKey="id" pagination={{ pageSize: 12 }} dataSource={filteredEmg}
+                  size="small" rowKey="id" loading={emgQ.isLoading} pagination={mkPag(emgQ.data?.meta.pagination.total)} dataSource={filteredEmg}
                   columns={[
                     { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 110, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Nhân sự', dataIndex: 'employeeName', ellipsis: true },

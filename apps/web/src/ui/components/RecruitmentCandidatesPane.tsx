@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { StatusTag } from '../StatusTag';
 import { FilterToolbar } from './FilterToolbar';
@@ -36,9 +37,12 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
   const { options: jobPositionOptions } = useJobPositions();
 
   const [q, setQ] = useState('');
+  const debouncedQ = useDebouncedValue(q, 400);
   const [branchFilter, setBranchFilter] = useState('ALL');
   const [positionFilter, setPositionFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
 
   const [candModal, setCandModal] = useState(false);
   const [editingCand, setEditingCand] = useState<Record<string, unknown> | null>(null);
@@ -56,14 +60,14 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
     }
   }, [candModal, watchedCandBranchId, shiftPrefOptions, candForm]);
 
-  const queryParams = new URLSearchParams({ per_page: '100' });
-  if (q) queryParams.set('q', q);
+  const queryParams = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+  if (debouncedQ) queryParams.set('q', debouncedQ);
   if (branchFilter !== 'ALL') queryParams.set('branch_id', branchFilter);
   if (positionFilter !== 'ALL') queryParams.set('staff_group', positionFilter);
   if (statusFilter !== 'ALL') queryParams.set('status', statusFilter);
 
   const candQ = useQuery({
-    queryKey: ['candidates', q, branchFilter, positionFilter, statusFilter],
+    queryKey: ['candidates', page, perPage, debouncedQ, branchFilter, positionFilter, statusFilter],
     queryFn: () => api.list<Record<string, unknown>>(`/admin/candidates?${queryParams.toString()}`),
   });
 
@@ -105,11 +109,11 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
       <FilterToolbar
         searchPlaceholder="Tìm mã UV, họ tên, SĐT, email..."
         searchValue={q}
-        onSearchChange={setQ}
+        onSearchChange={(v) => { setQ(v); setPage(1); }}
         selects={[
-          { key: 'branch', value: branchFilter, width: 205, options: [{ value: 'ALL', label: 'Tất cả chi nhánh nguyện vọng' }, ...branches], onChange: setBranchFilter },
-          { key: 'pos', value: positionFilter, width: 165, options: [{ value: 'ALL', label: 'Tất cả vị trí' }, ...jobPositionOptions], onChange: setPositionFilter },
-          { key: 'status', value: statusFilter, width: 195, options: CANDIDATE_STATUS_OPTIONS, onChange: setStatusFilter },
+          { key: 'branch', value: branchFilter, width: 205, options: [{ value: 'ALL', label: 'Tất cả chi nhánh nguyện vọng' }, ...branches], onChange: (v) => { setBranchFilter(v); setPage(1); } },
+          { key: 'pos', value: positionFilter, width: 165, options: [{ value: 'ALL', label: 'Tất cả vị trí' }, ...jobPositionOptions], onChange: (v) => { setPositionFilter(v); setPage(1); } },
+          { key: 'status', value: statusFilter, width: 195, options: CANDIDATE_STATUS_OPTIONS, onChange: (v) => { setStatusFilter(v); setPage(1); } },
         ]}
         onRefresh={refreshAll}
         refreshing={candQ.isFetching}
@@ -119,7 +123,9 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
       />
 
       <Table
-        size="small" rowKey="id" loading={candQ.isLoading} pagination={{ pageSize: 10 }} dataSource={rows}
+        size="small" rowKey="id" loading={candQ.isLoading}
+        pagination={{ current: page, pageSize: perPage, total: candQ.data?.meta.pagination.total ?? rows.length, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} ứng viên`, onChange: (p, ps) => { setPage(p); setPerPage(ps); } }}
+        dataSource={rows}
         columns={[
           { title: 'Mã UV', dataIndex: 'candidate_code', width: 100, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
           { title: 'Họ và tên', dataIndex: 'full_name', ellipsis: true, render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span> },

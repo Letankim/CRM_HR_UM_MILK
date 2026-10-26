@@ -7,6 +7,7 @@ import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
 import { FilterToolbar } from './FilterToolbar';
@@ -14,19 +15,13 @@ import { usePermissionGuard } from './GuardButton';
 import { RowActionButtons } from './RowActionButtons';
 
 const INTERVIEW_STATUS_OPTIONS = [
-  { value: 'ALL', label: 'Tất cả trạng thái lịch' },
-  { value: 'SCHEDULED', label: 'Đã xếp lịch' },
-  { value: 'CONFIRMED', label: 'Ứng viên đã xác nhận' },
-  { value: 'RESCHEDULE_NEEDED', label: 'Cần đổi lịch phỏng vấn' },
+  { value: 'ALL', label: 'Tất cả trạng thái lịch' }, { value: 'SCHEDULED', label: 'Đã xếp lịch' },
+  { value: 'CONFIRMED', label: 'Ứng viên đã xác nhận' }, { value: 'RESCHEDULE_NEEDED', label: 'Cần đổi lịch phỏng vấn' },
   { value: 'COMPLETED', label: 'Đã hoàn thành phỏng vấn' },
 ];
-
 const DECISION_OPTIONS = [
-  { value: 'ALL', label: 'Tất cả quyết định HR' },
-  { value: 'PENDING', label: 'Chờ kết quả phỏng vấn' },
-  { value: 'PASS', label: 'Đạt phỏng vấn (Mời thử việc)' },
-  { value: 'HOLD', label: 'Cân nhắc thêm' },
-  { value: 'FAIL', label: 'Chưa phù hợp' },
+  { value: 'ALL', label: 'Tất cả quyết định HR' }, { value: 'PENDING', label: 'Chờ kết quả phỏng vấn' },
+  { value: 'PASS', label: 'Đạt phỏng vấn (Mời thử việc)' }, { value: 'HOLD', label: 'Cân nhắc thêm' }, { value: 'FAIL', label: 'Chưa phù hợp' },
 ];
 
 interface Props {
@@ -43,9 +38,12 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
   const { message, modal } = App.useApp();
 
   const [q, setQ] = useState('');
+  const debouncedQ = useDebouncedValue(q, 400);
   const [branchFilter, setBranchFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [decisionFilter, setDecisionFilter] = useState('ALL');
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
 
   const [viewingIv, setViewingIv] = useState<Record<string, unknown> | null>(null);
   const [drawerWide, setDrawerWide] = useState(false);
@@ -54,18 +52,17 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
   const [evalForm] = Form.useForm();
   const [reschedForm] = Form.useForm();
   const reschedDate = Form.useWatch('interview_date', reschedForm);
-  const todayStr = dayjs().format('YYYY-MM-DD');
-  const nowTimeStr = dayjs().format('HH:mm');
+  const todayStr = dayjs().format('YYYY-MM-DD'), nowTimeStr = dayjs().format('HH:mm');
 
-  const queryParams = new URLSearchParams();
-  if (q) queryParams.set('q', q);
+  const queryParams = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+  if (debouncedQ) queryParams.set('q', debouncedQ);
   if (branchFilter !== 'ALL') queryParams.set('branch_id', branchFilter);
   if (statusFilter !== 'ALL') queryParams.set('status', statusFilter);
   if (decisionFilter !== 'ALL') queryParams.set('decision', decisionFilter);
 
   const ivQ = useQuery({
-    queryKey: ['interviews', q, branchFilter, statusFilter, decisionFilter],
-    queryFn: () => api.get<Record<string, unknown>[]>(`/admin/interviews?${queryParams.toString()}`),
+    queryKey: ['interviews', page, perPage, debouncedQ, branchFilter, statusFilter, decisionFilter],
+    queryFn: () => api.list<Record<string, unknown>>(`/admin/interviews?${queryParams.toString()}`),
   });
 
   const refreshAll = () => ['candidates', 'interviews', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
@@ -75,9 +72,7 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
     onSuccess: (_, vars) => {
       const isEval = typeof vars.body === 'object' && vars.body !== null && 'decision' in vars.body;
       message.success(isEval ? 'Đã lưu kết quả đánh giá phỏng vấn' : 'Đã cập nhật lịch phỏng vấn và gửi thông báo đến những người liên quan');
-      setEvalTarget(null);
-      setReschedTarget(null);
-      refreshAll();
+      setEvalTarget(null); setReschedTarget(null); refreshAll();
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Cập nhật thất bại'),
   });
@@ -91,10 +86,8 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
   const openEvalModal = (r: Record<string, unknown>) => {
     setEvalTarget(r);
     evalForm.setFieldsValue({
-      appearance_score: Number(r.appearance_score || 90),
-      attitude_score: Number(r.attitude_score || 90),
-      skill_score: Number(r.skill_score || 85),
-      score: Number(r.score || 88),
+      appearance_score: Number(r.appearance_score || 90), attitude_score: Number(r.attitude_score || 90),
+      skill_score: Number(r.skill_score || 85), score: Number(r.score || 88),
       decision: r.decision && r.decision !== 'PENDING' ? r.decision : 'PASS',
       comment: String(r.comment || 'Thái độ tích cực, phù hợp khung ca đăng ký tại cửa hàng'),
     });
@@ -104,42 +97,32 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
     setReschedTarget(r);
     const iso = String(r.scheduled_at || `${todayStr}T09:30:00`);
     const rawIds = String(r.interviewer_id || '').split(',').map((s) => s.trim()).filter(Boolean);
-    const mappedIds = rawIds.map((raw) => {
-      const exact = interviewerOptions.find((o) => o.value === raw || o.label.includes(`(@${raw})`));
-      return exact ? exact.value : raw;
-    });
+    const mappedIds = rawIds.map((raw) => interviewerOptions.find((o) => o.value === raw || o.label.includes(`(@${raw})`))?.value ?? raw);
     reschedForm.setFieldsValue({
-      interviewer_ids: mappedIds,
-      candidate_confirmed: Boolean(r.candidate_confirmed),
-      reschedule_requested: Boolean(r.reschedule_requested),
-      reschedule_reason: String(r.reschedule_reason || ''),
-      interview_date: iso.slice(0, 10),
-      interview_slot: iso.slice(11, 16) || '09:30',
-      duration_minutes: Number(r.duration_minutes || 30),
-      meet_link: String(r.meet_link || 'https://meet.google.com/umb-milk-hr'),
+      interviewer_ids: mappedIds, candidate_confirmed: Boolean(r.candidate_confirmed),
+      reschedule_requested: Boolean(r.reschedule_requested), reschedule_reason: String(r.reschedule_reason || ''),
+      interview_date: iso.slice(0, 10), interview_slot: iso.slice(11, 16) || '09:30',
+      duration_minutes: Number(r.duration_minutes || 30), meet_link: String(r.meet_link || 'https://meet.google.com/umb-milk-hr'),
     });
   };
 
   useEffect(() => {
-    if (externalEditTarget) {
-      openReschedModal(externalEditTarget);
-      onClearExternalEdit?.();
-    }
+    if (externalEditTarget) { openReschedModal(externalEditTarget); onClearExternalEdit?.(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalEditTarget]);
 
-  const rows = ivQ.data ?? [];
+  const rows = ivQ.data?.data ?? [];
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <FilterToolbar
         searchPlaceholder="Tìm ứng viên, người phỏng vấn..."
         searchValue={q}
-        onSearchChange={setQ}
+        onSearchChange={(v) => { setQ(v); setPage(1); }}
         selects={[
-          { key: 'branch', value: branchFilter, width: 185, options: [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branches], onChange: setBranchFilter },
-          { key: 'status', value: statusFilter, width: 190, options: INTERVIEW_STATUS_OPTIONS, onChange: setStatusFilter },
-          { key: 'decision', value: decisionFilter, width: 190, options: DECISION_OPTIONS, onChange: setDecisionFilter },
+          { key: 'branch', value: branchFilter, width: 185, options: [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branches], onChange: (v) => { setBranchFilter(v); setPage(1); } },
+          { key: 'status', value: statusFilter, width: 190, options: INTERVIEW_STATUS_OPTIONS, onChange: (v) => { setStatusFilter(v); setPage(1); } },
+          { key: 'decision', value: decisionFilter, width: 190, options: DECISION_OPTIONS, onChange: (v) => { setDecisionFilter(v); setPage(1); } },
         ]}
         onRefresh={refreshAll}
         refreshing={ivQ.isFetching}
@@ -149,7 +132,9 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
       />
 
       <Table
-        size="small" rowKey="id" loading={ivQ.isLoading} pagination={{ pageSize: 10 }} dataSource={rows}
+        size="small" rowKey="id" loading={ivQ.isLoading}
+        pagination={{ current: page, pageSize: perPage, total: ivQ.data?.meta.pagination.total ?? rows.length, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} lịch phỏng vấn`, onChange: (p, ps) => { setPage(p); setPerPage(ps); } }}
+        dataSource={rows}
         columns={[
           { title: 'Ứng viên phỏng vấn', dataIndex: 'candidateName', ellipsis: true, render: (v: string, r) => <span style={{ fontWeight: 600 }}>{v} {r.candidateCode ? `(${r.candidateCode})` : ''}</span> },
           { title: 'Chi nhánh', dataIndex: 'branchName', width: 165, ellipsis: true },

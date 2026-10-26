@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { BACKUP_KIND_LABELS, SYSTEM_CONFIG } from '@umbm/shared';
+import { BACKUP_KIND_LABELS, SYSTEM_CONFIG, zListQueryBase } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
-import { sendSuccess } from '../lib/response.js';
+import { paginateAndSort } from '../lib/list-query.js';
+import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
@@ -68,8 +69,16 @@ export async function systemCommsRoutes(app: FastifyInstance, ctx: AppContext) {
     canEdit: Boolean(u && canModifyRecord(u, p)),
   });
 
-  app.get('/api/admin/policies', { preHandler: requireAuth() }, async (request) =>
-    sendSuccess(request, 'Lấy danh sách chính sách vận hành theo phiên bản thành công', ctx.db.policies.all().map((p) => mapPolicy(p, request.auth?.user)).sort((a, b) => b.created_at.localeCompare(a.created_at))));
+  app.get('/api/admin/policies', { preHandler: requireAuth() }, async (request) => {
+    const query = zListQueryBase.extend({ category: z.string().trim().optional() }).parse(request.query ?? {});
+    const items = ctx.db.policies.all().map((p) => mapPolicy(p, request.auth?.user));
+    return sendPaginated(request, 'Lấy danh sách chính sách vận hành theo phiên bản thành công', paginateAndSort(items, {
+      page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc',
+      allowedSortFields: ['created_at', 'effective_from', 'key'], q: query.q,
+      searchExtractor: (p) => [p.key, p.description, p.title, p.value_json, p.approved_by, p.creatorName],
+      filters: { category: query.category },
+    }));
+  });
 
   app.post('/api/admin/policies', { preHandler: requirePermission(...POLICY_MANAGE_PERMS) }, async (request, reply) => {
     const body = zCreatePolicyBody.parse(request.body);
@@ -141,14 +150,17 @@ export async function systemCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.get('/api/admin/backups', { preHandler: requireAuth() }, async (request) => {
-    const q = (request.query ?? {}) as { limit?: string };
-    const maxRows = Math.min(500, Math.max(20, Number(q.limit) || 200));
+    const query = zListQueryBase.extend({ status: z.string().trim().optional() }).parse(request.query ?? {});
     const items = ctx.db.backupLog
       .all()
-      .map((b, idx) => ({ ...b, backup_code: `BKP-${idx + 1}`, verified_restore: b.rows_json.includes('VERIFIED'), kindLabel: BACKUP_KIND_LABELS[b.kind as keyof typeof BACKUP_KIND_LABELS] ?? b.kind }))
-      .sort((a, b) => b.started_at.localeCompare(a.started_at))
-      .slice(0, maxRows);
-    return sendSuccess(request, 'Lấy lịch sử sao lưu & khôi phục dữ liệu thành công', items);
+      .map((b, idx) => ({ ...b, backup_code: `BKP-${idx + 1}`, verified_restore: b.rows_json.includes('VERIFIED'), kindLabel: BACKUP_KIND_LABELS[b.kind as keyof typeof BACKUP_KIND_LABELS] ?? b.kind }));
+    return sendPaginated(request, 'Lấy lịch sử sao lưu & khôi phục dữ liệu thành công', paginateAndSort(items, {
+      page: query.page, perPage: query.per_page, defaultSortBy: 'started_at', defaultSortOrder: 'desc',
+      allowedSortFields: ['started_at', 'backup_code', 'status'], q: query.q,
+      searchExtractor: (b) => [b.backup_code, b.kindLabel, b.started_at, b.status],
+      filters: { status: query.status },
+      filterPredicates: { status: (b, val) => (val === 'VERIFIED' ? b.verified_restore : b.status === val) },
+    }));
   });
 
   app.post('/api/admin/backups', { preHandler: requirePermission('system.backup') }, async (request, reply) => {
