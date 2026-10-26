@@ -163,7 +163,7 @@ export function EmployeeTestCenterView({
 
   const assignmentsPane = (
     <Table
-      size="small" rowKey="id" pagination={false} dataSource={assignments}
+      size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (t) => `Tổng ${t} bài kiểm tra` }} dataSource={assignments}
       locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Hiện chưa có bài kiểm tra nghiệp vụ nào được giao cho bạn." /> }}
       columns={[
         { title: 'Mã đợt giao', dataIndex: 'assignment_code', width: 115, render: (v: string) => <Tag color="geekblue">{v}</Tag> },

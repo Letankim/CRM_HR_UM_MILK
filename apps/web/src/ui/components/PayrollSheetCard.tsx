@@ -84,7 +84,9 @@ export function PayrollSheetCard({ rows, loading, onOpenPayslip }: { rows: Payro
         </Flex>
       </div>
       <Table<PayrollSnapshotItem>
-        size="small" rowKey="id" loading={loading} dataSource={filteredRows} pagination={false} scroll={{ x: 'max-content' }}
+        size="small" rowKey="id" loading={loading} dataSource={filteredRows}
+        pagination={{ pageSize: 12, showSizeChanger: true, pageSizeOptions: ['12', '24', '50', '100'], showTotal: (t) => `Tổng ${t} nhân sự` }}
+        scroll={{ x: 'max-content' }}
         columns={[
           {
             title: 'Nhân sự', key: 'emp', fixed: 'left',

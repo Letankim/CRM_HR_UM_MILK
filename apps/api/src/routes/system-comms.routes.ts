@@ -141,7 +141,13 @@ export async function systemCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.get('/api/admin/backups', { preHandler: requireAuth() }, async (request) => {
-    const items = ctx.db.backupLog.all().map((b, idx) => ({ ...b, backup_code: `BKP-${idx + 1}`, verified_restore: b.rows_json.includes('VERIFIED'), kindLabel: BACKUP_KIND_LABELS[b.kind as keyof typeof BACKUP_KIND_LABELS] ?? b.kind })).sort((a, b) => b.started_at.localeCompare(a.started_at));
+    const q = (request.query ?? {}) as { limit?: string };
+    const maxRows = Math.min(500, Math.max(20, Number(q.limit) || 200));
+    const items = ctx.db.backupLog
+      .all()
+      .map((b, idx) => ({ ...b, backup_code: `BKP-${idx + 1}`, verified_restore: b.rows_json.includes('VERIFIED'), kindLabel: BACKUP_KIND_LABELS[b.kind as keyof typeof BACKUP_KIND_LABELS] ?? b.kind }))
+      .sort((a, b) => b.started_at.localeCompare(a.started_at))
+      .slice(0, maxRows);
     return sendSuccess(request, 'Lấy lịch sử sao lưu & khôi phục dữ liệu thành công', items);
   });
 

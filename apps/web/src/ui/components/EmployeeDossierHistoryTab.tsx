@@ -42,7 +42,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
           <Table
             size="small"
             rowKey="id"
-            pagination={false}
+            pagination={{ pageSize: 8, showSizeChanger: false }}
             dataSource={historyRows}
             columns={[
               { title: 'Từ giai đoạn', dataIndex: 'fromStage', width: 130, render: (v: string) => <StatusTag value={v} /> },
@@ -63,7 +63,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
           <Table
             size="small"
             rowKey="id"
-            pagination={false}
+            pagination={{ pageSize: 8, showSizeChanger: false }}
             dataSource={shiftRows}
             columns={[
               { title: 'Ngày làm việc', dataIndex: 'work_date', width: 120, render: (v: string) => <span className="num" style={{ fontWeight: 600 }}>{v}</span> },

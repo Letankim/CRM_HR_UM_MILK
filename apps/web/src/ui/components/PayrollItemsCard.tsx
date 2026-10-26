@@ -101,7 +101,7 @@ export function PayrollItemsCard({
           size="small"
           rowKey="id"
           loading={loading}
-          pagination={false}
+          pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} khoản mục` }}
           dataSource={filteredItems}
           locale={{ emptyText: 'Chưa có khoản thưởng, phụ cấp hoặc khấu trừ phù hợp bộ lọc' }}
           columns={[

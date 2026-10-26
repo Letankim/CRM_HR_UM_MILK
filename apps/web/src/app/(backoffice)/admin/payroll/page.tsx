@@ -146,7 +146,7 @@ function PayrollView() {
                 label: <span><BarChartOutlined /> Đối chiếu Chi phí Lương / Doanh thu ({(revInputsQuery.data ?? []).length})</span>,
                 children: (
                   <Table
-                    size="small" rowKey="id" pagination={false} loading={revInputsQuery.isLoading} dataSource={revInputsQuery.data ?? []}
+                    size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} bản ghi` }} loading={revInputsQuery.isLoading} dataSource={revInputsQuery.data ?? []}
                     locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có dữ liệu đối chiếu doanh thu. Nhấn 'Nhập Doanh thu đối chiếu' để thêm báo cáo." /> }}
                     columns={[
                       { title: 'Kỳ lương đối chiếu', dataIndex: 'periodName', render: (v: string) => <strong>{v || 'Kỳ lương hiện hành'}</strong> },
@@ -164,7 +164,7 @@ function PayrollView() {
                 label: <span><CalendarOutlined /> Tổng hợp Quỹ lương theo Kỳ lương ({periods.length})</span>,
                 children: (
                   <Table<PayPeriodRow>
-                    size="small" rowKey="id" pagination={false} loading={periodsQuery.isLoading} dataSource={periods}
+                    size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} kỳ lương` }} loading={periodsQuery.isLoading} dataSource={periods}
                     locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có kỳ lương nào. Hãy thiết lập hồ sơ lương cho nhân sự, sau đó tạo kỳ lương mới." /> }}
                     columns={[
                       { title: 'Mã kỳ', dataIndex: 'period_code', width: 140, render: (v: string) => <Tag color="geekblue">{v}</Tag> },

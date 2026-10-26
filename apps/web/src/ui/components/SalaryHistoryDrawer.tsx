@@ -166,7 +166,7 @@ export function SalaryHistoryDrawer({
           rowKey="id"
           loading={historyQuery.isLoading}
           dataSource={historyQuery.data ?? []}
-          pagination={false}
+          pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (t) => `Tổng ${t} mức lương` }}
           columns={[
             { title: 'Hiệu lực', key: 'eff', width: 155, render: (_, p) => <div><strong>{fmtDate(p.effectiveFrom)}</strong><div style={{ fontSize: 12, color: '#64748B' }}>đến {fmtDate(p.effectiveTo)}</div></div> },
             { title: 'Hình thức', dataIndex: 'rateTypeLabel', width: 115, render: (v: string, p) => <Tag color={p.rateType === 'MONTHLY' ? 'purple' : p.rateType === 'SHIFT' ? 'cyan' : 'blue'} style={{ borderRadius: 2 }}>{v}</Tag> },

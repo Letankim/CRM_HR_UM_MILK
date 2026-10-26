@@ -32,6 +32,8 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
   const [searchInput, setSearchInput] = useState('');
   const debouncedQ = useDebouncedValue(searchInput, 400);
   const [catFilter, setCatFilter] = useState('ALL');
+  const [bkpSearch, setBkpSearch] = useState('');
+  const [bkpStatusFilter, setBkpStatusFilter] = useState('ALL');
   const [mntScope, setMntScope] = useState('ALL');
   const [mntExpectedEnd, setMntExpectedEnd] = useState('');
   const [polForm] = Form.useForm();
@@ -66,6 +68,16 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
     return (polQ.data ?? []).filter((p) => (catFilter === 'ALL' || p.category === catFilter) && (!q || `${p.key || ''} ${p.description || ''} ${p.title || ''} ${p.value_json || ''} ${p.approved_by || ''}`.toLowerCase().includes(q)));
   }, [polQ.data, catFilter, debouncedQ]);
 
+  const filteredBackups = useMemo(() => {
+    const q = bkpSearch.trim().toLowerCase();
+    return (bkpQ.data ?? []).filter((b) => {
+      if (bkpStatusFilter === 'VERIFIED' && !b.verified_restore) return false;
+      if (bkpStatusFilter !== 'ALL' && bkpStatusFilter !== 'VERIFIED' && b.status !== bkpStatusFilter) return false;
+      if (q && !`${b.backup_code || ''} ${b.kindLabel || ''} ${b.started_at || ''}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [bkpQ.data, bkpSearch, bkpStatusFilter]);
+
   const mnt = mntQ.data?.[0];
   const savedEndTime = useMemo(() => {
     const raw = String(mnt?.expected_end_at || '').trim();
@@ -95,7 +107,9 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
         </Flex>
       </div>
       <Table
-        size="small" rowKey="id" loading={polQ.isLoading} pagination={{ pageSize: 12 }} dataSource={filteredPolicies} scroll={{ x: 'max-content' }}
+        size="small" rowKey="id" loading={polQ.isLoading}
+        pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} chính sách` }}
+        dataSource={filteredPolicies} scroll={{ x: 'max-content' }}
         columns={[
           { title: 'Mã chính sách', dataIndex: 'key', width: 165, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
           { title: 'Nhóm quy định / Bộ phận', dataIndex: 'category', width: 190, render: (v: string) => POLICY_CATEGORY_LABELS[v] ?? v },
@@ -145,8 +159,17 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
           }}
         />
       </Flex>
+      <Flex justify="space-between" align="center" wrap gap={10} style={{ marginBottom: 12 }}>
+        <Space size={8} wrap>
+          <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm mã BKP, loại sao lưu, ngày giờ..." value={bkpSearch} onChange={(e) => setBkpSearch(e.target.value)} style={{ width: 250 }} />
+          <Select value={bkpStatusFilter} onChange={setBkpStatusFilter} style={{ width: 205 }} options={[{ value: 'ALL', label: 'Tất cả trạng thái sao lưu' }, { value: 'SUCCESS', label: 'Thành công' }, { value: 'FAILED', label: 'Thất bại' }, { value: 'VERIFIED', label: 'Đã diễn tập kiểm chứng' }]} />
+        </Space>
+        <Button size="small" icon={<ReloadOutlined />} loading={bkpQ.isFetching} onClick={refreshAll}>Làm mới lịch sử</Button>
+      </Flex>
       <Table
-        size="small" rowKey="id" pagination={false} dataSource={bkpQ.data ?? []}
+        size="small" rowKey="id" loading={bkpQ.isLoading}
+        pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} bản sao lưu` }}
+        dataSource={filteredBackups}
         columns={[
           { title: 'Mã sao lưu', dataIndex: 'backup_code', width: 130, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
           { title: 'Loại sao lưu', dataIndex: 'kindLabel' },

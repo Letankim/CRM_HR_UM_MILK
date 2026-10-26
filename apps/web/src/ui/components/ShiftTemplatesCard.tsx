@@ -80,7 +80,7 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
 
   const shiftPane = (
     <Table<ShiftTemplateItem>
-      size="small" rowKey="id" pagination={false} loading={shiftsQuery.isLoading} dataSource={filteredShifts}
+      size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} khung ca` }} loading={shiftsQuery.isLoading} dataSource={filteredShifts}
       columns={[
         { title: 'Tên ca làm việc', dataIndex: 'name', render: (v: string) => <Typography.Text strong>{v}</Typography.Text> },
         { title: 'Chi nhánh áp dụng', dataIndex: 'branchName', render: (v: string, r) => <Tag color={!r.branchId || r.branchId === 'ALL' ? 'default' : 'blue'}>{v || 'Tất cả chi nhánh'}</Tag> },
@@ -107,7 +107,7 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
 
   const rulesPane = (
     <Table<StaffingRuleItem>
-      size="small" rowKey="id" pagination={false} loading={rulesQuery.isLoading} dataSource={filteredRules}
+      size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} định biên` }} loading={rulesQuery.isLoading} dataSource={filteredRules}
       columns={[
         { title: 'Chi nhánh áp dụng', dataIndex: 'branchName', render: (v: string, r) => <Tag color={r.branchId === 'ALL' ? 'default' : 'blue'}><strong>{v}</strong></Tag> },
         { title: 'Khung ca áp dụng', dataIndex: 'shiftName', render: (v: string) => <Tag color="geekblue">{v}</Tag> },

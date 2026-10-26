@@ -112,7 +112,7 @@ function IntegrationsView() {
             <Table<TableStat>
               size="small"
               rowKey="table"
-              pagination={false}
+              pagination={{ pageSize: 15, showSizeChanger: true, pageSizeOptions: ['15', '30', '50'], showTotal: (t) => `Tổng ${t} bảng` }}
               dataSource={d.data.tables}
               scroll={{ x: 640 }}
               columns={[

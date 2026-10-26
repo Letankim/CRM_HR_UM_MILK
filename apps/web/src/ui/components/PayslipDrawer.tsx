@@ -176,7 +176,7 @@ export function PayslipDrawer({ snapshot: s, onClose }: { snapshot: PayrollSnaps
                 key: 'revisions', label: <span><HistoryOutlined /> Lịch sử Điều chỉnh ({revsQ.data?.length ?? 0})</span>,
                 children: (
                   <Table
-                    size="small" rowKey="id" pagination={false} dataSource={revsQ.data ?? []}
+                    size="small" rowKey="id" pagination={{ pageSize: 8, showSizeChanger: false }} dataSource={revsQ.data ?? []}
                     columns={[
                       { title: 'Lần điều chỉnh', dataIndex: 'revision', width: 130, render: (v: number) => <Tag color="geekblue">Lần #{v}</Tag> },
                       { title: 'Chênh lệch (+/-)', dataIndex: 'delta_vnd', width: 150, render: (v: number) => <span className="num" style={{ fontWeight: 700, color: v >= 0 ? '#16A34A' : '#DC2626' }}>{v >= 0 ? `+${fmtVnd(v)}` : fmtVnd(v)}</span> },

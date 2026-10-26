@@ -176,7 +176,7 @@ export default function MyAttendancePage() {
                 <>
                   <Flex justify="space-between" align="center" style={{ marginBottom: 10 }}><Typography.Text type="secondary">Danh sách phiếu giải trình / bổ sung công cá nhân của bạn.</Typography.Text><Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => { setPresetAdjShiftId(undefined); setAdjOpen(true); }}>Gửi phiếu bổ sung công</Button></Flex>
                   <Table
-                    size="small" rowKey="id" pagination={false} dataSource={adjustments} locale={{ emptyText: 'Bạn chưa có phiếu bổ sung công nào.' }}
+                    size="small" rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'], showTotal: (t) => `Tổng ${t} phiếu` }} dataSource={adjustments} locale={{ emptyText: 'Bạn chưa có phiếu bổ sung công nào.' }}
                     columns={[
                       { title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
                       { title: 'Ngày công', dataIndex: 'work_date', width: 120, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> },
