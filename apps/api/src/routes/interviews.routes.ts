@@ -1,12 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { ROLE_LABELS, STAFF_GROUP_LABELS, type Role } from '@umbm/shared';
+import { ROLE_LABELS, type Role } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { resolveStaffGroupLabel } from './employee-mapper.js';
 
 const LEGACY_INTERVIEWER_MAP: Record<string, { role: Role; label: string }> = {
   'u-hr-01': { role: 'HR', label: 'Nguyễn Thị Nhân Sự (Quản lý Nhân sự)' },
@@ -15,32 +16,20 @@ const LEGACY_INTERVIEWER_MAP: Record<string, { role: Role; label: string }> = {
 };
 
 const zCreateInterviewBody = z.object({
-  candidate_id: z.string().trim().min(1),
-  interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
-  interviewer_ids: z.array(z.string().trim()).optional(),
-  scheduled_at: z.string().trim().optional(),
-  start_at: z.string().trim().optional(),
-  duration_minutes: z.coerce.number().int().min(5).max(240).default(30),
-  meet_link: z.string().optional().default(''),
+  candidate_id: z.string().trim().min(1), interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
+  interviewer_ids: z.array(z.string().trim()).optional(), scheduled_at: z.string().trim().optional(), start_at: z.string().trim().optional(),
+  duration_minutes: z.coerce.number().int().min(5).max(240).default(30), meet_link: z.string().optional().default(''),
 });
 
 const zEvaluateInterviewBody = z.object({
-  version: z.coerce.number().int().min(1),
-  score: z.coerce.number().min(0).max(100).optional(),
-  appearance_score: z.coerce.number().min(0).max(100).default(9),
-  attitude_score: z.coerce.number().min(0).max(100).default(9),
-  skill_score: z.coerce.number().min(0).max(100).default(9),
-  decision: z.enum(['PENDING', 'PASS', 'FAIL', 'PASSED', 'FAILED', 'HOLD']).default('PASS'),
-  comment: z.string().trim().optional(),
-  result_note: z.string().trim().optional(),
-  candidate_confirmed: z.boolean().optional(),
-  reschedule_requested: z.boolean().optional(),
-  reschedule_reason: z.string().trim().optional(),
-  scheduled_at: z.string().trim().optional(),
-  interviewer_ids: z.array(z.string().trim()).optional(),
+  version: z.coerce.number().int().min(1), score: z.coerce.number().min(0).max(100).optional(),
+  appearance_score: z.coerce.number().min(0).max(100).default(9), attitude_score: z.coerce.number().min(0).max(100).default(9),
+  skill_score: z.coerce.number().min(0).max(100).default(9), decision: z.enum(['PENDING', 'PASS', 'FAIL', 'PASSED', 'FAILED', 'HOLD']).default('PASS'),
+  comment: z.string().trim().optional(), result_note: z.string().trim().optional(),
+  candidate_confirmed: z.boolean().optional(), reschedule_requested: z.boolean().optional(), reschedule_reason: z.string().trim().optional(),
+  scheduled_at: z.string().trim().optional(), interviewer_ids: z.array(z.string().trim()).optional(),
   interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
-  duration_minutes: z.coerce.number().int().min(5).max(240).optional(),
-  meet_link: z.string().trim().optional(),
+  duration_minutes: z.coerce.number().int().min(5).max(240).optional(), meet_link: z.string().trim().optional(),
 });
 
 const zDeleteBody = z.object({ version: z.coerce.number().int().min(1).optional() });
@@ -112,7 +101,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
         ...iv, branch_id: branchId, branchName: branch?.name ?? (branchId || 'Chưa phân chi nhánh'),
         scheduled_at: iv.start_at, candidateName: cand?.full_name ?? iv.candidate_id, candidateCode: cand?.candidate_code ?? '',
         candidatePhone: cand?.phone ?? '', candidateEmail: cand?.email ?? '',
-        positionLabel: cand ? STAFF_GROUP_LABELS[cand.staff_group as keyof typeof STAFF_GROUP_LABELS] ?? cand.position : '',
+        positionLabel: cand ? resolveStaffGroupLabel(ctx, cand.staff_group, cand.position) : '',
         interviewerLabel: resolveInterviewerLabel(iv.interviewer_id),
       };
     }).filter((item) => {
@@ -232,9 +221,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!before) throw Errors.notFound('Lịch phỏng vấn', id);
     await ctx.db.interviews.softDelete(id, body.version ?? before.version, request.auth!.user.id);
     const cand = ctx.db.candidates.get(before.candidate_id);
-    if (cand && cand.status === 'INTERVIEW_SCHEDULED') {
-      await ctx.db.candidates.update(cand.id, cand.version, { status: 'CONTACTED' }, request.auth!.user.id);
-    }
+    if (cand && cand.status === 'INTERVIEW_SCHEDULED') await ctx.db.candidates.update(cand.id, cand.version, { status: 'CONTACTED' }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'interview.delete', entity: 'INTERVIEWS', entityId: id, before: { candidate_id: before.candidate_id, start_at: before.start_at } });
     return sendSuccess(request, 'Đã xóa lịch phỏng vấn', { id });
   });

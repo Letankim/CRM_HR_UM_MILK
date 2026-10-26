@@ -56,7 +56,7 @@ const zCreateEmployeeBody = z.object({
   stage: z.enum(['PROBATION', 'OFFICIAL']).default('PROBATION'),
   position_title: z.string().trim().max(60).optional().default(''),
   employment_type: z.enum(EMPLOYMENT_TYPES).default('PROBATION'),
-  default_shift_code: z.enum(DEFAULT_SHIFT_CODES).default('CA_SANG'),
+  default_shift_code: z.string().trim().min(1).max(40).default('CA_SANG'),
   probation_start: z.string().trim().optional().default(''),
   probation_end: z.string().trim().optional().default(''),
   /** Hồ sơ lương cá nhân ban đầu (tùy chọn) — Theo giờ / Theo tháng / Theo ca + % lương thử việc */

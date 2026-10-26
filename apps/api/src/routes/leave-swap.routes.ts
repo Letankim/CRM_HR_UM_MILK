@@ -103,7 +103,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     if (body.requester_id === body.peer_id || (reqEmp && reqEmp.id === peerEmp.id)) throw Errors.fieldValidation('peer_id', 'INVALID_VALUE', 'Người nhận đổi ca phải khác người xin đổi ca', body.peer_id);
     const peerConflict = ctx.db.shiftAssignments.find((a) => (a.employee_id === peerEmp.id || a.employee_id === peerEmp.employee_code) && a.work_date === fromAssign.work_date && a.day_type !== 'OFF' && a.status !== 'ON_LEAVE' && a.status !== 'ABSENT');
     if (peerConflict) {
-      const shiftName = DEFAULT_SHIFT_LABELS[peerConflict.shift_code as keyof typeof DEFAULT_SHIFT_LABELS] ?? peerConflict.shift_code;
+      const shiftName = resolveShiftTimeDetails(ctx, peerConflict.shift_code, peerConflict.id, peerConflict.branch_id).shiftLabel;
       throw Errors.fieldValidation('peer_id', 'DUPLICATE_VALUE', `Đồng nghiệp ${peerEmp.full_name} (${peerEmp.employee_code}) đã có ca làm việc (${shiftName}) trong ngày ${fromAssign.work_date}. Bắt buộc người nhận ca thay phải không có ca làm việc nào trong ngày hôm đó.`, body.peer_id);
     }
     const peerOnLeave = ctx.db.leaveRequests.find((l) => (l.employee_id === peerEmp.id || l.employee_id === peerEmp.employee_code) && l.leave_date === fromAssign.work_date && (l.status === 'APPROVED' || l.status === 'PENDING'));

@@ -5,11 +5,10 @@ import { Alert, App, Button, Col, Form, Input, InputNumber, Modal, Row, Select, 
 import { CloseOutlined, LockOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { DEFAULT_SHIFT_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
+import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { DateStringPicker, TimeStringPicker } from './DateTimePickers';
 
-const SHIFT_OPTIONS = [...DEFAULT_SHIFT_OPTIONS];
 const KIND_OPTIONS = [
   { value: 'FORGOT_CHECK_IN', label: 'Bù ca Vắng mặt / Quên chấm công Vào ca' },
   { value: 'FORGOT_CHECK_OUT', label: 'Quên chấm công Ra ca' },
@@ -36,6 +35,7 @@ export function AttendanceAdjustmentModal({
   const qc = useQueryClient();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const { options: shiftOptions } = useShiftTemplates();
 
   const cachedMyAtt = qc.getQueryData<{ shifts?: Record<string, unknown>[] }>(['my-attendance']);
   const isShiftAbsent = (s: Record<string, unknown>) =>
@@ -188,7 +188,7 @@ export function AttendanceAdjustmentModal({
           </div>
         )}
         <Row gutter={12}>
-          <Col xs={24} md={12}><Form.Item name="shift_code" label="Khung ca (Cố định theo ca vắng)" rules={[{ required: true }]}><Select options={SHIFT_OPTIONS} disabled placeholder="Tự động điền khi chọn ca vắng mặt" /></Form.Item></Col>
+          <Col xs={24} md={12}><Form.Item name="shift_code" label="Khung ca (Cố định theo ca vắng)" rules={[{ required: true }]}><Select options={shiftOptions} disabled placeholder="Tự động điền khi chọn ca vắng mặt" /></Form.Item></Col>
           <Col xs={24} md={12}><Form.Item name="kind" label="Phân loại bổ sung công" rules={[{ required: true }]}><Select options={KIND_OPTIONS} /></Form.Item></Col>
         </Row>
         <Row gutter={12}>

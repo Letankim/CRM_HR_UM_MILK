@@ -8,6 +8,8 @@ import { useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
+import { useShiftTemplates } from '../hooks/useShiftTemplates';
+import { useJobPositions } from './JobPositionsManagerModal';
 
 interface Props {
   branchFilter: string;
@@ -21,7 +23,10 @@ interface Props {
 export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Props) {
   const can = useCan();
   const canViewReport = can('employee.read', 'schedule.read', 'attendance.read');
-  const [groupOrShiftFilter, setGroupOrShiftFilter] = useState('ALL');
+  const [positionFilter, setPositionFilter] = useState('ALL');
+  const [shiftFilter, setShiftFilter] = useState('ALL');
+  const { options: jobPositionOptions } = useJobPositions();
+  const { options: shiftOptions } = useShiftTemplates(branchFilter);
 
   const branchesQ = useQuery({
     queryKey: ['report-branches'],
@@ -67,15 +72,15 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
     return branches.map((b) => {
       const bEmps = emps.filter((e) => {
         if ((e.branchId ?? e.branch_id) !== b.id) return false;
-        if (groupOrShiftFilter === 'STORE' || groupOrShiftFilter === 'BACKOFFICE') return e.staffGroup === groupOrShiftFilter || e.staff_group === groupOrShiftFilter;
+        if (positionFilter !== 'ALL') return e.staffGroup === positionFilter || e.staff_group === positionFilter;
         return true;
       });
       const bShifts = shifts.filter((s) => {
         if ((s.branchId ?? s.branch_id) !== b.id) return false;
-        if (groupOrShiftFilter.startsWith('CA_')) return s.shiftCode === groupOrShiftFilter || s.shift_code === groupOrShiftFilter;
+        if (shiftFilter !== 'ALL') return s.shiftCode === shiftFilter || s.shift_code === shiftFilter;
         return true;
       });
-      const bCands = cands.filter((c) => !c.applied_branch_id || c.applied_branch_id === b.id);
+      const bCands = cands.filter((c) => (!c.applied_branch_id && !c.branch_pref) || c.applied_branch_id === b.id || c.branch_pref === b.id);
       const probationCount = bEmps.filter((e) => e.stage === 'PROBATION' || e.stage === 'THU_VIEC').length;
       const officialCount = bEmps.filter((e) => e.stage === 'OFFICIAL' || e.stage === 'CHINH_THUC').length;
       const totalHours = bShifts.reduce((sum, s) => sum + (Number(s.scheduledHours) || 5), 0);
@@ -100,7 +105,7 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
         coverageRate,
       };
     });
-  }, [branchesQ.data, employeesQ.data, candidatesQ.data, shiftsQ.data, eventsQ.data, branchFilter, periodFilter, groupOrShiftFilter]);
+  }, [branchesQ.data, employeesQ.data, candidatesQ.data, shiftsQ.data, eventsQ.data, branchFilter, periodFilter, positionFilter, shiftFilter]);
 
   if (!canViewReport) return null;
 
@@ -135,15 +140,12 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
       extra={
         <Flex gap={8} wrap align="center">
           <Select
-            size="small" value={groupOrShiftFilter} onChange={setGroupOrShiftFilter} style={{ width: 220 }}
-            options={[
-              { value: 'ALL', label: 'Tất cả nhóm nhân sự & ca' },
-              { value: 'STORE', label: 'Nhóm: Khối Cửa hàng' },
-              { value: 'BACKOFFICE', label: 'Nhóm: Khối Văn phòng' },
-              { value: 'CA_SANG', label: 'Khung ca: Ca sáng (07:00–12:00)' },
-              { value: 'CA_CHIEU', label: 'Khung ca: Ca chiều (12:00–17:00)' },
-              { value: 'CA_TOI', label: 'Khung ca: Ca tối (17:00–22:00)' },
-            ]}
+            size="small" value={positionFilter} onChange={setPositionFilter} style={{ width: 185 }}
+            options={[{ value: 'ALL', label: 'Tất cả vị trí công việc' }, ...jobPositionOptions]}
+          />
+          <Select
+            size="small" value={shiftFilter} onChange={setShiftFilter} style={{ width: 195 }}
+            options={[{ value: 'ALL', label: 'Tất cả khung ca' }, ...shiftOptions]}
           />
           <Button size="small" icon={<FileExcelOutlined style={{ color: '#15803D' }} />} onClick={handleExport}>Xuất Báo cáo Excel</Button>
         </Flex>

@@ -4,9 +4,10 @@ import { App, Button, Col, Form, Input, Modal, Row, Select, Space, Tabs } from '
 import { CloseOutlined, ContactsOutlined, DollarOutlined, IdcardOutlined, PlusOutlined, SaveOutlined, SettingOutlined, ThunderboltOutlined, UserSwitchOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { DEFAULT_SHIFT_OPTIONS, EMPLOYEE_STATUS_OPTIONS, EMPLOYMENT_TYPE_OPTIONS } from '@umbm/shared';
+import { EMPLOYEE_STATUS_OPTIONS, EMPLOYMENT_TYPE_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { generateEmployeeCode, generatePin6 } from '@/lib/auto-generate';
+import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { DateStringPicker } from './DateTimePickers';
 import { EmployeeAccountLinkFields, type EmployeeAccountMode } from './EmployeeAccountLinkFields';
 import { EmployeePersonalFields } from './EmployeePersonalFields';
@@ -40,6 +41,16 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
   const [activeTab, setActiveTab] = useState('basic');
   const [posManagerOpen, setPosManagerOpen] = useState(false);
   const { options: jobPositionOptions } = useJobPositions();
+  const watchedBranchId = Form.useWatch('branch_id', form);
+  const { options: shiftOptions } = useShiftTemplates(watchedBranchId);
+
+  useEffect(() => {
+    if (!open || shiftOptions.length === 0) return;
+    const curShift = form.getFieldValue('default_shift_code');
+    if (!curShift || !shiftOptions.some((o) => o.value === curShift)) {
+      form.setFieldValue('default_shift_code', shiftOptions[0]!.value);
+    }
+  }, [open, watchedBranchId, shiftOptions, form]);
 
   useEffect(() => {
     if (!open) return;
@@ -167,7 +178,7 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
                       <Col span={8}><Form.Item name="status" label="Trạng thái"><Select options={EMPLOYEE_STATUS_OPTIONS} /></Form.Item></Col>
                     </Row>
                     <Row gutter={12}>
-                      <Col span={8}><Form.Item name="default_shift_code" label="Ca mặc định"><Select options={DEFAULT_SHIFT_OPTIONS} /></Form.Item></Col>
+                      <Col span={8}><Form.Item name="default_shift_code" label="Ca mặc định (theo chi nhánh)"><Select options={shiftOptions} /></Form.Item></Col>
                       <Col span={8}><Form.Item name="employment_type" label="Hình thức"><Select options={EMPLOYMENT_TYPE_OPTIONS} /></Form.Item></Col>
                       <Col span={8}><Form.Item name="probation_start" label="Ngày bắt đầu"><DateStringPicker placeholder="Chọn ngày bắt đầu" /></Form.Item></Col>
                     </Row>

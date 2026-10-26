@@ -5,7 +5,7 @@ import { AppstoreOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, Delet
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useMemo, useState } from 'react';
-import { DEFAULT_SHIFT_OPTIONS, SHIFT_ASSIGNMENT_STATUS_OPTIONS } from '@umbm/shared';
+import { SHIFT_ASSIGNMENT_STATUS_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { AttendanceEventsTable, groupAttendanceEventsByShift, type AttendanceEventRow } from '@/ui/components/AttendanceEventsTable';
@@ -16,6 +16,7 @@ import { ScheduleViewsPanel } from '@/ui/components/ScheduleViewsPanel';
 import { ScheduleWorkflowsTabs } from '@/ui/components/ScheduleWorkflowsTabs';
 import { buildScheduleColumns, exportScheduleExcel } from '@/ui/components/schedule-table-columns';
 import { useScheduleBulkActions } from '@/ui/hooks/useScheduleBulkActions';
+import { useShiftTemplates } from '@/ui/hooks/useShiftTemplates';
 
 type ViewMode = 'WEEK_MATRIX' | 'CALENDAR' | 'TABLE' | 'ATTENDANCE';
 
@@ -46,8 +47,9 @@ function SchedulesView() {
   });
   const employeesQuery = useQuery({
     queryKey: ['employees', 'select-all'],
-    queryFn: () => api.list<{ id: string; employeeCode: string; fullName: string; branchName: string }>('/admin/employees?per_page=100'),
+    queryFn: () => api.list<{ id: string; employeeCode: string; fullName: string; branchId: string; branchName: string }>('/admin/employees?per_page=100'),
   });
+  const { options: shiftFilterOptions } = useShiftTemplates(branchId);
 
   const attQ = useQuery({
     queryKey: ['attendance-all'],
@@ -103,7 +105,7 @@ function SchedulesView() {
   const { bulkActions } = useScheduleBulkActions({ canEdit });
 
   const employeeOptions = useMemo(
-    () => (employeesQuery.data?.data ?? []).map((e) => ({ value: e.id, label: `${e.employeeCode} — ${e.fullName} (${e.branchName})` })),
+    () => (employeesQuery.data?.data ?? []).map((e) => ({ value: e.id, label: `${e.employeeCode} — ${e.fullName} (${e.branchName})`, branchId: e.branchId })),
     [employeesQuery.data],
   );
 
@@ -140,7 +142,7 @@ function SchedulesView() {
             onSearchChange={(val) => { setPage(1); setQ(val); }}
             selects={[
               { key: 'branch', value: branchId, width: 195, options: branchSelectOptions, onChange: (v) => { setPage(1); setBranchId(v); } },
-              { key: 'shift', value: shiftCode, width: 165, options: [{ value: 'ALL', label: 'Tất cả khung ca' }, ...DEFAULT_SHIFT_OPTIONS], onChange: (v) => { setPage(1); setShiftCode(v); } },
+              { key: 'shift', value: shiftCode, width: 185, options: [{ value: 'ALL', label: 'Tất cả khung ca' }, ...shiftFilterOptions], onChange: (v) => { setPage(1); setShiftCode(v); } },
               { key: 'status', value: status, width: 175, options: [{ value: 'ALL', label: 'Tất cả trạng thái' }, ...SHIFT_ASSIGNMENT_STATUS_OPTIONS], onChange: (v) => { setPage(1); setStatus(v); } },
             ]}
             extraRight={

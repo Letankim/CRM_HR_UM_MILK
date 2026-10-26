@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { STAFF_GROUP_LABELS } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
+import { resolveStaffGroupLabel } from './employee-mapper.js';
 
 const DEFAULT_SOP_QUESTIONS = JSON.stringify([
   { id: 'q1', q: 'Nhiệt độ bảo quản sữa tươi thanh trùng chuẩn tại quầy pha chế Ụm Bò Milk là bao nhiêu?', options: ['Từ 2°C đến 6°C', 'Từ 10°C đến 15°C', 'Nhiệt độ phòng 25°C', 'Dưới -5°C'], answer: 0 },
@@ -62,7 +62,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     const includeAnswers = canManage && q.include_answers === '1';
     const tests = ctx.db.testBank.all().map((t) => {
       const safeList = sanitizeQuestions(t.questions_json);
-      return { ...t, questions_json: includeAnswers ? t.questions_json : JSON.stringify(safeList), duration_min: t.duration_minutes, questionsCount: safeList.length || t.total_questions, staffGroupLabel: STAFF_GROUP_LABELS[t.staff_group as keyof typeof STAFF_GROUP_LABELS] ?? t.staff_group };
+      return { ...t, questions_json: includeAnswers ? t.questions_json : JSON.stringify(safeList), duration_min: t.duration_minutes, questionsCount: safeList.length || t.total_questions, staffGroupLabel: resolveStaffGroupLabel(ctx, t.staff_group, t.staff_group) };
     });
     const assignments = ctx.db.testAssignments.all().map((a, idx) => {
       const test = ctx.db.testBank.get(a.test_id), emp = resolveEmp(ctx, a.employee_id);

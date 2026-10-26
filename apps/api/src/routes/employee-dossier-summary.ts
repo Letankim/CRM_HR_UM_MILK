@@ -1,5 +1,6 @@
-import { DEFAULT_SHIFT_LABELS, EMPLOYEE_STAGE_LABELS, type Employee } from '@umbm/shared';
+import { EMPLOYEE_STAGE_LABELS, type Employee } from '@umbm/shared';
 import type { AppContext } from '../context.js';
+import { resolveShiftLabel } from './employee-mapper.js';
 
 export function buildEmployeeDossierSummary(e: Employee, ctx: AppContext) {
   const isEmp = (eid: string) => eid === e.id || eid === e.employee_code;
@@ -15,7 +16,7 @@ export function buildEmployeeDossierSummary(e: Employee, ctx: AppContext) {
       id: a.id,
       work_date: a.work_date,
       shift_code: a.shift_code,
-      shiftLabel: DEFAULT_SHIFT_LABELS[a.shift_code as keyof typeof DEFAULT_SHIFT_LABELS] ?? a.shift_code,
+      shiftLabel: resolveShiftLabel(ctx, a.shift_code, a.branch_id || e.branch_id),
       start_at: a.start_at,
       end_at: a.end_at,
       scheduled_hours: a.scheduled_hours,

@@ -3,16 +3,12 @@
 import { Button, Card, Flex, Space, Tag, Tooltip, Typography } from 'antd';
 import { CalendarOutlined, LeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
+import { useMemo } from 'react';
+import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { BRAND } from '../theme';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
 
-const BASE_SHIFT_ROWS = [
-  { code: 'CA_SANG', label: 'Ca sáng', time: '07:00 – 12:00', color: '#2563EB' },
-  { code: 'CA_CHIEU', label: 'Ca chiều', time: '12:00 – 17:00', color: '#0D9488' },
-  { code: 'CA_TOI', label: 'Ca tối', time: '17:00 – 22:30', color: '#7C3AED' },
-];
-const ADMIN_SHIFT_ROW = { code: 'CA_HANH_CHINH', label: 'Ca hành chính', time: '08:00 – 17:30', color: '#EA580C' };
-
+const SHIFT_COLORS = ['#2563EB', '#0D9488', '#7C3AED', '#EA580C', '#D97706', '#0284C7'];
 const WEEKDAY_NAMES = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật'];
 
 export function getMonday(d: Dayjs): Dayjs {
@@ -40,8 +36,28 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, onAddAtCel
   const currentWeekMonday = getMonday(dayjs(effectiveToday));
   const isCurrentWeek = weekStart.format('YYYY-MM-DD') === currentWeekMonday.format('YYYY-MM-DD');
   const days = Array.from({ length: 7 }, (_, idx) => weekStart.add(idx, 'day'));
-  const hasAdminShift = assignments.some((a) => a.shiftCode === 'CA_HANH_CHINH');
-  const shiftRows = hasAdminShift ? [...BASE_SHIFT_ROWS, ADMIN_SHIFT_ROW] : BASE_SHIFT_ROWS;
+  const { shifts: dynamicShifts } = useShiftTemplates();
+  const shiftRows = useMemo(() => {
+    const rows = dynamicShifts
+      .filter((s) => s.code !== 'CA_HANH_CHINH' || assignments.some((a) => a.shiftCode === 'CA_HANH_CHINH'))
+      .map((s, idx) => ({
+        code: s.code,
+        label: s.name.replace(/\s*\([^)]*\)\s*/g, '').trim(),
+        time: `${s.startTime} – ${s.endTime}`,
+        color: SHIFT_COLORS[idx % SHIFT_COLORS.length]!,
+      }));
+    for (const a of assignments) {
+      if (!rows.some((r) => r.code === a.shiftCode)) {
+        rows.push({
+          code: a.shiftCode,
+          label: (a.shiftLabel || a.shiftCode).replace(/\s*\([^)]*\)\s*/g, '').trim(),
+          time: `${a.startAt || '07:00'} – ${a.endAt || '12:00'}`,
+          color: SHIFT_COLORS[rows.length % SHIFT_COLORS.length]!,
+        });
+      }
+    }
+    return rows;
+  }, [dynamicShifts, assignments]);
 
   return (
     <Card

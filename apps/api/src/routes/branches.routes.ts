@@ -6,7 +6,7 @@ import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs } from '../lib/time.js';
-import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
+import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 
 const zBranchListQuery = zListQueryBase.extend({ status: z.enum([...BRANCH_STATUSES, 'ALL'] as const).optional(), refresh: z.enum(['0', '1', 'true', 'false']).optional() });
 const zBranchBody = z.object({ code: z.string({ required_error: 'Mã chi nhánh là bắt buộc' }).trim().min(2).max(10), name: z.string({ required_error: 'Tên chi nhánh là bắt buộc' }).trim().min(2).max(100), address: z.string().trim().max(200).optional().default(''), lat: z.coerce.number().min(-90).max(90), lng: z.coerce.number().min(-180).max(180), radius_m: z.coerce.number().int().min(10).max(2000).default(100), max_accuracy_m: z.coerce.number().int().min(5).max(500).default(50), open_time: z.string().regex(/^\d{2}:\d{2}$/).default('07:00'), close_time: z.string().regex(/^\d{2}:\d{2}$/).default('22:30'), phone_contact: z.string().trim().max(20).optional().default(''), effective_from: z.string().trim().optional().default(''), status: z.enum(BRANCH_STATUSES).default('ACTIVE'), note: z.string().trim().max(300).optional().default('') });
@@ -108,9 +108,17 @@ export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(request, `Đã xóa chi nhánh ${before.name}`, { id });
   });
 
-  app.get('/api/admin/shift-templates', { preHandler: requirePermission('schedule.read', 'system.config', 'employee.read') }, async (request) => {
+  app.get('/api/admin/shift-templates', { preHandler: requireAuth() }, async (request) => {
     const scope = request.auth!.branchScope;
-    const list = ctx.db.shiftTemplates.all().filter((s) => scope === 'ALL' || !s.shift_group || s.shift_group === 'ALL' || s.shift_group === 'STORE' || scope.includes(s.shift_group));
+    const empBranchId = request.auth!.user.employee_id
+      ? (ctx.db.employees.get(request.auth!.user.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === request.auth!.user.employee_id))?.branch_id
+      : undefined;
+    const list = ctx.db.shiftTemplates.all().filter((s) => {
+      if (!s.shift_group || s.shift_group === 'ALL' || s.shift_group === 'STORE') return true;
+      if (scope === 'ALL') return true;
+      if (empBranchId && s.shift_group === empBranchId) return true;
+      return scope.includes(s.shift_group);
+    });
     return sendSuccess(request, 'Lấy danh sách mẫu ca làm việc thành công', list.map((s) => mapShift(s, ctx)));
   });
 

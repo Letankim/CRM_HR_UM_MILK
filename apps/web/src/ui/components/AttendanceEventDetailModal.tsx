@@ -5,8 +5,8 @@ import { App, Button, Card, Col, Descriptions, Empty, Form, Input, InputNumber, 
 import { CameraOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, EnvironmentOutlined, SaveOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { DEFAULT_SHIFT_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
+import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { BRAND } from '../theme';
 import { AttendanceCameraModal } from './AttendanceCameraModal';
 import type { AttendanceEventRow } from './AttendanceEventsTable';
@@ -120,6 +120,7 @@ export function AttendanceEventEditModal({ event, onClose, onSuccess }: EditProp
   const [form] = Form.useForm();
   const { message } = App.useApp();
   const selectedType = Form.useWatch('type', form) as 'CHECK_IN' | 'CHECK_OUT' | undefined;
+  const { options: shiftOptions } = useShiftTemplates(event?.branch_id);
 
   const resolveTargetEvent = (typeVal?: 'CHECK_IN' | 'CHECK_OUT'): AttendanceEventRow | null => {
     if (!event) return null;
@@ -169,7 +170,7 @@ export function AttendanceEventEditModal({ event, onClose, onSuccess }: EditProp
         </Row>
         <Row gutter={12}>
           <Col span={12}><Form.Item name="work_date" label="Ngày ca làm việc" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col>
-          <Col span={12}><Form.Item name="shift_code" label="Khung ca" rules={[{ required: true }]}><Select options={DEFAULT_SHIFT_OPTIONS} /></Form.Item></Col>
+          <Col span={12}><Form.Item name="shift_code" label="Khung ca (theo chi nhánh)" rules={[{ required: true }]}><Select options={shiftOptions} /></Form.Item></Col>
         </Row>
         <Form.Item name="distance_m" label="Khoảng cách GPS tới cửa hàng (mét)"><InputNumber min={0} max={2000} style={{ width: '100%' }} suffix="m" /></Form.Item>
         <Form.Item name="note" label="Ghi chú kiểm tra / điều chỉnh"><Input.TextArea rows={2} /></Form.Item>

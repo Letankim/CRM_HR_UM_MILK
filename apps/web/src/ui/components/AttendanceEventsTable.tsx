@@ -5,11 +5,11 @@ import { App, Button, Flex, Input, Select, Space, Table, Tag, Typography } from 
 import { CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { DEFAULT_SHIFT_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { BRAND } from '../theme';
 import { AttendanceEventDetailModal, AttendanceEventEditModal } from './AttendanceEventDetailModal';
 import { RowActionButtons } from './RowActionButtons';
@@ -123,6 +123,7 @@ export function AttendanceEventsTable({ events, loading }: Props) {
   const [branchFilter, setBranchFilter] = useState('ALL');
   const [shiftFilter, setShiftFilter] = useState('ALL');
   const [stateFilter, setStateFilter] = useState('ALL');
+  const { options: shiftOptions } = useShiftTemplates(branchFilter);
 
   const branchesQ = useQuery({
     queryKey: ['branches', 'select'],
@@ -178,7 +179,7 @@ export function AttendanceEventsTable({ events, loading }: Props) {
           <Space size={10} wrap>
             <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm tên nhân sự, mã NV, ngày..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 240 }} />
             <Select value={branchFilter} onChange={setBranchFilter} style={{ width: 195 }} options={branchOptions} />
-            <Select value={shiftFilter} onChange={setShiftFilter} style={{ width: 155 }} options={[{ value: 'ALL', label: 'Tất cả khung ca' }, ...DEFAULT_SHIFT_OPTIONS]} />
+            <Select value={shiftFilter} onChange={setShiftFilter} style={{ width: 175 }} options={[{ value: 'ALL', label: 'Tất cả khung ca' }, ...shiftOptions]} />
             <Select value={stateFilter} onChange={setStateFilter} style={{ width: 175 }} options={[{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'COMPLETED', label: 'Hoàn thành Vào & Ra ca' }, { value: 'IN_PROGRESS', label: 'Đang trong ca (Chưa ra)' }, { value: 'LATE_EARLY', label: 'Vào trễ / Ra sớm' }]} />
           </Space>
           <Space size={10} wrap>

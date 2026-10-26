@@ -5,16 +5,17 @@ import { App, Button, Card, Col, Form, Input, InputNumber, Modal, Radio, Row, Se
 import { BookOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FileDoneOutlined, HistoryOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined, SendOutlined, SettingOutlined, ThunderboltOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { STAFF_GROUP_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { StatusTag } from '../StatusTag';
 import { AttemptHistoryTable, AttemptReviewModal } from './ExamTestCenter';
+import { useJobPositions } from './JobPositionsManagerModal';
 import { RowActionButtons } from './RowActionButtons';
 import { DEFAULT_QUESTIONS, parseQuestions, TestAssignmentFormModal, TestDetailDrawer, type QuestionRow } from './TestBankModals';
 
 export function TestBankManagerPane({ tests, assignments, attempts = [], employees, canManage = true }: { tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts?: Record<string, unknown>[]; employees: { value: string; label: string }[]; canManage?: boolean }) {
   const qc = useQueryClient();
   const { message, modal } = App.useApp();
+  const { options: jobPositionOptions } = useJobPositions();
   const [subTab, setSubTab] = useState<'bank' | 'assignments' | 'history'>('bank');
   const [modalTab, setModalTab] = useState<'config' | 'questions'>('config');
   const [bankModal, setBankModal] = useState(false);
@@ -183,7 +184,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
               children: (
                 <>
                   <Row gutter={12}><Col span={8}><Form.Item name="code" label="Mã bộ đề" rules={[{ required: true }]}><Input placeholder="SOP-BARISTA-01" suffix={<span style={{ cursor: 'pointer', userSelect: 'none', fontWeight: 600, fontSize: 12, color: '#2563EB', background: '#EFF6FF', padding: '1px 6px', borderRadius: 2 }} onClick={() => bankForm.setFieldValue('code', `SOP-${Math.floor(100 + Math.random() * 900)}`)}><ThunderboltOutlined /> Tự sinh</span>} /></Form.Item></Col><Col span={16}><Form.Item name="title" label="Tên bộ đề kiểm tra" rules={[{ required: true }]}><Input placeholder="Ví dụ: Quy chuẩn Pha chế & Vệ sinh An toàn Thực phẩm" /></Form.Item></Col></Row>
-                  <Row gutter={12}><Col span={6}><Form.Item name="staff_group" label="Nhóm vị trí áp dụng"><Select options={STAFF_GROUP_OPTIONS} /></Form.Item></Col><Col span={6}><Form.Item name="duration_minutes" label="Thời gian làm bài (phút)" rules={[{ required: true }]}><InputNumber min={5} max={180} step={5} style={{ width: '100%' }} suffix="phút" /></Form.Item></Col><Col span={6}><Form.Item name="pass_percent" label="Điểm chuẩn đạt (%)" rules={[{ required: true }]}><InputNumber min={10} max={100} step={5} style={{ width: '100%' }} suffix="%" /></Form.Item></Col><Col span={6}><Form.Item name="max_attempts" label="Số lần thi tối đa"><InputNumber min={1} max={20} style={{ width: '100%' }} suffix="lần" /></Form.Item></Col></Row>
+                  <Row gutter={12}><Col span={6}><Form.Item name="staff_group" label="Nhóm vị trí áp dụng"><Select options={jobPositionOptions} /></Form.Item></Col><Col span={6}><Form.Item name="duration_minutes" label="Thời gian làm bài (phút)" rules={[{ required: true }]}><InputNumber min={5} max={180} step={5} style={{ width: '100%' }} suffix="phút" /></Form.Item></Col><Col span={6}><Form.Item name="pass_percent" label="Điểm chuẩn đạt (%)" rules={[{ required: true }]}><InputNumber min={10} max={100} step={5} style={{ width: '100%' }} suffix="%" /></Form.Item></Col><Col span={6}><Form.Item name="max_attempts" label="Số lần thi tối đa"><InputNumber min={1} max={20} style={{ width: '100%' }} suffix="lần" /></Form.Item></Col></Row>
                 </>
               ),
             },

@@ -19,7 +19,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { healBranchConsistency, syncEmployeeFromAccount } from './account-employee-sync.js';
 import { accountActionRoutes } from './accounts-actions.routes.js';
-import { assertUniquePersonalIdentifiers, findLinkedEmployeeForUser } from './employee-mapper.js';
+import { assertUniquePersonalIdentifiers, findLinkedEmployeeForUser, resolveStaffGroupLabel } from './employee-mapper.js';
 
 const zAccountListQuery = zListQueryBase.extend({
   status: z.enum([...ACCOUNT_STATUSES, 'ALL'] as const).optional(),
@@ -78,7 +78,7 @@ export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
         employeeId: linkedEmp?.employee_code ?? pub.employeeId,
         employeeRecordId: linkedEmp?.id ?? null,
         employeeName: linkedEmp?.full_name ?? null,
-        employeePosition: linkedEmp ? linkedEmp.position_title || STAFF_GROUP_LABELS[linkedEmp.staff_group] : null,
+        employeePosition: linkedEmp ? resolveStaffGroupLabel(ctx, linkedEmp.staff_group, linkedEmp.position_title) : null,
         employeeStage: linkedEmp?.stage ?? null,
         employeeStageLabel: linkedEmp ? EMPLOYEE_STAGE_LABELS[linkedEmp.stage] : null,
         roleLabel: ROLE_LABELS[u.role],

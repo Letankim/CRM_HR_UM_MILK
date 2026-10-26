@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEFAULT_SHIFT_LABELS, type AttendanceEvent } from '@umbm/shared';
+import type { AttendanceEvent } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { dayjs } from '../lib/time.js';
+import { findBranchShiftTemplate } from './account-employee-sync.js';
+import { resolveShiftLabel } from './employee-mapper.js';
 
 export function parseHm(hm: string): number {
   const [h, m] = (hm || '00:00').split(':').map((x) => Number(x) || 0);
@@ -180,9 +182,10 @@ export function mapAttendanceEvent(e: AttendanceEvent, ctx: AppContext) {
   const emp = ctx.db.employees.get(e.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === e.employee_id);
   const branch = (emp ? ctx.db.branches.get(emp.branch_id) : undefined) ?? ctx.db.branches.get(e.branch_id);
   const assign = ctx.db.shiftAssignments.get(e.assignment_id);
-  const startAt = assign?.start_at || (e.type === 'CHECK_IN' ? e.scheduled_time : '07:00') || '07:00';
-  const endAt = assign?.end_at || (e.type === 'CHECK_OUT' ? e.scheduled_time : '12:00') || '12:00';
-  const rawLabel = DEFAULT_SHIFT_LABELS[e.shift_code as keyof typeof DEFAULT_SHIFT_LABELS] ?? e.shift_code;
+  const tpl = findBranchShiftTemplate(ctx, e.shift_code, branch?.id ?? e.branch_id);
+  const startAt = assign?.start_at || tpl?.start_time || (e.type === 'CHECK_IN' ? e.scheduled_time : '07:00') || '07:00';
+  const endAt = assign?.end_at || tpl?.end_time || (e.type === 'CHECK_OUT' ? e.scheduled_time : '12:00') || '12:00';
+  const rawLabel = resolveShiftLabel(ctx, e.shift_code, branch?.id ?? e.branch_id);
   const shiftLabel = rawLabel.replace(/\s*\([^)]*\)\s*/g, '').trim();
   const checkTimeHm = dayjs(e.server_time).format('HH:mm');
   const checkTimeFormatted = dayjs(e.server_time).format('HH:mm · DD/MM/YYYY');

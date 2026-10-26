@@ -1,12 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { DEFAULT_SHIFT_LABELS, normalizePhone, STAFF_GROUP_LABELS, zListQueryBase } from '@umbm/shared';
+import { normalizePhone, zListQueryBase } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
+import { resolveShiftLabel, resolveStaffGroupLabel } from './employee-mapper.js';
 import { interviewRoutes } from './interviews.routes.js';
 import { testBankRoutes } from './test-bank.routes.js';
 
@@ -61,8 +62,8 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
       ...c,
       stage: c.status,
       branchName: ctx.db.branches.get(c.branch_pref)?.name ?? (c.branch_pref || 'Chưa chọn chi nhánh'),
-      positionLabel: STAFF_GROUP_LABELS[c.staff_group as keyof typeof STAFF_GROUP_LABELS] ?? c.position,
-      shiftPrefLabel: DEFAULT_SHIFT_LABELS[c.shift_pref as keyof typeof DEFAULT_SHIFT_LABELS] ?? c.shift_pref,
+      positionLabel: resolveStaffGroupLabel(ctx, c.staff_group, c.position),
+      shiftPrefLabel: resolveShiftLabel(ctx, c.shift_pref, c.branch_pref),
     }));
     return sendPaginated(
       request,
@@ -107,7 +108,7 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
       candidate_code: `UV${String(ctx.db.candidates.all(true).length + 1).padStart(4, '0')}`,
       source_row: `WEB-${Date.now()}`,
       full_name: body.full_name, phone, email: body.email,
-      position: STAFF_GROUP_LABELS[staffGroup as keyof typeof STAFF_GROUP_LABELS] ?? staffGroup,
+      position: resolveStaffGroupLabel(ctx, staffGroup, staffGroup),
       staff_group: staffGroup, branch_pref: branchId, shift_pref: body.shift_pref,
       status: 'NEW', source_channel: body.source_channel, birth_year: body.birth_year, gender: body.gender,
       experience_note: body.experience_note, hr_note: body.hr_note, cv_file_id: '', assigned_hr_id: request.auth!.user.username, contacted_at: nowIso(),
@@ -135,7 +136,7 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
     const updated = await ctx.db.candidates.update(id, body.version, {
       full_name: body.full_name ?? before.full_name, phone: phone || before.phone, email: body.email ?? before.email,
       branch_pref: body.branch_pref ?? before.branch_pref, staff_group: staffGroup,
-      position: STAFF_GROUP_LABELS[staffGroup as keyof typeof STAFF_GROUP_LABELS] ?? before.position,
+      position: resolveStaffGroupLabel(ctx, staffGroup, before.position),
       shift_pref: body.shift_pref ?? before.shift_pref,
       birth_year: body.birth_year ?? before.birth_year,
       gender: body.gender ?? before.gender,

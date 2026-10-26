@@ -3,10 +3,10 @@ import {
   PAY_RATE_TYPE_LABELS,
   PAY_RATE_UNIT_LABELS,
   PAYROLL_WORK_SOURCE_LABELS,
-  STAFF_GROUP_LABELS,
   type PayrollSnapshot,
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
+import { resolveStaffGroupLabel } from '../routes/employee-mapper.js';
 import type { ShiftPayrollLog } from './payroll-work-collector.js';
 
 interface SnapshotAdjustmentsDetail {
@@ -48,7 +48,7 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
     fullName: s.full_name,
     branchId: s.branch_id,
     branchName: s.branch_name,
-    staffGroupLabel: STAFF_GROUP_LABELS[s.staff_group as keyof typeof STAFF_GROUP_LABELS] ?? s.staff_group,
+    staffGroupLabel: resolveStaffGroupLabel(ctx, s.staff_group, s.staff_group),
     stage: s.stage,
     stageLabel: EMPLOYEE_STAGE_LABELS[s.stage as keyof typeof EMPLOYEE_STAGE_LABELS] ?? s.stage,
     hasSalaryProfile: !!s.pay_rate_id,

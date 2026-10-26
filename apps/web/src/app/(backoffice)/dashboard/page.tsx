@@ -17,14 +17,11 @@ import { StatusTag } from '@/ui/StatusTag';
 import { DashboardBranchAndShiftOverview } from '@/ui/components/DashboardBranchAndShiftOverview';
 import { HrDashboardActionPanel } from '@/ui/components/HrDashboardActionPanel';
 import { HrStoreOperationsReportCard } from '@/ui/components/HrStoreOperationsReportCard';
+import { useJobPositions } from '@/ui/components/JobPositionsManagerModal';
 
 const CHECK_LABELS: Record<string, string> = {
-  google: 'Google API',
-  sheetsCache: 'Bộ nhớ đệm Google Sheets',
-  writeQueue: 'Hàng đợi ghi',
-  deadLetters: 'Bản ghi cần đối soát',
-  realtime: 'Kết nối thời gian thực',
-  backup: 'Sao lưu gần nhất',
+  google: 'Google API', sheetsCache: 'Bộ nhớ đệm Google Sheets', writeQueue: 'Hàng đợi ghi',
+  deadLetters: 'Bản ghi cần đối soát', realtime: 'Kết nối thời gian thực', backup: 'Sao lưu gần nhất',
 };
 
 export default function DashboardPage() {
@@ -32,50 +29,21 @@ export default function DashboardPage() {
   const can = useCan();
   const qc = useQueryClient();
   const { message } = App.useApp();
+  const { options: jobPositionOptions } = useJobPositions();
   const [refreshing, setRefreshing] = useState(false);
   const [branchFilter, setBranchFilter] = useState('ALL');
+  const [positionFilter, setPositionFilter] = useState('ALL');
   const [stageFilter, setStageFilter] = useState('ALL');
   const [periodFilter, setPeriodFilter] = useState<'TODAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'ALL'>('ALL');
 
-  const branches = useQuery({
-    queryKey: ['dashboard-branches'],
-    queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'),
-  });
-  const accounts = useQuery({
-    queryKey: ['accounts', 'all'],
-    queryFn: () => api.list<{ id: string; status: string }>('/admin/accounts?per_page=100'),
-    enabled: can('account.read'),
-  });
-  const employees = useQuery({
-    queryKey: ['dashboard-employees'],
-    queryFn: () => api.list<{ id: string; stage: string; status: string; branchId?: string; branch_id?: string }>('/admin/employees?per_page=100'),
-    enabled: can('employee.read'),
-  });
-  const schedules = useQuery({
-    queryKey: ['dashboard-schedules'],
-    queryFn: () => api.list<{ id: string; status: string; branchId?: string; branch_id?: string }>('/admin/schedules?per_page=100'),
-    enabled: can('schedule.read'),
-  });
-  const leaves = useQuery({
-    queryKey: ['dashboard-leaves'],
-    queryFn: () => api.list<{ id: string; status: string; branch_id?: string }>('/admin/leave-requests?per_page=50'),
-    enabled: can('schedule.read'),
-  });
-  const payroll = useQuery({
-    queryKey: ['dashboard-payroll'],
-    queryFn: () => api.get<Record<string, unknown>[]>('/admin/payroll/periods'),
-    enabled: can('payroll.read'),
-  });
-  const comms = useQuery({
-    queryKey: ['mkt-comms'],
-    queryFn: () => api.get<{ announcements: Record<string, unknown>[] }>('/admin/comms'),
-    enabled: !!me,
-  });
-  const health = useQuery({
-    queryKey: ['integrations', 'health'],
-    queryFn: () => api.get<Health>('/admin/integrations/health'),
-    enabled: can('integration.read'),
-  });
+  const branches = useQuery({ queryKey: ['dashboard-branches'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
+  const accounts = useQuery({ queryKey: ['accounts', 'all'], queryFn: () => api.list<{ id: string; status: string }>('/admin/accounts?per_page=100'), enabled: can('account.read') });
+  const employees = useQuery({ queryKey: ['dashboard-employees'], queryFn: () => api.list<{ id: string; stage: string; status: string; staffGroup?: string; staff_group?: string; branchId?: string; branch_id?: string }>('/admin/employees?per_page=100'), enabled: can('employee.read') });
+  const schedules = useQuery({ queryKey: ['dashboard-schedules'], queryFn: () => api.list<{ id: string; status: string; branchId?: string; branch_id?: string }>('/admin/schedules?per_page=100'), enabled: can('schedule.read') });
+  const leaves = useQuery({ queryKey: ['dashboard-leaves'], queryFn: () => api.list<{ id: string; status: string; branch_id?: string }>('/admin/leave-requests?per_page=50'), enabled: can('schedule.read') });
+  const payroll = useQuery({ queryKey: ['dashboard-payroll'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/payroll/periods'), enabled: can('payroll.read') });
+  const comms = useQuery({ queryKey: ['mkt-comms'], queryFn: () => api.get<{ announcements: Record<string, unknown>[] }>('/admin/comms'), enabled: !!me });
+  const health = useQuery({ queryKey: ['integrations', 'health'], queryFn: () => api.get<Health>('/admin/integrations/health'), enabled: can('integration.read') });
 
   const handleRefreshAll = async () => {
     setRefreshing(true);
@@ -98,10 +66,11 @@ export default function DashboardPage() {
   const empList = useMemo(() => {
     return (employees.data?.data ?? []).filter((e) => {
       if (branchFilter !== 'ALL' && e.branchId !== branchFilter && e.branch_id !== branchFilter) return false;
+      if (positionFilter !== 'ALL' && e.staffGroup !== positionFilter && e.staff_group !== positionFilter) return false;
       if (stageFilter !== 'ALL' && e.stage !== stageFilter && e.status !== stageFilter) return false;
       return true;
     });
-  }, [employees.data, branchFilter, stageFilter]);
+  }, [employees.data, branchFilter, positionFilter, stageFilter]);
 
   const probationCount = empList.filter((e) => e.stage === 'PROBATION' || e.stage === 'THU_VIEC').length;
   const officialCount = empList.filter((e) => e.stage === 'OFFICIAL' || e.stage === 'CHINH_THUC').length;
@@ -125,9 +94,10 @@ export default function DashboardPage() {
         <Flex justify="space-between" align="center" wrap gap={10}>
           <Space wrap size={10}>
             <Typography.Text strong><FilterOutlined /> Bộ lọc Tổng quan:</Typography.Text>
-            <Select value={branchFilter} onChange={setBranchFilter} style={{ width: 250 }} options={branchOptions} />
+            <Select value={branchFilter} onChange={setBranchFilter} style={{ width: 235 }} options={branchOptions} />
+            <Select value={positionFilter} onChange={setPositionFilter} style={{ width: 185 }} options={[{ value: 'ALL', label: 'Tất cả vị trí công việc' }, ...jobPositionOptions]} />
             <Select
-              value={stageFilter} onChange={setStageFilter} style={{ width: 210 }}
+              value={stageFilter} onChange={setStageFilter} style={{ width: 195 }}
               options={[
                 { value: 'ALL', label: 'Tất cả giai đoạn / trạng thái' },
                 { value: 'PROBATION', label: 'Nhân viên Thử việc' },
@@ -136,7 +106,7 @@ export default function DashboardPage() {
               ]}
             />
             <Select
-              value={periodFilter} onChange={setPeriodFilter} style={{ width: 190 }}
+              value={periodFilter} onChange={setPeriodFilter} style={{ width: 175 }}
               options={[
                 { value: 'TODAY', label: 'Thời gian: Hôm nay' },
                 { value: 'THIS_WEEK', label: 'Thời gian: Tuần này' },
@@ -145,8 +115,8 @@ export default function DashboardPage() {
               ]}
             />
           </Space>
-          {(branchFilter !== 'ALL' || stageFilter !== 'ALL' || periodFilter !== 'ALL') && (
-            <Button size="small" onClick={() => { setBranchFilter('ALL'); setStageFilter('ALL'); setPeriodFilter('ALL'); }}>Đặt lại bộ lọc</Button>
+          {(branchFilter !== 'ALL' || positionFilter !== 'ALL' || stageFilter !== 'ALL' || periodFilter !== 'ALL') && (
+            <Button size="small" onClick={() => { setBranchFilter('ALL'); setPositionFilter('ALL'); setStageFilter('ALL'); setPeriodFilter('ALL'); }}>Đặt lại bộ lọc</Button>
           )}
         </Flex>
       </Card>

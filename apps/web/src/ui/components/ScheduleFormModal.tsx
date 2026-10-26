@@ -5,8 +5,9 @@ import { CheckOutlined, CloseOutlined, DeleteOutlined, SaveOutlined } from '@ant
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useMemo } from 'react';
-import { DEFAULT_SHIFT_OPTIONS, SHIFT_ASSIGNMENT_STATUS_OPTIONS } from '@umbm/shared';
+import { SHIFT_ASSIGNMENT_STATUS_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
+import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { DateStringPicker } from './DateTimePickers';
 import { GuardButton, usePermissionGuard } from './GuardButton';
 
@@ -26,7 +27,7 @@ interface ScheduleFormValues {
 
 export interface ScheduleFormModalProps {
   open: boolean; editing?: ScheduleAssignmentItem | null; presetDate?: string; presetShiftCode?: string;
-  employees: { value: string; label: string }[]; canEdit?: boolean; onClose: () => void;
+  employees: { value: string; label: string; branchId?: string }[]; canEdit?: boolean; onClose: () => void;
 }
 
 export function ScheduleFormModal({
@@ -36,10 +37,26 @@ export function ScheduleFormModal({
   const { message } = App.useApp();
   const qc = useQueryClient();
   const hasSchedulePerm = usePermissionGuard({ perms: ['schedule.propose', 'schedule.publish'], allowed: canEdit });
+  const watchedEmpId = Form.useWatch('employee_id', form);
+  const selectedEmpBranchId = useMemo(
+    () => employees.find((e) => e.value === watchedEmpId)?.branchId || editing?.branchId || 'ALL',
+    [employees, watchedEmpId, editing?.branchId],
+  );
+  const { options: shiftOptions, hoursMap } = useShiftTemplates(selectedEmpBranchId);
+
   const employeeSelectOptions = useMemo(() => {
     if (!editing?.employeeId || employees.some((e) => e.value === editing.employeeId)) return employees;
-    return [{ value: editing.employeeId, label: `${editing.employeeCode} — ${editing.employeeName} (${editing.branchName})` }, ...employees];
+    return [{ value: editing.employeeId, label: `${editing.employeeCode} — ${editing.employeeName} (${editing.branchName})`, branchId: editing.branchId }, ...employees];
   }, [employees, editing]);
+
+  useEffect(() => {
+    if (!open || shiftOptions.length === 0) return;
+    const curShift = form.getFieldValue('shift_code');
+    if (!curShift || !shiftOptions.some((o) => o.value === curShift)) {
+      const nextShift = shiftOptions[0]!.value;
+      form.setFieldsValue({ shift_code: nextShift, scheduled_hours: hoursMap[nextShift] ?? 5 });
+    }
+  }, [open, selectedEmpBranchId, shiftOptions, hoursMap, form]);
 
   useEffect(() => {
     if (!open) return;
@@ -162,48 +179,19 @@ export function ScheduleFormModal({
       {editing && editing.status === 'DRAFT' && (
         <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca đăng ký đang chờ Quản lý cửa hàng hoặc HR phê duyệt. Bấm 'Duyệt & Phát hành ca' để chuyển sang Đã phân ca chính thức và cho phép nhân sự điểm danh." />
       )}
-      <Form<ScheduleFormValues> form={form} layout="vertical" disabled={!hasSchedulePerm} style={{ marginTop: 12 }}>
+      <Form<ScheduleFormValues> form={form} layout="vertical" disabled={!hasSchedulePerm} style={{ marginTop: 12 }} onValuesChange={(changed) => { if (changed.shift_code && hoursMap[changed.shift_code]) form.setFieldValue('scheduled_hours', hoursMap[changed.shift_code]); }}>
         <Form.Item name="employee_id" label="Nhân sự phân công" rules={[{ required: true, message: 'Vui lòng chọn nhân sự' }]}>
           <Select showSearch optionFilterProp="label" options={employeeSelectOptions} placeholder="Chọn nhân sự" />
         </Form.Item>
-
         <Row gutter={12}>
-          <Col span={12}>
-            <Form.Item name="work_date" label="Ngày làm việc" rules={[{ required: true }]}>
-              <DateStringPicker />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="shift_code" label="Khung ca làm việc" rules={[{ required: true }]}>
-              <Select options={DEFAULT_SHIFT_OPTIONS} />
-            </Form.Item>
-          </Col>
+          <Col span={12}><Form.Item name="work_date" label="Ngày làm việc" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col>
+          <Col span={12}><Form.Item name="shift_code" label="Khung ca làm việc (theo chi nhánh)" rules={[{ required: true }]}><Select options={shiftOptions} /></Form.Item></Col>
         </Row>
-
         <Row gutter={12}>
-          <Col span={8}>
-            <Form.Item name="day_type" label="Loại ngày công">
-              <Select
-                options={[
-                  { value: 'WORK', label: 'Ca làm việc chuẩn' },
-                  { value: 'OT', label: 'Ca tăng ca (OT)' },
-                  { value: 'OFF', label: 'Ngày nghỉ phép (OFF)' },
-                ]}
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item name="scheduled_hours" label="Số giờ công">
-              <InputNumber min={0} max={24} step={0.5} style={{ width: '100%' }} />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item name="status" label="Trạng thái lịch">
-              <Select options={SHIFT_ASSIGNMENT_STATUS_OPTIONS} />
-            </Form.Item>
-          </Col>
+          <Col span={8}><Form.Item name="day_type" label="Loại ngày công"><Select options={[{ value: 'WORK', label: 'Ca làm việc chuẩn' }, { value: 'OT', label: 'Ca tăng ca (OT)' }, { value: 'OFF', label: 'Ngày nghỉ phép (OFF)' }]} /></Form.Item></Col>
+          <Col span={8}><Form.Item name="scheduled_hours" label="Số giờ công"><InputNumber min={0} max={24} step={0.5} style={{ width: '100%' }} /></Form.Item></Col>
+          <Col span={8}><Form.Item name="status" label="Trạng thái lịch"><Select options={SHIFT_ASSIGNMENT_STATUS_OPTIONS} /></Form.Item></Col>
         </Row>
-
         <Form.Item name="note" label="Ghi chú phân ca / Đánh dấu đặc biệt">
           <Input placeholder="Ví dụ: Trực mở quầy, kèm nhân viên mới..." />
         </Form.Item>

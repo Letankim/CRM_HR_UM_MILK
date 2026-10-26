@@ -15,6 +15,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
 import { currentProfile, dayBefore, isProfileLocked, mapSalaryProfile, profilesOf, profileStatus } from '../services/salary-profile.service.js';
 import { assertAmountInRange, createSalaryProfile, deleteLatestSalaryProfile } from '../services/salary-profile.writer.js';
+import { resolveStaffGroupLabel } from './employee-mapper.js';
 import { zCreateSalaryProfileBody, zUpdateSalaryProfileBody } from './salary-profile.schemas.js';
 
 const zListQuery = zListQueryBase.extend({
@@ -46,7 +47,7 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
         branchName: ctx.db.branches.get(e.branch_id)?.name ?? 'Chưa phân chi nhánh',
         stage: e.stage,
         stageLabel: EMPLOYEE_STAGE_LABELS[e.stage],
-        staffGroupLabel: STAFF_GROUP_LABELS[e.staff_group],
+        staffGroupLabel: resolveStaffGroupLabel(ctx, e.staff_group, e.position_title),
         officialFrom: e.official_from || null,
         profileStatus: status,
         profileStatusLabel: SALARY_PROFILE_STATUS_LABELS[status],

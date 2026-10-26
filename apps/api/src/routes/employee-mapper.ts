@@ -135,16 +135,23 @@ export function salarySummary(e: Employee, ctx: AppContext) {
 }
 
 export function resolveStaffGroupLabel(ctx: AppContext, code: string, fallbackTitle?: string): string {
-  const builtin = STAFF_GROUP_LABELS[code as keyof typeof STAFF_GROUP_LABELS];
   const cfg = ctx.db.systemSettings.find((s) => s.key === 'JOB_POSITIONS_CONFIG');
   if (cfg?.value) {
     try {
-      const parsed = JSON.parse(cfg.value) as { code: string; label: string }[];
-      const match = parsed.find((p) => p.code === code);
+      const parsed = JSON.parse(cfg.value) as { code: string; label: string; deleted?: boolean }[];
+      const match = parsed.find((p) => p.code === code && !p.deleted);
       if (match?.label) return match.label;
     } catch { /* ignore */ }
   }
+  const builtin = STAFF_GROUP_LABELS[code as keyof typeof STAFF_GROUP_LABELS];
   return builtin || fallbackTitle || code;
+}
+
+export function resolveShiftLabel(ctx: AppContext, shiftCode: string, branchId?: string): string {
+  const byBranch = branchId ? ctx.db.shiftTemplates.find((s) => s.code === shiftCode && s.shift_group === branchId) : undefined;
+  const tpl = byBranch ?? ctx.db.shiftTemplates.find((s) => s.code === shiftCode);
+  if (tpl) return `${tpl.name} (${tpl.start_time} - ${tpl.end_time})`;
+  return DEFAULT_SHIFT_LABELS[shiftCode as keyof typeof DEFAULT_SHIFT_LABELS] ?? shiftCode;
 }
 
 export function mapEmployeeRecord(e: Employee, ctx: AppContext) {
@@ -180,7 +187,7 @@ export function mapEmployeeRecord(e: Employee, ctx: AppContext) {
     employmentType: e.employment_type,
     employmentTypeLabel: EMPLOYMENT_TYPE_LABELS[e.employment_type],
     defaultShiftCode: e.default_shift_code,
-    defaultShiftLabel: DEFAULT_SHIFT_LABELS[e.default_shift_code as keyof typeof DEFAULT_SHIFT_LABELS] ?? e.default_shift_code,
+    defaultShiftLabel: resolveShiftLabel(ctx, e.default_shift_code, e.branch_id),
     probationStart: e.probation_start || null,
     probationEnd: e.probation_end || null,
     officialFrom: e.official_from || null,

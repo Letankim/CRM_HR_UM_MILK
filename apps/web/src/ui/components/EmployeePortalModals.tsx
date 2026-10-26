@@ -5,37 +5,35 @@ import { Alert, App, Form, Input, Modal, Select } from 'antd';
 import { CloseOutlined, PlusOutlined, SendOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { DEFAULT_SHIFT_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
+import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { DateStringPicker } from './DateTimePickers';
 
 export { AttendanceAdjustmentModal } from './AttendanceAdjustmentModal';
-
-const SHIFT_OPTIONS = [...DEFAULT_SHIFT_OPTIONS];
-const SHIFT_END_HM: Record<string, string> = { CA_SANG: '12:00', CA_CHIEU: '17:00', CA_TOI: '22:00', CA_HANH_CHINH: '17:30' };
 
 export function MyShiftRegisterModal({
   open, todayDate, onClose, onCreated,
 }: { open: boolean; todayDate: string; onClose: () => void; onCreated: (createdId?: string) => void }) {
   const { message } = App.useApp();
   const [form] = Form.useForm();
+  const { options: shiftOptions, endTimeMap } = useShiftTemplates();
   const watchedDate = Form.useWatch('work_date', form) || todayDate;
   const nowHm = dayjs().format('HH:mm');
   const isTodaySelected = watchedDate === todayDate;
 
-  const shiftOptionsForDate = SHIFT_OPTIONS.map((opt) => {
-    const endHm = SHIFT_END_HM[opt.value] || '12:00';
+  const shiftOptionsForDate = shiftOptions.map((opt) => {
+    const endHm = endTimeMap[opt.value] || '12:00';
     const isPassed = isTodaySelected && nowHm >= endHm;
     return { value: opt.value, disabled: isPassed, label: isPassed ? `${opt.label} — Đã qua giờ ca hôm nay` : opt.label };
   });
-  const availableToday = SHIFT_OPTIONS.filter((opt) => nowHm < (SHIFT_END_HM[opt.value] || '12:00'));
+  const availableToday = shiftOptions.filter((opt) => nowHm < (endTimeMap[opt.value] || '12:00'));
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || shiftOptions.length === 0) return;
     const currentHm = dayjs().format('HH:mm');
-    const firstValidToday = SHIFT_OPTIONS.find((opt) => currentHm < (SHIFT_END_HM[opt.value] || '12:00'));
-    form.setFieldsValue({ work_date: firstValidToday ? todayDate : dayjs(todayDate).add(1, 'day').format('YYYY-MM-DD'), shift_code: firstValidToday ? firstValidToday.value : 'CA_SANG', note: 'Đăng ký ca làm việc cá nhân' });
-  }, [open, todayDate, form]);
+    const firstValidToday = shiftOptions.find((opt) => currentHm < (endTimeMap[opt.value] || '12:00'));
+    form.setFieldsValue({ work_date: firstValidToday ? todayDate : dayjs(todayDate).add(1, 'day').format('YYYY-MM-DD'), shift_code: firstValidToday ? firstValidToday.value : (shiftOptions[0]?.value || 'CA_SANG'), note: 'Đăng ký ca làm việc cá nhân' });
+  }, [open, todayDate, shiftOptions, endTimeMap, form]);
 
   const createShiftMut = useMutation({
     mutationFn: (body: unknown) => api.post<{ id: string }>('/my-attendance/shifts', body),
@@ -56,13 +54,13 @@ export function MyShiftRegisterModal({
         form={form} layout="vertical" style={{ marginTop: 8 }} onFinish={(v) => createShiftMut.mutate(v)}
         onValuesChange={(changed) => {
           if (changed.work_date === todayDate) {
-            const firstOk = SHIFT_OPTIONS.find((opt) => dayjs().format('HH:mm') < (SHIFT_END_HM[opt.value] || '12:00'));
+            const firstOk = shiftOptions.find((opt) => dayjs().format('HH:mm') < (endTimeMap[opt.value] || '12:00'));
             if (firstOk) form.setFieldValue('shift_code', firstOk.value);
           }
         }}
       >
         <Form.Item name="work_date" label="Ngày đăng ký làm việc" rules={[{ required: true, message: 'Vui lòng chọn ngày làm việc' }]}><DateStringPicker minDate={todayDate} /></Form.Item>
-        <Form.Item name="shift_code" label="Khung ca đăng ký" rules={[{ required: true, message: 'Vui lòng chọn khung ca' }, { validator: async (_, val) => { const endHm = SHIFT_END_HM[String(val)] || '12:00'; if (form.getFieldValue('work_date') === todayDate && dayjs().format('HH:mm') >= endHm) throw new Error(`Khung ca này trong ngày hôm nay đã kết thúc lúc ${endHm}, vui lòng chọn ca khác hoặc ngày tiếp theo`); } }]}><Select options={shiftOptionsForDate} /></Form.Item>
+        <Form.Item name="shift_code" label="Khung ca đăng ký" rules={[{ required: true, message: 'Vui lòng chọn khung ca' }, { validator: async (_, val) => { const endHm = endTimeMap[String(val)] || '12:00'; if (form.getFieldValue('work_date') === todayDate && dayjs().format('HH:mm') >= endHm) throw new Error(`Khung ca này trong ngày hôm nay đã kết thúc lúc ${endHm}, vui lòng chọn ca khác hoặc ngày tiếp theo`); } }]}><Select options={shiftOptionsForDate} /></Form.Item>
         <Form.Item name="note" label="Ghi chú ca làm việc"><Input placeholder="Ví dụ: Trực quản lý cửa hàng, ca sáng..." /></Form.Item>
       </Form>
     </Modal>
@@ -75,6 +73,7 @@ export function LeaveRequestModal({
   const { message } = App.useApp();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const { options: shiftOptions } = useShiftTemplates();
   const reqMode = Form.useWatch('req_mode', form) || 'LEAVE';
 
   const handleSubmit = async () => {
@@ -98,7 +97,7 @@ export function LeaveRequestModal({
       <Form form={form} layout="vertical" initialValues={{ req_mode: 'LEAVE', leave_date: dayjs().add(1, 'day').format('YYYY-MM-DD'), shift_code: 'CA_SANG', reason: 'Xin nghỉ phép theo định mức chu kỳ' }}>
         <Form.Item name="req_mode" label="Loại đề nghị nghỉ"><Select options={[{ value: 'LEAVE', label: 'Đăng ký nghỉ phép OFF định kỳ (Theo định mức chu kỳ)' }, { value: 'EMERGENCY', label: 'Báo nghỉ khẩn cấp sát giờ ca (<12h trước giờ vào ca)' }]} /></Form.Item>
         <Form.Item name="leave_date" label="Ngày xin nghỉ" rules={[{ required: true, message: 'Chọn ngày nghỉ' }]}><DateStringPicker minDate={dayjs().format('YYYY-MM-DD')} /></Form.Item>
-        <Form.Item name="shift_code" label="Khung ca" rules={[{ required: true }]}><Select options={SHIFT_OPTIONS} /></Form.Item>
+        <Form.Item name="shift_code" label="Khung ca" rules={[{ required: true }]}><Select options={shiftOptions} /></Form.Item>
         <Form.Item name="reason" label="Lý do xin nghỉ" rules={[{ required: true, message: 'Nhập lý do' }]}><Input.TextArea rows={2} placeholder="Nêu rõ lý do xin nghỉ phép hoặc sự cố khẩn cấp..." /></Form.Item>
       </Form>
     </Modal>

@@ -25,7 +25,7 @@ const zUpdateEmployeeBody = z.object({
   emergency_contact_name: z.string().trim().max(80).optional(), emergency_contact_phone: z.string().trim().max(20).optional(),
   tax_code: z.string().trim().max(30).optional(), resigned_at: z.string().trim().optional(), resign_reason: z.string().trim().max(300).optional(),
   branch_id: z.string().trim().min(1).optional(), staff_group: z.string().trim().min(1).optional(), stage: z.enum(['PROBATION', 'OFFICIAL']).optional(), position_title: z.string().trim().max(60).optional(),
-  employment_type: z.enum(EMPLOYMENT_TYPES).optional(), default_shift_code: z.enum(DEFAULT_SHIFT_CODES).optional(),
+  employment_type: z.enum(EMPLOYMENT_TYPES).optional(), default_shift_code: z.string().trim().min(1).max(40).optional(),
   status: z.enum(EMPLOYEE_STATUSES).optional(), probation_start: z.string().trim().optional(), probation_end: z.string().trim().optional(),
   salary: zSalaryProfileFields.optional(), bank_name: z.string().trim().max(60).optional(),
   bank_account_number: z.string().trim().max(40).optional(), bank_account_holder: z.string().trim().max(80).optional(),

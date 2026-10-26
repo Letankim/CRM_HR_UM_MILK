@@ -3,9 +3,10 @@
 import { App, Button, Card, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tag } from 'antd';
 import { CalendarOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, EditOutlined, ExpandAltOutlined, MailOutlined, MessageOutlined, PhoneOutlined, PlusOutlined, SaveOutlined, ShrinkOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
+import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { StatusTag } from '../StatusTag';
 import { FilterToolbar } from './FilterToolbar';
 import { GuardButton, usePermissionGuard } from './GuardButton';
@@ -20,13 +21,6 @@ const CANDIDATE_STATUS_OPTIONS = [
   { value: 'INTERVIEW_SCHEDULED', label: 'Đã xếp lịch phỏng vấn' },
   { value: 'HIRED', label: 'Đạt phỏng vấn / Mời thử việc' },
   { value: 'REJECTED', label: 'Chưa phù hợp' },
-];
-
-const SHIFT_PREF_OPTIONS = [
-  { value: 'CA_SANG', label: 'Ca sáng (07:00 - 12:00)' },
-  { value: 'CA_CHIEU', label: 'Ca chiều (12:00 - 17:00)' },
-  { value: 'CA_TOI', label: 'Ca tối (17:00 - 22:30)' },
-  { value: 'CA_FULL', label: 'Ca gãy / Linh hoạt' },
 ];
 
 interface Props {
@@ -51,6 +45,16 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
   const [viewingCand, setViewingCand] = useState<Record<string, unknown> | null>(null);
   const [drawerWide, setDrawerWide] = useState(false);
   const [candForm] = Form.useForm();
+  const watchedCandBranchId = Form.useWatch('applied_branch_id', candForm);
+  const { options: shiftPrefOptions } = useShiftTemplates(watchedCandBranchId);
+
+  useEffect(() => {
+    if (!candModal || shiftPrefOptions.length === 0) return;
+    const curShift = candForm.getFieldValue('shift_pref');
+    if (!curShift || !shiftPrefOptions.some((o) => o.value === curShift)) {
+      candForm.setFieldValue('shift_pref', shiftPrefOptions[0]!.value);
+    }
+  }, [candModal, watchedCandBranchId, shiftPrefOptions, candForm]);
 
   const queryParams = new URLSearchParams({ per_page: '100' });
   if (q) queryParams.set('q', q);
@@ -157,7 +161,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
             <Col span={6}><Form.Item name="gender" label="Giới tính"><Select options={[{ value: 'Nữ', label: 'Nữ' }, { value: 'Nam', label: 'Nam' }, { value: 'Khác', label: 'Khác' }]} /></Form.Item></Col>
             <Col span={12}><Form.Item name="applied_branch_id" label="Chi nhánh nguyện vọng" rules={[{ required: true }]}><Select options={branches} placeholder="Chọn chi nhánh" /></Form.Item></Col>
             <Col span={12}><Form.Item name="applied_position" label="Vị trí ứng tuyển"><Select options={jobPositionOptions} /></Form.Item></Col>
-            <Col span={8}><Form.Item name="shift_pref" label="Ca đăng ký"><Select options={SHIFT_PREF_OPTIONS} /></Form.Item></Col>
+            <Col span={8}><Form.Item name="shift_pref" label="Ca đăng ký (theo chi nhánh)"><Select options={shiftPrefOptions} /></Form.Item></Col>
             <Col span={8}><Form.Item name="expected_salary_vnd" label="Lương mong muốn"><InputNumber min={0} step={500000} style={{ width: '100%' }} suffix="đ" {...MONEY_INPUT_PROPS} /></Form.Item></Col>
             <Col span={8}><Form.Item name="status" label="Trạng thái xử lý"><Select options={CANDIDATE_STATUS_OPTIONS.filter((o) => o.value !== 'ALL')} /></Form.Item></Col>
             <Col span={24}><Form.Item name="experience_note" label="Kinh nghiệm làm việc"><Input placeholder="Ví dụ: 6 tháng pha chế / thu ngân..." /></Form.Item></Col>
