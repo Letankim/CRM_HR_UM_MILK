@@ -147,7 +147,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
   );
 
   const backupsPane = (
-    <Card size="small" title="Chế độ Bảo trì & Sao lưu Khôi phục Google Drive" extra={canBackupOrMaint && <Space size={6}><Button size="small" icon={<CloudDownloadOutlined />} onClick={() => postMut.mutate({ url: '/admin/backups', body: { kind: 'PRE_OPERATION', action: 'BACKUP' } })}>Sao lưu ngay</Button><Button size="small" type="primary" icon={<ToolOutlined />} onClick={() => postMut.mutate({ url: '/admin/backups', body: { kind: 'DAILY', action: 'RESTORE_VERIFY' } })}>Diễn tập Khôi phục</Button></Space>}>
+    <Card size="small" title="Chế độ Bảo trì & Sao lưu Khôi phục Hệ thống" extra={canBackupOrMaint && <Space size={6}><Button size="small" icon={<CloudDownloadOutlined />} onClick={() => postMut.mutate({ url: '/admin/backups', body: { kind: 'PRE_OPERATION', action: 'BACKUP' } })}>Sao lưu ngay</Button><Button size="small" type="primary" icon={<ToolOutlined />} onClick={() => postMut.mutate({ url: '/admin/backups', body: { kind: 'DAILY', action: 'RESTORE_VERIFY' } })}>Diễn tập Khôi phục</Button></Space>}>
       <Flex justify="space-between" align="center" wrap gap={10} style={{ padding: '10px 14px', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, marginBottom: 12 }}>
         <Space wrap>
           <Typography.Text strong>Chế độ Bảo trì:</Typography.Text>

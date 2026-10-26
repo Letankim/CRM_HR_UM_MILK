@@ -31,7 +31,7 @@ export const TABLE_DISPLAY_LABELS: Record<string, string> = {
   'ATTENDANCE.ATTENDANCE_RECORDS': 'Bảng tổng hợp Ca công theo ngày',
   'ATTENDANCE.ATTENDANCE_ADJUSTMENTS': 'Phiếu Bổ sung & Điều chỉnh công',
   'ATTENDANCE.ATTENDANCE_CONFIRMATIONS': 'Xác nhận Bảng công Cửa hàng',
-  'ATTENDANCE.PHOTOS': 'Kho Ảnh Điểm danh Camera trên Google Drive',
+  'ATTENDANCE.PHOTOS': 'Kho Ảnh Điểm danh Camera',
   'PAYROLL.PAY_RATES': 'Hồ sơ Lương & Phụ cấp Cá nhân',
   'PAYROLL.PAY_PERIODS': 'Kỳ lương 5 bước',
   'PAYROLL.PAYROLL_ITEMS': 'Khoản Thưởng, Phụ cấp & Điều chỉnh lương',
