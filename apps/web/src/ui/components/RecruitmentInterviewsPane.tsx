@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Button, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tag } from 'antd';
-import { CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DeleteOutlined, EditOutlined, VideoCameraOutlined } from '@ant-design/icons';
+import { CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DeleteOutlined, EditOutlined, ExpandAltOutlined, SaveOutlined, ShrinkOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
@@ -48,6 +48,7 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
   const [decisionFilter, setDecisionFilter] = useState('ALL');
 
   const [viewingIv, setViewingIv] = useState<Record<string, unknown> | null>(null);
+  const [drawerWide, setDrawerWide] = useState(false);
   const [evalTarget, setEvalTarget] = useState<Record<string, unknown> | null>(null);
   const [reschedTarget, setReschedTarget] = useState<Record<string, unknown> | null>(null);
   const [evalForm] = Form.useForm();
@@ -183,7 +184,7 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
         ]}
       />
 
-      <Drawer open={Boolean(viewingIv)} title={viewingIv ? `Chi tiết Phỏng vấn: ${viewingIv.candidateName}` : 'Chi tiết phỏng vấn'} width="65vw" onClose={() => setViewingIv(null)} destroyOnHidden extra={<Space>{Boolean(viewingIv?.meet_link) && <Button size="small" type="primary" icon={<VideoCameraOutlined />} href={String(viewingIv?.meet_link)} target="_blank">Mở Google Meet</Button>}{canManageRec && viewingIv && <Button size="small" icon={<EditOutlined />} onClick={() => { const iv = viewingIv; setViewingIv(null); openEvalModal(iv); }}>Chấm điểm HR</Button>}<Button size="small" icon={<CloseOutlined />} onClick={() => setViewingIv(null)}>Đóng</Button></Space>}>
+      <Drawer open={Boolean(viewingIv)} title={viewingIv ? `Chi tiết Phỏng vấn: ${viewingIv.candidateName}` : 'Chi tiết phỏng vấn'} width={drawerWide ? '95vw' : '65vw'} onClose={() => setViewingIv(null)} destroyOnHidden extra={<Space>{Boolean(viewingIv?.meet_link) && <Button size="small" type="primary" icon={<VideoCameraOutlined />} href={String(viewingIv?.meet_link)} target="_blank">Mở Google Meet</Button>}{canManageRec && viewingIv && <Button size="small" icon={<ClockCircleOutlined />} onClick={() => { const iv = viewingIv; setViewingIv(null); openReschedModal(iv); }}>Chỉnh sửa lịch</Button>}{canManageRec && viewingIv && <Button size="small" icon={<EditOutlined />} onClick={() => { const iv = viewingIv; setViewingIv(null); openEvalModal(iv); }}>Chấm điểm HR</Button>}<Button size="small" icon={drawerWide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setDrawerWide((v) => !v)}>{drawerWide ? 'Thu gọn' : 'Mở rộng'}</Button><Button size="small" icon={<CloseOutlined />} onClick={() => setViewingIv(null)}>Đóng</Button></Space>}>
         {viewingIv && (
           <Descriptions size="small" bordered column={2}>
             <Descriptions.Item label="Ứng viên">{String(viewingIv.candidateName)} {viewingIv.candidateCode ? <Tag color="geekblue">{String(viewingIv.candidateCode)}</Tag> : null}</Descriptions.Item>
@@ -191,9 +192,9 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
             <Descriptions.Item label="Vị trí ứng tuyển">{String(viewingIv.positionLabel || '—')}</Descriptions.Item>
             <Descriptions.Item label="Chi nhánh">{String(viewingIv.branchName || '—')}</Descriptions.Item>
             <Descriptions.Item label="Thời gian phỏng vấn">{String(viewingIv.scheduled_at || '').slice(0, 16).replace('T', ' ')} ({String(viewingIv.duration_minutes ?? 30)} phút)</Descriptions.Item>
-            <Descriptions.Item label="Phòng họp trực tuyến">{viewingIv.meet_link ? <a href={String(viewingIv.meet_link)} target="_blank" rel="noreferrer">{String(viewingIv.meet_link)}</a> : '—'}</Descriptions.Item>
+            <Descriptions.Item label="Phòng họp trực tuyến">{viewingIv.meet_link ? <Button size="small" type="link" icon={<VideoCameraOutlined />} href={String(viewingIv.meet_link)} target="_blank" style={{ padding: 0, height: 'auto' }}>{String(viewingIv.meet_link)}</Button> : '—'}</Descriptions.Item>
             <Descriptions.Item label="Hội đồng phỏng vấn" span={2}>{String(viewingIv.interviewerLabel || viewingIv.interviewer_id || '—')}</Descriptions.Item>
-            <Descriptions.Item label="Trạng thái xác nhận">{viewingIv.reschedule_requested ? <Tag color="warning">Cần đổi lịch</Tag> : viewingIv.candidate_confirmed ? <Tag color="success">Đã xác nhận</Tag> : <Tag>Chờ xác nhận</Tag>}</Descriptions.Item>
+            <Descriptions.Item label="Trạng thái xác nhận">{viewingIv.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />}>Cần đổi lịch</Tag> : viewingIv.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã xác nhận</Tag> : <Tag>Chờ xác nhận</Tag>}</Descriptions.Item>
             <Descriptions.Item label="Quyết định HR"><Space size={6}><StatusTag value={String(viewingIv.decision)} />{viewingIv.decision !== 'PENDING' && <Tag color="blue">{String(viewingIv.score)} điểm</Tag>}</Space></Descriptions.Item>
             {Boolean(viewingIv.reschedule_reason) && <Descriptions.Item label="Lý do xin đổi lịch" span={2}>{String(viewingIv.reschedule_reason)}</Descriptions.Item>}
             <Descriptions.Item label="Điểm thành phần" span={2}>Tác phong: <b>{String(viewingIv.appearance_score ?? 0)}</b> · Thái độ: <b>{String(viewingIv.attitude_score ?? 0)}</b> · Kỹ năng: <b>{String(viewingIv.skill_score ?? 0)}</b></Descriptions.Item>
@@ -202,7 +203,7 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
         )}
       </Drawer>
 
-      <Modal width={620} open={Boolean(evalTarget)} forceRender destroyOnHidden title={evalTarget ? `Chấm điểm & Quyết định Phỏng vấn: ${evalTarget.candidateName}` : 'Đánh giá phỏng vấn'} okText="Lưu kết quả phỏng vấn" cancelText="Hủy bỏ" okButtonProps={{ loading: putMut.isPending }} onCancel={() => setEvalTarget(null)} onOk={() => evalForm.submit()}>
+      <Modal width={620} open={Boolean(evalTarget)} forceRender destroyOnHidden title={evalTarget ? `Chấm điểm & Quyết định Phỏng vấn: ${evalTarget.candidateName}` : 'Đánh giá phỏng vấn'} okText="Lưu kết quả phỏng vấn" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined />, loading: putMut.isPending }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={() => setEvalTarget(null)} onOk={() => evalForm.submit()}>
         <Form form={evalForm} layout="vertical" onFinish={(v) => putMut.mutate({ url: `/admin/interviews/${evalTarget!.id}/evaluate`, body: { ...v, version: evalTarget!.version } })}>
           <Row gutter={12}>
             <Col span={8}><Form.Item name="appearance_score" label="Điểm tác phong (0-100)" rules={[{ required: true }]}><InputNumber min={0} max={100} style={{ width: '100%' }} /></Form.Item></Col>
@@ -215,7 +216,7 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
         </Form>
       </Modal>
 
-      <Modal width={640} open={Boolean(reschedTarget)} forceRender destroyOnHidden title={reschedTarget ? `Chỉnh sửa / Đổi lịch Phỏng vấn: ${reschedTarget.candidateName}` : 'Chỉnh sửa lịch phỏng vấn'} okText="Lưu chỉnh sửa & Thông báo" cancelText="Hủy bỏ" okButtonProps={{ loading: putMut.isPending }} onCancel={() => setReschedTarget(null)} onOk={() => reschedForm.submit()}>
+      <Modal width={640} open={Boolean(reschedTarget)} forceRender destroyOnHidden title={reschedTarget ? `Chỉnh sửa / Đổi lịch Phỏng vấn: ${reschedTarget.candidateName}` : 'Chỉnh sửa lịch phỏng vấn'} okText="Lưu chỉnh sửa & Thông báo" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined />, loading: putMut.isPending }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={() => setReschedTarget(null)} onOk={() => reschedForm.submit()}>
         <Form form={reschedForm} layout="vertical" onFinish={(v) => putMut.mutate({ url: `/admin/interviews/${reschedTarget!.id}/evaluate`, body: { version: reschedTarget!.version, interviewer_ids: v.interviewer_ids, duration_minutes: Number(v.duration_minutes || 30), meet_link: v.meet_link, candidate_confirmed: Boolean(v.candidate_confirmed), reschedule_requested: Boolean(v.reschedule_requested), reschedule_reason: v.reschedule_reason, scheduled_at: `${v.interview_date}T${v.interview_slot}:00+07:00` } })}>
           <Row gutter={12}>
             <Col span={24}><Form.Item name="interviewer_ids" label="Người tham gia phỏng vấn (tự động nhận thông báo chỉnh sửa)" rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 người phỏng vấn' }]}><Select mode="multiple" allowClear showSearch optionFilterProp="label" placeholder="Chọn người tham gia phỏng vấn" options={interviewerOptions} /></Form.Item></Col>

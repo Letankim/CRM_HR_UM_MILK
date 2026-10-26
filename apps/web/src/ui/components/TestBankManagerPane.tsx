@@ -160,7 +160,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
   );
 
   const historyCard = (
-    <Card size="small" title={`Lịch sử các phiên làm bài kiểm tra (${filteredAttempts.length}/${attempts.length})`} extra={<Space><Button size="small" onClick={() => { setHistorySearch(''); setHistoryEmpId('ALL'); setHistoryTestId('ALL'); setHistoryResult('ALL'); }}>Xóa bộ lọc</Button><Button size="small" type="primary" ghost icon={<ReloadOutlined />} loading={refreshing} onClick={() => void handleManualRefresh()}>Làm mới</Button></Space>}>
+    <Card size="small" title={`Lịch sử các phiên làm bài kiểm tra (${filteredAttempts.length}/${attempts.length})`} extra={<Space><Button size="small" icon={<CloseOutlined />} onClick={() => { setHistorySearch(''); setHistoryEmpId('ALL'); setHistoryTestId('ALL'); setHistoryResult('ALL'); }}>Xóa bộ lọc</Button><Button size="small" type="primary" ghost icon={<ReloadOutlined />} loading={refreshing} onClick={() => void handleManualRefresh()}>Làm mới</Button></Space>}>
       <Space wrap size={8} style={{ width: '100%', marginBottom: 12 }}>
         <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm tên nhân sự, mã đề, tên đề..." value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} style={{ width: 240 }} />
         <Select showSearch optionFilterProp="label" value={historyEmpId} onChange={setHistoryEmpId} style={{ width: 230 }} options={[{ value: 'ALL', label: 'Tất cả nhân sự làm bài' }, ...employees]} />

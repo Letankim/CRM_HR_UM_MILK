@@ -1,7 +1,7 @@
 'use client';
 
 import { Alert, App, Button, Card, Flex, Form, Input, Modal, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd';
-import { CloseOutlined, CloudDownloadOutlined, DeleteOutlined, EditOutlined, FileProtectOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SendOutlined, SettingOutlined, ToolOutlined } from '@ant-design/icons';
+import { CloseOutlined, CloudDownloadOutlined, DeleteOutlined, EditOutlined, FileProtectOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined, SendOutlined, SettingOutlined, ToolOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
@@ -189,7 +189,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
         ]} />
       </Card>
       <PolicyFormModal open={polModal} editing={editingPol} form={polForm} isAdmin={isAdmin} loading={postMut.isPending || putMut.isPending} onClose={() => setPolModal(false)} onSubmit={(v) => { if (editingPol) putMut.mutate({ url: `/admin/policies/${editingPol.id}`, body: { ...v, version: editingPol.version, owner_override_approved: true } }); else postMut.mutate({ url: '/admin/policies', body: v }); setPolModal(false); }} />
-      <Modal width={680} open={settingModal} title="Cập nhật Tham số Cài đặt Hệ thống" okText="Lưu tham số" cancelText="Hủy bỏ" onCancel={() => setSettingModal(false)} onOk={() => setForm.submit()}>
+      <Modal width={680} open={settingModal} title="Cập nhật Tham số Cài đặt Hệ thống" okText="Lưu tham số" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined />, loading: putMut.isPending }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={() => setSettingModal(false)} onOk={() => setForm.submit()}>
         <Form form={setForm} layout="vertical" onFinish={(v) => { putMut.mutate({ url: '/admin/system-settings', body: v }); setSettingModal(false); }}>
           <Form.Item name="key" label="Mã tham số cấu hình" rules={[{ required: true }]}><Input placeholder="VD: APP_TIMEZONE" /></Form.Item>
           <Form.Item name="value_json" label="Giá trị áp dụng" rules={[{ required: true }]}><Input placeholder="VD: Asia/Ho_Chi_Minh" /></Form.Item>
