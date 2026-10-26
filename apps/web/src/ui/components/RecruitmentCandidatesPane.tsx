@@ -1,6 +1,6 @@
 'use client';
 
-import { App, Button, Card, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tag, Tooltip } from 'antd';
+import { App, Button, Card, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tag } from 'antd';
 import { CalendarOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, EditOutlined, ExpandAltOutlined, MailOutlined, MessageOutlined, PhoneOutlined, PlusOutlined, SaveOutlined, ShrinkOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -36,7 +36,7 @@ interface Props {
 
 export function RecruitmentCandidatesPane({ branches, onScheduleInterview }: Props) {
   const qc = useQueryClient();
-  const canManageRec = usePermissionGuard({ perms: ['candidate.manage', 'interview.manage'] });
+  const canManageRec = usePermissionGuard({ perms: ['candidate.manage', 'interview.manage', 'system.config'] });
   const { message, modal } = App.useApp();
   const { options: jobPositionOptions } = useJobPositions();
 
@@ -116,28 +116,17 @@ export function RecruitmentCandidatesPane({ branches, onScheduleInterview }: Pro
       <Table
         size="small" rowKey="id" loading={candQ.isLoading} pagination={{ pageSize: 10 }} dataSource={rows}
         columns={[
-          { title: 'Mã UV', dataIndex: 'candidate_code', width: 95, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
-          { title: 'Họ và tên', dataIndex: 'full_name', render: (v: string, r) => <Space direction="vertical" size={0}><span style={{ fontWeight: 600 }}>{v}</span><span style={{ fontSize: 12, color: '#64748B' }}>{r.gender ? `${r.gender} · ` : ''}{r.birth_year ? `SN ${r.birth_year}` : ''}</span></Space> },
-          {
-            title: 'Số điện thoại & Liên hệ', dataIndex: 'phone', width: 190,
-            render: (v: string, r) => (
-              <Space size={4} wrap>
-                <span className="num" style={{ fontWeight: 600 }}>{v}</span>
-                <Tooltip title={`Gọi điện ${v}`}><Button size="small" type="text" icon={<PhoneOutlined style={{ color: '#2563EB' }} />} href={`tel:${v}`} /></Tooltip>
-                <Tooltip title={`Nhắn Zalo ${v}`}><Button size="small" type="text" icon={<MessageOutlined style={{ color: '#0284C7' }} />} href={`https://zalo.me/${v}`} target="_blank" /></Tooltip>
-                {Boolean(r.email) && <Tooltip title={`Gửi Email: ${r.email}`}><Button size="small" type="text" icon={<MailOutlined style={{ color: '#16A34A' }} />} href={`mailto:${r.email}`} /></Tooltip>}
-              </Space>
-            ),
-          },
-          { title: 'Email', dataIndex: 'email', render: (v: string) => v || '—' },
-          { title: 'Vị trí & Ca', dataIndex: 'positionLabel', width: 160, render: (v: string, r) => <Space direction="vertical" size={0}><span>{v}</span><span style={{ fontSize: 12, color: '#64748B' }}>{String(r.shiftPrefLabel || '')}</span></Space> },
-          { title: 'Chi nhánh nguyện vọng', dataIndex: 'branchName' },
-          { title: 'Giai đoạn', dataIndex: 'stage', width: 145, render: (v: string) => <StatusTag value={v} /> },
+          { title: 'Mã UV', dataIndex: 'candidate_code', width: 100, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
+          { title: 'Họ và tên', dataIndex: 'full_name', ellipsis: true, render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span> },
+          { title: 'Số điện thoại', dataIndex: 'phone', width: 130, render: (v: string) => <span className="num" style={{ fontWeight: 600 }}>{v}</span> },
+          { title: 'Vị trí ứng tuyển', dataIndex: 'positionLabel', width: 155, ellipsis: true },
+          { title: 'Chi nhánh nguyện vọng', dataIndex: 'branchName', ellipsis: true },
+          { title: 'Giai đoạn', dataIndex: 'stage', width: 165, render: (v: string) => <StatusTag value={v} /> },
           {
             title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
             render: (_, r) => (
               <RowActionButtons
-                detailTooltip="Xem hồ sơ & ghi chú HR"
+                detailTooltip="Xem chi tiết hồ sơ ứng viên"
                 onViewDetail={() => setViewingCand(r)}
                 menuItems={canManageRec ? [
                   ...(r.status === 'NEW' ? [{ key: 'contacted', icon: <CheckCircleOutlined style={{ color: '#2563EB' }} />, label: 'Đánh dấu Đã liên hệ ứng viên', onClick: () => saveMut.mutate({ url: `/admin/candidates/${r.id}`, method: 'PUT', body: { version: r.version, status: 'CONTACTED' } }) }] : []),
@@ -173,7 +162,7 @@ export function RecruitmentCandidatesPane({ branches, onScheduleInterview }: Pro
         </Form>
       </Modal>
 
-      <Drawer open={Boolean(viewingCand)} title={viewingCand ? `Hồ sơ Ứng viên: ${viewingCand.full_name} (${viewingCand.candidate_code})` : 'Chi tiết ứng viên'} width={drawerWide ? '95vw' : '70vw'} onClose={() => setViewingCand(null)} destroyOnHidden extra={<Space><GuardButton size="small" type="primary" icon={<CalendarOutlined />} perms={['interview.manage']} onClick={() => { const id = String(viewingCand!.id); setViewingCand(null); onScheduleInterview(id); }}>Đặt lịch phỏng vấn</GuardButton><GuardButton size="small" icon={<EditOutlined />} perms={['candidate.manage']} onClick={() => { const c = viewingCand!; setViewingCand(null); openEditCand(c); }}>Chỉnh sửa</GuardButton><Button size="small" icon={drawerWide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setDrawerWide((v) => !v)}>{drawerWide ? 'Thu gọn' : 'Mở rộng'}</Button><Button size="small" icon={<CloseOutlined />} onClick={() => setViewingCand(null)}>Đóng</Button></Space>}>
+      <Drawer open={Boolean(viewingCand)} title={viewingCand ? `Hồ sơ Ứng viên: ${viewingCand.full_name} (${viewingCand.candidate_code})` : 'Chi tiết ứng viên'} width={drawerWide ? '95vw' : '70vw'} onClose={() => setViewingCand(null)} destroyOnHidden extra={<Space><GuardButton size="small" type="primary" icon={<CalendarOutlined />} perms={['interview.manage', 'system.config']} onClick={() => { const id = String(viewingCand!.id); setViewingCand(null); onScheduleInterview(id); }}>Đặt lịch phỏng vấn</GuardButton><GuardButton size="small" icon={<EditOutlined />} perms={['candidate.manage', 'system.config']} onClick={() => { const c = viewingCand!; setViewingCand(null); openEditCand(c); }}>Chỉnh sửa</GuardButton><Button size="small" icon={drawerWide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setDrawerWide((v) => !v)}>{drawerWide ? 'Thu gọn' : 'Mở rộng'}</Button><Button size="small" icon={<CloseOutlined />} onClick={() => setViewingCand(null)}>Đóng</Button></Space>}>
         {viewingCand && (
           <Space direction="vertical" size={14} style={{ width: '100%' }}>
             <Card size="small" title="Kênh liên hệ tích hợp">

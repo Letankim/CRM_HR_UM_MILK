@@ -138,8 +138,8 @@ export default function DashboardPage() {
                 <Col xs={12} md={6}>
                   <Card size="small" loading={employees.isLoading}>
                     <Statistic title="Thử việc / Chính thức" value={`${probationCount} / ${officialCount}`} prefix={<UserSwitchOutlined />} />
-                    <Link href={can('candidate.manage', 'interview.manage') ? '/admin/employees?section=recruitment' : '/admin/employees'} style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>
-                      {can('candidate.manage', 'interview.manage') ? 'Tuyển dụng & Đánh giá TV' : 'Xem nhân sự theo giai đoạn'}
+                    <Link href={can('candidate.manage', 'interview.manage', 'system.config') ? '/admin/employees?section=recruitment' : '/admin/employees'} style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>
+                      {can('candidate.manage', 'interview.manage', 'system.config') ? 'Tuyển dụng & Đánh giá TV' : 'Xem nhân sự theo giai đoạn'}
                     </Link>
                   </Card>
                 </Col>

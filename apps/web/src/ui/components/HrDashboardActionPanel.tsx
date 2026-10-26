@@ -105,7 +105,7 @@ export function HrDashboardActionPanel() {
           <Card size="small"><Statistic title="Ứng viên mới" value={newCandidatesCount} prefix={<SolutionOutlined style={{ color: '#2563EB' }} />} /><Link href="/admin/employees?section=recruitment" style={{ fontSize: 12 }}>Xem hồ sơ ứng viên</Link></Card>
         </Col>
         <Col xs={12} md={4}>
-          <Card size="small"><Statistic title="Lịch phỏng vấn" value={todayInterviewsCount} prefix={<CalendarOutlined style={{ color: '#0284C7' }} />} /><Link href="/admin/employees?section=recruitment" style={{ fontSize: 12 }}>Xem lịch phỏng vấn</Link></Card>
+          <Card size="small"><Statistic title="Lịch phỏng vấn" value={todayInterviewsCount} prefix={<CalendarOutlined style={{ color: '#0284C7' }} />} /><Link href="/admin/employees?section=recruitment&sub=interviews" style={{ fontSize: 12 }}>Xem lịch phỏng vấn</Link></Card>
         </Col>
         <Col xs={12} md={4}>
           <Card size="small"><Statistic title="NV sắp hết thử việc" value={`${endingProbationList.length} / ${probationEmployees.length}`} prefix={<TeamOutlined style={{ color: '#D97706' }} />} /><Link href="/admin/employees?stage=PROBATION" style={{ fontSize: 12 }}>Xét chuyển chính thức</Link></Card>

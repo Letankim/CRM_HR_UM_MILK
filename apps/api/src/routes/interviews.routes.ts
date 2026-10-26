@@ -168,7 +168,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
         category: 'HR',
         title: notifTitle,
         body: notifBody,
-        link: '/admin/employees?section=recruitment',
+        link: '/admin/employees?section=recruitment&sub=interviews',
         severity: 'INFO',
         read_at: '',
         entity_type: 'INTERVIEWS',

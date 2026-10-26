@@ -22,10 +22,19 @@ export function canAccessPath(user: PublicUser, pathname: string, section?: stri
 
   if (path.startsWith('/admin/employees')) {
     if (effectiveSection === 'recruitment') {
-      return user.permissions.includes('candidate.manage') || user.permissions.includes('interview.manage');
+      return (
+        user.permissions.includes('candidate.manage') ||
+        user.permissions.includes('interview.manage') ||
+        user.permissions.includes('employee.read') ||
+        user.permissions.includes('system.config')
+      );
     }
     if (effectiveSection === 'tests') {
-      return user.permissions.includes('test.manage') || user.permissions.includes('system.config');
+      return (
+        user.permissions.includes('test.manage') ||
+        user.permissions.includes('test.read') ||
+        user.permissions.includes('system.config')
+      );
     }
     return user.permissions.includes('employee.read');
   }

@@ -1,6 +1,6 @@
 'use client';
 
-import { App, Button, Col, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tag } from 'antd';
+import { App, Button, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tag } from 'antd';
 import { CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DeleteOutlined, EditOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -36,7 +36,7 @@ interface Props {
 
 export function RecruitmentInterviewsPane({ branches, onOpenScheduleModal }: Props) {
   const qc = useQueryClient();
-  const canManageRec = usePermissionGuard({ perms: ['candidate.manage', 'interview.manage'] });
+  const canManageRec = usePermissionGuard({ perms: ['candidate.manage', 'interview.manage', 'system.config'] });
   const { message, modal } = App.useApp();
 
   const [q, setQ] = useState('');
@@ -44,6 +44,7 @@ export function RecruitmentInterviewsPane({ branches, onOpenScheduleModal }: Pro
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [decisionFilter, setDecisionFilter] = useState('ALL');
 
+  const [viewingIv, setViewingIv] = useState<Record<string, unknown> | null>(null);
   const [evalTarget, setEvalTarget] = useState<Record<string, unknown> | null>(null);
   const [reschedTarget, setReschedTarget] = useState<Record<string, unknown> | null>(null);
   const [evalForm] = Form.useForm();
@@ -129,55 +130,57 @@ export function RecruitmentInterviewsPane({ branches, onOpenScheduleModal }: Pro
       <Table
         size="small" rowKey="id" loading={ivQ.isLoading} pagination={{ pageSize: 10 }} dataSource={rows}
         columns={[
-          { title: 'Ứng viên phỏng vấn', dataIndex: 'candidateName', render: (v: string, r) => <Space direction="vertical" size={0}><span style={{ fontWeight: 600 }}>{v} {r.candidateCode ? `(${r.candidateCode})` : ''}</span><span style={{ fontSize: 12, color: '#64748B' }}>{String(r.positionLabel || '')} · {String(r.branchName || '')}</span></Space> },
-          { title: 'Người phỏng vấn', dataIndex: 'interviewerLabel', render: (v: string, r) => v || String(r.interviewer_id ?? '') },
+          { title: 'Ứng viên phỏng vấn', dataIndex: 'candidateName', ellipsis: true, render: (v: string, r) => <span style={{ fontWeight: 600 }}>{v} {r.candidateCode ? `(${r.candidateCode})` : ''}</span> },
+          { title: 'Chi nhánh', dataIndex: 'branchName', width: 165, ellipsis: true },
+          { title: 'Người phỏng vấn', dataIndex: 'interviewerLabel', ellipsis: true, render: (v: string, r) => v || String(r.interviewer_id ?? '') },
           {
-            title: 'Khung giờ & Google Meet', dataIndex: 'scheduled_at', width: 220,
-            render: (v: string, r) => (
-              <Space direction="vertical" size={2}>
-                <span className="num" style={{ fontWeight: 600 }}>{String(v).slice(0, 16).replace('T', ' ')} ({String(r.duration_minutes ?? 30)}p)</span>
-                {Boolean(r.meet_link) && <Button size="small" type="link" icon={<VideoCameraOutlined />} href={String(r.meet_link)} target="_blank" style={{ padding: 0, height: 'auto' }}>Mở Google Meet</Button>}
-              </Space>
-            ),
+            title: 'Thời gian phỏng vấn', dataIndex: 'scheduled_at', width: 165,
+            render: (v: string, r) => <span className="num" style={{ fontWeight: 600 }}>{String(v).slice(0, 16).replace('T', ' ')} ({String(r.duration_minutes ?? 30)}p)</span>,
           },
           {
-            title: 'Xác nhận & Đổi lịch', dataIndex: 'status', width: 175,
+            title: 'Xác nhận', dataIndex: 'status', width: 135,
+            render: (_, r) => r.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />}>Cần đổi lịch</Tag> : r.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã xác nhận</Tag> : <Tag color="default">Chờ xác nhận</Tag>,
+          },
+          {
+            title: 'Kết quả HR', dataIndex: 'decision', width: 165,
+            render: (v: string, r) => <Space size={4}><StatusTag value={v} />{v !== 'PENDING' && <Tag color="blue" className="num">{String(r.score)}đ</Tag>}</Space>,
+          },
+          {
+            title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
             render: (_, r) => (
-              <Space direction="vertical" size={2}>
-                {r.reschedule_requested ? (
-                  <Tag color="warning" icon={<ClockCircleOutlined />}>Cần đổi lịch</Tag>
-                ) : r.candidate_confirmed ? (
-                  <Tag color="success" icon={<CheckCircleOutlined />}>Đã xác nhận</Tag>
-                ) : (
-                  <Tag color="default">Chờ xác nhận</Tag>
-                )}
-                {Boolean(r.reschedule_reason) && <span style={{ fontSize: 11, color: '#B45309' }}>{String(r.reschedule_reason)}</span>}
-              </Space>
-            ),
-          },
-          {
-            title: 'Chấm điểm & Quyết định HR', dataIndex: 'decision', width: 210,
-            render: (v: string, r) => (
-              <Space direction="vertical" size={2}>
-                <Space size={4}><StatusTag value={v} />{v !== 'PENDING' && <Tag color="blue" className="num">{String(r.score)}đ</Tag>}</Space>
-                {Boolean(r.comment) && <span style={{ fontSize: 12, color: '#475569' }}>{String(r.comment)}</span>}
-              </Space>
-            ),
-          },
-          {
-            title: 'Thao tác', width: 80, fixed: 'right', align: 'right',
-            render: (_, r) => canManageRec ? (
               <RowActionButtons
-                menuItems={[
+                detailTooltip="Xem chi tiết lịch phỏng vấn"
+                onViewDetail={() => setViewingIv(r)}
+                menuItems={canManageRec ? [
+                  ...(r.meet_link ? [{ key: 'meet', icon: <VideoCameraOutlined style={{ color: '#2563EB' }} />, label: 'Mở phòng họp Google Meet', onClick: () => window.open(String(r.meet_link), '_blank') }] : []),
                   { key: 'eval', icon: <EditOutlined style={{ color: '#2563EB' }} />, label: 'Chấm điểm & Ra quyết định HR', onClick: () => openEvalModal(r) },
                   { key: 'resched', icon: <ClockCircleOutlined style={{ color: '#D97706' }} />, label: 'Xác nhận / Đổi lịch phỏng vấn', onClick: () => openReschedModal(r) },
                   { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa lịch phỏng vấn', onClick: () => modal.confirm({ title: 'Xóa lịch phỏng vấn này?', content: `Lịch phỏng vấn của ứng viên "${r.candidateName}" sẽ bị xóa.`, okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => delMut.mutateAsync({ url: `/admin/interviews/${r.id}`, body: { version: r.version } }) }) },
-                ]}
+                ] : []}
               />
-            ) : null,
+            ),
           },
         ]}
       />
+
+      <Drawer open={Boolean(viewingIv)} title={viewingIv ? `Chi tiết Phỏng vấn: ${viewingIv.candidateName}` : 'Chi tiết phỏng vấn'} width="65vw" onClose={() => setViewingIv(null)} destroyOnHidden extra={<Space>{Boolean(viewingIv?.meet_link) && <Button size="small" type="primary" icon={<VideoCameraOutlined />} href={String(viewingIv?.meet_link)} target="_blank">Mở Google Meet</Button>}{canManageRec && viewingIv && <Button size="small" icon={<EditOutlined />} onClick={() => { const iv = viewingIv; setViewingIv(null); openEvalModal(iv); }}>Chấm điểm HR</Button>}<Button size="small" icon={<CloseOutlined />} onClick={() => setViewingIv(null)}>Đóng</Button></Space>}>
+        {viewingIv && (
+          <Descriptions size="small" bordered column={2}>
+            <Descriptions.Item label="Ứng viên">{String(viewingIv.candidateName)} {viewingIv.candidateCode ? <Tag color="geekblue">{String(viewingIv.candidateCode)}</Tag> : null}</Descriptions.Item>
+            <Descriptions.Item label="Số điện thoại">{String(viewingIv.candidatePhone || '—')}</Descriptions.Item>
+            <Descriptions.Item label="Vị trí ứng tuyển">{String(viewingIv.positionLabel || '—')}</Descriptions.Item>
+            <Descriptions.Item label="Chi nhánh">{String(viewingIv.branchName || '—')}</Descriptions.Item>
+            <Descriptions.Item label="Thời gian phỏng vấn">{String(viewingIv.scheduled_at || '').slice(0, 16).replace('T', ' ')} ({String(viewingIv.duration_minutes ?? 30)} phút)</Descriptions.Item>
+            <Descriptions.Item label="Phòng họp trực tuyến">{viewingIv.meet_link ? <a href={String(viewingIv.meet_link)} target="_blank" rel="noreferrer">{String(viewingIv.meet_link)}</a> : '—'}</Descriptions.Item>
+            <Descriptions.Item label="Hội đồng phỏng vấn" span={2}>{String(viewingIv.interviewerLabel || viewingIv.interviewer_id || '—')}</Descriptions.Item>
+            <Descriptions.Item label="Trạng thái xác nhận">{viewingIv.reschedule_requested ? <Tag color="warning">Cần đổi lịch</Tag> : viewingIv.candidate_confirmed ? <Tag color="success">Đã xác nhận</Tag> : <Tag>Chờ xác nhận</Tag>}</Descriptions.Item>
+            <Descriptions.Item label="Quyết định HR"><Space size={6}><StatusTag value={String(viewingIv.decision)} />{viewingIv.decision !== 'PENDING' && <Tag color="blue">{String(viewingIv.score)} điểm</Tag>}</Space></Descriptions.Item>
+            {Boolean(viewingIv.reschedule_reason) && <Descriptions.Item label="Lý do xin đổi lịch" span={2}>{String(viewingIv.reschedule_reason)}</Descriptions.Item>}
+            <Descriptions.Item label="Điểm thành phần" span={2}>Tác phong: <b>{String(viewingIv.appearance_score ?? 0)}</b> · Thái độ: <b>{String(viewingIv.attitude_score ?? 0)}</b> · Kỹ năng: <b>{String(viewingIv.skill_score ?? 0)}</b></Descriptions.Item>
+            <Descriptions.Item label="Nhận xét của HR" span={2}>{String(viewingIv.comment || 'Chưa có nhận xét đánh giá')}</Descriptions.Item>
+          </Descriptions>
+        )}
+      </Drawer>
 
       <Modal width={620} open={Boolean(evalTarget)} forceRender destroyOnHidden title={evalTarget ? `Chấm điểm & Quyết định Phỏng vấn: ${evalTarget.candidateName}` : 'Đánh giá phỏng vấn'} okText="Lưu kết quả phỏng vấn" cancelText="Hủy bỏ" okButtonProps={{ loading: putMut.isPending }} onCancel={() => setEvalTarget(null)} onOk={() => evalForm.submit()}>
         <Form form={evalForm} layout="vertical" onFinish={(v) => putMut.mutate({ url: `/admin/interviews/${evalTarget!.id}/evaluate`, body: { ...v, version: evalTarget!.version } })}>

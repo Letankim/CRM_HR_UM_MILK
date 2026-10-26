@@ -4,7 +4,8 @@ import { App, Card, Col, Form, Input, InputNumber, Modal, Row, Select, Tabs } fr
 import { BookOutlined, CalendarOutlined, CloseOutlined, SolutionOutlined, TeamOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
@@ -41,9 +42,17 @@ function getNextFutureInterviewSlot(): { date: string; slot: string } {
 export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabChange }: Props) {
   const qc = useQueryClient();
   const can = useCan();
+  const searchParams = useSearchParams();
   const { message } = App.useApp();
-  const [recSubTab, setRecSubTab] = useState<'candidates' | 'interviews'>('candidates');
+  const subParam = searchParams.get('sub');
+  const [recSubTab, setRecSubTab] = useState<'candidates' | 'interviews'>(subParam === 'interviews' ? 'interviews' : 'candidates');
   const [ivModal, setIvModal] = useState(false);
+
+  useEffect(() => {
+    if (subParam === 'interviews' || subParam === 'candidates') {
+      setRecSubTab(subParam);
+    }
+  }, [subParam]);
   const [ivForm] = Form.useForm();
   const selectedDate = Form.useWatch('interview_date', ivForm);
   const todayStr = dayjs().format('YYYY-MM-DD');

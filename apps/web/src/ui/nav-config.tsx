@@ -78,14 +78,14 @@ export const BACKOFFICE_NAV: NavGroup[] = [
         label: 'Tuyển dụng & Phỏng vấn',
         breadcrumbTitle: 'Tuyển dụng & Lịch Phỏng vấn',
         icon: <SolutionOutlined />,
-        perms: ['candidate.manage', 'interview.manage'],
+        perms: ['candidate.manage', 'interview.manage', 'employee.read', 'system.config'],
       },
       {
         key: '/admin/employees?section=tests',
         label: 'Ngân hàng Đề & Thi TEST',
         breadcrumbTitle: 'Ngân hàng Đề & Thi TEST Nghiệp Vụ',
         icon: <BookOutlined />,
-        perms: ['test.manage', 'system.config'],
+        perms: ['test.manage', 'test.read', 'system.config'],
       },
       {
         key: '/admin/accounts',
