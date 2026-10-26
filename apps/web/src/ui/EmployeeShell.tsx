@@ -116,7 +116,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   if (isDesktop) {
     return (
       <Layout style={{ minHeight: '100dvh' }}>
-        <Layout.Sider width={260} collapsedWidth={68} collapsed={collapsed} style={{ borderRight: `1px solid ${BRAND.border}`, position: 'sticky', top: 0, height: '100dvh' }}>
+        <Layout.Sider width={260} collapsedWidth={68} collapsed={collapsed} style={{ borderRight: `1px solid ${BRAND.border}`, position: 'sticky', top: 0, height: '100dvh', alignSelf: 'flex-start', zIndex: 20 }}>
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div style={{ height: 56, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 10, padding: collapsed ? 0 : '0 16px', borderBottom: `1px solid ${BRAND.border}` }}>
               <div style={{ width: 34, height: 34, borderRadius: 6, background: '#0F172A', border: `1px solid ${BRAND.primary}`, color: '#FFFFFF', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 12, cursor: 'pointer' }} onClick={() => router.push('/nv')}>
@@ -184,7 +184,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
               </Dropdown>
             </Space>
           </Layout.Header>
-          <Layout.Content style={{ padding: 20, width: '100%' }}>
+          <Layout.Content style={{ padding: 20, width: '100%', maxWidth: '100%', overflowX: 'clip' }}>
             {activeMaint && <Alert type="warning" banner showIcon style={{ marginBottom: 14 }} message={activeMaint.message || 'Hệ thống đang bảo trì nâng cấp định kỳ.'} />}
             {children}
           </Layout.Content>

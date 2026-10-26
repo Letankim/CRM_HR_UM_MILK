@@ -158,7 +158,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
           width={260}
           collapsedWidth={68}
           collapsed={collapsed}
-          style={{ borderRight: `1px solid ${BRAND.border}`, position: 'sticky', top: 0, height: '100dvh' }}
+          style={{ borderRight: `1px solid ${BRAND.border}`, position: 'sticky', top: 0, height: '100dvh', alignSelf: 'flex-start', zIndex: 20 }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             {brand}
@@ -182,7 +182,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
         </Drawer>
       )}
 
-      <Layout style={{ minWidth: 0, flex: 1, overflowX: 'hidden' }}>
+      <Layout style={{ minWidth: 0, flex: 1 }}>
         <TopHeaderBar
           isMobile={isMobile}
           collapsed={collapsed}
@@ -192,7 +192,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
           user={data.user}
           onLogout={logout}
         />
-        <Layout.Content style={{ padding: isMobile ? '8px 6px' : 20, width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
+        <Layout.Content style={{ padding: isMobile ? '8px 6px' : 20, width: '100%', maxWidth: '100%', overflowX: 'clip' }}>
           {activeMaint && (
             <Alert
               type="warning"
