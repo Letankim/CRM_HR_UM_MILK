@@ -4,7 +4,7 @@ import { Alert, App, Button, Card, Flex, Form, Input, Modal, Select, Space, Swit
 import { CloseOutlined, CloudDownloadOutlined, DeleteOutlined, EditOutlined, FileProtectOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SendOutlined, SettingOutlined, ToolOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
@@ -69,9 +69,19 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
     return (polQ.data ?? []).filter((p) => (catFilter === 'ALL' || p.category === catFilter) && (!q || `${p.key || ''} ${p.description || ''} ${p.title || ''} ${p.value_json || ''} ${p.approved_by || ''}`.toLowerCase().includes(q)));
   }, [polQ.data, catFilter, debouncedQ]);
 
-  if (mode === 'comms') return <MktCommsCenter />;
-
   const mnt = mntQ.data?.[0];
+  const savedEndTime = useMemo(() => {
+    const raw = String(mnt?.expected_end_at || '').trim();
+    if (/^\d{2}:\d{2}$/.test(raw)) return raw;
+    return mnt?.enabled ? (raw.match(/(\d{2}:\d{2})/)?.[1] ?? '') : '';
+  }, [mnt?.expected_end_at, mnt?.enabled]);
+
+  useEffect(() => {
+    if (mnt?.scope) setMntScope(String(mnt.scope));
+    if (savedEndTime) setMntExpectedEnd(savedEndTime);
+  }, [mnt?.scope, savedEndTime]);
+
+  if (mode === 'comms') return <MktCommsCenter />;
 
   const policiesPane = (
     <>
@@ -121,10 +131,22 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
         <Space wrap>
           <Typography.Text strong>Chế độ Bảo trì:</Typography.Text>
           <Tag color={mnt?.enabled ? 'red' : 'green'}>{mnt?.enabled ? 'ĐANG BẢO TRÌ' : 'HOẠT ĐỘNG BÌNH THƯỜNG'}</Tag>
-          <Select size="small" value={String(mnt?.scope || mntScope)} onChange={setMntScope} style={{ width: 185 }} options={[{ value: 'ALL', label: 'Phạm vi: Toàn hệ thống' }, { value: 'ATTENDANCE', label: 'Phạm vi: Điểm danh GPS' }, { value: 'PAYROLL', label: 'Phạm vi: Kỳ lương' }]} />
-          <TimeSelect size="small" placeholder="Giờ mở lại (VD: 23:30)" value={mntExpectedEnd} onChange={setMntExpectedEnd} style={{ width: 185 }} />
+          <Select size="small" value={mntScope} onChange={(v) => { setMntScope(v); if (mnt?.enabled) postMut.mutate({ url: '/admin/maintenance', body: { version: Number(mnt?.version) || 1, enabled: true, scope: v, expected_end_at: mntExpectedEnd || String(mnt?.expected_end_at || ''), banner_message: 'Hệ thống đang bảo trì nâng cấp định kỳ' } }); }} style={{ width: 195 }} options={[{ value: 'ALL', label: 'Phạm vi: Toàn hệ thống' }, { value: 'EMPLOYEE_APP', label: 'Phạm vi: Cổng Nhân viên' }, { value: 'ATTENDANCE', label: 'Phạm vi: Điểm danh GPS' }, { value: 'PAYROLL', label: 'Phạm vi: Kỳ lương' }, { value: 'BACKOFFICE', label: 'Phạm vi: Cổng Quản trị' }]} />
+          <TimeSelect size="small" placeholder="Giờ mở lại (VD: 23:30)" value={mntExpectedEnd} onChange={(v) => { setMntExpectedEnd(v); if (mnt?.enabled && v) postMut.mutate({ url: '/admin/maintenance', body: { version: Number(mnt?.version) || 1, enabled: true, scope: mntScope || String(mnt?.scope || 'ALL'), expected_end_at: v, banner_message: `Hệ thống đang bảo trì nâng cấp định kỳ (Dự kiến mở lại lúc ${v})` } }); }} style={{ width: 185 }} />
         </Space>
-        <Switch disabled={!canBackupOrMaint} checked={Boolean(mnt?.enabled)} onChange={(checked) => postMut.mutate({ url: '/admin/maintenance', body: { version: mnt?.version ?? 1, enabled: checked, scope: mntScope, expected_end_at: mntExpectedEnd || null, banner_message: 'Hệ thống đang bảo trì nâng cấp định kỳ', reason: 'Bảo trì định kỳ từ Quản trị viên' } })} />
+        <Switch
+          disabled={!canBackupOrMaint}
+          loading={postMut.isPending}
+          checked={Boolean(mnt?.enabled)}
+          onChange={(checked) => {
+            const endTime = mntExpectedEnd || savedEndTime;
+            if (checked && !endTime) {
+              message.warning('Vui lòng chọn Giờ mở lại dự kiến trước khi bật chế độ bảo trì');
+              return;
+            }
+            postMut.mutate({ url: '/admin/maintenance', body: { version: Number(mnt?.version) || 1, enabled: checked, scope: mntScope || String(mnt?.scope || 'ALL'), expected_end_at: endTime, banner_message: checked ? `Hệ thống đang bảo trì nâng cấp định kỳ (Dự kiến mở lại lúc ${endTime})` : 'Hệ thống hoạt động bình thường', reason: checked ? 'Bảo trì định kỳ từ Quản trị viên' : 'Kết thúc bảo trì từ Quản trị viên' } });
+          }}
+        />
       </Flex>
       <Table
         size="small" rowKey="id" pagination={false} dataSource={bkpQ.data ?? []}

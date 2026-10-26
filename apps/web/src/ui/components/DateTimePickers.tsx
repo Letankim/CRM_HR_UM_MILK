@@ -89,6 +89,8 @@ export function TimeSelect({
   size?: 'small' | 'middle' | 'large';
   style?: CSSProperties;
 }) {
+  const baseOpts = TIME_30M_OPTIONS.map((o) => ({ value: o.value, label: slotRange ? o.slotLabel : o.label }));
+  const options = value && !baseOpts.some((o) => o.value === value) ? [{ value, label: value }, ...baseOpts] : baseOpts;
   return (
     <Select
       showSearch
@@ -98,7 +100,7 @@ export function TimeSelect({
       placeholder={placeholder}
       value={value || undefined}
       onChange={(val) => onChange?.(val ?? '')}
-      options={TIME_30M_OPTIONS.map((o) => ({ value: o.value, label: slotRange ? o.slotLabel : o.label }))}
+      options={options}
     />
   );
 }

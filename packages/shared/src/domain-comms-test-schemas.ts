@@ -119,7 +119,7 @@ export type Policy = z.infer<typeof zPolicy>;
 
 export const zMaintenance = zSystemColumns.extend({
   scope: z
-    .preprocess((v) => (v === 'GLOBAL' || !v ? 'ALL' : v), z.enum(['ALL', 'EMPLOYEE_APP', 'BACKOFFICE', 'MODULE']))
+    .preprocess((v) => (v === 'GLOBAL' || !v ? 'ALL' : v), z.enum(['ALL', 'EMPLOYEE_APP', 'BACKOFFICE', 'MODULE', 'ATTENDANCE', 'PAYROLL']))
     .default('EMPLOYEE_APP'),
   enabled: zBool.default(false),
   message: z.string().default(''),

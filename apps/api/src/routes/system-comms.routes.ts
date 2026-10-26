@@ -24,9 +24,11 @@ const zUpdatePolicyBody = z.object({
 });
 const zDeleteBody = z.object({ version: z.coerce.number().int().min(1).optional(), owner_override_approved: z.boolean().default(false) });
 const zToggleMaintenanceBody = z.object({
-  version: z.coerce.number().int().min(1).optional(), enabled: z.boolean(),
-  scope: z.preprocess((v) => (v === 'GLOBAL' || !v ? 'ALL' : v), z.enum(['ALL', 'EMPLOYEE_APP', 'BACKOFFICE', 'MODULE'])).default('ALL'),
-  banner_message: z.string().trim().optional(), reason: z.string().trim().optional(), expected_end_at: z.string().optional().default(''),
+  version: z.preprocess((v) => (v === null || v === '' ? undefined : v), z.coerce.number().int().min(1).optional()), enabled: z.boolean(),
+  scope: z.preprocess((v) => (v === 'GLOBAL' || !v ? 'ALL' : v), z.enum(['ALL', 'EMPLOYEE_APP', 'BACKOFFICE', 'MODULE', 'ATTENDANCE', 'PAYROLL'])).default('ALL'),
+  banner_message: z.preprocess((v) => (v === null ? '' : v), z.string().trim().optional()),
+  reason: z.preprocess((v) => (v === null ? '' : v), z.string().trim().optional()),
+  expected_end_at: z.preprocess((v) => (v === null || v === undefined ? '' : String(v)), z.string().default('')),
 });
 const zTriggerBackupBody = z.object({ kind: z.enum(['DAILY', 'CRITICAL', 'PRE_OPERATION', 'WEEKLY', 'MONTHLY']).default('PRE_OPERATION'), action: z.enum(['BACKUP', 'RESTORE_VERIFY']).default('BACKUP') });
 const zSystemSettingsBody = z.object({
@@ -126,10 +128,13 @@ export async function systemCommsRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.post('/api/admin/maintenance', { preHandler: requirePermission('system.maintenance') }, async (request) => {
     const body = zToggleMaintenanceBody.parse(request.body), current = ctx.db.maintenance.all()[0], actorId = request.auth!.user.id;
+    const savedEnd = current?.expected_end_at && (/^\d{2}:\d{2}$/.test(current.expected_end_at) || current.enabled) ? current.expected_end_at : '';
+    const endAt = body.expected_end_at || savedEnd;
+    if (body.enabled && !endAt) throw Errors.badRequest('Vui lòng chọn Giờ mở lại dự kiến trước khi bật chế độ bảo trì');
     const msg = body.banner_message || body.reason || 'Hệ thống đang bảo trì nâng cấp định kỳ';
     const updated = current
-      ? await ctx.db.maintenance.update(current.id, body.version ?? current.version, { enabled: body.enabled, scope: body.scope, message: msg, expected_end_at: body.expected_end_at || current.expected_end_at, started_at: body.enabled ? nowIso() : current.started_at }, actorId)
-      : await ctx.db.maintenance.insert({ scope: body.scope, enabled: body.enabled, title: 'Bảo trì hệ thống', message: msg, expected_end_at: body.expected_end_at || '', target_module: 'ALL', started_at: nowIso() }, actorId);
+      ? await ctx.db.maintenance.update(current.id, current.version, { enabled: body.enabled, scope: body.scope, message: msg, expected_end_at: endAt, started_at: body.enabled ? nowIso() : current.started_at }, actorId)
+      : await ctx.db.maintenance.insert({ scope: body.scope, enabled: body.enabled, title: 'Bảo trì hệ thống', message: msg, expected_end_at: endAt, target_module: 'ALL', started_at: nowIso() }, actorId);
     await ctx.audit.record(auditContext(request), { action: 'system.maintenance', entity: 'MAINTENANCE_MODE', entityId: updated.id, after: { enabled: updated.enabled, scope: updated.scope, message: updated.message } });
     ctx.realtime()?.broadcast(SocketEvents.MAINTENANCE_UPDATED, updated);
     return sendSuccess(request, body.enabled ? 'Đã BẬT chế độ bảo trì hệ thống và phát thông báo toàn trang' : 'Đã TẮT chế độ bảo trì — hệ thống hoạt động bình thường trở lại', updated);
