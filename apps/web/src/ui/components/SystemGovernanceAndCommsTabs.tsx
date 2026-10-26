@@ -1,7 +1,7 @@
 'use client';
 
-import { Alert, App, Button, Card, Flex, Form, Input, Modal, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd';
-import { CloseOutlined, CloudDownloadOutlined, DeleteOutlined, EditOutlined, FileProtectOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined, SendOutlined, SettingOutlined, ToolOutlined } from '@ant-design/icons';
+import { App, Button, Card, Flex, Form, Input, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd';
+import { CloudDownloadOutlined, DeleteOutlined, EditOutlined, FileProtectOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SendOutlined, ToolOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
@@ -25,10 +25,9 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
     Boolean(isAdmin || r.canEdit || r.isMine || (me && (r.created_by === me.id || r.approved_by === me.username || r.approved_by === me.displayName)));
   const { message, modal } = App.useApp();
 
-  const [govSubTab, setGovSubTab] = useState<'policies' | 'backups' | 'settings'>('policies');
+  const [govSubTab, setGovSubTab] = useState<'policies' | 'backups'>('policies');
   const [polModal, setPolModal] = useState(false);
   const [editingPol, setEditingPol] = useState<Record<string, unknown> | null>(null);
-  const [settingModal, setSettingModal] = useState(false);
   const [viewing, setViewing] = useState<Record<string, unknown> | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const debouncedQ = useDebouncedValue(searchInput, 400);
@@ -36,14 +35,12 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
   const [mntScope, setMntScope] = useState('ALL');
   const [mntExpectedEnd, setMntExpectedEnd] = useState('');
   const [polForm] = Form.useForm();
-  const [setForm] = Form.useForm();
 
   const polQ = useQuery({ queryKey: ['policies'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/policies'), enabled: mode === 'governance', retry: false });
   const mntQ = useQuery({ queryKey: ['maintenance'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/maintenance'), enabled: mode === 'governance', retry: false });
   const bkpQ = useQuery({ queryKey: ['backups'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/backups'), enabled: mode === 'governance' && canBackupOrMaint, retry: false });
-  const cfgQ = useQuery({ queryKey: ['system-settings'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/system-settings'), enabled: mode === 'governance' && isAdmin, retry: false });
 
-  const refreshAll = () => ['policies', 'maintenance', 'backups', 'system-settings', 'mkt-comms', 'nv-comms', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+  const refreshAll = () => ['policies', 'maintenance', 'backups', 'mkt-comms', 'nv-comms', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const onErr = (fallback: string) => (e: unknown) => message.error(e instanceof ApiClientError ? e.message : fallback);
   const postMut = useMutation({
     mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body),
@@ -161,41 +158,17 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
     </Card>
   );
 
-  const settingsPane = (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <Alert type="warning" showIcon message="Bảo mật Cấu hình Hệ thống" description="Bảng Cài đặt hệ thống chỉ dùng để lưu các thông số vận hành chung (Múi giờ, Chu kỳ lương, Ngưỡng cảnh báo, Tiền tố mã). Vì lý do an toàn bảo mật, vui lòng không nhập mật khẩu hoặc khóa bảo mật tại đây." />
-      {isAdmin && <Flex justify="flex-end"><Button type="primary" icon={<PlusOutlined />} onClick={() => { setForm.resetFields(); setSettingModal(true); }}>Cập nhật / Thêm tham số hệ thống</Button></Flex>}
-      <Table
-        size="small" rowKey="key" pagination={false} dataSource={cfgQ.data ?? []}
-        columns={[
-          { title: 'Mã tham số', dataIndex: 'key', width: 230, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
-          { title: 'Giá trị hiện hành', dataIndex: 'value_json', width: 220, render: (v: string) => <Tag color="blue">{v}</Tag> },
-          { title: 'Mô tả tham số hệ thống', dataIndex: 'description' },
-          { title: 'Thao tác', width: 100, align: 'right', render: (_, r) => isAdmin ? <Button size="small" icon={<EditOutlined />} onClick={() => { setForm.setFieldsValue(r); setSettingModal(true); }}>Sửa</Button> : null },
-        ]}
-      />
-    </Space>
-  );
-
   const canEditViewing = viewing ? canEditItem(viewing) : false;
 
   return (
     <>
       <Card size="small" styles={{ body: { padding: '12px 20px 20px' } }}>
-        <Tabs activeKey={govSubTab} onChange={(k) => setGovSubTab(k as 'policies' | 'backups' | 'settings')} items={[
+        <Tabs activeKey={govSubTab} onChange={(k) => setGovSubTab(k as 'policies' | 'backups')} items={[
           { key: 'policies', label: <span><FileProtectOutlined /> Chính sách Vận hành &amp; Quy định ({filteredPolicies.length})</span>, children: policiesPane },
           ...(canBackupOrMaint ? [{ key: 'backups', label: <span><CloudDownloadOutlined /> Bảo trì &amp; Sao lưu ({bkpQ.data?.length ?? 0})</span>, children: backupsPane }] : []),
-          ...(isAdmin ? [{ key: 'settings', label: <span><SettingOutlined /> Cài đặt Hệ thống ({cfgQ.data?.length ?? 0})</span>, children: settingsPane }] : []),
         ]} />
       </Card>
       <PolicyFormModal open={polModal} editing={editingPol} form={polForm} isAdmin={isAdmin} loading={postMut.isPending || putMut.isPending} onClose={() => setPolModal(false)} onSubmit={(v) => { if (editingPol) putMut.mutate({ url: `/admin/policies/${editingPol.id}`, body: { ...v, version: editingPol.version, owner_override_approved: true } }); else postMut.mutate({ url: '/admin/policies', body: v }); setPolModal(false); }} />
-      <Modal width={680} open={settingModal} title="Cập nhật Tham số Cài đặt Hệ thống" okText="Lưu tham số" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined />, loading: putMut.isPending }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={() => setSettingModal(false)} onOk={() => setForm.submit()}>
-        <Form form={setForm} layout="vertical" onFinish={(v) => { putMut.mutate({ url: '/admin/system-settings', body: v }); setSettingModal(false); }}>
-          <Form.Item name="key" label="Mã tham số cấu hình" rules={[{ required: true }]}><Input placeholder="VD: APP_TIMEZONE" /></Form.Item>
-          <Form.Item name="value_json" label="Giá trị áp dụng" rules={[{ required: true }]}><Input placeholder="VD: Asia/Ho_Chi_Minh" /></Form.Item>
-          <Form.Item name="description" label="Mô tả tham số" rules={[{ required: true }]}><Input placeholder="Mô tả ý nghĩa tham số vận hành..." /></Form.Item>
-        </Form>
-      </Modal>
       <GovernanceDetailDrawer record={viewing} kind="policy" onClose={() => setViewing(null)} onEdit={canEditViewing && canManagePolicies ? openEditPolicy : undefined} onBroadcast={canEditViewing && canManagePolicies ? (r) => postMut.mutate({ url: `/admin/policies/${r.id}/broadcast`, body: {} }) : undefined} />
     </>
   );
