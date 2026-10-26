@@ -5,6 +5,7 @@
  *  - Có phiếu bổ sung đã duyệt -> Đã hoàn thành (bù công). Ca thực sự không điểm danh giữ nguyên Vắng mặt.
  */
 import type { Database } from '../../src/data/database.js';
+import { tolerantWrite } from '../../src/services/background-write.js';
 import { SEED_ACTOR } from './kit.js';
 
 export async function repairSeedShifts(db: Database, apply: boolean): Promise<{ toPublished: number; toCompleted: number }> {
@@ -22,9 +23,9 @@ export async function repairSeedShifts(db: Database, apply: boolean): Promise<{ 
     if (complete) toCompleted++; else toPublished++;
     if (!apply) continue;
     const latest = db.shiftAssignments.get(a.id) ?? a;
-    await db.shiftAssignments.update(a.id, latest.version, complete
+    await tolerantWrite(() => db.shiftAssignments.update(a.id, latest.version, complete
       ? { status: 'COMPLETED', note: adj ? `Đã bù công theo phiếu bổ sung ${adj.adjustment_code}` : 'Đã hoàn thành điểm danh Vào/Ra ca' }
-      : { status: 'PUBLISHED', note: 'Đã vào ca, chưa chấm ra — chờ phiếu bổ sung công' }, 'seed-repair');
+      : { status: 'PUBLISHED', note: 'Đã vào ca, chưa chấm ra — chờ phiếu bổ sung công' }, 'seed-repair'));
   }
   return { toPublished, toCompleted };
 }
