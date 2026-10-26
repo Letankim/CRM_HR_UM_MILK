@@ -31,6 +31,26 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Cố định tuyệt đối Sidebar trái trên màn hình máy tính, không bị kéo lên khi mở Drawer chi tiết bên phải */
+.umbm-fixed-sider.ant-layout-sider {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  bottom: 0 !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+  z-index: 100 !important;
+}
+
+.umbm-fixed-sider > .ant-layout-sider-children {
+  height: 100% !important;
+  max-height: 100dvh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
 /* Menu Sidebar gọn gàng: mục con chỉ lùi nhẹ 8px so với tiêu đề nhóm */
 .umbm-sider-menu.ant-menu-inline .ant-menu-submenu-title {
   padding-inline-start: 10px !important;

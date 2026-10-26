@@ -116,9 +116,9 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   if (isDesktop) {
     return (
       <Layout style={{ minHeight: '100dvh' }}>
-        <Layout.Sider width={260} collapsedWidth={68} collapsed={collapsed} style={{ borderRight: `1px solid ${BRAND.border}`, position: 'sticky', top: 0, height: '100dvh', alignSelf: 'flex-start', zIndex: 20 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <div style={{ height: 56, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 10, padding: collapsed ? 0 : '0 16px', borderBottom: `1px solid ${BRAND.border}` }}>
+        <Layout.Sider className="umbm-fixed-sider" width={260} collapsedWidth={68} collapsed={collapsed} style={{ borderRight: `1px solid ${BRAND.border}`, position: 'fixed', top: 0, left: 0, bottom: 0, height: '100dvh', maxHeight: '100dvh', overflow: 'hidden', zIndex: 100 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '100dvh', overflow: 'hidden' }}>
+            <div style={{ flexShrink: 0, height: 56, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 10, padding: collapsed ? 0 : '0 16px', borderBottom: `1px solid ${BRAND.border}` }}>
               <div style={{ width: 34, height: 34, borderRadius: 6, background: '#0F172A', border: `1px solid ${BRAND.primary}`, color: '#FFFFFF', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 12, cursor: 'pointer' }} onClick={() => router.push('/nv')}>
                 {SYSTEM_CONFIG.brandShortCode}
               </div>
@@ -129,10 +129,10 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
                 </div>
               )}
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: collapsed ? '8px 0' : '6px 4px' }}>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', padding: collapsed ? '8px 0' : '6px 4px' }}>
               <Menu className="umbm-sider-menu" mode="inline" inlineIndent={10} inlineCollapsed={collapsed} defaultOpenKeys={DESKTOP_GROUPS.map((g) => g.key)} items={desktopMenuItems} selectedKeys={[activeDesktopItem.item.key]} style={{ borderInlineEnd: 'none' }} />
             </div>
-            <div style={{ padding: collapsed ? '10px 4px' : '10px 16px', borderTop: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'space-between', background: '#FFFFFF' }}>
+            <div style={{ flexShrink: 0, padding: collapsed ? '10px 4px' : '10px 16px', borderTop: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'space-between', background: '#FFFFFF' }}>
               {!collapsed && <span style={{ fontSize: 12, color: '#64748B' }}>Phiên bản hệ thống</span>}
               <Tooltip placement="right" title={collapsed ? `Phiên bản hệ thống ${versionLabel}` : undefined}>
                 <Tag color="blue" style={{ margin: 0, borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{collapsed ? versionLabel.replace(/\.0$/, '') : versionLabel}</Tag>
@@ -141,7 +141,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
           </div>
         </Layout.Sider>
 
-        <Layout style={{ minWidth: 0, flex: 1 }}>
+        <Layout style={{ minWidth: 0, flex: 1, marginLeft: collapsed ? 68 : 260, transition: 'margin-left 0.2s ease' }}>
           <Layout.Header style={{ borderBottom: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10, paddingInline: 16 }}>
             <Flex align="center" gap={12}>
               <Button size="small" className="umbm-header-pill" icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setCollapsed((c) => !c)} style={{ width: 32, height: 32, borderRadius: 6, borderColor: BRAND.headerControlBorder }} />

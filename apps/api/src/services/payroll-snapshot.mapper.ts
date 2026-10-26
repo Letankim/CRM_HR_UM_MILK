@@ -7,12 +7,31 @@ import {
   type PayrollSnapshot,
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
+import type { ShiftPayrollLog } from './payroll-work-collector.js';
 
-/** Chuyển Snapshot lương sang dạng hiển thị (kèm chi tiết phân đoạn lương để truy vết FIN-06) */
+interface SnapshotAdjustmentsDetail {
+  source?: keyof typeof PAYROLL_WORK_SOURCE_LABELS;
+  workedDays?: number;
+  missingProfileShifts?: number;
+  checkedInShiftsCount?: number;
+  adjustedShiftsCount?: number;
+  scheduledOnlyShiftsCount?: number;
+  leaveOffCount?: number;
+  emergencyLeaveCount?: number;
+  swappedOutCount?: number;
+  absentCount?: number;
+  lateCount?: number;
+  lateMinutesTotal?: number;
+  shiftLogs?: ShiftPayrollLog[];
+  segments?: unknown[];
+  items?: unknown[];
+}
+
+/** Chuyển Snapshot lương sang dạng hiển thị (kèm chi tiết phân đoạn lương & đối soát chấm công/nghỉ OFF/đổi ca) */
 export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
   const rate = s.pay_rate_id ? ctx.db.payRates.get(s.pay_rate_id) : undefined;
   const rateType = rate?.rate_type ?? 'HOURLY';
-  let detail: { source?: keyof typeof PAYROLL_WORK_SOURCE_LABELS; workedDays?: number; missingProfileShifts?: number; segments?: unknown[]; items?: unknown[] } = {};
+  let detail: SnapshotAdjustmentsDetail = {};
   let allowanceLines: { code: string; label: string; amount: number }[] = [];
   try {
     detail = JSON.parse(s.adjustments_json || '{}');
@@ -48,6 +67,16 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
     totalShiftsCount: s.total_shifts_count,
     workedDays: detail.workedDays ?? 0,
     missingProfileShifts: detail.missingProfileShifts ?? 0,
+    checkedInShiftsCount: detail.checkedInShiftsCount ?? 0,
+    adjustedShiftsCount: detail.adjustedShiftsCount ?? 0,
+    scheduledOnlyShiftsCount: detail.scheduledOnlyShiftsCount ?? 0,
+    leaveOffCount: detail.leaveOffCount ?? 0,
+    emergencyLeaveCount: detail.emergencyLeaveCount ?? 0,
+    swappedOutCount: detail.swappedOutCount ?? 0,
+    absentCount: detail.absentCount ?? 0,
+    lateCount: detail.lateCount ?? s.late_count ?? 0,
+    lateMinutesTotal: detail.lateMinutesTotal ?? s.late_minutes_total ?? 0,
+    shiftLogs: detail.shiftLogs ?? [],
     workSourceLabel: detail.source ? PAYROLL_WORK_SOURCE_LABELS[detail.source] : '',
     segments: detail.segments ?? [],
     items: detail.items ?? [],

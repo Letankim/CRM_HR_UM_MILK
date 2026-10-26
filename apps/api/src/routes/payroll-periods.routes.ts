@@ -8,6 +8,7 @@ import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { mapSnapshot, recalculatePeriodSnapshots } from '../services/payroll-snapshot.service.js';
 import { generatePayslips } from '../services/payslip.service.js';
+import { healBranchConsistency } from './account-employee-sync.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const zPeriodBody = z
@@ -50,8 +51,12 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
 
   app.get('/api/admin/payroll/periods/:id/snapshots', { preHandler: requirePermission('payroll.read') }, async (request) => {
     const { id } = request.params as { id: string };
-    const period = ctx.db.payPeriods.get(id);
+    let period = ctx.db.payPeriods.get(id);
     if (!period) throw Errors.notFound('Không tìm thấy kỳ lương');
+    if (period.status === 'DRAFT' || period.status === 'RECONCILE') {
+      await healBranchConsistency(ctx);
+      period = await recalculatePeriodSnapshots(ctx, period, request.auth?.user.id ?? 'system');
+    }
     const snaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === id).map((s) => mapSnapshot(s, ctx));
     return sendSuccess(request, 'Lấy chi tiết bảng lương thành công', { period: withLabel(period), snapshots: snaps });
   });

@@ -106,7 +106,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
   const versionLabel = SYSTEM_CONFIG.version.startsWith('v') ? SYSTEM_CONFIG.version : `v${SYSTEM_CONFIG.version}`;
 
   const brand = (
-    <div style={{ height: 56, display: 'flex', alignItems: 'center', justifyContent: isCompactSider ? 'center' : 'flex-start', gap: 10, padding: isCompactSider ? 0 : '0 16px', borderBottom: `1px solid ${BRAND.border}` }}>
+    <div style={{ flexShrink: 0, height: 56, display: 'flex', alignItems: 'center', justifyContent: isCompactSider ? 'center' : 'flex-start', gap: 10, padding: isCompactSider ? 0 : '0 16px', borderBottom: `1px solid ${BRAND.border}` }}>
       <Tooltip placement="right" title={isCompactSider ? `${SYSTEM_CONFIG.brandName} — ${SYSTEM_CONFIG.brandSubtitle}` : undefined}>
         <div
           style={{ width: 34, height: 34, borderRadius: 6, background: '#0F172A', border: `1px solid ${BRAND.primary}`, color: '#FFFFFF', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 12, letterSpacing: 0.4, flexShrink: 0, cursor: 'pointer' }}
@@ -125,7 +125,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
   );
 
   const menu = (
-    <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: isCompactSider ? '8px 0' : '6px 4px' }}>
+    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', padding: isCompactSider ? '8px 0' : '6px 4px' }}>
       <Menu
         className="umbm-sider-menu"
         mode="inline"
@@ -141,7 +141,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
   );
 
   const versionFooter = (
-    <div style={{ padding: isCompactSider ? '10px 4px' : '10px 16px', borderTop: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', justifyContent: isCompactSider ? 'center' : 'space-between', background: '#FFFFFF' }}>
+    <div style={{ flexShrink: 0, padding: isCompactSider ? '10px 4px' : '10px 16px', borderTop: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', justifyContent: isCompactSider ? 'center' : 'space-between', background: '#FFFFFF' }}>
       {!isCompactSider && <span style={{ fontSize: 12, color: '#64748B' }}>Phiên bản hệ thống</span>}
       <Tooltip placement="right" title={isCompactSider ? `Phiên bản hệ thống ${versionLabel}` : undefined}>
         <Tag color="blue" style={{ margin: 0, borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
@@ -155,12 +155,13 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
     <Layout style={{ minHeight: '100dvh' }}>
       {!isMobile && (
         <Layout.Sider
+          className="umbm-fixed-sider"
           width={260}
           collapsedWidth={68}
           collapsed={collapsed}
-          style={{ borderRight: `1px solid ${BRAND.border}`, position: 'sticky', top: 0, height: '100dvh', alignSelf: 'flex-start', zIndex: 20 }}
+          style={{ borderRight: `1px solid ${BRAND.border}`, position: 'fixed', top: 0, left: 0, bottom: 0, height: '100dvh', maxHeight: '100dvh', overflow: 'hidden', zIndex: 100 }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '100dvh', overflow: 'hidden' }}>
             {brand}
             {menu}
             {versionFooter}
@@ -182,7 +183,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
         </Drawer>
       )}
 
-      <Layout style={{ minWidth: 0, flex: 1 }}>
+      <Layout style={{ minWidth: 0, flex: 1, marginLeft: isMobile ? 0 : isCompactSider ? 68 : 260, transition: 'margin-left 0.2s ease' }}>
         <TopHeaderBar
           isMobile={isMobile}
           collapsed={collapsed}

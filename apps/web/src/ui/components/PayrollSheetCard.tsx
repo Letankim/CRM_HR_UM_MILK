@@ -100,7 +100,32 @@ export function PayrollSheetCard({ rows, loading, onOpenPayslip }: { rows: Payro
             ),
           },
           { title: 'Hình thức / Mức lương', key: 'rate', render: (_, r) => <div><Tag color={r.rateType === 'MONTHLY' ? 'purple' : r.rateType === 'SHIFT' ? 'cyan' : 'blue'} style={{ borderRadius: 2, margin: 0 }}>{r.rateTypeLabel}</Tag><div className="num" style={{ fontSize: 12, marginTop: 2 }}>{fmtVnd(r.rateVnd)}/{r.unitLabel}{r.probationPercent ? ` · TV ${r.probationPercent}%` : ''}</div></div> },
-          { title: 'Công', key: 'work', align: 'right', render: (_, r) => <span className="num">{r.approvedHours} giờ<div style={{ fontSize: 12, color: '#64748B' }}>{r.totalShiftsCount} ca · {r.workedDays} ngày</div></span> },
+          {
+            title: 'Công & Chấm công', key: 'work', align: 'right',
+            render: (_, r) => (
+              <div className="num">
+                <strong>{r.approvedHours} giờ</strong>
+                <div style={{ fontSize: 12, color: '#64748B' }}>{r.totalShiftsCount} ca · {r.workedDays} ngày</div>
+                {((r.checkedInShiftsCount ?? 0) > 0 || (r.adjustedShiftsCount ?? 0) > 0) && (
+                  <div style={{ fontSize: 11, color: '#15803D' }}>
+                    Điểm danh: {r.checkedInShiftsCount ?? 0} ca{(r.adjustedShiftsCount ?? 0) > 0 ? ` · Bổ sung: ${r.adjustedShiftsCount}` : ''}
+                  </div>
+                )}
+                {((r.leaveOffCount ?? 0) > 0 || r.shiftSwapCount > 0 || (r.swappedOutCount ?? 0) > 0) && (
+                  <div style={{ fontSize: 11, color: '#2563EB' }}>
+                    {[
+                      (r.leaveOffCount ?? 0) > 0 ? `Nghỉ OFF: ${r.leaveOffCount}` : '',
+                      r.shiftSwapCount > 0 ? `Nhận đổi: +${r.shiftSwapCount}ca` : '',
+                      (r.swappedOutCount ?? 0) > 0 ? `Chuyển ca: -${r.swappedOutCount}ca` : '',
+                    ].filter(Boolean).join(' · ')}
+                  </div>
+                )}
+                {(r.lateCount ?? 0) > 0 && (
+                  <div style={{ fontSize: 11, color: '#D97706' }}>Đi trễ: {r.lateCount} lần ({r.lateMinutesTotal ?? 0}p)</div>
+                )}
+              </div>
+            ),
+          },
           { title: 'Lương thử việc', dataIndex: 'probationPayVnd', align: 'right', render: (v: number, r) => <span className="num">{fmtVnd(v)}<div style={{ fontSize: 12, color: '#64748B' }}>{r.probationHours} giờ</div></span> },
           { title: 'Lương chính thức', dataIndex: 'officialPayVnd', align: 'right', render: (v: number, r) => <span className="num">{fmtVnd(v)}<div style={{ fontSize: 12, color: '#64748B' }}>{r.officialHours} giờ</div></span> },
           { title: 'Tăng ca', dataIndex: 'otPayVnd', align: 'right', render: (v: number) => <span className="num">{fmtVnd(v)}</span> },

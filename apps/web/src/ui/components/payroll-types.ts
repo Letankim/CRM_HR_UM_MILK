@@ -61,6 +61,22 @@ export interface SalarySegment {
   toDate: string;
 }
 
+export interface ShiftPayrollLog {
+  date: string;
+  shiftCode: string;
+  shiftLabel: string;
+  shiftTime: string;
+  status: 'ATTENDANCE_FULL' | 'ATTENDANCE_CHECKIN' | 'ADJUSTMENT_APPROVED' | 'SCHEDULE_PUBLISHED' | 'LEAVE_OFF' | 'SWAPPED_OUT' | 'EMERGENCY_LEAVE' | 'ABSENT';
+  statusLabel: string;
+  hours: number;
+  otHours: number;
+  isSwapIn: boolean;
+  lateMinutes: number;
+  checkInHm: string;
+  checkOutHm: string;
+  note: string;
+}
+
 export interface PayrollSnapshotItem {
   id: string;
   periodId: string;
@@ -87,6 +103,16 @@ export interface PayrollSnapshotItem {
   totalShiftsCount: number;
   workedDays: number;
   missingProfileShifts: number;
+  checkedInShiftsCount?: number;
+  adjustedShiftsCount?: number;
+  scheduledOnlyShiftsCount?: number;
+  leaveOffCount?: number;
+  emergencyLeaveCount?: number;
+  swappedOutCount?: number;
+  absentCount?: number;
+  lateCount?: number;
+  lateMinutesTotal?: number;
+  shiftLogs?: ShiftPayrollLog[];
   workSourceLabel: string;
   segments: SalarySegment[];
   items: { id: string; label: string; title: string; direction: 'ADD' | 'DEDUCT'; amount: number }[];

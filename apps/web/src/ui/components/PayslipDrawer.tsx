@@ -1,16 +1,27 @@
 'use client';
 
 import { Alert, App, Button, Descriptions, Drawer, Form, Input, InputNumber, Modal, Space, Table, Tabs, Tag, Typography } from 'antd';
-import { CloseOutlined, EditOutlined, ExpandAltOutlined, FileExcelOutlined, FileTextOutlined, HistoryOutlined, IdcardOutlined, ShrinkOutlined } from '@ant-design/icons';
+import { CalendarOutlined, CloseOutlined, EditOutlined, ExpandAltOutlined, FileExcelOutlined, FileTextOutlined, HistoryOutlined, IdcardOutlined, ShrinkOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
-import { allowancesOf, deductionsOf, fmtVnd, type PayrollSnapshotItem } from './payroll-types';
+import { allowancesOf, deductionsOf, fmtVnd, type PayrollSnapshotItem, type ShiftPayrollLog } from './payroll-types';
 
 interface Line { label: string; detail: string; amount: number }
+
+const LOG_STATUS_COLORS: Record<ShiftPayrollLog['status'], string> = {
+  ATTENDANCE_FULL: 'green',
+  ATTENDANCE_CHECKIN: 'processing',
+  ADJUSTMENT_APPROVED: 'cyan',
+  SCHEDULE_PUBLISHED: 'blue',
+  LEAVE_OFF: 'gold',
+  SWAPPED_OUT: 'purple',
+  EMERGENCY_LEAVE: 'volcano',
+  ABSENT: 'red',
+};
 
 /** Dựng các dòng phiếu lương (dùng chung cho Drawer và Xuất Excel phiếu lương) */
 export function payslipLines(s: PayrollSnapshotItem): Line[] {
@@ -94,6 +105,17 @@ export function PayslipDrawer({ snapshot: s, onClose }: { snapshot: PayrollSnaps
         <>
           {!s.hasSalaryProfile && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Nhân sự chưa được thiết lập hồ sơ lương cá nhân. Vui lòng thiết lập tại tab Hồ sơ lương nhân sự rồi tính lại kỳ lương." />}
           {s.missingProfileShifts > 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`Có ${s.missingProfileShifts} ca làm nằm ngoài thời gian hiệu lực của hồ sơ lương nên chưa được tính.`} />}
+          <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '10px 12px', marginBottom: 12 }}>
+            <Space size={[8, 6]} wrap>
+              <Tag color="blue" style={{ margin: 0 }}>Tổng công: {s.totalShiftsCount} ca ({s.approvedHours} giờ · {s.workedDays} ngày)</Tag>
+              <Tag color="green" style={{ margin: 0 }}>Điểm danh GPS: {s.checkedInShiftsCount ?? 0} ca</Tag>
+              {(s.adjustedShiftsCount ?? 0) > 0 && <Tag color="cyan" style={{ margin: 0 }}>Bổ sung công duyệt: {s.adjustedShiftsCount} ca</Tag>}
+              <Tag color="gold" style={{ margin: 0 }}>Nghỉ OFF đã duyệt: {s.leaveOffCount ?? 0} ngày</Tag>
+              <Tag color="purple" style={{ margin: 0 }}>Nhận đổi ca: +{s.shiftSwapCount} ca · Chuyển ca: -{s.swappedOutCount ?? 0} ca</Tag>
+              {(s.lateCount ?? 0) > 0 && <Tag color="warning" style={{ margin: 0 }}>Đi trễ: {s.lateCount} lần ({s.lateMinutesTotal ?? 0} phút)</Tag>}
+              {(s.absentCount ?? 0) > 0 && <Tag color="error" style={{ margin: 0 }}>Vắng không phép: {s.absentCount} ca</Tag>}
+            </Space>
+          </div>
           <Tabs
             defaultActiveKey="lines"
             items={[
@@ -123,16 +145,29 @@ export function PayslipDrawer({ snapshot: s, onClose }: { snapshot: PayrollSnaps
                 ),
               },
               {
+                key: 'attendance-logs', label: <span><CalendarOutlined /> Đối soát Chấm công, Nghỉ OFF &amp; Đổi ca ({(s.shiftLogs ?? []).length})</span>,
+                children: (
+                  <Table<ShiftPayrollLog>
+                    size="small" rowKey={(r, i) => `${r.date}-${r.shiftCode}-${i}`} pagination={{ pageSize: 10 }} dataSource={s.shiftLogs ?? []}
+                    columns={[
+                      { title: 'Ngày', dataIndex: 'date', width: 105, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
+                      { title: 'Ca làm việc', width: 165, render: (_, r) => <div><strong>{r.shiftLabel}</strong><div style={{ fontSize: 11, color: '#64748B' }}>{r.shiftTime}</div></div> },
+                      { title: 'Vào – Ra thực tế', width: 130, render: (_, r) => <span className="num">{r.checkInHm || '—'} – {r.checkOutHm || '—'}</span> },
+                      { title: 'Trạng thái đối soát', width: 210, render: (_, r) => <Space size={4} wrap><Tag color={LOG_STATUS_COLORS[r.status] || 'default'} style={{ margin: 0 }}>{r.statusLabel}</Tag>{r.isSwapIn && <Tag color="purple" style={{ margin: 0 }}>+30.000đ đổi ca</Tag>}</Space> },
+                      { title: 'Giờ tính lương', width: 120, align: 'right', render: (_, r) => <span className="num"><strong>{r.hours} giờ</strong>{r.otHours > 0 ? <div style={{ fontSize: 11, color: '#2563EB' }}>+{r.otHours}h OT</div> : null}</span> },
+                      { title: 'Ghi chú', dataIndex: 'note', ellipsis: true, render: (v: string) => v || '—' },
+                    ]}
+                  />
+                ),
+              },
+              {
                 key: 'info', label: <span><IdcardOutlined /> Thông tin Công &amp; Ngân hàng</span>,
                 children: (
                   <Descriptions column={1} bordered size="small">
-                    <Descriptions.Item label="Nhân sự">{s.fullName} ({s.employeeCode})</Descriptions.Item>
-                    <Descriptions.Item label="Chi nhánh">{s.branchName}</Descriptions.Item>
-                    <Descriptions.Item label="Giai đoạn">{s.stageLabel}</Descriptions.Item>
-                    <Descriptions.Item label="Hình thức lương">{s.rateTypeLabel}</Descriptions.Item>
-                    <Descriptions.Item label="Lương chính thức">{fmtVnd(s.rateVnd)}/{s.unitLabel}{s.probationPercent ? ` · Thử việc ${s.probationPercent}%` : ''}</Descriptions.Item>
-                    <Descriptions.Item label="Công trong kỳ">{s.totalShiftsCount} ca · {s.workedDays} ngày · {s.approvedHours} giờ</Descriptions.Item>
-                    <Descriptions.Item label="Nguồn công">{s.workSourceLabel || '—'}</Descriptions.Item>
+                    <Descriptions.Item label="Nhân sự">{s.fullName} ({s.employeeCode}) · {s.branchName} · {s.stageLabel}</Descriptions.Item>
+                    <Descriptions.Item label="Hình thức &amp; Mức lương">{s.rateTypeLabel} — {fmtVnd(s.rateVnd)}/{s.unitLabel}{s.probationPercent ? ` · Thử việc ${s.probationPercent}%` : ''}</Descriptions.Item>
+                    <Descriptions.Item label="Công tính lương">{s.totalShiftsCount} ca · {s.workedDays} ngày · {s.approvedHours} giờ ({s.workSourceLabel || '—'})</Descriptions.Item>
+                    <Descriptions.Item label="Đối soát chấm công &amp; phép">Điểm danh GPS: {s.checkedInShiftsCount ?? 0} ca · Bổ sung công: {s.adjustedShiftsCount ?? 0} ca · Nghỉ OFF: {s.leaveOffCount ?? 0} ngày · Nhận đổi ca: {s.shiftSwapCount} ca · Chuyển ca: {s.swappedOutCount ?? 0} ca</Descriptions.Item>
                     <Descriptions.Item label="Tài khoản nhận lương">{s.bankName || 'Chưa cập nhật'} · {s.bankAccountNumber || '—'}</Descriptions.Item>
                   </Descriptions>
                 ),
