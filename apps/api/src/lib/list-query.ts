@@ -50,7 +50,7 @@ export function paginateAndSort<T extends object>(
       : requestedSortBy;
 
   const activeFilters: Record<string, string> = {};
-  let filtered = [...sourceItems];
+  let filtered = sourceItems.map((item, idx) => ({ item, idx }));
 
   // 1. Lọc theo các trường filter
   if (options.filters) {
@@ -60,9 +60,9 @@ export function paginateAndSort<T extends object>(
       activeFilters[key] = val;
       const customPredicate = options.filterPredicates?.[key];
       if (customPredicate) {
-        filtered = filtered.filter((item) => customPredicate(item, val));
+        filtered = filtered.filter(({ item }) => customPredicate(item, val));
       } else {
-        filtered = filtered.filter((item) => String((item as Record<string, unknown>)[key] ?? '') === val);
+        filtered = filtered.filter(({ item }) => String((item as Record<string, unknown>)[key] ?? '') === val);
       }
     }
   }
@@ -72,7 +72,7 @@ export function paginateAndSort<T extends object>(
   if (keyword) {
     activeFilters.q = options.q!.trim();
     if (options.searchExtractor) {
-      filtered = filtered.filter((item) =>
+      filtered = filtered.filter(({ item }) =>
         options
           .searchExtractor!(item)
           .some((fieldVal) => fieldVal && fieldVal.toLowerCase().includes(keyword)),
@@ -80,21 +80,27 @@ export function paginateAndSort<T extends object>(
     }
   }
 
-  // 3. Sắp xếp
-  filtered.sort((a, b) =>
-    compareValues(
-      (a as Record<string, unknown>)[sortBy],
-      (b as Record<string, unknown>)[sortBy],
+  // 3. Sắp xếp (ưu tiên thứ tự dòng mới nhất ở đầu danh sách khi cùng thời gian hoặc lệch múi giờ seed)
+  const isCreationSort = sortBy === 'created_at' || sortBy === 'createdAt';
+  filtered.sort((a, b) => {
+    if (isCreationSort) {
+      return sortOrder === 'asc' ? a.idx - b.idx : b.idx - a.idx;
+    }
+    const cmp = compareValues(
+      (a.item as Record<string, unknown>)[sortBy],
+      (b.item as Record<string, unknown>)[sortBy],
       sortOrder,
-    ),
-  );
+    );
+    if (cmp !== 0) return cmp;
+    return sortOrder === 'asc' ? a.idx - b.idx : b.idx - a.idx;
+  });
 
   // 4. Phân trang
   const total = filtered.length;
   const lastPage = Math.max(1, Math.ceil(total / perPage));
   const safePage = Math.min(page, lastPage);
   const start = (safePage - 1) * perPage;
-  const items = filtered.slice(start, start + perPage);
+  const items = filtered.slice(start, start + perPage).map((entry) => entry.item);
 
   return {
     items,

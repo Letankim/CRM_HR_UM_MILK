@@ -62,13 +62,8 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext) {
       }
       const google = await ctx.google.check();
       const stats = ctx.db.stats();
-      const lastBackup = ctx.db.backupLog
-        .all()
-        .sort((a, b) => b.started_at.localeCompare(a.started_at))[0];
-      const recentSagas = ctx.db.operationJournal
-        .all()
-        .sort((a, b) => b.created_at.localeCompare(a.created_at))
-        .slice(0, 10);
+      const lastBackup = ctx.db.backupLog.all().reverse()[0];
+      const recentSagas = ctx.db.operationJournal.all().reverse().slice(0, 10);
 
       const checks: Health['checks'] = {
         google: { status: google.ok ? 'ok' : 'down', detail: google.detail },

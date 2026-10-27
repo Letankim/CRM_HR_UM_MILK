@@ -94,22 +94,22 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
       return target === 'ALL' || branchScope.includes(target);
     });
     const allLogs = ctx.db.deliveryLogs.all().filter((l) => branchScope === 'ALL' || !l.branch_id || l.branch_id === 'ALL' || branchScope.includes(l.branch_id) || (u && l.recipient_user_id === u.id));
-    const campaigns = allCampaigns.map((c) => {
+    const campaigns = [...allCampaigns].reverse().map((c) => {
       const cAncs = allAncs.filter((a) => a.campaign_id === c.id);
       return { ...c, campaign_code: c.code, channel: 'IN_APP', totalAnnouncements: cAncs.length, sentCount: cAncs.filter((a) => a.status === 'SENT').length, draftOrScheduledCount: cAncs.filter((a) => a.status !== 'SENT').length, creatorName: ctx.db.users.get(c.owner_id || c.created_by)?.display_name || 'Truyền thông MKT', isMine: Boolean(u && (c.created_by === u.id || c.owner_id === u.id)), canEdit: Boolean(u && canModify(u, c)) };
-    }).sort((a, b) => b.created_at.localeCompare(a.created_at));
-    const announcements = allAncs.filter((a) => !onlySent || a.status === 'SENT').map((a) => {
+    });
+    const announcements = [...allAncs].reverse().filter((a) => !onlySent || a.status === 'SENT').map((a) => {
       const camp = ctx.db.campaigns.get(a.campaign_id), logs = allLogs.filter((l) => l.announcement_id === a.id);
       let target = 'ALL';
       try { target = JSON.parse(a.audience_json || '{}').target || 'ALL'; } catch { target = 'ALL'; }
       return { ...a, announcement_code: a.code, campaignName: camp?.name || 'Thông báo độc lập', audience_target: target, audienceLabel: formatAudienceLabel(a.audience_scope || 'ALL', a.audience_json), creatorName: ctx.db.users.get(a.created_by)?.display_name || a.approved_by || 'Hệ thống', isMine: Boolean(u && (a.created_by === u.id || a.approved_by === u.username || a.approved_by === u.display_name)), canEdit: Boolean(u && canModify(u, a)), deliveredCount: logs.filter((l) => l.status === 'SENT').length, failedCount: logs.filter((l) => l.status === 'FAILED').length, readConfirmedCount: logs.filter((l) => Boolean(l.read_at || l.ack_at)).length };
-    }).sort((a, b) => b.created_at.localeCompare(a.created_at));
-    const mediaAssets = allMedia.map((m) => ({ ...m, drive_url: m.drive_file_id, creatorName: ctx.db.users.get(m.uploaded_by || m.created_by)?.display_name || 'Truyền thông MKT', isMine: Boolean(u && (m.created_by === u.id || m.uploaded_by === u.id)), canEdit: Boolean(u && canModify(u, m)) })).sort((a, b) => b.created_at.localeCompare(a.created_at));
-    const deliveryLogs = allLogs.map((l) => {
+    });
+    const mediaAssets = [...allMedia].reverse().map((m) => ({ ...m, drive_url: m.drive_file_id, creatorName: ctx.db.users.get(m.uploaded_by || m.created_by)?.display_name || 'Truyền thông MKT', isMine: Boolean(u && (m.created_by === u.id || m.uploaded_by === u.id)), canEdit: Boolean(u && canModify(u, m)) }));
+    const deliveryLogs = [...allLogs].reverse().map((l) => {
       const anc = ctx.db.announcements.get(l.announcement_id), recUser = ctx.db.users.get(l.recipient_user_id);
       return { ...l, announcementCode: anc?.code || 'ANC', announcementTitle: anc?.title || 'Bản tin nội bộ', recipientName: recUser?.display_name || l.recipient_user_id, readReceiptStatus: l.read_at || l.ack_at ? 'READ_CONFIRMED' : 'NO_RECEIPT', readReceiptLabel: l.read_at || l.ack_at ? 'Đã xác nhận đọc' : 'Chưa xác nhận đọc' };
-    }).sort((a, b) => b.created_at.localeCompare(a.created_at));
-    const policies = ctx.db.policies.all().map((p) => ({ ...p, description: p.title || p.key, content_html: p.note || '', creatorName: ctx.db.users.get(p.created_by)?.display_name || p.approved_by || 'Hệ thống' })).sort((a, b) => b.created_at.localeCompare(a.created_at));
+    });
+    const policies = ctx.db.policies.all().reverse().map((p) => ({ ...p, description: p.title || p.key, content_html: p.note || '', creatorName: ctx.db.users.get(p.created_by)?.display_name || p.approved_by || 'Hệ thống' }));
     const dashboard = { runningCount: allAncs.filter((a) => a.status === 'SENT').length, draftCount: allAncs.filter((a) => a.status === 'DRAFT').length, scheduledCount: allAncs.filter((a) => a.status === 'SCHEDULED').length, failedCount: allAncs.filter((a) => a.status === 'FAILED').length + allLogs.filter((l) => l.status === 'FAILED').length, campaignCount: allCampaigns.length, activeCampaignsCount: allCampaigns.filter((c) => c.status === 'ACTIVE').length, acknowledgedCount: allLogs.filter((l) => Boolean(l.read_at || l.ack_at)).length, mediaCount: allMedia.length };
     return { dashboard, audienceGroups: buildAudienceGroups(branchScope), campaigns, announcements, mediaAssets, deliveryLogs, policies };
   };

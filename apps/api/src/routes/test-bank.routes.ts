@@ -60,19 +60,19 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     const perms = request.auth?.permissions;
     const canManage = Boolean(perms?.has('test.manage') || perms?.has('system.config'));
     const includeAnswers = canManage && q.include_answers === '1';
-    const tests = ctx.db.testBank.all().map((t) => {
+    const tests = ctx.db.testBank.all().reverse().map((t) => {
       const safeList = sanitizeQuestions(t.questions_json);
       return { ...t, questions_json: includeAnswers ? t.questions_json : JSON.stringify(safeList), duration_min: t.duration_minutes, questionsCount: safeList.length || t.total_questions, staffGroupLabel: resolveStaffGroupLabel(ctx, t.staff_group, t.staff_group) };
     });
     const assignments = ctx.db.testAssignments.all().map((a, idx) => {
       const test = ctx.db.testBank.get(a.test_id), emp = resolveEmp(ctx, a.employee_id);
       return { ...a, assignment_code: `TEST-ASG-${idx + 1}`, testTitle: test?.title ?? a.test_id, testCode: test?.code ?? '', durationMinutes: test?.duration_minutes ?? 15, passPercent: test?.pass_percent ?? 80, employeeName: emp?.full_name ?? a.employee_id, employeeCode: emp?.employee_code ?? '', isMine: isSameEmployee(ctx, request.auth?.user, a.employee_id) };
-    });
-    const attempts = ctx.db.testAttempts.all().filter((att) => Boolean(att.submitted_at)).map((att) => {
+    }).reverse();
+    const attempts = ctx.db.testAttempts.all().filter((att) => Boolean(att.submitted_at)).reverse().map((att) => {
       const test = ctx.db.testBank.get(att.test_id), emp = resolveEmp(ctx, att.employee_id), asg = ctx.db.testAssignments.get(att.assignment_id);
       const revealCorrect = Boolean(canManage || asg?.passed || (asg && asg.attempts_used >= asg.max_attempts));
       return { ...att, testTitle: test?.title ?? att.test_id, testCode: test?.code ?? '', passPercent: test?.pass_percent ?? 80, employeeName: emp?.full_name ?? att.employee_id, employeeCode: emp?.employee_code ?? '', isMine: isSameEmployee(ctx, request.auth?.user, att.employee_id), reviewItems: buildReviewItems(test?.questions_json, att.answers_json, revealCorrect) };
-    }).sort((a, b) => String(b.submitted_at || b.started_at).localeCompare(String(a.submitted_at || a.started_at)));
+    });
     return sendSuccess(request, 'Lấy ngân hàng đề thi, đợt giao bài và kết quả bài làm thành công', { tests, assignments, attempts });
   });
 

@@ -3,7 +3,7 @@ import { buildTestApp } from '../test-utils/build-test-app.js';
 
 describe('Workflows, Infrastructure & Full Tab APIs (AI-INFRA-07..09, FLOW-02..04)', () => {
   it('enforces Probation OFF quota, 3-step Shift Swap (Saga only on Step 3), and Emergency Leave escalation', async () => {
-    const { app, db, loginHeaders } = await buildTestApp('w');
+    const { app, db, login, loginHeaders } = await buildTestApp('w');
     const hrHeaders = await loginHeaders('hr');
 
     const probEmp = db.employees.find((e) => e.stage === 'PROBATION')!;
@@ -37,6 +37,14 @@ describe('Workflows, Infrastructure & Full Tab APIs (AI-INFRA-07..09, FLOW-02..0
     expect(createSwap.statusCode).toBe(201);
     const swapId = createSwap.json().data.id as string;
     expect(db.shiftAssignments.get(publishedAssign.id)?.employee_id).toBe(origAssignee);
+
+    const swapListRes = await app.inject({ method: 'GET', url: '/api/admin/shift-swaps', headers: hrHeaders });
+    expect(swapListRes.statusCode).toBe(200);
+    expect(swapListRes.json().data[0].id).toBe(swapId);
+    const { cookie: nvCookie } = await login('nv.thuviec', '246810', 'employee');
+    const myAttRes = await app.inject({ method: 'GET', url: '/api/my-attendance', headers: { cookie: nvCookie, 'x-umbm-client': 'web' } });
+    expect(myAttRes.statusCode).toBe(200);
+    expect(myAttRes.json().data.swaps[0].id).toBe(swapId);
 
     const prematureApprove = await app.inject({
       method: 'POST', url: `/api/admin/shift-swaps/${swapId}/decide`, headers: hrHeaders,

@@ -162,8 +162,8 @@ export async function systemCommsRoutes(app: FastifyInstance, ctx: AppContext) {
         actorName: !b.created_by || b.created_by === 'embedded-cron' || b.created_by === 'embedded-worker' || b.created_by === 'system' ? 'Tự động theo lịch hệ thống' : (ctx.db.users.get(b.created_by)?.display_name || 'Quản trị hệ thống'),
       }));
     return sendPaginated(request, 'Lấy lịch sử sao lưu & khôi phục dữ liệu thành công', paginateAndSort(items, {
-      page: query.page, perPage: query.per_page, defaultSortBy: 'started_at', defaultSortOrder: 'desc',
-      allowedSortFields: ['started_at', 'backup_code', 'status'], q: query.q,
+      page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc',
+      allowedSortFields: ['created_at', 'started_at', 'backup_code', 'status'], q: query.q,
       searchExtractor: (b) => [b.backup_code, b.kindLabel, b.started_at, b.status, b.actorName],
       filters: { status: query.status },
       filterPredicates: { status: (b, val) => (val === 'VERIFIED' ? b.verified_restore : b.status === val) },

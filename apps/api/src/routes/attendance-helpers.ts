@@ -203,7 +203,7 @@ export function buildPaginatedAttendanceSessions(
   }
 
   const completedCount = rawSessions.filter((s) => s.isCompleted).length, inProgressCount = rawSessions.filter((s) => s.isInProgress).length, lateEarlyCount = rawSessions.filter((s) => s.isLateEarly).length;
-  const paged = paginateAndSort(rawSessions, {
+  const paged = paginateAndSort(rawSessions.reverse(), {
     page: query.page, perPage: query.per_page ?? 15, maxPerPage: 500, defaultSortBy: 'work_date', defaultSortOrder: 'desc', allowedSortFields: ['work_date', 'server_time', 'employeeCode'],
     q: query.q, searchExtractor: (s) => [s.employeeName, s.employeeCode, s.branchName, s.work_date, s.shiftLabel],
     filters: { branch_id: query.branch_id, shift_code: query.shift_code, status: query.status }, filterPredicates: { status: () => true },

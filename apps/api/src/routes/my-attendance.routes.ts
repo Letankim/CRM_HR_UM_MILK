@@ -66,11 +66,12 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
 
     const myRawEvents = ctx.db.attendanceEvents
       .filter((e) => e.employee_id === emp.id || e.employee_id === emp.employee_code)
-      .sort((a, b) => b.server_time.localeCompare(a.server_time));
+      .reverse();
     const events = myRawEvents.map((e) => mapAttendanceEvent(e, ctx));
 
     const myRawShifts = ctx.db.shiftAssignments
       .filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code)
+      .reverse()
       .sort((a, b) => b.work_date.localeCompare(a.work_date));
 
     const shifts = myRawShifts.map((a) => {
@@ -92,14 +93,17 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
 
     const leaves = ctx.db.leaveRequests
       .filter((l) => l.employee_id === emp.id || l.employee_id === emp.employee_code)
+      .reverse()
       .map((l) => ({ ...l, ...resolveShiftTimeDetails(ctx, l.shift_code, l.assignment_id), branchName: ctx.db.branches.get(l.branch_id)?.name ?? branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[l.status] }));
 
     const emergencyLeaves = ctx.db.emergencyLeaves
       .filter((el) => el.employee_id === emp.id || el.employee_id === emp.employee_code)
+      .reverse()
       .map((el) => ({ ...el, ...resolveShiftTimeDetails(ctx, el.shift_code, el.assignment_id), branchName: ctx.db.branches.get(el.branch_id)?.name ?? branch?.name ?? 'Chi nhánh' }));
 
     const swaps = ctx.db.shiftSwaps
       .filter((s) => s.requester_id === emp.id || s.requester_id === emp.employee_code || s.peer_id === emp.id || s.peer_id === emp.employee_code)
+      .reverse()
       .map((s) => {
         const reqEmp = ctx.db.employees.get(s.requester_id) ?? ctx.db.employees.find((e) => e.employee_code === s.requester_id);
         const peerEmp = ctx.db.employees.get(s.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === s.peer_id);
@@ -138,6 +142,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
 
     const adjustments = ctx.db.attendanceAdjustments
       .filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code)
+      .reverse()
       .map((a) => ({ ...a, ...resolveShiftTimeDetails(ctx, a.shift_code, a.assignment_id), branchName: ctx.db.branches.get(a.branch_id)?.name ?? branch?.name ?? 'Chi nhánh' }));
 
     const cycleDays = emp.probation_cycle_days || 12;

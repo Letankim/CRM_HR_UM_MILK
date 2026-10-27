@@ -43,6 +43,7 @@ export function buildEmployeeDossierSummary(e: Employee, ctx: AppContext) {
   const probationHoursCompleted = completedOrPublished.reduce((sum, a) => sum + (Number(a.scheduled_hours) || 5), 0);
   const recentShifts = assignments
     .slice()
+    .reverse()
     .sort((a, b) => b.work_date.localeCompare(a.work_date))
     .slice(0, 50)
     .map((a) => {
@@ -74,6 +75,7 @@ export function buildEmployeeDossierSummary(e: Employee, ctx: AppContext) {
 
   const stageHistory = ctx.db.employeeStageHistory
     .filter((h) => isEmp(h.employee_id))
+    .reverse()
     .sort((a, b) => b.effective_from.localeCompare(a.effective_from))
     .map((h) => {
       const actor = resolveActorInfo(ctx, h.decided_by || h.created_by, h.approved_by);

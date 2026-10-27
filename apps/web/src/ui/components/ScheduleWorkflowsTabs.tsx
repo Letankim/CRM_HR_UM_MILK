@@ -50,7 +50,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
 
   const actMut = useMutation({
     mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body),
-    onSuccess: () => { message.success('Đã thực hiện thao tác thành công'); refreshAll(); },
+    onSuccess: () => { message.success('Đã thực hiện thao tác thành công'); setPage(1); refreshAll(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại'),
   });
 

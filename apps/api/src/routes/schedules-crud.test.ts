@@ -107,6 +107,8 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
     expect(adjRes.statusCode).toBe(201);
     const adj = adjRes.json().data;
     expect(adj.assignment_id).toBe(shiftId);
+    const adjListRes = await app.inject({ method: 'GET', url: '/api/admin/attendance/adjustments', headers: hrHeaders });
+    expect(adjListRes.json().data[0].id).toBe(adj.id);
 
     const decideRes = await app.inject({
       method: 'POST', url: `/api/admin/attendance/adjustments/${adj.id}/decide`, headers: hrHeaders,
@@ -119,11 +121,8 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
   it('requires Store Manager (STORE) or HR approval before employee-registered shifts become PUBLISHED and allow Check-In/Swap', async () => {
     const storeHeaders = await loginHeaders('store1');
     const hrHeaders = await loginHeaders('hr');
-
     const regRes = await app.inject({
-      method: 'POST',
-      url: '/api/my-attendance/shifts',
-      headers: storeHeaders,
+      method: 'POST', url: '/api/my-attendance/shifts', headers: storeHeaders,
       payload: { work_date: '2027-12-15', shift_code: 'CA_TOI', note: 'Đăng ký ca tối chờ duyệt' },
     });
     expect(regRes.statusCode).toBe(201);
@@ -132,35 +131,25 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
 
     const branch = db.branches.get(registered.branchId) ?? db.branches.all()[0]!;
     const checkBeforeApprove = await app.inject({
-      method: 'POST',
-      url: '/api/attendance/check',
-      headers: storeHeaders,
+      method: 'POST', url: '/api/attendance/check', headers: storeHeaders,
       payload: { assignment_id: registered.id, kind: 'CHECK_IN', lat: branch.lat, lng: branch.lng, selfie_source: 'LIVE_CAMERA' },
     });
     expect(checkBeforeApprove.statusCode).toBe(400);
 
     const approveRes = await app.inject({
-      method: 'PUT',
-      url: `/api/admin/schedules/${registered.id}`,
-      headers: hrHeaders,
+      method: 'PUT', url: `/api/admin/schedules/${registered.id}`, headers: hrHeaders,
       payload: { version: registered.version, status: 'PUBLISHED' },
     });
     expect(approveRes.statusCode).toBe(200);
     expect(approveRes.json().data.status).toBe('PUBLISHED');
 
     const checkAfterApprove = await app.inject({
-      method: 'POST',
-      url: '/api/attendance/check',
-      headers: storeHeaders,
+      method: 'POST', url: '/api/attendance/check', headers: storeHeaders,
       payload: { assignment_id: registered.id, kind: 'CHECK_IN', lat: branch.lat, lng: branch.lng, selfie_source: 'LIVE_CAMERA' },
     });
     expect(checkAfterApprove.statusCode).toBe(201);
 
-    const sessionsRes = await app.inject({
-      method: 'GET',
-      url: '/api/admin/attendance/sessions?page=1&per_page=5',
-      headers: hrHeaders,
-    });
+    const sessionsRes = await app.inject({ method: 'GET', url: '/api/admin/attendance/sessions?page=1&per_page=5', headers: hrHeaders });
     expect(sessionsRes.statusCode).toBe(200);
     expect(sessionsRes.json().meta.pagination.per_page).toBe(5);
     expect(sessionsRes.json().data.length).toBeGreaterThanOrEqual(1);

@@ -105,8 +105,8 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       };
     }).filter((item) => (!query.branch_id || query.branch_id === 'ALL' || item.branch_id === query.branch_id) && (!query.decision || query.decision === 'ALL' || item.decision === query.decision) && (!query.status || query.status === 'ALL' || item.status === query.status));
     return sendPaginated(request, 'Lấy danh sách lịch phỏng vấn thành công', paginateAndSort(items, {
-      page: query.page, perPage: query.per_page ?? 20, defaultSortBy: 'start_at', defaultSortOrder: 'desc',
-      allowedSortFields: ['start_at', 'created_at', 'score', 'decision'], q: query.q,
+      page: query.page, perPage: query.per_page ?? 20, defaultSortBy: 'created_at', defaultSortOrder: 'desc',
+      allowedSortFields: ['created_at', 'start_at', 'score', 'decision'], q: query.q,
       searchExtractor: (i) => [i.candidateName, i.candidateCode, i.candidatePhone, i.interviewerLabel, i.branchName, i.comment],
       filters: { branch_id: query.branch_id, status: query.status, decision: query.decision },
     }));
