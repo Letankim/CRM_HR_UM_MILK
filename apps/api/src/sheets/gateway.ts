@@ -18,6 +18,8 @@ export interface SheetsGateway {
   appendRows(spreadsheetId: string, tab: string, rows: string[][]): Promise<number>;
   /** Ghi đè một dòng (1-based). */
   updateRow(spreadsheetId: string, tab: string, row: number, values: string[]): Promise<void>;
+  /** Ghi đè nhiều dòng trong MỘT request batchUpdate (tiết kiệm quota). */
+  batchUpdateRows(spreadsheetId: string, tab: string, items: { row: number; values: string[] }[]): Promise<void>;
   /** Tạo tab nếu chưa có, ghi header, định dạng toàn bộ ô là văn bản. */
   ensureTab(spreadsheetId: string, tab: string, headers: readonly string[]): Promise<void>;
 }
@@ -47,13 +49,7 @@ export class GoogleSheetsGateway implements SheetsGateway {
 
   async readTab(spreadsheetId: string, tab: string): Promise<string[][]> {
     const res = await withRetry(
-      () =>
-        this.sheets.spreadsheets.values.get({
-          spreadsheetId,
-          range: quoteTab(tab),
-          valueRenderOption: 'FORMATTED_VALUE',
-          majorDimension: 'ROWS',
-        }),
+      () => this.sheets.spreadsheets.values.get({ spreadsheetId, range: quoteTab(tab), valueRenderOption: 'FORMATTED_VALUE', majorDimension: 'ROWS' }),
       { onRetry: this.onRetry },
     );
     return (res.data.values ?? []).map((r) => r.map((c) => String(c ?? '')));
@@ -70,14 +66,7 @@ export class GoogleSheetsGateway implements SheetsGateway {
 
   async appendRows(spreadsheetId: string, tab: string, rows: string[][]): Promise<number> {
     const res = await withRetry(
-      () =>
-        this.sheets.spreadsheets.values.append({
-          spreadsheetId,
-          range: `${quoteTab(tab)}!A1`,
-          valueInputOption: 'RAW',
-          insertDataOption: 'INSERT_ROWS',
-          requestBody: { values: rows },
-        }),
+      () => this.sheets.spreadsheets.values.append({ spreadsheetId, range: `${quoteTab(tab)}!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: rows } }),
       { onRetry: this.onRetry },
     );
     const updated = res.data.updates?.updatedRange;
@@ -93,19 +82,7 @@ export class GoogleSheetsGateway implements SheetsGateway {
     let sheetId: number | undefined;
     try {
       const res = await withRetry(
-        () =>
-          this.sheets.spreadsheets.batchUpdate({
-            spreadsheetId,
-            requestBody: {
-              requests: [
-                {
-                  addSheet: {
-                    properties: { title: tab, gridProperties: { frozenRowCount: 1, columnCount: Math.max(headers.length, 26) } },
-                  },
-                },
-              ],
-            },
-          }),
+        () => this.sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: [{ addSheet: { properties: { title: tab, gridProperties: { frozenRowCount: 1, columnCount: Math.max(headers.length, 26) } } } }] } }),
         { onRetry: this.onRetry },
       );
       sheetId = res.data.replies?.[0]?.addSheet?.properties?.sheetId ?? undefined;
@@ -117,32 +94,12 @@ export class GoogleSheetsGateway implements SheetsGateway {
 
     if (sheetId !== undefined) {
       await withRetry(
-        () =>
-          this.sheets.spreadsheets.batchUpdate({
-            spreadsheetId,
-            requestBody: {
-              requests: [
-                {
-                  repeatCell: {
-                    range: { sheetId },
-                    cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } },
-                    fields: 'userEnteredFormat.numberFormat',
-                  },
-                },
-              ],
-            },
-          }),
+        () => this.sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: [{ repeatCell: { range: { sheetId }, cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } }, fields: 'userEnteredFormat.numberFormat' } }] } }),
         { onRetry: this.onRetry },
       );
     }
     await withRetry(
-      () =>
-        this.sheets.spreadsheets.values.update({
-          spreadsheetId,
-          range: `${quoteTab(tab)}!A1`,
-          valueInputOption: 'RAW',
-          requestBody: { values: [[...headers]] },
-        }),
+      () => this.sheets.spreadsheets.values.update({ spreadsheetId, range: `${quoteTab(tab)}!A1`, valueInputOption: 'RAW', requestBody: { values: [[...headers]] } }),
       { onRetry: this.onRetry },
     );
   }
@@ -150,13 +107,17 @@ export class GoogleSheetsGateway implements SheetsGateway {
   async updateRow(spreadsheetId: string, tab: string, row: number, values: string[]): Promise<void> {
     const range = `${quoteTab(tab)}!A${row}:${columnLetter(values.length)}${row}`;
     await withRetry(
-      () =>
-        this.sheets.spreadsheets.values.update({
-          spreadsheetId,
-          range,
-          valueInputOption: 'RAW',
-          requestBody: { values: [values] },
-        }),
+      () => this.sheets.spreadsheets.values.update({ spreadsheetId, range, valueInputOption: 'RAW', requestBody: { values: [values] } }),
+      { onRetry: this.onRetry },
+    );
+  }
+
+  async batchUpdateRows(spreadsheetId: string, tab: string, items: { row: number; values: string[] }[]): Promise<void> {
+    if (items.length === 0) return;
+    if (items.length === 1) return this.updateRow(spreadsheetId, tab, items[0]!.row, items[0]!.values);
+    const data = items.map(({ row, values }) => ({ range: `${quoteTab(tab)}!A${row}:${columnLetter(values.length)}${row}`, values: [values] }));
+    await withRetry(
+      () => this.sheets.spreadsheets.values.batchUpdate({ spreadsheetId, requestBody: { valueInputOption: 'RAW', data } }),
       { onRetry: this.onRetry },
     );
   }
@@ -208,6 +169,13 @@ export class InMemorySheetsGateway implements SheetsGateway {
     this.calls.write++;
     const rows = this.tab(spreadsheetId, tab);
     rows[row - 1] = [...values];
+  }
+
+  async batchUpdateRows(spreadsheetId: string, tab: string, items: { row: number; values: string[] }[]) {
+    if (items.length === 0) return;
+    this.calls.write++;
+    const rows = this.tab(spreadsheetId, tab);
+    for (const { row, values } of items) rows[row - 1] = [...values];
   }
 
   /** Mô phỏng ai đó sửa tay trực tiếp trên Google Sheets. */

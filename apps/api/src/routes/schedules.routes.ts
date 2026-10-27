@@ -196,20 +196,19 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.post('/api/admin/schedules/bulk-action', { preHandler: requirePermission('schedule.publish', 'schedule.propose') }, async (request) => {
-    const body = zBulkScheduleBody.parse(request.body);
-    const actorId = request.auth!.user.id;
-    const processedIds: string[] = [], empIds = new Set<string>();
+    const body = zBulkScheduleBody.parse(request.body), actorId = request.auth!.user.id, pubAt = nowIso();
+    const processedIds: string[] = [], empIds = new Set<string>(), patches: { id: string; expectedVersion: number; patch: Partial<ShiftAssignment> }[] = [];
     let lastBranchId = '';
     for (const item of body.items) {
       const a = ctx.db.shiftAssignments.get(item.id);
       if (!a) continue;
       lastBranchId = resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id);
       assertBranchAccess(request, lastBranchId);
-      if (body.action === 'DELETE') await ctx.db.shiftAssignments.softDelete(a.id, a.version, actorId);
-      else await ctx.db.shiftAssignments.update(a.id, a.version, { status: 'PUBLISHED', published_at: nowIso() }, actorId);
+      patches.push({ id: a.id, expectedVersion: a.version, patch: body.action === 'DELETE' ? { is_deleted: true } : { status: 'PUBLISHED', published_at: pubAt } });
       processedIds.push(a.id);
       empIds.add(a.employee_id);
     }
+    await ctx.db.shiftAssignments.batchUpdate(patches, actorId);
     await ctx.audit.record(auditContext(request), { action: body.action === 'DELETE' ? 'schedule.delete' : 'schedule.publish', entity: 'SHIFT_ASSIGNMENTS', entityId: `bulk-${processedIds.length}`, after: { action: body.action, processedIds } });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: lastBranchId, employeeIds: Array.from(empIds), kind: body.action === 'PUBLISH' ? 'SHIFT_APPROVED' : 'SHIFT_DELETED', message: body.action === 'PUBLISH' ? `Đã phát hành chính thức ${processedIds.length} ca làm việc` : '', actorId });
     return sendSuccess(request, body.action === 'DELETE' ? `Đã xóa ${processedIds.length} ca làm việc` : `Đã phát hành chính thức ${processedIds.length} ca làm việc`, { processedCount: processedIds.length, processedIds });

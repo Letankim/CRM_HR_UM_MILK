@@ -45,10 +45,25 @@ function getLocalPhotosDir(ctx: AppContext): string {
   return dir;
 }
 const sanitizeFileId = (fileId: string) => fileId.replace(/[^a-zA-Z0-9_-]/g, '');
+const MAX_PHOTO_RAM_CACHE = 60;
+const photoRamCache = new Map<string, Buffer>();
+let driveUploadsInFlight = 0;
+let migratingPhotos = false;
+
+function putPhotoCache(key: string, buf: Buffer): void {
+  if (!key) return;
+  photoRamCache.delete(key);
+  if (photoRamCache.size >= MAX_PHOTO_RAM_CACHE) {
+    const oldest = photoRamCache.keys().next().value;
+    if (oldest) photoRamCache.delete(oldest);
+  }
+  photoRamCache.set(key, buf);
+}
 
 export async function persistAttendancePhoto(
   ctx: AppContext,
   params: { base64: string; employeeCode: string; checkType: 'CHECK_IN' | 'CHECK_OUT'; workDate: string },
+  forceDriveUpload = false,
 ): Promise<{ fileId: string; sha256: string }> {
   const match = params.base64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   const mimeType = match?.[1] ?? 'image/jpeg', rawPayload = match?.[2] ?? params.base64;
@@ -60,56 +75,56 @@ export async function persistAttendancePhoto(
   const safeCode = (params.employeeCode || 'NV').replace(/[^a-zA-Z0-9_-]/g, '');
   const monthFolder = (params.workDate || dayjs().format('YYYY-MM-DD')).slice(0, 7);
   const fileName = `${safeCode}_${params.checkType}_${params.workDate}_${Date.now()}.${ext}`;
+  let fileId = `local_${Date.now()}_${sha256.slice(-6)}`, uploadedToDrive = false;
 
-  let fileId = `local_${Date.now()}_${sha256.slice(-6)}`;
-  if (ctx.google.uploadAttendancePhoto) {
+  if (ctx.google.uploadAttendancePhoto && (forceDriveUpload || driveUploadsInFlight < 2)) {
+    driveUploadsInFlight++;
     try {
       const uploaded = await ctx.google.uploadAttendancePhoto({ fileName, mimeType, data: buffer, monthFolder });
-      if (uploaded.fileId) fileId = uploaded.fileId;
-    } catch { /* fallback local */ }
+      if (uploaded.fileId) { fileId = uploaded.fileId; uploadedToDrive = true; }
+    } catch { /* fallback */ } finally { driveUploadsInFlight--; }
   }
-  try { writeFileSync(join(getLocalPhotosDir(ctx), `${sanitizeFileId(fileId)}.jpg`), buffer); } catch { /* ignore */ }
+  const safeCacheKey = sanitizeFileId(fileId);
+  putPhotoCache(safeCacheKey, buffer);
+  try { writeFileSync(join(getLocalPhotosDir(ctx), `${safeCacheKey}.jpg`), buffer); } catch { /* ignore ephemeral disk */ }
+
+  if (!uploadedToDrive && ctx.google.uploadAttendancePhoto && params.base64.length <= 42_000) {
+    setTimeout(() => { void migrateLegacyBase64Photos(ctx); }, 1500);
+    return { fileId: params.base64, sha256 };
+  }
   return { fileId, sha256 };
 }
 
 export async function loadAttendancePhotoBuffer(ctx: AppContext, fileId: string): Promise<Buffer | null> {
   const safeId = sanitizeFileId(fileId);
   if (!safeId) return null;
+  const ramHit = photoRamCache.get(safeId);
+  if (ramHit) { putPhotoCache(safeId, ramHit); return ramHit; }
   const cachePath = join(getLocalPhotosDir(ctx), `${safeId}.jpg`);
   if (existsSync(cachePath)) {
-    try { return readFileSync(cachePath); } catch { /* fallback drive */ }
+    try { const buf = readFileSync(cachePath); putPhotoCache(safeId, buf); return buf; } catch { /* fallback drive */ }
   }
   if (ctx.google.downloadDriveFile && !safeId.startsWith('local_')) {
     const buf = await ctx.google.downloadDriveFile(safeId);
-    if (buf) {
-      try { writeFileSync(cachePath, buf); } catch { /* ignore */ }
-      return buf;
-    }
+    if (buf) { putPhotoCache(safeId, buf); try { writeFileSync(cachePath, buf); } catch { /* ignore */ } return buf; }
   }
   return null;
 }
 
-let migratingPhotos = false;
-const checkedPhotoDbs = new WeakSet<object>();
-
 export async function migrateLegacyBase64Photos(ctx: AppContext): Promise<void> {
-  if (migratingPhotos || checkedPhotoDbs.has(ctx.db)) return;
-  const legacyRows = ctx.db.attendanceEvents.all().filter((e) => e.photo_drive_file_id?.startsWith('data:image/'));
-  if (legacyRows.length === 0) {
-    checkedPhotoDbs.add(ctx.db);
-    return;
-  }
+  if (migratingPhotos || !ctx.google.uploadAttendancePhoto) return;
+  const legacyRows = ctx.db.attendanceEvents.all().filter((e) => e.photo_drive_file_id?.startsWith('data:image/')).slice(0, 5);
+  if (legacyRows.length === 0) return;
   migratingPhotos = true;
   try {
+    const patches: { id: string; expectedVersion: number; patch: Partial<AttendanceEvent> }[] = [];
     for (const ev of legacyRows) {
       const emp = ctx.db.employees.get(ev.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === ev.employee_id);
-      const uploaded = await persistAttendancePhoto(ctx, { base64: ev.photo_drive_file_id, employeeCode: emp?.employee_code ?? ev.employee_id, checkType: ev.type, workDate: ev.work_date });
-      await ctx.db.attendanceEvents.update(ev.id, ev.version, { photo_drive_file_id: uploaded.fileId, photo_sha256: uploaded.sha256 }, 'system-drive-sync');
+      const uploaded = await persistAttendancePhoto(ctx, { base64: ev.photo_drive_file_id, employeeCode: emp?.employee_code ?? ev.employee_id, checkType: ev.type, workDate: ev.work_date }, true);
+      if (!uploaded.fileId.startsWith('data:image/')) patches.push({ id: ev.id, expectedVersion: ev.version, patch: { photo_drive_file_id: uploaded.fileId, photo_sha256: uploaded.sha256 } });
     }
-    checkedPhotoDbs.add(ctx.db);
-  } catch { /* retry later */ } finally {
-    migratingPhotos = false;
-  }
+    if (patches.length > 0) await ctx.db.attendanceEvents.batchUpdate(patches, 'system-drive-sync');
+  } catch { /* retry later */ } finally { migratingPhotos = false; }
 }
 
 export function buildCheckInPhotoUrl(rawPhotoData: string, employeeName: string, kindLabel: string, checkTimeFormatted: string, shiftLabel: string, distanceM: number): string {
@@ -187,25 +202,16 @@ export function buildPaginatedAttendanceSessions(
     });
   }
 
-  const completedCount = rawSessions.filter((s) => s.isCompleted).length;
-  const inProgressCount = rawSessions.filter((s) => s.isInProgress).length;
-  const lateEarlyCount = rawSessions.filter((s) => s.isLateEarly).length;
-
+  const completedCount = rawSessions.filter((s) => s.isCompleted).length, inProgressCount = rawSessions.filter((s) => s.isInProgress).length, lateEarlyCount = rawSessions.filter((s) => s.isLateEarly).length;
   const paged = paginateAndSort(rawSessions, {
-    page: query.page, perPage: query.per_page ?? 15, maxPerPage: 500,
-    defaultSortBy: 'work_date', defaultSortOrder: 'desc', allowedSortFields: ['work_date', 'server_time', 'employeeCode'],
+    page: query.page, perPage: query.per_page ?? 15, maxPerPage: 500, defaultSortBy: 'work_date', defaultSortOrder: 'desc', allowedSortFields: ['work_date', 'server_time', 'employeeCode'],
     q: query.q, searchExtractor: (s) => [s.employeeName, s.employeeCode, s.branchName, s.work_date, s.shiftLabel],
-    filters: { branch_id: query.branch_id, shift_code: query.shift_code, status: query.status },
-    filterPredicates: { status: () => true },
+    filters: { branch_id: query.branch_id, shift_code: query.shift_code, status: query.status }, filterPredicates: { status: () => true },
   });
-
   const items = paged.items.map((s) => {
-    const mappedIn = s.inEv ? mapAttendanceEvent(s.inEv, ctx) : null;
-    const mappedOut = s.outEv ? mapAttendanceEvent(s.outEv, ctx) : null;
-    const base = mappedIn ?? mappedOut!;
+    const mappedIn = s.inEv ? mapAttendanceEvent(s.inEv, ctx) : null, mappedOut = s.outEv ? mapAttendanceEvent(s.outEv, ctx) : null, base = mappedIn ?? mappedOut!;
     return { ...base, id: mappedIn?.id ?? mappedOut!.id, checkInEvent: mappedIn, checkOutEvent: mappedOut };
   });
-
   paged.meta.filters.completed_count = String(completedCount);
   paged.meta.filters.in_progress_count = String(inProgressCount);
   paged.meta.filters.late_early_count = String(lateEarlyCount);

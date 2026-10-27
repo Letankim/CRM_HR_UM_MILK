@@ -30,28 +30,18 @@ function getVnDateAndHm(): { todayStr: string; nowHm: string } {
 }
 
 export async function ensurePersonalProfile(ctx: AppContext, user: User): Promise<Employee> {
-  const existing = ctx.db.employees.find(
-    (e) => e.user_id === user.id || Boolean(user.employee_id && (e.employee_code === user.employee_id || e.id === user.employee_id)),
-  );
+  const existing = ctx.db.employees.find((e) => e.user_id === user.id || Boolean(user.employee_id && (e.employee_code === user.employee_id || e.id === user.employee_id)));
   if (existing) {
-    const autoShifts = ctx.db.shiftAssignments.filter(
-      (a) => (a.employee_id === existing.id || a.employee_id === existing.employee_code) && a.note === 'Ca làm việc cá nhân hôm nay',
-    );
+    const autoShifts = ctx.db.shiftAssignments.filter((a) => (a.employee_id === existing.id || a.employee_id === existing.employee_code) && a.note === 'Ca làm việc cá nhân hôm nay');
     for (const s of autoShifts) {
-      if (!ctx.db.attendanceEvents.find((e) => e.assignment_id === s.id)) {
-        await ctx.db.shiftAssignments.softDelete(s.id, s.version, user.id);
-      }
+      if (!ctx.db.attendanceEvents.find((e) => e.assignment_id === s.id)) await ctx.db.shiftAssignments.softDelete(s.id, s.version, user.id);
     }
     return existing;
   }
-
   const firstBranch = ctx.db.branches.all()[0];
-  const scopedBranchId = user.branch_scope && user.branch_scope !== 'ALL'
-    ? user.branch_scope.split(',')[0]?.trim() || firstBranch?.id || ''
-    : firstBranch?.id || '';
+  const scopedBranchId = user.branch_scope && user.branch_scope !== 'ALL' ? user.branch_scope.split(',')[0]?.trim() || firstBranch?.id || '' : firstBranch?.id || '';
   const nextCode = `NV${String(ctx.db.employees.all(true).length + 1).padStart(4, '0')}`;
   const isProb = user.role === 'THU_VIEC';
-
   const createdEmp = await ctx.db.employees.insert({
     employee_code: nextCode, candidate_id: '', user_id: user.id, full_name: user.display_name, phone: user.phone || '0901000099', email: user.email || '',
     date_of_birth: '1998-01-01', gender: 'Khác', citizen_id: '', citizen_issue_date: '', permanent_address: 'TP. Hồ Chí Minh', current_address: 'TP. Hồ Chí Minh',
@@ -67,7 +57,7 @@ export async function ensurePersonalProfile(ctx: AppContext, user: User): Promis
 
 export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/my-attendance', { preHandler: requireAuth() }, async (request) => {
-    await migrateLegacyBase64Photos(ctx);
+    void migrateLegacyBase64Photos(ctx);
     await healBranchConsistency(ctx);
     const user = request.auth!.user;
     const emp = await ensurePersonalProfile(ctx, user);
@@ -124,19 +114,27 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
         };
       });
 
+    const peerBusyByEmp = new Map<string, Record<string, string>>();
+    const putBusy = (key: string, date: string, label: string) => {
+      let map = peerBusyByEmp.get(key);
+      if (!map) { map = {}; peerBusyByEmp.set(key, map); }
+      map[date] = label;
+    };
+    for (const a of ctx.db.shiftAssignments.all()) {
+      if (a.day_type === 'OFF' || a.status === 'ON_LEAVE' || a.status === 'ABSENT') continue;
+      const meta = resolveShiftTimeDetails(ctx, a.shift_code, a.id);
+      putBusy(a.employee_id, a.work_date, `${meta.shiftLabel} (${meta.shiftTimeRange})`);
+    }
+    for (const l of ctx.db.leaveRequests.all()) {
+      if (l.status === 'APPROVED' || l.status === 'PENDING') putBusy(l.employee_id, l.leave_date, 'Đang nghỉ OFF');
+    }
     const branchPeers = ctx.db.employees
       .filter((e) => e.id !== emp.id && e.status === 'ACTIVE' && e.branch_id === emp.branch_id)
-      .map((e) => {
-        const busyShiftsByDate: Record<string, string> = {};
-        for (const a of ctx.db.shiftAssignments.filter((x) => (x.employee_id === e.id || x.employee_id === e.employee_code) && x.day_type !== 'OFF' && x.status !== 'ON_LEAVE' && x.status !== 'ABSENT')) {
-          const meta = resolveShiftTimeDetails(ctx, a.shift_code, a.id);
-          busyShiftsByDate[a.work_date] = `${meta.shiftLabel} (${meta.shiftTimeRange})`;
-        }
-        for (const l of ctx.db.leaveRequests.filter((x) => (x.employee_id === e.id || x.employee_id === e.employee_code) && (x.status === 'APPROVED' || x.status === 'PENDING'))) {
-          busyShiftsByDate[l.leave_date] = 'Đang nghỉ OFF';
-        }
-        return { id: e.id, employeeCode: e.employee_code, fullName: e.full_name, positionTitle: e.position_title || 'Nhân sự cửa hàng', branchName: ctx.db.branches.get(e.branch_id)?.name ?? '', busyShiftsByDate };
-      });
+      .map((e) => ({
+        id: e.id, employeeCode: e.employee_code, fullName: e.full_name, positionTitle: e.position_title || 'Nhân sự cửa hàng',
+        branchName: ctx.db.branches.get(e.branch_id)?.name ?? '',
+        busyShiftsByDate: { ...(peerBusyByEmp.get(e.employee_code) ?? {}), ...(peerBusyByEmp.get(e.id) ?? {}) },
+      }));
 
     const adjustments = ctx.db.attendanceAdjustments
       .filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code)
@@ -165,22 +163,13 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     const emp = await ensurePersonalProfile(ctx, user);
     const { todayStr, nowHm } = getVnDateAndHm();
 
-    if (body.work_date < todayStr) {
-      throw Errors.fieldValidation('work_date', 'OUT_OF_RANGE', `Không được phép đăng ký ca làm việc cho ngày trong quá khứ (${dayjs(body.work_date).format('DD/MM/YYYY')}). Hôm nay là ${dayjs(todayStr).format('DD/MM/YYYY')}.`, body.work_date);
-    }
+    if (body.work_date < todayStr) throw Errors.fieldValidation('work_date', 'OUT_OF_RANGE', `Không được phép đăng ký ca làm việc cho ngày trong quá khứ (${dayjs(body.work_date).format('DD/MM/YYYY')}). Hôm nay là ${dayjs(todayStr).format('DD/MM/YYYY')}.`, body.work_date);
     const leaveOnDate = ctx.db.leaveRequests.find((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.leave_date === body.work_date && (l.status === 'APPROVED' || l.status === 'PENDING'));
-    if (leaveOnDate) {
-      throw Errors.fieldValidation('work_date', 'DUPLICATE_VALUE', `Bạn đã đăng ký nghỉ OFF trong ngày ${dayjs(body.work_date).format('DD/MM/YYYY')}, không thể đăng ký ca làm việc trùng ngày nghỉ.`, body.work_date);
-    }
+    if (leaveOnDate) throw Errors.fieldValidation('work_date', 'DUPLICATE_VALUE', `Bạn đã đăng ký nghỉ OFF trong ngày ${dayjs(body.work_date).format('DD/MM/YYYY')}, không thể đăng ký ca làm việc trùng ngày nghỉ.`, body.work_date);
 
-    const tpl = ctx.db.shiftTemplates.find((s) => s.code === body.shift_code);
-    const fallback = SHIFT_DEFAULT_HOURS[body.shift_code] ?? SHIFT_DEFAULT_HOURS.CA_SANG!;
-    const startAt = tpl?.start_time ?? fallback.start;
-    const endAt = tpl?.end_time ?? fallback.end;
-
-    if (body.work_date === todayStr && nowHm >= endAt) {
-      throw Errors.fieldValidation('shift_code', 'OUT_OF_RANGE', `Khung ca này (${startAt} – ${endAt}) trong ngày hôm nay (${dayjs(todayStr).format('DD/MM/YYYY')}) đã trôi qua (hiện tại là ${nowHm}). Không được phép đăng ký ca đã kết thúc, vui lòng chọn ca chưa kết thúc hoặc đăng ký cho ngày tiếp theo.`, body.shift_code);
-    }
+    const tpl = ctx.db.shiftTemplates.find((s) => s.code === body.shift_code), fallback = SHIFT_DEFAULT_HOURS[body.shift_code] ?? SHIFT_DEFAULT_HOURS.CA_SANG!;
+    const startAt = tpl?.start_time ?? fallback.start, endAt = tpl?.end_time ?? fallback.end;
+    if (body.work_date === todayStr && nowHm >= endAt) throw Errors.fieldValidation('shift_code', 'OUT_OF_RANGE', `Khung ca này (${startAt} – ${endAt}) trong ngày hôm nay (${dayjs(todayStr).format('DD/MM/YYYY')}) đã trôi qua (hiện tại là ${nowHm}). Không được phép đăng ký ca đã kết thúc, vui lòng chọn ca chưa kết thúc hoặc đăng ký cho ngày tiếp theo.`, body.shift_code);
 
     const dup = ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.shift_code === body.shift_code);
     if (dup) throw Errors.fieldValidation('shift_code', 'DUPLICATE_VALUE', `Bạn đã đăng ký ca này trong ngày ${dayjs(body.work_date).format('DD/MM/YYYY')} rồi`, body.shift_code);

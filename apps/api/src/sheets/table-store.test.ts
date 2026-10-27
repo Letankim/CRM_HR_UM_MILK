@@ -134,6 +134,27 @@ describe('TableStore', () => {
     await store.load();
     await expect(store.insert({ name: 'x'.repeat(46_000), qty: 1 }, 'u1')).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
+
+  it('batchUpdate cập nhật hàng loạt bản ghi trong 1 lần ghi duy nhất và chống spam refreshIfIdle', async () => {
+    const { gw, store } = setup();
+    await store.load();
+    const records = await Promise.all(Array.from({ length: 25 }, (_, i) => store.insert({ name: `Item ${i}`, qty: i }, 'u1')));
+    const writesBefore = gw.calls.write;
+    const updated = await store.batchUpdate(
+      records.map((r) => ({ id: r.id, expectedVersion: r.version, patch: { qty: r.qty + 100 } })),
+      'u2',
+    );
+    expect(gw.calls.write - writesBefore).toBe(1);
+    expect(updated).toHaveLength(25);
+    expect(store.get(records[0]!.id)?.qty).toBe(100);
+    expect(store.get(records[24]!.id)?.qty).toBe(124);
+
+    // refreshIfIdle trong thời gian cooldown không gọi lại readTab tốn quota
+    const readsBefore = gw.calls.read;
+    const refreshed = await store.refreshIfIdle(12_000);
+    expect(refreshed).toBe(false);
+    expect(gw.calls.read).toBe(readsBefore);
+  });
 });
 
 describe('Audit log theo tháng', () => {

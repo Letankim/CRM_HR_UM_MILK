@@ -7,37 +7,30 @@ import type { WriteQueue } from './write-queue.js';
 
 export type { BaseRecord, InsertInput, InvalidRow, TableStoreOptions, UpdatePatch } from './table-store-codec.js';
 
-interface Entry<T> {
-  row: number;
-  data: T;
-}
-
-interface PendingInsert<T> {
-  record: T;
-  resolve: (value: T) => void;
-  reject: (reason: unknown) => void;
-}
-
+interface Entry<T> { row: number; data: T; }
+interface PendingInsert<T> { record: T; resolve: (value: T) => void; reject: (reason: unknown) => void; }
 const MAX_APPEND_BATCH = 200;
 
 export class TableStore<T extends BaseRecord> {
   private entries = new Map<string, Entry<T>>();
   private invalid: InvalidRow[] = [];
   private loadedAt: string | null = null;
+  private lastLoadedMs = 0;
+  private loadInFlight: Promise<void> | null = null;
   private insertBuffer: PendingInsert<T>[] = [];
   private flushScheduled = false;
 
-  constructor(
-    private readonly gateway: SheetsGateway,
-    private readonly queue: WriteQueue,
-    private readonly opts: TableStoreOptions<T>,
-  ) {}
+  constructor(private readonly gateway: SheetsGateway, private readonly queue: WriteQueue, private readonly opts: TableStoreOptions<T>) {}
 
-  get name(): string {
-    return `${this.opts.spreadsheetKey}.${this.opts.tab}`;
-  }
+  get name(): string { return `${this.opts.spreadsheetKey}.${this.opts.tab}`; }
 
   async load(): Promise<void> {
+    if (this.loadInFlight) return this.loadInFlight;
+    this.loadInFlight = this.doLoad().finally(() => { this.loadInFlight = null; });
+    return this.loadInFlight;
+  }
+
+  private async doLoad(): Promise<void> {
     if (this.opts.cacheRows === false) {
       const header = await this.gateway.readRow(this.opts.spreadsheetId, this.opts.tab, 1, this.opts.headers.length).catch(async () => {
         await this.gateway.ensureTab(this.opts.spreadsheetId, this.opts.tab, this.opts.headers);
@@ -45,6 +38,7 @@ export class TableStore<T extends BaseRecord> {
       });
       await this.ensureHeader(header);
       this.loadedAt = nowIso();
+      this.lastLoadedMs = Date.now();
       return;
     }
     const rows = await this.gateway.readTab(this.opts.spreadsheetId, this.opts.tab).catch(async () => {
@@ -63,11 +57,7 @@ export class TableStore<T extends BaseRecord> {
       const parsed = this.opts.schema.safeParse(obj);
       const rowNumber = i + 1;
       if (!parsed.success) {
-        invalid.push({
-          row: rowNumber,
-          id: String(obj.id ?? ''),
-          issues: parsed.error.issues.map((x) => `${x.path.join('.')}: ${x.message}`),
-        });
+        invalid.push({ row: rowNumber, id: String(obj.id ?? ''), issues: parsed.error.issues.map((x) => `${x.path.join('.')}: ${x.message}`) });
         continue;
       }
       if (next.has(parsed.data.id)) {
@@ -79,10 +69,12 @@ export class TableStore<T extends BaseRecord> {
     this.entries = next;
     this.invalid = invalid;
     this.loadedAt = nowIso();
+    this.lastLoadedMs = Date.now();
   }
 
-  async refreshIfIdle(): Promise<boolean> {
+  async refreshIfIdle(cooldownMs = 12_000): Promise<boolean> {
     if (this.opts.cacheRows === false || !this.queue.isIdle(this.opts.spreadsheetId)) return false;
+    if (this.lastLoadedMs > 0 && Date.now() - this.lastLoadedMs < cooldownMs) return false;
     await this.load();
     return true;
   }
@@ -109,16 +101,7 @@ export class TableStore<T extends BaseRecord> {
 
   async insert(input: InsertInput<T>, actorId: string): Promise<T> {
     const now = nowIso();
-    const record = this.validate({
-      ...input,
-      id: input.id ?? newId(),
-      created_at: now,
-      created_by: actorId,
-      updated_at: now,
-      updated_by: actorId,
-      version: 1,
-      is_deleted: false,
-    });
+    const record = this.validate({ ...input, id: input.id ?? newId(), created_at: now, created_by: actorId, updated_at: now, updated_by: actorId, version: 1, is_deleted: false });
     if (this.entries.has(record.id) || this.insertBuffer.some((b) => b.record.id === record.id)) {
       throw Errors.badRequest(`id ${record.id} đã tồn tại`);
     }
@@ -172,17 +155,30 @@ export class TableStore<T extends BaseRecord> {
         throw Errors.conflict(undefined, refreshed?.data.version ?? Number(liveObj.version));
       }
 
-      const next = this.validate({
-        ...entry.data,
-        ...patch,
-        id,
-        version: expectedVersion + 1,
-        updated_at: nowIso(),
-        updated_by: actorId,
-      });
+      const next = this.validate({ ...entry.data, ...patch, id, version: expectedVersion + 1, updated_at: nowIso(), updated_by: actorId });
       await this.gateway.updateRow(this.opts.spreadsheetId, this.opts.tab, entry.row, this.toRow(next));
       this.entries.set(id, { row: entry.row, data: next });
       return next;
+    });
+  }
+
+  async batchUpdate(items: { id: string; expectedVersion: number; patch: UpdatePatch<T> }[], actorId: string): Promise<T[]> {
+    if (items.length === 0) return [];
+    if (this.opts.appendOnly) throw new Error(`${this.name} là bảng chỉ thêm, không được cập nhật`);
+    return this.queue.enqueue(this.opts.spreadsheetId, async () => {
+      const now = nowIso();
+      const staged: { id: string; row: number; next: T; values: string[] }[] = [];
+      for (const { id, expectedVersion, patch } of items) {
+        const entry = this.entries.get(id);
+        const isRestoring = (patch as Record<string, unknown>).is_deleted === false;
+        if (!entry || (entry.data.is_deleted && !isRestoring)) throw Errors.notFound();
+        if (entry.data.version !== expectedVersion) throw Errors.conflict(undefined, entry.data.version);
+        const next = this.validate({ ...entry.data, ...patch, id, version: expectedVersion + 1, updated_at: now, updated_by: actorId });
+        staged.push({ id, row: entry.row, next, values: this.toRow(next) });
+      }
+      await this.gateway.batchUpdateRows(this.opts.spreadsheetId, this.opts.tab, staged.map((s) => ({ row: s.row, values: s.values })));
+      for (const s of staged) this.entries.set(s.id, { row: s.row, data: s.next });
+      return staged.map((s) => s.next);
     });
   }
 
@@ -199,20 +195,10 @@ export class TableStore<T extends BaseRecord> {
   }
 
   private async ensureHeader(header: string[]): Promise<void> {
-    if (checkHeader(this.name, this.opts.headers, header)) {
-      await this.gateway.updateRow(this.opts.spreadsheetId, this.opts.tab, 1, [...this.opts.headers]);
-    }
+    if (checkHeader(this.name, this.opts.headers, header)) await this.gateway.updateRow(this.opts.spreadsheetId, this.opts.tab, 1, [...this.opts.headers]);
   }
 
-  private toObject(raw: string[]): Record<string, string> {
-    return rowToObject(this.opts.headers, raw);
-  }
-
-  private toRow(record: T): string[] {
-    return recordToRow(this.opts.headers, record);
-  }
-
-  private validate(candidate: unknown): T {
-    return validateRecord(this.name, this.opts.headers, this.opts.schema, candidate);
-  }
+  private toObject(raw: string[]): Record<string, string> { return rowToObject(this.opts.headers, raw); }
+  private toRow(record: T): string[] { return recordToRow(this.opts.headers, record); }
+  private validate(candidate: unknown): T { return validateRecord(this.name, this.opts.headers, this.opts.schema, candidate); }
 }

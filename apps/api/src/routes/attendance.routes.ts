@@ -45,7 +45,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.get('/api/admin/attendance', { preHandler: requirePermission('attendance.read', 'self.attendance') }, async (request) => {
-    await migrateLegacyBase64Photos(ctx);
+    void migrateLegacyBase64Photos(ctx);
     await healBranchConsistency(ctx);
     const rawEvents = [...filterByBranch(request, ctx.db.attendanceEvents.all(), (e) => resolveEmployeeBranchId(ctx, e.employee_id, e.branch_id))].sort((a, b) => b.server_time.localeCompare(a.server_time)).slice(0, 200);
     const events = rawEvents.map((e) => mapAttendanceEvent(e, ctx));
@@ -59,8 +59,8 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.get('/api/admin/attendance/sessions', { preHandler: requirePermission('attendance.read', 'schedule.read', 'self.attendance') }, async (request) => {
     const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), shift_code: z.string().trim().optional(), status: z.string().trim().optional(), from_date: z.string().trim().optional(), to_date: z.string().trim().optional(), refresh: z.string().trim().optional() }).parse(request.query ?? {});
-    if (query.refresh === '1') await ctx.db.attendanceEvents.load();
-    await migrateLegacyBase64Photos(ctx);
+    if (query.refresh === '1') await ctx.db.attendanceEvents.refreshIfIdle();
+    void migrateLegacyBase64Photos(ctx);
     await healBranchConsistency(ctx);
     const scoped = filterByBranch(request, ctx.db.attendanceEvents.all(), (e) => resolveEmployeeBranchId(ctx, e.employee_id, e.branch_id));
     return sendPaginated(request, 'Lấy danh sách điểm danh Vào/Ra ca theo phiên làm việc thành công', buildPaginatedAttendanceSessions(ctx, scoped, query));
