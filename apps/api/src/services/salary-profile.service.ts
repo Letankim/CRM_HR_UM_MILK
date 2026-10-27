@@ -81,7 +81,7 @@ export function mapSalaryProfile(p: PayRate, db: Database) {
     stageAtCreationLabel: EMPLOYEE_STAGE_LABELS[p.stage],
     changeReason: p.change_reason,
     note: p.note,
-    approvedBy: p.approved_by,
+    approvedBy: db.users.get(p.approved_by)?.display_name || db.users.find((u) => u.username === p.approved_by)?.display_name || p.approved_by || 'Hệ thống nhân sự',
     approvedAt: p.approved_at || null,
     version: p.version,
     created_at: p.created_at,
