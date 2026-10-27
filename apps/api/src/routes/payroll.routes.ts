@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { PAYROLL_ITEM_TYPES, PAYROLL_ITEM_TYPE_LABELS, type PayPeriod, type PayrollItem } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
-import { sendSuccess } from '../lib/response.js';
+import { paginateAndSort } from '../lib/list-query.js';
+import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { recalculatePeriodSnapshots } from '../services/payroll-snapshot.service.js';
@@ -60,10 +61,19 @@ const resolveDirection = (t: PayrollItem['item_type']): 'ADD' | 'DEDUCT' =>
 
 export async function payrollRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/payroll/items', { preHandler: requirePermission('payroll.read') }, async (request) => {
-    const { period_id } = z.object({ period_id: z.string().optional() }).parse(request.query);
-    let items = ctx.db.payrollItems.all();
-    if (period_id && period_id !== 'ALL') items = items.filter((i) => i.period_id === period_id);
-    return sendSuccess(request, 'Lấy danh sách khoản thưởng, phụ cấp và điều chỉnh thành công', items.map((i) => mapPayrollItem(i, ctx)));
+    const q = (request.query ?? {}) as Record<string, string | undefined>;
+    const mapped = ctx.db.payrollItems.all().map((i) => mapPayrollItem(i, ctx));
+    const result = paginateAndSort(mapped, {
+      page: Number(q.page) || 1,
+      perPage: Number(q.per_page) || 12,
+      maxPerPage: 500,
+      defaultSortBy: 'created_at',
+      defaultSortOrder: 'desc',
+      q: q.q,
+      searchExtractor: (i) => [i.employeeCode, i.employeeName, i.itemTypeLabel, i.title, i.note],
+      filters: { period_id: q.period_id, direction: q.direction, branch_id: q.branch_id },
+    });
+    return sendPaginated(request, 'Lấy danh sách khoản thưởng, phụ cấp và điều chỉnh thành công', result);
   });
 
   app.post('/api/admin/payroll/items', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request, reply) => {

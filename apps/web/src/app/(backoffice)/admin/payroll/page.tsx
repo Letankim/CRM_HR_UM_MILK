@@ -14,7 +14,6 @@ import { exportPayrollSheet, PayrollSheetCard } from '@/ui/components/PayrollShe
 import { fmtVnd, MONEY_INPUT_PROPS, type PayPeriodRow, type PayrollItemRow, type PayrollSnapshotItem } from '@/ui/components/payroll-types';
 import { PayslipDrawer } from '@/ui/components/PayslipDrawer';
 import { SalaryProfilesTab } from '@/ui/components/SalaryProfilesTab';
-import { useClientPagination } from '@/ui/hooks/useClientPagination';
 import { StatusTag } from '@/ui/StatusTag';
 
 type TabKey = 'SHEET' | 'RECONCILE' | 'ITEMS' | 'SALARY' | 'REPORTS';
@@ -34,31 +33,28 @@ function PayrollView() {
   const [revInputOpen, setRevInputOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<PayrollItemRow | null>(null);
   const [payslipSnap, setPayslipSnap] = useState<PayrollSnapshotItem | null>(null);
+  const [revPage, setRevPage] = useState(1);
+  const [revPerPage, setRevPerPage] = useState(12);
+  const [perPageNum, setPerPageNum] = useState(1);
+  const [perPageSize, setPerPageSize] = useState(12);
   const [revForm] = Form.useForm();
-  const revPagination = useClientPagination(12, 'bản ghi');
-  const perPagination = useClientPagination(12, 'kỳ lương');
 
-  const periodsQuery = useQuery({ queryKey: ['payroll-periods'], queryFn: () => api.get<PayPeriodRow[]>('/admin/payroll/periods') });
+  const periodsQuery = useQuery({ queryKey: ['payroll-periods'], queryFn: () => api.get<PayPeriodRow[]>('/admin/payroll/periods?per_page=100') });
   const periods = periodsQuery.data ?? [];
   useEffect(() => {
     if (periods.length > 0 && !periods.some((p) => p.id === selectedPeriodId)) setSelectedPeriodId(periods[0]!.id);
   }, [periods, selectedPeriodId]);
   const currentPeriod = useMemo(() => periods.find((p) => p.id === selectedPeriodId), [periods, selectedPeriodId]);
 
-  const snapshotsQuery = useQuery({
-    queryKey: ['payroll-snapshots', currentPeriod?.id],
-    queryFn: () => api.get<{ period: PayPeriodRow; snapshots: PayrollSnapshotItem[] }>(`/admin/payroll/periods/${currentPeriod!.id}/snapshots`),
-    enabled: !!currentPeriod?.id,
-  });
-  const itemsQuery = useQuery({
-    queryKey: ['payroll-items', currentPeriod?.id],
-    queryFn: () => api.get<PayrollItemRow[]>(`/admin/payroll/items?period_id=${currentPeriod!.id}`),
-    enabled: !!currentPeriod?.id,
-  });
   const revInputsQuery = useQuery({
-    queryKey: ['payroll-revenue-inputs'],
-    queryFn: () => api.get<Record<string, unknown>[]>('/admin/payroll/revenue-inputs'),
+    queryKey: ['payroll-revenue-inputs', revPage, revPerPage],
+    queryFn: () => api.list<Record<string, unknown>>(`/admin/payroll/revenue-inputs?page=${revPage}&per_page=${revPerPage}`),
     enabled: tab === 'REPORTS',
+  });
+  const periodsReportQuery = useQuery({
+    queryKey: ['payroll-periods-report', perPageNum, perPageSize],
+    queryFn: () => api.list<PayPeriodRow>(`/admin/payroll/periods?page=${perPageNum}&per_page=${perPageSize}`),
+    enabled: tab === 'REPORTS' && reportSubTab === 'periods',
   });
   const branchesQuery = useQuery({
     queryKey: ['branches-select'],
@@ -77,13 +73,17 @@ function PayrollView() {
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu doanh thu đối chiếu thất bại'),
   });
 
-  const snapshots = snapshotsQuery.data?.snapshots ?? [];
   const isLocked = !!currentPeriod && currentPeriod.status !== 'DRAFT' && currentPeriod.status !== 'RECONCILE';
-  const refreshAll = () => ['payroll-periods', 'payroll-snapshots', 'payroll-items', 'payroll-revenue-inputs'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+  const refreshAll = () => ['payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items', 'payroll-revenue-inputs'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const openRevModal = () => {
     revForm.resetFields();
     revForm.setFieldsValue({ period_id: currentPeriod?.id || undefined, branch_id: 'ALL', revenue_vnd: 120000000 });
     setRevInputOpen(true);
+  };
+  const handleExportSheet = async () => {
+    if (!currentPeriod) return;
+    const res = await api.get<{ period: PayPeriodRow; snapshots: PayrollSnapshotItem[] }>(`/admin/payroll/periods/${currentPeriod.id}/snapshots`);
+    exportPayrollSheet(currentPeriod, res.snapshots);
   };
 
   return (
@@ -111,7 +111,7 @@ function PayrollView() {
           {tab !== 'SALARY' && (
             <Space size={8} wrap>
               {tab !== 'REPORTS' && (
-                <Button icon={<FileExcelOutlined style={{ color: '#15803D' }} />} onClick={() => currentPeriod && exportPayrollSheet(currentPeriod, snapshots)} disabled={!currentPeriod}>Xuất Bảng lương Excel</Button>
+                <Button icon={<FileExcelOutlined style={{ color: '#15803D' }} />} onClick={() => void handleExportSheet()} disabled={!currentPeriod}>Xuất Bảng lương Excel</Button>
               )}
               {canManage && tab === 'REPORTS' && (
                 <Button type="primary" icon={<BarChartOutlined />} onClick={openRevModal}>Nhập Doanh thu đối chiếu</Button>
@@ -119,7 +119,7 @@ function PayrollView() {
               {canManage && (tab === 'SHEET' || tab === 'ITEMS') && currentPeriod && !isLocked && (
                 <Button icon={<GiftOutlined />} onClick={() => { setEditingItem(null); setItemModalOpen(true); }}>Thêm Thưởng / Phụ cấp</Button>
               )}
-              <Button icon={<ReloadOutlined />} loading={periodsQuery.isFetching || snapshotsQuery.isFetching || revInputsQuery.isFetching} onClick={refreshAll}>Làm mới</Button>
+              <Button icon={<ReloadOutlined />} loading={periodsQuery.isFetching || revInputsQuery.isFetching} onClick={refreshAll}>Làm mới</Button>
               {canManage && <Button type={tab === 'REPORTS' ? 'default' : 'primary'} icon={<PlusOutlined />} onClick={() => setPeriodModalOpen(true)}>Tạo kỳ lương mới</Button>}
             </Space>
           )}
@@ -133,10 +133,10 @@ function PayrollView() {
       {(tab === 'SHEET' || tab === 'RECONCILE' || tab === 'ITEMS') && !currentPeriod && !periodsQuery.isLoading && (
         <Card size="small"><Empty description="Chưa có kỳ lương nào. Hãy thiết lập hồ sơ lương cho nhân sự, sau đó tạo kỳ lương mới." /></Card>
       )}
-      {tab === 'SHEET' && currentPeriod && <PayrollSheetCard rows={snapshots} loading={snapshotsQuery.isLoading} onOpenPayslip={setPayslipSnap} />}
-      {tab === 'RECONCILE' && currentPeriod && <PayrollAttendanceReconcileCard period={currentPeriod} snapshots={snapshots} loading={snapshotsQuery.isLoading} onOpenPayslip={setPayslipSnap} />}
+      {tab === 'SHEET' && currentPeriod && <PayrollSheetCard period={currentPeriod} onOpenPayslip={setPayslipSnap} />}
+      {tab === 'RECONCILE' && currentPeriod && <PayrollAttendanceReconcileCard period={currentPeriod} onOpenPayslip={setPayslipSnap} />}
       {tab === 'ITEMS' && currentPeriod && (
-        <PayrollItemsCard items={itemsQuery.data ?? []} loading={itemsQuery.isLoading} canManage={canManage} isLockedPeriod={isLocked} onAddItem={() => { setEditingItem(null); setItemModalOpen(true); }} onEditItem={(i) => { setEditingItem(i); setItemModalOpen(true); }} />
+        <PayrollItemsCard periodId={currentPeriod.id} canManage={canManage} isLockedPeriod={isLocked} onAddItem={() => { setEditingItem(null); setItemModalOpen(true); }} onEditItem={(i) => { setEditingItem(i); setItemModalOpen(true); }} />
       )}
       {tab === 'REPORTS' && (
         <Card size="small" styles={{ body: { padding: '10px 18px 18px' } }}>
@@ -146,16 +146,18 @@ function PayrollView() {
             items={[
               {
                 key: 'revenue',
-                label: <span><BarChartOutlined /> Đối chiếu Chi phí Lương / Doanh thu ({(revInputsQuery.data ?? []).length})</span>,
+                label: <span><BarChartOutlined /> Đối chiếu Chi phí Lương / Doanh thu ({revInputsQuery.data?.meta.pagination.total ?? 0})</span>,
                 children: (
                   <Table
-                    size="small" rowKey="id" pagination={revPagination} loading={revInputsQuery.isLoading} dataSource={revInputsQuery.data ?? []}
+                    size="small" rowKey="id"
+                    pagination={{ current: revPage, pageSize: revPerPage, total: revInputsQuery.data?.meta.pagination.total ?? 0, showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'], showTotal: (t) => `Tổng ${t} bản ghi`, onChange: (p, ps) => { setRevPage(ps !== revPerPage ? 1 : p); setRevPerPage(ps); } }}
+                    loading={revInputsQuery.isLoading || revInputsQuery.isFetching} dataSource={revInputsQuery.data?.data ?? []}
                     locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có dữ liệu đối chiếu doanh thu. Nhấn 'Nhập Doanh thu đối chiếu' để thêm báo cáo." /> }}
                     columns={[
                       { title: 'Kỳ lương đối chiếu', dataIndex: 'periodName', render: (v: string) => <strong>{v || 'Kỳ lương hiện hành'}</strong> },
                       { title: 'Phạm vi chi nhánh', dataIndex: 'branchName', render: (v: string) => <Tag color="blue">{v}</Tag> },
                       { title: 'Doanh thu kỳ (VNĐ)', dataIndex: 'revenue_vnd', align: 'right', render: (v: number) => <span className="num" style={{ fontWeight: 600 }}>{fmtVnd(v)}</span> },
-                      { title: 'Tổng chi phí lương Gross (VNĐ)', dataIndex: 'payroll_cost_vnd', align: 'right', render: (v: number) => <span className="num" style={{ fontWeight: 600 }}>{fmtVnd(v)}</span> },
+                      { title: 'Tổng chi phí lương (VNĐ)', dataIndex: 'payroll_cost_vnd', align: 'right', render: (v: number) => <span className="num" style={{ fontWeight: 600 }}>{fmtVnd(v)}</span> },
                       { title: 'Tỷ lệ Chi phí Lương / Doanh thu', dataIndex: 'labor_cost_percent', align: 'right', render: (v: number) => <Tag color={v <= 25 ? 'green' : 'orange'} className="num">{v}%</Tag> },
                       { title: 'Ghi chú tài chính', dataIndex: 'note', render: (v: string) => v || '—' },
                     ]}
@@ -164,10 +166,12 @@ function PayrollView() {
               },
               {
                 key: 'periods',
-                label: <span><CalendarOutlined /> Tổng hợp Quỹ lương theo Kỳ lương ({periods.length})</span>,
+                label: <span><CalendarOutlined /> Tổng hợp Quỹ lương theo Kỳ lương ({periodsReportQuery.data?.meta.pagination.total ?? periods.length})</span>,
                 children: (
                   <Table<PayPeriodRow>
-                    size="small" rowKey="id" pagination={perPagination} loading={periodsQuery.isLoading} dataSource={periods}
+                    size="small" rowKey="id"
+                    pagination={{ current: perPageNum, pageSize: perPageSize, total: periodsReportQuery.data?.meta.pagination.total ?? periods.length, showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'], showTotal: (t) => `Tổng ${t} kỳ lương`, onChange: (p, ps) => { setPerPageNum(ps !== perPageSize ? 1 : p); setPerPageSize(ps); } }}
+                    loading={periodsReportQuery.isLoading || periodsReportQuery.isFetching} dataSource={periodsReportQuery.data?.data ?? periods}
                     locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có kỳ lương nào. Hãy thiết lập hồ sơ lương cho nhân sự, sau đó tạo kỳ lương mới." /> }}
                     columns={[
                       { title: 'Mã kỳ', dataIndex: 'period_code', width: 140, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
@@ -175,8 +179,8 @@ function PayrollView() {
                       { title: 'Từ ngày – Đến ngày', width: 195, render: (_, r) => <span className="num">{r.from_date} – {r.to_date}</span> },
                       { title: 'Nhân sự', dataIndex: 'total_employees', width: 95, align: 'right', render: (v: number) => <span className="num">{v} NV</span> },
                       { title: 'Tổng giờ công', dataIndex: 'total_approved_hours', width: 120, align: 'right', render: (v: number) => <span className="num">{v} giờ</span> },
-                      { title: 'Tổng quỹ lương Gross', dataIndex: 'total_gross_vnd', align: 'right', render: (v: number) => <span className="num" style={{ fontWeight: 600 }}>{fmtVnd(v)}</span> },
-                      { title: 'Tổng thực lĩnh Net', dataIndex: 'total_net_vnd', align: 'right', render: (v: number) => <span className="num" style={{ fontWeight: 700, color: '#16A34A' }}>{fmtVnd(v)}</span> },
+                      { title: 'Tổng quỹ lương', dataIndex: 'total_gross_vnd', align: 'right', render: (v: number) => <span className="num" style={{ fontWeight: 600 }}>{fmtVnd(v)}</span> },
+                      { title: 'Tổng thực lĩnh', dataIndex: 'total_net_vnd', align: 'right', render: (v: number) => <span className="num" style={{ fontWeight: 700, color: '#16A34A' }}>{fmtVnd(v)}</span> },
                       { title: 'Trạng thái', dataIndex: 'status', width: 130, render: (v: string, r) => <StatusTag value={v} label={r.statusLabel} /> },
                     ]}
                   />

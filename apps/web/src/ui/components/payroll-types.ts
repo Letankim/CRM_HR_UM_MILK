@@ -84,6 +84,7 @@ export interface PayrollSnapshotItem {
   employeeId: string;
   employeeCode: string;
   fullName: string;
+  branchId?: string;
   branchName: string;
   staffGroupLabel: string;
   stageLabel: string;
@@ -100,6 +101,9 @@ export interface PayrollSnapshotItem {
   officialRateVnd: number;
   officialPayVnd: number;
   approvedHours: number;
+  standardHours?: number;
+  actualHours?: number;
+  approvedPayrollHours?: number;
   totalShiftsCount: number;
   workedDays: number;
   missingProfileShifts: number;
@@ -112,6 +116,10 @@ export interface PayrollSnapshotItem {
   absentCount?: number;
   lateCount?: number;
   lateMinutesTotal?: number;
+  missingCheckoutCount?: number;
+  pendingAdjCount?: number;
+  approvedAdjCount?: number;
+  hasAnomaly?: boolean;
   shiftLogs?: ShiftPayrollLog[];
   workSourceLabel: string;
   segments: SalarySegment[];

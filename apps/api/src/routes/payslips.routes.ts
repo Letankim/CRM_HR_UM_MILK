@@ -3,7 +3,8 @@ import { z } from 'zod';
 import type { Payslip } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
-import { sendSuccess } from '../lib/response.js';
+import { paginateAndSort } from '../lib/list-query.js';
+import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { buildPayslipPayload, mapPayslip } from '../services/payslip.service.js';
@@ -128,12 +129,23 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.get('/api/admin/payroll/revenue-inputs', { preHandler: requirePermission('payroll.read') }, async (request) => {
+    const q = (request.query ?? {}) as Record<string, string | undefined>;
     const items = ctx.db.revenueInputs.all().map((r) => ({
       ...r,
       branchName: ctx.db.branches.get(r.branch_id)?.name ?? (r.branch_id === 'ALL' ? 'Toàn chuỗi Ụm Bò Milk' : r.branch_id),
       periodName: ctx.db.payPeriods.get(r.period_id)?.name ?? (r.period_id || 'Kỳ lương hiện hành'),
     }));
-    return sendSuccess(request, 'Lấy báo cáo doanh thu đối chiếu & tỷ lệ chi phí lương thành công', items);
+    const result = paginateAndSort(items, {
+      page: Number(q.page) || 1,
+      perPage: Number(q.per_page) || 12,
+      maxPerPage: 200,
+      defaultSortBy: 'created_at',
+      defaultSortOrder: 'desc',
+      q: q.q,
+      searchExtractor: (r) => [r.periodName, r.branchName, r.note],
+      filters: { period_id: q.period_id, branch_id: q.branch_id },
+    });
+    return sendPaginated(request, 'Lấy báo cáo doanh thu đối chiếu & tỷ lệ chi phí lương thành công', result);
   });
 
   app.post('/api/admin/payroll/revenue-inputs', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request, reply) => {

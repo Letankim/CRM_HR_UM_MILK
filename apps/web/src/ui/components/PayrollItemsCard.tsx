@@ -2,25 +2,22 @@
 
 import { App, Button, Card, Descriptions, Flex, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd';
 import { CloseOutlined, DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { useClientPagination } from '../hooks/useClientPagination';
 import { fmtVnd, type PayrollItemRow } from './payroll-types';
 import { RowActionButtons } from './RowActionButtons';
 
 /** Danh sách khoản Thưởng / Phụ cấp / Khấu trừ đã duyệt trong kỳ lương */
 export function PayrollItemsCard({
-  items,
-  loading,
+  periodId,
   canManage,
   isLockedPeriod,
   onAddItem,
   onEditItem,
 }: {
-  items: PayrollItemRow[];
-  loading?: boolean;
+  periodId: string;
   canManage: boolean;
   isLockedPeriod: boolean;
   onAddItem: () => void;
@@ -31,20 +28,27 @@ export function PayrollItemsCard({
   const [viewing, setViewing] = useState<PayrollItemRow | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const [directionFilter, setDirectionFilter] = useState('ALL');
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(12);
   const q = useDebouncedValue(searchInput, 400);
-  const pagination = useClientPagination(12, 'khoản mục');
 
-  const filteredItems = useMemo(() => {
-    const keyword = q.trim().toLowerCase();
-    return items.filter((i) => {
-      if (directionFilter !== 'ALL' && i.direction !== directionFilter) return false;
-      if (keyword) {
-        const hay = [i.employeeCode, i.employeeName, i.itemTypeLabel, i.title, i.note].filter(Boolean).join(' ').toLowerCase();
-        if (!hay.includes(keyword)) return false;
-      }
-      return true;
-    });
-  }, [items, q, directionFilter]);
+  useEffect(() => { setPage(1); }, [periodId, directionFilter, q]);
+
+  const queryParams = useMemo(() => {
+    const sp = new URLSearchParams({ period_id: periodId, page: String(page), per_page: String(perPage) });
+    if (directionFilter !== 'ALL') sp.set('direction', directionFilter);
+    if (q.trim()) sp.set('q', q.trim());
+    return sp.toString();
+  }, [periodId, page, perPage, directionFilter, q]);
+
+  const itemsQ = useQuery({
+    queryKey: ['payroll-items', periodId, queryParams],
+    queryFn: () => api.list<PayrollItemRow>(`/admin/payroll/items?${queryParams}`),
+    enabled: Boolean(periodId),
+  });
+
+  const rows = itemsQ.data?.data ?? [];
+  const totalCount = itemsQ.data?.meta.pagination.total ?? rows.length;
 
   const delItem = useMutation({
     mutationFn: (i: PayrollItemRow) => api.delete(`/admin/payroll/items/${i.id}`, { version: i.version }),
@@ -95,16 +99,21 @@ export function PayrollItemsCard({
               />
             </Space>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              Hiển thị <strong>{filteredItems.length}</strong> / {items.length} khoản mục
+              Tổng cộng <strong>{totalCount}</strong> khoản mục trong kỳ
             </Typography.Text>
           </Flex>
         </div>
         <Table<PayrollItemRow>
           size="small"
           rowKey="id"
-          loading={loading}
-          pagination={pagination}
-          dataSource={filteredItems}
+          loading={itemsQ.isLoading || itemsQ.isFetching}
+          pagination={{
+            current: page, pageSize: perPage, total: totalCount,
+            showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'],
+            showTotal: (t) => `Tổng ${t} khoản mục`,
+            onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); },
+          }}
+          dataSource={rows}
           locale={{ emptyText: 'Chưa có khoản thưởng, phụ cấp hoặc khấu trừ phù hợp bộ lọc' }}
           columns={[
             { title: 'Nhân sự', key: 'emp', render: (_, i) => <Space size={6}><Tag color="geekblue" style={{ margin: 0, borderRadius: 2 }}>{i.employeeCode}</Tag><Typography.Text strong>{i.employeeName}</Typography.Text></Space> },

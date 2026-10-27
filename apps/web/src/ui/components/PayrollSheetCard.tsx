@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Flex, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { EyeOutlined, SearchOutlined, WarningOutlined } from '@ant-design/icons';
+import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { api } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { useClientPagination } from '../hooks/useClientPagination';
 import { allowancesOf, bonusesOf, deductionsOf, fmtVnd, type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
 
 const sum = (rows: PayrollSnapshotItem[], f: (r: PayrollSnapshotItem) => number) => rows.reduce((s, r) => s + f(r), 0);
@@ -45,49 +46,68 @@ export function exportPayrollSheet(period: PayPeriodRow, rows: PayrollSnapshotIt
   });
 }
 
-export function PayrollSheetCard({ rows, loading, onOpenPayslip }: { rows: PayrollSnapshotItem[]; loading?: boolean; onOpenPayslip: (r: PayrollSnapshotItem) => void }) {
+export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodRow; onOpenPayslip: (r: PayrollSnapshotItem) => void }) {
   const [searchInput, setSearchInput] = useState('');
   const debouncedQ = useDebouncedValue(searchInput, 400);
   const [branchFilter, setBranchFilter] = useState('ALL');
   const [rateFilter, setRateFilter] = useState('ALL');
-  const pagination = useClientPagination(12, 'nhân sự');
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(12);
 
-  const branchOptions = useMemo(() => {
-    const names = Array.from(new Set(rows.map((r) => r.branchName).filter(Boolean)));
-    return [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...names.map((n) => ({ value: n, label: n }))];
-  }, [rows]);
+  useEffect(() => { setPage(1); }, [period.id, branchFilter, rateFilter, debouncedQ]);
 
-  const filteredRows = useMemo(() => {
-    const q = debouncedQ.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (branchFilter !== 'ALL' && r.branchName !== branchFilter) return false;
-      if (rateFilter !== 'ALL' && r.rateType !== rateFilter) return false;
-      if (q && !`${r.employeeCode} ${r.fullName} ${r.branchName} ${r.stageLabel}`.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [rows, branchFilter, rateFilter, debouncedQ]);
+  const branchesQ = useQuery({
+    queryKey: ['branches-select'],
+    queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'),
+  });
+  const branchOptions = useMemo(
+    () => [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...(branchesQ.data?.data ?? []).map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }))],
+    [branchesQ.data?.data],
+  );
+
+  const queryParams = useMemo(() => {
+    const sp = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+    if (branchFilter !== 'ALL') sp.set('branch_id', branchFilter);
+    if (rateFilter !== 'ALL') sp.set('rate_type', rateFilter);
+    if (debouncedQ.trim()) sp.set('q', debouncedQ.trim());
+    return sp.toString();
+  }, [page, perPage, branchFilter, rateFilter, debouncedQ]);
+
+  const snapshotsQ = useQuery({
+    queryKey: ['payroll-snapshots', period.id, queryParams],
+    queryFn: () => api.list<PayrollSnapshotItem>(`/admin/payroll/periods/${period.id}/snapshots?${queryParams}`),
+  });
+
+  const rows = snapshotsQ.data?.data ?? [];
+  const totalCount = snapshotsQ.data?.meta.pagination.total ?? rows.length;
+  const summary = (snapshotsQ.data?.meta.filters?.summary ?? {}) as Record<string, number>;
 
   return (
     <Card
       size="small"
       styles={{ body: { padding: 16 } }}
-      title={<Typography.Text strong>Bảng lương chi tiết từng nhân sự ({filteredRows.length})</Typography.Text>}
+      title={<Typography.Text strong>Bảng lương chi tiết từng nhân sự ({totalCount})</Typography.Text>}
     >
       <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '12px 16px', marginBottom: 14 }}>
         <Flex justify="space-between" align="center" wrap gap={12}>
           <Space size={10} wrap>
             <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm tên, mã NV, chi nhánh..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 250 }} />
-            <Select value={branchFilter} onChange={setBranchFilter} style={{ width: 205 }} options={branchOptions} />
+            <Select value={branchFilter} onChange={setBranchFilter} style={{ width: 215 }} options={branchOptions} />
             <Select value={rateFilter} onChange={setRateFilter} style={{ width: 185 }} options={[{ value: 'ALL', label: 'Mọi hình thức lương' }, { value: 'HOURLY', label: 'Theo giờ' }, { value: 'MONTHLY', label: 'Theo tháng' }, { value: 'SHIFT', label: 'Theo ca' }]} />
           </Space>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Hiển thị <strong>{filteredRows.length}</strong> / {rows.length} nhân sự
+            Tổng cộng <strong>{totalCount}</strong> nhân sự phù hợp bộ lọc
           </Typography.Text>
         </Flex>
       </div>
       <Table<PayrollSnapshotItem>
-        size="small" rowKey="id" loading={loading} dataSource={filteredRows}
-        pagination={pagination}
+        size="small" rowKey="id" loading={snapshotsQ.isLoading || snapshotsQ.isFetching} dataSource={rows}
+        pagination={{
+          current: page, pageSize: perPage, total: totalCount,
+          showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'],
+          showTotal: (t) => `Tổng ${t} nhân sự`,
+          onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); },
+        }}
         scroll={{ x: 'max-content' }}
         columns={[
           {
@@ -143,16 +163,16 @@ export function PayrollSheetCard({ rows, loading, onOpenPayslip }: { rows: Payro
           },
         ]}
         summary={() =>
-          filteredRows.length > 0 ? (
+          rows.length > 0 ? (
             <Table.Summary.Row>
-              <Table.Summary.Cell index={0} colSpan={3}><strong>TỔNG CỘNG ({filteredRows.length} nhân sự)</strong></Table.Summary.Cell>
-              <Table.Summary.Cell index={1} align="right"><span className="num">{fmtVnd(sum(filteredRows, (r) => r.probationPayVnd))}</span></Table.Summary.Cell>
-              <Table.Summary.Cell index={2} align="right"><span className="num">{fmtVnd(sum(filteredRows, (r) => r.officialPayVnd))}</span></Table.Summary.Cell>
-              <Table.Summary.Cell index={3} align="right"><span className="num">{fmtVnd(sum(filteredRows, (r) => r.otPayVnd))}</span></Table.Summary.Cell>
-              <Table.Summary.Cell index={4} align="right"><span className="num">{fmtVnd(sum(filteredRows, allowancesOf))}</span></Table.Summary.Cell>
-              <Table.Summary.Cell index={5} align="right"><span className="num">{fmtVnd(sum(filteredRows, bonusesOf))}</span></Table.Summary.Cell>
-              <Table.Summary.Cell index={6} align="right"><span className="num">{fmtVnd(sum(filteredRows, deductionsOf))}</span></Table.Summary.Cell>
-              <Table.Summary.Cell index={7} align="right"><span className="num" style={{ fontWeight: 800, color: '#2563EB' }}>{fmtVnd(sum(filteredRows, (r) => r.netVnd))}</span></Table.Summary.Cell>
+              <Table.Summary.Cell index={0} colSpan={3}><strong>TỔNG CỘNG ({totalCount} nhân sự)</strong></Table.Summary.Cell>
+              <Table.Summary.Cell index={1} align="right"><span className="num">{fmtVnd(summary.probationPayVnd ?? sum(rows, (r) => r.probationPayVnd))}</span></Table.Summary.Cell>
+              <Table.Summary.Cell index={2} align="right"><span className="num">{fmtVnd(summary.officialPayVnd ?? sum(rows, (r) => r.officialPayVnd))}</span></Table.Summary.Cell>
+              <Table.Summary.Cell index={3} align="right"><span className="num">{fmtVnd(summary.otPayVnd ?? sum(rows, (r) => r.otPayVnd))}</span></Table.Summary.Cell>
+              <Table.Summary.Cell index={4} align="right"><span className="num">{fmtVnd(summary.allowancesVnd ?? sum(rows, allowancesOf))}</span></Table.Summary.Cell>
+              <Table.Summary.Cell index={5} align="right"><span className="num">{fmtVnd(summary.bonusesVnd ?? sum(rows, bonusesOf))}</span></Table.Summary.Cell>
+              <Table.Summary.Cell index={6} align="right"><span className="num">{fmtVnd(summary.deductionsVnd ?? sum(rows, deductionsOf))}</span></Table.Summary.Cell>
+              <Table.Summary.Cell index={7} align="right"><span className="num" style={{ fontWeight: 800, color: '#2563EB' }}>{fmtVnd(summary.netVnd ?? sum(rows, (r) => r.netVnd))}</span></Table.Summary.Cell>
               <Table.Summary.Cell index={8} />
             </Table.Summary.Row>
           ) : null

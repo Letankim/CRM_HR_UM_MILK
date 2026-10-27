@@ -39,6 +39,29 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
   } catch {
     /* dữ liệu snapshot cũ không có chi tiết */
   }
+  const period = ctx.db.payPeriods.get(s.period_id);
+  const fromDate = period?.from_date || '2000-01-01';
+  const toDate = period?.to_date || '2099-12-31';
+  const empShifts = ctx.db.shiftAssignments.filter(
+    (sh) => (sh.employee_id === s.employee_id || sh.employee_id === s.employee_code) && sh.work_date >= fromDate && sh.work_date <= toDate,
+  );
+  const empEvs = ctx.db.attendanceEvents.filter(
+    (e) => (e.employee_id === s.employee_id || e.employee_id === s.employee_code) && e.work_date >= fromDate && e.work_date <= toDate,
+  );
+  const empAdjs = ctx.db.attendanceAdjustments.filter(
+    (a) => (a.employee_id === s.employee_id || a.employee_id === s.employee_code) && a.work_date >= fromDate && a.work_date <= toDate,
+  );
+  const standardHours = empShifts.reduce((sum, sh) => sum + (Number(sh.scheduled_hours) || 5), 0) || s.approved_hours;
+  const missingCheckoutCount =
+    (detail.absentCount ?? 0) +
+    empShifts.filter((sh) => {
+      const sEvs = empEvs.filter((e) => e.assignment_id === sh.id);
+      return sEvs.some((e) => e.type === 'CHECK_IN') && !sEvs.some((e) => e.type === 'CHECK_OUT');
+    }).length;
+  const pendingAdjCount = empAdjs.filter((a) => a.status === 'PENDING' || a.status === 'STORE_CONFIRMED').length;
+  const approvedAdjCount = empAdjs.filter((a) => a.status === 'APPROVED').length;
+  const hasAnomaly = missingCheckoutCount > 0 || pendingAdjCount > 0;
+
   return {
     id: s.id,
     periodId: s.period_id,
@@ -64,6 +87,9 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
     officialRateVnd: s.official_hourly_rate_vnd,
     officialPayVnd: s.official_pay_vnd,
     approvedHours: s.approved_hours,
+    standardHours,
+    actualHours: s.approved_hours,
+    approvedPayrollHours: s.approved_hours,
     totalShiftsCount: s.total_shifts_count,
     workedDays: detail.workedDays ?? 0,
     missingProfileShifts: detail.missingProfileShifts ?? 0,
@@ -76,6 +102,10 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
     absentCount: detail.absentCount ?? 0,
     lateCount: detail.lateCount ?? s.late_count ?? 0,
     lateMinutesTotal: detail.lateMinutesTotal ?? s.late_minutes_total ?? 0,
+    missingCheckoutCount,
+    pendingAdjCount,
+    approvedAdjCount,
+    hasAnomaly,
     shiftLogs: detail.shiftLogs ?? [],
     workSourceLabel: detail.source ? PAYROLL_WORK_SOURCE_LABELS[detail.source] : '',
     segments: detail.segments ?? [],

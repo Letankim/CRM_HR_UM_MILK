@@ -7,111 +7,71 @@ import {
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
 import { type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
 
 interface Props {
-  period?: PayPeriodRow;
-  snapshots: PayrollSnapshotItem[];
-  loading?: boolean;
+  period: PayPeriodRow;
   onOpenPayslip: (row: PayrollSnapshotItem) => void;
 }
 
 /**
- * Bảng chấm công tổng hợp (FIN-02) & Đối soát công trước chốt lương (FIN-03).
- * Chỉ dùng dữ liệu công đã xác nhận, phát hiện thiếu check-in/out, đi trễ và phiếu điều chỉnh chờ duyệt.
+ * Bảng chấm công tổng hợp & Đối soát công trước chốt lương.
+ * Chỉ dùng dữ liệu công đã xác nhận, phát hiện thiếu vào/ra ca, đi trễ và phiếu điều chỉnh chờ duyệt.
  */
-export function PayrollAttendanceReconcileCard({ period, snapshots, loading, onOpenPayslip }: Props) {
+export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props) {
   const [searchInput, setSearchInput] = useState('');
   const debouncedQ = useDebouncedValue(searchInput, 400);
   const [branchFilter, setBranchFilter] = useState('ALL');
   const [anomalyFilter, setAnomalyFilter] = useState<'ALL' | 'ANOMALY' | 'CLEAN'>('ALL');
-  const pagination = useClientPagination(12, 'nhân sự');
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(12);
 
-  const eventsQ = useQuery({
-    queryKey: ['payroll-reconcile-events', period?.id],
-    queryFn: () => api.list<Record<string, unknown>>('/admin/attendance/events?per_page=100'),
-    enabled: Boolean(period?.id),
+  useEffect(() => { setPage(1); }, [period.id, branchFilter, anomalyFilter, debouncedQ]);
+
+  const branchesQ = useQuery({
+    queryKey: ['branches-select'],
+    queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'),
   });
-  const adjQ = useQuery({
-    queryKey: ['payroll-reconcile-adjustments', period?.id],
-    queryFn: () => api.list<Record<string, unknown>>('/admin/attendance/adjustments?per_page=100'),
-    enabled: Boolean(period?.id),
+  const branches = useMemo(
+    () => [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...(branchesQ.data?.data ?? []).map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }))],
+    [branchesQ.data?.data],
+  );
+
+  const queryParams = useMemo(() => {
+    const sp = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+    if (branchFilter !== 'ALL') sp.set('branch_id', branchFilter);
+    if (anomalyFilter !== 'ALL') sp.set('anomaly', anomalyFilter);
+    if (debouncedQ.trim()) sp.set('q', debouncedQ.trim());
+    return sp.toString();
+  }, [page, perPage, branchFilter, anomalyFilter, debouncedQ]);
+
+  const snapshotsQ = useQuery({
+    queryKey: ['payroll-reconcile', period.id, queryParams],
+    queryFn: () => api.list<PayrollSnapshotItem>(`/admin/payroll/periods/${period.id}/snapshots?${queryParams}`),
   });
-  const shiftsQ = useQuery({
-    queryKey: ['payroll-reconcile-shifts', period?.id],
-    queryFn: () => api.list<Record<string, unknown>>('/admin/schedules?per_page=300'),
-    enabled: Boolean(period?.id),
-  });
 
-  const branches = useMemo(() => {
-    const names = Array.from(new Set(snapshots.map((s) => s.branchName).filter(Boolean)));
-    return [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...names.map((n) => ({ value: n, label: n }))];
-  }, [snapshots]);
+  const rows = snapshotsQ.data?.data ?? [];
+  const totalCount = snapshotsQ.data?.meta.pagination.total ?? rows.length;
+  const summary = (snapshotsQ.data?.meta.filters?.summary ?? {}) as Record<string, number>;
+  const totalPendingAdjs = summary.totalPendingAdjs ?? 0;
+  const totalMissingPunches = summary.totalMissingPunches ?? 0;
+  const totalApprovedHours = summary.totalApprovedHours ?? period.total_approved_hours ?? 0;
 
-  const rows = useMemo(() => {
-    const evs = eventsQ.data?.data ?? [];
-    const adjs = adjQ.data?.data ?? [];
-    const shifts = shiftsQ.data?.data ?? [];
-    const fromDate = period?.from_date || '2000-01-01';
-    const toDate = period?.to_date || '2099-12-31';
-
-    return snapshots.map((snap) => {
-      const empShifts = shifts.filter((s) => (s.employeeId === snap.employeeId || s.employeeCode === snap.employeeCode) && String(s.workDate) >= fromDate && String(s.workDate) <= toDate);
-      const empEvs = evs.filter((e) => (e.employee_id === snap.employeeId || e.employeeCode === snap.employeeCode));
-      const empAdjs = adjs.filter((a) => (a.employee_id === snap.employeeId || a.employeeCode === snap.employeeCode));
-
-      const standardHours = empShifts.reduce((sum, s) => sum + (Number(s.scheduledHours) || 5), 0) || snap.approvedHours;
-      const lateCount = snap.lateCount ?? empEvs.filter((e) => e.punctualityStatus === 'LATE' || Number(e.late_minutes) > 0).length;
-      const missingCheckoutCount = (snap.absentCount ?? 0) + empShifts.filter((s) => {
-        const sEvs = empEvs.filter((e) => String(e.assignment_id) === String(s.id));
-        const hasIn = sEvs.some((e) => e.type === 'CHECK_IN');
-        const hasOut = sEvs.some((e) => e.type === 'CHECK_OUT');
-        return hasIn && !hasOut;
-      }).length;
-      const pendingAdjCount = empAdjs.filter((a) => a.status === 'PENDING').length;
-      const approvedAdjCount = empAdjs.filter((a) => a.status === 'APPROVED').length;
-      const hasAnomaly = missingCheckoutCount > 0 || pendingAdjCount > 0;
-
-      return {
-        ...snap,
-        standardHours,
-        actualHours: snap.approvedHours,
-        approvedPayrollHours: snap.approvedHours,
-        lateCount,
-        missingCheckoutCount,
-        pendingAdjCount,
-        approvedAdjCount,
-        hasAnomaly,
-      };
-    });
-  }, [snapshots, eventsQ.data, adjQ.data, shiftsQ.data, period?.from_date, period?.to_date]);
-
-  const filtered = useMemo(() => {
-    const q = debouncedQ.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (branchFilter !== 'ALL' && r.branchName !== branchFilter) return false;
-      if (anomalyFilter === 'ANOMALY' && !r.hasAnomaly && r.lateCount === 0) return false;
-      if (anomalyFilter === 'CLEAN' && (r.hasAnomaly || r.lateCount > 0)) return false;
-      if (q && !`${r.employeeCode} ${r.fullName} ${r.branchName}`.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [rows, branchFilter, anomalyFilter, debouncedQ]);
-
-  const totalPendingAdjs = rows.reduce((s, r) => s + r.pendingAdjCount, 0);
-  const totalMissingPunches = rows.reduce((s, r) => s + r.missingCheckoutCount, 0);
-  const totalApprovedHours = rows.reduce((s, r) => s + r.approvedPayrollHours, 0);
-
-  const handleExport = () => {
+  const handleExport = async () => {
+    const sp = new URLSearchParams({ page: '1', per_page: '500' });
+    if (branchFilter !== 'ALL') sp.set('branch_id', branchFilter);
+    if (anomalyFilter !== 'ALL') sp.set('anomaly', anomalyFilter);
+    if (debouncedQ.trim()) sp.set('q', debouncedQ.trim());
+    const res = await api.list<PayrollSnapshotItem>(`/admin/payroll/periods/${period.id}/snapshots?${sp.toString()}`);
     exportToExcel({
-      fileName: `UB_Bang_Cham_Cong_Doi_Soat_${period?.period_code ?? 'KY_LUONG'}.xls`,
-      sheetTitle: `BẢNG CHẤM CÔNG & ĐỐI SOÁT CÔNG KỲ LƯƠNG — ${period?.name ?? ''}`,
-      subtitle: `Từ ${period?.from_date ?? ''} đến ${period?.to_date ?? ''} · Chỉ tính lương trên dữ liệu công đã xác nhận`,
+      fileName: `UB_Bang_Cham_Cong_Doi_Soat_${period.period_code ?? 'KY_LUONG'}.xls`,
+      sheetTitle: `BẢNG CHẤM CÔNG & ĐỐI SOÁT CÔNG KỲ LƯƠNG — ${period.name ?? ''}`,
+      subtitle: `Từ ${period.from_date ?? ''} đến ${period.to_date ?? ''} · Chỉ tính lương trên dữ liệu công đã xác nhận`,
       columns: [
         { header: 'Mã NV', key: 'employeeCode' },
         { header: 'Họ và tên', key: 'fullName' },
@@ -123,11 +83,11 @@ export function PayrollAttendanceReconcileCard({ period, snapshots, loading, onO
         { header: 'Giờ chính thức', key: 'officialHours', align: 'right' },
         { header: 'Giờ OT', key: 'otHours', align: 'right' },
         { header: 'Lượt đi trễ', key: 'lateCount', align: 'right' },
-        { header: 'Thiếu In/Out hoặc Vắng', key: 'missingCheckoutCount', align: 'right' },
+        { header: 'Thiếu Vào/Ra hoặc Vắng', key: 'missingCheckoutCount', align: 'right' },
         { header: 'Đơn bù công chờ duyệt', key: 'pendingAdjCount', align: 'right' },
         { header: 'Trạng thái đối soát', key: 'reconcileStatus' },
       ],
-      rows: filtered.map((r) => ({
+      rows: res.data.map((r) => ({
         ...r,
         reconcileStatus: r.hasAnomaly ? 'Cần kiểm tra bổ sung công' : 'Đã khớp công hợp lệ',
       })),
@@ -137,9 +97,9 @@ export function PayrollAttendanceReconcileCard({ period, snapshots, loading, onO
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Row gutter={[12, 12]}>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="Nhân sự trong bảng công" value={rows.length} suffix="NV" /></Card></Col>
+        <Col xs={12} md={6}><Card size="small"><Statistic title="Nhân sự trong bảng công" value={totalCount} suffix="NV" /></Card></Col>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Tổng giờ công tính lương" value={totalApprovedHours} suffix="giờ" prefix={<ClockCircleOutlined />} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="Ca thiếu In/Out hoặc Vắng" value={totalMissingPunches} formatter={(v) => <span style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }}>{v}</span>} prefix={<WarningOutlined style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }} />} /></Card></Col>
+        <Col xs={12} md={6}><Card size="small"><Statistic title="Ca thiếu Vào/Ra hoặc Vắng" value={totalMissingPunches} formatter={(v) => <span style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }}>{v}</span>} prefix={<WarningOutlined style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }} />} /></Card></Col>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Phiếu điều chỉnh chờ duyệt" value={totalPendingAdjs} formatter={(v) => <span style={{ color: totalPendingAdjs > 0 ? '#D97706' : '#16A34A' }}>{v}</span>} prefix={<SafetyCertificateOutlined style={{ color: totalPendingAdjs > 0 ? '#D97706' : '#16A34A' }} />} /></Card></Col>
       </Row>
 
@@ -172,37 +132,44 @@ export function PayrollAttendanceReconcileCard({ period, snapshots, loading, onO
           </Space>
           <Space wrap size={8}>
             <Link href="/admin/schedules?section=workflows"><Button icon={<SafetyCertificateOutlined />}>Mở phiếu Điều chỉnh công</Button></Link>
-            <Button icon={<FileExcelOutlined style={{ color: '#15803D' }} />} onClick={handleExport}>Xuất Bảng công Excel</Button>
+            <Button icon={<FileExcelOutlined style={{ color: '#15803D' }} />} onClick={() => void handleExport()}>Xuất Bảng công Excel</Button>
           </Space>
         </Flex>
 
         <Table
-          size="small" rowKey="employeeId" loading={loading || eventsQ.isLoading} dataSource={filtered} pagination={pagination} scroll={{ x: 1180 }}
+          size="small" rowKey="employeeId" loading={snapshotsQ.isLoading || snapshotsQ.isFetching} dataSource={rows}
+          pagination={{
+            current: page, pageSize: perPage, total: totalCount,
+            showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'],
+            showTotal: (t) => `Tổng ${t} nhân sự`,
+            onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); },
+          }}
+          scroll={{ x: 1180 }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có dữ liệu chấm công trong kỳ" /> }}
           columns={[
             { title: 'Nhân sự', width: 210, fixed: 'left', render: (_, r) => <div><strong>{r.fullName}</strong><div style={{ fontSize: 12, color: '#64748B' }}>{r.employeeCode} · {r.branchName}</div></div> },
             { title: 'Hình thức', dataIndex: 'rateTypeLabel', width: 110, render: (v: string) => <Tag color="blue">{v}</Tag> },
             { title: 'Số ca', dataIndex: 'totalShiftsCount', width: 75, align: 'right', render: (v: number) => <span className="num">{v} ca</span> },
-            { title: 'Giờ chuẩn', dataIndex: 'standardHours', width: 95, align: 'right', render: (v: number) => <span className="num">{v}h</span> },
+            { title: 'Giờ chuẩn', dataIndex: 'standardHours', width: 95, align: 'right', render: (v: number) => <span className="num">{v ?? 0}h</span> },
             { title: 'Giờ TV / CT', width: 120, align: 'right', render: (_, r) => <span className="num">{r.probationHours}h / <strong>{r.officialHours}h</strong></span> },
             { title: 'Giờ OT', dataIndex: 'otHours', width: 85, align: 'right', render: (v: number) => v > 0 ? <Tag color="purple" className="num">+{v}h</Tag> : '0h' },
-            { title: 'Giờ tính lương', dataIndex: 'approvedPayrollHours', width: 115, align: 'right', render: (v: number) => <strong className="num" style={{ color: '#2563EB' }}>{v} giờ</strong> },
+            { title: 'Giờ tính lương', dataIndex: 'approvedPayrollHours', width: 115, align: 'right', render: (v: number, r) => <strong className="num" style={{ color: '#2563EB' }}>{v ?? r.approvedHours} giờ</strong> },
             { title: 'Đi trễ', dataIndex: 'lateCount', width: 85, align: 'center', render: (v: number) => v > 0 ? <Tag color="volcano">{v} lần</Tag> : <Tag color="green">0</Tag> },
             {
               title: 'Đối soát Giờ công & Bù công', width: 240,
               render: (_, r) => r.hasAnomaly ? (
                 <Space size={4} wrap>
-                  {r.missingCheckoutCount > 0 && <Tag color="red" icon={<WarningOutlined />}>Thiếu Vào/Ra: {r.missingCheckoutCount} ca</Tag>}
-                  {r.pendingAdjCount > 0 && <Badge status="processing" text={<Tag color="gold">{r.pendingAdjCount} đơn bù công chờ duyệt</Tag>} />}
+                  {(r.missingCheckoutCount ?? 0) > 0 && <Tag color="red" icon={<WarningOutlined />}>Thiếu Vào/Ra: {r.missingCheckoutCount} ca</Tag>}
+                  {(r.pendingAdjCount ?? 0) > 0 && <Badge status="processing" text={<Tag color="gold">{r.pendingAdjCount} đơn bù công chờ duyệt</Tag>} />}
                 </Space>
               ) : (
                 <Space size={4}>
                   <Tag color="green" icon={<CheckCircleOutlined />}>Đã khớp công hợp lệ</Tag>
-                  {r.approvedAdjCount > 0 && <Typography.Text type="secondary" style={{ fontSize: 11 }}>({r.approvedAdjCount} đơn đã duyệt)</Typography.Text>}
+                  {(r.approvedAdjCount ?? 0) > 0 && <Typography.Text type="secondary" style={{ fontSize: 11 }}>({r.approvedAdjCount} đơn đã duyệt)</Typography.Text>}
                 </Space>
               ),
             },
-            { title: 'Trạng thái kỳ', width: 125, render: () => <StatusTag value={period?.status || 'DRAFT'} label={period?.statusLabel} /> },
+            { title: 'Trạng thái kỳ', width: 125, render: () => <StatusTag value={period.status || 'DRAFT'} label={period.statusLabel} /> },
             {
               title: 'Chi tiết', width: 90, fixed: 'right', align: 'right',
               render: (_, r) => <Button size="small" icon={<EyeOutlined />} onClick={() => onOpenPayslip(r)}>Chi tiết</Button>,

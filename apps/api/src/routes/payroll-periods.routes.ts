@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { PAY_PERIOD_STATUSES, PAY_PERIOD_STATUS_LABELS, type PayPeriod, type PayPeriodStatus } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
-import { sendSuccess } from '../lib/response.js';
+import { paginateAndSort } from '../lib/list-query.js';
+import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { mapSnapshot, recalculatePeriodSnapshots } from '../services/payroll-snapshot.service.js';
@@ -45,20 +46,68 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.get('/api/admin/payroll/periods', { preHandler: requirePermission('payroll.read') }, async (request) => {
-    const items = ctx.db.payPeriods.all().sort((a, b) => b.from_date.localeCompare(a.from_date)).map(withLabel);
-    return sendSuccess(request, 'Lấy danh sách kỳ lương thành công', items);
+    const q = (request.query ?? {}) as Record<string, string | undefined>;
+    const allItems = ctx.db.payPeriods.all().map(withLabel);
+    const result = paginateAndSort(allItems, {
+      page: Number(q.page) || 1,
+      perPage: Number(q.per_page) || 50,
+      maxPerPage: 200,
+      defaultSortBy: 'from_date',
+      defaultSortOrder: 'desc',
+      q: q.q,
+      searchExtractor: (p) => [p.period_code, p.name, p.from_date, p.to_date],
+      filters: { status: q.status },
+    });
+    return sendPaginated(request, 'Lấy danh sách kỳ lương thành công', result);
   });
 
   app.get('/api/admin/payroll/periods/:id/snapshots', { preHandler: requirePermission('payroll.read') }, async (request) => {
     const { id } = request.params as { id: string };
+    const q = (request.query ?? {}) as Record<string, string | undefined>;
     let period = ctx.db.payPeriods.get(id);
     if (!period) throw Errors.notFound('Không tìm thấy kỳ lương');
     if (period.status === 'DRAFT' || period.status === 'RECONCILE') {
       await healBranchConsistency(ctx);
       period = await recalculatePeriodSnapshots(ctx, period, request.auth?.user.id ?? 'system');
     }
-    const snaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === id).map((s) => mapSnapshot(s, ctx));
-    return sendSuccess(request, 'Lấy chi tiết bảng lương thành công', { period: withLabel(period), snapshots: snaps });
+    const allSnaps = ctx.db.payrollSnapshots
+      .filter((s) => s.period_id === id)
+      .map((s) => mapSnapshot(s, ctx))
+      .sort((a, b) => a.employeeCode.localeCompare(b.employeeCode));
+    const branchFilter = q.branch_id && q.branch_id !== 'ALL' ? q.branch_id : '';
+    const rateFilter = q.rate_type && q.rate_type !== 'ALL' ? q.rate_type : '';
+    const anomalyFilter = q.anomaly && q.anomaly !== 'ALL' ? q.anomaly : '';
+    const keyword = (q.q ?? '').trim().toLowerCase();
+    const filtered = allSnaps.filter((r) => {
+      if (branchFilter && r.branchId !== branchFilter && r.branchName !== branchFilter) return false;
+      if (rateFilter && r.rateType !== rateFilter) return false;
+      if (anomalyFilter === 'ANOMALY' && !r.hasAnomaly && (r.lateCount ?? 0) === 0) return false;
+      if (anomalyFilter === 'CLEAN' && (r.hasAnomaly || (r.lateCount ?? 0) > 0)) return false;
+      if (keyword && !`${r.employeeCode} ${r.fullName} ${r.branchName} ${r.stageLabel}`.toLowerCase().includes(keyword)) return false;
+      return true;
+    });
+    const sumBy = (fn: (r: (typeof filtered)[number]) => number) => filtered.reduce((s, r) => s + fn(r), 0);
+    const summary = {
+      totalEmployees: filtered.length, probationHours: sumBy((r) => r.probationHours), probationPayVnd: sumBy((r) => r.probationPayVnd),
+      officialHours: sumBy((r) => r.officialHours), officialPayVnd: sumBy((r) => r.officialPayVnd), otHours: sumBy((r) => r.otHours), otPayVnd: sumBy((r) => r.otPayVnd),
+      allowancesVnd: sumBy((r) => r.mealAllowanceVnd + r.transportAllowanceVnd + r.otherAllowancesVnd + r.shiftSwapAllowanceVnd),
+      bonusesVnd: sumBy((r) => r.attendanceBonusVnd + r.kpiBonusVnd + r.positiveAdjustmentsVnd),
+      deductionsVnd: sumBy((r) => r.approvedDeductionsVnd + r.advanceDeductionVnd),
+      grossVnd: sumBy((r) => r.grossVnd), netVnd: sumBy((r) => r.netVnd), totalApprovedHours: sumBy((r) => r.approvedHours),
+      totalMissingPunches: sumBy((r) => r.missingCheckoutCount ?? 0), totalPendingAdjs: sumBy((r) => r.pendingAdjCount ?? 0),
+    };
+    if (q.page !== undefined) {
+      const result = paginateAndSort(filtered, {
+        page: Number(q.page) || 1,
+        perPage: Number(q.per_page) || 12,
+        maxPerPage: 500,
+        defaultSortBy: 'employeeCode',
+        defaultSortOrder: 'asc',
+      });
+      (result.meta.filters as Record<string, unknown>).summary = summary;
+      return sendPaginated(request, 'Lấy chi tiết bảng lương thành công', result);
+    }
+    return sendSuccess(request, 'Lấy chi tiết bảng lương thành công', { period: withLabel(period), snapshots: filtered, summary });
   });
 
   app.post('/api/admin/payroll/periods', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request, reply) => {
