@@ -1,8 +1,8 @@
 'use client';
 
-import { Alert, Badge, Button, Card, Col, Empty, Flex, Input, Row, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
+import { Alert, Badge, Button, Card, Col, Empty, Flex, Input, Row, Select, Space, Statistic, Tag, Typography } from 'antd';
 import {
-  CheckCircleOutlined, ClockCircleOutlined, EyeOutlined, FileExcelOutlined,
+  CheckCircleOutlined, ClockCircleOutlined, DownloadOutlined, EyeOutlined, FileExcelOutlined,
   SafetyCertificateOutlined, SearchOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
@@ -12,6 +12,7 @@ import { api } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
+import { SelectableTable } from './BulkActionBar';
 import { type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
 
 interface Props {
@@ -136,8 +137,9 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
           </Space>
         </Flex>
 
-        <Table
+        <SelectableTable<PayrollSnapshotItem>
           size="small" rowKey="employeeId" loading={snapshotsQ.isLoading || snapshotsQ.isFetching} dataSource={rows}
+          bulkActions={[{ key: 'export', label: 'Xuất Excel nhân sự đã chọn', icon: <DownloadOutlined />, onClick: (sel) => exportToExcel({ fileName: `UB_Bang_Cham_Cong_Chon_${period.period_code ?? 'KY_LUONG'}.xls`, sheetTitle: `BẢNG CHẤM CÔNG & ĐỐI SOÁT CÔNG — ${period.name ?? ''}`, rows: sel.map((r) => ({ ...r, reconcileStatus: r.hasAnomaly ? 'Cần kiểm tra bổ sung công' : 'Đã khớp công hợp lệ' })), columns: [{ header: 'Mã NV', key: 'employeeCode' }, { header: 'Họ và tên', key: 'fullName' }, { header: 'Chi nhánh', key: 'branchName' }, { header: 'Số ca công', key: 'totalShiftsCount', align: 'right' }, { header: 'Giờ thực tế', key: 'actualHours', align: 'right' }, { header: 'Trạng thái đối soát', key: 'reconcileStatus' }] }) }]}
           pagination={{
             current: page, pageSize: perPage, total: totalCount,
             showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'],

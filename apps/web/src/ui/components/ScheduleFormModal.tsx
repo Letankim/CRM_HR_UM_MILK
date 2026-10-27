@@ -1,15 +1,16 @@
 'use client';
 
 import { Alert, App, Button, Col, Flex, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space } from 'antd';
-import { CheckOutlined, CloseOutlined, DeleteOutlined, SaveOutlined } from '@ant-design/icons';
+import { CheckOutlined, CloseOutlined, DeleteOutlined, FileAddOutlined, SaveOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SHIFT_ASSIGNMENT_STATUS_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { DateStringPicker } from './DateTimePickers';
 import { GuardButton, usePermissionGuard } from './GuardButton';
+import { isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
 
 export interface ScheduleAssignmentItem {
   id: string; employeeId: string; employeeCode: string; employeeName: string;
@@ -34,10 +35,13 @@ export function ScheduleFormModal({
   open, editing, presetDate, presetShiftCode, employees, canEdit = true, onClose,
 }: ScheduleFormModalProps) {
   const [form] = Form.useForm<ScheduleFormValues>();
+  const [quickAdjOpen, setQuickAdjOpen] = useState(false);
   const { message } = App.useApp();
   const qc = useQueryClient();
   const hasSchedulePerm = usePermissionGuard({ perms: ['schedule.propose', 'schedule.publish'], allowed: canEdit });
   const watchedEmpId = Form.useWatch('employee_id', form);
+  const watchedStatus = Form.useWatch('status', form);
+  const isEditingAbsent = Boolean(editing && (watchedStatus === 'ABSENT' || isAbsentShiftRecord(editing as unknown as Record<string, unknown>)));
   const selectedEmpBranchId = useMemo(
     () => employees.find((e) => e.value === watchedEmpId)?.branchId || editing?.branchId || 'ALL',
     [employees, watchedEmpId, editing?.branchId],
@@ -128,30 +132,22 @@ export function ScheduleFormModal({
                 cancelButtonProps={{ icon: <CloseOutlined /> }}
                 onConfirm={() => deleteMutation.mutateAsync()}
               >
-                <GuardButton
-                  danger
-                  icon={<DeleteOutlined />}
-                  perms={['schedule.propose', 'schedule.publish']}
-                  allowed={hasSchedulePerm}
-                  loading={deleteMutation.isPending}
-                >
+                <GuardButton danger icon={<DeleteOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={hasSchedulePerm} loading={deleteMutation.isPending}>
                   Xóa ca này
                 </GuardButton>
               </Popconfirm>
             )}
             <Space wrap size={8}>
               <Button icon={<CloseOutlined />} onClick={onClose}>Hủy bỏ</Button>
+              {isEditingAbsent && (
+                <Button danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>
+                  Tạo phiếu bổ sung công
+                </Button>
+              )}
               {editing && editing.status === 'DRAFT' && (
                 <GuardButton
-                  type="primary"
-                  icon={<CheckOutlined />}
-                  perms={['schedule.propose', 'schedule.publish']}
-                  allowed={hasSchedulePerm}
-                  loading={saveMutation.isPending}
-                  onClick={async () => {
-                    const vals = await form.validateFields();
-                    saveMutation.mutate({ ...vals, status: 'PUBLISHED' });
-                  }}
+                  type="primary" icon={<CheckOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={hasSchedulePerm} loading={saveMutation.isPending}
+                  onClick={async () => { const vals = await form.validateFields(); saveMutation.mutate({ ...vals, status: 'PUBLISHED' }); }}
                 >
                   Duyệt &amp; Phát hành ca
                 </GuardButton>
@@ -159,9 +155,7 @@ export function ScheduleFormModal({
               <GuardButton
                 type={editing && editing.status === 'DRAFT' ? 'default' : 'primary'}
                 icon={editing ? <SaveOutlined /> : <CheckOutlined />}
-                perms={['schedule.propose', 'schedule.publish']}
-                allowed={hasSchedulePerm}
-                loading={saveMutation.isPending}
+                perms={['schedule.propose', 'schedule.publish']} allowed={hasSchedulePerm} loading={saveMutation.isPending}
                 onClick={async () => saveMutation.mutate(await form.validateFields())}
               >
                 {editing ? 'Lưu cập nhật' : 'Xác nhận phân ca'}
@@ -169,7 +163,14 @@ export function ScheduleFormModal({
             </Space>
           </Flex>
         ) : (
-          <Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
+          <Space wrap size={8}>
+            {isEditingAbsent && (
+              <Button type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>
+                Tạo phiếu bổ sung công
+              </Button>
+            )}
+            <Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
+          </Space>
         )
       }
       width="min(840px, 94vw)"
@@ -178,6 +179,13 @@ export function ScheduleFormModal({
     >
       {editing && editing.status === 'DRAFT' && (
         <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca đăng ký đang chờ Quản lý cửa hàng hoặc HR phê duyệt. Bấm 'Duyệt & Phát hành ca' để chuyển sang Đã phân ca chính thức và cho phép nhân sự điểm danh." />
+      )}
+      {isEditingAbsent && (
+        <Alert
+          type="error" showIcon style={{ marginTop: 8, marginBottom: 8 }}
+          message="Ca làm việc này đang ở trạng thái Vắng mặt (Cần bổ sung công). Bạn có thể tạo phiếu bổ sung công trực tiếp từ chi tiết ca này."
+          action={<Button size="small" type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công</Button>}
+        />
       )}
       <Form<ScheduleFormValues> form={form} layout="vertical" disabled={!hasSchedulePerm} style={{ marginTop: 12 }} onValuesChange={(changed) => { if (changed.shift_code && hoursMap[changed.shift_code]) form.setFieldValue('scheduled_hours', hoursMap[changed.shift_code]); }}>
         <Form.Item name="employee_id" label="Nhân sự phân công" rules={[{ required: true, message: 'Vui lòng chọn nhân sự' }]}>
@@ -196,6 +204,7 @@ export function ScheduleFormModal({
           <Input placeholder="Ví dụ: Trực mở quầy, kèm nhân viên mới..." />
         </Form.Item>
       </Form>
+      <QuickAbsentAdjustmentModal shift={editing as unknown as Record<string, unknown>} open={quickAdjOpen} onClose={() => setQuickAdjOpen(false)} onSuccess={onClose} />
     </Modal>
   );
 }

@@ -1,13 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { App, Button, Card, Col, Descriptions, Empty, Modal, Row, Select, Space, Table, Tabs, Tag, Typography } from 'antd';
-import { BookOutlined, CheckCircleOutlined, CloseCircleOutlined, CloseOutlined, DeleteOutlined, EyeOutlined, HistoryOutlined, PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons';
+import { App, Button, Card, Col, Descriptions, Empty, Modal, Row, Select, Space, Tabs, Tag, Typography } from 'antd';
+import { BookOutlined, CheckCircleOutlined, CloseCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EyeOutlined, HistoryOutlined, PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
+import { exportToExcel } from '@/lib/export-excel';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
 import { BRAND } from '../theme';
+import { SelectableTable } from './BulkActionBar';
 import { ExamFullscreenModal } from './ExamFullscreenModal';
 import { RowActionButtons } from './RowActionButtons';
 
@@ -96,8 +98,9 @@ export function AttemptHistoryTable({
 }) {
   const attPag = useClientPagination(10, 'lượt thi');
   return (
-    <Table
+    <SelectableTable<Record<string, unknown>>
       size="small" rowKey="id" pagination={attPag} dataSource={attempts}
+      bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Lich_su_lam_bai_TEST.xls', sheetTitle: 'Lịch sử các lượt làm bài kiểm tra (TEST)', rows, columns: [{ header: 'Lượt thi', key: 'attempt_no', align: 'right' }, { header: 'Nhân sự', key: 'employeeName' }, { header: 'Bộ đề', key: 'testTitle' }, { header: 'Thời gian nộp', key: 'submitted_at' }, { header: 'Điểm (%)', key: 'score_percent', align: 'right' }] }) }]}
       locale={{ emptyText: 'Chưa có lịch sử lượt làm bài nào được ghi nhận.' }}
       columns={[
         { title: 'Lượt thi', dataIndex: 'attempt_no', width: 95, render: (v: number) => <Tag color="blue" style={{ margin: 0 }}>Lần #{v ?? 1}</Tag> },
@@ -111,16 +114,8 @@ export function AttemptHistoryTable({
           title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
           render: (_, r) => (
             <RowActionButtons
-              detailTooltip="Xem chi tiết bài làm"
-              onViewDetail={() => onViewAttempt(r)}
-              menuItems={
-                canDelete && onDeleteAttempt
-                  ? [
-                      { key: 'view', icon: <EyeOutlined />, label: 'Xem chi tiết bài làm', onClick: () => onViewAttempt(r) },
-                      { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa phiên làm bài này', onClick: () => onDeleteAttempt(r) },
-                    ]
-                  : []
-              }
+              detailTooltip="Xem chi tiết bài làm" onViewDetail={() => onViewAttempt(r)}
+              menuItems={canDelete && onDeleteAttempt ? [{ key: 'view', icon: <EyeOutlined />, label: 'Xem chi tiết bài làm', onClick: () => onViewAttempt(r) }, { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa phiên làm bài này', onClick: () => onDeleteAttempt(r) }] : []}
             />
           ),
         },
@@ -162,8 +157,9 @@ export function EmployeeTestCenterView({
   const visibleAttempts = filterTestId === 'ALL' ? attempts : attempts.filter((a) => String(a.test_id) === filterTestId);
 
   const assignmentsPane = (
-    <Table
+    <SelectableTable<Record<string, unknown>>
       size="small" rowKey="id" pagination={asgPag} dataSource={assignments}
+      bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Bai_kiem_tra_cua_ban.xls', sheetTitle: 'Danh sách Bài kiểm tra Nghiệp vụ của bạn', rows, columns: [{ header: 'Mã đợt giao', key: 'assignment_code' }, { header: 'Đề thi', key: 'testTitle' }, { header: 'Hạn nộp', key: 'close_at' }, { header: 'Điểm cao nhất (%)', key: 'best_score_percent', align: 'right' }] }) }]}
       locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Hiện chưa có bài kiểm tra nghiệp vụ nào được giao cho bạn." /> }}
       columns={[
         { title: 'Mã đợt giao', dataIndex: 'assignment_code', width: 115, render: (v: string) => <Tag color="geekblue">{v}</Tag> },

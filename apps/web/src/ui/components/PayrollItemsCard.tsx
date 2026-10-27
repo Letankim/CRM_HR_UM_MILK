@@ -1,11 +1,13 @@
 'use client';
 
-import { App, Button, Card, Descriptions, Flex, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd';
-import { CloseOutlined, DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { App, Button, Card, Descriptions, Flex, Input, Modal, Select, Space, Tag, Typography } from 'antd';
+import { CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
+import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { SelectableTable } from './BulkActionBar';
 import { fmtVnd, type PayrollItemRow } from './payroll-types';
 import { RowActionButtons } from './RowActionButtons';
 
@@ -51,7 +53,7 @@ export function PayrollItemsCard({
   const totalCount = itemsQ.data?.meta.pagination.total ?? rows.length;
 
   const delItem = useMutation({
-    mutationFn: (i: PayrollItemRow) => api.delete(`/admin/payroll/items/${i.id}`, { version: i.version }),
+    mutationFn: async (items: PayrollItemRow[]) => { for (const i of items) await api.delete(`/admin/payroll/items/${i.id}`, { version: i.version }); },
     onSuccess: () => {
       message.success('Đã xóa khoản mục và tính lại bảng lương');
       qc.invalidateQueries({ queryKey: ['payroll-items'] });
@@ -103,10 +105,12 @@ export function PayrollItemsCard({
             </Typography.Text>
           </Flex>
         </div>
-        <Table<PayrollItemRow>
-          size="small"
-          rowKey="id"
-          loading={itemsQ.isLoading || itemsQ.isFetching}
+        <SelectableTable<PayrollItemRow>
+          size="small" rowKey="id" loading={itemsQ.isLoading || itemsQ.isFetching}
+          bulkActions={[
+            { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (sel) => exportToExcel({ fileName: 'Khoan_muc_thuong_phu_cap_khau_tru.xls', sheetTitle: 'Danh sách Khoản Mục Thưởng / Phụ Cấp / Khấu Trừ', rows: sel, columns: [{ header: 'Mã NV', key: 'employeeCode' }, { header: 'Nhân sự', key: 'employeeName' }, { header: 'Loại khoản mục', key: 'itemTypeLabel' }, { header: 'Nội dung', key: 'title' }, { header: 'Thành tiền', key: 'totalAmountVnd', isCurrency: true }] }) },
+            ...(editable ? [{ key: 'del', label: 'Xóa khoản mục đã chọn', danger: true, icon: <DeleteOutlined />, loading: delItem.isPending, confirm: 'Xác nhận xóa các khoản mục đã chọn?', onClick: (sel: PayrollItemRow[]) => delItem.mutate(sel) }] : []),
+          ]}
           pagination={{
             current: page, pageSize: perPage, total: totalCount,
             showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'],
@@ -122,38 +126,14 @@ export function PayrollItemsCard({
             { title: 'SL x Đơn giá', key: 'qty', align: 'right', render: (_, i) => <span className="num">{i.quantity} x {fmtVnd(i.unitAmountVnd)}</span> },
             { title: 'Thành tiền', dataIndex: 'totalAmountVnd', align: 'right', render: (v: number, i) => <span className="num" style={{ fontWeight: 700, color: i.direction === 'ADD' ? '#15803D' : '#DC2626' }}>{i.direction === 'ADD' ? '+' : '-'}{fmtVnd(v)}</span> },
             {
-              title: 'Thao tác',
-              key: 'act',
-              width: 90,
-              align: 'right',
+              title: 'Thao tác', key: 'act', width: 90, align: 'right',
               render: (_, i) => (
                 <RowActionButtons
-                  detailTooltip="Xem chi tiết khoản mục"
-                  onViewDetail={() => setViewing(i)}
-                  loading={delItem.isPending && delItem.variables?.id === i.id}
-                  menuItems={
-                    editable
-                      ? [
-                          { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa khoản mục', onClick: () => onEditItem(i) },
-                          {
-                            key: 'delete',
-                            icon: <DeleteOutlined />,
-                            danger: true,
-                            label: 'Xóa khoản mục',
-                            onClick: () =>
-                              modal.confirm({
-                                title: 'Xác nhận xóa khoản mục này?',
-                                content: 'Khoản mục sẽ bị xóa và bảng lương nháp được tính lại ngay lập tức.',
-                                okText: 'Xác nhận xóa',
-                                cancelText: 'Hủy bỏ',
-                                okButtonProps: { danger: true, icon: <DeleteOutlined /> },
-                                cancelButtonProps: { icon: <CloseOutlined /> },
-                                onOk: () => delItem.mutateAsync(i),
-                              }),
-                          },
-                        ]
-                      : []
-                  }
+                  detailTooltip="Xem chi tiết khoản mục" onViewDetail={() => setViewing(i)} loading={delItem.isPending}
+                  menuItems={editable ? [
+                    { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa khoản mục', onClick: () => onEditItem(i) },
+                    { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa khoản mục', onClick: () => modal.confirm({ title: 'Xác nhận xóa khoản mục này?', content: 'Khoản mục sẽ bị xóa và bảng lương nháp được tính lại ngay lập tức.', okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => delItem.mutateAsync([i]) }) },
+                  ] : []}
                 />
               ),
             },

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { App, Button, Flex, Input, Select, Space, Table, Tag, Typography } from 'antd';
+import { App, Button, Flex, Input, Select, Space, Tag, Typography } from 'antd';
 import { CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -12,6 +12,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { BRAND } from '../theme';
 import { AttendanceEventDetailModal, AttendanceEventEditModal } from './AttendanceEventDetailModal';
+import { SelectableTable } from './BulkActionBar';
 import { RowActionButtons } from './RowActionButtons';
 
 export interface AttendanceEventRow {
@@ -95,42 +96,23 @@ export function renderShiftCheckInOutSummary(r: AttendanceEventRow) {
   );
 }
 
-interface Props {
-  events?: AttendanceEventRow[];
-  assignments?: Record<string, unknown>[];
-  loading?: boolean;
-  externalFilters?: { q: string; branchId: string; shiftCode: string; status: string };
-}
+interface Props { events?: AttendanceEventRow[]; assignments?: Record<string, unknown>[]; loading?: boolean; externalFilters?: { q: string; branchId: string; shiftCode: string; status: string } }
 
 export function AttendanceEventsTable({ externalFilters }: Props) {
-  const qc = useQueryClient();
-  const can = useCan();
-  const canManageEvents = can('system.config');
-  const { message, modal } = App.useApp();
-  const [detailRow, setDetailRow] = useState<AttendanceEventRow | null>(null);
-  const [editRow, setEditRow] = useState<AttendanceEventRow | null>(null);
-  const [searchInput, setSearchInput] = useState('');
-  const debouncedLocalQ = useDebouncedValue(searchInput, 400);
-  const [branchFilter, setBranchFilter] = useState('ALL');
-  const [shiftFilter, setShiftFilter] = useState('ALL');
-  const [stateFilter, setStateFilter] = useState('ALL');
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(15);
+  const qc = useQueryClient(), can = useCan(), canManageEvents = can('system.config'), { message, modal } = App.useApp();
+  const [detailRow, setDetailRow] = useState<AttendanceEventRow | null>(null), [editRow, setEditRow] = useState<AttendanceEventRow | null>(null);
+  const [searchInput, setSearchInput] = useState(''), debouncedLocalQ = useDebouncedValue(searchInput, 400);
+  const [branchFilter, setBranchFilter] = useState('ALL'), [shiftFilter, setShiftFilter] = useState('ALL'), [stateFilter, setStateFilter] = useState('ALL');
+  const [page, setPage] = useState(1), [perPage, setPerPage] = useState(15);
 
   const effQ = externalFilters ? externalFilters.q : debouncedLocalQ;
   const effBranch = externalFilters ? externalFilters.branchId : branchFilter;
   const effShift = externalFilters ? externalFilters.shiftCode : shiftFilter;
   const effState = externalFilters ? externalFilters.status : stateFilter;
   const { options: shiftOptions } = useShiftTemplates(effBranch);
-
   useEffect(() => { setPage(1); }, [effQ, effBranch, effShift, effState]);
 
-  const branchesQ = useQuery({
-    queryKey: ['branches', 'select'],
-    queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'),
-    enabled: !externalFilters,
-  });
-
+  const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'), enabled: !externalFilters });
   const sessionsUrl = useMemo(() => {
     const sp = new URLSearchParams({ page: String(page), per_page: String(perPage) });
     if (effBranch && effBranch !== 'ALL') sp.set('branch_id', effBranch);
@@ -150,10 +132,12 @@ export function AttendanceEventsTable({ externalFilters }: Props) {
   };
 
   const deleteMut = useMutation({
-    mutationFn: async (r: AttendanceEventRow) => {
-      const targets = [r.checkInEvent, r.checkOutEvent].filter((x): x is AttendanceEventRow => Boolean(x));
-      if (targets.length === 0) targets.push(r);
-      for (const t of targets) await api.delete(`/admin/attendance/events/${t.id}`, { version: t.version ?? 1 });
+    mutationFn: async (items: AttendanceEventRow[]) => {
+      for (const r of items) {
+        const targets = [r.checkInEvent, r.checkOutEvent].filter((x): x is AttendanceEventRow => Boolean(x));
+        if (targets.length === 0) targets.push(r);
+        for (const t of targets) await api.delete(`/admin/attendance/events/${t.id}`, { version: t.version ?? 1 });
+      }
     },
     onSuccess: () => { message.success('Đã xóa bản ghi điểm danh của ca làm việc'); refreshAttendance(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa thất bại'),
@@ -201,15 +185,19 @@ export function AttendanceEventsTable({ externalFilters }: Props) {
           </Space>
         </Flex>
       </div>
-      <Table<AttendanceEventRow>
+      <SelectableTable<AttendanceEventRow>
         size="small" rowKey="id" loading={sessionsQ.isLoading || sessionsQ.isFetching}
+        bulkActions={[
+          { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (sel) => exportAttendanceEventsExcel(sel) },
+          ...(canManageEvents ? [{ key: 'delete', label: 'Xóa điểm danh đã chọn', danger: true, icon: <DeleteOutlined />, loading: deleteMut.isPending, confirm: 'Xác nhận xóa các bản ghi điểm danh đã chọn?', onClick: (sel: AttendanceEventRow[]) => deleteMut.mutate(sel) }] : []),
+        ]}
         pagination={{ current: page, pageSize: perPage, total: totalCount, showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'], showTotal: (t) => `Tổng ${t} ca điểm danh`, onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } }}
         dataSource={rows} locale={{ emptyText: 'Chưa có dữ liệu điểm danh Vào ca / Ra ca phù hợp bộ lọc.' }}
         columns={[
           { title: 'Nhân sự điểm danh', width: 215, render: (_, r) => <div><Typography.Text strong>{r.employeeName}</Typography.Text>{r.branchName && <div style={{ fontSize: 11, color: BRAND.textSecondary }}>{r.branchName}</div>}</div> },
           { title: 'Ngày & Khung ca', width: 195, render: (_, r) => <div><div style={{ fontWeight: 600 }}>{r.shiftLabel || 'Ca làm việc'} ({r.shiftTimeRange || '07:00 – 12:00'})</div><div className="num" style={{ fontSize: 12, color: BRAND.textSecondary }}>Ngày: {r.work_date ? dayjs(r.work_date).format('DD/MM/YYYY') : '—'}</div></div> },
           { title: 'Vào ca / Ra ca', render: (_, r) => renderShiftCheckInOutSummary(r) },
-          { title: 'Thao tác', width: 90, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết điểm danh Vào/Ra ca" onViewDetail={() => setDetailRow(r)} menuItems={canManageEvents ? [{ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa điểm danh', onClick: () => setEditRow(r) }, { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa bản ghi điểm danh', onClick: () => modal.confirm({ title: `Xác nhận xóa điểm danh ca của ${r.employeeName}?`, content: `Toàn bộ lượt Vào ca / Ra ca thuộc ${r.shiftLabel} ngày ${r.work_date} sẽ bị xóa.`, okText: 'Xác nhận xóa', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelText: 'Hủy bỏ', cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => deleteMut.mutateAsync(r) }) }] : []} /> },
+          { title: 'Thao tác', width: 90, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết điểm danh Vào/Ra ca" onViewDetail={() => setDetailRow(r)} menuItems={canManageEvents ? [{ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa điểm danh', onClick: () => setEditRow(r) }, { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa bản ghi điểm danh', onClick: () => modal.confirm({ title: `Xác nhận xóa điểm danh ca của ${r.employeeName}?`, content: `Toàn bộ lượt Vào ca / Ra ca thuộc ${r.shiftLabel} ngày ${r.work_date} sẽ bị xóa.`, okText: 'Xác nhận xóa', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelText: 'Hủy bỏ', cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => deleteMut.mutateAsync([r]) }) }] : []} /> },
         ]}
       />
       <AttendanceEventDetailModal event={detailRow} onClose={() => setDetailRow(null)} />

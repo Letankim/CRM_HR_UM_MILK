@@ -1,33 +1,21 @@
 'use client';
 
-import { App, Button, Card, Col, Descriptions, Form, Input, Modal, Row, Select, Space, Table, Tag, Typography } from 'antd';
-import { CloseOutlined, DeleteOutlined, EditOutlined, PlusOutlined, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { App, Button, Card, Col, Descriptions, Form, Input, Modal, Row, Select, Space, Tag, Typography } from 'antd';
+import { CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, PlusOutlined, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { STAFF_GROUP_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
+import { exportToExcel } from '@/lib/export-excel';
+import { SelectableTable } from './BulkActionBar';
 import { GuardButton, usePermissionGuard } from './GuardButton';
 import { RowActionButtons } from './RowActionButtons';
 
 function toPosCode(raw: string): string {
-  return raw
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[đĐ]/g, 'D')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_|_$/g, '')
-    .slice(0, 24);
+  return raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'D').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24);
 }
 
-export interface JobPositionItem {
-  code: string;
-  label: string;
-  department: string;
-  description: string;
-  employeeCount?: number;
-  isDefault?: boolean;
-}
+export interface JobPositionItem { code: string; label: string; department: string; description: string; employeeCount?: number; isDefault?: boolean }
 
 const DEPARTMENT_OPTIONS = [
   { value: 'Cửa hàng (Vận hành)', label: 'Cửa hàng (Vận hành)' },
@@ -76,7 +64,7 @@ export function JobPositionsTableCard({ canManage = true }: { canManage?: boolea
   });
 
   const delMut = useMutation({
-    mutationFn: (code: string) => api.delete(`/admin/job-positions/${code}`, {}),
+    mutationFn: async (codes: string[]) => { for (const c of codes) await api.delete(`/admin/job-positions/${c}`, {}); },
     onSuccess: () => { message.success('Đã xóa vị trí công việc'); refresh(); },
     onError: onErr('Xóa vị trí công việc thất bại'),
   });
@@ -112,8 +100,12 @@ export function JobPositionsTableCard({ canManage = true }: { canManage?: boolea
           </GuardButton>
         }
       >
-        <Table<JobPositionItem>
+        <SelectableTable<JobPositionItem>
           size="small" rowKey="code" pagination={false} loading={isLoading} dataSource={positions}
+          bulkActions={[
+            { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Danh_muc_vi_tri_cong_viec.xls', sheetTitle: 'Danh mục Vị trí Công việc & Phân nhóm Nhân sự', rows, columns: [{ header: 'Mã vị trí', key: 'code' }, { header: 'Tên vị trí công việc', key: 'label' }, { header: 'Bộ phận', key: 'department' }, { header: 'Nhân sự hiện có', key: 'employeeCount', align: 'right' }, { header: 'Mô tả', key: 'description' }] }) },
+            ...(canEditPos ? [{ key: 'del', label: 'Xóa vị trí đã chọn', danger: true, icon: <DeleteOutlined />, loading: delMut.isPending, confirm: 'Xác nhận xóa các vị trí công việc đã chọn?', onClick: (rows: JobPositionItem[]) => delMut.mutate(rows.map((r) => r.code)) }] : []),
+          ]}
           columns={[
             { title: 'Mã vị trí', dataIndex: 'code', width: 160, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
             { title: 'Tên vị trí công việc', dataIndex: 'label', render: (v: string, r) => <Typography.Link strong onClick={() => setViewing(r)}>{v}</Typography.Link> },
@@ -127,7 +119,7 @@ export function JobPositionsTableCard({ canManage = true }: { canManage?: boolea
                   onViewDetail={() => setViewing(r)}
                   menuItems={canEditPos ? [
                     { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa vị trí công việc', onClick: () => openEdit(r) },
-                    { key: 'del', icon: <DeleteOutlined />, danger: true, label: 'Xóa vị trí công việc', onClick: () => modal.confirm({ title: `Xóa vị trí công việc "${r.label}"?`, okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => delMut.mutateAsync(r.code) }) },
+                    { key: 'del', icon: <DeleteOutlined />, danger: true, label: 'Xóa vị trí công việc', onClick: () => modal.confirm({ title: `Xóa vị trí công việc "${r.label}"?`, okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => delMut.mutateAsync([r.code]) }) },
                   ] : []}
                 />
               ),

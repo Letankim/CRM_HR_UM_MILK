@@ -1,8 +1,9 @@
 'use client';
 
-import { Button, Flex, Space, Tag, Typography } from 'antd';
+import { Button, Flex, Popconfirm, Space, Table, Tag, Typography } from 'antd';
+import type { TableProps } from 'antd/es/table';
 import { CloseOutlined } from '@ant-design/icons';
-import type { ReactNode } from 'react';
+import { type Key, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { BRAND } from '../theme';
 
 export interface BulkActionItem<TRecord> {
@@ -13,7 +14,8 @@ export interface BulkActionItem<TRecord> {
   danger?: boolean;
   loading?: boolean;
   disabled?: boolean;
-  onClick: (selectedRows: TRecord[], clearSelection: () => void) => void | Promise<void>;
+  confirm?: string;
+  onClick: (selectedRows: TRecord[], clearSelection: () => void) => unknown;
 }
 
 export interface BulkActionBarProps<TRecord> {
@@ -63,22 +65,94 @@ export function BulkActionBar<TRecord>({
         </Space>
 
         <Space size={8} wrap>
-          {actions.map((act) => (
-            <Button
-              key={act.key}
-              size="small"
-              type={act.type ?? 'default'}
-              danger={act.danger}
-              icon={act.icon}
-              loading={act.loading}
-              disabled={act.disabled}
-              onClick={() => act.onClick(selectedRows, onClearSelection)}
-            >
-              {act.label}
-            </Button>
-          ))}
+          {actions.map((act) => {
+            const btn = (
+              <Button
+                key={act.key}
+                size="small"
+                type={act.type ?? 'default'}
+                danger={act.danger}
+                icon={act.icon}
+                loading={act.loading}
+                disabled={act.disabled}
+                onClick={act.confirm ? undefined : () => act.onClick(selectedRows, onClearSelection)}
+              >
+                {act.label}
+              </Button>
+            );
+            return act.confirm ? (
+              <Popconfirm
+                key={act.key}
+                title={act.confirm}
+                okText="Xác nhận"
+                cancelText="Hủy bỏ"
+                okButtonProps={{ danger: act.danger }}
+                onConfirm={() => act.onClick(selectedRows, onClearSelection)}
+              >
+                {btn}
+              </Popconfirm>
+            ) : (
+              btn
+            );
+          })}
         </Space>
       </Flex>
     </div>
+  );
+}
+
+export interface SelectableTableProps<TRecord extends object> extends TableProps<TRecord> {
+  bulkActions?:
+    | BulkActionItem<TRecord>[]
+    | ((selectedRows: TRecord[], clearSelection: () => void) => BulkActionItem<TRecord>[]);
+}
+
+/**
+ * Bảng dữ liệu tích hợp sẵn cột tích chọn hàng loạt (rowSelection) và thanh BulkActionBar.
+ */
+export function SelectableTable<TRecord extends object>({
+  bulkActions = [],
+  dataSource = [],
+  rowKey = 'id',
+  ...rest
+}: SelectableTableProps<TRecord>) {
+  const getKey = (r: TRecord): string =>
+    typeof rowKey === 'function' ? String(rowKey(r)) : String((r as Record<string, unknown>)[String(rowKey)] ?? '');
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
+  const clearSelection = () => setSelectedRowKeys([]);
+
+  useEffect(() => {
+    const valid = new Set(dataSource.map(getKey));
+    setSelectedRowKeys((prev) => (prev.length === 0 ? prev : prev.filter((k) => valid.has(String(k)))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataSource]);
+
+  const selectedRows = useMemo(() => {
+    if (selectedRowKeys.length === 0) return [];
+    const keySet = new Set(selectedRowKeys.map(String));
+    return dataSource.filter((r) => keySet.has(getKey(r)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataSource, selectedRowKeys]);
+
+  const resolvedActions =
+    typeof bulkActions === 'function' ? bulkActions(selectedRows, clearSelection) : bulkActions;
+
+  return (
+    <>
+      <BulkActionBar
+        selectedRows={selectedRows}
+        onClearSelection={clearSelection}
+        actions={resolvedActions}
+      />
+      <Table<TRecord>
+        rowKey={rowKey}
+        dataSource={dataSource}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: (keys) => setSelectedRowKeys(keys),
+        }}
+        {...rest}
+      />
+    </>
   );
 }

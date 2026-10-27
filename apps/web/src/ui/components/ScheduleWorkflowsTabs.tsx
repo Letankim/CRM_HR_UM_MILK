@@ -1,7 +1,7 @@
 'use client';
 
-import { App, Button, Card, Flex, Input, Select, Space, Table, Tabs, Tag, Tooltip } from 'antd';
-import { AlertOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, EnvironmentOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SwapOutlined } from '@ant-design/icons';
+import { App, Button, Card, Flex, Input, Select, Space, Tabs, Tag, Tooltip } from 'antd';
+import { AlertOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, DownloadOutlined, EnvironmentOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SwapOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useMemo, useState } from 'react';
@@ -9,9 +9,11 @@ import { api, ApiClientError } from '@/lib/api';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
 import { AttendanceEventsTable, type AttendanceEventRow } from './AttendanceEventsTable';
+import { SelectableTable } from './BulkActionBar';
 import { GuardButton, usePermissionGuard } from './GuardButton';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
 import { ScheduleWorkflowModals, type WorkflowAssignmentOption } from './ScheduleWorkflowModals';
+import { buildAdjustmentsBulkActions, buildEmergencyBulkActions, buildLeavesBulkActions, buildSwapsBulkActions, exportAdjustmentsExcel, exportEmergencyExcel, exportLeavesExcel, exportSwapsExcel } from './workflow-bulk-helpers';
 
 interface Props { employees: { value: string; label: string }[]; assignments: WorkflowAssignmentOption[] }
 const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
@@ -19,11 +21,9 @@ const fmtShiftTime = (r: Record<string, unknown>) => `${String(r.startAt || r.st
 const fmtDate = (raw: unknown) => (raw ? dayjs(String(raw)).format('DD/MM/YYYY') : '—');
 
 export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
-  const qc = useQueryClient();
-  const { message } = App.useApp();
-  const canApproveLeave = usePermissionGuard({ perms: ['leave.approve'] });
-  const canApproveSwap = usePermissionGuard({ perms: ['swap.approve'] });
-  const canHandleEmg = usePermissionGuard({ perms: ['emergency.handle'] });
+  const qc = useQueryClient(), { message } = App.useApp();
+  const canConfirmAtt = usePermissionGuard({ perms: ['attendance.confirm'] }), canApproveAdj = usePermissionGuard({ perms: ['adjustment.approve'] });
+  const canApproveLeave = usePermissionGuard({ perms: ['leave.approve'] }), canApproveSwap = usePermissionGuard({ perms: ['swap.approve'] }), canHandleEmg = usePermissionGuard({ perms: ['emergency.handle'] });
   const [leaveModal, setLeaveModal] = useState(false), [swapModal, setSwapModal] = useState(false), [emgModal, setEmgModal] = useState(false), [adjModal, setAdjModal] = useState(false);
   const [detailTarget, setDetailTarget] = useState<ScheduleDetailTarget | null>(null);
   const [searchInput, setSearchInput] = useState(''), debouncedQ = useDebouncedValue(searchInput, 400);
@@ -47,34 +47,32 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
 
   const refreshAll = () => ['attendance-adjustments', 'leave-requests', 'shift-swaps', 'emergency-leaves', 'attendance-sessions', 'attendance-sessions-count', 'schedules', 'my-attendance'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const isRefreshing = adjQ.isFetching || leavesQ.isFetching || swapsQ.isFetching || emgQ.isFetching || attCountQ.isFetching;
-
-  const actMut = useMutation({
-    mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body),
-    onSuccess: () => { message.success('Đã thực hiện thao tác thành công'); setPage(1); refreshAll(); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại'),
+  const actMut = useMutation({ mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body), onSuccess: () => { message.success('Đã thực hiện thao tác thành công'); setPage(1); refreshAll(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại') });
+  const batchMut = useMutation({
+    mutationFn: async ({ items, buildCall, successMsg }: { items: Record<string, unknown>[]; buildCall: (r: Record<string, unknown>) => { url: string; body: unknown } | null; successMsg: string }) => {
+      if (items.length === 0) throw new Error('Không có bản ghi nào ở trạng thái hợp lệ để thực hiện thao tác này');
+      for (const r of items) { const c = buildCall(r); if (c) await api.post(c.url, c.body); }
+      return successMsg;
+    },
+    onSuccess: (msg) => { message.success(msg); refreshAll(); },
+    onError: (e) => message.error(e instanceof ApiClientError ? e.message : e instanceof Error ? e.message : 'Thao tác hàng loạt thất bại'),
   });
+  const bulkOpts = { canConfirmAtt, canApproveAdj, canApproveLeave, canApproveSwap, canHandleEmg, loading: batchMut.isPending, runBatch: (items: Record<string, unknown>[], buildCall: (r: Record<string, unknown>) => { url: string; body: unknown } | null, successMsg: string) => batchMut.mutate({ items, buildCall, successMsg }) };
 
   const branchList = branchesQ.data?.data ?? [];
   const branchOptions = useMemo(() => branchList.length === 1 ? [{ value: 'ALL', label: `${branchList[0]!.code} — ${branchList[0]!.name}` }] : [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branchList.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))], [branchList]);
-
-  const filteredAdjustments = adjQ.data?.data ?? [];
-  const filteredLeaves = leavesQ.data?.data ?? [];
-  const filteredSwaps = swapsQ.data?.data ?? [];
-  const filteredEmg = emgQ.data?.data ?? [];
+  const filteredAdjustments = adjQ.data?.data ?? [], filteredLeaves = leavesQ.data?.data ?? [], filteredSwaps = swapsQ.data?.data ?? [], filteredEmg = emgQ.data?.data ?? [];
   const mkPag = (total?: number) => ({ current: page, pageSize: perPage, total: total ?? 0, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t: number) => `Tổng ${t} đơn`, onChange: (p: number, ps: number) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } });
 
-  const renderSubFilterBar = (actionBtn: React.ReactNode) => (
-    <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '14px 16px', marginTop: 4, marginBottom: 16 }}>
-      <Flex justify="space-between" align="center" wrap gap={12}>
+  const renderSubFilterBar = (onExport: () => void, actionBtn: React.ReactNode) => (
+    <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '12px 16px', marginTop: 4, marginBottom: 12 }}>
+      <Flex justify="space-between" align="center" wrap gap={10}>
         <Space size={10} wrap>
-          <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm tên nhân sự, mã đơn, ngày, lý do..." value={searchInput} onChange={(e) => { setSearchInput(e.target.value); setPage(1); }} style={{ width: 250 }} />
-          <Select value={branchFilter} onChange={(v) => { setBranchFilter(v); setPage(1); }} style={{ width: 200 }} options={branchOptions} />
-          <Select value={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1); }} style={{ width: 175 }} options={[{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'PENDING', label: 'Chờ duyệt' }, { value: 'STORE_CONFIRMED', label: 'CH đã xác nhận' }, { value: 'APPROVED', label: 'Đã phê duyệt' }, { value: 'REJECTED', label: 'Đã từ chối' }]} />
+          <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm tên nhân sự, mã đơn, ngày, lý do..." value={searchInput} onChange={(e) => { setSearchInput(e.target.value); setPage(1); }} style={{ width: 245 }} />
+          <Select value={branchFilter} onChange={(v) => { setBranchFilter(v); setPage(1); }} style={{ width: 195 }} options={branchOptions} />
+          <Select value={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1); }} style={{ width: 170 }} options={[{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'PENDING', label: 'Chờ duyệt' }, { value: 'STORE_CONFIRMED', label: 'CH đã xác nhận' }, { value: 'APPROVED', label: 'Đã phê duyệt' }, { value: 'REJECTED', label: 'Đã từ chối' }]} />
         </Space>
-        <Space size={10} wrap>
-          <Button icon={<ReloadOutlined />} loading={isRefreshing} onClick={refreshAll}>Làm mới</Button>
-          {actionBtn}
-        </Space>
+        <Space size={8} wrap><Button icon={<ReloadOutlined />} loading={isRefreshing} onClick={refreshAll}>Làm mới</Button><Button icon={<DownloadOutlined />} onClick={onExport}>Xuất Excel</Button>{actionBtn}</Space>
       </Flex>
     </div>
   );
@@ -94,9 +92,9 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
             label: <span><FileAddOutlined /> Phiếu bổ sung công ({adjQ.data?.meta.pagination.total ?? filteredAdjustments.length})</span>,
             children: (
               <>
-                {renderSubFilterBar(<GuardButton type="primary" icon={<FileAddOutlined />} perms={['attendance.confirm', 'adjustment.approve']} onClick={() => setAdjModal(true)}>Tạo phiếu bổ sung công</GuardButton>)}
-                <Table
-                  size="small" rowKey="id" loading={adjQ.isLoading} pagination={mkPag(adjQ.data?.meta.pagination.total)} dataSource={filteredAdjustments}
+                {renderSubFilterBar(() => exportAdjustmentsExcel(filteredAdjustments), <GuardButton type="primary" icon={<FileAddOutlined />} perms={['attendance.confirm', 'adjustment.approve']} onClick={() => setAdjModal(true)}>Tạo phiếu bổ sung công</GuardButton>)}
+                <SelectableTable<Record<string, unknown>>
+                  size="small" rowKey="id" loading={adjQ.isLoading} pagination={mkPag(adjQ.data?.meta.pagination.total)} dataSource={filteredAdjustments} bulkActions={buildAdjustmentsBulkActions(bulkOpts)}
                   columns={[
                     { title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 105, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Nhân sự', ellipsis: true, render: (_, r) => <strong>{String(r.employeeName || '')}</strong> },
@@ -126,9 +124,9 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
             label: <span><CalendarOutlined /> Đơn xin nghỉ phép (OFF) ({leavesQ.data?.meta.pagination.total ?? filteredLeaves.length})</span>,
             children: (
               <>
-                {renderSubFilterBar(<GuardButton type="primary" icon={<PlusOutlined />} perms={['leave.approve']} onClick={() => setLeaveModal(true)}>Đăng ký nghỉ OFF</GuardButton>)}
-                <Table
-                  size="small" rowKey="id" loading={leavesQ.isLoading} pagination={mkPag(leavesQ.data?.meta.pagination.total)} dataSource={filteredLeaves}
+                {renderSubFilterBar(() => exportLeavesExcel(filteredLeaves), <GuardButton type="primary" icon={<PlusOutlined />} perms={['leave.approve']} onClick={() => setLeaveModal(true)}>Đăng ký nghỉ OFF</GuardButton>)}
+                <SelectableTable<Record<string, unknown>>
+                  size="small" rowKey="id" loading={leavesQ.isLoading} pagination={mkPag(leavesQ.data?.meta.pagination.total)} dataSource={filteredLeaves} bulkActions={buildLeavesBulkActions(bulkOpts)}
                   columns={[
                     { title: 'Mã đơn', dataIndex: 'request_code', width: 105, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Nhân sự', ellipsis: true, render: (_, r) => <strong>{String(r.employeeName)} ({String(r.employeeCode)})</strong> },
@@ -156,9 +154,9 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
             label: <span><SwapOutlined /> Đơn xin đổi ca ({swapsQ.data?.meta.pagination.total ?? filteredSwaps.length})</span>,
             children: (
               <>
-                {renderSubFilterBar(<GuardButton type="primary" icon={<PlusOutlined />} perms={['swap.approve']} onClick={() => setSwapModal(true)}>Tạo yêu cầu đổi ca</GuardButton>)}
-                <Table
-                  size="small" rowKey="id" loading={swapsQ.isLoading} pagination={mkPag(swapsQ.data?.meta.pagination.total)} dataSource={filteredSwaps}
+                {renderSubFilterBar(() => exportSwapsExcel(filteredSwaps), <GuardButton type="primary" icon={<PlusOutlined />} perms={['swap.approve']} onClick={() => setSwapModal(true)}>Tạo yêu cầu đổi ca</GuardButton>)}
+                <SelectableTable<Record<string, unknown>>
+                  size="small" rowKey="id" loading={swapsQ.isLoading} pagination={mkPag(swapsQ.data?.meta.pagination.total)} dataSource={filteredSwaps} bulkActions={buildSwapsBulkActions(bulkOpts)}
                   columns={[
                     { title: 'Mã đơn', dataIndex: 'swap_code', width: 105, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Ngày ca', dataIndex: 'from_work_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
@@ -186,9 +184,9 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
             label: <span><AlertOutlined /> Báo nghỉ đột xuất ({emgQ.data?.meta.pagination.total ?? filteredEmg.length})</span>,
             children: (
               <>
-                {renderSubFilterBar(<GuardButton danger icon={<AlertOutlined />} perms={['emergency.handle']} onClick={() => setEmgModal(true)}>Báo nghỉ khẩn</GuardButton>)}
-                <Table
-                  size="small" rowKey="id" loading={emgQ.isLoading} pagination={mkPag(emgQ.data?.meta.pagination.total)} dataSource={filteredEmg}
+                {renderSubFilterBar(() => exportEmergencyExcel(filteredEmg), <GuardButton danger icon={<AlertOutlined />} perms={['emergency.handle']} onClick={() => setEmgModal(true)}>Báo nghỉ khẩn</GuardButton>)}
+                <SelectableTable<Record<string, unknown>>
+                  size="small" rowKey="id" loading={emgQ.isLoading} pagination={mkPag(emgQ.data?.meta.pagination.total)} dataSource={filteredEmg} bulkActions={buildEmergencyBulkActions(bulkOpts)}
                   columns={[
                     { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 110, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Nhân sự', dataIndex: 'employeeName', ellipsis: true },

@@ -88,7 +88,7 @@ function SchedulesView() {
   const query = useQuery({
     queryKey: ['schedules', viewMode, branchId, shiftCode, status, q, page, dateRangeParams.from, dateRangeParams.to, dateRangeParams.limit],
     queryFn: () => api.list<ScheduleAssignmentItem>(buildUrl(false)),
-    enabled: section === 'schedules' && viewMode !== 'ATTENDANCE',
+    enabled: viewMode !== 'ATTENDANCE',
   });
 
   const handleManualRefresh = async () => {

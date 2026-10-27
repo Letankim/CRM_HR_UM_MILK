@@ -1,14 +1,16 @@
 'use client';
 
-import { App, Button, Card, Flex, Form, Input, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd';
-import { CloudDownloadOutlined, DeleteOutlined, EditOutlined, FileProtectOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SendOutlined, ToolOutlined } from '@ant-design/icons';
+import { App, Button, Card, Flex, Form, Input, Select, Space, Switch, Tabs, Tag, Typography } from 'antd';
+import { CloudDownloadOutlined, DeleteOutlined, EditOutlined, FileExcelOutlined, FileProtectOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SendOutlined, ToolOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
+import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
+import { SelectableTable } from './BulkActionBar';
 import { TimeSelect } from './DateTimePickers';
 import { BackupDetailDrawer, GovernanceDetailDrawer, POLICY_CATEGORY_LABELS, POLICY_CATEGORY_OPTIONS, PolicyFormModal } from './GovernanceAndCommsModals';
 import { MktCommsCenter } from './MktCommsCenter';
@@ -116,10 +118,17 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
           </Space>
         </Flex>
       </div>
-      <Table
+      <SelectableTable
         size="small" rowKey="id" loading={polQ.isLoading}
         pagination={{ current: polPage, pageSize: polPerPage, total: polTotal, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t) => `Tổng ${t} chính sách`, onChange: (p, ps) => { setPolPage(ps !== polPerPage ? 1 : p); setPolPerPage(ps); } }}
         dataSource={filteredPolicies} scroll={{ x: 'max-content' }}
+        bulkActions={(rows, clear) => [
+          { key: 'excel', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: () => exportToExcel({ fileName: 'Chinh_Sach_Da_Chon', sheetTitle: 'Chính sách đã chọn', columns: [{ header: 'Mã chính sách', render: (r) => String(r.key ?? '') }, { header: 'Nhóm quy định', render: (r) => POLICY_CATEGORY_LABELS[String(r.category)] ?? String(r.category ?? '') }, { header: 'Tên chính sách', render: (r) => String(r.description ?? '') }, { header: 'Giá trị hiệu lực', render: (r) => String(r.value_json ?? '') }, { header: 'Hiệu lực từ', render: (r) => String(r.effective_from ?? '') }], rows }) },
+          ...(canManagePolicies ? [
+            { key: 'broadcast', label: 'Phổ biến chính sách đã chọn', icon: <SendOutlined />, type: 'primary' as const, onClick: async () => { for (const r of rows) await api.post(`/admin/policies/${r.id}/broadcast`, {}); message.success(`Đã phổ biến ${rows.length} chính sách đã chọn`); clear(); refreshAll(); } },
+            { key: 'delete', label: 'Xóa chính sách đã chọn', icon: <DeleteOutlined />, danger: true, onClick: () => modal.confirm({ title: `Xác nhận xóa ${rows.length} chính sách đã chọn?`, okText: 'Xóa đã chọn', cancelText: 'Hủy', okButtonProps: { danger: true }, onOk: async () => { for (const r of rows) await api.delete(`/admin/policies/${r.id}`, { version: r.version, owner_override_approved: true }); message.success(`Đã xóa ${rows.length} chính sách`); clear(); refreshAll(); } }) },
+          ] : []),
+        ]}
         columns={[
           { title: 'Mã chính sách', dataIndex: 'key', width: 165, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
           { title: 'Nhóm quy định / Bộ phận', dataIndex: 'category', width: 190, render: (v: string) => POLICY_CATEGORY_LABELS[v] ?? v },
@@ -131,8 +140,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
             title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
             render: (_, r) => (
               <RowActionButtons
-                detailTooltip="Xem chi tiết văn bản chính sách"
-                onViewDetail={() => setViewing(r)}
+                detailTooltip="Xem chi tiết văn bản chính sách" onViewDetail={() => setViewing(r)}
                 menuItems={canManagePolicies && canEditItem(r) ? [
                   { key: 'broadcast', icon: <SendOutlined />, label: 'Phổ biến toàn công ty (Gửi thông báo)', onClick: () => postMut.mutate({ url: `/admin/policies/${r.id}/broadcast`, body: {} }) },
                   { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa chính sách', onClick: () => openEditPolicy(r) },
@@ -156,15 +164,10 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
           <TimeSelect size="small" placeholder="Giờ mở lại (VD: 23:30)" value={mntExpectedEnd} onChange={(v) => { setMntExpectedEnd(v); if (mnt?.enabled && v) postMut.mutate({ url: '/admin/maintenance', body: { version: Number(mnt?.version) || 1, enabled: true, scope: mntScope || String(mnt?.scope || 'ALL'), expected_end_at: v, banner_message: `Hệ thống đang bảo trì nâng cấp định kỳ (Dự kiến mở lại lúc ${v})` } }); }} style={{ width: 185 }} />
         </Space>
         <Switch
-          disabled={!canBackupOrMaint}
-          loading={postMut.isPending}
-          checked={Boolean(mnt?.enabled)}
+          disabled={!canBackupOrMaint} loading={postMut.isPending} checked={Boolean(mnt?.enabled)}
           onChange={(checked) => {
             const endTime = mntExpectedEnd || savedEndTime;
-            if (checked && !endTime) {
-              message.warning('Vui lòng chọn Giờ mở lại dự kiến trước khi bật chế độ bảo trì');
-              return;
-            }
+            if (checked && !endTime) { message.warning('Vui lòng chọn Giờ mở lại dự kiến trước khi bật chế độ bảo trì'); return; }
             postMut.mutate({ url: '/admin/maintenance', body: { version: Number(mnt?.version) || 1, enabled: checked, scope: mntScope || String(mnt?.scope || 'ALL'), expected_end_at: endTime, banner_message: checked ? `Hệ thống đang bảo trì nâng cấp định kỳ (Dự kiến mở lại lúc ${endTime})` : 'Hệ thống hoạt động bình thường', reason: checked ? 'Bảo trì định kỳ từ Quản trị viên' : 'Kết thúc bảo trì từ Quản trị viên' } });
           }}
         />
@@ -176,10 +179,11 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
         </Space>
         <Button size="small" icon={<ReloadOutlined />} loading={bkpQ.isFetching} onClick={refreshAll}>Làm mới lịch sử</Button>
       </Flex>
-      <Table
+      <SelectableTable
         size="small" rowKey="id" loading={bkpQ.isLoading}
         pagination={{ current: bkpPage, pageSize: bkpPerPage, total: bkpTotal, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t) => `Tổng ${t} bản sao lưu`, onChange: (p, ps) => { setBkpPage(ps !== bkpPerPage ? 1 : p); setBkpPerPage(ps); } }}
         dataSource={filteredBackups}
+        bulkActions={(rows) => [{ key: 'excel', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: () => exportToExcel({ fileName: 'Sao_Luu_Da_Chon', sheetTitle: 'Bản sao lưu đã chọn', columns: [{ header: 'Mã sao lưu', render: (r) => String(r.backup_code ?? '') }, { header: 'Loại sao lưu', render: (r) => String(r.kindLabel ?? '') }, { header: 'Thực hiện bởi', render: (r) => String(r.actorName ?? '') }, { header: 'Thời điểm', render: (r) => String(r.started_at ?? '') }, { header: 'Trạng thái', render: (r) => String(r.status ?? '') }], rows }) }]}
         columns={[
           { title: 'Mã sao lưu', dataIndex: 'backup_code', width: 120, render: (v: string, r) => <Typography.Link strong onClick={() => setViewingBackup(r)}><Tag color="geekblue">{v}</Tag></Typography.Link> },
           { title: 'Loại sao lưu', dataIndex: 'kindLabel', render: (v: string, r) => <Typography.Link strong onClick={() => setViewingBackup(r)}>{v}</Typography.Link> },

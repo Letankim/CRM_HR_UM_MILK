@@ -1,9 +1,11 @@
 'use client';
 
-import { Button, Descriptions, Modal, Space, Tag } from 'antd';
-import { ClockCircleOutlined, CloseOutlined } from '@ant-design/icons';
+import { useState } from 'react';
+import { Alert, Button, Descriptions, Modal, Space, Tag } from 'antd';
+import { ClockCircleOutlined, CloseOutlined, FileAddOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { StatusTag } from '../StatusTag';
+import { isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
 
 export type ScheduleDetailKind = 'shift' | 'leave' | 'emergency' | 'swap' | 'adjustment';
 
@@ -33,8 +35,10 @@ export function ScheduleRequestDetailModal({
   target: ScheduleDetailTarget | null;
   onClose: () => void;
 }) {
+  const [quickAdjOpen, setQuickAdjOpen] = useState(false);
   if (!target) return null;
   const { kind, record: r } = target;
+  const isAbsentShift = kind === 'shift' && isAbsentShiftRecord(r);
 
   return (
     <Modal
@@ -42,8 +46,24 @@ export function ScheduleRequestDetailModal({
       open
       title={TITLES[kind]}
       onCancel={onClose}
-      footer={<Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>}
+      footer={
+        <Space wrap size={8}>
+          {isAbsentShift && (
+            <Button type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>
+              Tạo phiếu bổ sung công từ ca này
+            </Button>
+          )}
+          <Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
+        </Space>
+      }
     >
+      {isAbsentShift && (
+        <Alert
+          type="error" showIcon style={{ marginBottom: 10 }}
+          message="Ca làm việc này đang ở trạng thái Vắng mặt (Cần bổ sung công). Bấm nút 'Tạo phiếu bổ sung công từ ca này' để gửi phiếu giải trình bù công."
+          action={<Button size="small" type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công</Button>}
+        />
+      )}
       <Descriptions bordered size="small" column={1} style={{ marginTop: 8 }} styles={{ label: { width: 220, fontWeight: 600, background: '#F8FAFC' } }}>
         {kind === 'swap' && (
           <>
@@ -146,6 +166,7 @@ export function ScheduleRequestDetailModal({
           </>
         )}
       </Descriptions>
+      <QuickAbsentAdjustmentModal shift={isAbsentShift ? r : null} open={quickAdjOpen} onClose={() => setQuickAdjOpen(false)} onSuccess={onClose} />
     </Modal>
   );
 }

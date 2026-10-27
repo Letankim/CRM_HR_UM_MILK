@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Button, Card, Descriptions, Drawer, Segmented, Space, Tabs, Tag } from 'antd';
-import { ClockCircleOutlined, CloseOutlined, DeleteOutlined, EditOutlined, EnvironmentOutlined, ExpandAltOutlined, IdcardOutlined, ShopOutlined, ShrinkOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EnvironmentOutlined, ExpandAltOutlined, IdcardOutlined, ShopOutlined, ShrinkOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Suspense, useState } from 'react';
 import { BRANCH_STATUS_OPTIONS, type BranchStatus } from '@umbm/shared';
@@ -66,11 +66,10 @@ function BranchesView() {
   };
 
   const deleteBranch = useMutation({
-    mutationFn: (r: BranchRowItem) => api.delete(`/admin/branches/${r.id}`, { version: r.version }),
-    onSuccess: () => {
-      message.success('Đã xóa chi nhánh thành công');
-      qc.invalidateQueries({ queryKey: ['branches'] });
+    mutationFn: async (items: BranchRowItem[]) => {
+      for (const r of items) await api.delete(`/admin/branches/${r.id}`, { version: r.version });
     },
+    onSuccess: () => { message.success('Đã xóa chi nhánh thành công'); qc.invalidateQueries({ queryKey: ['branches'] }); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa chi nhánh thất bại'),
   });
 
@@ -82,11 +81,9 @@ function BranchesView() {
       modal.confirm({
         title: `Xóa chi nhánh ${r.name}?`,
         content: 'Chi nhánh sẽ được ngừng sử dụng và ẩn khỏi danh sách hoạt động.',
-        okText: 'Xác nhận xóa',
-        okButtonProps: { danger: true, icon: <DeleteOutlined /> },
-        cancelText: 'Hủy bỏ',
-        cancelButtonProps: { icon: <CloseOutlined /> },
-        onOk: () => deleteBranch.mutateAsync(r),
+        okText: 'Xác nhận xóa', okButtonProps: { danger: true, icon: <DeleteOutlined /> },
+        cancelText: 'Hủy bỏ', cancelButtonProps: { icon: <CloseOutlined /> },
+        onOk: () => deleteBranch.mutateAsync([r]),
       }),
   });
 
@@ -129,6 +126,10 @@ function BranchesView() {
             loading={branchesQuery.isLoading || branchesQuery.isFetching || manualRefreshing}
             codeExtractor={(r) => r.code}
             onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }}
+            bulkActions={[
+              { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportBranchesExcel(rows) },
+              ...(canConfig ? [{ key: 'delete', label: 'Xóa chi nhánh đã chọn', danger: true, icon: <DeleteOutlined />, loading: deleteBranch.isPending, confirm: 'Xác nhận xóa các chi nhánh đã chọn?', onClick: (rows: BranchRowItem[]) => deleteBranch.mutate(rows) }] : []),
+            ]}
           />
         </>
       ) : tab === 'shifts' ? (

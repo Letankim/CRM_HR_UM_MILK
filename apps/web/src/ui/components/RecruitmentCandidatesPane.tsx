@@ -1,7 +1,7 @@
 'use client';
 
-import { App, Button, Card, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tag } from 'antd';
-import { CalendarOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, EditOutlined, ExpandAltOutlined, MailOutlined, MessageOutlined, PhoneOutlined, PlusOutlined, SaveOutlined, ShrinkOutlined } from '@ant-design/icons';
+import { App, Button, Card, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
+import { CalendarOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, ExpandAltOutlined, MailOutlined, MessageOutlined, PhoneOutlined, PlusOutlined, SaveOutlined, ShrinkOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
@@ -9,6 +9,7 @@ import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { StatusTag } from '../StatusTag';
+import { SelectableTable } from './BulkActionBar';
 import { FilterToolbar } from './FilterToolbar';
 import { GuardButton, usePermissionGuard } from './GuardButton';
 import { useJobPositions } from './JobPositionsManagerModal';
@@ -103,6 +104,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
   };
 
   const rows = candQ.data?.data ?? [];
+  const exportCands = (list: Record<string, unknown>[]) => exportToExcel({ fileName: 'Danh_sach_ung_vien.xls', sheetTitle: 'Danh sách Hồ sơ Ứng viên Tuyển dụng', rows: list, columns: [{ header: 'Mã UV', key: 'candidate_code' }, { header: 'Họ và tên', key: 'full_name' }, { header: 'Số điện thoại', key: 'phone' }, { header: 'Email', key: 'email' }, { header: 'Vị trí', key: 'positionLabel' }, { header: 'Chi nhánh nguyện vọng', key: 'branchName' }, { header: 'Ca đăng ký', key: 'shiftPrefLabel' }, { header: 'Giai đoạn', key: 'stage' }, { header: 'Ghi chú HR', key: 'hr_note' }] });
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -117,13 +119,20 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
         ]}
         onRefresh={refreshAll}
         refreshing={candQ.isFetching}
-        onExportExcel={() => exportToExcel({ fileName: 'Danh_sach_ung_vien.xls', sheetTitle: 'Danh sách Hồ sơ Ứng viên Tuyển dụng', rows, columns: [{ header: 'Mã UV', key: 'candidate_code' }, { header: 'Họ và tên', key: 'full_name' }, { header: 'Số điện thoại', key: 'phone' }, { header: 'Email', key: 'email' }, { header: 'Vị trí', key: 'positionLabel' }, { header: 'Chi nhánh nguyện vọng', key: 'branchName' }, { header: 'Ca đăng ký', key: 'shiftPrefLabel' }, { header: 'Giai đoạn', key: 'stage' }, { header: 'Ghi chú HR', key: 'hr_note' }] })}
+        onExportExcel={() => exportCands(rows)}
         primaryActionLabel={canManageRec ? 'Thêm ứng viên mới' : undefined}
         onPrimaryAction={canManageRec ? openCreateCand : undefined}
       />
 
-      <Table
+      <SelectableTable<Record<string, unknown>>
         size="small" rowKey="id" loading={candQ.isLoading}
+        bulkActions={[
+          ...(canManageRec ? [
+            { key: 'contacted', label: 'Đánh dấu Đã liên hệ đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel.filter((x) => x.status === 'NEW')) await api.put(`/admin/candidates/${r.id}`, { version: r.version, status: 'CONTACTED' }); message.success('Đã cập nhật trạng thái Đã liên hệ cho ứng viên đã chọn'); refreshAll(); } },
+            { key: 'delete', label: 'Xóa ứng viên đã chọn', danger: true, icon: <DeleteOutlined />, confirm: 'Xác nhận xóa các hồ sơ ứng viên đã chọn?', onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel) await api.delete(`/admin/candidates/${r.id}`, { version: r.version }); message.success('Đã xóa các hồ sơ ứng viên đã chọn'); refreshAll(); } },
+          ] : []),
+          { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (sel) => exportCands(sel) },
+        ]}
         pagination={{ current: page, pageSize: perPage, total: candQ.data?.meta.pagination.total ?? rows.length, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t) => `Tổng ${t} ứng viên`, onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } }}
         dataSource={rows}
         columns={[

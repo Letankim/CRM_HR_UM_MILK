@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Alert, App, Button, Flex, Popconfirm, Segmented, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
+import { Alert, App, Button, Flex, Popconfirm, Segmented, Space, Tabs, Tag, Tooltip, Typography } from 'antd';
 import {
   AppstoreOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined,
-  CloseOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SwapOutlined, TableOutlined,
+  CloseOutlined, DeleteOutlined, DownloadOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined, SwapOutlined, TableOutlined,
 } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -12,10 +12,13 @@ import { SYSTEM_CONFIG } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { StatusTag } from '../StatusTag';
 import { useClientPagination } from '../hooks/useClientPagination';
+import { SelectableTable } from './BulkActionBar';
 import { LeaveRequestModal, MyShiftRegisterModal, ShiftSwapRequestModal } from './EmployeePortalModals';
+import { isAbsentShiftRecord } from './QuickAbsentAdjustmentModal';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
 import { ScheduleViewsPanel } from './ScheduleViewsPanel';
+import { buildPortalShiftsBulkActions, exportEmergencyExcel, exportLeavesExcel, exportSwapsExcel } from './workflow-bulk-helpers';
 
 type ScheduleViewMode = 'WEEK_MATRIX' | 'CALENDAR' | 'TABLE';
 
@@ -37,24 +40,21 @@ export function EmployeeScheduleAndLeaveCenter({
   const [activeTab, setActiveTab] = useState<'shifts' | 'leaves' | 'swaps'>(initialTab);
   const [viewMode, setViewMode] = useState<ScheduleViewMode>('WEEK_MATRIX');
   useEffect(() => { setActiveTab(initialTab); }, [initialTab]);
-  const [addShiftOpen, setAddShiftOpen] = useState(false);
-  const [leaveOpen, setLeaveOpen] = useState(false);
-  const [swapOpen, setSwapOpen] = useState(false);
+  const [addShiftOpen, setAddShiftOpen] = useState(false), [leaveOpen, setLeaveOpen] = useState(false), [swapOpen, setSwapOpen] = useState(false);
   const [detailTarget, setDetailTarget] = useState<ScheduleDetailTarget | null>(null);
-  const shiftsPag = useClientPagination(10, 'ca');
-  const leavesPag = useClientPagination(10, 'đơn');
-  const emgPag = useClientPagination(10, 'báo cáo');
-  const swapsPag = useClientPagination(10, 'yêu cầu');
+  const shiftsPag = useClientPagination(10, 'ca'), leavesPag = useClientPagination(10, 'đơn'), emgPag = useClientPagination(10, 'báo cáo'), swapsPag = useClientPagination(10, 'yêu cầu');
 
   const peerRespondMut = useMutation({
-    mutationFn: ({ id, version, accept }: { id: string; version: number; accept: boolean }) =>
-      api.post(`/admin/shift-swaps/${id}/peer-respond`, { version, accept, peer_note: accept ? 'Đồng ý nhận ca' : 'Bận lịch cá nhân, không thể nhận ca' }),
-    onSuccess: (_, vars) => { message.success(vars.accept ? 'Đã xác nhận đồng ý nhận ca (Bước 2/3: Chờ Quản lý duyệt)' : 'Đã từ chối yêu cầu đổi ca'); onRefresh(); },
+    mutationFn: async (items: { id: string; version: number; accept: boolean }[]) => {
+      for (const it of items) await api.post(`/admin/shift-swaps/${it.id}/peer-respond`, { version: it.version, accept: it.accept, peer_note: it.accept ? 'Đồng ý nhận ca' : 'Bận lịch cá nhân, không thể nhận ca' });
+      return items[0]?.accept;
+    },
+    onSuccess: (accept) => { message.success(accept ? 'Đã xác nhận đồng ý nhận ca (Bước 2/3: Chờ Quản lý duyệt)' : 'Đã từ chối yêu cầu đổi ca'); onRefresh(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại'),
   });
 
   const cancelShiftMut = useMutation({
-    mutationFn: (id: string) => api.delete(`/my-attendance/shifts/${id}`),
+    mutationFn: async (ids: string[]) => { for (const id of ids) await api.delete(`/my-attendance/shifts/${id}`); },
     onSuccess: () => { message.success('Đã hủy đăng ký ca làm việc'); onRefresh(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Không thể hủy ca'),
   });
@@ -95,8 +95,9 @@ export function EmployeeScheduleAndLeaveCenter({
                 {viewMode !== 'TABLE' ? (
                   <ScheduleViewsPanel mode={viewMode} todayDate={todayDate} assignments={shifts as unknown as ScheduleAssignmentItem[]} canEdit={false} onAddAtCell={() => setAddShiftOpen(true)} onEditItem={(item) => setDetailTarget({ kind: 'shift', record: item as unknown as Record<string, unknown> })} />
                 ) : (
-                  <Table
+                  <SelectableTable<Record<string, unknown>>
                     size="small" rowKey="id" pagination={shiftsPag} dataSource={shifts} scroll={{ x: 'max-content' }}
+                    bulkActions={buildPortalShiftsBulkActions({ loading: cancelShiftMut.isPending, onCancelDrafts: (rows) => cancelShiftMut.mutate(rows.map((r) => String(r.id))), onCreateAbsentAdj: (row) => setDetailTarget({ kind: 'shift', record: { ...row, employeeId: empId } }) })}
                     locale={{ emptyText: 'Bạn chưa có ca làm việc nào được phân công trong kỳ này.' }}
                     columns={[
                       { title: 'Ngày làm việc', dataIndex: 'workDate', width: 145, render: (v: string) => <Space size={6}><span className="num" style={{ fontWeight: 600 }}>{dayjs(v).format('DD/MM/YYYY')}</span>{v === todayDate && <Tag color="blue" style={{ margin: 0 }}>Hôm nay</Tag>}</Space> },
@@ -105,12 +106,13 @@ export function EmployeeScheduleAndLeaveCenter({
                       { title: 'Điểm danh', width: 185, render: (_, r) => <Tag color={String(r.attendanceStatusColor || 'default')} style={{ margin: 0 }}>{String(r.attendanceStatusLabel || 'Chưa điểm danh')}</Tag> },
                       { title: 'Trạng thái lịch', dataIndex: 'status', width: 145, render: (v: string, r) => <StatusTag value={v} label={String(r.statusLabel || '') || undefined} /> },
                       {
-                        title: 'Thao tác', width: 145, align: 'right',
+                        title: 'Thao tác', width: 195, align: 'right',
                         render: (_, r) => (
                           <Space size={6}>
-                            <Tooltip title="Xem chi tiết ca làm việc"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'shift', record: r })} /></Tooltip>
+                            <Tooltip title="Xem chi tiết ca làm việc"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'shift', record: { ...r, employeeId: empId } })} /></Tooltip>
+                            {isAbsentShiftRecord(r) && <Button size="small" danger icon={<FileAddOutlined />} onClick={() => setDetailTarget({ kind: 'shift', record: { ...r, employeeId: empId } })}>Bổ sung công</Button>}
                             {r.status === 'DRAFT' && !r.checkInEvent && (
-                              <Popconfirm title="Hủy đăng ký ca đang chờ duyệt này?" okText="Hủy đăng ký" cancelText="Đóng" okButtonProps={{ danger: true, icon: <DeleteOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onConfirm={() => cancelShiftMut.mutate(String(r.id))}><Button size="small" danger icon={<DeleteOutlined />}>Hủy</Button></Popconfirm>
+                              <Popconfirm title="Hủy đăng ký ca đang chờ duyệt này?" okText="Hủy đăng ký" cancelText="Đóng" okButtonProps={{ danger: true, icon: <DeleteOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onConfirm={() => cancelShiftMut.mutate([String(r.id)])}><Button size="small" danger icon={<DeleteOutlined />}>Hủy</Button></Popconfirm>
                             )}
                           </Space>
                         ),
@@ -130,8 +132,9 @@ export function EmployeeScheduleAndLeaveCenter({
                   <Tag color="blue" style={{ margin: 0, fontWeight: 600 }}>Định mức nghỉ OFF đã đăng ký: {usedOffCount} / {offQuotaLimit} ngày trong chu kỳ</Tag>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>Bấm biểu tượng con mắt ở từng dòng để xem chi tiết lý do và thời gian phê duyệt.</Typography.Text>
                 </Space>
-                <Table
+                <SelectableTable<Record<string, unknown>>
                   size="small" rowKey="id" pagination={leavesPag} dataSource={leaves} scroll={{ x: 'max-content' }}
+                  bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportLeavesExcel(rows) }]}
                   locale={{ emptyText: 'Bạn chưa có đơn đăng ký nghỉ phép (OFF) nào trong kỳ.' }}
                   columns={[
                     { title: 'Mã đơn', dataIndex: 'request_code', width: 105, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
@@ -143,8 +146,9 @@ export function EmployeeScheduleAndLeaveCenter({
                   ]}
                 />
                 {emergencyLeaves.length > 0 && (
-                  <Table
+                  <SelectableTable<Record<string, unknown>>
                     size="small" rowKey="id" pagination={emgPag} dataSource={emergencyLeaves} scroll={{ x: 'max-content' }}
+                    bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportEmergencyExcel(rows) }]}
                     title={() => <span style={{ fontWeight: 600, fontSize: 13 }}>Báo cáo nghỉ khẩn cấp sát giờ ca (&lt;12h)</span>}
                     columns={[
                       { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 110, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
@@ -165,8 +169,13 @@ export function EmployeeScheduleAndLeaveCenter({
             children: (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 <Alert type="info" showIcon message="Quy trình đổi ca 3 bước: (1) Bạn tạo yêu cầu -> (2) Đồng nghiệp xác nhận nhận ca -> (3) Quản lý duyệt cập nhật lịch chính thức. Bấm nút con mắt để xem đầy đủ chi tiết & thời gian." />
-                <Table
+                <SelectableTable<Record<string, unknown>>
                   size="small" rowKey="id" pagination={swapsPag} dataSource={swaps} scroll={{ x: 'max-content' }}
+                  bulkActions={[
+                    { key: 'accept', label: 'Đồng ý nhận ca đã chọn', type: 'primary', icon: <CheckCircleOutlined />, loading: peerRespondMut.isPending, onClick: (rows) => { const valid = rows.filter((r) => r.status === 'PENDING_PEER' && (r.peer_id === empId || r.peerCode === empCode)); if (valid.length > 0) peerRespondMut.mutate(valid.map((r) => ({ id: String(r.id), version: Number(r.version), accept: true }))); } },
+                    { key: 'reject', label: 'Từ chối nhận ca đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: peerRespondMut.isPending, onClick: (rows) => { const valid = rows.filter((r) => r.status === 'PENDING_PEER' && (r.peer_id === empId || r.peerCode === empCode)); if (valid.length > 0) peerRespondMut.mutate(valid.map((r) => ({ id: String(r.id), version: Number(r.version), accept: false }))); } },
+                    { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportSwapsExcel(rows) },
+                  ]}
                   locale={{ emptyText: 'Bạn chưa có yêu cầu đổi ca nội bộ nào. Bấm nút "Đổi ca" phía trên để gửi đề nghị đổi ca với đồng nghiệp.' }}
                   columns={[
                     { title: 'Mã đơn', dataIndex: 'swap_code', width: 100, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
@@ -184,8 +193,8 @@ export function EmployeeScheduleAndLeaveCenter({
                             <Tooltip title="Xem chi tiết yêu cầu đổi ca"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'swap', record: r })} /></Tooltip>
                             {r.status === 'PENDING_PEER' && isPeer && (
                               <>
-                                <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={peerRespondMut.isPending} onClick={() => peerRespondMut.mutate({ id: String(r.id), version: Number(r.version), accept: true })}>Đồng ý</Button>
-                                <Button size="small" danger icon={<CloseCircleOutlined />} loading={peerRespondMut.isPending} onClick={() => peerRespondMut.mutate({ id: String(r.id), version: Number(r.version), accept: false })}>Từ chối</Button>
+                                <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={peerRespondMut.isPending} onClick={() => peerRespondMut.mutate([{ id: String(r.id), version: Number(r.version), accept: true }])}>Đồng ý</Button>
+                                <Button size="small" danger icon={<CloseCircleOutlined />} loading={peerRespondMut.isPending} onClick={() => peerRespondMut.mutate([{ id: String(r.id), version: Number(r.version), accept: false }])}>Từ chối</Button>
                               </>
                             )}
                           </Space>

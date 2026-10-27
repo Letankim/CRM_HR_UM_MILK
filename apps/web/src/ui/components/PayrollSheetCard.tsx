@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Flex, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
-import { EyeOutlined, SearchOutlined, WarningOutlined } from '@ant-design/icons';
+import { DownloadOutlined, EyeOutlined, SearchOutlined, WarningOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { SelectableTable } from './BulkActionBar';
 import { allowancesOf, bonusesOf, deductionsOf, fmtVnd, type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
 
 const sum = (rows: PayrollSnapshotItem[], f: (r: PayrollSnapshotItem) => number) => rows.reduce((s, r) => s + f(r), 0);
@@ -100,8 +101,9 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
           </Typography.Text>
         </Flex>
       </div>
-      <Table<PayrollSnapshotItem>
+      <SelectableTable<PayrollSnapshotItem>
         size="small" rowKey="id" loading={snapshotsQ.isLoading || snapshotsQ.isFetching} dataSource={rows}
+        bulkActions={[{ key: 'export', label: 'Xuất Excel nhân sự đã chọn', icon: <DownloadOutlined />, onClick: (sel) => exportPayrollSheet(period, sel) }]}
         pagination={{
           current: page, pageSize: perPage, total: totalCount,
           showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'],
@@ -165,7 +167,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
         summary={() =>
           rows.length > 0 ? (
             <Table.Summary.Row>
-              <Table.Summary.Cell index={0} colSpan={3}><strong>TỔNG CỘNG ({totalCount} nhân sự)</strong></Table.Summary.Cell>
+              <Table.Summary.Cell index={0} colSpan={4}><strong>TỔNG CỘNG ({totalCount} nhân sự)</strong></Table.Summary.Cell>
               <Table.Summary.Cell index={1} align="right"><span className="num">{fmtVnd(summary.probationPayVnd ?? sum(rows, (r) => r.probationPayVnd))}</span></Table.Summary.Cell>
               <Table.Summary.Cell index={2} align="right"><span className="num">{fmtVnd(summary.officialPayVnd ?? sum(rows, (r) => r.officialPayVnd))}</span></Table.Summary.Cell>
               <Table.Summary.Cell index={3} align="right"><span className="num">{fmtVnd(summary.otPayVnd ?? sum(rows, (r) => r.otPayVnd))}</span></Table.Summary.Cell>

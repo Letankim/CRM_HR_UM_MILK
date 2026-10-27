@@ -1,13 +1,14 @@
 'use client';
 
 import { Alert, Button, Card, Col, Descriptions, Empty, Form, Input, Modal, Row, Space, Table, Tag, Tooltip, Typography } from 'antd';
-import { CheckCircleOutlined, CloseOutlined, EyeOutlined, RiseOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, CloseOutlined, EyeOutlined, FileAddOutlined, RiseOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
 import { DateStringPicker } from './DateTimePickers';
 import type { EmployeeRowItem } from './employee-table-columns';
+import { isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
 
 type StageHistoryItem = NonNullable<EmployeeRowItem['stageHistory']>[number];
 type RecentShiftItem = NonNullable<EmployeeRowItem['recentShifts']>[number];
@@ -19,6 +20,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
   const shiftPag = useClientPagination(10, 'ca');
   const [viewingStage, setViewingStage] = useState<StageHistoryItem | null>(null);
   const [viewingShift, setViewingShift] = useState<RecentShiftItem | null>(null);
+  const [quickAdjOpen, setQuickAdjOpen] = useState(false);
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -126,7 +128,19 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
         )}
       </Modal>
 
-      <Modal open={Boolean(viewingShift)} title="Chi tiết Ca làm việc của Nhân sự" onCancel={() => setViewingShift(null)} footer={<Button icon={<CloseOutlined />} onClick={() => setViewingShift(null)}>Đóng</Button>} width="min(860px, 94vw)" destroyOnHidden>
+      <Modal
+        open={Boolean(viewingShift)} title="Chi tiết Ca làm việc của Nhân sự" onCancel={() => setViewingShift(null)} width="min(860px, 94vw)" destroyOnHidden
+        footer={
+          <Space wrap size={8}>
+            {viewingShift && isAbsentShiftRecord(viewingShift as unknown as Record<string, unknown>) && (
+              <Button type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>
+                Tạo phiếu bổ sung công từ ca này
+              </Button>
+            )}
+            <Button icon={<CloseOutlined />} onClick={() => setViewingShift(null)}>Đóng</Button>
+          </Space>
+        }
+      >
         {viewingShift && (
           <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} styles={{ label: { width: 200, fontWeight: 600, background: '#F8FAFC' }, content: { minWidth: 200 } }}>
             <Descriptions.Item label="Nhân sự" span={2}><strong>{employee.fullName}</strong> ({employee.employeeCode})</Descriptions.Item>
@@ -140,6 +154,10 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
           </Descriptions>
         )}
       </Modal>
+      <QuickAbsentAdjustmentModal
+        shift={viewingShift ? { ...viewingShift, employeeId: employee.id, employeeName: employee.fullName, employeeCode: employee.employeeCode, branchName: viewingShift.branchName || employee.branchName } : null}
+        open={quickAdjOpen} onClose={() => setQuickAdjOpen(false)} onSuccess={() => setViewingShift(null)}
+      />
     </Space>
   );
 }

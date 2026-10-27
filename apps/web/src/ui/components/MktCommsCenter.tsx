@@ -1,15 +1,17 @@
 'use client';
 
-import { Alert, App, Button, Card, Col, Descriptions, Flex, Form, Input, Modal, Progress, Row, Select, Space, Table, Tabs, Tag, Typography } from 'antd';
-import { AudioOutlined, BellOutlined, CalendarOutlined, CheckCircleOutlined, CloseOutlined, CloudUploadOutlined, DeleteOutlined, EditOutlined, FolderOpenOutlined, NotificationOutlined, PlusOutlined, ReloadOutlined, RetweetOutlined, SearchOutlined, SendOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Card, Col, Descriptions, Flex, Form, Input, Modal, Progress, Row, Select, Space, Tabs, Tag, Typography } from 'antd';
+import { AudioOutlined, BellOutlined, CalendarOutlined, CheckCircleOutlined, CloseOutlined, CloudUploadOutlined, DeleteOutlined, EditOutlined, FileExcelOutlined, FolderOpenOutlined, NotificationOutlined, PlusOutlined, ReloadOutlined, RetweetOutlined, SearchOutlined, SendOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
+import { exportToExcel } from '@/lib/export-excel';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
+import { SelectableTable } from './BulkActionBar';
 import { GovernanceDetailDrawer } from './GovernanceAndCommsModals';
 import { GuardButton } from './GuardButton';
 import { JobPositionsManagerModal, useJobPositions } from './JobPositionsManagerModal';
@@ -30,18 +32,12 @@ export function MktCommsCenter() {
   const [tab, setTab] = useState('announcements');
   const [searchInput, setSearchInput] = useState('');
   const debouncedQ = useDebouncedValue(searchInput, 400);
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [prioFilter, setPrioFilter] = useState('ALL');
-  const [ancModal, setAncModal] = useState(false);
-  const [editingAnc, setEditingAnc] = useState<Record<string, unknown> | null>(null);
-  const [audModal, setAudModal] = useState(false);
-  const [editingAud, setEditingAud] = useState<Record<string, unknown> | null>(null);
-  const [viewingAud, setViewingAud] = useState<Record<string, unknown> | null>(null);
-  const [posModal, setPosModal] = useState(false);
-  const [cmpModal, setCmpModal] = useState(false);
-  const [editingCmp, setEditingCmp] = useState<Record<string, unknown> | null>(null);
-  const [medModal, setMedModal] = useState(false);
-  const [editingMed, setEditingMed] = useState<Record<string, unknown> | null>(null);
+  const [statusFilter, setStatusFilter] = useState('ALL'), [prioFilter, setPrioFilter] = useState('ALL');
+  const [ancModal, setAncModal] = useState(false), [editingAnc, setEditingAnc] = useState<Record<string, unknown> | null>(null);
+  const [audModal, setAudModal] = useState(false), [editingAud, setEditingAud] = useState<Record<string, unknown> | null>(null);
+  const [viewingAud, setViewingAud] = useState<Record<string, unknown> | null>(null), [posModal, setPosModal] = useState(false);
+  const [cmpModal, setCmpModal] = useState(false), [editingCmp, setEditingCmp] = useState<Record<string, unknown> | null>(null);
+  const [medModal, setMedModal] = useState(false), [editingMed, setEditingMed] = useState<Record<string, unknown> | null>(null);
   const [viewingAnc, setViewingAnc] = useState<Record<string, unknown> | null>(null);
   const [ancForm] = Form.useForm(), [audForm] = Form.useForm(), [cmpForm] = Form.useForm(), [medForm] = Form.useForm();
   const ancPag = useClientPagination(10, 'bản tin'), audPag = useClientPagination(10, 'nhóm'), cmpPag = useClientPagination(10, 'chiến dịch'), medPag = useClientPagination(10, 'tệp'), dlvPag = useClientPagination(10, 'lượt gửi');
@@ -82,10 +78,7 @@ export function MktCommsCenter() {
 
   const filteredAnc = useMemo(() => {
     const q = debouncedQ.trim().toLowerCase();
-    return (data?.announcements ?? []).filter((a) =>
-      (canManage || a.status === 'SENT') && (statusFilter === 'ALL' || a.status === statusFilter) && (prioFilter === 'ALL' || a.priority === prioFilter) &&
-      (!q || `${a.announcement_code || ''} ${a.title || ''} ${a.summary || ''} ${a.audienceLabel || ''}`.toLowerCase().includes(q)),
-    );
+    return (data?.announcements ?? []).filter((a) => (canManage || a.status === 'SENT') && (statusFilter === 'ALL' || a.status === statusFilter) && (prioFilter === 'ALL' || a.priority === prioFilter) && (!q || `${a.announcement_code || ''} ${a.title || ''} ${a.summary || ''} ${a.audienceLabel || ''}`.toLowerCase().includes(q)));
   }, [data?.announcements, canManage, statusFilter, prioFilter, debouncedQ]);
 
   const db = data?.dashboard ?? {};
@@ -101,11 +94,7 @@ export function MktCommsCenter() {
   const dashboardPane = (
     <Space direction="vertical" size={14} style={{ width: '100%' }}>
       <Alert type="info" showIcon message="Chuẩn phân quyền & bảo mật dữ liệu Truyền thông Nội bộ" description="Bộ phận Truyền thông được phép cấu hình Nhóm người nhận theo phạm vi cho phép (Toàn công ty, Chi nhánh, Thử việc/Chính thức, Nhóm vị trí); hệ thống tự động ẩn 100% lương, GPS, ảnh điểm danh và hồ sơ HR nhạy cảm. Trạng thái gửi không khẳng định người nhận đã đọc nếu chưa có xác nhận đọc thực tế." />
-      <Row gutter={[12, 12]}>
-        {kpiCards.map((k) => (
-          <Col xs={12} md={4} key={k.label}><Card size="small" styles={{ body: { padding: '12px 14px' } }}><div style={{ fontSize: 12, color: '#64748B' }}>{k.label}</div><div className="num" style={{ fontSize: 22, fontWeight: 700, color: k.color, margin: '4px 0' }}>{k.val}</div><div style={{ fontSize: 11, color: '#94A3B8' }}>{k.sub}</div></Card></Col>
-        ))}
-      </Row>
+      <Row gutter={[12, 12]}>{kpiCards.map((k) => <Col xs={12} md={4} key={k.label}><Card size="small" styles={{ body: { padding: '12px 14px' } }}><div style={{ fontSize: 12, color: '#64748B' }}>{k.label}</div><div className="num" style={{ fontSize: 22, fontWeight: 700, color: k.color, margin: '4px 0' }}>{k.val}</div><div style={{ fontSize: 11, color: '#94A3B8' }}>{k.sub}</div></Card></Col>)}</Row>
     </Space>
   );
 
@@ -125,8 +114,15 @@ export function MktCommsCenter() {
           </Space>
         </Flex>
       </div>
-      <Table
+      <SelectableTable
         size="small" rowKey="id" loading={mktQ.isLoading} pagination={ancPag} dataSource={filteredAnc} scroll={{ x: 'max-content' }}
+        bulkActions={(rows, clear) => [
+          { key: 'excel', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: () => exportToExcel({ fileName: 'Ban_Tin_Da_Chon', sheetTitle: 'Bản tin đã chọn', columns: [{ header: 'Mã tin', render: (r) => String(r.announcement_code ?? '') }, { header: 'Tiêu đề', render: (r) => String(r.title ?? '') }, { header: 'Nhóm người nhận', render: (r) => String(r.audienceLabel ?? '') }, { header: 'Mức độ', render: (r) => String(r.priority ?? '') }, { header: 'Trạng thái', render: (r) => String(r.status ?? '') }], rows }) },
+          ...(canManage ? [
+            { key: 'send', label: 'Phát thông báo đã chọn', icon: <SendOutlined />, type: 'primary' as const, onClick: async () => { for (const r of rows.filter((x) => x.status !== 'SENT')) await api.put(`/mkt/announcements/${r.id}`, { ...r, status: 'SENT', publish_now: true, version: r.version }); message.success('Đã phát các thông báo đã chọn'); clear(); refresh(); } },
+            { key: 'delete', label: 'Xóa thông báo đã chọn', icon: <DeleteOutlined />, danger: true, onClick: () => modal.confirm({ title: `Xác nhận xóa ${rows.length} thông báo đã chọn?`, okText: 'Xóa đã chọn', cancelText: 'Hủy', okButtonProps: { danger: true }, onOk: async () => { for (const r of rows) await api.delete(`/mkt/announcements/${r.id}`, { version: r.version }); message.success(`Đã xóa ${rows.length} thông báo`); clear(); refresh(); } }) },
+          ] : []),
+        ]}
         columns={[
           { title: 'Mã tin', dataIndex: 'announcement_code', width: 95, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
           { title: 'Tiêu đề thông báo', dataIndex: 'title', width: 260, ellipsis: true, render: (v: string, r) => <Typography.Link strong onClick={() => setViewingAnc(r)}>{v}</Typography.Link> },
@@ -170,8 +166,9 @@ export function MktCommsCenter() {
                   <Typography.Text type="secondary" style={{ fontSize: 13 }}>Cấu hình các nhóm người nhận theo Chi nhánh, Giai đoạn hoặc Vị trí công việc (Ẩn 100% dữ liệu HR nhạy cảm).</Typography.Text>
                   <Space size={8}><GuardButton perms={['employee.manage', 'system.config']} roles={['ADMIN', 'HR']} icon={<SettingOutlined />} onClick={() => setPosModal(true)}>Quản lý Vị trí công việc</GuardButton><GuardButton type="primary" perms={['comms.manage', 'employee.manage', 'system.config']} icon={<PlusOutlined />} onClick={openCreateAud}>Cấu hình nhóm người nhận mới</GuardButton></Space>
                 </Flex>
-                <Table
+                <SelectableTable
                   size="small" rowKey="id" pagination={audPag} dataSource={data?.audienceGroups ?? []}
+                  bulkActions={(rows) => [{ key: 'excel', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: () => exportToExcel({ fileName: 'Nhom_Nguoi_Nhan_Da_Chon', sheetTitle: 'Nhóm người nhận', columns: [{ header: 'Tên nhóm', render: (r) => String(r.label ?? '') }, { header: 'Quy mô dự kiến', render: (r) => String(r.recipientCount ?? 0) }], rows }) }]}
                   columns={[
                     { title: 'Tên nhóm người nhận được cấu hình', dataIndex: 'label', render: (v: string, r) => <Space size={6}><Typography.Link strong onClick={() => setViewingAud(r)}>{v}</Typography.Link>{Boolean(r.isCustom) && <Tag color="purple">Đã cấu hình</Tag>}</Space> },
                     { title: 'Quy mô dự kiến', dataIndex: 'recipientCount', width: 140, render: (v: number) => <Tag color="blue">{v} nhân sự</Tag> },
@@ -186,7 +183,7 @@ export function MktCommsCenter() {
             children: (
               <>
                 <Flex justify="flex-end" style={{ marginBottom: 10 }}><Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingCmp(null); cmpForm.resetFields(); cmpForm.setFieldsValue({ campaign_code: `CMP-2026-${Math.floor(10 + Math.random() * 89)}`, channel: 'IN_APP', audience_scope: 'ALL', status: 'RUNNING', scheduled_at: dayjs().format('YYYY-MM-DD') }); setCmpModal(true); }}>Tạo chiến dịch mới</Button></Flex>
-                <Table size="small" rowKey="id" pagination={cmpPag} dataSource={data?.campaigns ?? []} columns={[{ title: 'Mã chiến dịch', dataIndex: 'campaign_code', width: 130, render: (v: string) => <Tag color="geekblue">{v}</Tag> }, { title: 'Tên chiến dịch truyền thông', dataIndex: 'name', render: (v: string) => <strong>{v}</strong> }, { title: 'Kênh phát', dataIndex: 'channel', width: 130, render: (v: string) => <Tag>{v === 'EMAIL' ? 'Email Doanh nghiệp' : 'Cổng Nội bộ'}</Tag> }, { title: 'Tiến độ phát bản tin', width: 200, render: (_, r) => <Progress percent={Number(r.totalAnnouncements) > 0 ? Math.round((Number(r.sentCount) / Number(r.totalAnnouncements)) * 100) : 100} size="small" /> }, { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag value={v} /> }, { title: 'Thao tác', width: 88, align: 'right', render: (_, r) => canEditRow(r) ? <RowActionButtons menuItems={[{ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa chiến dịch', onClick: () => { setEditingCmp(r); cmpForm.setFieldsValue(r); setCmpModal(true); } }, { key: 'del', icon: <DeleteOutlined />, danger: true, label: 'Xóa chiến dịch', onClick: () => delMut.mutate({ url: `/mkt/campaigns/${r.id}`, body: { version: r.version } }) }]} /> : null }]} />
+                <SelectableTable size="small" rowKey="id" pagination={cmpPag} dataSource={data?.campaigns ?? []} bulkActions={(rows) => [{ key: 'excel', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: () => exportToExcel({ fileName: 'Chien_Dich_Da_Chon', sheetTitle: 'Chiến dịch đã chọn', columns: [{ header: 'Mã chiến dịch', render: (r) => String(r.campaign_code ?? '') }, { header: 'Tên chiến dịch', render: (r) => String(r.name ?? '') }, { header: 'Kênh phát', render: (r) => String(r.channel ?? '') }, { header: 'Trạng thái', render: (r) => String(r.status ?? '') }], rows }) }]} columns={[{ title: 'Mã chiến dịch', dataIndex: 'campaign_code', width: 130, render: (v: string) => <Tag color="geekblue">{v}</Tag> }, { title: 'Tên chiến dịch truyền thông', dataIndex: 'name', render: (v: string) => <strong>{v}</strong> }, { title: 'Kênh phát', dataIndex: 'channel', width: 130, render: (v: string) => <Tag>{v === 'EMAIL' ? 'Email Doanh nghiệp' : 'Cổng Nội bộ'}</Tag> }, { title: 'Tiến độ phát bản tin', width: 200, render: (_, r) => <Progress percent={Number(r.totalAnnouncements) > 0 ? Math.round((Number(r.sentCount) / Number(r.totalAnnouncements)) * 100) : 100} size="small" /> }, { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag value={v} /> }, { title: 'Thao tác', width: 88, align: 'right', render: (_, r) => canEditRow(r) ? <RowActionButtons menuItems={[{ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa chiến dịch', onClick: () => { setEditingCmp(r); cmpForm.setFieldsValue(r); setCmpModal(true); } }, { key: 'del', icon: <DeleteOutlined />, danger: true, label: 'Xóa chiến dịch', onClick: () => delMut.mutate({ url: `/mkt/campaigns/${r.id}`, body: { version: r.version } }) }]} /> : null }]} />
               </>
             ),
           },
@@ -195,13 +192,13 @@ export function MktCommsCenter() {
             children: (
               <>
                 <Flex justify="flex-end" style={{ marginBottom: 10 }}><Button type="primary" icon={<CloudUploadOutlined />} onClick={() => { setEditingMed(null); medForm.resetFields(); medForm.setFieldsValue({ mime_type: 'image/png', size_bytes: 245000, is_internal_only: true }); setMedModal(true); }}>Thêm Ảnh / Tài liệu vào Kho Media</Button></Flex>
-                <Table size="small" rowKey="id" pagination={medPag} dataSource={data?.mediaAssets ?? []} columns={[{ title: 'Tên tệp / Tài liệu', dataIndex: 'file_name', render: (v: string) => <strong>{v}</strong> }, { title: 'Định dạng', dataIndex: 'mime_type', width: 150, render: (v: string) => <Tag color="blue">{v}</Tag> }, { title: 'Đường dẫn tài liệu / Hình ảnh', dataIndex: 'drive_url', ellipsis: true }, { title: 'Phạm vi bảo mật', dataIndex: 'is_internal_only', width: 170, render: (v: boolean) => v ? <Tag color="green">Chỉ lưu hành nội bộ</Tag> : <Tag color="orange">Đã duyệt</Tag> }, { title: 'Thao tác', width: 88, align: 'right', render: (_, r) => canEditRow(r) ? <RowActionButtons menuItems={[{ key: 'edit', icon: <EditOutlined />, label: 'Cập nhật tệp', onClick: () => { setEditingMed(r); medForm.setFieldsValue(r); setMedModal(true); } }, { key: 'del', icon: <DeleteOutlined />, danger: true, label: 'Xóa tệp Media', onClick: () => delMut.mutate({ url: `/mkt/media/${r.id}`, body: { version: r.version } }) }]} /> : null }]} />
+                <SelectableTable size="small" rowKey="id" pagination={medPag} dataSource={data?.mediaAssets ?? []} bulkActions={(rows) => [{ key: 'excel', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: () => exportToExcel({ fileName: 'Kho_Media_Da_Chon', sheetTitle: 'Kho Media đã chọn', columns: [{ header: 'Tên tệp', render: (r) => String(r.file_name ?? '') }, { header: 'Định dạng', render: (r) => String(r.mime_type ?? '') }, { header: 'Đường dẫn', render: (r) => String(r.drive_url ?? '') }], rows }) }]} columns={[{ title: 'Tên tệp / Tài liệu', dataIndex: 'file_name', render: (v: string) => <strong>{v}</strong> }, { title: 'Định dạng', dataIndex: 'mime_type', width: 150, render: (v: string) => <Tag color="blue">{v}</Tag> }, { title: 'Đường dẫn tài liệu / Hình ảnh', dataIndex: 'drive_url', ellipsis: true }, { title: 'Phạm vi bảo mật', dataIndex: 'is_internal_only', width: 170, render: (v: boolean) => v ? <Tag color="green">Chỉ lưu hành nội bộ</Tag> : <Tag color="orange">Đã duyệt</Tag> }, { title: 'Thao tác', width: 88, align: 'right', render: (_, r) => canEditRow(r) ? <RowActionButtons menuItems={[{ key: 'edit', icon: <EditOutlined />, label: 'Cập nhật tệp', onClick: () => { setEditingMed(r); medForm.setFieldsValue(r); setMedModal(true); } }, { key: 'del', icon: <DeleteOutlined />, danger: true, label: 'Xóa tệp Media', onClick: () => delMut.mutate({ url: `/mkt/media/${r.id}`, body: { version: r.version } }) }]} /> : null }]} />
               </>
             ),
           },
           {
             key: 'delivery', label: <span><RetweetOutlined /> Theo dõi gửi &amp; Xác nhận đọc ({data?.deliveryLogs?.length ?? 0})</span>,
-            children: <Table size="small" rowKey="id" pagination={dlvPag} dataSource={data?.deliveryLogs ?? []} columns={[{ title: 'Thông báo phát', dataIndex: 'announcementTitle', render: (v: string, r) => <div><strong>{v}</strong> <Tag color="geekblue">{String(r.announcementCode || '')}</Tag></div> }, { title: 'Người nhận', dataIndex: 'recipientName', width: 175, render: (v: string) => <Tag color="blue">{v || '—'}</Tag> }, { title: 'Kênh gửi', dataIndex: 'channel', width: 125, render: () => <Tag>Cổng Nội bộ</Tag> }, { title: 'Trạng thái gửi', dataIndex: 'status', width: 115, render: (v: string) => <StatusTag value={v} /> }, { title: 'Số lần gửi lại', dataIndex: 'attempts', width: 120, render: (v: number) => <span className="num">{v ?? 1} lần</span> }, { title: 'Trạng thái xác nhận đọc', dataIndex: 'readReceiptLabel', render: (v: string, r) => <Tag color={r.ack_at ? 'green' : 'default'}>{v}</Tag> }, { title: 'Lỗi gần nhất', dataIndex: 'last_error', width: 170, render: (v: string) => v ? <Tag color="red">{v}</Tag> : <span style={{ color: '#94A3B8' }}>Không có lỗi</span> }, { title: 'Thao tác', width: 125, align: 'right', render: (_, r) => <Button size="small" icon={<RetweetOutlined />} onClick={() => postMut.mutate({ url: `/mkt/delivery-logs/${r.id}/retry`, body: {} })}>Thử gửi lại</Button> }]} />,
+            children: <SelectableTable size="small" rowKey="id" pagination={dlvPag} dataSource={data?.deliveryLogs ?? []} bulkActions={(rows, clear) => [{ key: 'retry', label: 'Thử gửi lại đã chọn', icon: <RetweetOutlined />, type: 'primary' as const, onClick: async () => { for (const r of rows) await api.post(`/mkt/delivery-logs/${r.id}/retry`, {}); message.success(`Đã thử gửi lại ${rows.length} lượt gửi`); clear(); refresh(); } }, { key: 'excel', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: () => exportToExcel({ fileName: 'Lich_Su_Gui_Tin_Da_Chon', sheetTitle: 'Lịch sử gửi tin', columns: [{ header: 'Thông báo', render: (r) => String(r.announcementTitle ?? '') }, { header: 'Người nhận', render: (r) => String(r.recipientName ?? '') }, { header: 'Trạng thái gửi', render: (r) => String(r.status ?? '') }, { header: 'Xác nhận đọc', render: (r) => String(r.readReceiptLabel ?? '') }], rows }) }]} columns={[{ title: 'Thông báo phát', dataIndex: 'announcementTitle', render: (v: string, r) => <div><strong>{v}</strong> <Tag color="geekblue">{String(r.announcementCode || '')}</Tag></div> }, { title: 'Người nhận', dataIndex: 'recipientName', width: 175, render: (v: string) => <Tag color="blue">{v || '—'}</Tag> }, { title: 'Kênh gửi', dataIndex: 'channel', width: 125, render: () => <Tag>Cổng Nội bộ</Tag> }, { title: 'Trạng thái gửi', dataIndex: 'status', width: 115, render: (v: string) => <StatusTag value={v} /> }, { title: 'Số lần gửi lại', dataIndex: 'attempts', width: 120, render: (v: number) => <span className="num">{v ?? 1} lần</span> }, { title: 'Trạng thái xác nhận đọc', dataIndex: 'readReceiptLabel', render: (v: string, r) => <Tag color={r.ack_at ? 'green' : 'default'}>{v}</Tag> }, { title: 'Lỗi gần nhất', dataIndex: 'last_error', width: 170, render: (v: string) => v ? <Tag color="red">{v}</Tag> : <span style={{ color: '#94A3B8' }}>Không có lỗi</span> }, { title: 'Thao tác', width: 125, align: 'right', render: (_, r) => <Button size="small" icon={<RetweetOutlined />} onClick={() => postMut.mutate({ url: `/mkt/delivery-logs/${r.id}/retry`, body: {} })}>Thử gửi lại</Button> }]} />,
           }] : []),
         ]}
       />

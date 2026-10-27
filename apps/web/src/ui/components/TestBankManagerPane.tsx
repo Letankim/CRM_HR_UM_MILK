@@ -1,33 +1,27 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { App, Button, Card, Col, Form, Input, InputNumber, Modal, Radio, Row, Select, Space, Table, Tabs, Tag, Typography } from 'antd';
-import { BookOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FileDoneOutlined, HistoryOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined, SendOutlined, SettingOutlined, ThunderboltOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { App, Button, Card, Col, Form, Input, InputNumber, Modal, Radio, Row, Select, Space, Tabs, Tag, Typography } from 'antd';
+import { BookOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, FileDoneOutlined, HistoryOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined, SendOutlined, SettingOutlined, ThunderboltOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
+import { exportToExcel } from '@/lib/export-excel';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
+import { SelectableTable } from './BulkActionBar';
 import { AttemptHistoryTable, AttemptReviewModal } from './ExamTestCenter';
 import { useJobPositions } from './JobPositionsManagerModal';
 import { RowActionButtons } from './RowActionButtons';
 import { DEFAULT_QUESTIONS, parseQuestions, TestAssignmentFormModal, TestDetailDrawer, type QuestionRow } from './TestBankModals';
 
 export function TestBankManagerPane({ tests, assignments, attempts = [], employees, canManage = true }: { tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts?: Record<string, unknown>[]; employees: { value: string; label: string }[]; canManage?: boolean }) {
-  const qc = useQueryClient();
-  const { message, modal } = App.useApp();
-  const { options: jobPositionOptions } = useJobPositions();
-  const [subTab, setSubTab] = useState<'bank' | 'assignments' | 'history'>('bank');
-  const [modalTab, setModalTab] = useState<'config' | 'questions'>('config');
-  const [bankModal, setBankModal] = useState(false);
-  const [editingTest, setEditingTest] = useState<Record<string, unknown> | null>(null);
-  const [viewingTest, setViewingTest] = useState<Record<string, unknown> | null>(null);
-  const [viewingAssignment, setViewingAssignment] = useState<Record<string, unknown> | null>(null);
-  const [editingAssignment, setEditingAssignment] = useState<Record<string, unknown> | null>(null);
+  const qc = useQueryClient(), { message, modal } = App.useApp(), { options: jobPositionOptions } = useJobPositions();
+  const [subTab, setSubTab] = useState<'bank' | 'assignments' | 'history'>('bank'), [modalTab, setModalTab] = useState<'config' | 'questions'>('config');
+  const [bankModal, setBankModal] = useState(false), [asgModal, setAsgModal] = useState(false), [drawerWide, setDrawerWide] = useState(false), [refreshing, setRefreshing] = useState(false);
+  const [editingTest, setEditingTest] = useState<Record<string, unknown> | null>(null), [viewingTest, setViewingTest] = useState<Record<string, unknown> | null>(null);
+  const [viewingAssignment, setViewingAssignment] = useState<Record<string, unknown> | null>(null), [editingAssignment, setEditingAssignment] = useState<Record<string, unknown> | null>(null);
   const [reviewingAttempt, setReviewingAttempt] = useState<Record<string, unknown> | null>(null);
-  const [drawerWide, setDrawerWide] = useState(false);
-  const [asgModal, setAsgModal] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [historySearch, setHistorySearch] = useState(''), [historyEmpId, setHistoryEmpId] = useState('ALL'), [historyTestId, setHistoryTestId] = useState('ALL'), [historyResult, setHistoryResult] = useState('ALL');
   const [questions, setQuestions] = useState<QuestionRow[]>(DEFAULT_QUESTIONS);
   const [bankForm] = Form.useForm(), [asgForm] = Form.useForm();
@@ -65,33 +59,19 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
   };
 
   const saveBankMut = useMutation({
-    mutationFn: async () => {
-      const vals = await bankForm.validateFields();
-      const payload = { ...vals, questions_json: JSON.stringify(questions) };
-      return editingTest ? api.put(`/admin/tests/bank/${editingTest.id}`, { ...payload, version: editingTest.version }) : api.post('/admin/tests/bank', payload);
-    },
+    mutationFn: async () => { const vals = await bankForm.validateFields(); const payload = { ...vals, questions_json: JSON.stringify(questions) }; return editingTest ? api.put(`/admin/tests/bank/${editingTest.id}`, { ...payload, version: editingTest.version }) : api.post('/admin/tests/bank', payload); },
     onSuccess: () => { message.success(editingTest ? 'Đã cập nhật bộ đề kiểm tra' : 'Đã tạo bộ đề kiểm tra mới'); setBankModal(false); refresh(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu bộ đề thất bại'),
   });
   const delBankMut = useMutation({ mutationFn: (r: Record<string, unknown>) => api.delete(`/admin/tests/bank/${r.id}`, { version: r.version }), onSuccess: () => { message.success('Đã xóa bộ đề kiểm tra'); refresh(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa bộ đề thất bại') });
   const assignMut = useMutation({
-    mutationFn: (v: Record<string, unknown>) => {
-      const closeAt = `${v.due_date}T${v.due_time}:00+07:00`;
-      if (editingAssignment) return api.put(`/admin/tests/assignments/${editingAssignment.id}`, { version: editingAssignment.version, test_id: v.test_id, employee_id: v.employee_id, max_attempts: Number(v.max_attempts ?? 3), close_at: closeAt, reset_attempts: Boolean(v.reset_attempts), note: v.note ?? '' });
-      return api.post('/admin/tests/assignments', { test_id: v.test_id, employee_ids: v.employee_ids, max_attempts: Number(v.max_attempts ?? 3), close_at: closeAt, note: v.note ?? '' });
-    },
+    mutationFn: (v: Record<string, unknown>) => { const closeAt = `${v.due_date}T${v.due_time}:00+07:00`; return editingAssignment ? api.put(`/admin/tests/assignments/${editingAssignment.id}`, { version: editingAssignment.version, test_id: v.test_id, employee_id: v.employee_id, max_attempts: Number(v.max_attempts ?? 3), close_at: closeAt, reset_attempts: Boolean(v.reset_attempts), note: v.note ?? '' }) : api.post('/admin/tests/assignments', { test_id: v.test_id, employee_ids: v.employee_ids, max_attempts: Number(v.max_attempts ?? 3), close_at: closeAt, note: v.note ?? '' }); },
     onSuccess: () => { message.success(editingAssignment ? 'Đã cập nhật đợt giao bài kiểm tra thành công' : 'Đã giao bài kiểm tra cho nhân sự'); setAsgModal(false); setEditingAssignment(null); setSubTab('assignments'); refresh(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu đợt giao bài thất bại'),
   });
   const delAsgMut = useMutation({ mutationFn: (r: Record<string, unknown>) => api.delete(`/admin/tests/assignments/${r.id}`, { version: r.version }), onSuccess: () => { message.success('Đã thu hồi đợt giao bài'); refresh(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thu hồi thất bại') });
   const delAttemptMut = useMutation({ mutationFn: (r: Record<string, unknown>) => api.delete(`/admin/tests/attempts/${r.id}`, { version: r.version }), onSuccess: () => { message.success('Đã xóa phiên làm bài và cập nhật lại số lượt thi'); refresh(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa phiên làm bài thất bại') });
-
-  const confirmDeleteAttempt = (att: Record<string, unknown>) => modal.confirm({
-    title: `Xóa phiên làm bài Lần #${att.attempt_no ?? 1} của "${att.employeeName || 'Nhân sự'}"?`,
-    content: 'Phiên làm bài này sẽ bị xóa và số lượt đã thi của nhân sự sẽ được hoàn trả tương ứng.',
-    okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> },
-    onOk: () => delAttemptMut.mutateAsync(att),
-  });
+  const confirmDeleteAttempt = (att: Record<string, unknown>) => modal.confirm({ title: `Xóa phiên làm bài Lần #${att.attempt_no ?? 1} của "${att.employeeName || 'Nhân sự'}"?`, content: 'Phiên làm bài này sẽ bị xóa và số lượt đã thi của nhân sự sẽ được hoàn trả tương ứng.', okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => delAttemptMut.mutateAsync(att) });
 
   const filteredAttempts = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
@@ -100,8 +80,12 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
 
   const bankTable = (
     <Card size="small" title="Ngân hàng Bộ đề Kiểm tra" extra={<Space><Button size="small" icon={<ReloadOutlined />} loading={refreshing} onClick={() => void handleManualRefresh()}>Làm mới</Button>{canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={openCreateBank}>Tạo bộ đề mới</Button>}</Space>}>
-      <Table
+      <SelectableTable<Record<string, unknown>>
         size="small" rowKey="id" pagination={bankPag} dataSource={tests}
+        bulkActions={[
+          { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Ngan_hang_bo_de_TEST.xls', sheetTitle: 'Ngân hàng Bộ đề Kiểm tra Nghiệp vụ', rows, columns: [{ header: 'Mã bộ đề', key: 'code' }, { header: 'Tên bộ đề', key: 'title' }, { header: 'Nhóm vị trí', key: 'staffGroupLabel' }, { header: 'Thời gian (phút)', key: 'duration_minutes', align: 'right' }, { header: 'Điểm chuẩn (%)', key: 'pass_percent', align: 'right' }, { header: 'Trạng thái', key: 'status' }] }) },
+          ...(canManage ? [{ key: 'del', label: 'Xóa bộ đề đã chọn', danger: true, icon: <DeleteOutlined />, confirm: 'Xác nhận xóa các bộ đề đã chọn?', onClick: async (rows: Record<string, unknown>[]) => { for (const r of rows) await api.delete(`/admin/tests/bank/${r.id}`, { version: r.version }); message.success('Đã xóa các bộ đề kiểm tra đã chọn'); refresh(); } }] : []),
+        ]}
         columns={[
           { title: 'Mã bộ đề', dataIndex: 'code', width: 130, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
           { title: 'Tên bộ đề kiểm tra', dataIndex: 'title', ellipsis: true },
@@ -132,8 +116,12 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
 
   const assignmentsTable = (
     <Card size="small" title="Đợt giao bài & Kết quả thi" extra={<Space><Button size="small" icon={<ReloadOutlined />} loading={refreshing} onClick={() => void handleManualRefresh()}>Làm mới</Button>{canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => openCreateAssignment()}>Giao bài kiểm tra</Button>}</Space>}>
-      <Table
+      <SelectableTable<Record<string, unknown>>
         size="small" rowKey="id" pagination={asgPag} dataSource={assignments}
+        bulkActions={[
+          { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Dot_giao_bai_TEST.xls', sheetTitle: 'Danh sách Đợt Giao Bài Kiểm Tra & Kết Quả', rows, columns: [{ header: 'Mã đợt giao', key: 'assignment_code' }, { header: 'Nhân sự', key: 'employeeName' }, { header: 'Bộ đề', key: 'testTitle' }, { header: 'Lượt đã thi', key: 'attempts_used', align: 'right' }, { header: 'Hạn nộp', key: 'close_at' }, { header: 'Điểm cao nhất (%)', key: 'best_score_percent', align: 'right' }, { header: 'Trạng thái', key: 'status' }] }) },
+          ...(canManage ? [{ key: 'revoke', label: 'Thu hồi đợt giao đã chọn', danger: true, icon: <DeleteOutlined />, confirm: 'Xác nhận thu hồi các đợt giao bài đã chọn?', onClick: async (rows: Record<string, unknown>[]) => { for (const r of rows) await api.delete(`/admin/tests/assignments/${r.id}`, { version: r.version }); message.success('Đã thu hồi các đợt giao bài đã chọn'); refresh(); } }] : []),
+        ]}
         columns={[
           { title: 'Mã đợt giao', dataIndex: 'assignment_code', width: 115, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
           { title: 'Nhân sự nhận đề', dataIndex: 'employeeName', width: 165, ellipsis: true },

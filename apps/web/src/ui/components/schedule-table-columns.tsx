@@ -2,9 +2,10 @@
 
 import { Button, Flex, Space, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { CheckOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { CheckOutlined, DeleteOutlined, EditOutlined, FileAddOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { exportToExcel } from '@/lib/export-excel';
+import { isAbsentShiftRecord } from '@/ui/components/QuickAbsentAdjustmentModal';
 import { RowActionButtons } from '@/ui/components/RowActionButtons';
 import type { ScheduleAssignmentItem } from '@/ui/components/ScheduleFormModal';
 import { StatusTag } from '@/ui/StatusTag';
@@ -90,32 +91,45 @@ export function buildScheduleColumns({ canEdit, onApprove, onEdit, onDelete }: B
     {
       title: 'Thao tác',
       key: 'actions',
-      width: 175,
+      width: 215,
       fixed: 'right',
       align: 'right',
-      render: (_, r) => (
-        <Space size={4}>
-          {canEdit && r.status === 'DRAFT' && onApprove && (
-            <Button size="small" type="primary" icon={<CheckOutlined />} onClick={() => onApprove(r)}>
-              Duyệt ca
-            </Button>
-          )}
-          <RowActionButtons
-            onViewDetail={() => onEdit(r)}
-            menuItems={
-              canEdit
-                ? [
-                    ...(r.status === 'DRAFT' && onApprove
-                      ? [{ key: 'approve', icon: <CheckOutlined />, label: 'Duyệt & Phát hành ca', onClick: () => onApprove(r) }]
-                      : []),
-                    { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa ca', onClick: () => onEdit(r) },
-                    { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa phân ca', onClick: () => onDelete(r) },
-                  ]
-                : []
-            }
-          />
-        </Space>
-      ),
+      render: (_, r) => {
+        const isAbsent = isAbsentShiftRecord(r as unknown as Record<string, unknown>);
+        return (
+          <Space size={4}>
+            {canEdit && r.status === 'DRAFT' && onApprove && (
+              <Button size="small" type="primary" icon={<CheckOutlined />} onClick={() => onApprove(r)}>
+                Duyệt ca
+              </Button>
+            )}
+            {isAbsent && (
+              <Button size="small" danger icon={<FileAddOutlined />} onClick={() => onEdit(r)}>
+                Bổ sung công
+              </Button>
+            )}
+            <RowActionButtons
+              onViewDetail={() => onEdit(r)}
+              menuItems={
+                canEdit
+                  ? [
+                      ...(r.status === 'DRAFT' && onApprove
+                        ? [{ key: 'approve', icon: <CheckOutlined />, label: 'Duyệt & Phát hành ca', onClick: () => onApprove(r) }]
+                        : []),
+                      ...(isAbsent
+                        ? [{ key: 'adj', icon: <FileAddOutlined />, label: 'Tạo phiếu bổ sung công', onClick: () => onEdit(r) }]
+                        : []),
+                      { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa ca', onClick: () => onEdit(r) },
+                      { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa phân ca', onClick: () => onDelete(r) },
+                    ]
+                  : isAbsent
+                    ? [{ key: 'adj', icon: <FileAddOutlined />, label: 'Tạo phiếu bổ sung công', onClick: () => onEdit(r) }]
+                    : []
+              }
+            />
+          </Space>
+        );
+      },
     },
   ];
 }

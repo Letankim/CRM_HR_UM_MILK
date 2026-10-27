@@ -1,7 +1,7 @@
 'use client';
 
-import { App, Button, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tag } from 'antd';
-import { CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DeleteOutlined, EditOutlined, ExpandAltOutlined, SaveOutlined, ShrinkOutlined, VideoCameraOutlined } from '@ant-design/icons';
+import { App, Button, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
+import { CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, ExpandAltOutlined, SaveOutlined, ShrinkOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
@@ -9,6 +9,7 @@ import { api, ApiClientError } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
+import { SelectableTable } from './BulkActionBar';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
 import { FilterToolbar } from './FilterToolbar';
 import { usePermissionGuard } from './GuardButton';
@@ -16,21 +17,13 @@ import { RowActionButtons } from './RowActionButtons';
 
 const INTERVIEW_STATUS_OPTIONS = [
   { value: 'ALL', label: 'Tất cả trạng thái lịch' }, { value: 'SCHEDULED', label: 'Đã xếp lịch' },
-  { value: 'CONFIRMED', label: 'Ứng viên đã xác nhận' }, { value: 'RESCHEDULE_NEEDED', label: 'Cần đổi lịch phỏng vấn' },
-  { value: 'COMPLETED', label: 'Đã hoàn thành phỏng vấn' },
+  { value: 'CONFIRMED', label: 'Ứng viên đã xác nhận' }, { value: 'RESCHEDULE_NEEDED', label: 'Cần đổi lịch phỏng vấn' }, { value: 'COMPLETED', label: 'Đã hoàn thành phỏng vấn' },
 ];
 const DECISION_OPTIONS = [
   { value: 'ALL', label: 'Tất cả quyết định HR' }, { value: 'PENDING', label: 'Chờ kết quả phỏng vấn' },
   { value: 'PASS', label: 'Đạt phỏng vấn (Mời thử việc)' }, { value: 'HOLD', label: 'Cân nhắc thêm' }, { value: 'FAIL', label: 'Chưa phù hợp' },
 ];
-
-interface Props {
-  branches: { value: string; label: string }[];
-  interviewerOptions?: { value: string; label: string }[];
-  externalEditTarget?: Record<string, unknown> | null;
-  onClearExternalEdit?: () => void;
-  onOpenScheduleModal: () => void;
-}
+interface Props { branches: { value: string; label: string }[]; interviewerOptions?: { value: string; label: string }[]; externalEditTarget?: Record<string, unknown> | null; onClearExternalEdit?: () => void; onOpenScheduleModal: () => void }
 
 export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], externalEditTarget, onClearExternalEdit, onOpenScheduleModal }: Props) {
   const qc = useQueryClient();
@@ -112,6 +105,7 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
   }, [externalEditTarget]);
 
   const rows = ivQ.data?.data ?? [];
+  const exportIvs = (list: Record<string, unknown>[]) => exportToExcel({ fileName: 'Lich_phong_van.xls', sheetTitle: 'Danh sách Lịch Phỏng vấn & Kết quả HR', rows: list, columns: [{ header: 'Mã UV', key: 'candidateCode' }, { header: 'Ứng viên', key: 'candidateName' }, { header: 'Chi nhánh', key: 'branchName' }, { header: 'Người phỏng vấn', key: 'interviewerLabel' }, { header: 'Thời gian', key: 'scheduled_at' }, { header: 'Thời lượng (phút)', key: 'duration_minutes' }, { header: 'Google Meet', key: 'meet_link' }, { header: 'Điểm', key: 'score' }, { header: 'Quyết định HR', key: 'decision' }, { header: 'Nhận xét', key: 'comment' }] });
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -126,13 +120,20 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
         ]}
         onRefresh={refreshAll}
         refreshing={ivQ.isFetching}
-        onExportExcel={() => exportToExcel({ fileName: 'Lich_phong_van.xls', sheetTitle: 'Danh sách Lịch Phỏng vấn & Kết quả HR', rows, columns: [{ header: 'Mã UV', key: 'candidateCode' }, { header: 'Ứng viên', key: 'candidateName' }, { header: 'Chi nhánh', key: 'branchName' }, { header: 'Người phỏng vấn', key: 'interviewerLabel' }, { header: 'Thời gian', key: 'scheduled_at' }, { header: 'Thời lượng (phút)', key: 'duration_minutes' }, { header: 'Google Meet', key: 'meet_link' }, { header: 'Điểm', key: 'score' }, { header: 'Quyết định HR', key: 'decision' }, { header: 'Nhận xét', key: 'comment' }] })}
+        onExportExcel={() => exportIvs(rows)}
         primaryActionLabel={canManageRec ? 'Đặt lịch phỏng vấn' : undefined}
         onPrimaryAction={canManageRec ? onOpenScheduleModal : undefined}
       />
 
-      <Table
+      <SelectableTable<Record<string, unknown>>
         size="small" rowKey="id" loading={ivQ.isLoading}
+        bulkActions={[
+          ...(canManageRec ? [
+            { key: 'pass', label: 'Duyệt Đạt phỏng vấn đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel) await api.put(`/admin/interviews/${r.id}/evaluate`, { version: r.version, decision: 'PASS', appearance_score: 90, attitude_score: 90, skill_score: 88, score: 89, comment: 'Đạt yêu cầu phỏng vấn, mời thử việc' }); message.success('Đã duyệt Đạt phỏng vấn cho các lịch đã chọn'); refreshAll(); } },
+            { key: 'delete', label: 'Xóa lịch phỏng vấn đã chọn', danger: true, icon: <DeleteOutlined />, confirm: 'Xác nhận xóa các lịch phỏng vấn đã chọn?', onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel) await api.delete(`/admin/interviews/${r.id}`, { version: r.version }); message.success('Đã xóa các lịch phỏng vấn đã chọn'); refreshAll(); } },
+          ] : []),
+          { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (sel) => exportIvs(sel) },
+        ]}
         pagination={{ current: page, pageSize: perPage, total: ivQ.data?.meta.pagination.total ?? rows.length, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t) => `Tổng ${t} lịch phỏng vấn`, onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } }}
         dataSource={rows}
         columns={[

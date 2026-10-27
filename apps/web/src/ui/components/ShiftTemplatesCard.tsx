@@ -1,13 +1,15 @@
 'use client';
 
-import { App, Button, Card, Col, Descriptions, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tabs, Tag, Typography } from 'antd';
-import { CloseOutlined, DeleteOutlined, EditOutlined, PlusOutlined, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { App, Button, Card, Col, Descriptions, Form, Input, InputNumber, Modal, Row, Select, Space, Tabs, Tag, Typography } from 'antd';
+import { CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, PlusOutlined, SaveOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { generateShiftCode } from '@/lib/auto-generate';
+import { exportToExcel } from '@/lib/export-excel';
 import { StatusTag } from '@/ui/StatusTag';
 import { useClientPagination } from '../hooks/useClientPagination';
+import { SelectableTable } from './BulkActionBar';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
 import { RowActionButtons } from './RowActionButtons';
 
@@ -52,7 +54,7 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
   });
 
   const deleteShift = useMutation({
-    mutationFn: (s: ShiftTemplateItem) => api.delete(`/admin/shift-templates/${s.id}`, { version: s.version }),
+    mutationFn: async (items: ShiftTemplateItem[]) => { for (const s of items) await api.delete(`/admin/shift-templates/${s.id}`, { version: s.version }); },
     onSuccess: () => { message.success('Đã xóa mẫu ca làm việc'); qc.invalidateQueries({ queryKey: ['shift-templates'] }); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa mẫu ca thất bại'),
   });
@@ -64,7 +66,7 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
   });
 
   const deleteRule = useMutation({
-    mutationFn: (id: string) => api.delete(`/admin/staffing-rules/${id}`, {}),
+    mutationFn: async (ids: string[]) => { for (const id of ids) await api.delete(`/admin/staffing-rules/${id}`, {}); },
     onSuccess: () => { message.success('Đã xóa định biên ca làm'); qc.invalidateQueries({ queryKey: ['staffing-rules'] }); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa định biên thất bại'),
   });
@@ -82,8 +84,12 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
   };
 
   const shiftPane = (
-    <Table<ShiftTemplateItem>
+    <SelectableTable<ShiftTemplateItem>
       size="small" rowKey="id" pagination={shiftsPag} loading={shiftsQuery.isLoading} dataSource={filteredShifts}
+      bulkActions={[
+        { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Danh_muc_khung_ca.xls', sheetTitle: 'Danh mục Mẫu Ca Làm Việc', rows, columns: [{ header: 'Mã ca', key: 'code' }, { header: 'Tên ca', key: 'name' }, { header: 'Chi nhánh', key: 'branchName' }, { header: 'Giờ bắt đầu', key: 'startTime' }, { header: 'Giờ kết thúc', key: 'endTime' }, { header: 'Giờ chuẩn', key: 'standardHours', align: 'right' }, { header: 'Trạng thái', key: 'statusLabel' }] }) },
+        ...(canConfig ? [{ key: 'delete', label: 'Xóa mẫu ca đã chọn', danger: true, icon: <DeleteOutlined />, loading: deleteShift.isPending, confirm: 'Xác nhận xóa các mẫu ca đã chọn?', onClick: (rows: ShiftTemplateItem[]) => deleteShift.mutate(rows) }] : []),
+      ]}
       columns={[
         { title: 'Tên ca làm việc', dataIndex: 'name', render: (v: string) => <Typography.Text strong>{v}</Typography.Text> },
         { title: 'Chi nhánh áp dụng', dataIndex: 'branchName', render: (v: string, r) => <Tag color={!r.branchId || r.branchId === 'ALL' ? 'default' : 'blue'}>{v || 'Tất cả chi nhánh'}</Tag> },
@@ -96,10 +102,10 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
           render: (_, s) => (
             <RowActionButtons
               detailTooltip="Xem chi tiết mẫu ca" onViewDetail={() => setViewingShift(s)}
-              loading={deleteShift.isPending && deleteShift.variables?.id === s.id}
+              loading={deleteShift.isPending}
               menuItems={canConfig ? [
                 { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa mẫu ca', onClick: () => openEditShift(s) },
-                { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa mẫu ca', onClick: () => modal.confirm({ title: `Xác nhận xóa mẫu ca "${s.name}"?`, okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => deleteShift.mutateAsync(s) }) },
+                { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa mẫu ca', onClick: () => modal.confirm({ title: `Xác nhận xóa mẫu ca "${s.name}"?`, okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => deleteShift.mutateAsync([s]) }) },
               ] : []}
             />
           ),
@@ -109,15 +115,19 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
   );
 
   const rulesPane = (
-    <Table<StaffingRuleItem>
+    <SelectableTable<StaffingRuleItem>
       size="small" rowKey="id" pagination={rulesPag} loading={rulesQuery.isLoading} dataSource={filteredRules}
+      bulkActions={[
+        { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Dinh_bien_nhan_su_ca.xls', sheetTitle: 'Định Biên Nhân Sự Theo Ca', rows, columns: [{ header: 'Chi nhánh', key: 'branchName' }, { header: 'Khung ca', key: 'shiftName' }, { header: 'Tối thiểu', key: 'min_staff', align: 'right' }, { header: 'Tối đa', key: 'max_staff', align: 'right' }, { header: 'Kiểm soát', key: 'enforcement' }, { header: 'Ghi chú', key: 'note' }] }) },
+        ...(canConfig ? [{ key: 'delete', label: 'Xóa định biên đã chọn', danger: true, icon: <DeleteOutlined />, loading: deleteRule.isPending, confirm: 'Xác nhận xóa các định biên đã chọn?', onClick: (rows: StaffingRuleItem[]) => deleteRule.mutate(rows.map((r) => String(r.id))) }] : []),
+      ]}
       columns={[
         { title: 'Chi nhánh áp dụng', dataIndex: 'branchName', render: (v: string, r) => <Tag color={r.branchId === 'ALL' ? 'default' : 'blue'}><strong>{v}</strong></Tag> },
         { title: 'Khung ca áp dụng', dataIndex: 'shiftName', render: (v: string) => <Tag color="geekblue">{v}</Tag> },
         { title: 'Định biên Tối thiểu – Tối đa', render: (_, r) => <span className="num"><strong>{String(r.min_staff)}</strong> – <strong>{String(r.max_staff)}</strong> nhân sự/ca</span> },
         { title: 'Chế độ kiểm soát', dataIndex: 'enforcement', render: (v: string) => <Tag color={v === 'HARD_BLOCK' ? 'red' : 'orange'}>{v === 'HARD_BLOCK' ? 'Chặn cứng khi thiếu định biên' : 'Cảnh báo mềm khi thiếu người'}</Tag> },
         { title: 'Ghi chú', dataIndex: 'note', ellipsis: true },
-        { title: 'Thao tác', width: 100, align: 'right', render: (_, r) => canConfig ? <Space size={4}><Button size="small" icon={<EditOutlined />} onClick={() => openEditRule(r)} /><Button size="small" danger icon={<DeleteOutlined />} onClick={() => modal.confirm({ title: `Xóa định biên của "${r.branchName}" (${r.shiftName})?`, okText: 'Xóa định biên', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => deleteRule.mutateAsync(String(r.id)) })} /></Space> : null },
+        { title: 'Thao tác', width: 100, align: 'right', render: (_, r) => canConfig ? <Space size={4}><Button size="small" icon={<EditOutlined />} onClick={() => openEditRule(r)} /><Button size="small" danger icon={<DeleteOutlined />} onClick={() => modal.confirm({ title: `Xóa định biên của "${r.branchName}" (${r.shiftName})?`, okText: 'Xóa định biên', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => deleteRule.mutateAsync([String(r.id)]) })} /></Space> : null },
       ]}
     />
   );
@@ -185,29 +195,15 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
       <Modal width={720} title={editingRule ? 'Chỉnh sửa Định biên Nhân sự Theo Ca' : 'Thiết lập Định biên Nhân sự Theo Ca'} open={ruleModalOpen} onOk={async () => saveRule.mutate(await ruleForm.validateFields())} onCancel={() => { setRuleModalOpen(false); setEditingRule(null); }} okText={editingRule ? 'Lưu cập nhật' : 'Lưu định biên'} cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} confirmLoading={saveRule.isPending} forceRender>
         <Form form={ruleForm} layout="vertical" style={{ marginTop: 12 }}>
           <Row gutter={12}>
-            <Col xs={24} md={12}>
-              <Form.Item name="branch_id" label="Chi nhánh áp dụng" rules={[{ required: true, message: 'Vui lòng chọn chi nhánh áp dụng' }]}>
-                <Select showSearch optionFilterProp="label" options={[{ value: 'ALL', label: 'Tất cả chi nhánh (Định biên mặc định chung)' }, ...branches.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))]} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item name="shift_template_id" label="Khung ca áp dụng" rules={[{ required: true, message: 'Vui lòng chọn khung ca áp dụng' }]}>
-                <Select showSearch optionFilterProp="label" options={[{ value: 'ALL', label: 'Mọi khung ca làm việc' }, ...(shiftsQuery.data ?? []).map((s) => ({ value: s.id, label: `${s.name} (${s.startTime} – ${s.endTime})${s.branchId && s.branchId !== 'ALL' ? ` · ${s.branchName}` : ''}` }))]} />
-              </Form.Item>
-            </Col>
+            <Col xs={24} md={12}><Form.Item name="branch_id" label="Chi nhánh áp dụng" rules={[{ required: true, message: 'Vui lòng chọn chi nhánh áp dụng' }]}><Select showSearch optionFilterProp="label" options={[{ value: 'ALL', label: 'Tất cả chi nhánh (Định biên mặc định chung)' }, ...branches.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))]} /></Form.Item></Col>
+            <Col xs={24} md={12}><Form.Item name="shift_template_id" label="Khung ca áp dụng" rules={[{ required: true, message: 'Vui lòng chọn khung ca áp dụng' }]}><Select showSearch optionFilterProp="label" options={[{ value: 'ALL', label: 'Mọi khung ca làm việc' }, ...(shiftsQuery.data ?? []).map((s) => ({ value: s.id, label: `${s.name} (${s.startTime} – ${s.endTime})${s.branchId && s.branchId !== 'ALL' ? ` · ${s.branchName}` : ''}` }))]} /></Form.Item></Col>
           </Row>
           <Row gutter={12}>
             <Col xs={12} md={7}><Form.Item name="min_staff" label="Số NS tối thiểu / ca" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} min={1} max={30} suffix="người" /></Form.Item></Col>
             <Col xs={12} md={7}><Form.Item name="max_staff" label="Số NS tối đa / ca" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} min={1} max={50} suffix="người" /></Form.Item></Col>
-            <Col xs={24} md={10}>
-              <Form.Item name="enforcement" label="Chế độ kiểm soát định biên">
-                <Select options={[{ value: 'HARD_BLOCK', label: 'Chặn cứng khi thiếu định biên' }, { value: 'SOFT_WARN', label: 'Cảnh báo mềm khi thiếu người' }]} />
-              </Form.Item>
-            </Col>
+            <Col xs={24} md={10}><Form.Item name="enforcement" label="Chế độ kiểm soát định biên"><Select options={[{ value: 'HARD_BLOCK', label: 'Chặn cứng khi thiếu định biên' }, { value: 'SOFT_WARN', label: 'Cảnh báo mềm khi thiếu người' }]} /></Form.Item></Col>
           </Row>
-          <Form.Item name="note" label="Ghi chú vận hành">
-            <Input placeholder="VD: Bắt buộc tối thiểu 2 Pha chế/ca khi duyệt đơn OFF hoặc đổi ca tại chi nhánh này" />
-          </Form.Item>
+          <Form.Item name="note" label="Ghi chú vận hành"><Input placeholder="VD: Bắt buộc tối thiểu 2 Pha chế/ca khi duyệt đơn OFF hoặc đổi ca tại chi nhánh này" /></Form.Item>
         </Form>
       </Modal>
     </>

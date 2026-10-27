@@ -1,10 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Alert, App, Button, Card, Col, Flex, Popconfirm, Row, Select, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
+import { Alert, App, Button, Card, Col, Flex, Row, Select, Space, Tabs, Tag, Tooltip, Typography } from 'antd';
 import {
-  CalendarOutlined, CameraOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined,
-  DeleteOutlined, DownloadOutlined, EnvironmentOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined,
+  CameraOutlined, ClockCircleOutlined, DownloadOutlined, EnvironmentOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -14,9 +13,11 @@ import { BRAND } from '@/ui/theme';
 import { AttendanceCameraModal } from '@/ui/components/AttendanceCameraModal';
 import { AttendanceEventDetailModal } from '@/ui/components/AttendanceEventDetailModal';
 import { exportAttendanceEventsExcel, groupAttendanceEventsByShift, renderShiftCheckInOutSummary, type AttendanceEventRow } from '@/ui/components/AttendanceEventsTable';
+import { SelectableTable } from '@/ui/components/BulkActionBar';
 import { AttendanceAdjustmentModal, MyShiftRegisterModal } from '@/ui/components/EmployeePortalModals';
 import { EmployeeScheduleAndLeaveCenter } from '@/ui/components/EmployeeScheduleAndLeaveCenter';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from '@/ui/components/ScheduleRequestDetailModal';
+import { exportAdjustmentsExcel } from '@/ui/components/workflow-bulk-helpers';
 import { useClientPagination } from '@/ui/hooks/useClientPagination';
 
 interface MyShiftRow extends Record<string, unknown> {
@@ -161,8 +162,9 @@ export default function MyAttendancePage() {
               children: (
                 <>
                   <Flex justify="space-between" align="center" style={{ marginBottom: 10 }}><Typography.Text type="secondary">Danh sách điểm danh Vào ca &amp; Ra ca theo từng ca làm việc của riêng bạn.</Typography.Text><Button size="small" icon={<DownloadOutlined />} onClick={() => exportAttendanceEventsExcel(events)}>Xuất Excel Điểm danh của bạn</Button></Flex>
-                  <Table<AttendanceEventRow>
+                  <SelectableTable<AttendanceEventRow>
                     size="small" rowKey="id" pagination={myEventsPag} dataSource={groupAttendanceEventsByShift(events)} locale={{ emptyText: 'Bạn chưa có lượt điểm danh nào trong kỳ.' }}
+                    bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAttendanceEventsExcel(rows) }]}
                     columns={[
                       { title: 'Ngày & Ca làm việc', width: 220, render: (_, r) => <div><div style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)} ({r.shiftTimeRange || '07:00 – 12:00'})</div><div className="num" style={{ fontSize: 12, color: BRAND.textSecondary }}>Ngày: {r.work_date ? dayjs(r.work_date).format('DD/MM/YYYY') : '—'}</div></div> },
                       { title: 'Vào ca / Ra ca', render: (_, r) => renderShiftCheckInOutSummary(r) },
@@ -178,8 +180,9 @@ export default function MyAttendancePage() {
               children: (
                 <>
                   <Flex justify="space-between" align="center" style={{ marginBottom: 10 }}><Typography.Text type="secondary">Danh sách phiếu giải trình / bổ sung công cá nhân của bạn.</Typography.Text><Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => { setPresetAdjShiftId(undefined); setAdjOpen(true); }}>Gửi phiếu bổ sung công</Button></Flex>
-                  <Table
+                  <SelectableTable<Record<string, unknown>>
                     size="small" rowKey="id" pagination={myAdjPag} dataSource={adjustments} locale={{ emptyText: 'Bạn chưa có phiếu bổ sung công nào.' }}
+                    bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAdjustmentsExcel(rows) }]}
                     columns={[
                       { title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
                       { title: 'Ngày công', dataIndex: 'work_date', width: 120, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> },
