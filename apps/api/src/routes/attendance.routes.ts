@@ -125,12 +125,9 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const uploadedPhoto = await persistAttendancePhoto(ctx, { base64: body.photo_base64, employeeCode: empRecord.employee_code, checkType, workDate: assign.work_date });
 
     const created = await ctx.db.attendanceEvents.insert({
-      idempotency_key: body.idempotency_key || `chk_${assign.id}_${checkType}_${Date.now()}`,
-      employee_id: assign.employee_id, assignment_id: assign.id, branch_id: branch.id, type: checkType, server_time: serverNow,
-      lat: body.lat, lng: body.lng, accuracy_m: body.accuracy_m, distance_m: distanceM, within_radius: withinRadius,
-      photo_id: `photo_${Date.now()}`, photo_sha256: uploadedPhoto.sha256, device_info: body.device_info, result,
-      work_date: assign.work_date, shift_code: assign.shift_code, scheduled_time: schedTime, late_minutes: lateMinutes,
-      early_leave_minutes: earlyLeaveMinutes, allowed_radius_m: branch.radius_m, gps_status: accuracyOk ? 'OK' : 'WARNING',
+      idempotency_key: body.idempotency_key || `chk_${assign.id}_${checkType}_${Date.now()}`, employee_id: assign.employee_id, assignment_id: assign.id, branch_id: branch.id, type: checkType, server_time: serverNow,
+      lat: body.lat, lng: body.lng, accuracy_m: body.accuracy_m, distance_m: distanceM, within_radius: withinRadius, photo_id: `photo_${Date.now()}`, photo_sha256: uploadedPhoto.sha256, device_info: body.device_info, result,
+      work_date: assign.work_date, shift_code: assign.shift_code, scheduled_time: schedTime, late_minutes: lateMinutes, early_leave_minutes: earlyLeaveMinutes, allowed_radius_m: branch.radius_m, gps_status: accuracyOk ? 'OK' : 'WARNING',
       photo_drive_file_id: uploadedPhoto.fileId, ip_address: request.ip, anomaly_flags_json: '[]', note: `${punc.punctualityLabel} · Khoảng cách GPS ${distanceM}m`,
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: checkType === 'CHECK_IN' ? 'attendance.check_in' : 'attendance.check_out', entity: 'ATTENDANCE_EVENTS', entityId: created.id, after: { type: created.type, distance_m: distanceM, within_radius: withinRadius, result, late_minutes: lateMinutes, early_leave_minutes: earlyLeaveMinutes } });
@@ -187,17 +184,20 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const body = zCreateAdjustmentBody.parse(request.body);
     const emp = ctx.db.employees.get(body.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === body.employee_id);
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy nhân sự', body.employee_id);
+    const caller = request.auth!.user, perms = request.auth!.permissions;
+    const isSelfEmp = emp.user_id === caller.id || Boolean(caller.employee_id && (emp.id === caller.employee_id || emp.employee_code === caller.employee_id));
+    if (!isSelfEmp && !perms.has('attendance.confirm') && !perms.has('adjustment.approve')) {
+      throw Errors.forbidden('Vai trò của bạn chỉ có quyền xem lịch và điểm danh, không được phép tạo phiếu bổ sung công cho nhân sự khác');
+    }
     assertBranchAccess(request, emp.branch_id);
     const matchedShift = (body.assignment_id ? ctx.db.shiftAssignments.get(body.assignment_id) : undefined)
       ?? ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.shift_code === body.shift_code);
     assertDateNotLockedByPayroll(ctx.db, matchedShift?.work_date ?? body.work_date, 'tạo phiếu bổ sung công');
     const shiftStart = matchedShift?.start_at || body.requested_check_in_at, shiftEnd = matchedShift?.end_at || body.requested_check_out_at, shiftHours = matchedShift?.scheduled_hours || body.requested_hours;
     const created = await ctx.db.attendanceAdjustments.insert({
-      adjustment_code: `ADJ-${String(ctx.db.attendanceAdjustments.all(true).length + 1).padStart(4, '0')}`,
-      event_id: body.event_id, assignment_id: matchedShift?.id ?? body.assignment_id, employee_id: emp.id, branch_id: emp.branch_id,
-      work_date: matchedShift?.work_date ?? body.work_date, shift_code: matchedShift?.shift_code ?? body.shift_code, kind: body.kind, requested_time: shiftEnd,
-      requested_check_in_at: shiftStart, requested_check_out_at: shiftEnd, requested_hours: shiftHours, reason: body.reason, evidence_file_id: '', exception_source: 'EMPLOYEE',
-      status: 'PENDING', store_confirmed_by: '', store_confirmed_at: '', store_note: '', hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
+      adjustment_code: `ADJ-${String(ctx.db.attendanceAdjustments.all(true).length + 1).padStart(4, '0')}`, event_id: body.event_id, assignment_id: matchedShift?.id ?? body.assignment_id, employee_id: emp.id, branch_id: emp.branch_id,
+      work_date: matchedShift?.work_date ?? body.work_date, shift_code: matchedShift?.shift_code ?? body.shift_code, kind: body.kind, requested_time: shiftEnd, requested_check_in_at: shiftStart, requested_check_out_at: shiftEnd, requested_hours: shiftHours,
+      reason: body.reason, evidence_file_id: '', exception_source: 'EMPLOYEE', status: 'PENDING', store_confirmed_by: '', store_confirmed_at: '', store_note: '', hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.create', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: created.id, after: { adjustment_code: created.adjustment_code, assignment_id: created.assignment_id, requested_hours: created.requested_hours } });
     emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'ADJUSTMENT_CREATED', actorId: request.auth!.user.id });

@@ -8,6 +8,7 @@ import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
 import { DateStringPicker } from './DateTimePickers';
 import type { EmployeeRowItem } from './employee-table-columns';
+import { usePermissionGuard } from './GuardButton';
 import { isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
 import { RowActionButtons } from './RowActionButtons';
 
@@ -19,6 +20,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
   const shiftRows = employee.recentShifts ?? [];
   const histPag = useClientPagination(10, 'lần chuyển');
   const shiftPag = useClientPagination(10, 'ca');
+  const canCreateAdj = usePermissionGuard({ perms: ['attendance.confirm', 'adjustment.approve'], roles: ['HR', 'STORE'] });
   const [viewingStage, setViewingStage] = useState<StageHistoryItem | null>(null);
   const [viewingShift, setViewingShift] = useState<RecentShiftItem | null>(null);
   const [quickAdjOpen, setQuickAdjOpen] = useState(false);
@@ -99,7 +101,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
                   <RowActionButtons
                     detailTooltip="Xem chi tiết ca làm việc"
                     onViewDetail={() => setViewingShift(r)}
-                    menuItems={isAbsentShiftRecord(r as unknown as Record<string, unknown>) ? [{ key: 'adj', icon: <FileAddOutlined style={{ color: '#DC2626' }} />, label: 'Tạo phiếu bổ sung công', onClick: () => { setViewingShift(r); setQuickAdjOpen(true); } }] : []}
+                    menuItems={canCreateAdj && isAbsentShiftRecord(r as unknown as Record<string, unknown>) ? [{ key: 'adj', icon: <FileAddOutlined style={{ color: '#DC2626' }} />, label: 'Tạo phiếu bổ sung công', onClick: () => { setViewingShift(r); setQuickAdjOpen(true); } }] : []}
                   />
                 ),
               },
@@ -132,7 +134,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
         open={Boolean(viewingShift)} title="Chi tiết Ca làm việc của Nhân sự" onCancel={() => setViewingShift(null)} width="min(860px, 94vw)" destroyOnHidden
         footer={
           <Space wrap size={8}>
-            {viewingShift && isAbsentShiftRecord(viewingShift as unknown as Record<string, unknown>) && (
+            {canCreateAdj && viewingShift && isAbsentShiftRecord(viewingShift as unknown as Record<string, unknown>) && (
               <Button type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>
                 Tạo phiếu bổ sung công từ ca này
               </Button>

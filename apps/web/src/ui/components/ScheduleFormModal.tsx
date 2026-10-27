@@ -39,12 +39,13 @@ export function ScheduleFormModal({
   const [quickAdjOpen, setQuickAdjOpen] = useState(false);
   const { message } = App.useApp();
   const qc = useQueryClient();
-  const hasSchedulePerm = usePermissionGuard({ perms: ['schedule.propose', 'schedule.publish'], allowed: canEdit });
+  const hasSchedulePerm = usePermissionGuard({ perms: ['schedule.propose', 'schedule.publish'], roles: ['HR', 'STORE'], allowed: canEdit });
+  const canCreateAdj = usePermissionGuard({ perms: ['attendance.confirm', 'adjustment.approve'], roles: ['HR', 'STORE'], allowed: canEdit });
   const isLocked = Boolean(editing?.isLockedByPayroll);
   const canModifyShift = hasSchedulePerm && !isLocked;
   const watchedEmpId = Form.useWatch('employee_id', form);
   const watchedStatus = Form.useWatch('status', form);
-  const isEditingAbsent = !isLocked && Boolean(editing && (watchedStatus === 'ABSENT' || isAbsentShiftRecord(editing as unknown as Record<string, unknown>)));
+  const isEditingAbsent = canCreateAdj && !isLocked && Boolean(editing && (watchedStatus === 'ABSENT' || isAbsentShiftRecord(editing as unknown as Record<string, unknown>)));
   const selectedEmpBranchId = useMemo(
     () => employees.find((e) => e.value === watchedEmpId)?.branchId || editing?.branchId || 'ALL',
     [employees, watchedEmpId, editing?.branchId],
