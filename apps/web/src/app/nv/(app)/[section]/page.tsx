@@ -36,7 +36,8 @@ interface MyAttendanceData {
 }
 
 const SECTIONS: Record<string, string> = {
-  lich: 'Lịch làm việc & Đăng ký nghỉ phép / Đổi ca', 'diem-danh': 'Điểm danh GPS & Camera trực tiếp của bạn',
+  lich: 'Lịch làm việc & Đăng ký nghỉ phép / Đổi ca', 'nghi-phep': 'Đăng ký Nghỉ phép OFF & Báo nghỉ khẩn cấp',
+  'doi-ca': 'Yêu cầu Đổi ca nội bộ (Quy trình 3 bước)', 'diem-danh': 'Điểm danh GPS & Camera trực tiếp của bạn',
   cong: 'Bảng công cá nhân & Phiếu bổ sung công', 'bai-kiem-tra': 'Bài kiểm tra Nghiệp vụ (TEST)',
   'ban-tin': 'Bản tin Nội bộ & Chính sách Quy định Công ty', 'thong-bao': 'Trung tâm Thông báo & Hộp thư Cá nhân', them: 'Tiện ích mở rộng của bạn',
 };
@@ -101,26 +102,19 @@ export default function EmployeeSection() {
 
   const refreshSection = () => ['my-attendance', 'schedules', 'nv-swaps', 'nv-tests', 'nv-comms', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const isRefreshing = myQ.isFetching || testsQ.isFetching || commsQ.isFetching;
+  const isSchedSection = section === 'lich' || section === 'nghi-phep' || section === 'doi-ca';
+  const schedCenter = <EmployeeScheduleAndLeaveCenter todayDate={todayDate} empId={empId} empCode={empCode} stage={myQ.data?.profile.stage} initialTab={section === 'nghi-phep' ? 'leaves' : section === 'doi-ca' ? 'swaps' : 'shifts'} shifts={publishedShifts} leaves={myQ.data?.leaves ?? []} emergencyLeaves={myQ.data?.emergencyLeaves ?? []} swaps={mySwaps} branchPeers={myQ.data?.branchPeers ?? []} refreshing={myQ.isFetching} onRefresh={refreshSection} />;
 
   return (
     <div style={{ padding: isDesktop ? 0 : '8px 6px', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
-      <Card size="small" title={title} extra={section === 'lich' || section === 'them' ? undefined : <Button size="small" icon={<ReloadOutlined />} loading={isRefreshing} onClick={refreshSection}>Làm mới</Button>} style={{ marginBottom: 12 }}>
-        {section === 'lich' && (
-          <EmployeeScheduleAndLeaveCenter
-            todayDate={todayDate} empId={empId} empCode={empCode} stage={myQ.data?.profile.stage}
-            shifts={publishedShifts} leaves={myQ.data?.leaves ?? []} emergencyLeaves={myQ.data?.emergencyLeaves ?? []}
-            swaps={mySwaps} branchPeers={myQ.data?.branchPeers ?? []} refreshing={myQ.isFetching} onRefresh={refreshSection}
-          />
-        )}
-
+      <Card size="small" title={title} extra={isSchedSection || section === 'them' ? undefined : <Button size="small" icon={<ReloadOutlined />} loading={isRefreshing} onClick={refreshSection}>Làm mới</Button>} style={{ marginBottom: 12 }}>
+        {isSchedSection && schedCenter}
         {section === 'diem-danh' && (
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={isDesktop ? 9 : 24}>
               <div style={{ background: '#F8FAFC', border: `1px solid ${BRAND.border}`, borderRadius: 4, padding: 12 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: BRAND.textSecondary, marginBottom: 6 }}>Chọn ca làm việc của bạn để điểm danh</div>
-                {publishedShifts.length === 0 ? (
-                  <Alert type="info" showIcon message="Bạn chưa có ca làm việc nào được phân công trong kỳ này để điểm danh." />
-                ) : (
+                {publishedShifts.length === 0 ? <Alert type="info" showIcon message="Bạn chưa có ca làm việc nào được phân công trong kỳ này để điểm danh." /> : (
                   <>
                     <Select style={{ width: '100%', marginBottom: 10 }} value={String(activeShift?.id ?? '')} onChange={setSelectedShiftId} options={publishedShifts.map((s) => { const sEvs = allEvents.filter((e) => String(e.assignment_id) === String(s.id)); const isAbs = s.status === 'ABSENT' || Boolean(s.isAbsentShift); const stateTag = s.status === 'DRAFT' ? 'Chờ CH / HR duyệt ca' : (s.status === 'COMPLETED' || (sEvs.some((e) => e.type === 'CHECK_IN') && sEvs.some((e) => e.type === 'CHECK_OUT'))) ? 'Hoàn thành' : isAbs ? 'Vắng mặt (Cần bù công)' : sEvs.some((e) => e.type === 'CHECK_IN') ? 'Đã vào ca' : 'Đã duyệt · Chưa vào ca'; return { value: String(s.id), label: `${dayjs(String(s.workDate)).format('DD/MM/YYYY')} · ${cleanShiftName(s.shiftLabel)} (${s.startAt || '07:00'}–${s.endAt || '12:00'}) · ${stateTag}` }; })} />
                     {activeShift && (
@@ -134,38 +128,19 @@ export default function EmployeeSection() {
                         </Space>
                       </div>
                     )}
-                    {!isSelectedApproved ? (
-                      <Alert type="warning" showIcon message="Ca đăng ký này đang chờ Quản lý cửa hàng hoặc HR duyệt phân ca. Chỉ được phép chấm công Vào/Ra ca sau khi ca đã chuyển sang Đã phân ca chính thức." />
-                    ) : isSelectedDone ? (
-                      <Alert type="success" showIcon message="Đã hoàn thành đầy đủ ca làm việc này." />
-                    ) : isSelectedAbsent ? (
+                    {!isSelectedApproved ? <Alert type="warning" showIcon message="Ca đăng ký này đang chờ Quản lý cửa hàng hoặc HR duyệt phân ca. Chỉ được phép chấm công Vào/Ra ca sau khi ca đã chuyển sang Đã phân ca chính thức." /> : isSelectedDone ? <Alert type="success" showIcon message="Đã hoàn thành đầy đủ ca làm việc này." /> : isSelectedAbsent ? (
                       <Space direction="vertical" size={8} style={{ width: '100%' }}>
                         <Alert type="error" showIcon message={`Ca làm việc (${String(activeShift?.startAt || '07:00')} – ${String(activeShift?.endAt || '12:00')}) đã qua giờ kết thúc ca mà chưa điểm danh nên đã khóa Vào ca và chuyển sang Vắng mặt.`} />
                         <Button type="primary" danger block icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(String(activeShift?.id)); setAdjOpen(true); }}>Làm phiếu bổ sung công bù ca vắng mặt này</Button>
                       </Space>
-                    ) : !isSelectedToday ? (
-                      <Alert type="warning" showIcon message={`Ca đang chọn thuộc ngày ${dayjs(String(activeShift?.workDate)).format('DD/MM/YYYY')}. Chỉ được điểm danh đúng ngày đăng ký ca (Hôm nay: ${dayjs(todayDate).format('DD/MM/YYYY')}).`} />
-                    ) : !checkInEvent ? (
-                      <Button type="primary" block icon={<CameraOutlined />} disabled={!activeShift} onClick={() => setCameraModalKind('CHECK_IN')}>Vào ca (Chụp ảnh Camera &amp; GPS)</Button>
-                    ) : !checkOutEvent ? (
-                      <Button type="primary" block icon={<CameraOutlined />} onClick={() => setCameraModalKind('CHECK_OUT')}>Ra ca (Chụp ảnh Camera &amp; GPS)</Button>
-                    ) : (
-                      <Alert type="success" showIcon message="Đã hoàn thành đầy đủ Vào ca & Ra ca cho ca làm việc này." />
-                    )}
+                    ) : !isSelectedToday ? <Alert type="warning" showIcon message={`Ca đang chọn thuộc ngày ${dayjs(String(activeShift?.workDate)).format('DD/MM/YYYY')}. Chỉ được điểm danh đúng ngày đăng ký ca (Hôm nay: ${dayjs(todayDate).format('DD/MM/YYYY')}).`} /> : !checkInEvent ? <Button type="primary" block icon={<CameraOutlined />} disabled={!activeShift} onClick={() => setCameraModalKind('CHECK_IN')}>Vào ca (Chụp ảnh Camera &amp; GPS)</Button> : !checkOutEvent ? <Button type="primary" block icon={<CameraOutlined />} onClick={() => setCameraModalKind('CHECK_OUT')}>Ra ca (Chụp ảnh Camera &amp; GPS)</Button> : <Alert type="success" showIcon message="Đã hoàn thành đầy đủ Vào ca & Ra ca cho ca làm việc này." />}
                   </>
                 )}
               </div>
             </Col>
             <Col xs={24} lg={isDesktop ? 15 : 24}>
               <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Lịch sử điểm danh Vào ca &amp; Ra ca của bạn</div>
-              <Table<AttendanceEventRow>
-                size="small" rowKey="id" pagination={attPag} scroll={{ x: 'max-content' }} dataSource={groupAttendanceEventsByShift(allEvents)} locale={{ emptyText: 'Bạn chưa có lượt điểm danh nào trong kỳ.' }}
-                columns={[
-                  { title: 'Ngày & Ca làm việc', width: 165, render: (_, r) => <div><div style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)} ({String(r.shiftTimeRange || '07:00 – 12:00')})</div><div className="num" style={{ fontSize: 12, color: BRAND.textSecondary }}>Ngày: {r.work_date ? dayjs(r.work_date).format('DD/MM/YYYY') : '—'}</div></div> },
-                  { title: 'Vào ca / Ra ca', render: (_, r) => renderShiftCheckInOutSummary(r) },
-                  { title: 'Thao tác', width: 64, align: 'center', render: (_, r) => <Tooltip title="Xem chi tiết điểm danh"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailEvent(r)} /></Tooltip> },
-                ]}
-              />
+              <Table<AttendanceEventRow> size="small" rowKey="id" pagination={attPag} scroll={{ x: 'max-content' }} dataSource={groupAttendanceEventsByShift(allEvents)} locale={{ emptyText: 'Bạn chưa có lượt điểm danh nào trong kỳ.' }} columns={[{ title: 'Ngày & Ca làm việc', width: 165, render: (_, r) => <div><div style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)} ({String(r.shiftTimeRange || '07:00 – 12:00')})</div><div className="num" style={{ fontSize: 12, color: BRAND.textSecondary }}>Ngày: {r.work_date ? dayjs(r.work_date).format('DD/MM/YYYY') : '—'}</div></div> }, { title: 'Vào ca / Ra ca', render: (_, r) => renderShiftCheckInOutSummary(r) }, { title: 'Thao tác', width: 64, align: 'center', render: (_, r) => <Tooltip title="Xem chi tiết điểm danh"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailEvent(r)} /></Tooltip> }]} />
             </Col>
           </Row>
         )}
@@ -208,6 +183,11 @@ export default function EmployeeSection() {
           </Row>
         )}
       </Card>
+      {section === 'diem-danh' && (
+        <Card size="small" title="Lịch làm việc, Đăng ký Nghỉ OFF & Đổi ca nội bộ của bạn" style={{ marginBottom: 12 }}>
+          {schedCenter}
+        </Card>
+      )}
 
       <AttendanceCameraModal open={Boolean(cameraModalKind)} kind={cameraModalKind ?? 'CHECK_IN'} shift={activeShift} loading={postMut.isPending} onClose={() => setCameraModalKind(null)} onConfirm={(payload) => postMut.mutate({ url: '/attendance/check', body: payload })} />
       <AttendanceEventDetailModal event={detailEvent} onClose={() => setDetailEvent(null)} />

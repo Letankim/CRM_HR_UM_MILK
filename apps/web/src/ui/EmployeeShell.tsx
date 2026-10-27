@@ -4,9 +4,9 @@ import { Alert, Avatar, Badge, Breadcrumb, Button, Dropdown, Flex, Grid, Layout,
 import type { ItemType } from 'antd/es/menu/interface';
 import {
   AppstoreOutlined, BellOutlined, BookOutlined, CalendarOutlined, DownOutlined, EnvironmentOutlined,
-  FieldTimeOutlined, FileTextOutlined, HomeOutlined, KeyOutlined, LogoutOutlined,
+  FieldTimeOutlined, FileDoneOutlined, FileTextOutlined, HomeOutlined, KeyOutlined, LogoutOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, NotificationOutlined, ReloadOutlined,
-  RightOutlined, UserOutlined, UserSwitchOutlined,
+  RightOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -21,9 +21,9 @@ import { BRAND } from './theme';
 
 const MOBILE_TABS = [
   { href: '/nv', label: 'Trang chủ', icon: <HomeOutlined /> },
-  { href: '/nv/lich', label: 'Lịch', icon: <CalendarOutlined /> },
+  { href: '/nv/lich', label: 'Lịch & OFF', icon: <CalendarOutlined /> },
   { href: '/nv/diem-danh', label: 'Điểm danh', icon: <EnvironmentOutlined />, primary: true },
-  { href: '/nv/cong', label: 'Công', icon: <FieldTimeOutlined /> },
+  { href: '/nv/doi-ca', label: 'Đổi ca', icon: <SwapOutlined /> },
 ];
 
 const DESKTOP_GROUPS = [
@@ -33,7 +33,9 @@ const DESKTOP_GROUPS = [
     items: [
       { key: '/nv', label: 'Tổng quan & Ca hôm nay', icon: <HomeOutlined /> },
       { key: '/nv/diem-danh', label: 'Điểm danh GPS & Camera', icon: <EnvironmentOutlined /> },
-      { key: '/nv/lich', label: 'Lịch làm việc & Nghỉ OFF', icon: <CalendarOutlined /> },
+      { key: '/nv/lich', label: 'Lịch làm việc & Đăng ký ca', icon: <CalendarOutlined /> },
+      { key: '/nv/nghi-phep', label: 'Đơn nghỉ OFF & Khẩn cấp', icon: <FileDoneOutlined /> },
+      { key: '/nv/doi-ca', label: 'Yêu cầu Đổi ca nội bộ', icon: <SwapOutlined /> },
       { key: '/nv/cong', label: 'Bảng công & Bổ sung công', icon: <FieldTimeOutlined /> },
     ],
   },
@@ -74,27 +76,23 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   }, [data, error, isLoading, router]);
   if (isLoading || !data) return <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center' }}><Spin /></div>;
 
-  const u = data.user;
-  const isInternal = !['THU_VIEC', 'CHINH_THUC'].includes(u.role);
-  const isMoreActive = ['/nv/them', '/nv/phieu-luong', '/nv/bai-kiem-tra', '/nv/ban-tin'].some((p) => pathname.startsWith(p));
+  const u = data.user, isInternal = !['THU_VIEC', 'CHINH_THUC'].includes(u.role);
+  const isMoreActive = ['/nv/them', '/nv/nghi-phep', '/nv/cong', '/nv/phieu-luong', '/nv/bai-kiem-tra', '/nv/ban-tin'].some((p) => pathname.startsWith(p));
   const versionLabel = SYSTEM_CONFIG.version.startsWith('v') ? SYSTEM_CONFIG.version : `v${SYSTEM_CONFIG.version}`;
-
   const activeDesktopItem = (() => {
-    for (const g of DESKTOP_GROUPS) {
-      for (const item of g.items) {
-        if (item.key === '/nv' ? pathname === '/nv' : pathname.startsWith(item.key)) return { group: g.label, item };
-      }
-    }
+    for (const g of DESKTOP_GROUPS) for (const item of g.items) if (item.key === '/nv' ? pathname === '/nv' : pathname.startsWith(item.key)) return { group: g.label, item };
     return { group: 'Bàn làm việc cá nhân', item: DESKTOP_GROUPS[0]!.items[0]! };
   })();
-
   const desktopMenuItems: ItemType[] = collapsed
     ? DESKTOP_GROUPS.flatMap((g) => g.items.map((i) => ({ key: i.key, icon: i.icon, label: <Link href={i.key}>{i.label}</Link> })))
     : DESKTOP_GROUPS.map((g) => ({ key: g.key, label: <span style={{ fontSize: 12, fontWeight: 600, color: '#64748B' }}>{g.label}</span>, children: g.items.map((i) => ({ key: i.key, icon: i.icon, label: <Link href={i.key}>{i.label}</Link> })) }));
   const mobileMoreMenu = (
-    <div style={{ width: 256, display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div style={{ width: 262, display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.textSecondary, padding: '2px 8px 4px', borderBottom: `1px solid ${BRAND.border}` }}>CHỌN TIỆN ÍCH NHÂN SỰ</div>
       {[
+        { label: 'Đơn nghỉ OFF & Nghỉ khẩn cấp', desc: 'Đăng ký nghỉ phép OFF & xem trạng thái duyệt', icon: <FileDoneOutlined />, onClick: () => router.push('/nv/nghi-phep') },
+        { label: 'Yêu cầu Đổi ca nội bộ', desc: 'Tạo đề nghị đổi ca & xác nhận nhận ca', icon: <SwapOutlined />, onClick: () => router.push('/nv/doi-ca') },
+        { label: 'Bảng công & Bổ sung công', desc: 'Gửi phiếu giải trình bổ sung công', icon: <FieldTimeOutlined />, onClick: () => router.push('/nv/cong') },
         { label: 'Trung tâm Thông báo', desc: 'Tất cả thông báo cá nhân & vai trò', icon: <BellOutlined />, onClick: () => router.push('/nv/thong-bao') },
         { label: 'Phiếu lương cá nhân', desc: 'Xem chi tiết & xác nhận lương', icon: <FileTextOutlined />, onClick: () => router.push('/nv/phieu-luong') },
         { label: 'Bài kiểm tra Nghiệp vụ', desc: 'Làm bài thi SOP & quy chế', icon: <BookOutlined />, onClick: () => router.push('/nv/bai-kiem-tra') },

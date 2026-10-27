@@ -16,7 +16,7 @@ export function canAccessPath(user: PublicUser, pathname: string, section?: stri
   const path = cleanPath || pathname;
 
   if (path === '/nv' || path.startsWith('/nv/')) {
-    return isEmployeeRole(user.role);
+    return user.role !== 'MKT';
   }
   if (isEmployeeRole(user.role)) return false;
 

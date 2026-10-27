@@ -7,7 +7,7 @@ import {
   DownOutlined, EnvironmentOutlined, FieldTimeOutlined, FileTextOutlined, KeyOutlined,
   LogoutOutlined, NotificationOutlined, ReloadOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined,
 } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -16,16 +16,20 @@ import { api } from '@/lib/api';
 import { useLogout, useMe } from '@/lib/auth';
 import { StatusTag } from '@/ui/StatusTag';
 import { BRAND } from '@/ui/theme';
+import { EmployeeScheduleAndLeaveCenter } from '@/ui/components/EmployeeScheduleAndLeaveCenter';
 import { UserProfileModal } from '@/ui/components/UserProfileModal';
 
 interface MyAttendanceData {
   todayDate: string;
-  profile: { employeeId: string; employeeCode: string; fullName: string; branchName?: string; probationStart?: string; probationEnd?: string; probationCycleDays?: number; probationDaysPassed?: number; probationDaysRemaining?: number };
+  profile: { employeeId: string; employeeCode: string; fullName: string; stage?: string; branchName?: string; probationStart?: string; probationEnd?: string; probationCycleDays?: number; probationDaysPassed?: number; probationDaysRemaining?: number };
   shifts: Record<string, unknown>[]; events: Record<string, unknown>[]; leaves: Record<string, unknown>[];
+  emergencyLeaves?: Record<string, unknown>[]; swaps?: Record<string, unknown>[];
+  branchPeers?: { id: string; employeeCode: string; fullName: string; positionTitle?: string; branchName?: string; busyShiftsByDate?: Record<string, string> }[];
 }
 
 export default function EmployeeHome() {
   const router = useRouter();
+  const qc = useQueryClient();
   const { data } = useMe();
   const logout = useLogout('employee');
   const screens = Grid.useBreakpoint();
@@ -130,6 +134,18 @@ export default function EmployeeHome() {
     </Card>
   );
 
+  const refreshHome = () => ['my-attendance', 'nv-swaps', 'nv-tests', 'nv-comms'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+  const scheduleCenterCard = (
+    <Card size="small" title="Lịch làm việc, Đăng ký Nghỉ OFF & Đổi ca nội bộ của bạn" style={{ marginTop: 12, marginBottom: isDesktop ? 0 : 12 }}>
+      <EmployeeScheduleAndLeaveCenter
+        todayDate={todayDate} empId={empId} empCode={empCode} stage={myQ.data?.profile.stage}
+        shifts={displayShifts} leaves={myLeaves} emergencyLeaves={myQ.data?.emergencyLeaves ?? []}
+        swaps={myQ.data?.swaps ?? []} branchPeers={myQ.data?.branchPeers ?? []}
+        refreshing={myQ.isFetching} onRefresh={refreshHome}
+      />
+    </Card>
+  );
+
   if (isDesktop) {
     return (
       <Row gutter={[16, 16]}>
@@ -137,27 +153,22 @@ export default function EmployeeHome() {
           <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
             {[
               { href: '/nv/diem-danh', label: 'Điểm danh GPS', icon: <EnvironmentOutlined />, primary: true },
-              { href: '/nv/lich', label: 'Lịch & Nghỉ OFF', icon: <CalendarOutlined /> },
-              { href: '/nv/cong', label: 'Bảng công', icon: <FieldTimeOutlined /> },
-              { href: '/nv/phieu-luong', label: 'Phiếu lương', icon: <FileTextOutlined /> },
-              { href: '/nv/bai-kiem-tra', label: 'Bài kiểm tra', icon: <BookOutlined /> },
-              { href: '/nv/ban-tin', label: 'Bản tin nội bộ', icon: <NotificationOutlined /> },
+              { href: '/nv/lich', label: 'Lịch & Đăng ký ca', icon: <CalendarOutlined /> },
+              { href: '/nv/nghi-phep', label: 'Đăng ký Nghỉ OFF', icon: <ClockCircleOutlined /> },
+              { href: '/nv/doi-ca', label: 'Đổi ca nội bộ', icon: <SwapOutlined /> },
+              { href: '/nv/cong', label: 'Bảng công & Bù công', icon: <FieldTimeOutlined /> },
+              { href: '/nv/phieu-luong', label: 'Phiếu lương cá nhân', icon: <FileTextOutlined /> },
             ].map((btn) => (
               <Col span={8} key={btn.href}>
-                <Link href={btn.href} style={{ display: 'block' }}>
-                  <Button type={btn.primary ? 'primary' : 'default'} icon={btn.icon} block style={{ height: 40, justifyContent: 'flex-start', fontWeight: 600 }}>{btn.label}</Button>
-                </Link>
+                <Link href={btn.href} style={{ display: 'block' }}><Button type={btn.primary ? 'primary' : 'default'} icon={btn.icon} block style={{ height: 40, justifyContent: 'flex-start', fontWeight: 600 }}>{btn.label}</Button></Link>
               </Col>
             ))}
           </Row>
           {shiftsCard}
+          {scheduleCenterCard}
         </Col>
         <Col xs={24} lg={8}>
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
-            {summaryCard}
-            {probationCard}
-            {tasksCard}
-          </Space>
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>{summaryCard}{probationCard}{tasksCard}</Space>
         </Col>
       </Row>
     );
@@ -170,20 +181,7 @@ export default function EmployeeHome() {
           <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>{dayjs().format('DD/MM/YYYY')} · Cổng Nhân viên {SYSTEM_CONFIG.brandName}</Typography.Text>
           <Typography.Title level={5} style={{ margin: 0, fontWeight: 700 }}>{u.displayName}</Typography.Title>
         </div>
-        <Dropdown
-          trigger={['click']} placement="bottomRight"
-          menu={{
-            items: [
-              { key: 'role', icon: <UserSwitchOutlined />, label: `${u.displayName} (${ROLE_LABELS[u.role]})`, disabled: true },
-              { type: 'divider' },
-              { key: 'profile', icon: <UserOutlined />, label: 'Hồ sơ cá nhân & Cập nhật thông tin', onClick: () => setProfileTab('info') },
-              { key: 'password', icon: <KeyOutlined />, label: 'Đổi mật khẩu / Mã PIN bảo mật', onClick: () => setProfileTab('password') },
-              ...(isInternal ? [{ key: 'admin', icon: <UserSwitchOutlined />, label: 'Về trang Quản trị', onClick: () => router.push('/admin/my-attendance') }] : []),
-              { type: 'divider' },
-              { key: 'logout', icon: <LogoutOutlined />, danger: true, label: 'Đăng xuất hệ thống', onClick: logout },
-            ],
-          }}
-        >
+        <Dropdown trigger={['click']} placement="bottomRight" menu={{ items: [{ key: 'role', icon: <UserSwitchOutlined />, label: `${u.displayName} (${ROLE_LABELS[u.role]})`, disabled: true }, { type: 'divider' }, { key: 'profile', icon: <UserOutlined />, label: 'Hồ sơ cá nhân & Cập nhật thông tin', onClick: () => setProfileTab('info') }, { key: 'password', icon: <KeyOutlined />, label: 'Đổi mật khẩu / Mã PIN bảo mật', onClick: () => setProfileTab('password') }, ...(isInternal ? [{ key: 'admin', icon: <UserSwitchOutlined />, label: 'Về trang Quản trị', onClick: () => router.push('/admin/my-attendance') }] : []), { type: 'divider' }, { key: 'logout', icon: <LogoutOutlined />, danger: true, label: 'Đăng xuất hệ thống', onClick: logout }] }}>
           <div className="umbm-header-pill" style={{ height: 34, display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px 0 6px', border: `1px solid ${BRAND.headerControlBorder}`, borderRadius: 8, cursor: 'pointer', background: '#F8FAFC', flexShrink: 0 }}>
             <Avatar size={22} style={{ background: BRAND.primaryBg, color: BRAND.primary, border: '1px solid #93C5FD', fontWeight: 700, fontSize: 11 }}>{(u.displayName || u.username).charAt(0).toUpperCase()}</Avatar>
             <Tag color="blue" style={{ margin: 0, borderRadius: 4, fontSize: 11, lineHeight: '18px', paddingInline: 6, fontWeight: 600 }}>{ROLE_SHORT_LABELS[u.role]}</Tag>
@@ -191,27 +189,20 @@ export default function EmployeeHome() {
           </div>
         </Dropdown>
       </div>
-
-      {summaryCard}
-      {probationCard}
-
+      {summaryCard}{probationCard}
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
         {[
           { href: '/nv/diem-danh', label: 'Điểm danh GPS', icon: <EnvironmentOutlined />, primary: true },
-          { href: '/nv/lich', label: 'Lịch & Nghỉ OFF', icon: <CalendarOutlined /> },
+          { href: '/nv/lich', label: 'Lịch & Đăng ký ca', icon: <CalendarOutlined /> },
+          { href: '/nv/nghi-phep', label: 'Đăng ký Nghỉ OFF', icon: <ClockCircleOutlined /> },
+          { href: '/nv/doi-ca', label: 'Đổi ca nội bộ', icon: <SwapOutlined /> },
           { href: '/nv/cong', label: 'Bảng công', icon: <FieldTimeOutlined /> },
           { href: '/nv/phieu-luong', label: 'Phiếu lương', icon: <FileTextOutlined /> },
         ].map((btn) => (
-          <Col span={12} key={btn.href}>
-            <Link href={btn.href} style={{ display: 'block' }}>
-              <Button type={btn.primary ? 'primary' : 'default'} icon={btn.icon} block style={{ height: 40, justifyContent: 'flex-start', fontWeight: 600 }}>{btn.label}</Button>
-            </Link>
-          </Col>
+          <Col span={12} key={btn.href}><Link href={btn.href} style={{ display: 'block' }}><Button type={btn.primary ? 'primary' : 'default'} icon={btn.icon} block style={{ height: 40, justifyContent: 'flex-start', fontWeight: 600 }}>{btn.label}</Button></Link></Col>
         ))}
       </Row>
-
-      {shiftsCard}
-      {tasksCard}
+      {shiftsCard}{scheduleCenterCard}{tasksCard}
       <UserProfileModal open={profileTab !== null} initialTab={profileTab ?? 'info'} onClose={() => setProfileTab(null)} />
     </div>
   );

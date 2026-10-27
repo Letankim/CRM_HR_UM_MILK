@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, App, Button, Flex, Popconfirm, Segmented, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import {
   AppstoreOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined,
@@ -21,6 +21,7 @@ type ScheduleViewMode = 'WEEK_MATRIX' | 'CALENDAR' | 'TABLE';
 
 export interface EmployeeScheduleAndLeaveCenterProps {
   todayDate: string; empId: string; empCode: string; stage?: string;
+  initialTab?: 'shifts' | 'leaves' | 'swaps';
   shifts: Record<string, unknown>[]; leaves: Record<string, unknown>[]; emergencyLeaves?: Record<string, unknown>[]; swaps: Record<string, unknown>[];
   branchPeers: { id: string; employeeCode: string; fullName: string; positionTitle?: string; branchName?: string; busyShiftsByDate?: Record<string, string> }[];
   refreshing?: boolean; onRefresh: () => void;
@@ -30,10 +31,12 @@ const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace
 const fmtShiftTime = (r: Record<string, unknown>) => `${String(r.startAt || r.start_at || '07:00')} – ${String(r.endAt || r.end_at || '12:00')}${r.scheduledHours || r.scheduled_hours ? ` (${r.scheduledHours || r.scheduled_hours}h)` : ''}`;
 
 export function EmployeeScheduleAndLeaveCenter({
-  todayDate, empId, empCode, stage, shifts, leaves, emergencyLeaves = [], swaps, branchPeers, refreshing = false, onRefresh,
+  todayDate, empId, empCode, stage, initialTab = 'shifts', shifts, leaves, emergencyLeaves = [], swaps, branchPeers, refreshing = false, onRefresh,
 }: EmployeeScheduleAndLeaveCenterProps) {
   const { message } = App.useApp();
+  const [activeTab, setActiveTab] = useState<'shifts' | 'leaves' | 'swaps'>(initialTab);
   const [viewMode, setViewMode] = useState<ScheduleViewMode>('WEEK_MATRIX');
+  useEffect(() => { setActiveTab(initialTab); }, [initialTab]);
   const [addShiftOpen, setAddShiftOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [swapOpen, setSwapOpen] = useState(false);
@@ -62,6 +65,8 @@ export function EmployeeScheduleAndLeaveCenter({
   return (
     <>
       <Tabs
+        activeKey={activeTab}
+        onChange={(k) => setActiveTab(k as 'shifts' | 'leaves' | 'swaps')}
         tabBarExtraContent={
           <Space size={6} wrap>
             <Button size="small" icon={<ReloadOutlined />} loading={refreshing} onClick={onRefresh}>Làm mới</Button>

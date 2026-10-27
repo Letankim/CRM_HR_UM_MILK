@@ -162,7 +162,7 @@ export function TopHeaderBar({
             size="small"
             className="umbm-header-pill"
             icon={<ShopOutlined />}
-            onClick={() => router.push('/nv/login')}
+            onClick={() => router.push('/nv')}
             style={{ height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder, paddingInline: 10 }}
           >
             Cổng NV
