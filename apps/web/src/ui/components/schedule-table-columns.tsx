@@ -88,7 +88,6 @@ export function buildScheduleColumns({ canEdit, onApprove, onEdit, onDelete }: B
         </Space>
       ),
     },
-    { title: 'Ghi chú', dataIndex: 'note', width: 230, ellipsis: true },
     {
       title: 'Thao tác',
       key: 'actions',

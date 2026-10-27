@@ -1,7 +1,7 @@
 'use client';
 
-import { Alert, Button, Card, Col, Descriptions, Empty, Form, Input, Modal, Row, Space, Table, Tag, Tooltip, Typography } from 'antd';
-import { CheckCircleOutlined, CloseOutlined, EyeOutlined, FileAddOutlined, RiseOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Col, Descriptions, Empty, Form, Input, Modal, Row, Space, Table, Tag } from 'antd';
+import { CheckCircleOutlined, CloseOutlined, FileAddOutlined, RiseOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { useClientPagination } from '../hooks/useClientPagination';
@@ -57,23 +57,13 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
             pagination={histPag}
             dataSource={historyRows}
             columns={[
-              { title: 'Chuyển đổi giai đoạn', key: 'transition', width: 225, render: (_, r) => <Space size={6} wrap><StatusTag value={r.fromStage} /><span style={{ color: '#94A3B8', fontWeight: 600 }}>→</span><StatusTag value={r.toStage} /></Space> },
-              { title: 'Ngày hiệu lực', dataIndex: 'effectiveFrom', width: 115, render: (v: string) => <span className="num" style={{ fontWeight: 600 }}>{v}</span> },
-              { title: 'Giờ thử việc / Điểm TEST', key: 'metrics', width: 165, render: (_, r) => <Space size={4} wrap><Tag color="blue" className="num" style={{ margin: 0, borderRadius: 2 }}>{r.probationHoursCompleted}h</Tag><Tag color={r.testScorePercent >= 80 ? 'green' : 'gold'} className="num" style={{ margin: 0, borderRadius: 2 }}>TEST {r.testScorePercent}%</Tag></Space> },
-              {
-                title: 'Đánh giá & Lý do quyết định',
-                dataIndex: 'evaluationSummary',
-                ellipsis: { showTitle: false },
-                render: (v: string) => (
-                  <Tooltip title={v || '—'}>
-                    <Typography.Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 0, fontSize: 13, minWidth: 200 }}>{v || '—'}</Typography.Paragraph>
-                  </Tooltip>
-                ),
-              },
+              { title: 'Chuyển đổi giai đoạn', key: 'transition', width: 240, render: (_, r) => <Space size={6} wrap><StatusTag value={r.fromStage} /><span style={{ color: '#94A3B8', fontWeight: 600 }}>→</span><StatusTag value={r.toStage} /></Space> },
+              { title: 'Ngày hiệu lực', dataIndex: 'effectiveFrom', width: 125, render: (v: string) => <span className="num" style={{ fontWeight: 600 }}>{v}</span> },
+              { title: 'Giờ thử việc / Điểm TEST', key: 'metrics', width: 180, render: (_, r) => <Space size={4} wrap><Tag color="blue" className="num" style={{ margin: 0, borderRadius: 2 }}>{r.probationHoursCompleted}h</Tag><Tag color={r.testScorePercent >= 80 ? 'green' : 'gold'} className="num" style={{ margin: 0, borderRadius: 2 }}>TEST {r.testScorePercent}%</Tag></Space> },
               {
                 title: 'Người duyệt',
                 key: 'decidedBy',
-                width: 175,
+                width: 195,
                 render: (_, r) => (
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>{r.decidedBy || 'Phòng Nhân sự'}</div>

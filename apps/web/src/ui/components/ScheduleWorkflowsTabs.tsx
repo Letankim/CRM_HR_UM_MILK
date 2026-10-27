@@ -102,7 +102,6 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
                     { title: 'Ngày công', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
                     { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
                     { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 115, render: (v: number) => <strong>{v} giờ</strong> },
-                    { title: 'Lý do giải trình', dataIndex: 'reason', width: 260, ellipsis: true },
                     { title: 'Trạng thái', dataIndex: 'status', width: 165, render: (v: string) => <StatusTag value={v} /> },
                     {
                       title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
@@ -135,7 +134,6 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
                     { title: 'Ngày nghỉ', dataIndex: 'leave_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
                     { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
                     { title: 'Định mức', width: 115, render: (_, r) => <Tag color="blue" style={{ margin: 0 }}>{String(r.quota_cycle_used)}/{String(r.quota_cycle_limit)} ngày</Tag> },
-                    { title: 'Lý do xin nghỉ', dataIndex: 'reason', width: 250, ellipsis: true },
                     { title: 'Trạng thái', dataIndex: 'status', width: 155, render: (v: string) => <StatusTag value={v} /> },
                     {
                       title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
@@ -163,9 +161,8 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
                     { title: 'Mã đơn', dataIndex: 'swap_code', width: 110, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Ngày ca', dataIndex: 'from_work_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
                     { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                    { title: 'Người xin đổi', dataIndex: 'requesterName', width: 190, ellipsis: true },
-                    { title: 'Người nhận thay', dataIndex: 'peerName', width: 190, ellipsis: true },
-                    { title: 'Lý do đổi ca', dataIndex: 'reason', width: 230, ellipsis: true },
+                    { title: 'Người xin đổi', dataIndex: 'requesterName', width: 195, ellipsis: true },
+                    { title: 'Người nhận thay', dataIndex: 'peerName', width: 195, ellipsis: true },
                     { title: 'Trạng thái', dataIndex: 'status', width: 170, render: (v: string) => <StatusTag value={v} /> },
                     {
                       title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
@@ -194,7 +191,6 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
                     { title: 'Nhân sự', dataIndex: 'employeeName', width: 200, ellipsis: true },
                     { title: 'Ngày ca', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
                     { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                    { title: 'Lý do khẩn cấp', dataIndex: 'reason', width: 250, ellipsis: true },
                     { title: 'Trạng thái & Phủ ca', dataIndex: 'status', width: 185, render: (v: string, r) => <Space size={4} wrap><StatusTag value={v} />{v !== 'REPORTED' && <Tag color={v === 'RESOLVED' ? 'green' : 'red'} style={{ margin: 0 }}>{String(r.shift_coverage_status || (v === 'RESOLVED' ? 'Đã phủ ca' : 'Thiếu ca'))}</Tag>}</Space> },
                     {
                       title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
