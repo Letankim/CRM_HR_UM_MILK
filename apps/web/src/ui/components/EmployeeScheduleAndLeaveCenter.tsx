@@ -102,11 +102,11 @@ export function EmployeeScheduleAndLeaveCenter({
                     columns={[
                       { title: 'Ngày làm việc', dataIndex: 'workDate', width: 145, render: (v: string) => <Space size={6}><span className="num" style={{ fontWeight: 600 }}>{dayjs(v).format('DD/MM/YYYY')}</span>{v === todayDate && <Tag color="blue" style={{ margin: 0 }}>Hôm nay</Tag>}</Space> },
                       { title: 'Khung ca & Giờ ca', width: 225, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                      { title: 'Chi nhánh', dataIndex: 'branchName', ellipsis: true },
+                      { title: 'Chi nhánh', dataIndex: 'branchName', width: 195, ellipsis: true },
                       { title: 'Điểm danh', width: 185, render: (_, r) => <Tag color={String(r.attendanceStatusColor || 'default')} style={{ margin: 0 }}>{String(r.attendanceStatusLabel || 'Chưa điểm danh')}</Tag> },
                       { title: 'Trạng thái lịch', dataIndex: 'status', width: 145, render: (v: string, r) => <StatusTag value={v} label={String(r.statusLabel || '') || undefined} /> },
                       {
-                        title: 'Thao tác', width: 195, align: 'right',
+                        title: 'Thao tác', width: 205, fixed: 'right', align: 'right',
                         render: (_, r) => (
                           <Space size={6}>
                             <Tooltip title="Xem chi tiết ca làm việc"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'shift', record: { ...r, employeeId: empId } })} /></Tooltip>
@@ -137,12 +137,12 @@ export function EmployeeScheduleAndLeaveCenter({
                   bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportLeavesExcel(rows) }]}
                   locale={{ emptyText: 'Bạn chưa có đơn đăng ký nghỉ phép (OFF) nào trong kỳ.' }}
                   columns={[
-                    { title: 'Mã đơn', dataIndex: 'request_code', width: 105, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
+                    { title: 'Mã đơn', dataIndex: 'request_code', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Ngày xin nghỉ', dataIndex: 'leave_date', width: 120, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
                     { title: 'Khung ca & Giờ ca', width: 225, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                    { title: 'Lý do xin nghỉ', dataIndex: 'reason', ellipsis: true },
-                    { title: 'Trạng thái', dataIndex: 'status', width: 140, render: (v: string) => <StatusTag value={v} /> },
-                    { title: 'Chi tiết', width: 75, align: 'center', render: (_, r) => <Tooltip title="Xem chi tiết đơn nghỉ OFF"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'leave', record: r })} /></Tooltip> },
+                    { title: 'Lý do xin nghỉ', dataIndex: 'reason', width: 250, ellipsis: true },
+                    { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (v: string) => <StatusTag value={v} /> },
+                    { title: 'Chi tiết', width: 80, fixed: 'right', align: 'center', render: (_, r) => <Tooltip title="Xem chi tiết đơn nghỉ OFF"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'leave', record: r })} /></Tooltip> },
                   ]}
                 />
                 {emergencyLeaves.length > 0 && (
@@ -154,9 +154,9 @@ export function EmployeeScheduleAndLeaveCenter({
                       { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 110, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
                       { title: 'Ngày nghỉ', dataIndex: 'work_date', width: 120, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
                       { title: 'Khung ca & Giờ ca', width: 225, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                      { title: 'Lý do khẩn cấp', dataIndex: 'reason', ellipsis: true },
-                      { title: 'Trạng thái', dataIndex: 'status', width: 140, render: (v: string) => <StatusTag value={v} /> },
-                      { title: 'Chi tiết', width: 75, align: 'center', render: (_, r) => <Tooltip title="Xem chi tiết báo nghỉ khẩn"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'emergency', record: r })} /></Tooltip> },
+                      { title: 'Lý do khẩn cấp', dataIndex: 'reason', width: 250, ellipsis: true },
+                      { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (v: string) => <StatusTag value={v} /> },
+                      { title: 'Chi tiết', width: 80, fixed: 'right', align: 'center', render: (_, r) => <Tooltip title="Xem chi tiết báo nghỉ khẩn"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'emergency', record: r })} /></Tooltip> },
                     ]}
                   />
                 )}
@@ -178,14 +178,14 @@ export function EmployeeScheduleAndLeaveCenter({
                   ]}
                   locale={{ emptyText: 'Bạn chưa có yêu cầu đổi ca nội bộ nào. Bấm nút "Đổi ca" phía trên để gửi đề nghị đổi ca với đồng nghiệp.' }}
                   columns={[
-                    { title: 'Mã đơn', dataIndex: 'swap_code', width: 100, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
-                    { title: 'Ngày ca', dataIndex: 'from_work_date', width: 110, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 220, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                    { title: 'Người xin đổi', ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.requesterName || '')}</span>{(r.requester_id === empId || r.requesterCode === empCode) && <Tag color="blue" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
-                    { title: 'Người nhận ca', ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.peerName || '')}</span>{(r.peer_id === empId || r.peerCode === empCode) && <Tag color="cyan" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
+                    { title: 'Mã đơn', dataIndex: 'swap_code', width: 110, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
+                    { title: 'Ngày ca', dataIndex: 'from_work_date', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> },
+                    { title: 'Khung ca & Giờ ca', width: 225, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                    { title: 'Người xin đổi', width: 190, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.requesterName || '')}</span>{(r.requester_id === empId || r.requesterCode === empCode) && <Tag color="blue" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
+                    { title: 'Người nhận ca', width: 190, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.peerName || '')}</span>{(r.peer_id === empId || r.peerCode === empCode) && <Tag color="cyan" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
                     { title: 'Trạng thái', dataIndex: 'status', width: 165, render: (v: string) => <StatusTag value={v} /> },
                     {
-                      title: 'Thao tác', width: 215, align: 'right',
+                      title: 'Thao tác', width: 215, fixed: 'right', align: 'right',
                       render: (_, r) => {
                         const isPeer = r.peer_id === empId || r.peerCode === empCode;
                         return (

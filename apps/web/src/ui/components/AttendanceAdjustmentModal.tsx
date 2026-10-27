@@ -123,7 +123,7 @@ export function AttendanceAdjustmentModal({
 
   return (
     <Modal
-      width={660} open={open} forceRender title="Gửi phiếu bổ sung công (Chỉ áp dụng cho ca Vắng mặt cần bù công)"
+      width="min(840px, 94vw)" open={open} forceRender title="Gửi phiếu bổ sung công (Chỉ áp dụng cho ca Vắng mặt cần bù công)"
       onCancel={onClose} onOk={handleSubmit} confirmLoading={loading}
       okText="Gửi phiếu bổ sung công" cancelText="Đóng"
       okButtonProps={{ icon: <SendOutlined />, disabled: !isShiftLocked }} cancelButtonProps={{ icon: <CloseOutlined /> }}

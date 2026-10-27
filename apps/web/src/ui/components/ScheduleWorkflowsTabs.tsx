@@ -94,17 +94,17 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
               <>
                 {renderSubFilterBar(() => exportAdjustmentsExcel(filteredAdjustments), <GuardButton type="primary" icon={<FileAddOutlined />} perms={['attendance.confirm', 'adjustment.approve']} onClick={() => setAdjModal(true)}>Tạo phiếu bổ sung công</GuardButton>)}
                 <SelectableTable<Record<string, unknown>>
-                  size="small" rowKey="id" loading={adjQ.isLoading} pagination={mkPag(adjQ.data?.meta.pagination.total)} dataSource={filteredAdjustments} bulkActions={buildAdjustmentsBulkActions(bulkOpts)}
+                  size="small" rowKey="id" loading={adjQ.isLoading} pagination={mkPag(adjQ.data?.meta.pagination.total)} dataSource={filteredAdjustments} bulkActions={buildAdjustmentsBulkActions(bulkOpts)} scroll={{ x: 'max-content' }}
                   columns={[
-                    { title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 105, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
-                    { title: 'Nhân sự', ellipsis: true, render: (_, r) => <strong>{String(r.employeeName || '')}</strong> },
+                    { title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
+                    { title: 'Nhân sự', width: 195, ellipsis: true, render: (_, r) => <strong>{String(r.employeeName || '')}</strong> },
                     { title: 'Ngày công', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 215, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                    { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 100, render: (v: number) => <strong>{v} giờ</strong> },
-                    { title: 'Lý do giải trình', dataIndex: 'reason', ellipsis: true },
-                    { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (v: string) => <StatusTag value={v} /> },
+                    { title: 'Khung ca & Giờ ca', width: 225, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                    { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 110, render: (v: number) => <strong>{v} giờ</strong> },
+                    { title: 'Lý do giải trình', dataIndex: 'reason', width: 260, ellipsis: true },
+                    { title: 'Trạng thái', dataIndex: 'status', width: 150, render: (v: string) => <StatusTag value={v} /> },
                     {
-                      title: 'Thao tác', width: 270, align: 'right',
+                      title: 'Thao tác', width: 270, fixed: 'right', align: 'right',
                       render: (_, r) => (
                         <Space size={4}>
                           <Tooltip title="Xem chi tiết phiếu bổ sung"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'adjustment', record: r })} /></Tooltip>
@@ -126,17 +126,17 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
               <>
                 {renderSubFilterBar(() => exportLeavesExcel(filteredLeaves), <GuardButton type="primary" icon={<PlusOutlined />} perms={['leave.approve']} onClick={() => setLeaveModal(true)}>Đăng ký nghỉ OFF</GuardButton>)}
                 <SelectableTable<Record<string, unknown>>
-                  size="small" rowKey="id" loading={leavesQ.isLoading} pagination={mkPag(leavesQ.data?.meta.pagination.total)} dataSource={filteredLeaves} bulkActions={buildLeavesBulkActions(bulkOpts)}
+                  size="small" rowKey="id" loading={leavesQ.isLoading} pagination={mkPag(leavesQ.data?.meta.pagination.total)} dataSource={filteredLeaves} bulkActions={buildLeavesBulkActions(bulkOpts)} scroll={{ x: 'max-content' }}
                   columns={[
-                    { title: 'Mã đơn', dataIndex: 'request_code', width: 105, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
-                    { title: 'Nhân sự', ellipsis: true, render: (_, r) => <strong>{String(r.employeeName)} ({String(r.employeeCode)})</strong> },
+                    { title: 'Mã đơn', dataIndex: 'request_code', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
+                    { title: 'Nhân sự', width: 205, ellipsis: true, render: (_, r) => <strong>{String(r.employeeName)} ({String(r.employeeCode)})</strong> },
                     { title: 'Ngày nghỉ', dataIndex: 'leave_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 215, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                    { title: 'Định mức', width: 105, render: (_, r) => <Tag color="blue" style={{ margin: 0 }}>{String(r.quota_cycle_used)}/{String(r.quota_cycle_limit)} ngày</Tag> },
-                    { title: 'Lý do xin nghỉ', dataIndex: 'reason', ellipsis: true },
-                    { title: 'Trạng thái', dataIndex: 'status', width: 130, render: (v: string) => <StatusTag value={v} /> },
+                    { title: 'Khung ca & Giờ ca', width: 225, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                    { title: 'Định mức', width: 110, render: (_, r) => <Tag color="blue" style={{ margin: 0 }}>{String(r.quota_cycle_used)}/{String(r.quota_cycle_limit)} ngày</Tag> },
+                    { title: 'Lý do xin nghỉ', dataIndex: 'reason', width: 250, ellipsis: true },
+                    { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (v: string) => <StatusTag value={v} /> },
                     {
-                      title: 'Thao tác', width: 210, align: 'right',
+                      title: 'Thao tác', width: 210, fixed: 'right', align: 'right',
                       render: (_, r) => (
                         <Space size={4}>
                           <Tooltip title="Xem chi tiết đơn nghỉ OFF"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'leave', record: r })} /></Tooltip>
@@ -156,16 +156,17 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
               <>
                 {renderSubFilterBar(() => exportSwapsExcel(filteredSwaps), <GuardButton type="primary" icon={<PlusOutlined />} perms={['swap.approve']} onClick={() => setSwapModal(true)}>Tạo yêu cầu đổi ca</GuardButton>)}
                 <SelectableTable<Record<string, unknown>>
-                  size="small" rowKey="id" loading={swapsQ.isLoading} pagination={mkPag(swapsQ.data?.meta.pagination.total)} dataSource={filteredSwaps} bulkActions={buildSwapsBulkActions(bulkOpts)}
+                  size="small" rowKey="id" loading={swapsQ.isLoading} pagination={mkPag(swapsQ.data?.meta.pagination.total)} dataSource={filteredSwaps} bulkActions={buildSwapsBulkActions(bulkOpts)} scroll={{ x: 'max-content' }}
                   columns={[
-                    { title: 'Mã đơn', dataIndex: 'swap_code', width: 105, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
+                    { title: 'Mã đơn', dataIndex: 'swap_code', width: 110, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Ngày ca', dataIndex: 'from_work_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 215, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                    { title: 'Người xin đổi', dataIndex: 'requesterName', ellipsis: true },
-                    { title: 'Người nhận thay', dataIndex: 'peerName', ellipsis: true },
+                    { title: 'Khung ca & Giờ ca', width: 225, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                    { title: 'Người xin đổi', dataIndex: 'requesterName', width: 185, ellipsis: true },
+                    { title: 'Người nhận thay', dataIndex: 'peerName', width: 185, ellipsis: true },
+                    { title: 'Lý do đổi ca', dataIndex: 'reason', width: 220, ellipsis: true },
                     { title: 'Trạng thái', dataIndex: 'status', width: 165, render: (v: string) => <StatusTag value={v} /> },
                     {
-                      title: 'Thao tác', width: 245, align: 'right',
+                      title: 'Thao tác', width: 245, fixed: 'right', align: 'right',
                       render: (_, r) => (
                         <Space size={4}>
                           <Tooltip title="Xem chi tiết yêu cầu đổi ca"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'swap', record: r })} /></Tooltip>
@@ -186,16 +187,16 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
               <>
                 {renderSubFilterBar(() => exportEmergencyExcel(filteredEmg), <GuardButton danger icon={<AlertOutlined />} perms={['emergency.handle']} onClick={() => setEmgModal(true)}>Báo nghỉ khẩn</GuardButton>)}
                 <SelectableTable<Record<string, unknown>>
-                  size="small" rowKey="id" loading={emgQ.isLoading} pagination={mkPag(emgQ.data?.meta.pagination.total)} dataSource={filteredEmg} bulkActions={buildEmergencyBulkActions(bulkOpts)}
+                  size="small" rowKey="id" loading={emgQ.isLoading} pagination={mkPag(emgQ.data?.meta.pagination.total)} dataSource={filteredEmg} bulkActions={buildEmergencyBulkActions(bulkOpts)} scroll={{ x: 'max-content' }}
                   columns={[
-                    { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 110, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
-                    { title: 'Nhân sự', dataIndex: 'employeeName', ellipsis: true },
+                    { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 115, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
+                    { title: 'Nhân sự', dataIndex: 'employeeName', width: 195, ellipsis: true },
                     { title: 'Ngày ca', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 215, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                    { title: 'Lý do khẩn cấp', dataIndex: 'reason', ellipsis: true },
-                    { title: 'Trạng thái', dataIndex: 'status', width: 140, render: (v: string) => <StatusTag value={v} /> },
+                    { title: 'Khung ca & Giờ ca', width: 225, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                    { title: 'Lý do khẩn cấp', dataIndex: 'reason', width: 250, ellipsis: true },
+                    { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (v: string) => <StatusTag value={v} /> },
                     {
-                      title: 'Điều phối', width: 270, align: 'right',
+                      title: 'Điều phối', width: 270, fixed: 'right', align: 'right',
                       render: (_, r) => (
                         <Space size={4}>
                           <Tooltip title="Xem chi tiết báo nghỉ khẩn"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'emergency', record: r })} /></Tooltip>

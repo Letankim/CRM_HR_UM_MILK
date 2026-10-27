@@ -113,7 +113,7 @@ export function ScheduleWorkflowModals({
 
   return (
     <>
-      <Modal width={640} open={leaveModal} forceRender title="Tạo đơn xin nghỉ phép (OFF)" okText="Gửi đơn nghỉ phép" cancelText="Hủy bỏ" okButtonProps={{ icon: <PlusOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseLeave} onOk={() => leaveForm.submit()}>
+      <Modal width="min(760px, 94vw)" open={leaveModal} forceRender title="Tạo đơn xin nghỉ phép (OFF)" okText="Gửi đơn nghỉ phép" cancelText="Hủy bỏ" okButtonProps={{ icon: <PlusOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseLeave} onOk={() => leaveForm.submit()}>
         <Form form={leaveForm} layout="vertical" initialValues={{ shift_code: 'CA_SANG', kind: 'WEEKLY_OFF', leave_date: dayjs().add(1, 'day').format('YYYY-MM-DD') }} onFinish={(v) => { onSubmitAction('/admin/leave-requests', v); onCloseLeave(); }}>
           <Form.Item name="employee_id" label="Nhân sự" rules={[{ required: true }]}><Select options={employees} showSearch optionFilterProp="label" placeholder="Chọn nhân sự" /></Form.Item>
           <Row gutter={12}><Col span={12}><Form.Item name="leave_date" label="Ngày nghỉ" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col><Col span={12}><Form.Item name="shift_code" label="Khung ca (theo chi nhánh)"><Select options={leaveShiftOptions} /></Form.Item></Col></Row>
@@ -121,7 +121,7 @@ export function ScheduleWorkflowModals({
         </Form>
       </Modal>
 
-      <Modal width={640} open={swapModal} forceRender title="Tạo yêu cầu đổi ca" okText="Tạo yêu cầu đổi ca" cancelText="Hủy bỏ" okButtonProps={{ icon: <SwapOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseSwap} onOk={() => swapForm.submit()}>
+      <Modal width="min(760px, 94vw)" open={swapModal} forceRender title="Tạo yêu cầu đổi ca" okText="Tạo yêu cầu đổi ca" cancelText="Hủy bỏ" okButtonProps={{ icon: <SwapOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseSwap} onOk={() => swapForm.submit()}>
         <Form form={swapForm} layout="vertical" onFinish={(v) => { onSubmitAction('/admin/shift-swaps', v); onCloseSwap(); }}>
           <Form.Item name="from_assignment_id" label="Ca làm việc cần đổi" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" placeholder="Chọn ca làm việc cần đổi" onChange={(id) => { const found = assignments.find((a) => a.id === id); if (found) { swapForm.setFieldValue('requester_id', found.employeeId); swapForm.setFieldValue('peer_id', undefined); } }} options={assignments.map((a) => ({ value: a.id, label: `${a.workDate} — ${a.shiftLabel} (${a.employeeName})` }))} /></Form.Item>
           <Form.Item name="requester_id" label="Người xin đổi ca" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" placeholder="Chọn người xin đổi ca" options={employees} disabled /></Form.Item>
@@ -130,7 +130,7 @@ export function ScheduleWorkflowModals({
         </Form>
       </Modal>
 
-      <Modal width={640} open={emgModal} forceRender title="Báo nghỉ đột xuất / Khẩn cấp" okText="Gửi báo nghỉ khẩn" cancelText="Hủy bỏ" okButtonProps={{ danger: true, icon: <AlertOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseEmg} onOk={() => emgForm.submit()}>
+      <Modal width="min(760px, 94vw)" open={emgModal} forceRender title="Báo nghỉ đột xuất / Khẩn cấp" okText="Gửi báo nghỉ khẩn" cancelText="Hủy bỏ" okButtonProps={{ danger: true, icon: <AlertOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseEmg} onOk={() => emgForm.submit()}>
         <Form form={emgForm} layout="vertical" initialValues={{ work_date: dayjs().format('YYYY-MM-DD'), shift_code: 'CA_TOI' }} onFinish={(v) => { onSubmitAction('/admin/emergency-leaves', v); onCloseEmg(); }}>
           <Form.Item name="employee_id" label="Nhân sự" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" placeholder="Chọn nhân sự" options={employees} /></Form.Item>
           <Row gutter={12}><Col span={12}><Form.Item name="work_date" label="Ngày ca làm việc" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col><Col span={12}><Form.Item name="shift_code" label="Khung ca (theo chi nhánh)"><Select options={emgShiftOptions} /></Form.Item></Col></Row>
@@ -138,7 +138,7 @@ export function ScheduleWorkflowModals({
         </Form>
       </Modal>
 
-      <Modal width={680} open={adjModal} forceRender title="Tạo phiếu bổ sung công (Chỉ áp dụng cho ca Vắng mặt cần bù công)" okText="Tạo phiếu bổ sung" cancelText="Hủy bỏ" okButtonProps={{ icon: <FileAddOutlined />, disabled: !isAdjShiftLocked }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseAdj} onOk={() => adjForm.submit()}>
+      <Modal width="min(840px, 94vw)" open={adjModal} forceRender title="Tạo phiếu bổ sung công (Chỉ áp dụng cho ca Vắng mặt cần bù công)" okText="Tạo phiếu bổ sung" cancelText="Hủy bỏ" okButtonProps={{ icon: <FileAddOutlined />, disabled: !isAdjShiftLocked }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseAdj} onOk={() => adjForm.submit()}>
         <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Chọn Nhân sự để hệ thống tự động tải các ca Vắng mặt cần bù công của nhân sự đó. Các ca chưa điểm danh hoặc đã hoàn thành sẽ không hiển thị. Khi chọn ca vắng mặt, Ngày công và Thời gian ca sẽ khóa cố định." />
         <Form
           form={adjForm} layout="vertical"

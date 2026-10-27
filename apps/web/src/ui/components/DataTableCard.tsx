@@ -99,7 +99,8 @@ export function DataTableCard<TRecord extends { id: string }>({
       const isAction = isLast && (col.key === 'actions' || col.key === 'act' || col.title === 'Thao tác');
       return {
         ...col,
-        ...(isAction ? { fixed: 'right' as const, width: col.width ?? 88 } : {}),
+        width: col.width ?? (isAction ? 88 : 'ellipsis' in col && col.ellipsis ? 230 : 185),
+        ...(isAction ? { fixed: 'right' as const } : {}),
       };
     });
     return [noColumn, ...normalizedCols];

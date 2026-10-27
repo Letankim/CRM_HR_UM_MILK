@@ -114,6 +114,8 @@ export function SelectableTable<TRecord extends object>({
   bulkActions = [],
   dataSource = [],
   rowKey = 'id',
+  columns,
+  scroll,
   ...rest
 }: SelectableTableProps<TRecord>) {
   const getKey = (r: TRecord): string =>
@@ -134,6 +136,15 @@ export function SelectableTable<TRecord extends object>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataSource, selectedRowKeys]);
 
+  const normalizedColumns = useMemo(
+    () =>
+      columns?.map((col) => ({
+        ...col,
+        width: col.width ?? ('ellipsis' in col && col.ellipsis ? 230 : 185),
+      })),
+    [columns],
+  );
+
   const resolvedActions =
     typeof bulkActions === 'function' ? bulkActions(selectedRows, clearSelection) : bulkActions;
 
@@ -147,6 +158,8 @@ export function SelectableTable<TRecord extends object>({
       <Table<TRecord>
         rowKey={rowKey}
         dataSource={dataSource}
+        columns={normalizedColumns}
+        scroll={scroll ?? { x: 'max-content' }}
         rowSelection={{
           selectedRowKeys,
           onChange: (keys) => setSelectedRowKeys(keys),

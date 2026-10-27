@@ -93,7 +93,7 @@ export function QuickAbsentAdjustmentModal({
 
   return (
     <Modal
-      width={660}
+      width="min(840px, 94vw)"
       open={open && Boolean(shift)}
       destroyOnHidden
       title="Tạo Phiếu Bổ Sung Công Bù Ca Vắng Mặt"
@@ -113,7 +113,15 @@ export function QuickAbsentAdjustmentModal({
             icon={<LockOutlined />}
             message="Thông tin Ngày công, Khung ca và Thời lượng giờ công đã được khóa cố định theo đúng ca Vắng mặt đang chọn."
           />
-          <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} styles={{ label: { width: 165, fontWeight: 600, background: '#F8FAFC' } }}>
+          <Descriptions
+            bordered
+            size="small"
+            column={{ xs: 1, sm: 2 }}
+            styles={{
+              label: { width: 175, fontWeight: 600, background: '#F8FAFC', whiteSpace: 'nowrap' },
+              content: { minWidth: 210 },
+            }}
+          >
             <Descriptions.Item label="Nhân sự được bù công" span={2}>
               <strong>{empName}</strong> {empCode ? <Tag color="geekblue" style={{ marginLeft: 6 }}>{empCode}</Tag> : null}
               {branchName ? <span style={{ color: '#64748B', marginLeft: 6 }}>· {branchName}</span> : null}

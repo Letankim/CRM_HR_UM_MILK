@@ -44,7 +44,7 @@ export function buildScheduleColumns({ canEdit, onApprove, onEdit, onDelete }: B
     {
       title: 'Ngày & Khung ca',
       key: 'shift',
-      width: 195,
+      width: 200,
       render: (_, r) => (
         <Flex vertical gap={2}>
           <span className="num" style={{ fontWeight: 700, color: '#0F172A' }}>{r.workDate}</span>
@@ -58,6 +58,7 @@ export function buildScheduleColumns({ canEdit, onApprove, onEdit, onDelete }: B
     {
       title: 'Nhân sự phân công',
       key: 'emp',
+      width: 210,
       render: (_, r) => (
         <div>
           <Typography.Text strong>{r.employeeName}</Typography.Text>
@@ -70,12 +71,12 @@ export function buildScheduleColumns({ canEdit, onApprove, onEdit, onDelete }: B
         </div>
       ),
     },
-    { title: 'Chi nhánh', dataIndex: 'branchName', width: 175 },
-    { title: 'Giờ công', dataIndex: 'scheduledHours', width: 95, align: 'right', render: (v: number) => <span className="num" style={{ fontWeight: 600 }}>{v} giờ</span> },
+    { title: 'Chi nhánh', dataIndex: 'branchName', width: 185 },
+    { title: 'Giờ công', dataIndex: 'scheduledHours', width: 100, align: 'right', render: (v: number) => <span className="num" style={{ fontWeight: 600 }}>{v} giờ</span> },
     {
       title: 'Trạng thái & Điểm danh',
       key: 'status',
-      width: 210,
+      width: 215,
       render: (_, r) => (
         <Space direction="vertical" size={3}>
           <StatusTag value={r.status} label={r.statusLabel} />
@@ -87,11 +88,11 @@ export function buildScheduleColumns({ canEdit, onApprove, onEdit, onDelete }: B
         </Space>
       ),
     },
-    { title: 'Ghi chú', dataIndex: 'note', ellipsis: true },
+    { title: 'Ghi chú', dataIndex: 'note', width: 230, ellipsis: true },
     {
       title: 'Thao tác',
       key: 'actions',
-      width: 215,
+      width: 225,
       fixed: 'right',
       align: 'right',
       render: (_, r) => {
