@@ -72,7 +72,7 @@ const zCreateEmployeeBody = z.object({
 });
 
 export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
-  app.get('/api/admin/employees', { preHandler: requirePermission('employee.read') }, async (request) => {
+  app.get('/api/admin/employees', { preHandler: requirePermission('employee.read', 'employee.manage', 'schedule.read', 'schedule.propose', 'schedule.publish', 'payroll.read', 'payroll.manage', 'candidate.manage', 'interview.manage', 'test.manage') }, async (request) => {
     const query = zEmployeeListQuery.parse(request.query);
     if (query.branch_id && query.branch_id !== 'ALL') assertBranchAccess(request, query.branch_id);
     if (query.refresh === '1' || query.refresh === 'true') {

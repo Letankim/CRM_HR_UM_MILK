@@ -53,7 +53,7 @@ const zUpdateCandidateBody = z.object({
 const zDeleteBody = z.object({ version: z.coerce.number().int().min(1).optional() });
 
 export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContext) {
-  app.get('/api/admin/candidates', { preHandler: requirePermission('candidate.manage') }, async (request) => {
+  app.get('/api/admin/candidates', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
     const query = zCandidateListQuery.parse(request.query);
     if (query.refresh === '1' || query.refresh === 'true') {
       await ctx.db.candidates.refreshIfIdle();

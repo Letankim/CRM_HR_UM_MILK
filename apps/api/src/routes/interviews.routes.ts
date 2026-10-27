@@ -91,7 +91,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       return emp ? `${emp.full_name} (${emp.employee_code})` : id;
     }).join(', ');
 
-  app.get('/api/admin/interviews', { preHandler: requirePermission('interview.manage') }, async (request) => {
+  app.get('/api/admin/interviews', { preHandler: requirePermission('interview.manage', 'candidate.manage') }, async (request) => {
     const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), decision: z.string().trim().optional(), status: z.string().trim().optional() }).parse(request.query ?? {});
     const items = ctx.db.interviews.all().map((iv) => {
       const cand = ctx.db.candidates.get(iv.candidate_id) ?? ctx.db.candidates.find((c) => c.candidate_code === iv.candidate_id);

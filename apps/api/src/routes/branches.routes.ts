@@ -50,7 +50,7 @@ function mapStaffingRule(r: StaffingRule, ctx: AppContext) {
 }
 
 export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
-  app.get('/api/admin/branches', { preHandler: requirePermission('employee.read', 'schedule.read', 'system.config', 'account.read') }, async (request) => {
+  app.get('/api/admin/branches', { preHandler: requireAuth() }, async (request) => {
     const query = zBranchListQuery.parse(request.query);
     if (query.refresh === '1' || query.refresh === 'true') {
       await Promise.all([ctx.db.branches.refreshIfIdle(), ctx.db.shiftTemplates.refreshIfIdle()]);

@@ -80,7 +80,7 @@ export function mapShiftAssignment(
 }
 
 export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
-  app.get('/api/admin/schedules', { preHandler: requirePermission('schedule.read', 'employee.read', 'self.schedule') }, async (request) => {
+  app.get('/api/admin/schedules', { preHandler: requirePermission('schedule.read', 'schedule.propose', 'schedule.publish', 'employee.read', 'self.schedule') }, async (request) => {
     const query = zScheduleQuery.parse(request.query);
     if (query.branch_id && query.branch_id !== 'ALL') assertBranchAccess(request, query.branch_id);
     if (query.refresh === '1' || query.refresh === 'true') {

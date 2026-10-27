@@ -111,7 +111,7 @@ export class AuthService {
   /** Xác thực lại mỗi request: tài khoản phải còn ACTIVE và session_version khớp. */
   resolveSession(claims: TokenClaims): User {
     const user = this.db.users.get(claims.sub);
-    if (!user || user.status !== 'ACTIVE' || user.session_version !== claims.sv || user.role !== claims.role) {
+    if (!user || user.status !== 'ACTIVE' || user.session_version !== claims.sv) {
       throw Errors.unauthorized();
     }
     return user;

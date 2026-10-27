@@ -77,7 +77,7 @@ const zCreateAccountBody = z.object({
  * ADM-02 (Danh sách & Tạo mới tài khoản + Phân quyền bổ sung) và đăng ký ADM-03 (Kích hoạt / Khóa / Mở khóa / Thu hồi / Lịch sử quyền).
  */
 export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
-  app.get('/api/admin/accounts', { preHandler: requirePermission('account.read') }, async (request) => {
+  app.get('/api/admin/accounts', { preHandler: requirePermission('account.read', 'account.manage', 'account.activate') }, async (request) => {
     const query = zAccountListQuery.parse(request.query);
 
     if (query.refresh === '1' || query.refresh === 'true') {

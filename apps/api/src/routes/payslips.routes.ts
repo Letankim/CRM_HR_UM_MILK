@@ -22,13 +22,13 @@ function selfEmployee(ctx: AppContext, user: { id: string; employee_id: string }
 }
 
 export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
-  app.get('/api/admin/payroll/periods/:id/payslips', { preHandler: requirePermission('payroll.read') }, async (request) => {
+  app.get('/api/admin/payroll/periods/:id/payslips', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const { id } = request.params as { id: string };
     const items = ctx.db.payslips.filter((p) => p.period_id === id).sort((a, b) => a.employee_code.localeCompare(b.employee_code) || a.revision - b.revision);
     return sendSuccess(request, 'Lấy danh sách phiếu lương của kỳ thành công', items.map(mapPayslip));
   });
 
-  app.get('/api/admin/payroll/payslips/:id/revisions', { preHandler: requirePermission('payroll.read') }, async (request) => {
+  app.get('/api/admin/payroll/payslips/:id/revisions', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const { id } = request.params as { id: string };
     const slip = ctx.db.payslips.get(id) ?? ctx.db.payslips.find((p) => p.snapshot_id === id);
     if (!slip) return sendSuccess(request, 'Chưa có lịch sử điều chỉnh phiếu lương', []);

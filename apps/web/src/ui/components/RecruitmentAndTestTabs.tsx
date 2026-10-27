@@ -61,9 +61,11 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
   const todayStr = dayjs().format('YYYY-MM-DD');
   const nowTimeStr = dayjs().format('HH:mm');
 
-  const candQ = useQuery({ queryKey: ['candidates'], queryFn: () => api.list<Record<string, unknown>>('/admin/candidates?per_page=100') });
-  const ivQ = useQuery({ queryKey: ['interviews'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/interviews') });
-  const testsQ = useQuery({ queryKey: ['tests-bank'], queryFn: () => api.get<{ tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts: Record<string, unknown>[] }>('/admin/tests/bank') });
+  const canViewRec = can('candidate.manage', 'interview.manage');
+  const canViewTests = can('test.manage', 'employee.read', 'system.config');
+  const candQ = useQuery({ queryKey: ['candidates'], queryFn: () => api.list<Record<string, unknown>>('/admin/candidates?per_page=100'), enabled: canViewRec });
+  const ivQ = useQuery({ queryKey: ['interviews'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/interviews'), enabled: canViewRec });
+  const testsQ = useQuery({ queryKey: ['tests-bank'], queryFn: () => api.get<{ tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts: Record<string, unknown>[] }>('/admin/tests/bank'), enabled: canViewTests });
   const recipientsQ = useQuery({
     queryKey: ['notification-recipients'],
     queryFn: () => api.get<{ id: string; username: string; displayName: string; roleLabel: string }[]>('/notifications/recipients'),
@@ -181,11 +183,7 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
                 label="Ngày phỏng vấn"
                 rules={[
                   { required: true, message: 'Vui lòng chọn ngày phỏng vấn' },
-                  {
-                    validator: async (_, val) => {
-                      if (val && String(val) < dayjs().format('YYYY-MM-DD')) throw new Error('Không được chọn ngày trong quá khứ');
-                    },
-                  },
+                  { validator: async (_, val) => { if (val && String(val) < dayjs().format('YYYY-MM-DD')) throw new Error('Không được chọn ngày trong quá khứ'); } },
                 ]}
               >
                 <DateStringPicker minDate={todayStr} />
@@ -201,9 +199,7 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
                   ({ getFieldValue }) => ({
                     validator: async (_, val) => {
                       const d = getFieldValue('interview_date');
-                      if (d && val && `${d} ${val}` < dayjs().format('YYYY-MM-DD HH:mm')) {
-                        throw new Error('Không được chọn thời gian trong quá khứ');
-                      }
+                      if (d && val && `${d} ${val}` < dayjs().format('YYYY-MM-DD HH:mm')) throw new Error('Không được chọn thời gian trong quá khứ');
                     },
                   }),
                 ]}

@@ -27,7 +27,7 @@ const zListQuery = zListQueryBase.extend({
 });
 
 export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext) {
-  app.get('/api/admin/payroll/salary-profiles', { preHandler: requirePermission('payroll.read') }, async (request) => {
+  app.get('/api/admin/payroll/salary-profiles', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const query = zListQuery.parse(request.query);
     if (query.branch_id && query.branch_id !== 'ALL') assertBranchAccess(request, query.branch_id);
     if (query.refresh === '1' || query.refresh === 'true') {
@@ -77,7 +77,7 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
     return sendPaginated(request, 'Lấy danh sách hồ sơ lương nhân sự thành công', result);
   });
 
-  app.get('/api/admin/employees/:id/salary-profiles', { preHandler: requirePermission('payroll.read') }, async (request) => {
+  app.get('/api/admin/employees/:id/salary-profiles', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const { id } = request.params as { id: string };
     const emp = ctx.db.employees.get(id);
     if (!emp) throw Errors.notFound('Không tìm thấy hồ sơ nhân sự');

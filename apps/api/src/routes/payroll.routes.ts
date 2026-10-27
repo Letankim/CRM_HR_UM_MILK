@@ -60,7 +60,7 @@ const resolveDirection = (t: PayrollItem['item_type']): 'ADD' | 'DEDUCT' =>
   t === 'DEDUCTION_APPROVED' || t === 'ADVANCE_DEDUCTION' ? 'DEDUCT' : 'ADD';
 
 export async function payrollRoutes(app: FastifyInstance, ctx: AppContext) {
-  app.get('/api/admin/payroll/items', { preHandler: requirePermission('payroll.read') }, async (request) => {
+  app.get('/api/admin/payroll/items', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const q = (request.query ?? {}) as Record<string, string | undefined>;
     const mapped = ctx.db.payrollItems.all().map((i) => mapPayrollItem(i, ctx));
     const result = paginateAndSort(mapped, {

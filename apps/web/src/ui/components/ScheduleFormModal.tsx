@@ -39,8 +39,8 @@ export function ScheduleFormModal({
   const [quickAdjOpen, setQuickAdjOpen] = useState(false);
   const { message } = App.useApp();
   const qc = useQueryClient();
-  const hasSchedulePerm = usePermissionGuard({ perms: ['schedule.propose', 'schedule.publish'], roles: ['HR', 'STORE'], allowed: canEdit });
-  const canCreateAdj = usePermissionGuard({ perms: ['attendance.confirm', 'adjustment.approve'], roles: ['HR', 'STORE'], allowed: canEdit });
+  const hasSchedulePerm = usePermissionGuard({ perms: ['schedule.propose', 'schedule.publish'], allowed: canEdit });
+  const canCreateAdj = usePermissionGuard({ perms: ['attendance.confirm', 'adjustment.approve'], allowed: canEdit });
   const isLocked = Boolean(editing?.isLockedByPayroll);
   const canModifyShift = hasSchedulePerm && !isLocked;
   const watchedEmpId = Form.useWatch('employee_id', form);

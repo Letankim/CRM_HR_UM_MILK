@@ -20,7 +20,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
   const shiftRows = employee.recentShifts ?? [];
   const histPag = useClientPagination(10, 'lần chuyển');
   const shiftPag = useClientPagination(10, 'ca');
-  const canCreateAdj = usePermissionGuard({ perms: ['attendance.confirm', 'adjustment.approve'], roles: ['HR', 'STORE'] });
+  const canCreateAdj = usePermissionGuard({ perms: ['attendance.confirm', 'adjustment.approve'] });
   const [viewingStage, setViewingStage] = useState<StageHistoryItem | null>(null);
   const [viewingShift, setViewingShift] = useState<RecentShiftItem | null>(null);
   const [quickAdjOpen, setQuickAdjOpen] = useState(false);

@@ -33,7 +33,8 @@ interface Props {
 
 export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onScheduleInterview }: Props) {
   const qc = useQueryClient();
-  const canManageRec = usePermissionGuard({ perms: ['candidate.manage', 'interview.manage', 'system.config'] });
+  const canManageRec = usePermissionGuard({ perms: ['candidate.manage'] });
+  const canManageIv = usePermissionGuard({ perms: ['interview.manage'] });
   const { message, modal } = App.useApp();
   const { options: jobPositionOptions } = useJobPositions();
 
@@ -150,12 +151,14 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
                 <RowActionButtons
                   detailTooltip="Xem chi tiết hồ sơ ứng viên"
                   onViewDetail={() => setViewingCand(r)}
-                  menuItems={canManageRec ? [
-                    ...(r.status === 'NEW' ? [{ key: 'contacted', icon: <CheckCircleOutlined style={{ color: '#2563EB' }} />, label: 'Đánh dấu Đã liên hệ ứng viên', onClick: () => saveMut.mutate({ url: `/admin/candidates/${r.id}`, method: 'PUT', body: { version: r.version, status: 'CONTACTED' } }) }] : []),
-                    { key: 'interview', icon: <CalendarOutlined />, label: hasIv ? 'Chỉnh sửa lịch phỏng vấn' : 'Đặt lịch phỏng vấn', onClick: () => onScheduleInterview(String(r.id)) },
-                    { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa hồ sơ & ghi chú HR', onClick: () => openEditCand(r) },
-                    { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa hồ sơ ứng viên', onClick: () => modal.confirm({ title: `Xóa hồ sơ ứng viên "${r.full_name}"?`, content: 'Hồ sơ ứng viên này sẽ bị xóa khỏi danh sách tuyển dụng.', okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => delMut.mutateAsync({ url: `/admin/candidates/${r.id}`, body: { version: r.version } }) }) },
-                  ] : []}
+                  menuItems={[
+                    ...(canManageRec && r.status === 'NEW' ? [{ key: 'contacted', icon: <CheckCircleOutlined style={{ color: '#2563EB' }} />, label: 'Đánh dấu Đã liên hệ ứng viên', onClick: () => saveMut.mutate({ url: `/admin/candidates/${r.id}`, method: 'PUT', body: { version: r.version, status: 'CONTACTED' } }) }] : []),
+                    ...(canManageIv ? [{ key: 'interview', icon: <CalendarOutlined />, label: hasIv ? 'Chỉnh sửa lịch phỏng vấn' : 'Đặt lịch phỏng vấn', onClick: () => onScheduleInterview(String(r.id)) }] : []),
+                    ...(canManageRec ? [
+                      { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa hồ sơ & ghi chú HR', onClick: () => openEditCand(r) },
+                      { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa hồ sơ ứng viên', onClick: () => modal.confirm({ title: `Xóa hồ sơ ứng viên "${r.full_name}"?`, content: 'Hồ sơ ứng viên này sẽ bị xóa khỏi danh sách tuyển dụng.', okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => delMut.mutateAsync({ url: `/admin/candidates/${r.id}`, body: { version: r.version } }) }) },
+                    ] : []),
+                  ]}
                 />
               );
             },
@@ -185,7 +188,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
         </Form>
       </Modal>
 
-      <Drawer open={Boolean(viewingCand)} title={viewingCand ? `Hồ sơ Ứng viên: ${viewingCand.full_name} (${viewingCand.candidate_code})` : 'Chi tiết ứng viên'} width={drawerWide ? '95vw' : '70vw'} onClose={() => setViewingCand(null)} destroyOnHidden extra={<Space><GuardButton size="small" type="primary" icon={<CalendarOutlined />} perms={['interview.manage', 'system.config']} onClick={() => { const id = String(viewingCand!.id); setViewingCand(null); onScheduleInterview(id); }}>{viewingCand && (scheduledCandidateIds?.has(String(viewingCand.id)) || scheduledCandidateIds?.has(String(viewingCand.candidate_code)) || viewingCand.status === 'INTERVIEW_SCHEDULED') ? 'Chỉnh sửa lịch phỏng vấn' : 'Đặt lịch phỏng vấn'}</GuardButton><GuardButton size="small" icon={<EditOutlined />} perms={['candidate.manage', 'system.config']} onClick={() => { const c = viewingCand!; setViewingCand(null); openEditCand(c); }}>Chỉnh sửa</GuardButton><Button size="small" icon={drawerWide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setDrawerWide((v) => !v)}>{drawerWide ? 'Thu gọn' : 'Mở rộng'}</Button><Button size="small" icon={<CloseOutlined />} onClick={() => setViewingCand(null)}>Đóng</Button></Space>}>
+      <Drawer open={Boolean(viewingCand)} title={viewingCand ? `Hồ sơ Ứng viên: ${viewingCand.full_name} (${viewingCand.candidate_code})` : 'Chi tiết ứng viên'} width={drawerWide ? '95vw' : '70vw'} onClose={() => setViewingCand(null)} destroyOnHidden extra={<Space><GuardButton size="small" type="primary" icon={<CalendarOutlined />} perms={['interview.manage']} onClick={() => { const id = String(viewingCand!.id); setViewingCand(null); onScheduleInterview(id); }}>{viewingCand && (scheduledCandidateIds?.has(String(viewingCand.id)) || scheduledCandidateIds?.has(String(viewingCand.candidate_code)) || viewingCand.status === 'INTERVIEW_SCHEDULED') ? 'Chỉnh sửa lịch phỏng vấn' : 'Đặt lịch phỏng vấn'}</GuardButton><GuardButton size="small" icon={<EditOutlined />} perms={['candidate.manage']} onClick={() => { const c = viewingCand!; setViewingCand(null); openEditCand(c); }}>Chỉnh sửa</GuardButton><Button size="small" icon={drawerWide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setDrawerWide((v) => !v)}>{drawerWide ? 'Thu gọn' : 'Mở rộng'}</Button><Button size="small" icon={<CloseOutlined />} onClick={() => setViewingCand(null)}>Đóng</Button></Space>}>
         {viewingCand && (
           <Space direction="vertical" size={14} style={{ width: '100%' }}>
             <Card size="small" title="Kênh liên hệ tích hợp">

@@ -27,7 +27,7 @@ interface Props { branches: { value: string; label: string }[]; interviewerOptio
 
 export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], externalEditTarget, onClearExternalEdit, onOpenScheduleModal }: Props) {
   const qc = useQueryClient();
-  const canManageRec = usePermissionGuard({ perms: ['candidate.manage', 'interview.manage', 'system.config'] });
+  const canManageRec = usePermissionGuard({ perms: ['interview.manage'] });
   const { message, modal } = App.useApp();
 
   const [q, setQ] = useState('');

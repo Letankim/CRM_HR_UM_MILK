@@ -40,12 +40,12 @@ const ALLOWED: Record<PayPeriodStatus, PayPeriodStatus[]> = {
 const withLabel = (p: PayPeriod) => ({ ...p, statusLabel: PAY_PERIOD_STATUS_LABELS[p.status] });
 
 export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext) {
-  app.get('/api/admin/payroll/runs', { preHandler: requirePermission('payroll.read') }, async (request) => {
+  app.get('/api/admin/payroll/runs', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const runs = ctx.db.payPeriods.all().reverse().sort((a, b) => b.from_date.localeCompare(a.from_date)).map(withLabel);
     return sendSuccess(request, 'Lấy tổng quan kỳ lương thành công', { runs, items: ctx.db.payrollItems.all().reverse() });
   });
 
-  app.get('/api/admin/payroll/periods', { preHandler: requirePermission('payroll.read') }, async (request) => {
+  app.get('/api/admin/payroll/periods', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const q = (request.query ?? {}) as Record<string, string | undefined>;
     const allItems = ctx.db.payPeriods.all().map(withLabel);
     const result = paginateAndSort(allItems, {
@@ -61,7 +61,7 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
     return sendPaginated(request, 'Lấy danh sách kỳ lương thành công', result);
   });
 
-  app.get('/api/admin/payroll/periods/:id/snapshots', { preHandler: requirePermission('payroll.read') }, async (request) => {
+  app.get('/api/admin/payroll/periods/:id/snapshots', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const { id } = request.params as { id: string };
     const q = (request.query ?? {}) as Record<string, string | undefined>;
     let period = ctx.db.payPeriods.get(id);

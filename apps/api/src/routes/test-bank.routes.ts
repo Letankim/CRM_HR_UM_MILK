@@ -53,7 +53,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     await ctx.db.testBank.insert({ code: 'SOP-BARISTA-01', title: 'Quy chuẩn Pha chế, Bảo quản Sữa tươi & Nội quy Chấm công GPS', staff_group: 'BARISTA', target_stage: 'PROBATION', duration_minutes: 15, pass_percent: 80, total_questions: 3, max_attempts: 3, questions_json: DEFAULT_SOP_QUESTIONS, status: 'APPROVED', approved_by: actorId, approved_at: nowIso() }, actorId);
   };
 
-  app.get('/api/admin/tests/bank', { preHandler: requirePermission('test.read', 'test.manage', 'self.test') }, async (request) => {
+  app.get('/api/admin/tests/bank', { preHandler: requirePermission('employee.read', 'system.config', 'test.manage', 'self.test') }, async (request) => {
     const q = (request.query ?? {}) as { include_answers?: string; refresh?: string };
     if (q.refresh === '1') await Promise.all([ctx.db.testBank.load(), ctx.db.testAssignments.load(), ctx.db.testAttempts.load()]);
     await ensureDefaultTestBank(request.auth?.user.id ?? 'system');
