@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, App, Button, Col, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
-import { CloseOutlined, LockOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
+import { CloseOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
@@ -181,12 +181,6 @@ export function AttendanceAdjustmentModal({
             </Form.Item>
           </Col>
         </Row>
-        {isShiftLocked && (
-          <div style={{ marginBottom: 12, padding: '6px 10px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 4, fontSize: 12, color: '#1E40AF' }}>
-            <LockOutlined style={{ marginRight: 6 }} />
-            Đã khóa cứng <strong>Ngày công ({dayjs(watchedDate).format('DD/MM/YYYY')})</strong>, <strong>Khung ca</strong> và <strong>Thời gian ca ({String(selectedShift?.startAt || '07:00')} – {String(selectedShift?.endAt || '12:00')} · {Number(selectedShift?.scheduledHours || 5)}h)</strong> theo đúng ca vắng mặt đã chọn.
-          </div>
-        )}
         <Row gutter={12}>
           <Col xs={24} md={12}><Form.Item name="shift_code" label="Khung ca (Cố định theo ca vắng)" rules={[{ required: true }]}><Select options={shiftOptions} disabled placeholder="Tự động điền khi chọn ca vắng mặt" /></Form.Item></Col>
           <Col xs={24} md={12}><Form.Item name="kind" label="Phân loại bổ sung công" rules={[{ required: true }]}><Select options={KIND_OPTIONS} /></Form.Item></Col>

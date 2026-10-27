@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Alert, App, Descriptions, Form, Input, Modal, Select, Space, Tag } from 'antd';
-import { ClockCircleOutlined, CloseOutlined, FileAddOutlined, LockOutlined } from '@ant-design/icons';
+import { App, Descriptions, Form, Input, Modal, Select, Space, Tag } from 'antd';
+import { ClockCircleOutlined, CloseOutlined, FileAddOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
@@ -107,22 +107,16 @@ export function QuickAbsentAdjustmentModal({
     >
       {shift && (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            icon={<LockOutlined />}
-            message="Thông tin Ngày công, Khung ca và Thời lượng giờ công đã được khóa cố định theo đúng ca Vắng mặt đang chọn."
-          />
           <Descriptions
             bordered
             size="small"
-            column={{ xs: 1, sm: 2 }}
+            column={1}
             styles={{
-              label: { width: 175, fontWeight: 600, background: '#F8FAFC', whiteSpace: 'nowrap' },
-              content: { minWidth: 210 },
+              label: { width: 185, fontWeight: 600, background: '#F8FAFC', whiteSpace: 'nowrap' },
+              content: { background: '#FFFFFF' },
             }}
           >
-            <Descriptions.Item label="Nhân sự được bù công" span={2}>
+            <Descriptions.Item label="Nhân sự được bù công">
               <strong>{empName}</strong> {empCode ? <Tag color="geekblue" style={{ marginLeft: 6 }}>{empCode}</Tag> : null}
               {branchName ? <span style={{ color: '#64748B', marginLeft: 6 }}>· {branchName}</span> : null}
             </Descriptions.Item>
@@ -132,7 +126,7 @@ export function QuickAbsentAdjustmentModal({
             <Descriptions.Item label="Giờ công đề nghị">
               <Tag color="blue" style={{ margin: 0, fontWeight: 600 }}>{hours} giờ</Tag>
             </Descriptions.Item>
-            <Descriptions.Item label="Khung ca & Giờ ca" span={2}>
+            <Descriptions.Item label="Khung ca & Giờ ca">
               <Space size={6} wrap>
                 <strong>{shiftLabel}</strong>
                 <Tag color="red" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{startAt} – {endAt}</Tag>

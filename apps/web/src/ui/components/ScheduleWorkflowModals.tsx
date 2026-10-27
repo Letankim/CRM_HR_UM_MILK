@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Alert, Col, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
-import { AlertOutlined, CloseOutlined, FileAddOutlined, LockOutlined, PlusOutlined, SwapOutlined } from '@ant-design/icons';
+import { Col, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
+import { AlertOutlined, CloseOutlined, FileAddOutlined, PlusOutlined, SwapOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { DateStringPicker, TimeStringPicker } from './DateTimePickers';
@@ -139,7 +139,6 @@ export function ScheduleWorkflowModals({
       </Modal>
 
       <Modal width="min(840px, 94vw)" open={adjModal} forceRender title="Tạo phiếu bổ sung công (Chỉ áp dụng cho ca Vắng mặt cần bù công)" okText="Tạo phiếu bổ sung" cancelText="Hủy bỏ" okButtonProps={{ icon: <FileAddOutlined />, disabled: !isAdjShiftLocked }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseAdj} onOk={() => adjForm.submit()}>
-        <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Chọn Nhân sự để hệ thống tự động tải các ca Vắng mặt cần bù công của nhân sự đó. Các ca chưa điểm danh hoặc đã hoàn thành sẽ không hiển thị. Khi chọn ca vắng mặt, Ngày công và Thời gian ca sẽ khóa cố định." />
         <Form
           form={adjForm} layout="vertical"
           initialValues={{ kind: 'FORGOT_CHECK_IN', reason: 'Bổ sung công bù ca Vắng mặt do nhân sự quên điểm danh đúng giờ' }}
@@ -179,12 +178,6 @@ export function ScheduleWorkflowModals({
               placeholder={!watchedAdjEmpId ? 'Vui lòng chọn nhân sự ở mục 1 trước' : empAbsentAssignments.length > 0 ? 'Chọn ca Vắng mặt cần bù công của nhân sự' : 'Nhân sự này không có ca Vắng mặt nào cần bù công'}
             />
           </Form.Item>
-          {isAdjShiftLocked && selectedAdjAssign && (
-            <div style={{ marginBottom: 12, padding: '6px 10px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 4, fontSize: 12, color: '#1E40AF' }}>
-              <LockOutlined style={{ marginRight: 6 }} />
-              Đã khóa cố định <strong>Ngày công ({dayjs(selectedAdjAssign.workDate).format('DD/MM/YYYY')})</strong>, <strong>Khung ca</strong> và <strong>Thời gian ca ({selectedAdjAssign.startAt || '07:00'} – {selectedAdjAssign.endAt || '12:00'} · {selectedAdjAssign.scheduledHours || 5}h)</strong> theo đúng ca vắng mặt đã chọn.
-            </div>
-          )}
           <Row gutter={12}>
             <Col xs={24} md={8}><Form.Item name="work_date" label="Ngày công (Cố định)" rules={[{ required: true }]}><DateStringPicker disabled /></Form.Item></Col>
             <Col xs={24} md={8}><Form.Item name="shift_code" label="Khung ca (Cố định)" rules={[{ required: true }]}><Select options={allShiftOptions} disabled placeholder="Tự động theo ca vắng" /></Form.Item></Col>
