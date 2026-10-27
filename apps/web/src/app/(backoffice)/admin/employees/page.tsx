@@ -168,7 +168,7 @@ function EmployeesView() {
               { key: 'status', value: status, width: 165, options: [{ value: 'ALL', label: 'Tất cả trạng thái' }, ...EMPLOYEE_STATUS_OPTIONS], onChange: (v) => updateUrlParam('status', v) },
             ]}
             extraRight={
-              <GuardButton perms={['employee.manage', 'system.config']} roles={['ADMIN', 'HR']} icon={<SettingOutlined />} onClick={() => setPosModalOpen(true)}>
+              <GuardButton perms={['employee.manage', 'system.config']} icon={<SettingOutlined />} onClick={() => setPosModalOpen(true)}>
                 Cấu hình vị trí
               </GuardButton>
             }

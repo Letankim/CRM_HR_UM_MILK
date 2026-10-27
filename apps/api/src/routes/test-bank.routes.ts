@@ -110,6 +110,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     const body = zAssignTestBody.parse(request.body);
     const test = ctx.db.testBank.get(body.test_id) ?? ctx.db.testBank.find((t) => t.code === body.test_id);
     if (!test) throw Errors.notFound('Đề kiểm tra', body.test_id);
+    if (test.status && test.status !== 'APPROVED') throw Errors.badRequest('Chỉ được phép giao bộ đề kiểm tra đã được phê duyệt (APPROVED)');
     const empIds = body.employee_ids?.length ? body.employee_ids : body.employee_id ? [body.employee_id] : [];
     if (empIds.length === 0) throw Errors.fieldValidation('employee_id', 'REQUIRED_FIELD', 'Vui lòng chọn ít nhất 1 nhân sự nhận đề', '');
     let firstCreated = null;
@@ -119,8 +120,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
       const created = await ctx.db.testAssignments.insert({ test_id: test.id, employee_id: emp.id, branch_id: emp.branch_id, open_at: nowIso(), close_at: body.close_at || body.due_at || '2026-11-30T23:59:59+07:00', assigned_by: request.auth!.user.id, status: 'ASSIGNED', max_attempts: body.max_attempts ?? test.max_attempts, attempts_used: 0, best_score_percent: 0, passed: false, note: body.note ?? '' }, request.auth!.user.id);
       if (!firstCreated) firstCreated = created;
     }
-    reply.code(201);
-    return sendSuccess(request, `Đã giao bài kiểm tra nghiệp vụ cho ${empIds.length} nhân sự thành công`, firstCreated);
+    return reply.code(201), sendSuccess(request, `Đã giao bài kiểm tra nghiệp vụ cho ${empIds.length} nhân sự thành công`, firstCreated);
   });
 
   app.put('/api/admin/tests/assignments/:id', { preHandler: requirePermission('test.manage') }, async (request) => {
@@ -176,10 +176,10 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     if (asg.close_at && Date.now() > new Date(asg.close_at).getTime()) throw Errors.badRequest('Đợt giao bài kiểm tra này đã quá hạn nộp bài');
     const test = ctx.db.testBank.get(asg.test_id) ?? ctx.db.testBank.all()[0];
     if (!test) throw Errors.notFound('Đề kiểm tra', asg.test_id);
+    if (test.status && test.status !== 'APPROVED') throw Errors.badRequest('Bộ đề kiểm tra này chưa được phê duyệt nên chưa thể bắt đầu làm bài');
     const startedMs = Date.now(), expiresMs = startedMs + test.duration_minutes * 60 * 1000;
     const attempt = await ctx.db.testAttempts.insert({ test_id: test.id, assignment_id: asg.id, employee_id: asg.employee_id, attempt_no: asg.attempts_used + 1, started_at: new Date(startedMs).toISOString(), expires_at: new Date(expiresMs).toISOString(), submitted_at: '', duration_seconds: 0, answers_json: '{}', correct_count: 0, total_questions: test.total_questions, score_percent: 0, passed: false, auto_submitted: false, client_ip: request.ip ?? '127.0.0.1' }, request.auth!.user.id);
-    reply.code(201);
-    return sendSuccess(request, 'Đã bắt đầu tính giờ làm bài trên máy chủ (Server-side Timer)', { ...attempt, testTitle: test.title, testCode: test.code, durationMinutes: test.duration_minutes, passPercent: test.pass_percent, questions: sanitizeQuestions(test.questions_json) });
+    return reply.code(201), sendSuccess(request, 'Đã bắt đầu tính giờ làm bài trên máy chủ (Server-side Timer)', { ...attempt, testTitle: test.title, testCode: test.code, durationMinutes: test.duration_minutes, passPercent: test.pass_percent, questions: sanitizeQuestions(test.questions_json) });
   });
 
   app.post('/api/tests/attempts/:id/submit', { preHandler: requireAuth() }, async (request) => {

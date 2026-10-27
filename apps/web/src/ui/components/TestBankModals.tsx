@@ -53,7 +53,7 @@ export function TestAssignmentFormModal({
               const found = tests.find((t) => String(t.id) === String(val));
               if (found && !editing) form.setFieldValue('max_attempts', Number(found.max_attempts ?? 3));
             }}
-            options={tests.map((t) => ({ value: String(t.id), label: `${t.code} — ${t.title} (${t.duration_minutes} phút · Tối đa ${t.max_attempts ?? 3} lần)` }))}
+            options={tests.map((t) => ({ value: String(t.id), disabled: Boolean(t.status && t.status !== 'APPROVED'), label: `${t.code} — ${t.title} (${t.duration_minutes} phút · Đạt ≥${t.pass_percent ?? 80}% · Tối đa ${t.max_attempts ?? 3} lần)${t.status && t.status !== 'APPROVED' ? ' — Chưa phê duyệt' : ''}` }))}
           />
         </Form.Item>
         {editing ? (

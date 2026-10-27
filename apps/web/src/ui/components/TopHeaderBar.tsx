@@ -38,7 +38,7 @@ export function TopHeaderBar({
   });
   const notifsQ = useQuery({
     queryKey: ['notifications', 'header-bell'],
-    queryFn: () => api.list<{ id: string; code: string; title: string; body: string; categoryLabel: string; targetLabel: string; readStatus: string }>('/notifications?per_page=6'),
+    queryFn: () => api.list<{ id: string; code: string; title: string; body: string; categoryLabel: string; targetLabel: string; readStatus: string; link?: string }>('/notifications?per_page=6'),
   });
 
   const pendingTotal = pendingAccounts.data?.meta.pagination.total ?? 0;
@@ -74,11 +74,19 @@ export function TopHeaderBar({
           <List
             size="small"
             dataSource={[
-              ...pendingItems.map((i) => ({ key: `acc-${i.id}`, title: `${i.displayName} (${i.username})`, desc: `Chờ kích hoạt · ${i.roleLabel}`, tag: 'Tài khoản', href: '/admin/accounts?status=PENDING_ACTIVATION' })),
-              ...notifItems.map((n) => ({ key: `ntf-${n.id}`, title: n.title, desc: `${n.targetLabel} · ${n.body}`, tag: n.code, href: '/admin/notifications' })),
+              ...pendingItems.map((i) => ({ key: `acc-${i.id}`, notifId: '', unread: true, title: `${i.displayName} (${i.username})`, desc: `Chờ kích hoạt · ${i.roleLabel}`, tag: 'Tài khoản', href: '/admin/accounts?status=PENDING_ACTIVATION' })),
+              ...notifItems.map((n) => ({ key: `ntf-${n.id}`, notifId: n.id, unread: n.readStatus === 'UNREAD', title: n.title, desc: `${n.targetLabel} · ${n.body}`, tag: n.code, href: n.link || '/admin/notifications' })),
             ].slice(0, 6)}
             renderItem={(item) => (
-              <List.Item style={{ cursor: 'pointer', paddingInline: 4 }} onClick={() => router.push(item.href)}>
+              <List.Item
+                style={{ cursor: 'pointer', paddingInline: 4 }}
+                onClick={() => {
+                  if (item.notifId && item.unread) {
+                    void api.post(`/notifications/${item.notifId}/read`, {}).then(() => qc.invalidateQueries({ queryKey: ['notifications'] }));
+                  }
+                  router.push(item.href);
+                }}
+              >
                 <List.Item.Meta
                   title={<Space size={4}><Tag color="geekblue" style={{ margin: 0, fontSize: 10, paddingInline: 4 }}>{item.tag}</Tag><span style={{ fontSize: 12, fontWeight: 600 }}>{item.title}</span></Space>}
                   description={<span style={{ fontSize: 11 }}>{item.desc}</span>}
@@ -95,39 +103,13 @@ export function TopHeaderBar({
   );
 
   return (
-    <Layout.Header
-      style={{
-        borderBottom: `1px solid ${BRAND.border}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        position: 'sticky',
-        top: 0,
-        zIndex: 10,
-        paddingInline: 16,
-      }}
-    >
+    <Layout.Header style={{ borderBottom: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10, paddingInline: 16 }}>
       <Flex align="center" gap={10} style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
-        <Button
-          size="small"
-          className="umbm-header-pill"
-          icon={isMobile ? <MenuOutlined /> : collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-          onClick={onToggleNav}
-          style={{ width: 32, height: 32, borderRadius: 6, borderColor: BRAND.headerControlBorder, flexShrink: 0 }}
-          aria-label="Đóng mở thanh điều hướng"
-        />
+        <Button size="small" className="umbm-header-pill" icon={isMobile ? <MenuOutlined /> : collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={onToggleNav} style={{ width: 32, height: 32, borderRadius: 6, borderColor: BRAND.headerControlBorder, flexShrink: 0 }} aria-label="Đóng mở thanh điều hướng" />
         {isMobile ? (
-          <Typography.Text strong ellipsis style={{ color: '#0F172A', fontSize: 13 }}>
-            {breadcrumbTitle}
-          </Typography.Text>
+          <Typography.Text strong ellipsis style={{ color: '#0F172A', fontSize: 13 }}>{breadcrumbTitle}</Typography.Text>
         ) : (
-          <Breadcrumb
-            items={[
-              { title: 'Quản trị' },
-              { title: breadcrumbGroup },
-              { title: <Typography.Text strong style={{ color: '#0F172A', fontSize: 13 }}>{breadcrumbTitle}</Typography.Text> },
-            ]}
-          />
+          <Breadcrumb items={[{ title: 'Quản trị' }, { title: breadcrumbGroup }, { title: <Typography.Text strong style={{ color: '#0F172A', fontSize: 13 }}>{breadcrumbTitle}</Typography.Text> }]} />
         )}
       </Flex>
 

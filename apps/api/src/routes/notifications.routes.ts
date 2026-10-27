@@ -49,46 +49,57 @@ async function ensureSyncedNotifications(ctx: AppContext, actorId: string) {
   const users = ctx.db.users.all();
   const findUserByEmp = (empId: string) => users.find((u) => u.employee_id === empId);
 
+  const ins = (data: Omit<Parameters<typeof ctx.db.notifications.insert>[0], 'read_at'>) => ctx.db.notifications.insert({ ...data, read_at: '' }, actorId);
   for (const anc of ctx.db.announcements.all()) {
     if (anc.status === 'SENT' && !hasKey('ANNOUNCEMENTS', anc.id)) {
       let target = 'ALL';
       try { target = JSON.parse(anc.audience_json || '{}').target || 'ALL'; } catch { target = 'ALL'; }
       const isGlobal = !anc.audience_scope || (anc.audience_scope === 'ALL' && target === 'ALL');
       const matched = isGlobal ? [] : getMatchingUsersForAudience(ctx, anc.audience_scope || 'ALL', anc.audience_json || target);
-      await ctx.db.notifications.insert({ recipient_user_id: isGlobal ? 'ALL' : (matched.map((u) => u.id).join(',') || 'NONE'), recipient_role: isGlobal ? 'ALL' : (anc.audience_scope === 'STAGE' ? (target === 'PROBATION' || target === 'THU_VIEC' ? 'THU_VIEC' : 'CHINH_THUC') : ''), branch_id: anc.audience_scope === 'BRANCH' ? target : 'ALL', category: 'ANNOUNCEMENT', title: anc.title, body: anc.summary || anc.title, link: '/admin/integrations?section=comms', severity: anc.priority === 'URGENT' ? 'CRITICAL' : anc.priority === 'HIGH' ? 'WARNING' : 'INFO', read_at: '', entity_type: 'ANNOUNCEMENTS', entity_id: anc.id }, actorId);
+      await ins({ recipient_user_id: isGlobal ? 'ALL' : (matched.map((u) => u.id).join(',') || 'NONE'), recipient_role: isGlobal ? 'ALL' : (anc.audience_scope === 'STAGE' ? (target === 'PROBATION' || target === 'THU_VIEC' ? 'THU_VIEC' : 'CHINH_THUC') : ''), branch_id: anc.audience_scope === 'BRANCH' ? target : 'ALL', category: 'ANNOUNCEMENT', title: anc.title, body: anc.summary || anc.title, link: '/admin/integrations?section=comms', severity: anc.priority === 'URGENT' ? 'CRITICAL' : anc.priority === 'HIGH' ? 'WARNING' : 'INFO', entity_type: 'ANNOUNCEMENTS', entity_id: anc.id });
     }
   }
   for (const u of users) {
     if (u.status === 'PENDING_ACTIVATION' && !hasKey('USERS_PENDING', u.id)) {
-      await ctx.db.notifications.insert({ recipient_user_id: '', recipient_role: 'ADMIN', branch_id: 'ALL', category: 'SYSTEM', title: `Tài khoản mới chờ kích hoạt: ${u.display_name || u.username}`, body: `Tài khoản @${u.username} (${ROLE_LABELS[u.role as Role] ?? u.role}) đang chờ Quản trị viên phê duyệt kích hoạt.`, link: '/admin/accounts?status=PENDING_ACTIVATION', severity: 'WARNING', read_at: '', entity_type: 'USERS_PENDING', entity_id: u.id }, actorId);
+      await ins({ recipient_user_id: '', recipient_role: 'ADMIN', branch_id: 'ALL', category: 'SYSTEM', title: `Tài khoản mới chờ kích hoạt: ${u.display_name || u.username}`, body: `Tài khoản @${u.username} (${ROLE_LABELS[u.role as Role] ?? u.role}) đang chờ Quản trị viên phê duyệt kích hoạt.`, link: '/admin/accounts?status=PENDING_ACTIVATION', severity: 'WARNING', entity_type: 'USERS_PENDING', entity_id: u.id });
     }
   }
   for (const l of ctx.db.leaveRequests.all().slice(0, 15)) {
-    const code = l.request_code || l.id;
+    const code = l.request_code || l.id, empUser = findUserByEmp(l.employee_id), empKey = `${l.id}_${l.status}`;
     if (l.status === 'PENDING' && !hasKey('LEAVE_ROLE', l.id)) {
-      await ctx.db.notifications.insert({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: l.branch_id || 'ALL', category: 'WORKFLOW', title: `Đơn xin nghỉ phép (OFF) chờ duyệt: ${code}`, body: `Đơn nghỉ ngày ${l.leave_date} — Lý do: ${l.reason || 'Nghỉ phép cá nhân'}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', read_at: '', entity_type: 'LEAVE_ROLE', entity_id: l.id }, actorId);
+      await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: l.branch_id || 'ALL', category: 'WORKFLOW', title: `Đơn xin nghỉ phép (OFF) chờ duyệt: ${code}`, body: `Đơn nghỉ ngày ${l.leave_date} — Lý do: ${l.reason || 'Nghỉ phép cá nhân'}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'LEAVE_ROLE', entity_id: l.id });
     }
-    const empUser = findUserByEmp(l.employee_id);
-    const empKey = `${l.id}_${l.status}`;
     if (empUser && !hasKey('LEAVE_USER', empKey)) {
-      await ctx.db.notifications.insert({ recipient_user_id: empUser.id, recipient_role: '', branch_id: l.branch_id || 'ALL', category: 'WORKFLOW', title: l.status === 'APPROVED' ? `Đơn xin nghỉ OFF (${l.leave_date}) đã được phê duyệt` : l.status === 'REJECTED' ? `Đơn xin nghỉ OFF (${l.leave_date}) bị từ chối` : `Đã tiếp nhận đơn xin nghỉ OFF (${l.leave_date})`, body: `Mã đơn: ${code} · Ngày nghỉ: ${l.leave_date} · Lý do: ${l.reason || 'Cá nhân'}.`, link: '/nv/lich', severity: l.status === 'REJECTED' ? 'WARNING' : 'INFO', read_at: '', entity_type: 'LEAVE_USER', entity_id: empKey }, actorId);
+      await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: l.branch_id || 'ALL', category: 'WORKFLOW', title: l.status === 'APPROVED' ? `Đơn xin nghỉ OFF (${l.leave_date}) đã được phê duyệt` : l.status === 'REJECTED' ? `Đơn xin nghỉ OFF (${l.leave_date}) bị từ chối` : `Đã tiếp nhận đơn xin nghỉ OFF (${l.leave_date})`, body: `Mã đơn: ${code} · Ngày nghỉ: ${l.leave_date} · Lý do: ${l.reason || 'Cá nhân'}.`, link: '/nv/lich', severity: l.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'LEAVE_USER', entity_id: empKey });
     }
   }
   for (const s of ctx.db.shiftSwaps.all().slice(0, 10)) {
-    if (!hasKey('SWAP_STORE', s.id)) {
-      await ctx.db.notifications.insert({ recipient_user_id: '', recipient_role: 'STORE', branch_id: s.branch_id || 'ALL', category: 'WORKFLOW', title: `Yêu cầu đổi ca 3 bước (${s.swap_code || s.id})`, body: `Yêu cầu đổi ca làm việc đang ở trạng thái ${s.status === 'APPROVED' ? 'Đã phê duyệt' : 'Chờ xử lý'}.`, link: '/admin/schedules?section=workflows', severity: 'INFO', read_at: '', entity_type: 'SWAP_STORE', entity_id: s.id }, actorId);
+    if (!hasKey('SWAP_STORE', s.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: s.branch_id || 'ALL', category: 'WORKFLOW', title: `Yêu cầu đổi ca 3 bước (${s.swap_code || s.id})`, body: `Yêu cầu đổi ca ngày ${s.from_work_date} đang ở trạng thái ${s.status === 'APPROVED' ? 'Đã phê duyệt' : s.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã xác nhận — Chờ duyệt' : 'Chờ xử lý'}.`, link: '/admin/schedules?section=workflows', severity: s.status === 'PEER_ACCEPTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_STORE', entity_id: s.id });
+  }
+  for (const iv of ctx.db.interviews.all().slice(0, 10)) {
+    if (iv.status !== 'CANCELLED' && !hasKey('INTERVIEW_HR', iv.id)) {
+      const cand = ctx.db.candidates.get(iv.candidate_id) ?? ctx.db.candidates.find((c) => c.candidate_code === iv.candidate_id);
+      await ins({ recipient_user_id: '', recipient_role: 'HR', branch_id: iv.branch_id || 'ALL', category: 'HR', title: `Lịch phỏng vấn ứng viên: ${cand?.full_name ?? iv.candidate_id}`, body: `Thời gian: ${String(iv.start_at).slice(0, 16).replace('T', ' ')} · Trạng thái: ${iv.reschedule_requested ? 'Ứng viên xin đổi lịch' : iv.decision === 'PENDING' ? 'Chờ chấm điểm phỏng vấn' : 'Đã đánh giá'}.`, link: '/admin/employees?section=recruitment&sub=interviews', severity: iv.reschedule_requested ? 'WARNING' : 'INFO', entity_type: 'INTERVIEW_HR', entity_id: iv.id });
     }
   }
-  for (const p of ctx.db.payPeriods.all().slice(0, 8)) {
-    if (!hasKey('PAY_PERIOD_FIN', p.id)) {
-      await ctx.db.notifications.insert({ recipient_user_id: '', recipient_role: 'FINANCE', branch_id: 'ALL', category: 'PAYROLL', title: `Kỳ lương hệ thống: ${p.name} (${p.period_code || p.id})`, body: `Chu kỳ lương từ ${p.from_date} đến ${p.to_date} hiện đang ở bước ${p.status}.`, link: '/admin/payroll', severity: 'INFO', read_at: '', entity_type: 'PAY_PERIOD_FIN', entity_id: p.id }, actorId);
+  for (const e of ctx.db.employees.all().filter((x) => x.stage === 'PROBATION').slice(0, 8)) {
+    if (!hasKey('PROBATION_HR', e.id)) await ins({ recipient_user_id: '', recipient_role: 'HR', branch_id: e.branch_id || 'ALL', category: 'HR', title: `Theo dõi thử việc & xét chính thức: ${e.full_name} (${e.employee_code})`, body: `Chu kỳ thử việc từ ${e.probation_start || '—'} đến ${e.probation_end || '—'} — Kiểm tra giờ công tích lũy và kết quả bài TEST.`, link: '/admin/employees?stage=PROBATION', severity: 'INFO', entity_type: 'PROBATION_HR', entity_id: e.id });
+  }
+  for (const att of ctx.db.testAttempts.all().filter((x) => Boolean(x.submitted_at)).slice(0, 8)) {
+    if (!hasKey('TEST_HR', att.id)) {
+      const emp = ctx.db.employees.get(att.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === att.employee_id);
+      await ins({ recipient_user_id: '', recipient_role: 'HR', branch_id: emp?.branch_id || 'ALL', category: 'HR', title: `Kết quả bài thi TEST nghiệp vụ: ${emp?.full_name ?? att.employee_id}`, body: `Điểm đạt được: ${att.score_percent}% (${att.passed ? 'ĐẠT yêu cầu' : 'Chưa đạt — Cần ôn tập thi lại'}).`, link: '/admin/employees?section=tests', severity: att.passed ? 'INFO' : 'WARNING', entity_type: 'TEST_HR', entity_id: att.id });
     }
+  }
+  for (const adj of ctx.db.attendanceAdjustments.all().filter((x) => x.status === 'PENDING' || x.status === 'STORE_CONFIRMED').slice(0, 8)) {
+    if (!hasKey('ATT_ADJ_HR', adj.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: adj.branch_id || 'ALL', category: 'ATTENDANCE', title: `Phiếu bổ sung / lỗi chấm công chờ duyệt: ${adj.adjustment_code}`, body: `Ngày công ${adj.work_date} (${adj.requested_hours}h) — Lý do: ${adj.reason}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'ATT_ADJ_HR', entity_id: adj.id });
+  }
+  for (const p of ctx.db.payPeriods.all().slice(0, 8)) {
+    if (!hasKey('PAY_PERIOD_FIN', p.id)) await ins({ recipient_user_id: '', recipient_role: 'FINANCE', branch_id: 'ALL', category: 'PAYROLL', title: `Kỳ lương hệ thống: ${p.name} (${p.period_code || p.id})`, body: `Chu kỳ lương từ ${p.from_date} đến ${p.to_date} hiện đang ở bước ${p.status}.`, link: '/admin/payroll', severity: 'INFO', entity_type: 'PAY_PERIOD_FIN', entity_id: p.id });
   }
   for (const ps of ctx.db.payslips.all().slice(0, 15)) {
     const empUser = findUserByEmp(ps.employee_id);
-    if (empUser && !hasKey('PAYSLIP_USER', ps.id)) {
-      await ctx.db.notifications.insert({ recipient_user_id: empUser.id, recipient_role: '', branch_id: ps.branch_id || 'ALL', category: 'PAYROLL', title: `Phiếu lương cá nhân đã phát hành: ${ps.period_name || ps.payslip_code}`, body: `Thực lĩnh (NET): ${Number(ps.net_vnd || 0).toLocaleString('vi-VN')}đ — Vui lòng kiểm tra chi tiết và xác nhận phiếu lương.`, link: '/nv/phieu-luong', severity: 'INFO', read_at: '', entity_type: 'PAYSLIP_USER', entity_id: ps.id }, actorId);
-    }
+    if (empUser && !hasKey('PAYSLIP_USER', ps.id)) await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: ps.branch_id || 'ALL', category: 'PAYROLL', title: `Phiếu lương cá nhân đã phát hành: ${ps.period_name || ps.payslip_code}`, body: `Thực lĩnh (NET): ${Number(ps.net_vnd || 0).toLocaleString('vi-VN')}đ — Vui lòng kiểm tra chi tiết và xác nhận phiếu lương.`, link: '/nv/phieu-luong', severity: 'INFO', entity_type: 'PAYSLIP_USER', entity_id: ps.id });
   }
 }
 
@@ -143,24 +154,19 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
       const scopeType = isPersonal ? 'PERSONAL' : isBroadcast ? 'BROADCAST' : 'ROLE';
       const userNames = userIds.map((uid) => { const u = usersMap.get(uid); return u?.display_name || u?.username || uid; });
       const roleLabels = roles.map((r) => ROLE_LABELS[r as Role] ?? r);
-      const targetLabel = isAncGroup
-        ? `Nhóm nhận (${userIds.length}): ${userNames.join(', ') || 'Theo nhóm cấu hình'}`
-        : isPersonal ? `Cá nhân (${userNames.length}): ${userNames.join(', ')}` : isBroadcast ? 'Toàn hệ thống (Tất cả vai trò)' : `Nhóm nhân sự: ${roleLabels.join(', ')}`;
-      const userReadAt = getUserReadAt(n.read_at, user.id);
-      const readStatus = userReadAt ? 'READ' : 'UNREAD';
+      const targetLabel = isAncGroup ? `Nhóm nhận (${userIds.length}): ${userNames.join(', ') || 'Theo nhóm cấu hình'}` : isPersonal ? `Cá nhân (${userNames.length}): ${userNames.join(', ')}` : isBroadcast ? 'Toàn hệ thống (Tất cả vai trò)' : `Nhóm nhân sự: ${roleLabels.join(', ')}`;
+      const userReadAt = getUserReadAt(n.read_at, user.id), readStatus = userReadAt ? 'READ' : 'UNREAD';
       return {
         ...n, read_at: userReadAt, code: anc?.code || `NTF-${String(idx + 1).padStart(4, '0')}`,
-        categoryLabel: NOTIFICATION_CATEGORY_LABELS[n.category] ?? n.category,
-        severityLabel: NOTIFICATION_SEVERITY_LABELS[n.severity] ?? n.severity,
-        scopeType, targetLabel, readStatus, readStatusLabel: userReadAt ? 'Đã đọc' : 'Chưa đọc',
-        detailHtml: anc?.body || `<p>${n.body}</p>`,
+        categoryLabel: NOTIFICATION_CATEGORY_LABELS[n.category] ?? n.category, severityLabel: NOTIFICATION_SEVERITY_LABELS[n.severity] ?? n.severity,
+        scopeType, targetLabel, readStatus, readStatusLabel: userReadAt ? 'Đã đọc' : 'Chưa đọc', detailHtml: anc?.body || `<p>${n.body}</p>`,
       };
     });
 
     const result = paginateAndSort(enriched, {
-      page: query.page, perPage: query.per_page, sortBy: query.sort_by, sortOrder: query.sort_order,
-      defaultSortBy: 'created_at', allowedSortFields: ['created_at', 'severity', 'title', 'category', 'readStatus'],
-      q: query.q, searchExtractor: (item) => [item.code, item.title, item.body, item.categoryLabel, item.targetLabel],
+      page: query.page, perPage: query.per_page, sortBy: query.sort_by, sortOrder: query.sort_order, defaultSortBy: 'created_at',
+      allowedSortFields: ['created_at', 'severity', 'title', 'category', 'readStatus'], q: query.q,
+      searchExtractor: (item) => [item.code, item.title, item.body, item.categoryLabel, item.targetLabel],
       filters: { category: query.category, severity: query.severity, readStatus: query.read_status, scopeType: query.scope_type },
     });
     return sendPaginated(request, 'Lấy danh sách thông báo hệ thống thành công', result);
@@ -174,17 +180,12 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
     if (body.target_scope === 'ROLE' && !pickedRoles.length) throw Errors.badRequest('Vui lòng chọn ít nhất 1 nhóm nhân sự nhận thông báo');
     const recipientUserId = body.target_scope === 'USER' ? pickedUsers.join(',') : body.target_scope === 'ALL' ? 'ALL' : '';
     const recipientRole = body.target_scope === 'ROLE' ? pickedRoles.join(',') : body.target_scope === 'ALL' ? 'ALL' : '';
-    const created = await ctx.db.notifications.insert({
-      recipient_user_id: recipientUserId, recipient_role: recipientRole, branch_id: 'ALL',
-      category: body.category, title: body.title, body: body.body, link: body.link || '/dashboard',
-      severity: body.severity, read_at: '', entity_type: 'MANUAL', entity_id: '',
-    }, actorId);
+    const created = await ctx.db.notifications.insert({ recipient_user_id: recipientUserId, recipient_role: recipientRole, branch_id: 'ALL', category: body.category, title: body.title, body: body.body, link: body.link || '/dashboard', severity: body.severity, read_at: '', entity_type: 'MANUAL', entity_id: '' }, actorId);
     const payload = { kind: 'ANNOUNCEMENT', id: created.id, code: 'NTF', title: created.title, summary: created.body, priority: created.severity === 'CRITICAL' ? 'URGENT' : 'NORMAL' };
     if (body.target_scope === 'USER') pickedUsers.forEach((uid) => ctx.realtime()?.toUser(uid, SocketEvents.NOTIFICATION, payload));
     else if (body.target_scope === 'ROLE') pickedRoles.forEach((r) => ctx.realtime()?.toRole(r, SocketEvents.NOTIFICATION, payload));
     else ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, payload);
-    reply.code(201);
-    return sendSuccess(request, 'Đã gửi thông báo thành công', created);
+    return reply.code(201), sendSuccess(request, 'Đã gửi thông báo thành công', created);
   });
 
   const handleMarkRead = async (request: FastifyRequest) => {

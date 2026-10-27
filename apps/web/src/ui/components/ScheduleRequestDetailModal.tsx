@@ -94,6 +94,11 @@ export function ScheduleRequestDetailModal({
           <>
             <Descriptions.Item label="Mã đơn nghỉ OFF"><Tag color="geekblue" style={{ margin: 0 }}>{String(r.request_code || r.id)}</Tag></Descriptions.Item>
             <Descriptions.Item label="Trạng thái duyệt"><StatusTag value={String(r.status)} /></Descriptions.Item>
+            <Descriptions.Item label="Phân loại nghỉ OFF">
+              <Tag color={r.employee_stage === 'PROBATION' || r.kind === 'PROBATION_OFF' ? 'gold' : 'blue'} style={{ margin: 0 }}>
+                {r.employee_stage === 'PROBATION' || r.kind === 'PROBATION_OFF' ? 'OFF chu kỳ Thử việc (2 ngày / 12 ngày)' : 'OFF định kỳ Nhân viên Chính thức'}
+              </Tag>
+            </Descriptions.Item>
             {r.employeeName ? <Descriptions.Item label="Nhân sự đăng ký">{String(r.employeeName)} {r.employeeCode ? `(${String(r.employeeCode)})` : ''}</Descriptions.Item> : null}
             <Descriptions.Item label="Ngày xin nghỉ"><strong className="num">{fmtDate(r.leave_date)}</strong></Descriptions.Item>
             <Descriptions.Item label="Khung ca & Thời gian">
@@ -104,6 +109,14 @@ export function ScheduleRequestDetailModal({
             </Descriptions.Item>
             <Descriptions.Item label="Chi nhánh">{String(r.branchName || '—')}</Descriptions.Item>
             {r.quota_cycle_limit ? <Descriptions.Item label="Định mức OFF chu kỳ"><Tag color="blue" style={{ margin: 0 }}>{String(r.quota_cycle_used || 1)} / {String(r.quota_cycle_limit)} ngày</Tag></Descriptions.Item> : null}
+            <Descriptions.Item label="Định biên ca sau khi nghỉ">
+              <Space size={6} wrap>
+                <Tag color={Number(r.staffing_after_leave ?? 2) >= Number(r.min_staff_required ?? 2) ? 'green' : 'volcano'} style={{ margin: 0 }}>
+                  Còn {String(r.staffing_after_leave ?? 2)} nhân sự trực ca (Tối thiểu {String(r.min_staff_required ?? 2)} NV)
+                </Tag>
+                <span style={{ fontSize: 12, color: '#64748B' }}>{Number(r.staffing_after_leave ?? 2) >= Number(r.min_staff_required ?? 2) ? 'Đảm bảo định biên' : 'Cảnh báo thiếu định biên ca'}</span>
+              </Space>
+            </Descriptions.Item>
             <Descriptions.Item label="Lý do xin nghỉ">{String(r.reason || '—')}</Descriptions.Item>
             <Descriptions.Item label="Thời điểm gửi đơn"><span className="num">{fmtTs(r.submitted_at || r.created_at)}</span></Descriptions.Item>
             <Descriptions.Item label="Thời điểm phê duyệt">{r.decided_at ? <span className="num">{fmtTs(r.decided_at)}</span> : 'Đang chờ duyệt'}</Descriptions.Item>
@@ -134,6 +147,11 @@ export function ScheduleRequestDetailModal({
           <>
             <Descriptions.Item label="Mã phiếu bổ sung"><Tag color="geekblue" style={{ margin: 0 }}>{String(r.adjustment_code || r.id)}</Tag></Descriptions.Item>
             <Descriptions.Item label="Trạng thái duyệt"><StatusTag value={String(r.status)} /></Descriptions.Item>
+            <Descriptions.Item label="Loại sự cố chấm công">
+              <Tag color="orange" style={{ margin: 0 }}>
+                {r.kind === 'FORGOT_CHECK_IN' ? 'Quên Check-in vào ca' : r.kind === 'FORGOT_CHECK_OUT' ? 'Quên Check-out ra ca' : r.kind === 'GPS_ERROR' ? 'Lỗi định vị GPS' : r.kind === 'CAMERA_ERROR' ? 'Lỗi Camera thiết bị' : 'Sự cố hợp lệ khác'}
+              </Tag>
+            </Descriptions.Item>
             {r.employeeName ? <Descriptions.Item label="Nhân sự đề nghị">{String(r.employeeName)}</Descriptions.Item> : null}
             <Descriptions.Item label="Ngày công"><strong className="num">{fmtDate(r.work_date)}</strong></Descriptions.Item>
             <Descriptions.Item label="Khung ca & Thời gian">
@@ -144,8 +162,9 @@ export function ScheduleRequestDetailModal({
             </Descriptions.Item>
             <Descriptions.Item label="Số giờ công đề nghị"><strong>{String(r.requested_hours || 5)} giờ</strong></Descriptions.Item>
             <Descriptions.Item label="Lý do giải trình">{String(r.reason || '—')}</Descriptions.Item>
+            <Descriptions.Item label="Xác nhận từ Cửa hàng">{r.store_confirmed_at ? `${fmtTs(r.store_confirmed_at)}${r.store_note ? ` — "${String(r.store_note)}"` : ''}` : 'Chưa xác nhận'}</Descriptions.Item>
             <Descriptions.Item label="Thời điểm gửi phiếu"><span className="num">{fmtTs(r.created_at)}</span></Descriptions.Item>
-            <Descriptions.Item label="Ghi chú xác nhận / Duyệt">{String(r.decision_reason || r.store_note || '—')}</Descriptions.Item>
+            <Descriptions.Item label="Ghi chú phê duyệt HR">{String(r.decision_reason || '—')}</Descriptions.Item>
           </>
         )}
 
