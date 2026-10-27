@@ -16,6 +16,7 @@ import { exportAttendanceEventsExcel, groupAttendanceEventsByShift, renderShiftC
 import { SelectableTable } from '@/ui/components/BulkActionBar';
 import { AttendanceAdjustmentModal, MyShiftRegisterModal } from '@/ui/components/EmployeePortalModals';
 import { EmployeeScheduleAndLeaveCenter } from '@/ui/components/EmployeeScheduleAndLeaveCenter';
+import { RowActionButtons } from '@/ui/components/RowActionButtons';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from '@/ui/components/ScheduleRequestDetailModal';
 import { exportAdjustmentsExcel } from '@/ui/components/workflow-bulk-helpers';
 import { useClientPagination } from '@/ui/hooks/useClientPagination';
@@ -167,8 +168,8 @@ export default function MyAttendancePage() {
                     bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAttendanceEventsExcel(rows) }]}
                     columns={[
                       { title: 'Ngày & Ca làm việc', width: 220, render: (_, r) => <div><div style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)} ({r.shiftTimeRange || '07:00 – 12:00'})</div><div className="num" style={{ fontSize: 12, color: BRAND.textSecondary }}>Ngày: {r.work_date ? dayjs(r.work_date).format('DD/MM/YYYY') : '—'}</div></div> },
-                      { title: 'Vào ca / Ra ca', render: (_, r) => renderShiftCheckInOutSummary(r) },
-                      { title: 'Thao tác', width: 70, align: 'center', render: (_, r) => <Tooltip title="Xem chi tiết điểm danh"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailEvent(r)} /></Tooltip> },
+                      { title: 'Vào ca / Ra ca', width: 340, render: (_, r) => renderShiftCheckInOutSummary(r) },
+                      { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết điểm danh" onViewDetail={() => setDetailEvent(r)} /> },
                     ]}
                   />
                 </>
@@ -181,16 +182,16 @@ export default function MyAttendancePage() {
                 <>
                   <Flex justify="space-between" align="center" style={{ marginBottom: 10 }}><Typography.Text type="secondary">Danh sách phiếu giải trình / bổ sung công cá nhân của bạn.</Typography.Text><Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => { setPresetAdjShiftId(undefined); setAdjOpen(true); }}>Gửi phiếu bổ sung công</Button></Flex>
                   <SelectableTable<Record<string, unknown>>
-                    size="small" rowKey="id" pagination={myAdjPag} dataSource={adjustments} scroll={{ x: 'max-content' }} locale={{ emptyText: 'Bạn chưa có phiếu bổ sung công nào.' }}
+                    size="small" rowKey="id" pagination={myAdjPag} dataSource={adjustments} locale={{ emptyText: 'Bạn chưa có phiếu bổ sung công nào.' }}
                     bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAdjustmentsExcel(rows) }]}
                     columns={[
                       { title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 115, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
                       { title: 'Ngày công', dataIndex: 'work_date', width: 120, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> },
-                      { title: 'Khung ca & Giờ ca', width: 225, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{String(r.shiftTimeRange || '07:00 – 12:00')}</Tag></Space> },
+                      { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{String(r.shiftTimeRange || '07:00 – 12:00')}</Tag></Space> },
                       { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 115, render: (v: number) => <strong>{v} giờ</strong> },
                       { title: 'Lý do giải trình', dataIndex: 'reason', width: 260, ellipsis: true },
-                      { title: 'Trạng thái', dataIndex: 'status', width: 150, render: (v: string) => <StatusTag value={v} /> },
-                      { title: 'Chi tiết', width: 80, fixed: 'right', align: 'center', render: (_, r) => <Tooltip title="Xem chi tiết phiếu bổ sung"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailReq({ kind: 'adjustment', record: r })} /></Tooltip> },
+                      { title: 'Trạng thái', dataIndex: 'status', width: 155, render: (v: string) => <StatusTag value={v} /> },
+                      { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết phiếu bổ sung" onViewDetail={() => setDetailReq({ kind: 'adjustment', record: r })} /> },
                     ]}
                   />
                 </>

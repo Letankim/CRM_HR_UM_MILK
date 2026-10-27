@@ -192,21 +192,62 @@ body {
   max-width: 100%;
 }
 
-/* Bảng dữ liệu cuộn ngang mượt bên trong khung */
+/* Bảng dữ liệu cuộn ngang mượt bên trong khung kèm thanh cuộn rõ ràng, chống đè cột */
 .ant-table-content,
 .ant-table-body {
   overflow-x: auto !important;
   max-width: 100%;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
 }
 
 .ant-table-content::-webkit-scrollbar,
 .ant-table-body::-webkit-scrollbar {
-  display: none;
-  width: 0 !important;
-  height: 0 !important;
+  height: 8px !important;
+  width: 8px !important;
+}
+
+.ant-table-content::-webkit-scrollbar-track,
+.ant-table-body::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.ant-table-content::-webkit-scrollbar-thumb,
+.ant-table-body::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.ant-table-content::-webkit-scrollbar-thumb:hover,
+.ant-table-body::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.ant-table-wrapper .ant-table-cell-ellipsis {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.ant-table-wrapper .ant-table-cell-fix-left,
+.ant-table-wrapper .ant-table-cell-fix-right {
+  background: #ffffff !important;
+  z-index: 2 !important;
+}
+
+.ant-table-wrapper .ant-table-thead > tr > .ant-table-cell-fix-left,
+.ant-table-wrapper .ant-table-thead > tr > .ant-table-cell-fix-right {
+  background: #fafafa !important;
+  z-index: 3 !important;
+}
+
+.ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected > .ant-table-cell-fix-left,
+.ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected > .ant-table-cell-fix-right,
+.ant-table-wrapper .ant-table-tbody > tr:hover > .ant-table-cell-fix-left,
+.ant-table-wrapper .ant-table-tbody > tr:hover > .ant-table-cell-fix-right {
+  background: #eff6ff !important;
 }
 
 /* Chống tràn Card, Modal, Drawer, Descriptions, Tag */

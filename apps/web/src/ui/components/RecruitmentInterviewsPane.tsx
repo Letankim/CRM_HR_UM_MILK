@@ -129,7 +129,7 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
         size="small" rowKey="id" loading={ivQ.isLoading}
         bulkActions={[
           ...(canManageRec ? [
-            { key: 'pass', label: 'Duyệt Đạt phỏng vấn đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel) await api.put(`/admin/interviews/${r.id}/evaluate`, { version: r.version, decision: 'PASS', appearance_score: 90, attitude_score: 90, skill_score: 88, score: 89, comment: 'Đạt yêu cầu phỏng vấn, mời thử việc' }); message.success('Đã duyệt Đạt phỏng vấn cho các lịch đã chọn'); refreshAll(); } },
+            { key: 'pass', label: 'Duyệt Đạt phỏng vấn đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, eligibleFilter: (x: Record<string, unknown>) => x.decision === 'PENDING', onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel) await api.put(`/admin/interviews/${r.id}/evaluate`, { version: r.version, decision: 'PASS', appearance_score: 90, attitude_score: 90, skill_score: 88, score: 89, comment: 'Đạt yêu cầu phỏng vấn, mời thử việc' }); message.success('Đã duyệt Đạt phỏng vấn cho các lịch hợp lệ'); refreshAll(); } },
             { key: 'delete', label: 'Xóa lịch phỏng vấn đã chọn', danger: true, icon: <DeleteOutlined />, confirm: 'Xác nhận xóa các lịch phỏng vấn đã chọn?', onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel) await api.delete(`/admin/interviews/${r.id}`, { version: r.version }); message.success('Đã xóa các lịch phỏng vấn đã chọn'); refreshAll(); } },
           ] : []),
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (sel) => exportIvs(sel) },
@@ -140,18 +140,9 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
           { title: 'Ứng viên phỏng vấn', dataIndex: 'candidateName', ellipsis: true, render: (v: string, r) => <span style={{ fontWeight: 600 }}>{v} {r.candidateCode ? `(${r.candidateCode})` : ''}</span> },
           { title: 'Chi nhánh', dataIndex: 'branchName', width: 165, ellipsis: true },
           { title: 'Người phỏng vấn', dataIndex: 'interviewerLabel', ellipsis: true, render: (v: string, r) => v || String(r.interviewer_id ?? '') },
-          {
-            title: 'Thời gian phỏng vấn', dataIndex: 'scheduled_at', width: 165,
-            render: (v: string, r) => <span className="num" style={{ fontWeight: 600 }}>{String(v).slice(0, 16).replace('T', ' ')} ({String(r.duration_minutes ?? 30)}p)</span>,
-          },
-          {
-            title: 'Xác nhận', dataIndex: 'status', width: 135,
-            render: (_, r) => r.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />}>Cần đổi lịch</Tag> : r.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã xác nhận</Tag> : <Tag color="default">Chờ xác nhận</Tag>,
-          },
-          {
-            title: 'Kết quả HR', dataIndex: 'decision', width: 165,
-            render: (v: string, r) => <Space size={4}><StatusTag value={v} />{v !== 'PENDING' && <Tag color="blue" className="num">{String(r.score)}đ</Tag>}</Space>,
-          },
+            { title: 'Thời gian phỏng vấn', dataIndex: 'scheduled_at', width: 165, render: (v: string, r) => <span className="num" style={{ fontWeight: 600 }}>{String(v).slice(0, 16).replace('T', ' ')} ({String(r.duration_minutes ?? 30)}p)</span> },
+            { title: 'Xác nhận', dataIndex: 'status', width: 135, render: (_, r) => r.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />}>Cần đổi lịch</Tag> : r.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã xác nhận</Tag> : <Tag color="default">Chờ xác nhận</Tag> },
+            { title: 'Kết quả HR', dataIndex: 'decision', width: 165, render: (v: string, r) => <Space size={4}><StatusTag value={v} />{v !== 'PENDING' && <Tag color="blue" className="num">{String(r.score)}đ</Tag>}</Space> },
           {
             title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
             render: (_, r) => (

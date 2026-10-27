@@ -40,6 +40,7 @@ export function useScheduleBulkActions({ canEdit }: { canEdit: boolean }) {
           type: 'primary',
           icon: <CheckOutlined />,
           loading: bulkMutation.isPending,
+          eligibleFilter: (r) => r.status === 'DRAFT',
           onClick: (rows, clear) => bulkMutation.mutate({ action: 'PUBLISH', rows, clear }),
         },
         {

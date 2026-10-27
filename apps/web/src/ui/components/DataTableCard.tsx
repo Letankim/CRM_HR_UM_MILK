@@ -6,7 +6,7 @@ import type { Key } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ListMeta } from '@umbm/shared';
 import { BRAND } from '../theme';
-import { BulkActionBar, type BulkActionItem } from './BulkActionBar';
+import { BulkActionBar, type BulkActionItem, isRowActionable } from './BulkActionBar';
 
 export interface DataTableCardProps<TRecord extends { id: string }> {
   columns: ColumnsType<TRecord>;
@@ -23,8 +23,8 @@ export interface DataTableCardProps<TRecord extends { id: string }> {
 /**
  * Bảng dữ liệu chuẩn mẫu 3DO ADMIN:
  * - Tự động sinh cột NO (số thứ tự đậm + mã định danh in hoa monospace phía dưới).
- * - Khi chọn nhiều dòng, tự động hiển thị BulkActionBar để xử lý hàng loạt.
- * - Hỗ trợ đầy đủ đổi trang và đổi số dòng hiển thị (10, 12, 15, 20, 50, 100 dòng/trang).
+ * - Khi chọn nhiều dòng, tự động hiển thị BulkActionBar thông minh để xử lý hàng loạt.
+ * - Tính toán chiều rộng cuộn ngang chính xác để không bao giờ bị đè cột.
  */
 export function DataTableCard<TRecord extends { id: string }>({
   columns,
@@ -64,7 +64,7 @@ export function DataTableCard<TRecord extends { id: string }>({
   const perPage = meta?.pagination.per_page ?? localPerPage;
   const total = meta?.pagination.total ?? (localTotal > 0 && loading ? localTotal : dataSource.length);
 
-  const fullColumns: ColumnsType<TRecord> = useMemo(() => {
+  const { fullColumns, totalScrollX } = useMemo(() => {
     const noColumn: ColumnsType<TRecord>[number] = {
       title: 'NO',
       key: '__no',
@@ -97,13 +97,16 @@ export function DataTableCard<TRecord extends { id: string }>({
     const normalizedCols = columns.map((col, idx) => {
       const isLast = idx === columns.length - 1;
       const isAction = isLast && (col.key === 'actions' || col.key === 'act' || col.title === 'Thao tác');
+      const w = Number(col.width ?? (isAction ? 88 : 'ellipsis' in col && col.ellipsis ? 230 : 185));
       return {
         ...col,
-        width: col.width ?? (isAction ? 88 : 'ellipsis' in col && col.ellipsis ? 230 : 185),
+        width: w,
         ...(isAction ? { fixed: 'right' as const } : {}),
       };
     });
-    return [noColumn, ...normalizedCols];
+    const allCols = [noColumn, ...normalizedCols];
+    const sumW = allCols.reduce((acc, c) => acc + Number(c.width || 185), 56);
+    return { fullColumns: allCols, totalScrollX: Math.max(sumW, 960) };
   }, [codeExtractor, columns, page, perPage]);
 
   const pagination: TablePaginationConfig = {
@@ -135,6 +138,7 @@ export function DataTableCard<TRecord extends { id: string }>({
         <BulkActionBar<TRecord>
           selectedRows={selectedRows}
           onClearSelection={() => setSelectedRowKeys([])}
+          onFilterSelection={(rows) => setSelectedRowKeys(rows.map((r) => r.id))}
           actions={bulkActions}
         />
       )}
@@ -152,12 +156,25 @@ export function DataTableCard<TRecord extends { id: string }>({
             ? {
                 selectedRowKeys,
                 onChange: (keys) => setSelectedRowKeys(keys),
+                selections: [
+                  { key: 'all-page', text: 'Chọn tất cả trang này', onSelect: () => setSelectedRowKeys(dataSource.map((r) => r.id)) },
+                  {
+                    key: 'only-actionable',
+                    text: 'Chỉ chọn mục chờ duyệt / chờ xử lý',
+                    onSelect: () => {
+                      const filterable = bulkActions.filter((a) => typeof a.eligibleFilter === 'function');
+                      const rows = dataSource.filter((r) => (filterable.length > 0 ? filterable.some((a) => a.eligibleFilter!(r)) : isRowActionable(r)));
+                      setSelectedRowKeys(rows.map((r) => r.id));
+                    },
+                  },
+                  { key: 'clear-all', text: 'Bỏ chọn tất cả', onSelect: () => setSelectedRowKeys([]) },
+                ],
               }
             : undefined
         }
         pagination={pagination}
         locale={{ emptyText }}
-        scroll={{ x: 'max-content' }}
+        scroll={{ x: totalScrollX }}
       />
     </div>
   );

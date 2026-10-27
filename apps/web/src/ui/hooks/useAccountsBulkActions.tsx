@@ -54,6 +54,7 @@ export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccoun
           type: 'primary',
           icon: <CheckOutlined />,
           loading: bulkMutation.isPending && bulkMutation.variables?.action === 'ACTIVATE',
+          eligibleFilter: (r) => r.status === 'PENDING_ACTIVATION',
           onClick: (rows, clear) => bulkMutation.mutate({ action: 'ACTIVATE', rows, clear }),
         },
         {
@@ -61,6 +62,7 @@ export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccoun
           label: 'Mở khóa đăng nhập',
           icon: <UnlockOutlined />,
           loading: bulkMutation.isPending && bulkMutation.variables?.action === 'UNLOCK',
+          eligibleFilter: (r) => r.status === 'LOCKED' || Number(r.failedLoginCount ?? 0) > 0,
           onClick: (rows, clear) => bulkMutation.mutate({ action: 'UNLOCK', rows, clear }),
         },
         {
@@ -69,14 +71,14 @@ export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccoun
           danger: true,
           icon: <StopOutlined />,
           loading: bulkMutation.isPending && bulkMutation.variables?.action === 'REVOKE',
+          eligibleFilter: (r) => r.id !== currentUserId && r.status !== 'REVOKED',
           onClick: (rows, clear) => {
-            const eligible = rows.filter((r) => r.id !== currentUserId && r.status !== 'REVOKED');
-            if (eligible.length === 0) {
+            if (rows.length === 0) {
               message.warning('Các tài khoản đang chọn không thể thu hồi');
               return;
             }
             setClearBulkFn(() => clear);
-            setRevokeTargets(eligible);
+            setRevokeTargets(rows);
           },
         },
         {
@@ -85,6 +87,7 @@ export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccoun
           danger: true,
           icon: <DeleteOutlined />,
           loading: bulkMutation.isPending && bulkMutation.variables?.action === 'DELETE',
+          eligibleFilter: (r) => r.id !== currentUserId,
           onClick: (rows, clear) => {
             modal.confirm({
               title: `Xóa ${rows.length} tài khoản đã chọn?`,

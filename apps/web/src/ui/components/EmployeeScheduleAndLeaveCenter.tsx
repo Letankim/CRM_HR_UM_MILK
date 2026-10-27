@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Alert, App, Button, Flex, Popconfirm, Segmented, Space, Tabs, Tag, Tooltip, Typography } from 'antd';
+import { Alert, App, Button, Flex, Segmented, Space, Tabs, Tag, Typography } from 'antd';
 import {
   AppstoreOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined,
-  CloseOutlined, DeleteOutlined, DownloadOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined, SwapOutlined, TableOutlined,
+  DeleteOutlined, DownloadOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined, SwapOutlined, TableOutlined,
 } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -15,6 +15,7 @@ import { useClientPagination } from '../hooks/useClientPagination';
 import { SelectableTable } from './BulkActionBar';
 import { LeaveRequestModal, MyShiftRegisterModal, ShiftSwapRequestModal } from './EmployeePortalModals';
 import { isAbsentShiftRecord } from './QuickAbsentAdjustmentModal';
+import { RowActionButtons } from './RowActionButtons';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
 import { ScheduleViewsPanel } from './ScheduleViewsPanel';
@@ -96,25 +97,25 @@ export function EmployeeScheduleAndLeaveCenter({
                   <ScheduleViewsPanel mode={viewMode} todayDate={todayDate} assignments={shifts as unknown as ScheduleAssignmentItem[]} canEdit={false} onAddAtCell={() => setAddShiftOpen(true)} onEditItem={(item) => setDetailTarget({ kind: 'shift', record: item as unknown as Record<string, unknown> })} />
                 ) : (
                   <SelectableTable<Record<string, unknown>>
-                    size="small" rowKey="id" pagination={shiftsPag} dataSource={shifts} scroll={{ x: 'max-content' }}
+                    size="small" rowKey="id" pagination={shiftsPag} dataSource={shifts}
                     bulkActions={buildPortalShiftsBulkActions({ loading: cancelShiftMut.isPending, onCancelDrafts: (rows) => cancelShiftMut.mutate(rows.map((r) => String(r.id))), onCreateAbsentAdj: (row) => setDetailTarget({ kind: 'shift', record: { ...row, employeeId: empId } }) })}
                     locale={{ emptyText: 'Bạn chưa có ca làm việc nào được phân công trong kỳ này.' }}
                     columns={[
-                      { title: 'Ngày làm việc', dataIndex: 'workDate', width: 145, render: (v: string) => <Space size={6}><span className="num" style={{ fontWeight: 600 }}>{dayjs(v).format('DD/MM/YYYY')}</span>{v === todayDate && <Tag color="blue" style={{ margin: 0 }}>Hôm nay</Tag>}</Space> },
-                      { title: 'Khung ca & Giờ ca', width: 225, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                      { title: 'Chi nhánh', dataIndex: 'branchName', width: 195, ellipsis: true },
+                      { title: 'Ngày làm việc', dataIndex: 'workDate', width: 150, render: (v: string) => <Space size={6}><span className="num" style={{ fontWeight: 600 }}>{dayjs(v).format('DD/MM/YYYY')}</span>{v === todayDate && <Tag color="blue" style={{ margin: 0 }}>Hôm nay</Tag>}</Space> },
+                      { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                      { title: 'Chi nhánh', dataIndex: 'branchName', width: 200, ellipsis: true },
                       { title: 'Điểm danh', width: 185, render: (_, r) => <Tag color={String(r.attendanceStatusColor || 'default')} style={{ margin: 0 }}>{String(r.attendanceStatusLabel || 'Chưa điểm danh')}</Tag> },
-                      { title: 'Trạng thái lịch', dataIndex: 'status', width: 145, render: (v: string, r) => <StatusTag value={v} label={String(r.statusLabel || '') || undefined} /> },
+                      { title: 'Trạng thái lịch', dataIndex: 'status', width: 150, render: (v: string, r) => <StatusTag value={v} label={String(r.statusLabel || '') || undefined} /> },
                       {
-                        title: 'Thao tác', width: 205, fixed: 'right', align: 'right',
+                        title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
                         render: (_, r) => (
-                          <Space size={6}>
-                            <Tooltip title="Xem chi tiết ca làm việc"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'shift', record: { ...r, employeeId: empId } })} /></Tooltip>
-                            {isAbsentShiftRecord(r) && <Button size="small" danger icon={<FileAddOutlined />} onClick={() => setDetailTarget({ kind: 'shift', record: { ...r, employeeId: empId } })}>Bổ sung công</Button>}
-                            {r.status === 'DRAFT' && !r.checkInEvent && (
-                              <Popconfirm title="Hủy đăng ký ca đang chờ duyệt này?" okText="Hủy đăng ký" cancelText="Đóng" okButtonProps={{ danger: true, icon: <DeleteOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onConfirm={() => cancelShiftMut.mutate([String(r.id)])}><Button size="small" danger icon={<DeleteOutlined />}>Hủy</Button></Popconfirm>
-                            )}
-                          </Space>
+                          <RowActionButtons
+                            detailTooltip="Xem chi tiết ca làm việc" onViewDetail={() => setDetailTarget({ kind: 'shift', record: { ...r, employeeId: empId } })} loading={cancelShiftMut.isPending}
+                            menuItems={[
+                              ...(isAbsentShiftRecord(r) ? [{ key: 'adj', icon: <FileAddOutlined style={{ color: '#DC2626' }} />, label: 'Tạo phiếu bổ sung công', onClick: () => setDetailTarget({ kind: 'shift', record: { ...r, employeeId: empId } }) }] : []),
+                              ...(r.status === 'DRAFT' && !r.checkInEvent ? [{ key: 'cancel', icon: <DeleteOutlined />, danger: true, label: 'Hủy đăng ký ca chờ duyệt', onClick: () => cancelShiftMut.mutate([String(r.id)]) }] : []),
+                            ]}
+                          />
                         ),
                       },
                     ]}
@@ -130,33 +131,33 @@ export function EmployeeScheduleAndLeaveCenter({
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 <Space size={8} wrap>
                   <Tag color="blue" style={{ margin: 0, fontWeight: 600 }}>Định mức nghỉ OFF đã đăng ký: {usedOffCount} / {offQuotaLimit} ngày trong chu kỳ</Tag>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>Bấm biểu tượng con mắt ở từng dòng để xem chi tiết lý do và thời gian phê duyệt.</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>Bấm nút thao tác ở từng dòng để xem chi tiết lý do và thời gian phê duyệt.</Typography.Text>
                 </Space>
                 <SelectableTable<Record<string, unknown>>
-                  size="small" rowKey="id" pagination={leavesPag} dataSource={leaves} scroll={{ x: 'max-content' }}
+                  size="small" rowKey="id" pagination={leavesPag} dataSource={leaves}
                   bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportLeavesExcel(rows) }]}
                   locale={{ emptyText: 'Bạn chưa có đơn đăng ký nghỉ phép (OFF) nào trong kỳ.' }}
                   columns={[
-                    { title: 'Mã đơn', dataIndex: 'request_code', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
-                    { title: 'Ngày xin nghỉ', dataIndex: 'leave_date', width: 120, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 225, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                    { title: 'Lý do xin nghỉ', dataIndex: 'reason', width: 250, ellipsis: true },
-                    { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (v: string) => <StatusTag value={v} /> },
-                    { title: 'Chi tiết', width: 80, fixed: 'right', align: 'center', render: (_, r) => <Tooltip title="Xem chi tiết đơn nghỉ OFF"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'leave', record: r })} /></Tooltip> },
+                    { title: 'Mã đơn', dataIndex: 'request_code', width: 115, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
+                    { title: 'Ngày xin nghỉ', dataIndex: 'leave_date', width: 125, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
+                    { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                    { title: 'Lý do xin nghỉ', dataIndex: 'reason', width: 260, ellipsis: true },
+                    { title: 'Trạng thái', dataIndex: 'status', width: 155, render: (v: string) => <StatusTag value={v} /> },
+                    { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết đơn nghỉ OFF" onViewDetail={() => setDetailTarget({ kind: 'leave', record: r })} /> },
                   ]}
                 />
                 {emergencyLeaves.length > 0 && (
                   <SelectableTable<Record<string, unknown>>
-                    size="small" rowKey="id" pagination={emgPag} dataSource={emergencyLeaves} scroll={{ x: 'max-content' }}
+                    size="small" rowKey="id" pagination={emgPag} dataSource={emergencyLeaves}
                     bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportEmergencyExcel(rows) }]}
                     title={() => <span style={{ fontWeight: 600, fontSize: 13 }}>Báo cáo nghỉ khẩn cấp sát giờ ca (&lt;12h)</span>}
                     columns={[
-                      { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 110, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
-                      { title: 'Ngày nghỉ', dataIndex: 'work_date', width: 120, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
-                      { title: 'Khung ca & Giờ ca', width: 225, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                      { title: 'Lý do khẩn cấp', dataIndex: 'reason', width: 250, ellipsis: true },
-                      { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (v: string) => <StatusTag value={v} /> },
-                      { title: 'Chi tiết', width: 80, fixed: 'right', align: 'center', render: (_, r) => <Tooltip title="Xem chi tiết báo nghỉ khẩn"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'emergency', record: r })} /></Tooltip> },
+                      { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 115, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
+                      { title: 'Ngày nghỉ', dataIndex: 'work_date', width: 125, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
+                      { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                      { title: 'Lý do khẩn cấp', dataIndex: 'reason', width: 260, ellipsis: true },
+                      { title: 'Trạng thái', dataIndex: 'status', width: 155, render: (v: string) => <StatusTag value={v} /> },
+                      { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết báo nghỉ khẩn" onViewDetail={() => setDetailTarget({ kind: 'emergency', record: r })} /> },
                     ]}
                   />
                 )}
@@ -168,36 +169,36 @@ export function EmployeeScheduleAndLeaveCenter({
             label: <span><SwapOutlined /> Yêu cầu đổi ca ({swaps.length})</span>,
             children: (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                <Alert type="info" showIcon message="Quy trình đổi ca 3 bước: (1) Bạn tạo yêu cầu -> (2) Đồng nghiệp xác nhận nhận ca -> (3) Quản lý duyệt cập nhật lịch chính thức. Bấm nút con mắt để xem đầy đủ chi tiết & thời gian." />
+                <Alert type="info" showIcon message="Quy trình đổi ca 3 bước: (1) Bạn tạo yêu cầu -> (2) Đồng nghiệp xác nhận nhận ca -> (3) Quản lý duyệt cập nhật lịch chính thức." />
                 <SelectableTable<Record<string, unknown>>
-                  size="small" rowKey="id" pagination={swapsPag} dataSource={swaps} scroll={{ x: 'max-content' }}
+                  size="small" rowKey="id" pagination={swapsPag} dataSource={swaps}
                   bulkActions={[
-                    { key: 'accept', label: 'Đồng ý nhận ca đã chọn', type: 'primary', icon: <CheckCircleOutlined />, loading: peerRespondMut.isPending, onClick: (rows) => { const valid = rows.filter((r) => r.status === 'PENDING_PEER' && (r.peer_id === empId || r.peerCode === empCode)); if (valid.length > 0) peerRespondMut.mutate(valid.map((r) => ({ id: String(r.id), version: Number(r.version), accept: true }))); } },
-                    { key: 'reject', label: 'Từ chối nhận ca đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: peerRespondMut.isPending, onClick: (rows) => { const valid = rows.filter((r) => r.status === 'PENDING_PEER' && (r.peer_id === empId || r.peerCode === empCode)); if (valid.length > 0) peerRespondMut.mutate(valid.map((r) => ({ id: String(r.id), version: Number(r.version), accept: false }))); } },
+                    { key: 'accept', label: 'Đồng ý nhận ca đã chọn', type: 'primary', icon: <CheckCircleOutlined />, loading: peerRespondMut.isPending, eligibleFilter: (r) => r.status === 'PENDING_PEER' && (r.peer_id === empId || r.peerCode === empCode), onClick: (rows) => peerRespondMut.mutate(rows.map((r) => ({ id: String(r.id), version: Number(r.version), accept: true }))) },
+                    { key: 'reject', label: 'Từ chối nhận ca đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: peerRespondMut.isPending, eligibleFilter: (r) => r.status === 'PENDING_PEER' && (r.peer_id === empId || r.peerCode === empCode), onClick: (rows) => peerRespondMut.mutate(rows.map((r) => ({ id: String(r.id), version: Number(r.version), accept: false }))) },
                     { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportSwapsExcel(rows) },
                   ]}
                   locale={{ emptyText: 'Bạn chưa có yêu cầu đổi ca nội bộ nào. Bấm nút "Đổi ca" phía trên để gửi đề nghị đổi ca với đồng nghiệp.' }}
                   columns={[
-                    { title: 'Mã đơn', dataIndex: 'swap_code', width: 110, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
+                    { title: 'Mã đơn', dataIndex: 'swap_code', width: 115, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Ngày ca', dataIndex: 'from_work_date', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 225, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                    { title: 'Người xin đổi', width: 190, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.requesterName || '')}</span>{(r.requester_id === empId || r.requesterCode === empCode) && <Tag color="blue" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
-                    { title: 'Người nhận ca', width: 190, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.peerName || '')}</span>{(r.peer_id === empId || r.peerCode === empCode) && <Tag color="cyan" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
-                    { title: 'Trạng thái', dataIndex: 'status', width: 165, render: (v: string) => <StatusTag value={v} /> },
+                    { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                    { title: 'Người xin đổi', width: 195, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.requesterName || '')}</span>{(r.requester_id === empId || r.requesterCode === empCode) && <Tag color="blue" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
+                    { title: 'Người nhận ca', width: 195, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.peerName || '')}</span>{(r.peer_id === empId || r.peerCode === empCode) && <Tag color="cyan" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
+                    { title: 'Trạng thái', dataIndex: 'status', width: 170, render: (v: string) => <StatusTag value={v} /> },
                     {
-                      title: 'Thao tác', width: 215, fixed: 'right', align: 'right',
+                      title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
                       render: (_, r) => {
                         const isPeer = r.peer_id === empId || r.peerCode === empCode;
                         return (
-                          <Space size={6}>
-                            <Tooltip title="Xem chi tiết yêu cầu đổi ca"><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailTarget({ kind: 'swap', record: r })} /></Tooltip>
-                            {r.status === 'PENDING_PEER' && isPeer && (
-                              <>
-                                <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={peerRespondMut.isPending} onClick={() => peerRespondMut.mutate([{ id: String(r.id), version: Number(r.version), accept: true }])}>Đồng ý</Button>
-                                <Button size="small" danger icon={<CloseCircleOutlined />} loading={peerRespondMut.isPending} onClick={() => peerRespondMut.mutate([{ id: String(r.id), version: Number(r.version), accept: false }])}>Từ chối</Button>
-                              </>
-                            )}
-                          </Space>
+                          <RowActionButtons
+                            detailTooltip="Xem chi tiết yêu cầu đổi ca"
+                            onViewDetail={() => setDetailTarget({ kind: 'swap', record: r })}
+                            loading={peerRespondMut.isPending}
+                            menuItems={r.status === 'PENDING_PEER' && isPeer ? [
+                              { key: 'accept', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Đồng ý nhận ca thay', onClick: () => peerRespondMut.mutate([{ id: String(r.id), version: Number(r.version), accept: true }]) },
+                              { key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối nhận ca thay', onClick: () => peerRespondMut.mutate([{ id: String(r.id), version: Number(r.version), accept: false }]) },
+                            ] : []}
+                          />
                         );
                       },
                     },

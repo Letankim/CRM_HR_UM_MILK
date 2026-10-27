@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { SelectableTable } from './BulkActionBar';
+import { RowActionButtons } from './RowActionButtons';
 import { allowancesOf, bonusesOf, deductionsOf, fmtVnd, type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
 
 const sum = (rows: PayrollSnapshotItem[], f: (r: PayrollSnapshotItem) => number) => rows.reduce((s, r) => s + f(r), 0);
@@ -160,8 +161,8 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
           { title: 'Khấu trừ', key: 'ded', align: 'right', render: (_, r) => <span className="num" style={{ color: '#DC2626' }}>{fmtVnd(deductionsOf(r))}</span> },
           { title: 'Thực lĩnh', dataIndex: 'netVnd', align: 'right', render: (v: number) => <span className="num" style={{ color: '#2563EB', fontWeight: 800 }}>{fmtVnd(v)}</span> },
           {
-            title: 'Thao tác', key: 'act', width: 70, align: 'center', fixed: 'right',
-            render: (_, r) => <Tooltip title="Xem chi tiết phiếu lương"><Button size="small" icon={<EyeOutlined />} onClick={() => onOpenPayslip(r)} /></Tooltip>,
+            title: 'Thao tác', key: 'act', width: 88, align: 'right', fixed: 'right',
+            render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết phiếu lương" onViewDetail={() => onOpenPayslip(r)} />,
           },
         ]}
         summary={() =>

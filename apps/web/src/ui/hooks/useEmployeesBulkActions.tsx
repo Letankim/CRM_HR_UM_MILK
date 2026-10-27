@@ -48,6 +48,7 @@ export function useEmployeesBulkActions({ canManage, canPromote }: UseEmployeesB
         type: 'primary',
         icon: <RiseOutlined />,
         loading: bulkAction.isPending,
+        eligibleFilter: (r) => r.stage === 'PROBATION',
         onClick: (rows, clear) => bulkAction.mutate({ action: 'PROMOTE_OFFICIAL', rows, clear }),
       });
     }

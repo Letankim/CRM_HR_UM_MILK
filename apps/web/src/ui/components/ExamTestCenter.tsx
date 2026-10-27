@@ -170,17 +170,18 @@ export function EmployeeTestCenterView({
         { title: 'Điểm cao nhất', dataIndex: 'best_score_percent', width: 115, render: (v: number) => <Tag color={v >= 80 ? 'green' : 'default'}>{v ?? 0}%</Tag> },
         { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag value={v} /> },
         {
-          title: 'Thao tác', width: 225, fixed: 'right', align: 'right',
+          title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
           render: (_, r) => {
             const exhausted = Number(r.attempts_used ?? 0) >= Number(r.max_attempts ?? 3);
             const expired = Boolean(r.close_at && Date.now() > new Date(String(r.close_at)).getTime());
             return (
-              <Space size={6}>
-                <Button size="small" icon={<HistoryOutlined />} onClick={() => { setFilterTestId(String(r.test_id)); setSubTab('history'); }}>Lịch sử</Button>
-                <Button size="small" type="primary" icon={<PlayCircleOutlined />} disabled={exhausted || expired} loading={startingId === String(r.id)} onClick={() => void handleStartExam(r)}>
-                  {exhausted ? 'Hết lượt thi' : expired ? 'Quá hạn' : 'Bắt đầu làm bài'}
-                </Button>
-              </Space>
+              <RowActionButtons
+                detailTooltip="Xem lịch sử làm bài" onViewDetail={() => { setFilterTestId(String(r.test_id)); setSubTab('history'); }} loading={startingId === String(r.id)}
+                menuItems={[
+                  { key: 'start', icon: <PlayCircleOutlined style={{ color: '#2563EB' }} />, disabled: exhausted || expired, label: exhausted ? 'Đã hết lượt thi' : expired ? 'Đã quá hạn nộp bài' : 'Bắt đầu làm bài kiểm tra', onClick: () => void handleStartExam(r) },
+                  { key: 'history', icon: <HistoryOutlined />, label: 'Xem lịch sử các lượt thi', onClick: () => { setFilterTestId(String(r.test_id)); setSubTab('history'); } },
+                ]}
+              />
             );
           },
         },

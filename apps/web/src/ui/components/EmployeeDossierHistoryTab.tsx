@@ -9,6 +9,7 @@ import { StatusTag } from '../StatusTag';
 import { DateStringPicker } from './DateTimePickers';
 import type { EmployeeRowItem } from './employee-table-columns';
 import { isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
+import { RowActionButtons } from './RowActionButtons';
 
 type StageHistoryItem = NonNullable<EmployeeRowItem['stageHistory']>[number];
 type RecentShiftItem = NonNullable<EmployeeRowItem['recentShifts']>[number];
@@ -80,7 +81,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
                   </div>
                 ),
               },
-              { title: 'Thao tác', key: 'action', width: 95, align: 'right', render: (_, r) => <Button size="small" icon={<EyeOutlined />} onClick={() => setViewingStage(r)}>Chi tiết</Button> },
+              { title: 'Thao tác', key: 'action', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết quyết định chuyển giai đoạn" onViewDetail={() => setViewingStage(r)} /> },
             ]}
           />
         )}
@@ -102,7 +103,16 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
               { title: 'Giờ ca', key: 'time', width: 145, render: (_, r) => <span className="num">{r.start_at} - {r.end_at} ({r.scheduled_hours}h)</span> },
               { title: 'Trạng thái ca', dataIndex: 'status', width: 140, render: (v: string) => <StatusTag value={v} /> },
               { title: 'Người xếp ca', dataIndex: 'assignedByName', width: 145, render: (v?: string) => <span style={{ fontSize: 12, color: '#475569' }}>{v || 'Quản lý ca'}</span> },
-              { title: 'Thao tác', key: 'action', width: 95, align: 'right', render: (_, r) => <Button size="small" icon={<EyeOutlined />} onClick={() => setViewingShift(r)}>Chi tiết</Button> },
+              {
+                title: 'Thao tác', key: 'action', width: 88, fixed: 'right', align: 'right',
+                render: (_, r) => (
+                  <RowActionButtons
+                    detailTooltip="Xem chi tiết ca làm việc"
+                    onViewDetail={() => setViewingShift(r)}
+                    menuItems={isAbsentShiftRecord(r as unknown as Record<string, unknown>) ? [{ key: 'adj', icon: <FileAddOutlined style={{ color: '#DC2626' }} />, label: 'Tạo phiếu bổ sung công', onClick: () => { setViewingShift(r); setQuickAdjOpen(true); } }] : []}
+                  />
+                ),
+              },
             ]}
           />
         )}

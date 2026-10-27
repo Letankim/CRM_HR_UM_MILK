@@ -12,8 +12,8 @@ export interface RowActionButtonsProps {
 }
 
 /**
- * Cụm nút thao tác gọn gàng trên từng dòng theo đúng mẫu 3DO ADMIN:
- * Nút icon con mắt [Xem chi tiết] + Nút [...] mở menu thao tác ngữ cảnh khi click.
+ * Cụm nút thao tác chuẩn doanh nghiệp 3DO ADMIN:
+ * Nút icon con mắt [Xem chi tiết] + Nút [...] mở danh sách thao tác ngữ cảnh khi click.
  */
 export function RowActionButtons({
   onViewDetail,
@@ -21,7 +21,23 @@ export function RowActionButtons({
   menuItems = [],
   loading = false,
 }: RowActionButtonsProps) {
-  const validItems = menuItems.filter(Boolean);
+  const validItems = (menuItems ?? []).filter(Boolean);
+  const hasViewInMenu = validItems.some((item) => item && 'key' in item && (item.key === 'view' || item.key === '__view_detail'));
+  const combinedItems: MenuProps['items'] = [
+    ...(onViewDetail && !hasViewInMenu
+      ? [
+          {
+            key: '__view_detail',
+            icon: <EyeOutlined />,
+            label: detailTooltip,
+            onClick: onViewDetail,
+          },
+          ...(validItems.length > 0 ? [{ type: 'divider' as const }] : []),
+        ]
+      : []),
+    ...validItems,
+  ];
+
   return (
     <Space size={4}>
       {onViewDetail && (
@@ -29,10 +45,10 @@ export function RowActionButtons({
           <Button size="small" icon={<EyeOutlined />} onClick={onViewDetail} disabled={loading} aria-label={detailTooltip} />
         </Tooltip>
       )}
-      {validItems.length > 0 && (
-        <Dropdown menu={{ items: validItems }} trigger={['click']} placement="bottomRight" disabled={loading}>
-          <Tooltip title="Thao tác">
-            <Button size="small" icon={<EllipsisOutlined />} loading={loading} aria-label="Thao tác khác" />
+      {combinedItems.length > 0 && (
+        <Dropdown menu={{ items: combinedItems }} trigger={['click']} placement="bottomRight" disabled={loading}>
+          <Tooltip title="Mở danh sách thao tác">
+            <Button size="small" icon={<EllipsisOutlined />} loading={loading} aria-label="Thao tác" />
           </Tooltip>
         </Dropdown>
       )}

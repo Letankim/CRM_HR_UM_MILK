@@ -13,6 +13,7 @@ import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
 import { SelectableTable } from './BulkActionBar';
+import { RowActionButtons } from './RowActionButtons';
 import { type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
 
 interface Props {
@@ -173,8 +174,8 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
             },
             { title: 'Trạng thái kỳ', width: 125, render: () => <StatusTag value={period.status || 'DRAFT'} label={period.statusLabel} /> },
             {
-              title: 'Chi tiết', width: 90, fixed: 'right', align: 'right',
-              render: (_, r) => <Button size="small" icon={<EyeOutlined />} onClick={() => onOpenPayslip(r)}>Chi tiết</Button>,
+              title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
+              render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết công & phiếu lương" onViewDetail={() => onOpenPayslip(r)} />,
             },
           ]}
         />

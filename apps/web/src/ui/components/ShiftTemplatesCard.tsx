@@ -127,7 +127,7 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
         { title: 'Định biên Tối thiểu – Tối đa', render: (_, r) => <span className="num"><strong>{String(r.min_staff)}</strong> – <strong>{String(r.max_staff)}</strong> nhân sự/ca</span> },
         { title: 'Chế độ kiểm soát', dataIndex: 'enforcement', render: (v: string) => <Tag color={v === 'HARD_BLOCK' ? 'red' : 'orange'}>{v === 'HARD_BLOCK' ? 'Chặn cứng khi thiếu định biên' : 'Cảnh báo mềm khi thiếu người'}</Tag> },
         { title: 'Ghi chú', dataIndex: 'note', ellipsis: true },
-        { title: 'Thao tác', width: 100, align: 'right', render: (_, r) => canConfig ? <Space size={4}><Button size="small" icon={<EditOutlined />} onClick={() => openEditRule(r)} /><Button size="small" danger icon={<DeleteOutlined />} onClick={() => modal.confirm({ title: `Xóa định biên của "${r.branchName}" (${r.shiftName})?`, okText: 'Xóa định biên', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => deleteRule.mutateAsync([String(r.id)]) })} /></Space> : null },
+        { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => canConfig ? <RowActionButtons menuItems={[{ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa định biên', onClick: () => openEditRule(r) }, { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa định biên ca', onClick: () => modal.confirm({ title: `Xóa định biên của "${r.branchName}" (${r.shiftName})?`, okText: 'Xóa định biên', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => deleteRule.mutateAsync([String(r.id)]) }) }]} /> : null },
       ]}
     />
   );

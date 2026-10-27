@@ -128,7 +128,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
         size="small" rowKey="id" loading={candQ.isLoading}
         bulkActions={[
           ...(canManageRec ? [
-            { key: 'contacted', label: 'Đánh dấu Đã liên hệ đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel.filter((x) => x.status === 'NEW')) await api.put(`/admin/candidates/${r.id}`, { version: r.version, status: 'CONTACTED' }); message.success('Đã cập nhật trạng thái Đã liên hệ cho ứng viên đã chọn'); refreshAll(); } },
+            { key: 'contacted', label: 'Đánh dấu Đã liên hệ đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, eligibleFilter: (x: Record<string, unknown>) => x.status === 'NEW', onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel) await api.put(`/admin/candidates/${r.id}`, { version: r.version, status: 'CONTACTED' }); message.success('Đã cập nhật trạng thái Đã liên hệ cho ứng viên hợp lệ'); refreshAll(); } },
             { key: 'delete', label: 'Xóa ứng viên đã chọn', danger: true, icon: <DeleteOutlined />, confirm: 'Xác nhận xóa các hồ sơ ứng viên đã chọn?', onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel) await api.delete(`/admin/candidates/${r.id}`, { version: r.version }); message.success('Đã xóa các hồ sơ ứng viên đã chọn'); refreshAll(); } },
           ] : []),
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (sel) => exportCands(sel) },
