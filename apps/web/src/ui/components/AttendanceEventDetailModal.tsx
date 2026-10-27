@@ -6,6 +6,7 @@ import { CameraOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
+import { useCan } from '@/lib/auth';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { BRAND } from '../theme';
 import { AttendanceCameraModal } from './AttendanceCameraModal';
@@ -18,7 +19,7 @@ interface DetailProps {
   onClose: () => void;
 }
 
-function renderCheckEventPane(ev: AttendanceEventRow | null | undefined, kind: 'CHECK_IN' | 'CHECK_OUT', gallerySlides: FancyboxSlideItem[]) {
+function renderCheckEventPane(ev: AttendanceEventRow | null | undefined, kind: 'CHECK_IN' | 'CHECK_OUT', gallerySlides: FancyboxSlideItem[], canViewMedia: boolean) {
   const isCheckIn = kind === 'CHECK_IN';
   const titleLabel = isCheckIn ? 'Chi tiết Vào ca (Check-In)' : 'Chi tiết Ra ca (Check-Out)';
   const slideIdx = ev?.photoUrl ? Math.max(0, gallerySlides.findIndex((s) => s.src === ev.photoUrl)) : 0;
@@ -33,13 +34,15 @@ function renderCheckEventPane(ev: AttendanceEventRow | null | undefined, kind: '
         </div>
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          <div style={{ background: '#0F172A', borderRadius: 4, padding: 0, overflow: 'hidden', textAlign: 'center', border: `1px solid ${BRAND.border}` }}>
-            {ev.photoUrl ? (
-              <FancyboxImage src={ev.photoUrl} alt={titleLabel} caption={`${titleLabel} — ${ev.employeeName || ''} (${ev.checkTimeFormatted || ev.checkTimeHm || ''})`} gallerySlides={gallerySlides} slideIndex={slideIdx} height={180} />
-            ) : (
-              <div style={{ height: 180, display: 'grid', placeItems: 'center', color: '#94A3B8' }}><div><CameraOutlined style={{ fontSize: 24 }} /><div>Ảnh xác thực Camera</div></div></div>
-            )}
-          </div>
+          {canViewMedia && (
+            <div style={{ background: '#0F172A', borderRadius: 4, padding: 0, overflow: 'hidden', textAlign: 'center', border: `1px solid ${BRAND.border}` }}>
+              {ev.photoUrl ? (
+                <FancyboxImage src={ev.photoUrl} alt={titleLabel} caption={`${titleLabel} — ${ev.employeeName || ''} (${ev.checkTimeFormatted || ev.checkTimeHm || ''})`} gallerySlides={gallerySlides} slideIndex={slideIdx} height={180} />
+              ) : (
+                <div style={{ height: 180, display: 'grid', placeItems: 'center', color: '#94A3B8' }}><div><CameraOutlined style={{ fontSize: 24 }} /><div>Ảnh xác thực Camera</div></div></div>
+              )}
+            </div>
+          )}
           <Descriptions column={1} bordered size="small" styles={{ label: { width: 102, whiteSpace: 'nowrap', padding: '6px 10px' }, content: { padding: '6px 10px' } }}>
             <Descriptions.Item label="Thời gian">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
@@ -50,9 +53,9 @@ function renderCheckEventPane(ev: AttendanceEventRow | null | undefined, kind: '
             <Descriptions.Item label="Vị trí GPS">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
                 <Tag color="green" icon={<EnvironmentOutlined />} style={{ margin: 0 }}>Cách CH {Number(ev.distance_m ?? 0)}m · Hợp lệ</Tag>
-                {ev.lat !== undefined && ev.lng !== undefined && <Button size="small" type="link" icon={<EnvironmentOutlined />} style={{ padding: 0, height: 20, fontSize: 12 }} href={`https://www.google.com/maps?q=${Number(ev.lat)},${Number(ev.lng)}`} target="_blank" rel="noopener noreferrer">Xem trên Google Maps</Button>}
+                {canViewMedia && ev.lat !== undefined && ev.lng !== undefined && <Button size="small" type="link" icon={<EnvironmentOutlined />} style={{ padding: 0, height: 20, fontSize: 12 }} href={`https://www.google.com/maps?q=${Number(ev.lat)},${Number(ev.lng)}`} target="_blank" rel="noopener noreferrer">Xem trên Google Maps</Button>}
               </div>
-              {ev.lat !== undefined && ev.lng !== undefined && <div className="mono" style={{ fontSize: 11, color: BRAND.textSecondary, marginTop: 3 }}>Tọa độ thiết bị: ({Number(ev.lat).toFixed(5)}, {Number(ev.lng).toFixed(5)})</div>}
+              {canViewMedia && ev.lat !== undefined && ev.lng !== undefined && <div className="mono" style={{ fontSize: 11, color: BRAND.textSecondary, marginTop: 3 }}>Tọa độ thiết bị: ({Number(ev.lat).toFixed(5)}, {Number(ev.lng).toFixed(5)})</div>}
             </Descriptions.Item>
           </Descriptions>
         </Space>
@@ -62,6 +65,7 @@ function renderCheckEventPane(ev: AttendanceEventRow | null | undefined, kind: '
 }
 
 export function AttendanceEventDetailModal({ event, onClose }: DetailProps) {
+  const can = useCan(), canViewMedia = can('attendance.media.read', 'self.attendance');
   const inEv = event ? (event.checkInEvent ?? (event.type === 'CHECK_IN' ? event : null)) : null;
   const outEv = event ? (event.checkOutEvent ?? (event.type === 'CHECK_OUT' ? event : null)) : null;
   const hasBranchCoords = event?.branchLat !== undefined && event?.branchLat !== null && event?.branchLng !== undefined && event?.branchLng !== null;
@@ -81,8 +85,7 @@ export function AttendanceEventDetailModal({ event, onClose }: DetailProps) {
           <Descriptions column={1} bordered size="small" styles={{ label: { width: 135, whiteSpace: 'nowrap', padding: '6px 12px' }, content: { padding: '6px 12px' } }}>
             <Descriptions.Item label="Nhân sự & Ca làm">
               <Space size={8} wrap>
-                <strong>{event.employeeName}</strong>
-                <span>·</span>
+                <strong>{event.employeeName}</strong><span>·</span>
                 <Tag color="blue" style={{ margin: 0 }}>{event.shiftLabel || 'Ca làm việc'} ({event.shiftTimeRange || '07:00 – 12:00'})</Tag>
                 <span className="num" style={{ color: BRAND.textSecondary }}>Ngày: {event.work_date ? dayjs(event.work_date).format('DD/MM/YYYY') : '—'}</span>
               </Space>
@@ -92,17 +95,17 @@ export function AttendanceEventDetailModal({ event, onClose }: DetailProps) {
                 <Space size={6} wrap>
                   <strong>{event.branchName || 'Chi nhánh làm việc'}</strong>
                   {event.branchRadiusM && <Tag color="geekblue" style={{ margin: 0 }}>Bán kính {event.branchRadiusM}m</Tag>}
-                  {hasBranchCoords && <span className="mono" style={{ fontSize: 12, color: BRAND.textSecondary }}>Tọa độ: ({Number(event.branchLat).toFixed(5)}, {Number(event.branchLng).toFixed(5)})</span>}
+                  {canViewMedia && hasBranchCoords && <span className="mono" style={{ fontSize: 12, color: BRAND.textSecondary }}>Tọa độ: ({Number(event.branchLat).toFixed(5)}, {Number(event.branchLng).toFixed(5)})</span>}
                 </Space>
-                {hasBranchCoords && (
+                {canViewMedia && hasBranchCoords && (
                   <Button size="small" type="primary" ghost icon={<EnvironmentOutlined />} href={`https://www.google.com/maps?q=${Number(event.branchLat)},${Number(event.branchLng)}`} target="_blank" rel="noopener noreferrer">Xem trên Google Maps</Button>
                 )}
               </div>
             </Descriptions.Item>
           </Descriptions>
           <Row gutter={[12, 12]}>
-            <Col xs={24} md={12}>{renderCheckEventPane(inEv, 'CHECK_IN', gallerySlides)}</Col>
-            <Col xs={24} md={12}>{renderCheckEventPane(outEv, 'CHECK_OUT', gallerySlides)}</Col>
+            <Col xs={24} md={12}>{renderCheckEventPane(inEv, 'CHECK_IN', gallerySlides, canViewMedia)}</Col>
+            <Col xs={24} md={12}>{renderCheckEventPane(outEv, 'CHECK_OUT', gallerySlides, canViewMedia)}</Col>
           </Row>
         </Space>
       )}

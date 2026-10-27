@@ -79,6 +79,12 @@ export function ScheduleRequestDetailModal({
             <Descriptions.Item label="Chi nhánh làm việc">{String(r.branchName || '—')}</Descriptions.Item>
             <Descriptions.Item label="Người xin đổi ca">{String(r.requesterName || r.requester_id || '—')}</Descriptions.Item>
             <Descriptions.Item label="Đồng nghiệp nhận ca">{String(r.peerName || r.peer_id || '—')}</Descriptions.Item>
+            <Descriptions.Item label="Kiểm tra chồng ca & Định biên">
+              <Space size={6} wrap>
+                <Tag color={r.has_conflict ? 'red' : 'green'} style={{ margin: 0 }}>{r.has_conflict ? 'Phát hiện chồng ca' : 'Không chồng ca'}</Tag>
+                <Tag color={r.staffing_valid === false ? 'volcano' : 'green'} style={{ margin: 0 }}>{r.staffing_valid === false ? 'Thiếu định biên' : 'Đảm bảo định biên ca'}</Tag>
+              </Space>
+            </Descriptions.Item>
             <Descriptions.Item label="Lý do xin đổi ca">{String(r.reason || '—')}</Descriptions.Item>
             <Descriptions.Item label="Thời điểm gửi yêu cầu"><span className="num">{fmtTs(r.requested_at || r.created_at)}</span></Descriptions.Item>
             <Descriptions.Item label="Đồng nghiệp phản hồi">
@@ -138,6 +144,12 @@ export function ScheduleRequestDetailModal({
             </Descriptions.Item>
             <Descriptions.Item label="Chi nhánh">{String(r.branchName || '—')}</Descriptions.Item>
             <Descriptions.Item label="Lý do khẩn cấp">{String(r.reason || '—')}</Descriptions.Item>
+            <Descriptions.Item label="Nhân sự thay ca">{String(r.replacementName || (r.status === 'RESOLVED' ? 'Đã bố trí nhân sự chi nhánh thay thế' : 'Chưa tìm được người thay'))}</Descriptions.Item>
+            <Descriptions.Item label="Tình trạng phủ ca">
+              <Tag color={r.shift_coverage_status === 'COVERED' || r.status === 'RESOLVED' ? 'green' : r.status === 'ESCALATED' ? 'volcano' : 'orange'} style={{ margin: 0 }}>
+                {r.shift_coverage_status === 'COVERED' || r.status === 'RESOLVED' ? 'Đã phủ đủ ca (Đã có người thay)' : r.status === 'ESCALATED' ? 'Thiếu ca — Đã báo HR điều phối' : 'Chưa phủ ca — Đang tìm người thay'}
+              </Tag>
+            </Descriptions.Item>
             <Descriptions.Item label="Thời điểm báo cáo"><span className="num">{fmtTs(r.reported_at || r.created_at)}</span></Descriptions.Item>
             <Descriptions.Item label="Phương án điều phối">{String(r.resolution_note || r.shift_coverage_status || 'Đang điều phối người thay ca')}</Descriptions.Item>
           </>

@@ -97,12 +97,14 @@ export function DashboardBranchAndShiftOverview({
       const bPeriodShifts = allShifts.filter((s) => (s.branchId ?? s.branch_id) === b.id);
 
       let present = 0, notCheckedIn = 0, absent = 0;
+      const presentNames: string[] = [], notCheckedInNames: string[] = [];
       for (const s of bTodayShifts) {
+        const empName = String(s.employeeName || s.employeeCode || 'NV');
         const attCol = String(s.attendanceStatusColor || '');
         const hasCheckIn = attCol === 'green' || attCol === 'processing' || attCol === 'volcano' || s.status === 'COMPLETED';
-        if (hasCheckIn) present += 1;
+        if (hasCheckIn) { present += 1; presentNames.push(empName); }
         else if (s.status === 'ABSENT' || nowHm > String(s.endAt || '12:00')) absent += 1;
-        else notCheckedIn += 1;
+        else { notCheckedIn += 1; notCheckedInNames.push(empName); }
       }
       const offCount = leaves.filter((l) => l.branch_id === b.id).length;
       const isUnderstaffed = bTodayShifts.length < 2 || absent > 0;
@@ -112,6 +114,7 @@ export function DashboardBranchAndShiftOverview({
       return {
         id: b.id, code: b.code, name: b.name, totalStaff: bEmps.length, probationCount: bProbation, officialCount: bOfficial,
         todayShiftCount: bTodayShifts.length, periodShiftCount: bPeriodShifts.length, present, notCheckedIn, absent, offCount, isUnderstaffed,
+        presentNames, notCheckedInNames,
       };
     });
 
@@ -123,17 +126,18 @@ export function DashboardBranchAndShiftOverview({
   const activePeriod = periods[0];
   const unpublishedPeriodsCount = periods.filter((p) => p.status === 'DRAFT' || p.status === 'RECONCILE' || p.status === 'APPROVED').length;
   const pendingAdjsCount = (adjustmentsQ.data?.data ?? []).filter((a) => a.status === 'PENDING').length;
+  const showNewHireKpi = can('account.activate', 'candidate.manage');
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%', marginBottom: 16 }}>
       {canSchedule && (
         <Row gutter={[12, 12]}>
-          <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Nhân sự mới / Chờ KH" value={totals.newHireCount} prefix={<TeamOutlined />} /></Card></Col>
+          <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title={showNewHireKpi ? 'Nhân sự mới / Chờ KH' : 'Tổng nhân sự chi nhánh'} value={showNewHireKpi ? totals.newHireCount : totals.totalStaff} prefix={<TeamOutlined />} /></Card></Col>
           <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Đang có mặt hôm nay" value={totals.presentTotal} formatter={(v) => <span style={{ color: '#16A34A' }}>{v}</span>} prefix={<CheckCircleOutlined style={{ color: '#16A34A' }} />} /></Card></Col>
           <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Chưa Check-in ca" value={totals.notCheckedInTotal} formatter={(v) => <span style={{ color: '#2563EB' }}>{v}</span>} prefix={<ClockCircleOutlined style={{ color: '#2563EB' }} />} /></Card></Col>
           <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Vắng mặt hôm nay" value={totals.absentTotal} formatter={(v) => <span style={{ color: totals.absentTotal > 0 ? '#DC2626' : '#16A34A' }}>{v}</span>} prefix={<WarningOutlined style={{ color: totals.absentTotal > 0 ? '#DC2626' : '#16A34A' }} />} /></Card></Col>
           <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Nghỉ OFF hôm nay" value={totals.offTodayTotal} prefix={<CalendarOutlined />} /></Card></Col>
-          <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Cảnh báo / Lỗi đồng bộ" value={deadLettersCount + totals.understaffedBranches} formatter={(v) => <span style={{ color: deadLettersCount + totals.understaffedBranches > 0 ? '#D97706' : '#16A34A' }}>{v}</span>} prefix={<AlertOutlined style={{ color: deadLettersCount + totals.understaffedBranches > 0 ? '#D97706' : '#16A34A' }} />} /></Card></Col>
+          <Col xs={12} sm={8} md={4}><Card size="small"><Statistic title="Cảnh báo vận hành" value={deadLettersCount + totals.understaffedBranches} formatter={(v) => <span style={{ color: deadLettersCount + totals.understaffedBranches > 0 ? '#D97706' : '#16A34A' }}>{v}</span>} prefix={<AlertOutlined style={{ color: deadLettersCount + totals.understaffedBranches > 0 ? '#D97706' : '#16A34A' }} />} /></Card></Col>
         </Row>
       )}
 
@@ -160,14 +164,14 @@ export function DashboardBranchAndShiftOverview({
             size="small" rowKey="id" pagination={false} loading={branchesQ.isLoading || shiftsQ.isLoading} dataSource={branchRows} scroll={{ x: 960 }}
             locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có chi nhánh phù hợp bộ lọc" /> }}
             columns={[
-              { title: 'Chi nhánh', width: 210, render: (_, r) => <div><strong>{r.name}</strong><div style={{ fontSize: 12, color: '#64748B' }}>Mã: {r.code}</div></div> },
-              { title: 'Nhân sự (TV / CT)', width: 150, render: (_, r) => <span><strong>{r.totalStaff} NV</strong> <span style={{ color: '#64748B', fontSize: 12 }}>({r.probationCount} TV / {r.officialCount} CT)</span></span> },
-              { title: 'Số ca hôm nay / Kỳ', width: 140, align: 'center', render: (_, r) => <Tag color="geekblue">{r.todayShiftCount} ca hôm nay ({r.periodShiftCount} ca kỳ)</Tag> },
-              { title: 'Đang có mặt', dataIndex: 'present', width: 110, align: 'center', render: (v: number) => <Tag color="green">{v} có mặt</Tag> },
-              { title: 'Chưa Check-in', dataIndex: 'notCheckedIn', width: 120, align: 'center', render: (v: number) => <Tag color="blue">{v} chờ vào ca</Tag> },
-              { title: 'Nghỉ OFF / Vắng', width: 135, align: 'center', render: (_, r) => <Space size={4}><Tag>{r.offCount} OFF</Tag>{r.absent > 0 && <Tag color="red">{r.absent} vắng</Tag>}</Space> },
-              { title: 'Cảnh báo vận hành', width: 150, render: (_, r) => r.isUnderstaffed ? <Badge status="warning" text={<Tag color="volcano">Cần bổ sung ca</Tag>} /> : <Badge status="success" text={<Tag color="green">Đủ định biên ca</Tag>} /> },
-              { title: 'Thao tác', width: 180, align: 'right', render: () => <Space size={6}><Link href="/admin/schedules"><Button size="small" icon={<CalendarOutlined />}>Lịch ca</Button></Link><Link href="/admin/schedules?section=workflows"><Button size="small" icon={<SafetyCertificateOutlined />}>Điểm danh</Button></Link></Space> },
+              { title: 'Chi nhánh', width: 200, render: (_, r) => <div><strong>{r.name}</strong><div style={{ fontSize: 12, color: '#64748B' }}>Mã: {r.code}</div></div> },
+              { title: 'Nhân sự (TV / CT)', width: 145, render: (_, r) => <span><strong>{r.totalStaff} NV</strong> <span style={{ color: '#64748B', fontSize: 12 }}>({r.probationCount} TV / {r.officialCount} CT)</span></span> },
+              { title: 'Số ca hôm nay / Kỳ', width: 135, align: 'center', render: (_, r) => <Tag color="geekblue">{r.todayShiftCount} ca hôm nay ({r.periodShiftCount} ca kỳ)</Tag> },
+              { title: 'Đang có mặt', dataIndex: 'present', width: 155, render: (v: number, r) => <div><Tag color="green">{v} có mặt</Tag>{r.presentNames.length > 0 && <div style={{ fontSize: 11, color: '#15803D', marginTop: 2 }}>{r.presentNames.join(', ')}</div>}</div> },
+              { title: 'Chưa Check-in', dataIndex: 'notCheckedIn', width: 155, render: (v: number, r) => <div><Tag color="blue">{v} chờ vào ca</Tag>{r.notCheckedInNames.length > 0 && <div style={{ fontSize: 11, color: '#1D4ED8', marginTop: 2 }}>{r.notCheckedInNames.join(', ')}</div>}</div> },
+              { title: 'Nghỉ OFF / Vắng', width: 130, align: 'center', render: (_, r) => <Space size={4}><Tag>{r.offCount} OFF</Tag>{r.absent > 0 && <Tag color="red">{r.absent} vắng</Tag>}</Space> },
+              { title: 'Cảnh báo vận hành', width: 145, render: (_, r) => r.isUnderstaffed ? <Badge status="warning" text={<Tag color="volcano">Thiếu người / Cần bù ca</Tag>} /> : <Badge status="success" text={<Tag color="green">Đủ định biên ca</Tag>} /> },
+              { title: 'Thao tác', width: 175, align: 'right', render: () => <Space size={6}><Link href="/admin/schedules"><Button size="small" icon={<CalendarOutlined />}>Lịch ca</Button></Link><Link href="/admin/schedules?section=workflows"><Button size="small" icon={<SafetyCertificateOutlined />}>Điểm danh</Button></Link></Space> },
             ]}
           />
         </Card>

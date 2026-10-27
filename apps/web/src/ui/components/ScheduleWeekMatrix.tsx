@@ -133,6 +133,11 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, onAddAtCel
                       style={{ padding: 8, border: `1px solid ${BRAND.border}`, verticalAlign: 'top', background: '#FFFFFF', minHeight: 88 }}
                     >
                       <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                        {cellItems.length > 0 && (
+                          <Tag color={cellItems.length >= 2 ? 'green' : 'volcano'} style={{ margin: 0, borderRadius: 2, fontSize: 10 }}>
+                            {cellItems.length >= 2 ? `Đủ định biên (${cellItems.length}/2 NV)` : `Thiếu người (${cellItems.length}/2 NV)`}
+                          </Tag>
+                        )}
                         {cellItems.map((item) => (
                           <Tooltip key={item.id} title={`${item.employeeName} (${item.employeeStageLabel}) · ${item.statusLabel}${item.note ? ` · ${item.note}` : ''}`}>
                             <div

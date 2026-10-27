@@ -103,10 +103,13 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       }, 350);
     };
 
-    const onAttendance = () => {
-      ['my-attendance', 'attendance-all', 'nv-attendance', 'attendance-sessions', 'attendance-sessions-count', 'attendance-adjustments', 'schedules'].forEach((k) =>
+    const onAttendance = (payload?: { message?: string }) => {
+      ['my-attendance', 'attendance-all', 'nv-attendance', 'attendance-sessions', 'attendance-sessions-count', 'attendance-adjustments', 'schedules', 'dashboard-shifts-full'].forEach((k) =>
         qc.invalidateQueries({ queryKey: [k] }),
       );
+      if (app === 'backoffice' && payload?.message) {
+        message.warning({ key: 'rt-att-alert', content: payload.message });
+      }
     };
     const onSchedule = (payload?: { kind?: string; message?: string }) => {
       triggerScheduleSync();

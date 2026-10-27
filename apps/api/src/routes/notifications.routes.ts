@@ -19,36 +19,17 @@ export const NOTIFICATION_SEVERITY_LABELS: Record<string, string> = { INFO: 'Th�
 
 function parseReadMap(raw: string): Record<string, string> {
   if (!raw || !raw.trim().startsWith('{')) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {};
-  } catch { return {}; }
+  try { const p = JSON.parse(raw); return p && typeof p === 'object' && !Array.isArray(p) ? (p as Record<string, string>) : {}; } catch { return {}; }
 }
 const getUserReadAt = (rawReadAt: string, userId: string) => parseReadMap(rawReadAt)[userId] || '';
-
-const zListQuery = z.object({
-  page: z.coerce.number().int().min(1).default(1), per_page: z.coerce.number().int().min(1).max(100).default(12),
-  q: z.string().optional(), category: z.string().optional(), severity: z.string().optional(),
-  read_status: z.string().optional(), scope_type: z.string().optional(),
-  sort_by: z.string().default('created_at'), sort_order: z.enum(['asc', 'desc']).default('desc'), refresh: z.string().optional(),
-});
-
-const zCreateNotificationBody = z.object({
-  title: z.string().trim().min(3, 'Tiêu đề thông báo tối thiểu 3 ký tự'), body: z.string().trim().min(3, 'Nội dung thông báo tối thiểu 3 ký tự'),
-  category: z.enum(['ANNOUNCEMENT', 'WORKFLOW', 'ATTENDANCE', 'PAYROLL', 'HR', 'SYSTEM']).default('SYSTEM'),
-  severity: z.enum(['INFO', 'WARNING', 'CRITICAL']).default('INFO'), target_scope: z.enum(['ALL', 'ROLE', 'USER']).default('ALL'),
-  recipient_role: z.string().optional().default(''), recipient_roles: z.array(z.string()).optional().default([]),
-  recipient_user_id: z.string().optional().default(''), recipient_user_ids: z.array(z.string()).optional().default([]), link: z.string().optional().default('/dashboard'),
-});
-
+const zListQuery = z.object({ page: z.coerce.number().int().min(1).default(1), per_page: z.coerce.number().int().min(1).max(100).default(12), q: z.string().optional(), category: z.string().optional(), severity: z.string().optional(), read_status: z.string().optional(), scope_type: z.string().optional(), sort_by: z.string().default('created_at'), sort_order: z.enum(['asc', 'desc']).default('desc'), refresh: z.string().optional() });
+const zCreateNotificationBody = z.object({ title: z.string().trim().min(3, 'Tiêu đề thông báo tối thiểu 3 ký tự'), body: z.string().trim().min(3, 'Nội dung thông báo tối thiểu 3 ký tự'), category: z.enum(['ANNOUNCEMENT', 'WORKFLOW', 'ATTENDANCE', 'PAYROLL', 'HR', 'SYSTEM']).default('SYSTEM'), severity: z.enum(['INFO', 'WARNING', 'CRITICAL']).default('INFO'), target_scope: z.enum(['ALL', 'ROLE', 'USER']).default('ALL'), recipient_role: z.string().optional().default(''), recipient_roles: z.array(z.string()).optional().default([]), recipient_user_id: z.string().optional().default(''), recipient_user_ids: z.array(z.string()).optional().default([]), link: z.string().optional().default('/dashboard') });
 const zBulkIdsBody = z.object({ ids: z.array(z.string()).optional() });
 
 async function ensureSyncedNotifications(ctx: AppContext, actorId: string) {
-  const existing = ctx.db.notifications.all(true);
+  const existing = ctx.db.notifications.all(true), users = ctx.db.users.all();
   const hasKey = (type: string, id: string) => existing.some((n) => n.entity_type === type && n.entity_id === id);
-  const users = ctx.db.users.all();
   const findUserByEmp = (empId: string) => users.find((u) => u.employee_id === empId);
-
   const ins = (data: Omit<Parameters<typeof ctx.db.notifications.insert>[0], 'read_at'>) => ctx.db.notifications.insert({ ...data, read_at: '' }, actorId);
   for (const anc of ctx.db.announcements.all()) {
     if (anc.status === 'SENT' && !hasKey('ANNOUNCEMENTS', anc.id)) {
@@ -93,6 +74,12 @@ async function ensureSyncedNotifications(ctx: AppContext, actorId: string) {
   }
   for (const adj of ctx.db.attendanceAdjustments.all().filter((x) => x.status === 'PENDING' || x.status === 'STORE_CONFIRMED').slice(0, 8)) {
     if (!hasKey('ATT_ADJ_HR', adj.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: adj.branch_id || 'ALL', category: 'ATTENDANCE', title: `Phiếu bổ sung / lỗi chấm công chờ duyệt: ${adj.adjustment_code}`, body: `Ngày công ${adj.work_date} (${adj.requested_hours}h) — Lý do: ${adj.reason}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'ATT_ADJ_HR', entity_id: adj.id });
+  }
+  for (const emg of ctx.db.emergencyLeaves.all().slice(0, 6)) {
+    if (!hasKey('EMG_STORE', emg.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: emg.branch_id || 'ALL', category: 'WORKFLOW', title: `Cảnh báo nghỉ đột xuất & thiếu người: ${emg.emergency_code}`, body: `Ca ${emg.shift_code} ngày ${emg.work_date} — Lý do: ${emg.reason}. Cần tìm người thay hoặc báo HR.`, link: '/admin/schedules?section=workflows', severity: 'CRITICAL', entity_type: 'EMG_STORE', entity_id: emg.id });
+  }
+  for (const a of ctx.db.shiftAssignments.all().filter((x) => x.status === 'ABSENT' || x.status === 'PUBLISHED').slice(0, 6)) {
+    if (!hasKey('SCHED_STORE', `${a.id}_${a.status}`)) await ins({ recipient_user_id: '', recipient_role: 'STORE', branch_id: a.branch_id || 'ALL', category: a.status === 'ABSENT' ? 'ATTENDANCE' : 'WORKFLOW', title: a.status === 'ABSENT' ? `Cảnh báo NV chưa điểm danh / Vắng mặt ca ngày ${a.work_date}` : `Lịch tuần mới đã phát hành (${a.work_date})`, body: `Khung ca ${a.shift_code} (${a.start_at}–${a.end_at}) tại chi nhánh phụ trách.`, link: '/admin/schedules', severity: a.status === 'ABSENT' ? 'WARNING' : 'INFO', entity_type: 'SCHED_STORE', entity_id: `${a.id}_${a.status}` });
   }
   for (const p of ctx.db.payPeriods.all().slice(0, 8)) {
     if (!hasKey('PAY_PERIOD_FIN', p.id)) await ins({ recipient_user_id: '', recipient_role: 'FINANCE', branch_id: 'ALL', category: 'PAYROLL', title: `Kỳ lương hệ thống: ${p.name} (${p.period_code || p.id})`, body: `Chu kỳ lương từ ${p.from_date} đến ${p.to_date} hiện đang ở bước ${p.status}.`, link: '/admin/payroll', severity: 'INFO', entity_type: 'PAY_PERIOD_FIN', entity_id: p.id });

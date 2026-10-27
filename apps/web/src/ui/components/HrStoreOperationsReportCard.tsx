@@ -84,6 +84,7 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
       const bCands = cands.filter((c) => (!c.applied_branch_id && !c.branch_pref) || c.applied_branch_id === b.id || c.branch_pref === b.id);
       const probationCount = bEmps.filter((e) => e.stage === 'PROBATION' || e.stage === 'THU_VIEC').length;
       const officialCount = bEmps.filter((e) => e.stage === 'OFFICIAL' || e.stage === 'CHINH_THUC').length;
+      const workDaysCount = new Set(bShifts.map((s) => String(s.workDate || s.work_date || '')).filter(Boolean)).size;
       const totalHours = bShifts.reduce((sum, s) => sum + (Number(s.scheduledHours) || 5), 0);
       const lateCount = evs.filter((e) => e.branch_id === b.id && (e.punctualityStatus === 'LATE' || Number(e.late_minutes) > 0)).length;
       const absentCount = bShifts.filter((s) => s.status === 'ABSENT').length;
@@ -91,19 +92,9 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
       const coverageRate = bShifts.length > 0 ? Math.max(0, Math.round(((bShifts.length - understaffedCount) / bShifts.length) * 100)) : 100;
 
       return {
-        id: b.id,
-        branchCode: b.code,
-        branchName: b.name,
-        headcount: bEmps.length,
-        probationCount,
-        officialCount,
-        candidateCount: bCands.length,
-        shiftCount: bShifts.length,
-        totalHours,
-        lateCount,
-        absentCount,
-        understaffedCount,
-        coverageRate,
+        id: b.id, branchCode: b.code, branchName: b.name, headcount: bEmps.length,
+        probationCount, officialCount, candidateCount: bCands.length, workDaysCount,
+        shiftCount: bShifts.length, totalHours, lateCount, absentCount, understaffedCount, coverageRate,
       };
     });
   }, [branchesQ.data, employeesQ.data, candidatesQ.data, shiftsQ.data, eventsQ.data, branchFilter, periodFilter, positionFilter, shiftFilter]);
@@ -122,6 +113,7 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
         { header: 'NV Thử việc', key: 'probationCount', align: 'right' },
         { header: 'NV Chính thức', key: 'officialCount', align: 'right' },
         { header: 'Hồ sơ Ứng viên', key: 'candidateCount', align: 'right' },
+        { header: 'Số ngày công', key: 'workDaysCount', align: 'right' },
         { header: 'Tổng số ca công', key: 'shiftCount', align: 'right' },
         { header: 'Tổng giờ làm', key: 'totalHours', align: 'right' },
         { header: 'Lượt đi trễ', key: 'lateCount', align: 'right' },
@@ -160,7 +152,7 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
           { title: 'Tổng nhân sự', dataIndex: 'headcount', width: 110, align: 'right', render: (v: number) => <strong className="num">{v} NV</strong> },
           { title: 'Thử việc / Chính thức', width: 145, align: 'center', render: (_, r) => <Space size={4}><Tag color="gold">{r.probationCount} TV</Tag><Tag color="blue">{r.officialCount} CT</Tag></Space> },
           ...(canRecruit ? [{ title: 'Tuyển dụng', dataIndex: 'candidateCount', width: 105, align: 'right' as const, render: (v: number) => <span className="num">{v} hồ sơ</span> }] : []),
-          { title: 'Số ca / Giờ làm', width: 135, align: 'right', render: (_, r) => <span className="num">{r.shiftCount} ca ({r.totalHours}h)</span> },
+          { title: 'Ngày công · Ca · Giờ làm', width: 175, align: 'right', render: (_, r) => <span className="num"><strong>{r.workDaysCount} ngày</strong> · {r.shiftCount} ca ({r.totalHours}h)</span> },
           { title: 'Đi trễ', dataIndex: 'lateCount', width: 90, align: 'center', render: (v: number) => v > 0 ? <Tag color="volcano">{v} lượt</Tag> : <Tag color="green">0</Tag> },
           { title: 'Vắng / Thiếu ca', width: 130, align: 'center', render: (_, r) => <Space size={4}><Tag color={r.absentCount > 0 ? 'red' : 'default'}>{r.absentCount} vắng</Tag><Tag color={r.understaffedCount > 0 ? 'orange' : 'default'}>{r.understaffedCount} thiếu</Tag></Space> },
           { title: 'Tỷ lệ phủ ca', dataIndex: 'coverageRate', width: 115, align: 'right', render: (v: number) => <Tag color={v >= 90 ? 'green' : 'orange'} className="num">{v}%</Tag> },

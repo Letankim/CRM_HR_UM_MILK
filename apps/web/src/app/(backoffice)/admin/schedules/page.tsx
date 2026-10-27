@@ -26,8 +26,7 @@ function SchedulesView() {
   const params = useSearchParams();
   const qc = useQueryClient();
   const { message, modal } = App.useApp();
-  const can = useCan();
-  const canEdit = can('schedule.propose', 'schedule.publish');
+  const can = useCan(), canEdit = can('schedule.propose', 'schedule.publish'), canPublish = can('schedule.publish');
 
   const section = (params.get('section') as 'schedules' | 'workflows' | null) ?? 'schedules';
   const [viewMode, setViewMode] = useState<ViewMode>('WEEK_MATRIX');
@@ -182,10 +181,10 @@ function SchedulesView() {
               type="warning" showIcon style={{ marginBottom: 12 }}
               message={
                 <Flex justify="space-between" align="center" wrap="wrap" gap={8}>
-                  <span>Có <strong>{totalDraftCount} ca làm việc</strong> đang ở trạng thái <strong>Chờ duyệt phân ca</strong>. Nhân sự chỉ có thể chấm công Vào/Ra ca sau khi Quản lý cửa hàng hoặc HR duyệt sang Đã phân ca chính thức.</span>
+                  <span>Có <strong>{totalDraftCount} ca làm việc</strong> đang ở trạng thái <strong>Chờ duyệt phân ca</strong>. {canPublish ? 'Nhấn Duyệt & Phát hành để lịch có hiệu lực chấm công.' : 'Quản lý cửa hàng kiểm tra định biên, đề xuất điều chỉnh và xác nhận dữ liệu vận hành.'}</span>
                   <Space wrap size={8}>
                     <Button size="small" onClick={() => { setStatus('DRAFT'); setViewMode('TABLE'); }}>Xem danh sách chờ duyệt</Button>
-                    {draftItems.length > 0 && <Button size="small" type="primary" icon={<CheckOutlined />} loading={approveBulkMut.isPending} onClick={() => approveBulkMut.mutate(draftItems)}>Duyệt &amp; Phát hành ({draftItems.length} ca đang hiển thị)</Button>}
+                    {draftItems.length > 0 && <Button size="small" type="primary" icon={<CheckOutlined />} loading={approveBulkMut.isPending} onClick={() => approveBulkMut.mutate(draftItems)}>{canPublish ? `Duyệt & Phát hành (${draftItems.length} ca)` : `Xác nhận vận hành & Duyệt (${draftItems.length} ca)`}</Button>}
                   </Space>
                 </Flex>
               }
