@@ -1,6 +1,7 @@
 import {
   isEmployeeRole,
   isInternalRole,
+  isPermissionForbiddenForRole,
   normalizePhone,
   PERMISSIONS,
   resolvePermissions,
@@ -38,12 +39,16 @@ export function parseExtraPermissions(raw: string): Permission[] {
 }
 
 export function toPublicUser(user: User): PublicUser {
+  const extraPermissions = parseExtraPermissions(user.permissions_json).filter(
+    (p) => !isPermissionForbiddenForRole(user.role, p),
+  );
   return {
     id: user.id,
     username: user.username,
     displayName: user.display_name,
     role: user.role,
-    permissions: [...resolvePermissions(user.role, parseExtraPermissions(user.permissions_json))],
+    permissions: [...resolvePermissions(user.role, extraPermissions)],
+    extraPermissions,
     branchScope: parseBranchScope(user.branch_scope),
     employeeId: user.employee_id || null,
     status: user.status,

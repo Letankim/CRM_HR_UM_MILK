@@ -1,13 +1,14 @@
 'use client';
 
 import { Alert, App, Button, Col, Form, Input, Modal, Row, Select, Space, Tabs } from 'antd';
-import { CloseOutlined, KeyOutlined, SafetyCertificateOutlined, SaveOutlined, TeamOutlined, ThunderboltOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
+import { CloseOutlined, KeyOutlined, SafetyCertificateOutlined, SaveOutlined, SettingOutlined, TeamOutlined, ThunderboltOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { ROLE_OPTIONS, type Role } from '@umbm/shared';
+import { ROLE_OPTIONS, getAllowedExtraPermissionsForRole, type Permission, type Role } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { generateAccountSecret, generateUsername } from '@/lib/auto-generate';
 import type { AccountRowItem } from './AccountDetailDrawer';
+import { AccountPermissionsFormSection } from './AccountPermissionsTab';
 import type { EmployeeRowItem } from './employee-table-columns';
 
 interface AccountFormValues {
@@ -19,6 +20,8 @@ interface AccountFormValues {
   secret?: string;
   employee_id?: string;
   branch_scope?: string;
+  extra_permissions?: Permission[];
+  reason?: string;
 }
 
 export interface AccountCreateModalProps {
@@ -33,17 +36,10 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState('login');
   const [showSecret, setShowSecret] = useState(true);
+  const currentRole: Role = Form.useWatch('role', form) ?? editing?.role ?? 'THU_VIEC';
 
-  const employeesQuery = useQuery({
-    queryKey: ['employees', 'select-for-account'],
-    queryFn: () => api.list<EmployeeRowItem>('/admin/employees?per_page=100'),
-    enabled: open,
-  });
-  const branchesQuery = useQuery({
-    queryKey: ['branches', 'select-for-account'],
-    queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'),
-    enabled: open,
-  });
+  const employeesQuery = useQuery({ queryKey: ['employees', 'select-for-account'], queryFn: () => api.list<EmployeeRowItem>('/admin/employees?per_page=100'), enabled: open });
+  const branchesQuery = useQuery({ queryKey: ['branches', 'select-for-account'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'), enabled: open });
 
   const employeeOptions = useMemo(
     () =>
@@ -77,13 +73,12 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
       form.setFieldsValue({
         username: editing.username, display_name: editing.displayName, phone_number: editing.phone,
         email: editing.email ?? '', role: editing.role, employee_id: editing.employeeId ?? undefined,
-        branch_scope: initialScope, secret: '',
+        branch_scope: initialScope, secret: '', extra_permissions: editing.extraPermissions ?? [], reason: '',
       });
     } else {
-      const initialSecret = generateAccountSecret('THU_VIEC');
       setShowSecret(true);
       form.resetFields();
-      form.setFieldsValue({ role: 'THU_VIEC', branch_scope: 'ALL', secret: initialSecret });
+      form.setFieldsValue({ role: 'THU_VIEC', branch_scope: 'ALL', secret: generateAccountSecret('THU_VIEC'), extra_permissions: [], reason: '' });
     }
   }, [open, editing, form]);
 
@@ -91,12 +86,13 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
     mutationFn: (values: AccountFormValues) =>
       editing
         ? api.put(`/admin/accounts/${editing.id}`, {
-            ...values, employee_id: values.employee_id ?? '', version: editing.version, secret: values.secret || undefined,
+            ...values, employee_id: values.employee_id ?? '', version: editing.version,
+            secret: values.secret || undefined, extra_permissions: values.extra_permissions ?? [],
           })
-        : api.post('/admin/accounts', values),
+        : api.post('/admin/accounts', { ...values, extra_permissions: values.extra_permissions ?? [] }),
     onSuccess: () => {
-      message.success(editing ? 'Đã cập nhật tài khoản và đồng bộ liên kết hồ sơ nhân sự thành công' : 'Đã tạo tài khoản mới (Trạng thái: Chờ Quản trị viên kích hoạt)');
-      ['accounts', 'employees', 'branches', 'schedules'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      message.success(editing ? 'Đã cập nhật tài khoản, phân quyền và đồng bộ hồ sơ thành công' : 'Đã tạo tài khoản mới (Trạng thái: Chờ Quản trị viên kích hoạt)');
+      ['accounts', 'account-audit-history', 'employees', 'branches', 'schedules', 'me'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
       onClose();
     },
     onError: (err) => {
@@ -109,20 +105,9 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
     },
   });
 
-  const handleGenUsername = () => {
-    const nextUser = generateUsername(form.getFieldValue('display_name'), form.getFieldValue('employee_id'), form.getFieldValue('username'));
-    form.setFieldsValue({ username: nextUser });
-  };
-
-  const handleGenSecret = () => {
-    const nextSec = generateAccountSecret(form.getFieldValue('role'));
-    setShowSecret(true);
-    form.setFieldsValue({ secret: nextSec });
-  };
-
   return (
     <Modal
-      title={editing ? `Chỉnh sửa Tài khoản — @${editing.username}` : 'Thêm Tài khoản Hệ thống Mới'}
+      title={editing ? `Chỉnh sửa Tài khoản & Phân quyền — @${editing.username}` : 'Thêm Tài khoản Hệ thống Mới'}
       open={open}
       onOk={async () => saveMutation.mutate(await form.validateFields())}
       onCancel={onClose}
@@ -131,7 +116,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
       okButtonProps={{ icon: editing ? <SaveOutlined /> : <UserAddOutlined /> }}
       cancelButtonProps={{ icon: <CloseOutlined /> }}
       confirmLoading={saveMutation.isPending}
-      width="70vw"
+      width="72vw"
       forceRender
     >
       <Form<AccountFormValues> form={form} layout="vertical" style={{ marginTop: 8 }}>
@@ -142,7 +127,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
             {
               key: 'login',
               forceRender: true,
-              label: <span><SafetyCertificateOutlined /> Thông tin Đăng nhập &amp; Bảo mật</span>,
+              label: <span><SafetyCertificateOutlined /> Thông tin Đăng nhập &amp; Vai trò</span>,
               children: (
                 <>
                   <Row gutter={12}>
@@ -153,7 +138,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
                           <Form.Item name="username" noStyle rules={[{ required: true, message: 'Vui lòng nhập tên đăng nhập' }]}>
                             <Input prefix={<UserOutlined />} disabled={!!editing} placeholder="Ví dụ: nv.an" />
                           </Form.Item>
-                          {!editing && <Button icon={<ThunderboltOutlined />} onClick={handleGenUsername}>Tự sinh</Button>}
+                          {!editing && <Button icon={<ThunderboltOutlined />} onClick={() => form.setFieldsValue({ username: generateUsername(form.getFieldValue('display_name'), form.getFieldValue('employee_id'), form.getFieldValue('username')) })}>Tự sinh</Button>}
                         </Space.Compact>
                       </Form.Item>
                     </Col>
@@ -161,29 +146,39 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
                   <Row gutter={12}>
                     <Col span={8}><Form.Item name="phone_number" label="Số điện thoại"><Input placeholder="Ví dụ: 0901000001" /></Form.Item></Col>
                     <Col span={8}><Form.Item name="email" label="Email"><Input placeholder="Ví dụ: nv.an@umbomilk.vn" /></Form.Item></Col>
-                    <Col span={8}><Form.Item name="role" label="Vai trò" rules={[{ required: true }]}><Select options={ROLE_OPTIONS} /></Form.Item></Col>
+                    <Col span={8}>
+                      <Form.Item name="role" label="Vai trò chính" rules={[{ required: true }]}>
+                        <Select
+                          options={ROLE_OPTIONS}
+                          onChange={(nextRole: Role) => {
+                            const allowed = new Set(getAllowedExtraPermissionsForRole(nextRole));
+                            const cur: Permission[] = form.getFieldValue('extra_permissions') ?? [];
+                            form.setFieldValue('extra_permissions', cur.filter((p) => allowed.has(p)));
+                          }}
+                        />
+                      </Form.Item>
+                    </Col>
                   </Row>
-                  <Form.Item
-                    label={editing ? 'Mật khẩu mới' : 'Mật khẩu'}
-                    required={!editing}
-                  >
+                  <Form.Item label={editing ? 'Mật khẩu mới (Được băm bảo mật Argon2id)' : 'Mật khẩu / Mã PIN (Được băm bảo mật Argon2id)'} required={!editing}>
                     <Space.Compact style={{ width: '100%' }}>
-                      <Form.Item
-                        name="secret"
-                        noStyle
-                        rules={editing ? [] : [{ required: true, min: 6, message: 'Mật khẩu tối thiểu 6 ký tự' }]}
-                      >
+                      <Form.Item name="secret" noStyle rules={editing ? [] : [{ required: true, min: 6, message: 'Mật khẩu tối thiểu 6 ký tự' }]}>
                         <Input.Password
                           prefix={<KeyOutlined />}
                           visibilityToggle={{ visible: showSecret, onVisibleChange: setShowSecret }}
                           placeholder={editing ? 'Để trống nếu giữ nguyên mật khẩu hiện tại' : 'Nhập mật khẩu hoặc nhấn nút Tự sinh bên cạnh'}
                         />
                       </Form.Item>
-                      <Button icon={<ThunderboltOutlined />} onClick={handleGenSecret}>Tự sinh MK</Button>
+                      <Button icon={<ThunderboltOutlined />} onClick={() => { setShowSecret(true); form.setFieldsValue({ secret: generateAccountSecret(form.getFieldValue('role')) }); }}>Tự sinh MK</Button>
                     </Space.Compact>
                   </Form.Item>
                 </>
               ),
+            },
+            {
+              key: 'permissions',
+              forceRender: true,
+              label: <span><SettingOutlined /> Phân quyền &amp; Permission bổ sung</span>,
+              children: <AccountPermissionsFormSection role={currentRole} />,
             },
             {
               key: 'link',
@@ -193,11 +188,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
                 <>
                   <Form.Item name="employee_id" label="Nhân sự liên kết">
                     <Select
-                      showSearch
-                      allowClear
-                      optionFilterProp="label"
-                      loading={employeesQuery.isLoading}
-                      options={employeeOptions}
+                      showSearch allowClear optionFilterProp="label" loading={employeesQuery.isLoading} options={employeeOptions}
                       placeholder="Chọn hồ sơ nhân sự để gắn với tài khoản này (hoặc bỏ trống nếu là TK Quản trị nội bộ)"
                       onChange={(val) => {
                         const found = employeeOptions.find((o) => o.value === val)?.raw;

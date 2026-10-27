@@ -118,6 +118,7 @@ export const zPublicUser = z.object({
   displayName: z.string(),
   role: z.enum(ROLES),
   permissions: z.array(z.enum(PERMISSIONS)),
+  extraPermissions: z.array(z.enum(PERMISSIONS)).optional(),
   branchScope: z.union([z.literal('ALL'), z.array(z.string())]),
   employeeId: z.string().nullable(),
   status: z.enum(ACCOUNT_STATUSES),

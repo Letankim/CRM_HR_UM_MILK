@@ -5,6 +5,7 @@ import {
   CloseOutlined,
   EditOutlined,
   ExpandAltOutlined,
+  HistoryOutlined,
   IdcardOutlined,
   SafetyCertificateOutlined,
   ShrinkOutlined,
@@ -12,8 +13,9 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useState } from 'react';
-import type { AccountStatus, Role } from '@umbm/shared';
+import type { AccountStatus, Permission, Role } from '@umbm/shared';
 import { StatusTag } from '../StatusTag';
+import { AccountAuditHistoryTab, AccountPermissionsSummaryCard } from './AccountPermissionsTab';
 
 export interface AccountRowItem {
   id: string;
@@ -21,6 +23,8 @@ export interface AccountRowItem {
   displayName: string;
   role: Role;
   roleLabel: string;
+  permissions?: Permission[];
+  extraPermissions?: Permission[];
   phone: string;
   email?: string;
   employeeId: string | null;
@@ -68,7 +72,7 @@ export function AccountDetailDrawer({
       title={account ? `Hồ sơ tài khoản: ${account.displayName} (@${account.username})` : 'Chi tiết tài khoản'}
       open={!!account}
       onClose={onClose}
-      width={expanded ? '95vw' : '70vw'}
+      width={expanded ? '95vw' : '72vw'}
       destroyOnHidden
       extra={
         <Space size={8}>
@@ -82,7 +86,7 @@ export function AccountDetailDrawer({
                 onEdit(account);
               }}
             >
-              Sửa &amp; Liên kết NV
+              Sửa &amp; Phân quyền
             </Button>
           )}
           <Button size="small" icon={expanded ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setExpanded((v) => !v)}>
@@ -100,30 +104,45 @@ export function AccountDetailDrawer({
           items={[
             {
               key: 'account',
-              label: <span><SafetyCertificateOutlined /> Thông tin Tài khoản &amp; Bảo mật</span>,
+              label: <span><SafetyCertificateOutlined /> Thông tin Tài khoản &amp; Phân quyền</span>,
               children: (
-                <Descriptions column={expanded ? 2 : 1} bordered size="small">
-                  <Descriptions.Item label="Họ và tên hiển thị">{account.displayName}</Descriptions.Item>
-                  <Descriptions.Item label="Tên đăng nhập">
-                    <Tag color="blue" style={{ borderRadius: 2, fontWeight: 600 }}>
-                      <UserOutlined /> @{account.username}
-                    </Tag>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Vai trò phân quyền">
-                    <Tag color="blue" style={{ borderRadius: 2 }}>{account.roleLabel}</Tag>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Số điện thoại">{fmtPhone(account.phone)}</Descriptions.Item>
-                  <Descriptions.Item label="Địa chỉ Email thông báo">{account.email || 'Chưa cập nhật'}</Descriptions.Item>
-                  <Descriptions.Item label="Phạm vi chi nhánh">{account.branchNames}</Descriptions.Item>
-                  <Descriptions.Item label="Trạng thái hiện tại"><StatusTag value={account.status} /></Descriptions.Item>
-                  <Descriptions.Item label="Số lần đăng nhập sai"><span className="num">{account.failedLoginCount ?? 0} lần</span></Descriptions.Item>
-                  <Descriptions.Item label="Ngày khởi tạo">{fmtDate(account.createdAt)}</Descriptions.Item>
-                  <Descriptions.Item label="Thời điểm kích hoạt">{fmtDate(account.activatedAt)}</Descriptions.Item>
-                  <Descriptions.Item label="Thời điểm thu hồi">{fmtDate(account.revokedAt)}</Descriptions.Item>
-                  <Descriptions.Item label="Lý do thu hồi">{account.revokeReason || '—'}</Descriptions.Item>
-                  <Descriptions.Item label="Đăng nhập gần nhất" span={expanded ? 2 : 1}>{fmtDate(account.lastLoginAt)}</Descriptions.Item>
-                </Descriptions>
+                <>
+                  <Descriptions column={expanded ? 2 : 1} bordered size="small">
+                    <Descriptions.Item label="Họ và tên hiển thị">{account.displayName}</Descriptions.Item>
+                    <Descriptions.Item label="Tên đăng nhập">
+                      <Tag color="blue" style={{ borderRadius: 2, fontWeight: 600 }}>
+                        <UserOutlined /> @{account.username}
+                      </Tag>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Vai trò phân quyền">
+                      <Space size={6}>
+                        <Tag color="blue" style={{ margin: 0, borderRadius: 2 }}>{account.roleLabel}</Tag>
+                        {(account.extraPermissions?.length ?? 0) > 0 && (
+                          <Tag color="purple" style={{ margin: 0, borderRadius: 2, fontWeight: 600 }}>
+                            +{account.extraPermissions!.length} quyền bổ sung
+                          </Tag>
+                        )}
+                      </Space>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Số điện thoại">{fmtPhone(account.phone)}</Descriptions.Item>
+                    <Descriptions.Item label="Địa chỉ Email thông báo">{account.email || 'Chưa cập nhật'}</Descriptions.Item>
+                    <Descriptions.Item label="Phạm vi chi nhánh">{account.branchNames}</Descriptions.Item>
+                    <Descriptions.Item label="Trạng thái hiện tại"><StatusTag value={account.status} /></Descriptions.Item>
+                    <Descriptions.Item label="Số lần đăng nhập sai"><span className="num">{account.failedLoginCount ?? 0} lần</span></Descriptions.Item>
+                    <Descriptions.Item label="Ngày khởi tạo">{fmtDate(account.createdAt)}</Descriptions.Item>
+                    <Descriptions.Item label="Thời điểm kích hoạt">{fmtDate(account.activatedAt)}</Descriptions.Item>
+                    <Descriptions.Item label="Thời điểm thu hồi">{fmtDate(account.revokedAt)}</Descriptions.Item>
+                    <Descriptions.Item label="Lý do thu hồi">{account.revokeReason || '—'}</Descriptions.Item>
+                    <Descriptions.Item label="Đăng nhập gần nhất" span={expanded ? 2 : 1}>{fmtDate(account.lastLoginAt)}</Descriptions.Item>
+                  </Descriptions>
+                  <AccountPermissionsSummaryCard account={account} />
+                </>
               ),
+            },
+            {
+              key: 'history',
+              label: <span><HistoryOutlined /> Lịch sử Thay đổi Quyền &amp; Trạng thái</span>,
+              children: <AccountAuditHistoryTab accountId={account.id} />,
             },
             {
               key: 'employee',
@@ -146,7 +165,7 @@ export function AccountDetailDrawer({
                   type="info"
                   showIcon
                   message="Tài khoản này chưa gắn với Hồ sơ Nhân sự cửa hàng (Tài khoản Quản trị nội bộ)"
-                  description="Nếu muốn gắn tài khoản này với một Hồ sơ Nhân sự cụ thể, hãy nhấn nút Sửa & Liên kết NV ở góc trên bên phải."
+                  description="Nếu muốn gắn tài khoản này với một Hồ sơ Nhân sự cụ thể, hãy nhấn nút Sửa & Phân quyền ở góc trên bên phải."
                 />
               ),
             },

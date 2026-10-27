@@ -1,7 +1,7 @@
 'use client';
 
 import { App } from 'antd';
-import { CheckOutlined, CloseOutlined, DeleteOutlined, FileExcelOutlined, StopOutlined, UnlockOutlined } from '@ant-design/icons';
+import { CheckOutlined, CloseOutlined, DeleteOutlined, FileExcelOutlined, LockOutlined, StopOutlined, UnlockOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
@@ -9,7 +9,7 @@ import type { AccountRowItem } from '@/ui/components/AccountDetailDrawer';
 import { exportAccountsExcel } from '@/ui/components/account-table-columns';
 import type { BulkActionItem } from '@/ui/components/BulkActionBar';
 
-export type AccountBulkAction = 'ACTIVATE' | 'UNLOCK' | 'REVOKE' | 'DELETE';
+export type AccountBulkAction = 'ACTIVATE' | 'LOCK' | 'UNLOCK' | 'REVOKE' | 'DELETE';
 
 interface UseAccountsBulkActionsOptions {
   canActivate: boolean;
@@ -17,7 +17,7 @@ interface UseAccountsBulkActionsOptions {
 }
 
 /**
- * Quản lý thao tác hàng loạt trên danh sách tài khoản (Kích hoạt, Mở khóa, Thu hồi, Xóa, Xuất Excel)
+ * Quản lý thao tác hàng loạt trên danh sách tài khoản (Kích hoạt, Khóa tạm thời, Mở khóa, Thu hồi, Xóa, Xuất Excel)
  * kèm danh sách tài khoản đang chờ xác nhận thu hồi.
  */
 export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccountsBulkActionsOptions) {
@@ -40,6 +40,7 @@ export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccoun
       clearBulkFn?.();
       setClearBulkFn(null);
       qc.invalidateQueries({ queryKey: ['accounts'] });
+      qc.invalidateQueries({ queryKey: ['account-audit-history'] });
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác hàng loạt thất bại'),
   });
@@ -56,6 +57,14 @@ export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccoun
           loading: bulkMutation.isPending && bulkMutation.variables?.action === 'ACTIVATE',
           eligibleFilter: (r) => r.status === 'PENDING_ACTIVATION',
           onClick: (rows, clear) => bulkMutation.mutate({ action: 'ACTIVATE', rows, clear }),
+        },
+        {
+          key: 'bulk-lock',
+          label: 'Khóa tạm thời đã chọn',
+          icon: <LockOutlined />,
+          loading: bulkMutation.isPending && bulkMutation.variables?.action === 'LOCK',
+          eligibleFilter: (r) => r.status === 'ACTIVE' && r.id !== currentUserId && r.username !== 'admin',
+          onClick: (rows, clear) => bulkMutation.mutate({ action: 'LOCK', rows, clear }),
         },
         {
           key: 'bulk-unlock',
@@ -87,7 +96,7 @@ export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccoun
           danger: true,
           icon: <DeleteOutlined />,
           loading: bulkMutation.isPending && bulkMutation.variables?.action === 'DELETE',
-          eligibleFilter: (r) => r.id !== currentUserId,
+          eligibleFilter: (r) => r.id !== currentUserId && r.username !== 'admin',
           onClick: (rows, clear) => {
             modal.confirm({
               title: `Xóa ${rows.length} tài khoản đã chọn?`,

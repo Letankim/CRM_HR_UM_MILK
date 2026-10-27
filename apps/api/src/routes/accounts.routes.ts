@@ -3,12 +3,17 @@ import { z } from 'zod';
 import {
   ACCOUNT_STATUSES,
   ACCOUNT_STATUS_LABELS,
+  DEFAULT_ROLE_PERMISSIONS,
   EMPLOYEE_STAGE_LABELS,
+  PERMISSIONS,
+  PERMISSION_LABELS,
   ROLES,
   ROLE_LABELS,
-  STAFF_GROUP_LABELS,
+  isPermissionForbiddenForRole,
   normalizePhone,
   zListQueryBase,
+  type Permission,
+  type Role,
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { toPublicUser } from '../auth/auth.service.js';
@@ -20,6 +25,22 @@ import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { healBranchConsistency, syncEmployeeFromAccount } from './account-employee-sync.js';
 import { accountActionRoutes } from './accounts-actions.routes.js';
 import { assertUniquePersonalIdentifiers, findLinkedEmployeeForUser, resolveStaffGroupLabel } from './employee-mapper.js';
+
+export function sanitizeExtraPermissions(role: Role, rawPerms: readonly Permission[]): Permission[] {
+  const defaults = new Set<Permission>(DEFAULT_ROLE_PERMISSIONS[role] ?? []);
+  const unique = [...new Set(rawPerms)];
+  for (const p of unique) {
+    if (isPermissionForbiddenForRole(role, p)) {
+      throw Errors.fieldValidation(
+        'extra_permissions',
+        'INVALID_VALUE',
+        `Quyền "${PERMISSION_LABELS[p] ?? p}" bị cấm cấp cho vai trò ${ROLE_LABELS[role]} (Quy tắc bảo mật SEC-01/SEC-02)`,
+        p,
+      );
+    }
+  }
+  return unique.filter((p) => !defaults.has(p));
+}
 
 const zAccountListQuery = zListQueryBase.extend({
   status: z.enum([...ACCOUNT_STATUSES, 'ALL'] as const).optional(),
@@ -49,10 +70,11 @@ const zCreateAccountBody = z.object({
     .max(128, 'Mật khẩu tối đa 128 ký tự'),
   employee_id: z.string().trim().max(32).optional().default(''),
   branch_scope: z.string().trim().max(200).optional().default('ALL'),
+  extra_permissions: z.array(z.enum(PERMISSIONS)).optional().default([]),
 });
 
 /**
- * ADM-02 (Danh sách & Tạo mới tài khoản) và đăng ký ADM-03 (Kích hoạt / Thu hồi / Mở khóa / Hàng loạt).
+ * ADM-02 (Danh sách & Tạo mới tài khoản + Phân quyền bổ sung) và đăng ký ADM-03 (Kích hoạt / Khóa / Mở khóa / Thu hồi / Lịch sử quyền).
  */
 export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/accounts', { preHandler: requirePermission('account.read') }, async (request) => {
@@ -137,6 +159,7 @@ export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
       if (!norm) throw Errors.fieldValidation('phone_number', 'INVALID_PHONE', 'Định dạng số điện thoại không hợp lệ', body.phone_number);
       normalizedPhone = norm;
     }
+    const extraPerms = sanitizeExtraPermissions(body.role, body.extra_permissions);
     const targetEmp = body.employee_id
       ? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === body.employee_id.trim().toUpperCase() || e.id === body.employee_id)
       : undefined;
@@ -160,7 +183,7 @@ export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
     const created = await ctx.db.users.insert(
       {
         username: body.username, phone: normalizedPhone || targetEmp?.phone || '', display_name: body.display_name,
-        password_hash: passwordHash, role: body.role, permissions_json: '[]',
+        password_hash: passwordHash, role: body.role, permissions_json: JSON.stringify(extraPerms),
         branch_scope: effectiveBranchScope, employee_id: resolvedEmployeeCode || '',
         status: 'PENDING_ACTIVATION', session_version: 1, failed_login_count: 0, locked_until: '',
         last_login_at: '', activated_by: '', activated_at: '', revoked_at: '',
@@ -171,20 +194,15 @@ export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
 
     if (targetEmp) {
       await syncEmployeeFromAccount(ctx, {
-        userId: created.id,
-        targetEmp,
-        displayName: body.display_name,
-        phone: normalizedPhone || undefined,
-        email: body.email || undefined,
-        role: body.role,
-        branchScope: effectiveBranchScope,
-        actorId,
+        userId: created.id, targetEmp, displayName: body.display_name,
+        phone: normalizedPhone || undefined, email: body.email || undefined,
+        role: body.role, branchScope: effectiveBranchScope, actorId,
       });
     }
 
     await ctx.audit.record(auditContext(request), {
       action: 'account.create', entity: 'USERS', entityId: created.id,
-      after: { username: created.username, role: created.role, status: created.status, email: created.email },
+      after: { username: created.username, role: created.role, extra_permissions: extraPerms, branch_scope: effectiveBranchScope, status: created.status, email: created.email },
     });
     ctx.realtime()?.toRole('ADMIN', 'account:pending', { id: created.id, username: created.username });
     reply.code(201);

@@ -169,4 +169,52 @@ describe('Kích hoạt, Thu hồi (FLOW-01), Saga & Đối soát toàn vẹn d�
     expect(bulkRevoke.json().data.processedCount).toBe(1);
     expect(db.users.get(pending.id)?.status).toBe('REVOKED');
   });
+
+  it('Quản lý Permission bổ sung (extra_permissions), Khóa/Mở khóa tạm thời (lock/unlock) và Lịch sử thay đổi quyền (ADM-02)', async () => {
+    const admin = await login('admin', DEMO_PASSWORD, 'backoffice');
+    const hrUser = db.users.find((u) => u.username === 'hr')!;
+
+    // 1. Chặn cấp quyền bị cấm (HR không được cấp payroll.manage)
+    const forbiddenRes = await app.inject({
+      method: 'PUT', url: `/api/admin/accounts/${hrUser.id}`,
+      headers: { cookie: admin.cookie, 'x-umbm-client': 'web' },
+      payload: { version: hrUser.version, extra_permissions: ['payroll.manage'] },
+    });
+    expect(forbiddenRes.statusCode).toBe(400);
+    expect(forbiddenRes.json().errors.code).toBe('VALIDATION_ERROR');
+
+    // 2. Cấp permission bổ sung hợp lệ (HR được phê duyệt xem lương payroll.read)
+    const grantRes = await app.inject({
+      method: 'PUT', url: `/api/admin/accounts/${hrUser.id}`,
+      headers: { cookie: admin.cookie, 'x-umbm-client': 'web' },
+      payload: { version: hrUser.version, extra_permissions: ['payroll.read'], reason: 'Ban Giám đốc phê duyệt quyền đối chiếu lương' },
+    });
+    expect(grantRes.statusCode).toBe(200);
+    expect(grantRes.json().data.user.extraPermissions).toEqual(['payroll.read']);
+    expect(grantRes.json().data.user.permissions).toContain('payroll.read');
+
+    // 3. Khóa tạm thời và Mở khóa lại tài khoản
+    const lockRes = await app.inject({
+      method: 'POST', url: `/api/admin/accounts/${hrUser.id}/lock`,
+      headers: { cookie: admin.cookie, 'x-umbm-client': 'web' },
+      payload: { version: grantRes.json().data.version, reason: 'Tạm khóa kiểm tra định kỳ' },
+    });
+    expect(lockRes.statusCode).toBe(200);
+    expect(db.users.get(hrUser.id)?.status).toBe('LOCKED');
+
+    const unlockRes = await app.inject({
+      method: 'POST', url: `/api/admin/accounts/${hrUser.id}/unlock`,
+      headers: { cookie: admin.cookie, 'x-umbm-client': 'web' },
+      payload: { version: lockRes.json().data.version },
+    });
+    expect(unlockRes.statusCode).toBe(200);
+    expect(db.users.get(hrUser.id)?.status).toBe('ACTIVE');
+
+    // 4. Kiểm tra API Lịch sử thay đổi quyền và trạng thái
+    const histRes = await app.inject({ method: 'GET', url: `/api/admin/accounts/${hrUser.id}/history`, headers: { cookie: admin.cookie } });
+    expect(histRes.statusCode).toBe(200);
+    const hist = histRes.json().data as { action: string; summary: string }[];
+    expect(hist.some((h) => h.action === 'account.permissions_update' && h.summary.includes('Quyền bổ sung'))).toBe(true);
+    expect(hist.some((h) => h.action === 'account.lock')).toBe(true);
+  });
 });

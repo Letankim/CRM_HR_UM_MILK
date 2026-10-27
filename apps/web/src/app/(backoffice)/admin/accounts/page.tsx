@@ -77,13 +77,20 @@ function AccountsView() {
   };
 
   const singleAction = useMutation({
-    mutationFn: async (payload: { row: AccountRowItem; kind: 'activate' | 'unlock' }) => {
+    mutationFn: async (payload: { row: AccountRowItem; kind: 'activate' | 'lock' | 'unlock' }) => {
       setProcessingId(payload.row.id);
       return api.post(`/admin/accounts/${payload.row.id}/${payload.kind}`, { version: payload.row.version });
     },
     onSuccess: (_d, { row, kind }) => {
-      message.success(kind === 'activate' ? `Đã kích hoạt tài khoản ${row.displayName}` : `Đã mở khóa đăng nhập cho ${row.displayName}`);
+      const msg =
+        kind === 'activate'
+          ? `Đã kích hoạt tài khoản ${row.displayName}`
+          : kind === 'lock'
+            ? `Đã khóa tạm thời tài khoản ${row.displayName}`
+            : `Đã mở khóa đăng nhập cho ${row.displayName}`;
+      message.success(msg);
       qc.invalidateQueries({ queryKey: ['accounts'] });
+      qc.invalidateQueries({ queryKey: ['account-audit-history'] });
     },
     onError: (e) => {
       message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại');
@@ -129,6 +136,7 @@ function AccountsView() {
         onViewDetail: (r) => setDetailRow(r),
         onEdit: (r) => { setEditingRow(r); setModalOpen(true); },
         onActivate: (r) => singleAction.mutate({ row: r, kind: 'activate' }),
+        onLock: (r) => singleAction.mutate({ row: r, kind: 'lock' }),
         onUnlock: (r) => singleAction.mutate({ row: r, kind: 'unlock' }),
         onRevoke: (r) => setRevokeTargets([r]),
         onDelete: (r) =>

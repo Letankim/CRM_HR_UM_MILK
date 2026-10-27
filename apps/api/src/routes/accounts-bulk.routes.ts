@@ -1,14 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { ROLES, normalizePhone } from '@umbm/shared';
+import { PERMISSIONS, ROLES, isPermissionForbiddenForRole, normalizePhone } from '@umbm/shared';
 import type { AppContext } from '../context.js';
-import { toPublicUser } from '../auth/auth.service.js';
+import { parseExtraPermissions, toPublicUser } from '../auth/auth.service.js';
 import { hashSecret } from '../auth/password.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { syncEmployeeFromAccount } from './account-employee-sync.js';
+import { sanitizeExtraPermissions } from './accounts.routes.js';
 import { assertUniquePersonalIdentifiers, findLinkedEmployeeForUser } from './employee-mapper.js';
 
 const zUpdateAccountBody = z.object({
@@ -20,6 +21,8 @@ const zUpdateAccountBody = z.object({
   branch_scope: z.string().trim().min(1).optional(),
   employee_id: z.string().trim().max(64).optional(),
   secret: z.string().min(6).max(128).optional(),
+  extra_permissions: z.array(z.enum(PERMISSIONS)).optional(),
+  reason: z.string().trim().max(500).optional(),
 });
 
 const zDeleteVersionBody = z.object({
@@ -27,8 +30,8 @@ const zDeleteVersionBody = z.object({
 });
 
 const zBulkActionBody = z.object({
-  action: z.enum(['ACTIVATE', 'REVOKE', 'UNLOCK', 'DELETE'], {
-    errorMap: () => ({ message: 'Hành động hàng loạt không hợp lệ (ACTIVATE, REVOKE, UNLOCK, DELETE)' }),
+  action: z.enum(['ACTIVATE', 'LOCK', 'REVOKE', 'UNLOCK', 'DELETE'], {
+    errorMap: () => ({ message: 'Hành động hàng loạt không hợp lệ (ACTIVATE, LOCK, REVOKE, UNLOCK, DELETE)' }),
   }),
   items: z
     .array(
@@ -86,6 +89,13 @@ export async function accountBulkRoutes(app: FastifyInstance, ctx: AppContext) {
       });
 
       const effectiveRole = body.role ?? before.role;
+      const beforeExtraPerms = parseExtraPermissions(before.permissions_json);
+      const nextExtraPerms =
+        body.extra_permissions !== undefined
+          ? sanitizeExtraPermissions(effectiveRole, body.extra_permissions)
+          : beforeExtraPerms.filter((p) => !isPermissionForbiddenForRole(effectiveRole, p));
+      const nextPermissionsJson = JSON.stringify(nextExtraPerms);
+
       const rawScope = body.branch_scope ?? before.branch_scope;
       const effectiveBranchScope =
         rawScope === 'ALL' &&
@@ -112,6 +122,7 @@ export async function accountBulkRoutes(app: FastifyInstance, ctx: AppContext) {
         ...(body.email !== undefined ? { email: body.email } : {}),
         ...(body.role ? { role: body.role } : {}),
         ...(effectiveBranchScope !== before.branch_scope ? { branch_scope: effectiveBranchScope } : {}),
+        ...(nextPermissionsJson !== before.permissions_json ? { permissions_json: nextPermissionsJson } : {}),
         ...(body.employee_id !== undefined || nextEmployeeCode !== before.employee_id ? { employee_id: nextEmployeeCode } : {}),
       };
       if (body.secret) {
@@ -120,15 +131,20 @@ export async function accountBulkRoutes(app: FastifyInstance, ctx: AppContext) {
       }
 
       const updated = await ctx.db.users.update(id, body.version, patch, actorId);
+      const isPermOrScopeChanged =
+        before.role !== updated.role ||
+        before.branch_scope !== updated.branch_scope ||
+        JSON.stringify(beforeExtraPerms) !== JSON.stringify(nextExtraPerms);
+
       await ctx.audit.record(auditContext(request), {
-        action: 'account.update',
+        action: isPermOrScopeChanged ? 'account.permissions_update' : 'account.update',
         entity: 'USERS',
         entityId: id,
-        before: { display_name: before.display_name, role: before.role, branch_scope: before.branch_scope, phone: before.phone, employee_id: before.employee_id },
-        after: { display_name: updated.display_name, role: updated.role, branch_scope: updated.branch_scope, phone: updated.phone, employee_id: updated.employee_id },
+        before: { display_name: before.display_name, role: before.role, extra_permissions: beforeExtraPerms, branch_scope: before.branch_scope, phone: before.phone, employee_id: before.employee_id },
+        after: { display_name: updated.display_name, role: updated.role, extra_permissions: nextExtraPerms, branch_scope: updated.branch_scope, phone: updated.phone, employee_id: updated.employee_id, ...(body.reason ? { reason: body.reason } : {}) },
       });
 
-      return sendSuccess(request, 'Cập nhật thông tin tài khoản thành công', { user: toPublicUser(updated), version: updated.version });
+      return sendSuccess(request, 'Cập nhật thông tin tài khoản và phân quyền thành công', { user: toPublicUser(updated), version: updated.version });
     },
   );
 
@@ -163,6 +179,10 @@ export async function accountBulkRoutes(app: FastifyInstance, ctx: AppContext) {
       if (body.action === 'ACTIVATE' && user.status !== 'ACTIVE') {
         await ctx.db.users.update(user.id, user.version, { status: 'ACTIVE', activated_by: actorId, activated_at: nowIso(), failed_login_count: 0, locked_until: '', revoked_at: '' }, actorId);
         processedIds.push(user.id);
+      } else if (body.action === 'LOCK' && user.id !== actorId && user.username !== 'admin' && user.status === 'ACTIVE') {
+        await ctx.db.users.update(user.id, user.version, { status: 'LOCKED', session_version: user.session_version + 1 }, actorId);
+        ctx.realtime()?.forceLogout(user.id, body.reason ?? 'Khóa tạm thời tài khoản hàng loạt');
+        processedIds.push(user.id);
       } else if (body.action === 'UNLOCK') {
         await ctx.db.users.update(user.id, user.version, { status: user.status === 'LOCKED' ? 'ACTIVE' : user.status, failed_login_count: 0, locked_until: '' }, actorId);
         processedIds.push(user.id);
@@ -184,7 +204,7 @@ export async function accountBulkRoutes(app: FastifyInstance, ctx: AppContext) {
       after: { action: body.action, processedIds, skippedIds, reason: body.reason ?? '' },
     });
 
-    const labels = { ACTIVATE: 'kích hoạt', UNLOCK: 'mở khóa đăng nhập', REVOKE: 'thu hồi quyền truy cập', DELETE: 'xóa' } as const;
+    const labels = { ACTIVATE: 'kích hoạt', LOCK: 'khóa tạm thời', UNLOCK: 'mở khóa đăng nhập', REVOKE: 'thu hồi quyền truy cập', DELETE: 'xóa' } as const;
     return sendSuccess(request, `Đã ${labels[body.action]} thành công ${processedIds.length}/${body.items.length} tài khoản đã chọn`, {
       action: body.action, processedCount: processedIds.length, skippedCount: skippedIds.length, processedIds, skippedIds,
     });

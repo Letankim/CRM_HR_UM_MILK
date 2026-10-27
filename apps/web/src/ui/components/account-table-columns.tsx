@@ -2,8 +2,9 @@
 
 import { Space, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { CheckOutlined, DeleteOutlined, EditOutlined, StopOutlined, UnlockOutlined, UserOutlined } from '@ant-design/icons';
+import { CheckOutlined, DeleteOutlined, EditOutlined, LockOutlined, StopOutlined, UnlockOutlined, UserOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { PERMISSION_LABELS } from '@umbm/shared';
 import { exportToExcel } from '@/lib/export-excel';
 import { StatusTag } from '../StatusTag';
 import type { AccountRowItem } from './AccountDetailDrawer';
@@ -21,6 +22,13 @@ export function exportAccountsExcel(rows: AccountRowItem[]) {
       { header: 'Tên đăng nhập', render: (r) => `@${r.username}` },
       { header: 'Họ và tên', key: 'displayName' },
       { header: 'Vai trò', key: 'roleLabel' },
+      {
+        header: 'Quyền bổ sung',
+        render: (r) =>
+          (r.extraPermissions?.length ?? 0) > 0
+            ? r.extraPermissions!.map((p) => PERMISSION_LABELS[p] ?? p).join(', ')
+            : 'Mặc định theo vai trò',
+      },
       { header: 'Số điện thoại', render: (r) => fmtPhone(r.phone) },
       { header: 'Phạm vi chi nhánh', key: 'branchNames' },
       { header: 'Trạng thái', key: 'statusLabel' },
@@ -38,6 +46,7 @@ export interface BuildAccountColumnsOptions {
   onViewDetail: (row: AccountRowItem) => void;
   onEdit: (row: AccountRowItem) => void;
   onActivate: (row: AccountRowItem) => void;
+  onLock: (row: AccountRowItem) => void;
   onUnlock: (row: AccountRowItem) => void;
   onRevoke: (row: AccountRowItem) => void;
   onDelete: (row: AccountRowItem) => void;
@@ -51,6 +60,7 @@ export function buildAccountColumns({
   onViewDetail,
   onEdit,
   onActivate,
+  onLock,
   onUnlock,
   onRevoke,
   onDelete,
@@ -80,6 +90,11 @@ export function buildAccountColumns({
         <div>
           <Space size={4} wrap>
             <Tag color="blue" style={{ margin: 0, borderRadius: 2, fontSize: 11 }}>{r.roleLabel}</Tag>
+            {(r.extraPermissions?.length ?? 0) > 0 && (
+              <Tag color="purple" style={{ margin: 0, borderRadius: 2, fontSize: 11, fontWeight: 600 }}>
+                +{r.extraPermissions!.length} quyền bổ sung
+              </Tag>
+            )}
             <Tag color="green" style={{ margin: 0, borderRadius: 2, fontSize: 11 }}>
               {r.branchScope === 'ALL' ? 'Toàn chuỗi' : 'Theo chi nhánh'}
             </Tag>
@@ -132,12 +147,15 @@ export function buildAccountColumns({
       render: (_, r) => {
         const menuItems = [];
         if (canManage) {
-          menuItems.push({ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa thông tin', onClick: () => onEdit(r) });
+          menuItems.push({ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa & Phân quyền', onClick: () => onEdit(r) });
         }
         if (canActivate && r.status !== 'ACTIVE') {
           menuItems.push({ key: 'activate', icon: <CheckOutlined />, label: 'Kích hoạt tài khoản', onClick: () => onActivate(r) });
         }
-        if (canActivate) {
+        if (canActivate && r.status === 'ACTIVE' && r.id !== currentUserId && r.username !== 'admin') {
+          menuItems.push({ key: 'lock', icon: <LockOutlined />, label: 'Khóa tạm thời tài khoản', onClick: () => onLock(r) });
+        }
+        if (canActivate && (r.status === 'LOCKED' || (r.failedLoginCount ?? 0) > 0)) {
           menuItems.push({ key: 'unlock', icon: <UnlockOutlined />, label: 'Mở khóa đăng nhập', onClick: () => onUnlock(r) });
         }
         if (canActivate && r.id !== currentUserId && r.status !== 'REVOKED') {

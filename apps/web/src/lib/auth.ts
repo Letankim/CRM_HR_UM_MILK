@@ -22,44 +22,40 @@ export function canAccessPath(user: PublicUser, pathname: string, section?: stri
 
   if (path.startsWith('/admin/employees')) {
     if (effectiveSection === 'recruitment') {
-      return (
-        user.role === 'HR' &&
-        (user.permissions.includes('candidate.manage') || user.permissions.includes('interview.manage'))
-      );
+      return user.permissions.includes('candidate.manage') || user.permissions.includes('interview.manage');
     }
     if (effectiveSection === 'tests') {
-      return user.role === 'HR' && user.permissions.includes('test.manage');
+      return user.permissions.includes('test.manage');
     }
     return user.permissions.includes('employee.read');
   }
   if (path.startsWith('/admin/accounts')) {
-    return user.role === 'ADMIN' && (user.permissions.includes('account.manage') || user.permissions.includes('account.activate'));
+    return user.permissions.includes('account.manage') || user.permissions.includes('account.activate');
   }
   if (path.startsWith('/admin/schedules')) {
-    return user.permissions.includes('schedule.read');
+    return user.permissions.includes('schedule.read') || user.permissions.includes('attendance.read');
   }
   if (path.startsWith('/admin/payroll')) {
-    return user.role === 'FINANCE' && (user.permissions.includes('payroll.read') || user.permissions.includes('payroll.manage'));
+    return user.permissions.includes('payroll.read') || user.permissions.includes('payroll.manage');
   }
   if (path.startsWith('/admin/branches')) {
-    return user.role === 'ADMIN' && user.permissions.includes('system.config');
+    return user.permissions.includes('system.config');
   }
   if (path.startsWith('/admin/audit-logs')) {
-    return user.role === 'ADMIN' && user.permissions.includes('system.audit.read');
+    return user.permissions.includes('system.audit.read');
   }
   if (path.startsWith('/admin/integrations')) {
     if (effectiveSection === 'governance') {
       return (
-        user.role === 'ADMIN' &&
-        (user.permissions.includes('system.config') ||
-          user.permissions.includes('system.maintenance') ||
-          user.permissions.includes('system.backup'))
+        user.permissions.includes('system.config') ||
+        user.permissions.includes('system.maintenance') ||
+        user.permissions.includes('system.backup')
       );
     }
     if (effectiveSection === 'comms') {
-      return user.role === 'MKT' && user.permissions.includes('comms.manage');
+      return user.permissions.includes('comms.manage');
     }
-    return user.role === 'ADMIN' && user.permissions.includes('integration.read');
+    return user.permissions.includes('integration.read');
   }
   return true;
 }
