@@ -196,3 +196,22 @@ export async function syncAccountFromEmployee(ctx: AppContext, params: SyncAccou
   await ctx.db.users.update(targetUser.id, targetUser.version, userPatch, actorId);
   return targetUser.id;
 }
+
+/** Phát tín hiệu Socket.IO đồng bộ Lịch làm việc, Ca làm & Đơn từ tới đúng Room Chi nhánh và Tài khoản nhân sự */
+export function emitScheduleRealtime(
+  ctx: AppContext,
+  event: string,
+  opts: { branchId?: string; employeeIds?: (string | undefined)[]; kind?: string; message?: string; actorId?: string },
+): void {
+  const rt = ctx.realtime();
+  if (!rt) return;
+  const payload = { kind: opts.kind ?? 'SCHEDULE_SYNC', branchId: opts.branchId ?? '', message: opts.message ?? '', actorId: opts.actorId ?? '' };
+  if (opts.branchId && opts.branchId !== 'ALL') rt.toBranch(opts.branchId, event, payload);
+  else rt.broadcast(event, payload);
+  for (const rawId of opts.employeeIds ?? []) {
+    if (!rawId) continue;
+    const emp = ctx.db.employees.get(rawId) ?? ctx.db.employees.find((e) => e.employee_code === rawId);
+    const u = emp ? findLinkedUserForEmployee(emp, ctx) : undefined;
+    if (u) rt.toUser(u.id, event, payload);
+  }
+}

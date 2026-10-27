@@ -7,8 +7,9 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
+import { SocketEvents } from '../realtime/realtime.js';
 import { applyApprovedAdjustmentToShift, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
-import { healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
+import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { buildPaginatedAttendanceSessions, calculateHaversineMeters, describePunctuality, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto } from './attendance-helpers.js';
 
 export { calculateHaversineMeters } from './attendance-helpers.js';
@@ -195,14 +196,12 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       status: 'PENDING', store_confirmed_by: '', store_confirmed_at: '', store_note: '', hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.create', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: created.id, after: { adjustment_code: created.adjustment_code, assignment_id: created.assignment_id, requested_hours: created.requested_hours } });
-    reply.code(201);
-    return sendSuccess(request, 'Đã tạo phiếu bổ sung / điều chỉnh công', created);
+    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'ADJUSTMENT_CREATED', actorId: request.auth!.user.id });
+    return reply.code(201), sendSuccess(request, 'Đã tạo phiếu bổ sung / điều chỉnh công', created);
   });
 
   app.post('/api/admin/attendance/adjustments/:id/decide', { preHandler: requirePermission('attendance.confirm', 'adjustment.approve') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const body = zDecideAdjustmentBody.parse(request.body);
-    const before = ctx.db.attendanceAdjustments.get(id);
+    const { id } = request.params as { id: string }, body = zDecideAdjustmentBody.parse(request.body), before = ctx.db.attendanceAdjustments.get(id);
     if (!before) throw Errors.notFound('Phiếu bổ sung công', id);
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
     const actorId = request.auth!.user.id;
@@ -214,6 +213,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const updated = await ctx.db.attendanceAdjustments.update(id, body.version, patch, actorId);
     if (body.action === 'HR_APPROVE') await applyApprovedAdjustmentToShift(ctx.db, id, actorId);
     await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.decide', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: id, before: { status: before.status }, after: { status: updated.status, hr_decision: updated.hr_decision } });
+    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: 'ADJUSTMENT_DECIDED', actorId });
     return sendSuccess(request, body.action === 'STORE_CONFIRM' ? 'Cửa hàng đã xác nhận phiếu bổ sung công để chuyển HR duyệt' : body.action === 'HR_APPROVE' ? 'Đã phê duyệt phiếu bổ sung công và cập nhật trạng thái hoàn thành ca làm việc' : 'Đã từ chối phiếu bổ sung công', updated);
   });
 }

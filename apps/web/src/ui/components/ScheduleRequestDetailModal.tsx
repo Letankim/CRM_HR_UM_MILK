@@ -38,13 +38,13 @@ export function ScheduleRequestDetailModal({
 
   return (
     <Modal
-      width={620}
+      width="min(860px, 94vw)"
       open
       title={TITLES[kind]}
       onCancel={onClose}
       footer={<Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>}
     >
-      <Descriptions bordered size="small" column={1} style={{ marginTop: 8 }} styles={{ label: { width: 185, fontWeight: 600, background: '#F8FAFC' } }}>
+      <Descriptions bordered size="small" column={1} style={{ marginTop: 8 }} styles={{ label: { width: 220, fontWeight: 600, background: '#F8FAFC' } }}>
         {kind === 'swap' && (
           <>
             <Descriptions.Item label="Mã yêu cầu đổi ca"><Tag color="purple" style={{ margin: 0 }}>{String(r.swap_code || r.id)}</Tag></Descriptions.Item>

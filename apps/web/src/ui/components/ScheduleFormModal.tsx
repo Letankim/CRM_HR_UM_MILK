@@ -172,7 +172,7 @@ export function ScheduleFormModal({
           <Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
         )
       }
-      width={680}
+      width="min(840px, 94vw)"
       style={{ maxWidth: 'calc(100vw - 24px)' }}
       forceRender
     >

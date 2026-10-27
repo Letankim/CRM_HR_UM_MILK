@@ -106,9 +106,9 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
         )}
       </Card>
 
-      <Modal open={Boolean(viewingStage)} title="Chi tiết Quyết định Chuyển đổi Giai đoạn Nhân sự" onCancel={() => setViewingStage(null)} footer={<Button icon={<CloseOutlined />} onClick={() => setViewingStage(null)}>Đóng</Button>} width={640} destroyOnHidden>
+      <Modal open={Boolean(viewingStage)} title="Chi tiết Quyết định Chuyển đổi Giai đoạn Nhân sự" onCancel={() => setViewingStage(null)} footer={<Button icon={<CloseOutlined />} onClick={() => setViewingStage(null)}>Đóng</Button>} width="min(920px, 94vw)" destroyOnHidden>
         {viewingStage && (
-          <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+          <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} styles={{ label: { width: 210, fontWeight: 600, background: '#F8FAFC' }, content: { minWidth: 220 } }}>
             <Descriptions.Item label="Nhân sự" span={2}><strong>{employee.fullName}</strong> ({employee.employeeCode})</Descriptions.Item>
             <Descriptions.Item label="Giai đoạn trước"><StatusTag value={viewingStage.fromStage} /></Descriptions.Item>
             <Descriptions.Item label="Giai đoạn chuyển sang"><StatusTag value={viewingStage.toStage} /></Descriptions.Item>
@@ -120,15 +120,15 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
             <Descriptions.Item label="Người phê duyệt quyết định" span={2}>
               <strong>{viewingStage.decidedBy || 'Phòng Nhân sự'}</strong>{viewingStage.decidedByRoleLabel ? ` (${viewingStage.decidedByRoleLabel})` : ''}{viewingStage.decidedBySub ? ` · ${viewingStage.decidedBySub}` : ''}
             </Descriptions.Item>
-            <Descriptions.Item label="Đánh giá & Lý do quyết định" span={2}>{viewingStage.evaluationSummary || '—'}</Descriptions.Item>
-            {viewingStage.note && viewingStage.note !== viewingStage.evaluationSummary && <Descriptions.Item label="Ghi chú bổ sung" span={2}>{viewingStage.note}</Descriptions.Item>}
+            <Descriptions.Item label="Đánh giá & Lý do quyết định" span={2}><div style={{ lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{viewingStage.evaluationSummary || '—'}</div></Descriptions.Item>
+            {viewingStage.note && viewingStage.note !== viewingStage.evaluationSummary && <Descriptions.Item label="Ghi chú bổ sung" span={2}><div style={{ lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{viewingStage.note}</div></Descriptions.Item>}
           </Descriptions>
         )}
       </Modal>
 
-      <Modal open={Boolean(viewingShift)} title="Chi tiết Ca làm việc của Nhân sự" onCancel={() => setViewingShift(null)} footer={<Button icon={<CloseOutlined />} onClick={() => setViewingShift(null)}>Đóng</Button>} width={560} destroyOnHidden>
+      <Modal open={Boolean(viewingShift)} title="Chi tiết Ca làm việc của Nhân sự" onCancel={() => setViewingShift(null)} footer={<Button icon={<CloseOutlined />} onClick={() => setViewingShift(null)}>Đóng</Button>} width="min(860px, 94vw)" destroyOnHidden>
         {viewingShift && (
-          <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }}>
+          <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} styles={{ label: { width: 200, fontWeight: 600, background: '#F8FAFC' }, content: { minWidth: 200 } }}>
             <Descriptions.Item label="Nhân sự" span={2}><strong>{employee.fullName}</strong> ({employee.employeeCode})</Descriptions.Item>
             <Descriptions.Item label="Ngày làm việc"><span className="num" style={{ fontWeight: 600 }}>{viewingShift.work_date}</span></Descriptions.Item>
             <Descriptions.Item label="Trạng thái ca"><StatusTag value={viewingShift.status} /></Descriptions.Item>
@@ -136,7 +136,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
             <Descriptions.Item label="Khung ca phân công">{viewingShift.shiftLabel}</Descriptions.Item>
             <Descriptions.Item label="Thời lượng ca"><span className="num">{viewingShift.start_at} - {viewingShift.end_at} ({viewingShift.scheduled_hours} giờ)</span></Descriptions.Item>
             <Descriptions.Item label="Người xếp ca" span={2}>{viewingShift.assignedByName || 'Quản lý ca'}{viewingShift.assignedByRoleLabel ? ` (${viewingShift.assignedByRoleLabel})` : ''}</Descriptions.Item>
-            <Descriptions.Item label="Ghi chú ca làm việc" span={2}>{viewingShift.note || 'Không có ghi chú bổ sung'}</Descriptions.Item>
+            <Descriptions.Item label="Ghi chú ca làm việc" span={2}><div style={{ lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{viewingShift.note || 'Không có ghi chú bổ sung'}</div></Descriptions.Item>
           </Descriptions>
         )}
       </Modal>
@@ -161,7 +161,7 @@ export function PromoteOfficialModal({
   }, [employee, form]);
 
   return (
-    <Modal width={620} open={Boolean(employee)} destroyOnHidden title={employee ? `Xét duyệt Chuyển Chính thức: ${employee.fullName} (${employee.employeeCode})` : 'Chuyển Chính thức'} okText="Xác nhận Chuyển Chính thức" cancelText="Hủy bỏ" okButtonProps={{ icon: <RiseOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onClose} onOk={() => form.submit()}>
+    <Modal width="min(860px, 94vw)" open={Boolean(employee)} destroyOnHidden title={employee ? `Xét duyệt Chuyển Chính thức: ${employee.fullName} (${employee.employeeCode})` : 'Chuyển Chính thức'} okText="Xác nhận Chuyển Chính thức" cancelText="Hủy bỏ" okButtonProps={{ icon: <RiseOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onClose} onOk={() => form.submit()}>
       {employee && (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           <Alert type="info" showIcon icon={<CheckCircleOutlined />} message="Quy tắc bảo toàn lịch sử khi chuyển chính thức" description={`Giữ nguyên Mã nhân sự (${employee.employeeCode}) và không xóa mốc thử việc gốc (${employee.probationStart || '—'} đến ${employee.probationEnd || '—'}). Hệ thống sẽ ghi nhận ngày hiệu lực chính thức và lưu vào lịch sử chuyển giai đoạn của nhân sự.`} />

@@ -7,7 +7,8 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
-import { healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
+import { SocketEvents } from '../realtime/realtime.js';
+import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 
 const zCreateLeaveBody = z.object({ employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'), leave_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày nghỉ phải theo định dạng YYYY-MM-DD'), kind: z.enum(['PROBATION_OFF', 'WEEKLY_OFF', 'UNPAID_LEAVE']).default('WEEKLY_OFF'), shift_code: z.string().default('CA_SANG'), reason: z.string().trim().min(2, 'Vui lòng nhập lý do xin nghỉ').max(300), status: z.enum(['DRAFT', 'PENDING']).default('PENDING') });
 const zDecideLeaveBody = z.object({ version: z.coerce.number().int().min(1), decision: z.enum(['APPROVED', 'REJECTED']), decision_reason: z.string().trim().max(300).optional().default('') });
@@ -49,13 +50,12 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       assignment_id: existingShift?.id ?? '', quota_cycle_used: usedCount + 1, quota_cycle_limit: limit, staffing_after_leave: 3, min_staff_required: 2, submitted_at: nowIso(), store_reviewed_by: '', store_reviewed_at: '', decided_by: '', decision_reason: '', decided_at: '',
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'leave.create', entity: 'LEAVE_REQUESTS', entityId: created.id, after: { request_code: created.request_code, leave_date: created.leave_date, status: created.status } });
+    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'LEAVE_CREATED', message: `${emp.full_name} gửi đơn nghỉ OFF ngày ${created.leave_date}`, actorId: request.auth!.user.id });
     return reply.code(201), sendSuccess(request, 'Đã gửi đơn đăng ký nghỉ OFF thành công', created);
   });
 
   app.post('/api/admin/leave-requests/:id/decide', { preHandler: requirePermission('leave.approve') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const body = zDecideLeaveBody.parse(request.body);
-    const before = ctx.db.leaveRequests.get(id);
+    const { id } = request.params as { id: string }, body = zDecideLeaveBody.parse(request.body), before = ctx.db.leaveRequests.get(id);
     if (!before) throw Errors.notFound('Đơn xin nghỉ OFF', id);
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
     if (body.decision === 'REJECTED' && !body.decision_reason.trim()) throw Errors.fieldValidation('decision_reason', 'REQUIRED_FIELD', 'Vui lòng nhập lý do từ chối đơn xin nghỉ OFF', '');
@@ -79,6 +79,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       resultSelector: (s) => s.leave,
     });
     await ctx.audit.record(auditContext(request), { action: 'leave.decide', entity: 'LEAVE_REQUESTS', entityId: id, before: { status: before.status }, after: { status: updated.status, decision_reason: updated.decision_reason } });
+    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: 'LEAVE_DECIDED', message: `Đơn nghỉ OFF ngày ${before.leave_date} đã ${body.decision === 'APPROVED' ? 'được phê duyệt' : 'bị từ chối'}`, actorId });
     return sendSuccess(request, body.decision === 'APPROVED' ? 'Đã phê duyệt đơn nghỉ OFF và tự động gỡ ca làm việc trùng ngày' : 'Đã từ chối đơn nghỉ OFF', updated);
   });
 
@@ -119,14 +120,12 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       peer_responded_at: '', peer_note: '', decided_by: '', decision_reason: '', decided_at: '', allowance_eligible: false, allowance_amount_vnd: SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd,
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'swap.create', entity: 'SHIFT_SWAPS', entityId: created.id, after: { swap_code: created.swap_code, status: created.status } });
-    reply.code(201);
-    return sendSuccess(request, 'Đã tạo yêu cầu đổi ca (Bước 1/3: Chờ đồng nghiệp xác nhận — lịch chính thức chưa thay đổi)', created);
+    emitScheduleRealtime(ctx, SocketEvents.SWAP_UPDATED, { branchId: fromAssign.branch_id, employeeIds: [created.requester_id, created.peer_id], kind: 'SWAP_CREATED', message: `Yêu cầu đổi ca mới (${created.swap_code}) ngày ${fromAssign.work_date}`, actorId: request.auth!.user.id });
+    return reply.code(201), sendSuccess(request, 'Đã tạo yêu cầu đổi ca (Bước 1/3: Chờ đồng nghiệp xác nhận — lịch chính thức chưa thay đổi)', created);
   });
 
   app.post('/api/admin/shift-swaps/:id/peer-respond', { preHandler: requireAuth() }, async (request) => {
-    const { id } = request.params as { id: string };
-    const body = zPeerRespondBody.parse(request.body);
-    const before = ctx.db.shiftSwaps.get(id);
+    const { id } = request.params as { id: string }, body = zPeerRespondBody.parse(request.body), before = ctx.db.shiftSwaps.get(id);
     if (!before) throw Errors.notFound('Yêu cầu đổi ca', id);
     if (body.accept) {
       const peerEmp = ctx.db.employees.get(before.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === before.peer_id);
@@ -138,13 +137,12 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     const nextStatus = body.accept ? 'PEER_ACCEPTED' : 'PEER_DECLINED';
     const updated = await ctx.db.shiftSwaps.update(id, body.version, { status: nextStatus, peer_responded_at: nowIso(), peer_note: body.peer_note }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'swap.peer_respond', entity: 'SHIFT_SWAPS', entityId: id, before: { status: before.status }, after: { status: updated.status } });
+    emitScheduleRealtime(ctx, SocketEvents.SWAP_UPDATED, { branchId: before.branch_id, employeeIds: [before.requester_id, before.peer_id], kind: 'SWAP_PEER', message: `Đồng nghiệp đã ${body.accept ? 'đồng ý' : 'từ chối'} nhận đổi ca (${before.swap_code})`, actorId: request.auth!.user.id });
     return sendSuccess(request, body.accept ? 'Đồng nghiệp đã xác nhận nhận ca (Bước 2/3: Chờ Quản lý duyệt — lịch chính thức chưa thay đổi)' : 'Đồng nghiệp đã từ chối nhận đổi ca', updated);
   });
 
   app.post('/api/admin/shift-swaps/:id/decide', { preHandler: requirePermission('swap.approve') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const body = zDecideSwapBody.parse(request.body);
-    const before = ctx.db.shiftSwaps.get(id);
+    const { id } = request.params as { id: string }, body = zDecideSwapBody.parse(request.body), before = ctx.db.shiftSwaps.get(id);
     if (!before) throw Errors.notFound('Yêu cầu đổi ca', id);
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.requester_id, before.branch_id));
     if (body.decision === 'APPROVED') {
@@ -169,6 +167,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       resultSelector: (s) => s.swap,
     });
     await ctx.audit.record(auditContext(request), { action: 'swap.decide', entity: 'SHIFT_SWAPS', entityId: id, before: { status: before.status }, after: { status: updated.status, decision_reason: updated.decision_reason } });
+    emitScheduleRealtime(ctx, SocketEvents.SWAP_UPDATED, { branchId: before.branch_id, employeeIds: [before.requester_id, before.peer_id], kind: 'SWAP_DECIDED', message: `Yêu cầu đổi ca ${before.swap_code} đã ${body.decision === 'APPROVED' ? 'được duyệt chuyển lịch chính thức' : 'bị từ chối'}`, actorId });
     return sendSuccess(request, body.decision === 'APPROVED' ? 'Đã duyệt đổi ca (Bước 3/3): Lịch chính thức đã được cập nhật sang người nhận ca' : 'Đã từ chối yêu cầu đổi ca', updated);
   });
 
@@ -195,8 +194,8 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       escalated: false, handled_by: '', reported_at: nowIso(), minutes_before_shift: 60, evidence_file_id: '', replacement_confirmed_at: '', shift_coverage_status: 'UNCOVERED', escalated_at: '', escalated_to_role: '', handled_at: '', resolution_note: '',
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'emergency.create', entity: 'EMERGENCY_LEAVES', entityId: created.id, after: { emergency_code: created.emergency_code, status: created.status } });
-    reply.code(201);
-    return sendSuccess(request, 'Đã ghi nhận báo nghỉ đột xuất và phát cảnh báo tới Quản lý', created);
+    emitScheduleRealtime(ctx, SocketEvents.EMERGENCY, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'EMERGENCY_REPORTED', message: `Cảnh báo nghỉ khẩn cấp (<12h): ${emp.full_name} báo nghỉ ca ngày ${body.work_date}`, actorId: request.auth!.user.id });
+    return reply.code(201), sendSuccess(request, 'Đã ghi nhận báo nghỉ đột xuất và phát cảnh báo tới Quản lý', created);
   });
 
   app.post('/api/admin/emergency-leaves/:id/handle', { preHandler: requirePermission('emergency.handle') }, async (request) => {
@@ -215,6 +214,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       }
     }
     await ctx.audit.record(auditContext(request), { action: 'emergency.handle', entity: 'EMERGENCY_LEAVES', entityId: id, before: { status: before.status }, after: { status: updated.status, escalated: updated.escalated } });
+    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: before.branch_id, employeeIds: [before.employee_id, body.replacement_id], kind: 'EMERGENCY_HANDLED', message: `Ca nghỉ khẩn cấp ${before.emergency_code} ngày ${before.work_date} đã được xử lý`, actorId });
     return sendSuccess(request, isEscalate ? 'Đã chuyển cảnh báo thiếu ca lên cấp trên (Escalated) để điều phối vận hành' : 'Đã cập nhật phương án xử lý ca nghỉ đột xuất và đồng bộ lịch ca', updated);
   });
 }

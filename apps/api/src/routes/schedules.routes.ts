@@ -15,7 +15,8 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
-import { findBranchShiftTemplate, healBranchConsistency, resolveEmployeeBranchId } from './account-employee-sync.js';
+import { SocketEvents } from '../realtime/realtime.js';
+import { emitScheduleRealtime, findBranchShiftTemplate, healBranchConsistency, resolveEmployeeBranchId } from './account-employee-sync.js';
 import { describePunctuality, parseHm } from './attendance-helpers.js';
 
 const zScheduleQuery = zListQueryBase.extend({
@@ -148,6 +149,7 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
       swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: body.status === 'PUBLISHED' ? nowIso() : '', note: body.note,
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'schedule.create', entity: 'SHIFT_ASSIGNMENTS', entityId: created.id, after: { employee_id: emp.employee_code, work_date: created.work_date, shift_code: created.shift_code, status: created.status } });
+    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId, employeeIds: [emp.id], kind: 'SHIFT_ASSIGNED', message: `Đã phân ca ngày ${created.work_date} cho ${emp.full_name}`, actorId: request.auth!.user.id });
     reply.code(201);
     return sendSuccess(request, 'Đã thêm phân công ca làm việc thành công', mapShiftAssignment(created, ctx));
   });
@@ -177,6 +179,7 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
       ...(patch.status === 'PUBLISHED' && !before.published_at ? { published_at: nowIso() } : {}),
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'schedule.update', entity: 'SHIFT_ASSIGNMENTS', entityId: id, before: { shift_code: before.shift_code, status: before.status }, after: { shift_code: updated.shift_code, status: updated.status } });
+    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: updated.branch_id, employeeIds: [before.employee_id, updated.employee_id], kind: before.status === 'DRAFT' && updated.status === 'PUBLISHED' ? 'SHIFT_APPROVED' : 'SHIFT_UPDATED', message: before.status === 'DRAFT' && updated.status === 'PUBLISHED' ? `Ca làm ngày ${updated.work_date} đã được duyệt phát hành chính thức` : '', actorId: request.auth!.user.id });
     return sendSuccess(request, 'Cập nhật phân công ca làm việc thành công', mapShiftAssignment(updated, ctx));
   });
 
@@ -188,22 +191,27 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
     await ctx.db.shiftAssignments.softDelete(id, body.version ?? before.version, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'schedule.delete', entity: 'SHIFT_ASSIGNMENTS', entityId: id, before: { work_date: before.work_date, shift_code: before.shift_code } });
+    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: 'SHIFT_DELETED', actorId: request.auth!.user.id });
     return sendSuccess(request, 'Đã xóa phân công ca làm việc', { id });
   });
 
   app.post('/api/admin/schedules/bulk-action', { preHandler: requirePermission('schedule.publish', 'schedule.propose') }, async (request) => {
     const body = zBulkScheduleBody.parse(request.body);
     const actorId = request.auth!.user.id;
-    const processedIds: string[] = [];
+    const processedIds: string[] = [], empIds = new Set<string>();
+    let lastBranchId = '';
     for (const item of body.items) {
       const a = ctx.db.shiftAssignments.get(item.id);
       if (!a) continue;
-      assertBranchAccess(request, resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id));
+      lastBranchId = resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id);
+      assertBranchAccess(request, lastBranchId);
       if (body.action === 'DELETE') await ctx.db.shiftAssignments.softDelete(a.id, a.version, actorId);
       else await ctx.db.shiftAssignments.update(a.id, a.version, { status: 'PUBLISHED', published_at: nowIso() }, actorId);
       processedIds.push(a.id);
+      empIds.add(a.employee_id);
     }
     await ctx.audit.record(auditContext(request), { action: body.action === 'DELETE' ? 'schedule.delete' : 'schedule.publish', entity: 'SHIFT_ASSIGNMENTS', entityId: `bulk-${processedIds.length}`, after: { action: body.action, processedIds } });
+    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: lastBranchId, employeeIds: Array.from(empIds), kind: body.action === 'PUBLISH' ? 'SHIFT_APPROVED' : 'SHIFT_DELETED', message: body.action === 'PUBLISH' ? `Đã phát hành chính thức ${processedIds.length} ca làm việc` : '', actorId });
     return sendSuccess(request, body.action === 'DELETE' ? `Đã xóa ${processedIds.length} ca làm việc` : `Đã phát hành chính thức ${processedIds.length} ca làm việc`, { processedCount: processedIds.length, processedIds });
   });
 }

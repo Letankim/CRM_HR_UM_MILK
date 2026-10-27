@@ -78,11 +78,47 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
         message.info(`Bản tin mới (${payload.code || 'Nội bộ'}): ${payload.title}`);
       }
     };
-    const onAttendance = () => {
-      ['my-attendance', 'attendance-all', 'nv-attendance'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    let scheduleTimer: ReturnType<typeof setTimeout> | null = null;
+    const triggerScheduleSync = () => {
+      if (scheduleTimer) clearTimeout(scheduleTimer);
+      scheduleTimer = setTimeout(() => {
+        [
+          'schedules',
+          'my-attendance',
+          'leave-requests',
+          'shift-swaps',
+          'emergency-leaves',
+          'attendance-adjustments',
+          'attendance-sessions',
+          'attendance-sessions-count',
+          'nv-schedules',
+          'nv-swaps',
+          'dashboard-schedules',
+          'dashboard-leaves',
+          'dashboard-leaves-full',
+          'dashboard-swaps',
+          'dashboard-emergencies',
+          'dashboard-attendance-adjustments',
+        ].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      }, 350);
     };
-    const onSchedule = () => {
-      ['my-attendance', 'schedules', 'nv-schedules', 'nv-swaps'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+
+    const onAttendance = () => {
+      ['my-attendance', 'attendance-all', 'nv-attendance', 'attendance-sessions', 'attendance-sessions-count', 'attendance-adjustments', 'schedules'].forEach((k) =>
+        qc.invalidateQueries({ queryKey: [k] }),
+      );
+    };
+    const onSchedule = (payload?: { kind?: string; message?: string }) => {
+      triggerScheduleSync();
+      if (app === 'employee' && payload?.message && ['SHIFT_APPROVED', 'SHIFT_ASSIGNED', 'LEAVE_DECIDED', 'SWAP_PEER', 'SWAP_DECIDED', 'EMERGENCY_HANDLED'].includes(payload.kind || '')) {
+        message.info({ key: 'rt-schedule-emp', content: payload.message });
+      }
+    };
+    const onEmergency = (payload?: { message?: string }) => {
+      triggerScheduleSync();
+      if (app === 'backoffice' && payload?.message) {
+        message.warning({ key: 'rt-emergency-mgr', content: payload.message });
+      }
     };
     const onAccountPending = () => {
       qc.invalidateQueries({ queryKey: ['accounts'] });
@@ -93,15 +129,18 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     s.on('attendance:event', onAttendance);
     s.on('schedule:published', onSchedule);
     s.on('swap:updated', onSchedule);
+    s.on('emergency:new', onEmergency);
     s.on('account:pending', onAccountPending);
     if (!s.connected) s.connect();
     return () => {
+      if (scheduleTimer) clearTimeout(scheduleTimer);
       s.off('auth:forceLogout', onForceLogout);
       s.off('system:maintenance', onMaintenance);
       s.off('notification:new', onNotification);
       s.off('attendance:event', onAttendance);
       s.off('schedule:published', onSchedule);
       s.off('swap:updated', onSchedule);
+      s.off('emergency:new', onEmergency);
       s.off('account:pending', onAccountPending);
     };
   }, [app, enabled, message, qc, router, socketToken]);

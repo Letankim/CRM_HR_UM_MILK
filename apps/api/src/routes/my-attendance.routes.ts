@@ -6,7 +6,8 @@ import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { dayjs } from '../lib/time.js';
 import { auditContext, requireAuth } from '../plugins/auth-context.js';
-import { healBranchConsistency, resolveShiftTimeDetails } from './account-employee-sync.js';
+import { SocketEvents } from '../realtime/realtime.js';
+import { emitScheduleRealtime, healBranchConsistency, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { mapAttendanceEvent, migrateLegacyBase64Photos } from './attendance-helpers.js';
 import { mapShiftAssignment } from './schedules.routes.js';
 
@@ -192,6 +193,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     }, user.id);
 
     await ctx.audit.record(auditContext(request), { action: 'schedule.create', entity: 'SHIFT_ASSIGNMENTS', entityId: created.id, after: { employee_id: emp.employee_code, work_date: created.work_date, shift_code: created.shift_code, status: created.status } });
+    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'SHIFT_REGISTERED', message: `${emp.full_name} vừa gửi đăng ký ca ngày ${created.work_date} chờ duyệt`, actorId: user.id });
     reply.code(201);
     return sendSuccess(request, 'Đã gửi đăng ký ca làm việc. Ca đăng ký đang ở trạng thái Chờ duyệt — cần Quản lý cửa hàng hoặc HR duyệt phân ca trước khi chấm công.', mapShiftAssignment(created, ctx));
   });
@@ -204,13 +206,14 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     if (!shift || (shift.employee_id !== emp.id && shift.employee_id !== emp.employee_code)) {
       throw Errors.forbidden('Bạn chỉ được phép hủy ca làm việc của chính mình');
     }
-    if ( ctx.db.attendanceEvents.find((e) => e.assignment_id === shift.id)) {
+    if (ctx.db.attendanceEvents.find((e) => e.assignment_id === shift.id)) {
       throw Errors.badRequest('Ca làm việc này đã có dữ liệu điểm danh thực tế, không thể hủy ca');
     }
     if (shift.status !== 'DRAFT') {
       throw Errors.badRequest('Ca làm việc này đã được Quản lý cửa hàng / HR duyệt phân ca chính thức. Nếu cần thay đổi, vui lòng gửi Đơn xin nghỉ OFF, Báo nghỉ khẩn cấp hoặc Yêu cầu đổi ca.');
     }
     await ctx.db.shiftAssignments.softDelete(shift.id, shift.version, user.id);
+    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: shift.branch_id || emp.branch_id, employeeIds: [emp.id], kind: 'SHIFT_CANCELLED', actorId: user.id });
     return sendSuccess(request, 'Đã hủy đăng ký ca làm việc đang chờ duyệt', { id });
   });
 }

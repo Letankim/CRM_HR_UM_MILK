@@ -23,7 +23,7 @@ export function EmployeeDetailDrawer({
       title={employee ? `Hồ sơ nhân sự: ${employee.fullName} (${employee.employeeCode})` : 'Chi tiết nhân sự'}
       open={!!employee}
       onClose={onClose}
-      width={expanded ? '95vw' : '70vw'}
+      width={expanded ? '96vw' : '84vw'}
       destroyOnHidden
       extra={
         <Space size={8}>
@@ -52,7 +52,7 @@ export function EmployeeDetailDrawer({
               key: 'work',
               label: <span><IdcardOutlined /> Công việc &amp; Phân công</span>,
               children: (
-                <Descriptions column={expanded ? 2 : 1} bordered size="small">
+                <Descriptions column={{ xs: 1, md: 2 }} bordered size="small" styles={{ label: { width: 200, fontWeight: 500 } }}>
                   <Descriptions.Item label="Mã nhân sự">
                     <Tag color="geekblue" style={{ borderRadius: 2, fontWeight: 600 }}>{employee.employeeCode}</Tag>
                   </Descriptions.Item>
@@ -65,12 +65,12 @@ export function EmployeeDetailDrawer({
                   <Descriptions.Item label="Trạng thái làm việc"><StatusTag value={employee.status} /></Descriptions.Item>
                   <Descriptions.Item label="Ca mặc định">{employee.defaultShiftLabel}</Descriptions.Item>
                   <Descriptions.Item label="Hình thức làm việc">{employee.employmentTypeLabel}</Descriptions.Item>
-                  <Descriptions.Item label="Chu kỳ thử việc chuẩn" span={expanded ? 2 : 1}>
+                  <Descriptions.Item label="Chu kỳ thử việc chuẩn" span={2}>
                     {employee.probationCycleDays} ngày ({employee.probationWorkDays} ngày làm / {employee.probationOffDays} ngày nghỉ)
                   </Descriptions.Item>
                   <Descriptions.Item label="Bắt đầu thử việc">{employee.probationStart || 'Chưa cập nhật'}</Descriptions.Item>
                   <Descriptions.Item label="Kết thúc thử việc">{employee.probationEnd || 'Chưa cập nhật'}</Descriptions.Item>
-                  <Descriptions.Item label="Ngày chuyển Chính thức" span={expanded ? 2 : 1}>{employee.officialFrom || 'Chưa chuyển chính thức'}</Descriptions.Item>
+                  <Descriptions.Item label="Ngày chuyển Chính thức" span={2}>{employee.officialFrom || 'Chưa chuyển chính thức'}</Descriptions.Item>
                   {employee.resignedAt && <Descriptions.Item label="Ngày nghỉ việc">{employee.resignedAt}</Descriptions.Item>}
                   {employee.resignReason && <Descriptions.Item label="Lý do nghỉ việc">{employee.resignReason}</Descriptions.Item>}
                 </Descriptions>
@@ -80,18 +80,18 @@ export function EmployeeDetailDrawer({
               key: 'personal',
               label: <span><ContactsOutlined /> Liên hệ &amp; Địa chỉ</span>,
               children: (
-                <Descriptions column={expanded ? 2 : 1} bordered size="small">
+                <Descriptions column={{ xs: 1, md: 2 }} bordered size="small" styles={{ label: { width: 200, fontWeight: 500 } }}>
                   <Descriptions.Item label="Email cá nhân">{employee.email || 'Chưa cập nhật'}</Descriptions.Item>
                   <Descriptions.Item label="Ngày sinh">{employee.dateOfBirth || 'Chưa cập nhật'}</Descriptions.Item>
                   <Descriptions.Item label="Giới tính">{employee.gender || 'Chưa cập nhật'}</Descriptions.Item>
                   {canSeeSalary && <Descriptions.Item label="Mã số thuế cá nhân">{employee.taxCode || 'Chưa cập nhật'}</Descriptions.Item>}
                   {canManage && <Descriptions.Item label="Số CCCD / CMND">{employee.citizenId || 'Chưa cập nhật'}</Descriptions.Item>}
                   {canManage && <Descriptions.Item label="Ngày cấp CCCD">{employee.citizenIssueDate || 'Chưa cập nhật'}</Descriptions.Item>}
-                  <Descriptions.Item label="Địa chỉ thường trú" span={expanded ? 2 : 1}>{employee.permanentAddress || 'Chưa cập nhật'}</Descriptions.Item>
-                  <Descriptions.Item label="Chỗ ở hiện tại / Tạm trú" span={expanded ? 2 : 1}>{employee.currentAddress || 'Chưa cập nhật'}</Descriptions.Item>
+                  <Descriptions.Item label="Địa chỉ thường trú" span={2}>{employee.permanentAddress || 'Chưa cập nhật'}</Descriptions.Item>
+                  <Descriptions.Item label="Chỗ ở hiện tại / Tạm trú" span={2}>{employee.currentAddress || 'Chưa cập nhật'}</Descriptions.Item>
                   <Descriptions.Item label="Người liên hệ khẩn cấp">{employee.emergencyContactName || 'Chưa cập nhật'}</Descriptions.Item>
                   <Descriptions.Item label="SĐT liên hệ khẩn cấp">{fmtPhone(employee.emergencyContactPhone || '')}</Descriptions.Item>
-                  <Descriptions.Item label="Ghi chú hồ sơ" span={expanded ? 2 : 1}>{employee.note || '—'}</Descriptions.Item>
+                  <Descriptions.Item label="Ghi chú hồ sơ" span={2}>{employee.note || '—'}</Descriptions.Item>
                 </Descriptions>
               ),
             },
