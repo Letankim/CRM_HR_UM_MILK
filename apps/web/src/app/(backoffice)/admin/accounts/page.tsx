@@ -62,7 +62,7 @@ function AccountsView() {
 
   const handleManualRefresh = async () => {
     setManualRefreshing(true);
-    const hide = message.loading('Đang đồng bộ dữ liệu mới nhất từ Google Sheets...', 0);
+    const hide = message.loading('Đang làm mới danh sách tài khoản...', 0);
     try {
       const fresh = await api.list<AccountRowItem>(buildQueryUrl(true));
       qc.setQueryData(['accounts', status, role, q, page, perPage], fresh);

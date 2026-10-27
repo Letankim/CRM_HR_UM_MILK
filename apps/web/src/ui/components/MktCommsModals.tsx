@@ -170,7 +170,7 @@ export function MktMediaModal({
           <Col xs={24} md={14}><Form.Item name="file_name" label="Tên tệp / Tài liệu truyền thông" rules={[{ required: true }]}><Input placeholder="VD: banner-sop-pha-che-v5.png" /></Form.Item></Col>
           <Col xs={24} md={10}><Form.Item name="mime_type" label="Định dạng tệp"><Select options={[{ value: 'image/png', label: 'Hình ảnh PNG' }, { value: 'image/jpeg', label: 'Hình ảnh JPEG' }, { value: 'application/pdf', label: 'Tài liệu PDF' }]} /></Form.Item></Col>
         </Row>
-        <Form.Item name="drive_url" label="Đường dẫn lưu trữ Google Drive / Kho Media nội bộ được phê duyệt" rules={[{ required: true }]}><Input placeholder="https://drive.google.com/file/d/..." /></Form.Item>
+        <Form.Item name="drive_url" label="Đường dẫn tệp tài liệu / Hình ảnh nội bộ" rules={[{ required: true }]}><Input placeholder="https://..." /></Form.Item>
         <Row gutter={12}>
           <Col xs={24} md={10}><Form.Item name="size_bytes" label="Dung lượng tệp"><InputNumber style={{ width: '100%' }} min={1024} step={10240} suffix="Bytes" /></Form.Item></Col>
           <Col xs={24} md={14}><Form.Item name="is_internal_only" label="Phạm vi bảo mật tài liệu" valuePropName="checked"><Switch checkedChildren="Chỉ lưu hành nội bộ" unCheckedChildren="Công khai có kiểm soát" /></Form.Item></Col>

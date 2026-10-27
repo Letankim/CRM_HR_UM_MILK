@@ -61,7 +61,7 @@ export function useEmployeesBulkActions({ canManage, canPromote }: UseEmployeesB
         onClick: (rows, clear) => {
           modal.confirm({
             title: `Xác nhận xóa ${rows.length} hồ sơ nhân sự?`,
-            content: 'Các hồ sơ đã chọn sẽ được chuyển sang trạng thái xóa mềm trên Google Sheets.',
+            content: 'Các hồ sơ nhân sự đã chọn sẽ được xóa khỏi danh sách đang làm việc.',
             okText: 'Xác nhận xóa',
             okButtonProps: { danger: true, icon: <DeleteOutlined /> },
             cancelText: 'Hủy bỏ',

@@ -112,8 +112,8 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
   const handleExport = () => {
     exportToExcel({
       fileName: `UB_Bao_Cao_HR_Van_Hanh_Chi_Nhanh_${dayjs().format('YYYYMMDD')}.xls`,
-      sheetTitle: 'BÁO CÁO TỔNG HỢP NHÂN SỰ HR & VẬN HÀNH CHI NHÁNH (HR-14 / STR-09)',
-      subtitle: `Ngày xuất: ${dayjs().format('DD/MM/YYYY HH:mm')} · Kỳ lọc: ${periodFilter}`,
+      sheetTitle: 'BÁO CÁO TỔNG HỢP NHÂN SỰ & VẬN HÀNH CHI NHÁNH',
+      subtitle: `Ngày xuất: ${dayjs().format('DD/MM/YYYY HH:mm')}`,
       columns: [
         { header: 'Mã CN', key: 'branchCode' },
         { header: 'Chi nhánh', key: 'branchName' },
@@ -136,7 +136,7 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
     <Card
       size="small"
       style={{ marginBottom: 16 }}
-      title={<span><BarChartOutlined /> Báo cáo Nhân sự HR &amp; Vận hành Chi nhánh (HR-14 / STR-09)</span>}
+      title={<span><BarChartOutlined /> Báo cáo Nhân sự &amp; Vận hành Chi nhánh</span>}
       extra={
         <Flex gap={8} wrap align="center">
           <Select
@@ -156,7 +156,7 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
         locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có dữ liệu báo cáo theo bộ lọc" /> }}
         columns={[
           { title: 'Chi nhánh', width: 200, render: (_, r) => <div><strong>{r.branchName}</strong><div style={{ fontSize: 12, color: '#64748B' }}>{r.branchCode}</div></div> },
-          { title: 'Headcount', dataIndex: 'headcount', width: 100, align: 'right', render: (v: number) => <strong className="num">{v} NV</strong> },
+          { title: 'Tổng nhân sự', dataIndex: 'headcount', width: 110, align: 'right', render: (v: number) => <strong className="num">{v} NV</strong> },
           { title: 'Thử việc / Chính thức', width: 145, align: 'center', render: (_, r) => <Space size={4}><Tag color="gold">{r.probationCount} TV</Tag><Tag color="blue">{r.officialCount} CT</Tag></Space> },
           { title: 'Tuyển dụng', dataIndex: 'candidateCount', width: 105, align: 'right', render: (v: number) => <span className="num">{v} hồ sơ</span> },
           { title: 'Số ca / Giờ làm', width: 135, align: 'right', render: (_, r) => <span className="num">{r.shiftCount} ca ({r.totalHours}h)</span> },

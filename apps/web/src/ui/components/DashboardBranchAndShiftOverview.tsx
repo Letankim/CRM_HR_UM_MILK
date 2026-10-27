@@ -138,12 +138,12 @@ export function DashboardBranchAndShiftOverview({
       )}
 
       {canPayroll && (
-        <Card size="small" title={<span><DollarOutlined /> Tổng quan Quỹ lương, Giờ công &amp; Đối soát Kế toán (FIN-01)</span>} extra={<Link href="/admin/payroll"><Button size="small" type="primary" icon={<DollarOutlined />}>Mở Bảng lương &amp; Đối soát</Button></Link>}>
+        <Card size="small" title={<span><DollarOutlined /> Tổng quan Quỹ lương, Giờ công &amp; Đối soát Kế toán</span>} extra={<Link href="/admin/payroll"><Button size="small" type="primary" icon={<DollarOutlined />}>Mở Bảng lương &amp; Đối soát</Button></Link>}>
           <Row gutter={[12, 12]}>
-            <Col xs={12} md={4}><Statistic title="Headcount tính lương" value={activePeriod?.total_employees ?? totals.totalStaff} suffix="NV" /></Col>
+            <Col xs={12} md={4}><Statistic title="Nhân sự tính lương" value={activePeriod?.total_employees ?? totals.totalStaff} suffix="NV" /></Col>
             <Col xs={12} md={4}><Statistic title="Tổng giờ công kỳ hiện tại" value={activePeriod?.total_approved_hours ?? 0} suffix="giờ" /></Col>
-            <Col xs={12} md={5}><Statistic title="Quỹ lương dự kiến (Gross)" value={fmtVnd(activePeriod?.total_gross_vnd ?? 0)} formatter={(v) => <span style={{ fontSize: 16, fontWeight: 700, color: '#2563EB' }}>{v}</span>} /></Col>
-            <Col xs={12} md={5}><Statistic title="Thực lĩnh dự kiến (Net)" value={fmtVnd(activePeriod?.total_net_vnd ?? 0)} formatter={(v) => <span style={{ fontSize: 16, fontWeight: 700, color: '#16A34A' }}>{v}</span>} /></Col>
+            <Col xs={12} md={5}><Statistic title="Tổng thu nhập dự kiến" value={fmtVnd(activePeriod?.total_gross_vnd ?? 0)} formatter={(v) => <span style={{ fontSize: 16, fontWeight: 700, color: '#2563EB' }}>{v}</span>} /></Col>
+            <Col xs={12} md={5}><Statistic title="Thực lĩnh dự kiến" value={fmtVnd(activePeriod?.total_net_vnd ?? 0)} formatter={(v) => <span style={{ fontSize: 16, fontWeight: 700, color: '#16A34A' }}>{v}</span>} /></Col>
             <Col xs={12} md={3}><Statistic title="Công chờ khóa / Bù công" value={pendingAdjsCount} suffix="đơn" formatter={(v) => <span style={{ color: pendingAdjsCount > 0 ? '#D97706' : '#16A34A' }}>{v}</span>} /></Col>
             <Col xs={12} md={3}>
               <div style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>Trạng thái kỳ lương</div>
@@ -155,7 +155,7 @@ export function DashboardBranchAndShiftOverview({
       )}
 
       {canSchedule && (
-        <Card size="small" title={<span><EnvironmentOutlined /> Tình trạng Nhân sự, Điểm danh &amp; Ca đang diễn ra theo Chi nhánh (ADM-01 / STR-01)</span>} extra={<Tag color="blue">{currentShiftLabel}</Tag>}>
+        <Card size="small" title={<span><EnvironmentOutlined /> Tình trạng Nhân sự, Điểm danh &amp; Ca đang diễn ra theo Chi nhánh</span>} extra={<Tag color="blue">{currentShiftLabel}</Tag>}>
           <Table
             size="small" rowKey="id" pagination={false} loading={branchesQ.isLoading || shiftsQ.isLoading} dataSource={branchRows} scroll={{ x: 960 }}
             locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có chi nhánh phù hợp bộ lọc" /> }}

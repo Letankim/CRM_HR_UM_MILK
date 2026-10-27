@@ -120,7 +120,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
                   { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa cấu hình & câu hỏi', onClick: () => void openEditBank(r, 'config') },
                   { key: 'questions', icon: <UnorderedListOutlined />, label: 'Biên soạn danh sách câu hỏi', onClick: () => void openEditBank(r, 'questions') },
                   { key: 'assign', icon: <SendOutlined />, label: 'Giao bộ đề này cho nhân sự', onClick: () => openCreateAssignment(String(r.id)) },
-                  { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa bộ đề kiểm tra', onClick: () => modal.confirm({ title: `Xóa bộ đề "${r.title}"?`, content: 'Bộ đề sẽ được chuyển sang trạng thái xóa mềm.', okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => delBankMut.mutateAsync(r) }) },
+                  { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa bộ đề kiểm tra', onClick: () => modal.confirm({ title: `Xóa bộ đề "${r.title}"?`, content: 'Bộ đề kiểm tra này sẽ bị xóa khỏi danh sách hiện hành.', okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => delBankMut.mutateAsync(r) }) },
                 ] : []}
               />
             ),

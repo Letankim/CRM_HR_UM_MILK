@@ -146,10 +146,10 @@ export function PayrollAttendanceReconcileCard({ period, snapshots, loading, onO
       {(totalPendingAdjs > 0 || totalMissingPunches > 0) && (
         <Alert
           type="warning" showIcon
-          message="Phát hiện dữ liệu chấm công cần đối soát trước khi khóa sổ lương (FIN-03)"
+          message="Phát hiện dữ liệu chấm công cần đối soát trước khi khóa sổ lương"
           description={
             <span>
-              Hệ thống ghi nhận <strong>{totalMissingPunches} ca thiếu lượt Check-in/out hoặc vắng</strong> và <strong>{totalPendingAdjs} phiếu điều chỉnh công đang chờ duyệt</strong>. Kế toán không tự sửa sự kiện gốc; vui lòng phối hợp Cửa hàng / HR xử lý tại mục{' '}
+              Hệ thống ghi nhận <strong>{totalMissingPunches} ca thiếu lượt Vào/Ra ca hoặc vắng</strong> và <strong>{totalPendingAdjs} phiếu điều chỉnh công đang chờ duyệt</strong>. Kế toán không tự sửa sự kiện gốc; vui lòng phối hợp Cửa hàng / HR xử lý tại mục{' '}
               <Link href="/admin/schedules?section=workflows"><strong>Đơn từ &amp; Điều chỉnh công</strong></Link>.
             </span>
           }
@@ -189,10 +189,10 @@ export function PayrollAttendanceReconcileCard({ period, snapshots, loading, onO
             { title: 'Giờ tính lương', dataIndex: 'approvedPayrollHours', width: 115, align: 'right', render: (v: number) => <strong className="num" style={{ color: '#2563EB' }}>{v} giờ</strong> },
             { title: 'Đi trễ', dataIndex: 'lateCount', width: 85, align: 'center', render: (v: number) => v > 0 ? <Tag color="volcano">{v} lần</Tag> : <Tag color="green">0</Tag> },
             {
-              title: 'Đối soát In/Out & Bù công (FIN-03)', width: 240,
+              title: 'Đối soát Giờ công & Bù công', width: 240,
               render: (_, r) => r.hasAnomaly ? (
                 <Space size={4} wrap>
-                  {r.missingCheckoutCount > 0 && <Tag color="red" icon={<WarningOutlined />}>Thiếu In/Out: {r.missingCheckoutCount} ca</Tag>}
+                  {r.missingCheckoutCount > 0 && <Tag color="red" icon={<WarningOutlined />}>Thiếu Vào/Ra: {r.missingCheckoutCount} ca</Tag>}
                   {r.pendingAdjCount > 0 && <Badge status="processing" text={<Tag color="gold">{r.pendingAdjCount} đơn bù công chờ duyệt</Tag>} />}
                 </Space>
               ) : (

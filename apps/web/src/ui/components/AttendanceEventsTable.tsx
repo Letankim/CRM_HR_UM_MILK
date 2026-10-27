@@ -189,7 +189,7 @@ export function AttendanceEventsTable({ externalFilters }: Props) {
               <Select value={stateFilter} onChange={setStateFilter} style={{ width: 175 }} options={[{ value: 'ALL', label: 'Tất cả trạng thái' }, ...ATTENDANCE_SESSION_STATUS_OPTIONS]} />
             </Space>
           ) : (
-            <Typography.Text type="secondary" style={{ fontSize: 13 }}>Tổng hợp phiên điểm danh Vào/Ra ca theo bộ lọc hiện tại (Phân trang trực tiếp từ máy chủ):</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 13 }}>Danh sách phiên điểm danh Vào/Ra ca theo bộ lọc hiện tại:</Typography.Text>
           )}
           <Space size={8} wrap>
             <Tag color="blue" style={{ margin: 0, padding: '3px 10px', fontSize: 12 }}>Tổng: {totalCount} ca</Tag>

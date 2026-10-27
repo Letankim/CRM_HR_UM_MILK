@@ -122,8 +122,8 @@ export function PromoteOfficialModal({
             type="info"
             showIcon
             icon={<CheckCircleOutlined />}
-            message="Quy tắc bảo toàn lịch sử khi chuyển chính thức (HR-06)"
-            description={`Giữ nguyên Mã nhân sự (${employee.employeeCode}) và không xóa mốc thử việc gốc (${employee.probationStart || '—'} đến ${employee.probationEnd || '—'}). Hệ thống sẽ ghi nhận ngày hiệu lực chính thức (official_from) và lưu vết vào bảng Lịch sử giai đoạn (EMPLOYEE_STAGE_HISTORY).`}
+            message="Quy tắc bảo toàn lịch sử khi chuyển chính thức"
+            description={`Giữ nguyên Mã nhân sự (${employee.employeeCode}) và không xóa mốc thử việc gốc (${employee.probationStart || '—'} đến ${employee.probationEnd || '—'}). Hệ thống sẽ ghi nhận ngày hiệu lực chính thức và lưu vào lịch sử chuyển giai đoạn của nhân sự.`}
           />
           <Descriptions size="small" bordered column={2}>
             <Descriptions.Item label="Công thử việc tích lũy"><span className="num" style={{ fontWeight: 600 }}>{employee.totalShiftsCount ?? 0} ca ({employee.probationHoursCompleted ?? 0} giờ)</span></Descriptions.Item>
@@ -133,7 +133,7 @@ export function PromoteOfficialModal({
           <Form form={form} layout="vertical" onFinish={(v) => onConfirm(v)}>
             <Row gutter={12}>
               <Col span={12}>
-                <Form.Item name="official_from" label="Ngày hiệu lực Chính thức (effective_from)" rules={[{ required: true, message: 'Vui lòng chọn ngày hiệu lực chính thức' }]}>
+                <Form.Item name="official_from" label="Ngày hiệu lực Chính thức" rules={[{ required: true, message: 'Vui lòng chọn ngày hiệu lực chính thức' }]}>
                   <DateStringPicker />
                 </Form.Item>
               </Col>

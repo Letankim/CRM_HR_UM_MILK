@@ -33,9 +33,9 @@ interface HealthDetail extends Health {
 }
 
 const CHECK_LABELS: Record<string, string> = {
-  google: 'Google API',
-  sheetsCache: 'Bộ nhớ đệm Google Sheets',
-  writeQueue: 'Hàng đợi ghi',
+  google: 'Kết nối dữ liệu',
+  sheetsCache: 'Bộ nhớ dữ liệu',
+  writeQueue: 'Hàng đợi xử lý',
   deadLetters: 'Cần đối soát',
   realtime: 'Thời gian thực',
   backup: 'Sao lưu gần nhất',
@@ -61,7 +61,7 @@ function IntegrationsView() {
 
   const handleManualRefresh = async () => {
     setRefreshing(true);
-    const hide = message.loading('Đang kiểm tra kết nối và nạp mới dữ liệu từ Google Sheets...', 0);
+    const hide = message.loading('Đang kiểm tra kết nối và làm mới dữ liệu hệ thống...', 0);
     try {
       const fresh = await api.get<HealthDetail>('/admin/integrations/health?refresh=1');
       qc.setQueryData(['integrations', 'health'], fresh);
@@ -78,7 +78,7 @@ function IntegrationsView() {
       <>
         <PageHeader
           title="Chính sách & Sao lưu Bảo trì"
-          description="Quản lý quy định vận hành, chấm công theo phiên bản, chế độ bảo trì và sao lưu khôi phục Google Drive."
+          description="Quản lý quy định vận hành, chấm công theo phiên bản, chế độ bảo trì và sao lưu khôi phục hệ thống."
         />
         <SystemGovernanceAndCommsTabs mode="governance" />
       </>
@@ -180,7 +180,7 @@ function IntegrationsView() {
     <>
       <PageHeader
         title="Tích hợp, Đối soát & Mẫu Email"
-        description="Giám sát kết nối Google Sheets, quét đối soát toàn vẹn dữ liệu và quản lý mẫu Email doanh nghiệp."
+        description="Giám sát trạng thái dữ liệu, quét đối soát toàn vẹn và quản lý mẫu Email doanh nghiệp."
         extra={
           <Button icon={<ReloadOutlined />} onClick={handleManualRefresh} loading={refreshing}>
             Kiểm tra &amp; Làm mới
@@ -194,7 +194,7 @@ function IntegrationsView() {
             activeKey={tab}
             onChange={(v) => setTab(v as 'health' | 'reconcile' | 'email')}
             items={[
-              { key: 'health', label: <span><ApiOutlined /> Đồng bộ Google Sheets &amp; Hàng đợi</span>, children: healthPane },
+              { key: 'health', label: <span><ApiOutlined /> Đồng bộ Dữ liệu &amp; Hàng đợi</span>, children: healthPane },
               { key: 'reconcile', label: <span><SafetyCertificateOutlined /> Đối soát Toàn vẹn Dữ liệu</span>, children: <ReconciliationAndEmailPanel mode="reconcile" /> },
               { key: 'email', label: <span><MailOutlined /> Mẫu Email &amp; Gửi thử Gmail</span>, children: <ReconciliationAndEmailPanel mode="email" /> },
             ]}

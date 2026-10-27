@@ -70,7 +70,7 @@ function EmployeesView() {
 
   const handleManualRefresh = async () => {
     setManualRefreshing(true);
-    const hide = message.loading('Đang đồng bộ danh sách nhân sự từ Google Sheets...', 0);
+    const hide = message.loading('Đang làm mới danh sách hồ sơ nhân sự...', 0);
     try {
       const fresh = await api.list<EmployeeRowItem>(buildQueryUrl(true));
       qc.setQueryData(['employees', branchId, stage, staffGroup, status, q, page, perPage], fresh);

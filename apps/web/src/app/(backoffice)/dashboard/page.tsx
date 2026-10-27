@@ -20,7 +20,7 @@ import { HrStoreOperationsReportCard } from '@/ui/components/HrStoreOperationsRe
 import { useJobPositions } from '@/ui/components/JobPositionsManagerModal';
 
 const CHECK_LABELS: Record<string, string> = {
-  google: 'Google API', sheetsCache: 'Bộ nhớ đệm Google Sheets', writeQueue: 'Hàng đợi ghi',
+  google: 'Kết nối dữ liệu', sheetsCache: 'Bộ nhớ dữ liệu', writeQueue: 'Hàng đợi xử lý',
   deadLetters: 'Bản ghi cần đối soát', realtime: 'Kết nối thời gian thực', backup: 'Sao lưu gần nhất',
 };
 
@@ -47,7 +47,7 @@ export default function DashboardPage() {
 
   const handleRefreshAll = async () => {
     setRefreshing(true);
-    const hide = message.loading('Đang đồng bộ số liệu mới nhất từ Google Sheets...', 0);
+    const hide = message.loading('Đang cập nhật số liệu tổng quan mới nhất...', 0);
     try {
       await Promise.all([
         can('account.read') ? api.list('/admin/accounts?per_page=100&refresh=1') : Promise.resolve(),

@@ -48,7 +48,7 @@ function BranchesView() {
 
   const handleManualRefresh = async () => {
     setManualRefreshing(true);
-    const hide = message.loading('Đang đồng bộ danh mục chi nhánh & mẫu ca từ Google Sheets...', 0);
+    const hide = message.loading('Đang làm mới danh mục chi nhánh & mẫu ca...', 0);
     try {
       const [freshBranches, freshShifts] = await Promise.all([
         api.list<BranchRowItem>(buildUrl(true)),
@@ -81,7 +81,7 @@ function BranchesView() {
     onDelete: (r) =>
       modal.confirm({
         title: `Xóa chi nhánh ${r.name}?`,
-        content: 'Chi nhánh sẽ chuyển sang trạng thái xóa mềm trên hệ thống.',
+        content: 'Chi nhánh sẽ được ngừng sử dụng và ẩn khỏi danh sách hoạt động.',
         okText: 'Xác nhận xóa',
         okButtonProps: { danger: true, icon: <DeleteOutlined /> },
         cancelText: 'Hủy bỏ',
