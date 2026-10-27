@@ -1,6 +1,7 @@
 import type { Database } from '../data/database.js';
 import { dayjs } from '../lib/time.js';
 import { singleFlight, tolerantWrite } from './background-write.js';
+import { findLockedPayrollPeriodForDate } from './salary-profile.service.js';
 
 type SweepResult = { markedAbsent: number; restoredCompleted: number };
 const sweepsInFlight = new WeakMap<Database, Promise<SweepResult>>();
@@ -64,6 +65,7 @@ async function runSweep(
 
   for (const a of db.shiftAssignments.all()) {
     if (a.day_type === 'OFF' || a.status === 'ON_LEAVE') continue;
+    if (findLockedPayrollPeriodForDate(db, a.work_date)) continue;
 
     const eid = resolveCanonicalEmpId(a.employee_id);
     const asgKey = `asg:${a.id}`;

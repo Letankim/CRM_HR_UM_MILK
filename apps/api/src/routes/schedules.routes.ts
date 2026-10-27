@@ -1,14 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import {
-  DEFAULT_SHIFT_LABELS,
-  EMPLOYEE_STAGE_LABELS,
-  isEmployeeRole,
-  SHIFT_ASSIGNMENT_STATUSES,
-  SHIFT_ASSIGNMENT_STATUS_LABELS,
-  zListQueryBase,
-  type ShiftAssignment,
-} from '@umbm/shared';
+import { DEFAULT_SHIFT_LABELS, EMPLOYEE_STAGE_LABELS, isEmployeeRole, SHIFT_ASSIGNMENT_STATUSES, SHIFT_ASSIGNMENT_STATUS_LABELS, zListQueryBase, type ShiftAssignment } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
@@ -16,6 +8,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { assertDateNotLockedByPayroll, findLockedPayrollPeriodForDate } from '../services/salary-profile.service.js';
 import { emitScheduleRealtime, findBranchShiftTemplate, healBranchConsistency, resolveEmployeeBranchId } from './account-employee-sync.js';
 import { describePunctuality, parseHm } from './attendance-helpers.js';
 
@@ -67,6 +60,7 @@ export function mapShiftAssignment(
     attendanceStatusColor = punc.punctualityStatus === 'LATE' ? 'volcano' : 'processing';
   }
 
+  const lockedPeriod = findLockedPayrollPeriodForDate(ctx.db, a.work_date);
   return {
     id: a.id, employeeId: emp?.id ?? a.employee_id, employeeCode: emp?.employee_code ?? a.employee_id,
     employeeName: emp?.full_name ?? 'Nhân sự đã xóa', employeeStage: a.employee_stage,
@@ -80,6 +74,7 @@ export function mapShiftAssignment(
     startAt, endAt, scheduledHours: a.scheduled_hours, dayType: a.day_type, status: a.status,
     statusLabel: SHIFT_ASSIGNMENT_STATUS_LABELS[a.status], publishedAt: a.published_at || null,
     attendanceStatusLabel, attendanceStatusColor,
+    isLockedByPayroll: Boolean(lockedPeriod), lockedByPeriodCode: lockedPeriod?.period_code ?? null,
     note: a.note, version: a.version, created_at: a.created_at, updated_at: a.updated_at,
   };
 }
@@ -128,6 +123,7 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.post('/api/admin/schedules', { preHandler: requirePermission('schedule.propose', 'schedule.publish') }, async (request, reply) => {
     const body = zCreateScheduleBody.parse(request.body);
+    assertDateNotLockedByPayroll(ctx.db, body.work_date, 'phân ca mới');
     const emp = ctx.db.employees.get(body.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === body.employee_id);
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy hồ sơ nhân sự được chọn', body.employee_id);
     const branchId = body.branch_id || emp.branch_id;
@@ -160,6 +156,8 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
     const before = ctx.db.shiftAssignments.get(id);
     if (!before) throw Errors.notFound('Không tìm thấy bản ghi phân ca');
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
+    assertDateNotLockedByPayroll(ctx.db, before.work_date, 'chỉnh sửa ca làm việc');
+    if (body.work_date && body.work_date !== before.work_date) assertDateNotLockedByPayroll(ctx.db, body.work_date, 'chuyển ca làm việc sang ngày');
 
     const { version, ...patch } = body;
     const nextEmp = patch.employee_id ? (ctx.db.employees.get(patch.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === patch.employee_id)) : undefined;
@@ -189,6 +187,7 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
     const before = ctx.db.shiftAssignments.get(id);
     if (!before) throw Errors.notFound('Không tìm thấy bản ghi phân ca');
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
+    assertDateNotLockedByPayroll(ctx.db, before.work_date, 'xóa ca làm việc');
     await ctx.db.shiftAssignments.softDelete(id, body.version ?? before.version, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'schedule.delete', entity: 'SHIFT_ASSIGNMENTS', entityId: id, before: { work_date: before.work_date, shift_code: before.shift_code } });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: 'SHIFT_DELETED', actorId: request.auth!.user.id });
@@ -204,6 +203,7 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
       if (!a) continue;
       lastBranchId = resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id);
       assertBranchAccess(request, lastBranchId);
+      assertDateNotLockedByPayroll(ctx.db, a.work_date, body.action === 'DELETE' ? 'xóa ca làm việc' : 'duyệt ca làm việc');
       patches.push({ id: a.id, expectedVersion: a.version, patch: body.action === 'DELETE' ? { is_deleted: true } : { status: 'PUBLISHED', published_at: pubAt } });
       processedIds.push(a.id);
       empIds.add(a.employee_id);

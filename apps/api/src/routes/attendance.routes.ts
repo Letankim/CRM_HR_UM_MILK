@@ -8,6 +8,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { applyApprovedAdjustmentToShift, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { buildPaginatedAttendanceSessions, calculateHaversineMeters, describePunctuality, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto } from './attendance-helpers.js';
@@ -144,6 +145,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const before = ctx.db.attendanceEvents.get(id);
     if (!before) throw Errors.notFound('Sự kiện điểm danh', id);
     assertBranchAccess(request, before.branch_id);
+    assertDateNotLockedByPayroll(ctx.db, before.work_date, 'chỉnh sửa điểm danh');
     const nextType = body.type ?? before.type, nextDate = body.work_date ?? before.work_date, nextShiftCode = body.shift_code ?? before.shift_code;
     const nextHm = body.check_time_hm ?? dayjs(before.server_time).format('HH:mm'), nextServerTime = `${nextDate}T${nextHm}:00+07:00`;
     const assign = ctx.db.shiftAssignments.get(before.assignment_id);
@@ -162,6 +164,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const before = ctx.db.attendanceEvents.get(id);
     if (!before) throw Errors.notFound('Sự kiện điểm danh', id);
     assertBranchAccess(request, before.branch_id);
+    assertDateNotLockedByPayroll(ctx.db, before.work_date, 'xóa điểm danh');
     await ctx.db.attendanceEvents.softDelete(id, body.version ?? before.version, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'attendance.event.delete', entity: 'ATTENDANCE_EVENTS', entityId: id, before: { type: before.type, work_date: before.work_date } });
     return sendSuccess(request, 'Đã xóa bản ghi điểm danh', { id });
@@ -187,6 +190,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     assertBranchAccess(request, emp.branch_id);
     const matchedShift = (body.assignment_id ? ctx.db.shiftAssignments.get(body.assignment_id) : undefined)
       ?? ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.shift_code === body.shift_code);
+    assertDateNotLockedByPayroll(ctx.db, matchedShift?.work_date ?? body.work_date, 'tạo phiếu bổ sung công');
     const shiftStart = matchedShift?.start_at || body.requested_check_in_at, shiftEnd = matchedShift?.end_at || body.requested_check_out_at, shiftHours = matchedShift?.scheduled_hours || body.requested_hours;
     const created = await ctx.db.attendanceAdjustments.insert({
       adjustment_code: `ADJ-${String(ctx.db.attendanceAdjustments.all(true).length + 1).padStart(4, '0')}`,
@@ -204,12 +208,9 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const { id } = request.params as { id: string }, body = zDecideAdjustmentBody.parse(request.body), before = ctx.db.attendanceAdjustments.get(id);
     if (!before) throw Errors.notFound('Phiếu bổ sung công', id);
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
+    assertDateNotLockedByPayroll(ctx.db, before.work_date, 'xử lý phiếu bổ sung công');
     const actorId = request.auth!.user.id;
-    const patch = body.action === 'STORE_CONFIRM'
-      ? { status: 'STORE_CONFIRMED' as const, store_confirmed_by: actorId, store_confirmed_at: nowIso(), store_note: body.decision_reason }
-      : body.action === 'HR_APPROVE'
-        ? { status: 'APPROVED' as const, hr_decision: 'APPROVED', decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), applied_to_record: true }
-        : { status: 'REJECTED' as const, hr_decision: 'REJECTED', decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), applied_to_record: false };
+    const patch = body.action === 'STORE_CONFIRM' ? { status: 'STORE_CONFIRMED' as const, store_confirmed_by: actorId, store_confirmed_at: nowIso(), store_note: body.decision_reason } : body.action === 'HR_APPROVE' ? { status: 'APPROVED' as const, hr_decision: 'APPROVED', decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), applied_to_record: true } : { status: 'REJECTED' as const, hr_decision: 'REJECTED', decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), applied_to_record: false };
     const updated = await ctx.db.attendanceAdjustments.update(id, body.version, patch, actorId);
     if (body.action === 'HR_APPROVE') await applyApprovedAdjustmentToShift(ctx.db, id, actorId);
     await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.decide', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: id, before: { status: before.status }, after: { status: updated.status, hr_decision: updated.hr_decision } });

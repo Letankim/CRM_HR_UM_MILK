@@ -7,6 +7,7 @@ import { sendSuccess } from '../lib/response.js';
 import { dayjs } from '../lib/time.js';
 import { auditContext, requireAuth } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { mapAttendanceEvent, migrateLegacyBase64Photos } from './attendance-helpers.js';
 import { mapShiftAssignment } from './schedules.routes.js';
@@ -169,6 +170,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     const { todayStr, nowHm } = getVnDateAndHm();
 
     if (body.work_date < todayStr) throw Errors.fieldValidation('work_date', 'OUT_OF_RANGE', `Không được phép đăng ký ca làm việc cho ngày trong quá khứ (${dayjs(body.work_date).format('DD/MM/YYYY')}). Hôm nay là ${dayjs(todayStr).format('DD/MM/YYYY')}.`, body.work_date);
+    assertDateNotLockedByPayroll(ctx.db, body.work_date, 'đăng ký ca làm việc');
     const leaveOnDate = ctx.db.leaveRequests.find((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.leave_date === body.work_date && (l.status === 'APPROVED' || l.status === 'PENDING'));
     if (leaveOnDate) throw Errors.fieldValidation('work_date', 'DUPLICATE_VALUE', `Bạn đã đăng ký nghỉ OFF trong ngày ${dayjs(body.work_date).format('DD/MM/YYYY')}, không thể đăng ký ca làm việc trùng ngày nghỉ.`, body.work_date);
 
@@ -200,6 +202,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     if (!shift || (shift.employee_id !== emp.id && shift.employee_id !== emp.employee_code)) {
       throw Errors.forbidden('Bạn chỉ được phép hủy ca làm việc của chính mình');
     }
+    assertDateNotLockedByPayroll(ctx.db, shift.work_date, 'hủy ca làm việc');
     if (ctx.db.attendanceEvents.find((e) => e.assignment_id === shift.id)) {
       throw Errors.badRequest('Ca làm việc này đã có dữ liệu điểm danh thực tế, không thể hủy ca');
     }

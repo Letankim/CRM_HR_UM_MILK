@@ -40,7 +40,7 @@ export function useScheduleBulkActions({ canEdit }: { canEdit: boolean }) {
           type: 'primary',
           icon: <CheckOutlined />,
           loading: bulkMutation.isPending,
-          eligibleFilter: (r) => r.status === 'DRAFT',
+          eligibleFilter: (r) => r.status === 'DRAFT' && !r.isLockedByPayroll,
           onClick: (rows, clear) => bulkMutation.mutate({ action: 'PUBLISH', rows, clear }),
         },
         {
@@ -49,6 +49,7 @@ export function useScheduleBulkActions({ canEdit }: { canEdit: boolean }) {
           danger: true,
           icon: <DeleteOutlined />,
           loading: bulkMutation.isPending,
+          eligibleFilter: (r) => !r.isLockedByPayroll,
           onClick: (rows, clear) => {
             modal.confirm({
               title: `Xóa ${rows.length} phân công ca đã chọn?`,

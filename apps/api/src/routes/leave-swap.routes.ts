@@ -8,6 +8,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 
 const zCreateLeaveBody = z.object({ employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'), leave_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày nghỉ phải theo định dạng YYYY-MM-DD'), kind: z.enum(['PROBATION_OFF', 'WEEKLY_OFF', 'UNPAID_LEAVE']).default('WEEKLY_OFF'), shift_code: z.string().default('CA_SANG'), reason: z.string().trim().min(2, 'Vui lòng nhập lý do xin nghỉ').max(300), status: z.enum(['DRAFT', 'PENDING']).default('PENDING') });
@@ -38,6 +39,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     const emp = ctx.db.employees.get(body.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === body.employee_id);
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy nhân sự', body.employee_id);
     assertBranchAccess(request, emp.branch_id);
+    assertDateNotLockedByPayroll(ctx.db, body.leave_date, 'đăng ký nghỉ OFF');
     const dupLeave = ctx.db.leaveRequests.find((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.leave_date === body.leave_date && l.status !== 'REJECTED' && l.status !== 'CANCELLED');
     if (dupLeave) throw Errors.fieldValidation('leave_date', 'DUPLICATE_VALUE', `Nhân sự đã có đơn đăng ký nghỉ OFF trong ngày ${body.leave_date}`, body.leave_date);
     const usedCount = ctx.db.leaveRequests.filter((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.status !== 'REJECTED' && l.status !== 'CANCELLED').length;
@@ -58,6 +60,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     const { id } = request.params as { id: string }, body = zDecideLeaveBody.parse(request.body), before = ctx.db.leaveRequests.get(id);
     if (!before) throw Errors.notFound('Đơn xin nghỉ OFF', id);
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
+    assertDateNotLockedByPayroll(ctx.db, before.leave_date, 'phê duyệt đơn nghỉ OFF');
     if (body.decision === 'REJECTED' && !body.decision_reason.trim()) throw Errors.fieldValidation('decision_reason', 'REQUIRED_FIELD', 'Vui lòng nhập lý do từ chối đơn xin nghỉ OFF', '');
     const actorId = request.auth!.user.id;
     const emp = ctx.db.employees.get(before.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === before.employee_id);
@@ -99,6 +102,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     const body = zCreateSwapBody.parse(request.body);
     const fromAssign = ctx.db.shiftAssignments.get(body.from_assignment_id);
     if (!fromAssign) throw Errors.fieldValidation('from_assignment_id', 'INVALID_VALUE', 'Không tìm thấy ca làm việc gốc cần đổi', body.from_assignment_id);
+    assertDateNotLockedByPayroll(ctx.db, fromAssign.work_date, 'tạo yêu cầu đổi ca');
     if (fromAssign.status !== 'PUBLISHED') throw Errors.badRequest('Chỉ được phép tạo yêu cầu đổi ca đối với những ca đã được Quản lý cửa hàng hoặc HR duyệt phân ca chính thức');
     const reqEmp = ctx.db.employees.get(body.requester_id) ?? ctx.db.employees.find((e) => e.employee_code === body.requester_id);
     const peerEmp = ctx.db.employees.get(body.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === body.peer_id);
@@ -145,6 +149,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     const { id } = request.params as { id: string }, body = zDecideSwapBody.parse(request.body), before = ctx.db.shiftSwaps.get(id);
     if (!before) throw Errors.notFound('Yêu cầu đổi ca', id);
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.requester_id, before.branch_id));
+    assertDateNotLockedByPayroll(ctx.db, before.from_work_date, 'duyệt yêu cầu đổi ca');
     if (body.decision === 'APPROVED') {
       if (before.status !== 'PEER_ACCEPTED') throw Errors.badRequest('Chỉ được duyệt đổi ca sau khi đồng nghiệp nhận ca đã xác nhận đồng ý (Bước 2)');
       const peerEmp = ctx.db.employees.get(before.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === before.peer_id);
@@ -187,6 +192,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     const body = zCreateEmergencyBody.parse(request.body);
     const emp = ctx.db.employees.get(body.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === body.employee_id);
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy nhân sự', body.employee_id);
+    assertDateNotLockedByPayroll(ctx.db, body.work_date, 'báo nghỉ đột xuất');
     const existingShift = (body.assignment_id ? ctx.db.shiftAssignments.get(body.assignment_id) : undefined) ?? ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.day_type !== 'OFF');
     const created = await ctx.db.emergencyLeaves.insert({
       emergency_code: `EMG-${String(ctx.db.emergencyLeaves.all(true).length + 1).padStart(4, '0')}`, employee_id: emp.id, assignment_id: existingShift?.id || body.assignment_id,
@@ -202,8 +208,8 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     const { id } = request.params as { id: string }, body = zHandleEmergencyBody.parse(request.body), before = ctx.db.emergencyLeaves.get(id);
     if (!before) throw Errors.notFound('Báo nghỉ đột xuất', id);
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
-    const actorId = request.auth!.user.id, isEscalate = body.action === 'ESCALATE';
-    const nextStatus = body.action === 'ASSIGN_REPLACEMENT' ? 'REPLACEMENT_FOUND' : isEscalate ? 'ESCALATED' : 'RESOLVED';
+    assertDateNotLockedByPayroll(ctx.db, before.work_date, 'xử lý báo nghỉ đột xuất');
+    const actorId = request.auth!.user.id, isEscalate = body.action === 'ESCALATE', nextStatus = body.action === 'ASSIGN_REPLACEMENT' ? 'REPLACEMENT_FOUND' : isEscalate ? 'ESCALATED' : 'RESOLVED';
     const updated = await ctx.db.emergencyLeaves.update(id, body.version, { status: nextStatus, escalated: isEscalate || before.escalated, replacement_id: body.replacement_id || before.replacement_id, shift_coverage_status: body.replacement_id ? 'COVERED' : isEscalate ? 'SHORT_STAFFED_ESCALATED' : 'RESOLVED', escalated_at: isEscalate ? nowIso() : before.escalated_at, escalated_to_role: isEscalate ? 'HR' : before.escalated_to_role, handled_by: actorId, handled_at: nowIso(), resolution_note: body.resolution_note }, actorId);
     if (!isEscalate) {
       const emp = ctx.db.employees.get(before.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === before.employee_id);

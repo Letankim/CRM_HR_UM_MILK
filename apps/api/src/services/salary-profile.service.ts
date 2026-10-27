@@ -1,12 +1,15 @@
 import {
   EMPLOYEE_STAGE_LABELS,
+  PAY_PERIOD_STATUS_LABELS,
   PAY_RATE_TYPE_LABELS,
   PAY_RATE_UNIT_LABELS,
   SALARY_PROFILE_STATUS_LABELS,
   type Employee,
+  type PayPeriod,
   type PayRate,
 } from '@umbm/shared';
 import type { Database } from '../data/database.js';
+import { Errors } from '../lib/errors.js';
 import { dayjs } from '../lib/time.js';
 
 /**
@@ -106,3 +109,28 @@ export function isProfileLocked(db: Database, profileId: string): boolean {
 }
 
 export const dayBefore = (date: string) => dayjs(date).subtract(1, 'day').format('YYYY-MM-DD');
+
+/** Tìm kỳ lương đã chốt (APPROVED / PUBLISHED / PAID) bao phủ ngày công `workDate` */
+export function findLockedPayrollPeriodForDate(db: Database, workDate: string): PayPeriod | undefined {
+  if (!workDate) return undefined;
+  return db.payPeriods.find(
+    (p) =>
+      (p.status === 'APPROVED' || p.status === 'PUBLISHED' || p.status === 'PAID') &&
+      p.from_date <= workDate &&
+      p.to_date >= workDate,
+  );
+}
+
+/** Chặn mọi thao tác thêm/sửa/xóa ca làm việc, điểm danh hoặc đơn từ thuộc kỳ lương đã chốt */
+export function assertDateNotLockedByPayroll(
+  db: Database,
+  workDate: string,
+  actionDesc = 'thay đổi dữ liệu ca làm việc',
+): void {
+  const locked = findLockedPayrollPeriodForDate(db, workDate);
+  if (locked) {
+    throw Errors.conflict(
+      `Ngày ${dayjs(workDate).format('DD/MM/YYYY')} thuộc kỳ lương "${locked.name}" (${locked.period_code}) đã chốt (${PAY_PERIOD_STATUS_LABELS[locked.status]}). Không được phép ${actionDesc} trong kỳ lương đã khóa.`,
+    );
+  }
+}

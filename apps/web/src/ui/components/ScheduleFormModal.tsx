@@ -19,6 +19,7 @@ export interface ScheduleAssignmentItem {
   scheduledHours: number; dayType: 'WORK' | 'OFF' | 'OT'; status: string; statusLabel: string;
   publishedAt: string | null; note: string; version: number; created_at: string;
   attendanceStatusLabel?: string; attendanceStatusColor?: string;
+  isLockedByPayroll?: boolean; lockedByPeriodCode?: string | null;
 }
 
 interface ScheduleFormValues {
@@ -39,9 +40,11 @@ export function ScheduleFormModal({
   const { message } = App.useApp();
   const qc = useQueryClient();
   const hasSchedulePerm = usePermissionGuard({ perms: ['schedule.propose', 'schedule.publish'], allowed: canEdit });
+  const isLocked = Boolean(editing?.isLockedByPayroll);
+  const canModifyShift = hasSchedulePerm && !isLocked;
   const watchedEmpId = Form.useWatch('employee_id', form);
   const watchedStatus = Form.useWatch('status', form);
-  const isEditingAbsent = Boolean(editing && (watchedStatus === 'ABSENT' || isAbsentShiftRecord(editing as unknown as Record<string, unknown>)));
+  const isEditingAbsent = !isLocked && Boolean(editing && (watchedStatus === 'ABSENT' || isAbsentShiftRecord(editing as unknown as Record<string, unknown>)));
   const selectedEmpBranchId = useMemo(
     () => employees.find((e) => e.value === watchedEmpId)?.branchId || editing?.branchId || 'ALL',
     [employees, watchedEmpId, editing?.branchId],
@@ -120,7 +123,7 @@ export function ScheduleFormModal({
       open={open}
       onCancel={onClose}
       footer={
-        hasSchedulePerm ? (
+        canModifyShift ? (
           <Flex justify={editing ? 'space-between' : 'flex-end'} align="center" wrap="wrap" gap={8} style={{ width: '100%' }}>
             {editing && (
               <Popconfirm
@@ -132,7 +135,7 @@ export function ScheduleFormModal({
                 cancelButtonProps={{ icon: <CloseOutlined /> }}
                 onConfirm={() => deleteMutation.mutateAsync()}
               >
-                <GuardButton danger icon={<DeleteOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={hasSchedulePerm} loading={deleteMutation.isPending}>
+                <GuardButton danger icon={<DeleteOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={canModifyShift} loading={deleteMutation.isPending}>
                   Xóa ca này
                 </GuardButton>
               </Popconfirm>
@@ -146,7 +149,7 @@ export function ScheduleFormModal({
               )}
               {editing && editing.status === 'DRAFT' && (
                 <GuardButton
-                  type="primary" icon={<CheckOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={hasSchedulePerm} loading={saveMutation.isPending}
+                  type="primary" icon={<CheckOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={canModifyShift} loading={saveMutation.isPending}
                   onClick={async () => { const vals = await form.validateFields(); saveMutation.mutate({ ...vals, status: 'PUBLISHED' }); }}
                 >
                   Duyệt &amp; Phát hành ca
@@ -155,7 +158,7 @@ export function ScheduleFormModal({
               <GuardButton
                 type={editing && editing.status === 'DRAFT' ? 'default' : 'primary'}
                 icon={editing ? <SaveOutlined /> : <CheckOutlined />}
-                perms={['schedule.propose', 'schedule.publish']} allowed={hasSchedulePerm} loading={saveMutation.isPending}
+                perms={['schedule.propose', 'schedule.publish']} allowed={canModifyShift} loading={saveMutation.isPending}
                 onClick={async () => saveMutation.mutate(await form.validateFields())}
               >
                 {editing ? 'Lưu cập nhật' : 'Xác nhận phân ca'}
@@ -177,7 +180,10 @@ export function ScheduleFormModal({
       style={{ maxWidth: 'calc(100vw - 24px)' }}
       forceRender
     >
-      {editing && editing.status === 'DRAFT' && (
+      {isLocked && (
+        <Alert type="info" showIcon style={{ marginTop: 8, marginBottom: 8 }} message={`Ca làm việc này thuộc kỳ lương đã chốt (${editing?.lockedByPeriodCode || 'Đã phê duyệt'}), đã khóa chỉnh sửa và xóa để bảo toàn dữ liệu bảng lương.`} />
+      )}
+      {!isLocked && editing && editing.status === 'DRAFT' && (
         <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca đăng ký đang chờ Quản lý cửa hàng hoặc HR phê duyệt. Bấm 'Duyệt & Phát hành ca' để chuyển sang Đã phân ca chính thức và cho phép nhân sự điểm danh." />
       )}
       {isEditingAbsent && (
@@ -187,7 +193,7 @@ export function ScheduleFormModal({
           action={<Button size="small" type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công</Button>}
         />
       )}
-      <Form<ScheduleFormValues> form={form} layout="vertical" disabled={!hasSchedulePerm} style={{ marginTop: 12 }} onValuesChange={(changed) => { if (changed.shift_code && hoursMap[changed.shift_code]) form.setFieldValue('scheduled_hours', hoursMap[changed.shift_code]); }}>
+      <Form<ScheduleFormValues> form={form} layout="vertical" disabled={!canModifyShift} style={{ marginTop: 12 }} onValuesChange={(changed) => { if (changed.shift_code && hoursMap[changed.shift_code]) form.setFieldValue('scheduled_hours', hoursMap[changed.shift_code]); }}>
         <Form.Item name="employee_id" label="Nhân sự phân công" rules={[{ required: true, message: 'Vui lòng chọn nhân sự' }]}>
           <Select showSearch optionFilterProp="label" options={employeeSelectOptions} placeholder="Chọn nhân sự" />
         </Form.Item>

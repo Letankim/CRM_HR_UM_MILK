@@ -85,6 +85,11 @@ export function buildScheduleColumns({ canEdit, onApprove, onEdit, onDelete }: B
               {r.attendanceStatusLabel}
             </Tag>
           )}
+          {r.isLockedByPayroll && (
+            <Tag color="purple" style={{ margin: 0, borderRadius: 2, fontSize: 11 }}>
+              Đã chốt lương ({r.lockedByPeriodCode || 'Khóa'})
+            </Tag>
+          )}
         </Space>
       ),
     },
@@ -95,26 +100,28 @@ export function buildScheduleColumns({ canEdit, onApprove, onEdit, onDelete }: B
       fixed: 'right',
       align: 'right',
       render: (_, r) => {
-        const isAbsent = isAbsentShiftRecord(r as unknown as Record<string, unknown>);
+        const isAbsent = !r.isLockedByPayroll && isAbsentShiftRecord(r as unknown as Record<string, unknown>);
         return (
           <RowActionButtons
             detailTooltip="Xem chi tiết ca làm việc"
             onViewDetail={() => onEdit(r)}
             menuItems={
-              canEdit
-                ? [
-                    ...(r.status === 'DRAFT' && onApprove
-                      ? [{ key: 'approve', icon: <CheckOutlined style={{ color: '#16A34A' }} />, label: 'Duyệt & Phát hành ca', onClick: () => onApprove(r) }]
-                      : []),
-                    ...(isAbsent
-                      ? [{ key: 'adj', icon: <FileAddOutlined style={{ color: '#DC2626' }} />, label: 'Tạo phiếu bổ sung công', onClick: () => onEdit(r) }]
-                      : []),
-                    { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa phân ca', onClick: () => onEdit(r) },
-                    { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa phân ca', onClick: () => onDelete(r) },
-                  ]
-                : isAbsent
-                  ? [{ key: 'adj', icon: <FileAddOutlined style={{ color: '#DC2626' }} />, label: 'Tạo phiếu bổ sung công', onClick: () => onEdit(r) }]
-                  : []
+              r.isLockedByPayroll
+                ? []
+                : canEdit
+                  ? [
+                      ...(r.status === 'DRAFT' && onApprove
+                        ? [{ key: 'approve', icon: <CheckOutlined style={{ color: '#16A34A' }} />, label: 'Duyệt & Phát hành ca', onClick: () => onApprove(r) }]
+                        : []),
+                      ...(isAbsent
+                        ? [{ key: 'adj', icon: <FileAddOutlined style={{ color: '#DC2626' }} />, label: 'Tạo phiếu bổ sung công', onClick: () => onEdit(r) }]
+                        : []),
+                      { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa phân ca', onClick: () => onEdit(r) },
+                      { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa phân ca', onClick: () => onDelete(r) },
+                    ]
+                  : isAbsent
+                    ? [{ key: 'adj', icon: <FileAddOutlined style={{ color: '#DC2626' }} />, label: 'Tạo phiếu bổ sung công', onClick: () => onEdit(r) }]
+                    : []
             }
           />
         );
