@@ -5,6 +5,15 @@ import type { TableProps } from 'antd/es/table';
 import { CloseOutlined, FilterOutlined } from '@ant-design/icons';
 import { type Key, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { BRAND } from '../theme';
+import {
+  buildTableSelections,
+  describeSelectionBreakdown,
+  getRowStateLabel,
+  isRowActionable,
+  type TableSelectionPreset,
+} from './table-selection-helpers';
+
+export { buildTableSelections, describeSelectionBreakdown, getRowStateLabel, isRowActionable, type TableSelectionPreset };
 
 export interface BulkActionItem<TRecord> {
   key: string;
@@ -15,7 +24,7 @@ export interface BulkActionItem<TRecord> {
   loading?: boolean;
   disabled?: boolean;
   confirm?: string;
-  /** Điều kiện lọc các bản ghi hợp lệ cho thao tác (VD: chỉ chọn đơn đang Chờ duyệt). */
+  /** Điều kiện lọc các bản ghi hợp lệ theo đúng trạng thái của bảng cho thao tác này. */
   eligibleFilter?: (row: TRecord) => boolean;
   onClick: (selectedRows: TRecord[], clearSelection: () => void) => unknown;
 }
@@ -27,35 +36,19 @@ export interface BulkActionBarProps<TRecord> {
   actions?: BulkActionItem<TRecord>[];
 }
 
-const ACTIONABLE_STATUSES = new Set([
-  'PENDING', 'STORE_CONFIRMED', 'PENDING_PEER', 'PEER_ACCEPTED', 'REPORTED',
-  'DRAFT', 'PENDING_ACTIVATION', 'LOCKED', 'NEW', 'INTERVIEW_SCHEDULED',
-]);
-
-export function isRowActionable(row: unknown): boolean {
-  if (!row || typeof row !== 'object') return false;
-  const r = row as Record<string, unknown>;
-  if (r.status && ACTIONABLE_STATUSES.has(String(r.status))) return true;
-  if (r.decision && ACTIONABLE_STATUSES.has(String(r.decision))) return true;
-  return r.stage === 'PROBATION' || Boolean(r.isAbsentShift);
-}
-
 /**
- * Thanh hành động hàng loạt (Bulk Action Bar) thông minh:
- * - Tự động đếm số bản ghi hợp lệ theo từng nút hành động (eligibleFilter).
- * - Hỗ trợ lọc nhanh "Chỉ chọn mục chờ xử lý" khi tích chọn tất cả trang (bao gồm cả mục đã duyệt).
+ * Thanh hành động hàng loạt (Bulk Action Bar) thích ứng theo đúng trạng thái của từng bảng:
+ * - Hiển thị phân rã số lượng theo đúng nhãn trạng thái thực tế của bảng đang xem.
+ * - Khi chọn lẫn nhiều trạng thái, hiển thị nút lọc nhanh theo từng trạng thái cụ thể của bảng.
  */
 export function BulkActionBar<TRecord>({
   selectedRows, onClearSelection, onFilterSelection, actions = [],
 }: BulkActionBarProps<TRecord>) {
   if (selectedRows.length === 0) return null;
 
-  const filterableActions = actions.filter((a) => typeof a.eligibleFilter === 'function');
-  const actionableRows = selectedRows.filter((row) =>
-    filterableActions.length > 0 ? filterableActions.some((a) => a.eligibleFilter!(row)) : isRowActionable(row),
-  );
-  const hasMixedSelection = actionableRows.length > 0 && actionableRows.length < selectedRows.length;
-  const allAlreadyProcessed = filterableActions.length > 0 && actionableRows.length === 0;
+  const breakdown = describeSelectionBreakdown(selectedRows, actions);
+  const hasMultipleStates = breakdown.length > 1;
+  const singleGroup = breakdown.length === 1 ? breakdown[0] : null;
 
   return (
     <div style={{ background: BRAND.primaryBg, borderBottom: `1px solid ${BRAND.primaryBorder}`, padding: '10px 16px' }}>
@@ -64,22 +57,29 @@ export function BulkActionBar<TRecord>({
           <Tag color="blue" style={{ margin: 0, borderRadius: 4, fontWeight: 600, fontSize: 12, padding: '2px 8px' }}>
             Đã chọn {selectedRows.length} bản ghi
           </Tag>
-          {hasMixedSelection && (
+          {singleGroup && singleGroup.label !== 'Bản ghi' && (
+            <Tag color={singleGroup.isActionable ? 'gold' : 'cyan'} style={{ margin: 0, borderRadius: 4, fontSize: 12 }}>
+              {singleGroup.rows.length} {singleGroup.label}
+            </Tag>
+          )}
+          {hasMultipleStates && (
             <>
               <Tag color="gold" style={{ margin: 0, borderRadius: 4, fontSize: 12 }}>
-                {actionableRows.length} mục chờ xử lý · {selectedRows.length - actionableRows.length} mục đã xử lý
+                {breakdown.map((g) => `${g.rows.length} ${g.label}`).join(' · ')}
               </Tag>
-              {onFilterSelection && (
-                <Button size="small" type="primary" ghost icon={<FilterOutlined />} onClick={() => onFilterSelection(actionableRows)}>
-                  Chỉ chọn mục chờ xử lý ({actionableRows.length})
+              {onFilterSelection && breakdown.map((g) => (
+                <Button
+                  key={g.label}
+                  size="small"
+                  type={g.isActionable ? 'primary' : 'default'}
+                  ghost={g.isActionable}
+                  icon={<FilterOutlined />}
+                  onClick={() => onFilterSelection(g.rows)}
+                >
+                  Chỉ giữ: {g.label} ({g.rows.length})
                 </Button>
-              )}
+              ))}
             </>
-          )}
-          {allAlreadyProcessed && (
-            <Tag color="default" style={{ margin: 0, borderRadius: 4, fontSize: 12 }}>
-              Các mục đang chọn đều đã hoàn tất duyệt/xử lý
-            </Tag>
           )}
           <Button size="small" type="text" icon={<CloseOutlined />} onClick={onClearSelection}>Bỏ chọn tất cả</Button>
         </Space>
@@ -100,7 +100,11 @@ export function BulkActionBar<TRecord>({
               </Button>
             );
             if (isDisabled && act.eligibleFilter) {
-              return <Tooltip key={act.key} title="Không có bản ghi nào trong danh sách đang chọn ở trạng thái chờ xử lý cho thao tác này">{btn}</Tooltip>;
+              return (
+                <Tooltip key={act.key} title={`Các bản ghi đang chọn không ở trạng thái hợp lệ để thực hiện "${act.label}"`}>
+                  {btn}
+                </Tooltip>
+              );
             }
             return act.confirm ? (
               <Popconfirm key={act.key} title={act.confirm} okText="Xác nhận" cancelText="Hủy bỏ" okButtonProps={{ danger: act.danger }} onConfirm={() => act.onClick(eligibleRows, onClearSelection)}>
@@ -116,10 +120,11 @@ export function BulkActionBar<TRecord>({
 
 export interface SelectableTableProps<TRecord extends object> extends TableProps<TRecord> {
   bulkActions?: BulkActionItem<TRecord>[] | ((selectedRows: TRecord[], clearSelection: () => void) => BulkActionItem<TRecord>[]);
+  selectionPresets?: TableSelectionPreset<TRecord>[];
 }
 
 export function SelectableTable<TRecord extends object>({
-  bulkActions = [], dataSource = [], rowKey = 'id', columns, scroll, ...rest
+  bulkActions = [], selectionPresets, dataSource = [], rowKey = 'id', columns, scroll, ...rest
 }: SelectableTableProps<TRecord>) {
   const getKey = (r: TRecord): string => typeof rowKey === 'function' ? String(rowKey(r)) : String((r as Record<string, unknown>)[String(rowKey)] ?? '');
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
@@ -150,6 +155,11 @@ export function SelectableTable<TRecord extends object>({
   }, [columns]);
 
   const resolvedActions = typeof bulkActions === 'function' ? bulkActions(selectedRows, clearSelection) : bulkActions;
+  const selections = useMemo(
+    () => buildTableSelections(dataSource, getKey, setSelectedRowKeys, resolvedActions, selectionPresets),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dataSource, resolvedActions, selectionPresets],
+  );
 
   return (
     <>
@@ -158,19 +168,9 @@ export function SelectableTable<TRecord extends object>({
         rowKey={rowKey} dataSource={dataSource} columns={normalizedColumns}
         scroll={scroll ? { ...scroll, x: typeof scroll.x === 'number' ? Math.max(scroll.x, totalScrollX) : totalScrollX } : { x: totalScrollX }}
         rowSelection={{
-          selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys),
-          selections: [
-            { key: 'all-page', text: 'Chọn tất cả trang này', onSelect: () => setSelectedRowKeys(dataSource.map(getKey)) },
-            {
-              key: 'only-actionable', text: 'Chỉ chọn mục chờ duyệt / chờ xử lý',
-              onSelect: () => {
-                const filterable = resolvedActions.filter((a) => typeof a.eligibleFilter === 'function');
-                const rows = dataSource.filter((r) => (filterable.length > 0 ? filterable.some((a) => a.eligibleFilter!(r)) : isRowActionable(r)));
-                setSelectedRowKeys(rows.map(getKey));
-              },
-            },
-            { key: 'clear-all', text: 'Bỏ chọn tất cả', onSelect: () => setSelectedRowKeys([]) },
-          ],
+          selectedRowKeys,
+          onChange: (keys) => setSelectedRowKeys(keys),
+          selections,
         }}
         {...rest}
       />

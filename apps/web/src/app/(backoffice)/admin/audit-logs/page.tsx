@@ -1,13 +1,7 @@
 'use client';
 
 import { Alert, App, Segmented, Space, Tag, Typography } from 'antd';
-import {
-  AuditOutlined,
-  CloseOutlined,
-  DownloadOutlined,
-  FolderOpenOutlined,
-  RollbackOutlined,
-} from '@ant-design/icons';
+import { AuditOutlined, CloseOutlined, DownloadOutlined, FolderOpenOutlined, RollbackOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Suspense, useState } from 'react';
 import dayjs from 'dayjs';
@@ -108,10 +102,8 @@ function AuditLogsView() {
       modal.confirm({
         title: 'Khôi phục toàn bộ nhật ký lưu trữ về danh sách hiện hành?',
         content: 'Tất cả bản ghi trong Kho Lưu Trữ sẽ được đưa trở lại danh sách Nhật ký Hiện hành.',
-        okText: 'Khôi phục tất cả',
-        cancelText: 'Hủy bỏ',
-        okButtonProps: { icon: <RollbackOutlined /> },
-        cancelButtonProps: { icon: <CloseOutlined /> },
+        okText: 'Khôi phục tất cả', cancelText: 'Hủy bỏ',
+        okButtonProps: { icon: <RollbackOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> },
         onOk: () => archiveMut.mutateAsync({ mode: 'RESTORE', ids: [] }),
       });
       return;
@@ -119,10 +111,8 @@ function AuditLogsView() {
     modal.confirm({
       title: 'Lưu trữ & Làm trống danh sách Nhật ký Hiện hành?',
       content: 'Toàn bộ phiên/nhật ký hiện tại sẽ được làm trống khỏi màn hình chính nhưng vẫn được bảo toàn 100% trong tab "Kho Lưu trữ Đã dọn" và ghi nhận vào Nhật ký Sao lưu Hệ thống.',
-      okText: 'Xác nhận Lưu trữ & Làm trống',
-      cancelText: 'Hủy bỏ',
-      okButtonProps: { icon: <FolderOpenOutlined /> },
-      cancelButtonProps: { icon: <CloseOutlined /> },
+      okText: 'Xác nhận Lưu trữ & Làm trống', cancelText: 'Hủy bỏ',
+      okButtonProps: { icon: <FolderOpenOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> },
       onOk: () => archiveMut.mutateAsync({ mode: 'ALL_ACTIVE', reason: 'Quản trị viên lưu trữ và dọn trống phiên kiểm toán hiện hành' }),
     });
   };
@@ -132,14 +122,8 @@ function AuditLogsView() {
   return (
     <>
       <Alert
-        type={view === 'ARCHIVED' ? 'warning' : 'info'}
-        showIcon
-        style={{ marginBottom: 12 }}
-        message={
-          view === 'ARCHIVED'
-            ? 'Kho Lưu trữ Đã dọn: Toàn bộ các phiên và nhật ký kiểm toán đã làm trống khỏi màn hình chính đều được lưu trữ an toàn tại đây. Bạn có thể tra cứu, xuất Excel hoặc khôi phục bất kỳ lúc nào.'
-            : 'Nhật ký Kiểm toán Hệ thống: Bạn có thể chọn từng phiên hoặc bấm "Lưu trữ & Làm trống" để dọn gọn màn hình hiện hành mà vẫn bảo toàn 100% lịch sử trong Kho Lưu trữ.'
-        }
+        type={view === 'ARCHIVED' ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
+        message={view === 'ARCHIVED' ? 'Kho Lưu trữ Đã dọn: Toàn bộ các phiên và nhật ký kiểm toán đã làm trống khỏi màn hình chính đều được lưu trữ an toàn tại đây. Bạn có thể tra cứu, xuất Excel hoặc khôi phục bất kỳ lúc nào.' : 'Nhật ký Kiểm toán Hệ thống: Bạn có thể chọn từng phiên hoặc bấm "Lưu trữ & Làm trống" để dọn gọn màn hình hiện hành mà vẫn bảo toàn 100% lịch sử trong Kho Lưu trữ.'}
       />
 
       <FilterToolbar
@@ -212,8 +196,8 @@ function AuditLogsView() {
         emptyText={view === 'ARCHIVED' ? 'Kho lưu trữ hiện đang trống' : 'Danh sách nhật ký hiện hành đã được dọn trống'}
         bulkActions={[
           view === 'ACTIVE'
-            ? { key: 'archive-sel', label: 'Lưu trữ & Làm trống đã chọn', icon: <FolderOpenOutlined />, type: 'primary', loading: archiveMut.isPending, onClick: async (rows, clear) => { await archiveMut.mutateAsync({ mode: 'SELECTED', ids: rows.map((x) => x.id) }); clear(); } }
-            : { key: 'restore-sel', label: 'Khôi phục đã chọn', icon: <RollbackOutlined />, type: 'primary', loading: archiveMut.isPending, onClick: async (rows, clear) => { await archiveMut.mutateAsync({ mode: 'RESTORE', ids: rows.map((x) => x.id) }); clear(); } },
+            ? { key: 'archive-sel', label: 'Lưu trữ & Làm trống đã chọn', icon: <FolderOpenOutlined />, type: 'primary', loading: archiveMut.isPending, eligibleFilter: (r) => !r.isArchived, onClick: async (rows, clear) => { await archiveMut.mutateAsync({ mode: 'SELECTED', ids: rows.map((x) => x.id) }); clear(); } }
+            : { key: 'restore-sel', label: 'Khôi phục đã chọn', icon: <RollbackOutlined />, type: 'primary', loading: archiveMut.isPending, eligibleFilter: (r) => Boolean(r.isArchived), onClick: async (rows, clear) => { await archiveMut.mutateAsync({ mode: 'RESTORE', ids: rows.map((x) => x.id) }); clear(); } },
           { key: 'export-sel', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAuditExcel(rows, view) },
         ]}
       />

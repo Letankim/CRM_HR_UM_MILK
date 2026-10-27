@@ -139,7 +139,7 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
         codeExtractor={(r) => r.code}
         onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }}
         bulkActions={[
-          { key: 'bulk-read', label: 'Đánh dấu đã đọc đã chọn', type: 'primary', icon: <CheckCircleOutlined />, onClick: (rows, clear) => { markAllMut.mutate(rows.map((r) => r.id)); clear(); } },
+          { key: 'bulk-read', label: 'Đánh dấu đã đọc đã chọn', type: 'primary', icon: <CheckCircleOutlined />, eligibleFilter: (r) => r.readStatus === 'UNREAD', onClick: (rows, clear) => { markAllMut.mutate(rows.map((r) => r.id)); clear(); } },
           { key: 'bulk-export', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: (rows) => { handleExport(rows); } },
           { key: 'bulk-del', label: 'Xóa đã chọn', danger: true, icon: <DeleteOutlined />, onClick: (rows, clear) => { modal.confirm({ title: `Xóa ${rows.length} thông báo đã chọn?`, content: 'Các thông báo đã chọn sẽ được xóa khỏi hộp thư của bạn.', okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: async () => { await Promise.all(rows.map((r) => api.delete(`/notifications/${r.id}`))); refreshAll(); clear(); } }); } },
         ]}

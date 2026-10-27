@@ -6,7 +6,7 @@ import type { Key } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ListMeta } from '@umbm/shared';
 import { BRAND } from '../theme';
-import { BulkActionBar, type BulkActionItem, isRowActionable } from './BulkActionBar';
+import { BulkActionBar, type BulkActionItem, buildTableSelections, type TableSelectionPreset } from './BulkActionBar';
 
 export interface DataTableCardProps<TRecord extends { id: string }> {
   columns: ColumnsType<TRecord>;
@@ -18,12 +18,13 @@ export interface DataTableCardProps<TRecord extends { id: string }> {
   emptyText?: string;
   selectable?: boolean;
   bulkActions?: BulkActionItem<TRecord>[];
+  selectionPresets?: TableSelectionPreset<TRecord>[];
 }
 
 /**
  * Bảng dữ liệu chuẩn mẫu 3DO ADMIN:
  * - Tự động sinh cột NO (số thứ tự đậm + mã định danh in hoa monospace phía dưới).
- * - Khi chọn nhiều dòng, tự động hiển thị BulkActionBar thông minh để xử lý hàng loạt.
+ * - Khi chọn nhiều dòng, tự động hiển thị BulkActionBar và menu chọn nhanh theo đúng trạng thái của bảng.
  * - Tính toán chiều rộng cuộn ngang chính xác để không bao giờ bị đè cột.
  */
 export function DataTableCard<TRecord extends { id: string }>({
@@ -36,6 +37,7 @@ export function DataTableCard<TRecord extends { id: string }>({
   emptyText = 'Không có dữ liệu phù hợp với bộ lọc hiện tại',
   selectable = true,
   bulkActions = [],
+  selectionPresets,
 }: DataTableCardProps<TRecord>) {
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
   const [localPage, setLocalPage] = useState(1);
@@ -109,6 +111,11 @@ export function DataTableCard<TRecord extends { id: string }>({
     return { fullColumns: allCols, totalScrollX: Math.max(sumW, 960) };
   }, [codeExtractor, columns, page, perPage]);
 
+  const selections = useMemo(
+    () => buildTableSelections(dataSource, (r) => r.id, setSelectedRowKeys, bulkActions, selectionPresets),
+    [dataSource, bulkActions, selectionPresets],
+  );
+
   const pagination: TablePaginationConfig = {
     current: page,
     pageSize: perPage,
@@ -156,19 +163,7 @@ export function DataTableCard<TRecord extends { id: string }>({
             ? {
                 selectedRowKeys,
                 onChange: (keys) => setSelectedRowKeys(keys),
-                selections: [
-                  { key: 'all-page', text: 'Chọn tất cả trang này', onSelect: () => setSelectedRowKeys(dataSource.map((r) => r.id)) },
-                  {
-                    key: 'only-actionable',
-                    text: 'Chỉ chọn mục chờ duyệt / chờ xử lý',
-                    onSelect: () => {
-                      const filterable = bulkActions.filter((a) => typeof a.eligibleFilter === 'function');
-                      const rows = dataSource.filter((r) => (filterable.length > 0 ? filterable.some((a) => a.eligibleFilter!(r)) : isRowActionable(r)));
-                      setSelectedRowKeys(rows.map((r) => r.id));
-                    },
-                  },
-                  { key: 'clear-all', text: 'Bỏ chọn tất cả', onSelect: () => setSelectedRowKeys([]) },
-                ],
+                selections,
               }
             : undefined
         }

@@ -4,7 +4,7 @@ import { App, Button, Card, Flex, Input, Select, Space, Tabs, Tag } from 'antd';
 import { AlertOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, DownloadOutlined, EnvironmentOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SwapOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
@@ -21,29 +21,34 @@ const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace
 const fmtShiftTime = (r: Record<string, unknown>) => `${String(r.startAt || r.start_at || '07:00')} – ${String(r.endAt || r.end_at || '12:00')}${r.scheduledHours || r.scheduled_hours ? ` (${r.scheduledHours || r.scheduled_hours}h)` : ''}`;
 const fmtDate = (raw: unknown) => (raw ? dayjs(String(raw)).format('DD/MM/YYYY') : '—');
 
+const ADJ_STATUS_OPTS = [{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'PENDING', label: 'Chờ duyệt' }, { value: 'STORE_CONFIRMED', label: 'CH đã xác nhận' }, { value: 'APPROVED', label: 'Đã phê duyệt' }, { value: 'REJECTED', label: 'Đã từ chối' }];
+const LEAVE_STATUS_OPTS = [{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'PENDING', label: 'Chờ duyệt nghỉ OFF' }, { value: 'APPROVED', label: 'Đã phê duyệt nghỉ OFF' }, { value: 'REJECTED', label: 'Đã từ chối' }];
+const SWAP_STATUS_OPTS = [{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'PENDING_PEER', label: 'Chờ đồng nghiệp nhận' }, { value: 'PEER_ACCEPTED', label: 'Đồng nghiệp đã nhận' }, { value: 'APPROVED', label: 'Đã phê duyệt đổi ca' }, { value: 'REJECTED', label: 'Đã từ chối' }];
+const EMG_STATUS_OPTS = [{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'REPORTED', label: 'Mới báo nghỉ khẩn' }, { value: 'RESOLVED', label: 'Đã có người thay ca' }, { value: 'ESCALATED', label: 'Thiếu ca (Cảnh báo HR)' }];
+
 export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
   const qc = useQueryClient(), { message } = App.useApp();
   const canConfirmAtt = usePermissionGuard({ perms: ['attendance.confirm'] }), canApproveAdj = usePermissionGuard({ perms: ['adjustment.approve'] });
   const canApproveLeave = usePermissionGuard({ perms: ['leave.approve'] }), canApproveSwap = usePermissionGuard({ perms: ['swap.approve'] }), canHandleEmg = usePermissionGuard({ perms: ['emergency.handle'] });
-  const [leaveModal, setLeaveModal] = useState(false), [swapModal, setSwapModal] = useState(false), [emgModal, setEmgModal] = useState(false), [adjModal, setAdjModal] = useState(false);
+  const [activeTab, setActiveTab] = useState('attendance'), [leaveModal, setLeaveModal] = useState(false), [swapModal, setSwapModal] = useState(false), [emgModal, setEmgModal] = useState(false), [adjModal, setAdjModal] = useState(false);
   const [detailTarget, setDetailTarget] = useState<ScheduleDetailTarget | null>(null);
   const [searchInput, setSearchInput] = useState(''), debouncedQ = useDebouncedValue(searchInput, 400);
-  const [branchFilter, setBranchFilter] = useState('ALL'), [statusFilter, setStatusFilter] = useState('ALL');
-  const [page, setPage] = useState(1), [perPage, setPerPage] = useState(10);
+  const [branchFilter, setBranchFilter] = useState('ALL'), [statusFilter, setStatusFilter] = useState('ALL'), [page, setPage] = useState(1), [perPage, setPerPage] = useState(10);
 
-  const wfParams = useMemo(() => {
-    const p = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+  const mkParams = (tabKey: string) => {
+    const p = new URLSearchParams({ page: String(activeTab === tabKey ? page : 1), per_page: String(perPage) });
     if (debouncedQ) p.set('q', debouncedQ);
     if (branchFilter !== 'ALL') p.set('branch_id', branchFilter);
-    if (statusFilter !== 'ALL') p.set('status', statusFilter);
+    if (activeTab === tabKey && statusFilter !== 'ALL') p.set('status', statusFilter);
     return p.toString();
-  }, [page, perPage, debouncedQ, branchFilter, statusFilter]);
+  };
 
   const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
-  const adjQ = useQuery({ queryKey: ['attendance-adjustments', wfParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/attendance/adjustments?${wfParams}`) });
-  const leavesQ = useQuery({ queryKey: ['leave-requests', wfParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/leave-requests?${wfParams}`) });
-  const swapsQ = useQuery({ queryKey: ['shift-swaps', wfParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/shift-swaps?${wfParams}`) });
-  const emgQ = useQuery({ queryKey: ['emergency-leaves', wfParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/emergency-leaves?${wfParams}`) });
+  const adjParams = mkParams('adjustments'), leaveParams = mkParams('leave'), swapParams = mkParams('swap'), emgParams = mkParams('emergency');
+  const adjQ = useQuery({ queryKey: ['attendance-adjustments', adjParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/attendance/adjustments?${adjParams}`) });
+  const leavesQ = useQuery({ queryKey: ['leave-requests', leaveParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/leave-requests?${leaveParams}`) });
+  const swapsQ = useQuery({ queryKey: ['shift-swaps', swapParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/shift-swaps?${swapParams}`) });
+  const emgQ = useQuery({ queryKey: ['emergency-leaves', emgParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/emergency-leaves?${emgParams}`) });
   const attCountQ = useQuery({ queryKey: ['attendance-sessions-count', branchFilter], queryFn: () => api.list<AttendanceEventRow>(`/admin/attendance/sessions?page=1&per_page=1${branchFilter !== 'ALL' ? `&branch_id=${branchFilter}` : ''}`) });
 
   const refreshAll = () => ['attendance-adjustments', 'leave-requests', 'shift-swaps', 'emergency-leaves', 'attendance-sessions', 'attendance-sessions-count', 'schedules', 'my-attendance'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
@@ -61,17 +66,17 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
   const bulkOpts = { canConfirmAtt, canApproveAdj, canApproveLeave, canApproveSwap, canHandleEmg, loading: batchMut.isPending, runBatch: (items: Record<string, unknown>[], buildCall: (r: Record<string, unknown>) => { url: string; body: unknown } | null, successMsg: string) => batchMut.mutate({ items, buildCall, successMsg }) };
 
   const branchList = branchesQ.data?.data ?? [];
-  const branchOptions = useMemo(() => branchList.length === 1 ? [{ value: 'ALL', label: `${branchList[0]!.code} — ${branchList[0]!.name}` }] : [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branchList.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))], [branchList]);
+  const branchOptions = branchList.length === 1 ? [{ value: 'ALL', label: `${branchList[0]!.code} — ${branchList[0]!.name}` }] : [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branchList.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))];
   const filteredAdjustments = adjQ.data?.data ?? [], filteredLeaves = leavesQ.data?.data ?? [], filteredSwaps = swapsQ.data?.data ?? [], filteredEmg = emgQ.data?.data ?? [];
   const mkPag = (total?: number) => ({ current: page, pageSize: perPage, total: total ?? 0, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t: number) => `Tổng ${t} đơn`, onChange: (p: number, ps: number) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } });
 
-  const renderSubFilterBar = (onExport: () => void, actionBtn: React.ReactNode) => (
+  const renderSubFilterBar = (statusOpts: { value: string; label: string }[], onExport: () => void, actionBtn: React.ReactNode) => (
     <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '12px 16px', marginTop: 4, marginBottom: 12 }}>
       <Flex justify="space-between" align="center" wrap gap={10}>
         <Space size={10} wrap>
           <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm tên nhân sự, mã đơn, ngày, lý do..." value={searchInput} onChange={(e) => { setSearchInput(e.target.value); setPage(1); }} style={{ width: 245 }} />
           <Select value={branchFilter} onChange={(v) => { setBranchFilter(v); setPage(1); }} style={{ width: 195 }} options={branchOptions} />
-          <Select value={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1); }} style={{ width: 170 }} options={[{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'PENDING', label: 'Chờ duyệt' }, { value: 'STORE_CONFIRMED', label: 'CH đã xác nhận' }, { value: 'APPROVED', label: 'Đã phê duyệt' }, { value: 'REJECTED', label: 'Đã từ chối' }]} />
+          <Select value={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1); }} style={{ width: 195 }} options={statusOpts} />
         </Space>
         <Space size={8} wrap><Button icon={<ReloadOutlined />} loading={isRefreshing} onClick={refreshAll}>Làm mới</Button><Button icon={<DownloadOutlined />} onClick={onExport}>Xuất Excel</Button>{actionBtn}</Space>
       </Flex>
@@ -80,20 +85,14 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
 
   return (
     <Card size="small" styles={{ body: { padding: '12px 20px 20px' } }}>
-      <Tabs
-        onChange={() => setPage(1)}
-        items={[
-          {
-            key: 'attendance',
-            label: <span><EnvironmentOutlined /> Lịch sử Điểm danh Vào/Ra ca ({attCountQ.data?.meta.pagination.total ?? 0})</span>,
-            children: <AttendanceEventsTable assignments={assignments as unknown as Record<string, unknown>[]} />,
-          },
+      <Tabs activeKey={activeTab} onChange={(k) => { setActiveTab(k); setStatusFilter('ALL'); setPage(1); }} items={[
+          { key: 'attendance', label: <span><EnvironmentOutlined /> Lịch sử Điểm danh Vào/Ra ca ({attCountQ.data?.meta.pagination.total ?? 0})</span>, children: <AttendanceEventsTable assignments={assignments as unknown as Record<string, unknown>[]} /> },
           {
             key: 'adjustments',
             label: <span><FileAddOutlined /> Phiếu bổ sung công ({adjQ.data?.meta.pagination.total ?? filteredAdjustments.length})</span>,
             children: (
               <>
-                {renderSubFilterBar(() => exportAdjustmentsExcel(filteredAdjustments), <GuardButton type="primary" icon={<FileAddOutlined />} perms={['attendance.confirm', 'adjustment.approve']} roles={['HR', 'STORE']} onClick={() => setAdjModal(true)}>Tạo phiếu bổ sung công</GuardButton>)}
+                {renderSubFilterBar(ADJ_STATUS_OPTS, () => exportAdjustmentsExcel(filteredAdjustments), <GuardButton type="primary" icon={<FileAddOutlined />} perms={['attendance.confirm', 'adjustment.approve']} roles={['HR', 'STORE']} onClick={() => setAdjModal(true)}>Tạo phiếu bổ sung công</GuardButton>)}
                 <SelectableTable<Record<string, unknown>>
                   size="small" rowKey="id" loading={adjQ.isLoading} pagination={mkPag(adjQ.data?.meta.pagination.total)} dataSource={filteredAdjustments} bulkActions={buildAdjustmentsBulkActions(bulkOpts)}
                   columns={[
@@ -125,7 +124,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
             label: <span><CalendarOutlined /> Đơn xin nghỉ phép (OFF) ({leavesQ.data?.meta.pagination.total ?? filteredLeaves.length})</span>,
             children: (
               <>
-                {renderSubFilterBar(() => exportLeavesExcel(filteredLeaves), <GuardButton type="primary" icon={<PlusOutlined />} perms={['leave.approve']} roles={['HR', 'STORE']} onClick={() => setLeaveModal(true)}>Đăng ký nghỉ OFF</GuardButton>)}
+                {renderSubFilterBar(LEAVE_STATUS_OPTS, () => exportLeavesExcel(filteredLeaves), <GuardButton type="primary" icon={<PlusOutlined />} perms={['leave.approve']} roles={['HR', 'STORE']} onClick={() => setLeaveModal(true)}>Đăng ký nghỉ OFF</GuardButton>)}
                 <SelectableTable<Record<string, unknown>>
                   size="small" rowKey="id" loading={leavesQ.isLoading} pagination={mkPag(leavesQ.data?.meta.pagination.total)} dataSource={filteredLeaves} bulkActions={buildLeavesBulkActions(bulkOpts)}
                   columns={[
@@ -154,7 +153,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
             label: <span><SwapOutlined /> Đơn xin đổi ca ({swapsQ.data?.meta.pagination.total ?? filteredSwaps.length})</span>,
             children: (
               <>
-                {renderSubFilterBar(() => exportSwapsExcel(filteredSwaps), <GuardButton type="primary" icon={<PlusOutlined />} perms={['swap.approve']} roles={['HR', 'STORE']} onClick={() => setSwapModal(true)}>Tạo yêu cầu đổi ca</GuardButton>)}
+                {renderSubFilterBar(SWAP_STATUS_OPTS, () => exportSwapsExcel(filteredSwaps), <GuardButton type="primary" icon={<PlusOutlined />} perms={['swap.approve']} roles={['HR', 'STORE']} onClick={() => setSwapModal(true)}>Tạo yêu cầu đổi ca</GuardButton>)}
                 <SelectableTable<Record<string, unknown>>
                   size="small" rowKey="id" loading={swapsQ.isLoading} pagination={mkPag(swapsQ.data?.meta.pagination.total)} dataSource={filteredSwaps} bulkActions={buildSwapsBulkActions(bulkOpts)}
                   columns={[
@@ -183,7 +182,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
             label: <span><AlertOutlined /> Báo nghỉ đột xuất ({emgQ.data?.meta.pagination.total ?? filteredEmg.length})</span>,
             children: (
               <>
-                {renderSubFilterBar(() => exportEmergencyExcel(filteredEmg), <GuardButton danger icon={<AlertOutlined />} perms={['emergency.handle']} roles={['HR', 'STORE']} onClick={() => setEmgModal(true)}>Báo nghỉ khẩn</GuardButton>)}
+                {renderSubFilterBar(EMG_STATUS_OPTS, () => exportEmergencyExcel(filteredEmg), <GuardButton danger icon={<AlertOutlined />} perms={['emergency.handle']} roles={['HR', 'STORE']} onClick={() => setEmgModal(true)}>Báo nghỉ khẩn</GuardButton>)}
                 <SelectableTable<Record<string, unknown>>
                   size="small" rowKey="id" loading={emgQ.isLoading} pagination={mkPag(emgQ.data?.meta.pagination.total)} dataSource={filteredEmg} bulkActions={buildEmergencyBulkActions(bulkOpts)}
                   columns={[
