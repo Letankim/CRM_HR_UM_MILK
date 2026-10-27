@@ -22,7 +22,8 @@ interface Props {
  */
 export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Props) {
   const can = useCan();
-  const canViewReport = can('employee.read', 'schedule.read', 'attendance.read');
+  const canViewReport = can('report.hr', 'report.store');
+  const canRecruit = can('candidate.manage');
   const [positionFilter, setPositionFilter] = useState('ALL');
   const [shiftFilter, setShiftFilter] = useState('ALL');
   const { options: jobPositionOptions } = useJobPositions();
@@ -36,12 +37,12 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
   const employeesQ = useQuery({
     queryKey: ['report-employees'],
     queryFn: () => api.list<Record<string, unknown>>('/admin/employees?per_page=100'),
-    enabled: can('employee.read'),
+    enabled: canViewReport && can('employee.read'),
   });
   const candidatesQ = useQuery({
     queryKey: ['report-candidates'],
     queryFn: () => api.list<Record<string, unknown>>('/admin/candidates?per_page=100'),
-    enabled: can('candidate.manage', 'employee.read'),
+    enabled: canViewReport && canRecruit,
   });
   const shiftsQ = useQuery({
     queryKey: ['report-shifts'],
@@ -158,7 +159,7 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
           { title: 'Chi nhánh', width: 200, render: (_, r) => <div><strong>{r.branchName}</strong><div style={{ fontSize: 12, color: '#64748B' }}>{r.branchCode}</div></div> },
           { title: 'Tổng nhân sự', dataIndex: 'headcount', width: 110, align: 'right', render: (v: number) => <strong className="num">{v} NV</strong> },
           { title: 'Thử việc / Chính thức', width: 145, align: 'center', render: (_, r) => <Space size={4}><Tag color="gold">{r.probationCount} TV</Tag><Tag color="blue">{r.officialCount} CT</Tag></Space> },
-          { title: 'Tuyển dụng', dataIndex: 'candidateCount', width: 105, align: 'right', render: (v: number) => <span className="num">{v} hồ sơ</span> },
+          ...(canRecruit ? [{ title: 'Tuyển dụng', dataIndex: 'candidateCount', width: 105, align: 'right' as const, render: (v: number) => <span className="num">{v} hồ sơ</span> }] : []),
           { title: 'Số ca / Giờ làm', width: 135, align: 'right', render: (_, r) => <span className="num">{r.shiftCount} ca ({r.totalHours}h)</span> },
           { title: 'Đi trễ', dataIndex: 'lateCount', width: 90, align: 'center', render: (v: number) => v > 0 ? <Tag color="volcano">{v} lượt</Tag> : <Tag color="green">0</Tag> },
           { title: 'Vắng / Thiếu ca', width: 130, align: 'center', render: (_, r) => <Space size={4}><Tag color={r.absentCount > 0 ? 'red' : 'default'}>{r.absentCount} vắng</Tag><Tag color={r.understaffedCount > 0 ? 'orange' : 'default'}>{r.understaffedCount} thiếu</Tag></Space> },

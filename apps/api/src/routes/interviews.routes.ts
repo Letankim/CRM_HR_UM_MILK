@@ -91,7 +91,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       return emp ? `${emp.full_name} (${emp.employee_code})` : id;
     }).join(', ');
 
-  app.get('/api/admin/interviews', { preHandler: requirePermission('interview.manage', 'employee.read', 'system.config') }, async (request) => {
+  app.get('/api/admin/interviews', { preHandler: requirePermission('interview.manage') }, async (request) => {
     const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), decision: z.string().trim().optional(), status: z.string().trim().optional() }).parse(request.query ?? {});
     const items = ctx.db.interviews.all().map((iv) => {
       const cand = ctx.db.candidates.get(iv.candidate_id) ?? ctx.db.candidates.find((c) => c.candidate_code === iv.candidate_id);
@@ -112,7 +112,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     }));
   });
 
-  app.post('/api/admin/interviews', { preHandler: requirePermission('interview.manage', 'system.config') }, async (request, reply) => {
+  app.post('/api/admin/interviews', { preHandler: requirePermission('interview.manage') }, async (request, reply) => {
     const body = zCreateInterviewBody.parse(request.body);
     const cand = ctx.db.candidates.get(body.candidate_id) ?? ctx.db.candidates.find((c) => c.candidate_code === body.candidate_id);
     if (!cand) throw Errors.fieldValidation('candidate_id', 'INVALID_VALUE', 'Không tìm thấy ứng viên', body.candidate_id);
@@ -154,7 +154,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(request, 'Đã đặt lịch phỏng vấn và gửi thông báo tới tất cả người tham gia phỏng vấn thành công', created);
   });
 
-  app.put('/api/admin/interviews/:id/evaluate', { preHandler: requirePermission('interview.manage', 'system.config') }, async (request) => {
+  app.put('/api/admin/interviews/:id/evaluate', { preHandler: requirePermission('interview.manage') }, async (request) => {
     const { id } = request.params as { id: string };
     const body = zEvaluateInterviewBody.parse(request.body);
     const before = ctx.db.interviews.get(id);
@@ -200,7 +200,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(request, normalizedDecision === 'PASS' ? 'Đã chấm ĐẠT phỏng vấn và chuyển ứng viên sang bước Tiếp nhận thử việc' : normalizedDecision === 'HOLD' ? 'Đã lưu kết quả phỏng vấn ở trạng thái Cân nhắc thêm' : 'Đã cập nhật kết quả phỏng vấn: Không đạt', updated);
   });
 
-  app.delete('/api/admin/interviews/:id', { preHandler: requirePermission('interview.manage', 'system.config') }, async (request) => {
+  app.delete('/api/admin/interviews/:id', { preHandler: requirePermission('interview.manage') }, async (request) => {
     const { id } = request.params as { id: string };
     const body = zDeleteBody.parse(request.body ?? {});
     const before = ctx.db.interviews.get(id);

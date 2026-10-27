@@ -89,7 +89,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'schedule.read',
     'attendance.read',
     'attendance.media.read',
-    'payroll.read',
     'test.read',
     'notification.send',
   ],
@@ -109,7 +108,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'attendance.read',
     'attendance.media.read',
     'adjustment.approve',
-    'payroll.read',
     'test.manage',
     'test.read',
     'report.hr',
@@ -125,7 +123,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'attendance.read',
     'attendance.media.read',
     'attendance.confirm',
-    'test.read',
     'report.store',
     'notification.send',
   ],
@@ -146,6 +143,19 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   CHINH_THUC: SELF_SERVICE,
 };
 
+/**
+ * Các permission bị cấm tuyệt đối theo từng vai trò (ngăn chặn cấu hình sai lệch trong permissions_json).
+ */
+const FORBIDDEN_ROLE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
+  ADMIN: ['candidate.manage', 'interview.manage', 'test.manage', 'payroll.manage', 'payroll.publish', 'payroll.pay', 'schedule.propose', 'schedule.publish', 'attendance.confirm', 'adjustment.approve'],
+  HR: ['payroll.manage', 'payroll.publish', 'payroll.pay', 'system.config', 'system.maintenance', 'system.backup', 'system.audit.read', 'account.activate'],
+  STORE: ['candidate.manage', 'interview.manage', 'test.manage', 'test.read', 'payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay', 'system.config', 'account.read', 'account.manage', 'account.activate'],
+  FINANCE: ['candidate.manage', 'interview.manage', 'test.manage', 'test.read', 'employee.manage', 'employee.promote', 'schedule.propose', 'schedule.publish', 'leave.approve', 'swap.approve', 'emergency.handle', 'attendance.confirm', 'adjustment.approve', 'system.config', 'account.read', 'account.manage', 'account.activate'],
+  MKT: ['account.read', 'account.manage', 'account.activate', 'candidate.manage', 'interview.manage', 'employee.read', 'employee.manage', 'employee.promote', 'schedule.read', 'schedule.propose', 'schedule.publish', 'attendance.read', 'attendance.media.read', 'attendance.confirm', 'adjustment.approve', 'payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay', 'test.manage', 'test.read'],
+};
+
 export function resolvePermissions(role: Role, extra: Permission[] = []): Set<Permission> {
-  return new Set<Permission>([...DEFAULT_ROLE_PERMISSIONS[role], ...extra]);
+  const forbidden = new Set<Permission>(FORBIDDEN_ROLE_PERMISSIONS[role] ?? []);
+  const safeExtra = extra.filter((p) => !forbidden.has(p));
+  return new Set<Permission>([...DEFAULT_ROLE_PERMISSIONS[role], ...safeExtra]);
 }

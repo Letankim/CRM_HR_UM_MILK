@@ -37,12 +37,12 @@ export default function DashboardPage() {
   const [periodFilter, setPeriodFilter] = useState<'TODAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'ALL'>('ALL');
 
   const branches = useQuery({ queryKey: ['dashboard-branches'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
-  const accounts = useQuery({ queryKey: ['accounts', 'all'], queryFn: () => api.list<{ id: string; status: string }>('/admin/accounts?per_page=100'), enabled: can('account.read') });
+  const accounts = useQuery({ queryKey: ['accounts', 'all'], queryFn: () => api.list<{ id: string; status: string }>('/admin/accounts?per_page=100'), enabled: can('account.manage', 'account.activate') });
   const employees = useQuery({ queryKey: ['dashboard-employees'], queryFn: () => api.list<{ id: string; stage: string; status: string; staffGroup?: string; staff_group?: string; branchId?: string; branch_id?: string }>('/admin/employees?per_page=100'), enabled: can('employee.read') });
   const schedules = useQuery({ queryKey: ['dashboard-schedules'], queryFn: () => api.list<{ id: string; status: string; branchId?: string; branch_id?: string }>('/admin/schedules?per_page=100'), enabled: can('schedule.read') });
   const leaves = useQuery({ queryKey: ['dashboard-leaves'], queryFn: () => api.list<{ id: string; status: string; branch_id?: string }>('/admin/leave-requests?per_page=50'), enabled: can('schedule.read') });
   const payroll = useQuery({ queryKey: ['dashboard-payroll'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/payroll/periods'), enabled: can('payroll.read') });
-  const comms = useQuery({ queryKey: ['mkt-comms'], queryFn: () => api.get<{ announcements: Record<string, unknown>[] }>('/admin/comms'), enabled: !!me });
+  const comms = useQuery({ queryKey: ['mkt-comms'], queryFn: () => api.get<{ announcements: Record<string, unknown>[] }>('/admin/comms'), enabled: can('comms.manage') });
   const health = useQuery({ queryKey: ['integrations', 'health'], queryFn: () => api.get<Health>('/admin/integrations/health'), enabled: can('integration.read') });
 
   const handleRefreshAll = async () => {
@@ -50,7 +50,7 @@ export default function DashboardPage() {
     const hide = message.loading('Đang cập nhật số liệu tổng quan mới nhất...', 0);
     try {
       await Promise.all([
-        can('account.read') ? api.list('/admin/accounts?per_page=100&refresh=1') : Promise.resolve(),
+        can('account.manage', 'account.activate') ? api.list('/admin/accounts?per_page=100&refresh=1') : Promise.resolve(),
         can('employee.read') ? api.list('/admin/employees?per_page=100&refresh=1') : Promise.resolve(),
         can('integration.read') ? api.get('/admin/integrations/health?refresh=1') : Promise.resolve(),
       ]);
@@ -124,7 +124,7 @@ export default function DashboardPage() {
       <Spin spinning={refreshing} tip="Đang đồng bộ số liệu mới nhất...">
         <div>
           <HrDashboardActionPanel />
-          {can('account.read') && (
+          {can('account.manage', 'account.activate') && (
             <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
               {[
                 { label: 'Tổng tài khoản', value: accounts.data?.meta.pagination.total ?? 0, link: '/admin/accounts', linkText: 'Quản lý tài khoản' },
@@ -154,8 +154,8 @@ export default function DashboardPage() {
                 <Col xs={12} md={6}>
                   <Card size="small" loading={employees.isLoading}>
                     <Statistic title="Thử việc / Chính thức" value={`${probationCount} / ${officialCount}`} prefix={<UserSwitchOutlined />} />
-                    <Link href={can('candidate.manage', 'interview.manage', 'system.config') ? '/admin/employees?section=recruitment' : '/admin/employees'} style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>
-                      {can('candidate.manage', 'interview.manage', 'system.config') ? 'Tuyển dụng & Đánh giá TV' : 'Xem nhân sự theo giai đoạn'}
+                    <Link href={can('candidate.manage', 'interview.manage') ? '/admin/employees?section=recruitment' : '/admin/employees'} style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>
+                      {can('candidate.manage', 'interview.manage') ? 'Tuyển dụng & Đánh giá TV' : 'Xem nhân sự theo giai đoạn'}
                     </Link>
                   </Card>
                 </Col>
@@ -170,7 +170,7 @@ export default function DashboardPage() {
             {can('payroll.read') && (
               <Col xs={12} md={6}><Card size="small" loading={payroll.isLoading}><Statistic title="Kỳ lương hệ thống" value={Array.isArray(payroll.data) ? payroll.data.length : 0} prefix={<DollarOutlined />} /><Link href="/admin/payroll" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Đối soát &amp; Hồ sơ lương</Link></Card></Col>
             )}
-            {!!me && (
+            {can('comms.manage') && (
               <Col xs={12} md={6}><Card size="small" loading={comms.isLoading}><Statistic title="Bản tin nội bộ" value={comms.data?.announcements.length ?? 0} prefix={<NotificationOutlined />} /><Link href="/admin/integrations?section=comms" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Xem &amp; Quản lý bản tin</Link></Card></Col>
             )}
           </Row>

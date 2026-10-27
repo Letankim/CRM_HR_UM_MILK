@@ -158,7 +158,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
               >
                 <Badge count={unreadNotifCount} size="small" offset={[-2, 2]}><Button size="small" className="umbm-header-pill" icon={<BellOutlined />} style={{ width: 34, height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder }} /></Badge>
               </Popover>
-              {isInternal && <Button size="small" className="umbm-header-pill" icon={<UserSwitchOutlined />} onClick={() => router.push('/admin/my-attendance')} style={{ height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder, paddingInline: 10 }}>Về Quản trị</Button>}
+              {isInternal && <Button size="small" className="umbm-header-pill" icon={<UserSwitchOutlined />} onClick={() => router.push('/dashboard')} style={{ height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder, paddingInline: 10 }}>Về Quản trị</Button>}
               <Dropdown
                 trigger={['click']}
                 menu={{

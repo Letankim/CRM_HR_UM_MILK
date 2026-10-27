@@ -246,6 +246,19 @@ describe('Workflows, Infrastructure & Full Tab APIs (AI-INFRA-07..09, FLOW-02..0
 
     const mktAttendanceForbidden = await app.inject({ method: 'GET', url: '/api/admin/attendance', headers: mktHeaders });
     expect(mktAttendanceForbidden.statusCode).toBe(403);
+
+    // FINANCE, STORE, ADMIN bị chặn truy cập Tuyển dụng & Phỏng vấn (HR-02, HR-03 chỉ dành cho HR)
+    const finHeaders = await loginHeaders('finance');
+    const storeHeaders = await loginHeaders('store1');
+    for (const h of [finHeaders, storeHeaders, adminHeaders, mktHeaders]) {
+      expect((await app.inject({ method: 'GET', url: '/api/admin/candidates', headers: h })).statusCode).toBe(403);
+      expect((await app.inject({ method: 'GET', url: '/api/admin/interviews', headers: h })).statusCode).toBe(403);
+    }
+
+    // HR, STORE, ADMIN bị chặn truy cập Kỳ lương & Thưởng (FIN-01..10 chỉ dành cho FINANCE)
+    for (const h of [hrHeaders, storeHeaders, adminHeaders, mktHeaders]) {
+      expect((await app.inject({ method: 'GET', url: '/api/admin/payroll/periods', headers: h })).statusCode).toBe(403);
+    }
     await app.close();
   });
 });

@@ -53,7 +53,7 @@ const zUpdateCandidateBody = z.object({
 const zDeleteBody = z.object({ version: z.coerce.number().int().min(1).optional() });
 
 export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContext) {
-  app.get('/api/admin/candidates', { preHandler: requirePermission('candidate.manage', 'employee.read', 'system.config') }, async (request) => {
+  app.get('/api/admin/candidates', { preHandler: requirePermission('candidate.manage') }, async (request) => {
     const query = zCandidateListQuery.parse(request.query);
     if (query.refresh === '1' || query.refresh === 'true') {
       await ctx.db.candidates.refreshIfIdle();
@@ -92,7 +92,7 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
     );
   });
 
-  app.post('/api/admin/candidates', { preHandler: requirePermission('candidate.manage', 'system.config') }, async (request, reply) => {
+  app.post('/api/admin/candidates', { preHandler: requirePermission('candidate.manage') }, async (request, reply) => {
     const body = zCreateCandidateBody.parse(request.body);
     const phone = normalizePhone(body.phone);
     if (!phone) throw Errors.fieldValidation('phone', 'INVALID_PHONE', 'Số điện thoại ứng viên không hợp lệ (10 số bắt đầu bằng 0)', body.phone);
@@ -118,7 +118,7 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
     return sendSuccess(request, 'Đã tiếp nhận hồ sơ ứng viên mới thành công', created);
   });
 
-  app.put('/api/admin/candidates/:id', { preHandler: requirePermission('candidate.manage', 'system.config') }, async (request) => {
+  app.put('/api/admin/candidates/:id', { preHandler: requirePermission('candidate.manage') }, async (request) => {
     const { id } = request.params as { id: string };
     const body = zUpdateCandidateBody.parse(request.body);
     const before = ctx.db.candidates.get(id);
@@ -150,7 +150,7 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
     return sendSuccess(request, 'Đã cập nhật hồ sơ ứng viên thành công', updated);
   });
 
-  app.delete('/api/admin/candidates/:id', { preHandler: requirePermission('candidate.manage', 'system.config') }, async (request) => {
+  app.delete('/api/admin/candidates/:id', { preHandler: requirePermission('candidate.manage') }, async (request) => {
     const { id } = request.params as { id: string };
     const body = zDeleteBody.parse(request.body ?? {});
     const before = ctx.db.candidates.get(id);

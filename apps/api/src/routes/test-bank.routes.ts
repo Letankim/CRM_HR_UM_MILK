@@ -53,12 +53,12 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     await ctx.db.testBank.insert({ code: 'SOP-BARISTA-01', title: 'Quy chuẩn Pha chế, Bảo quản Sữa tươi & Nội quy Chấm công GPS', staff_group: 'BARISTA', target_stage: 'PROBATION', duration_minutes: 15, pass_percent: 80, total_questions: 3, max_attempts: 3, questions_json: DEFAULT_SOP_QUESTIONS, status: 'APPROVED', approved_by: actorId, approved_at: nowIso() }, actorId);
   };
 
-  app.get('/api/admin/tests/bank', { preHandler: requirePermission('test.read', 'test.manage', 'self.test', 'system.config') }, async (request) => {
+  app.get('/api/admin/tests/bank', { preHandler: requirePermission('test.read', 'test.manage', 'self.test') }, async (request) => {
     const q = (request.query ?? {}) as { include_answers?: string; refresh?: string };
     if (q.refresh === '1') await Promise.all([ctx.db.testBank.load(), ctx.db.testAssignments.load(), ctx.db.testAttempts.load()]);
     await ensureDefaultTestBank(request.auth?.user.id ?? 'system');
     const perms = request.auth?.permissions;
-    const canManage = Boolean(perms?.has('test.manage') || perms?.has('system.config'));
+    const canManage = Boolean(perms?.has('test.manage'));
     const includeAnswers = canManage && q.include_answers === '1';
     const tests = ctx.db.testBank.all().reverse().map((t) => {
       const safeList = sanitizeQuestions(t.questions_json);
@@ -76,7 +76,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(request, 'Lấy ngân hàng đề thi, đợt giao bài và kết quả bài làm thành công', { tests, assignments, attempts });
   });
 
-  app.post('/api/admin/tests/bank', { preHandler: requirePermission('test.manage', 'system.config') }, async (request, reply) => {
+  app.post('/api/admin/tests/bank', { preHandler: requirePermission('test.manage') }, async (request, reply) => {
     const body = zTestBankBody.parse(request.body);
     if (ctx.db.testBank.find((t) => t.code.toUpperCase() === body.code.toUpperCase())) throw Errors.fieldValidation('code', 'DUPLICATE_VALUE', 'Mã bộ đề kiểm tra đã tồn tại', body.code);
     const created = await ctx.db.testBank.insert({ ...body, code: body.code.toUpperCase(), total_questions: Math.max(1, parseRawQuestions(body.questions_json).length), approved_by: request.auth!.user.id, approved_at: nowIso() }, request.auth!.user.id);
@@ -85,7 +85,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(request, 'Đã tạo bộ đề kiểm tra nghiệp vụ mới thành công', created);
   });
 
-  app.put('/api/admin/tests/bank/:id', { preHandler: requirePermission('test.manage', 'system.config') }, async (request) => {
+  app.put('/api/admin/tests/bank/:id', { preHandler: requirePermission('test.manage') }, async (request) => {
     const { id } = request.params as { id: string };
     const body = zUpdateTestBankBody.parse(request.body);
     const before = ctx.db.testBank.get(id);
@@ -96,7 +96,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(request, 'Đã cập nhật bộ đề kiểm tra thành công', updated);
   });
 
-  app.delete('/api/admin/tests/bank/:id', { preHandler: requirePermission('test.manage', 'system.config') }, async (request) => {
+  app.delete('/api/admin/tests/bank/:id', { preHandler: requirePermission('test.manage') }, async (request) => {
     const { id } = request.params as { id: string };
     const body = zDeleteVersionBody.parse(request.body ?? {});
     const before = ctx.db.testBank.get(id);
@@ -106,7 +106,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(request, 'Đã xóa bộ đề kiểm tra khỏi ngân hàng đề', { id });
   });
 
-  app.post('/api/admin/tests/assignments', { preHandler: requirePermission('test.manage', 'system.config') }, async (request, reply) => {
+  app.post('/api/admin/tests/assignments', { preHandler: requirePermission('test.manage') }, async (request, reply) => {
     const body = zAssignTestBody.parse(request.body);
     const test = ctx.db.testBank.get(body.test_id) ?? ctx.db.testBank.find((t) => t.code === body.test_id);
     if (!test) throw Errors.notFound('Đề kiểm tra', body.test_id);
@@ -123,7 +123,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(request, `Đã giao bài kiểm tra nghiệp vụ cho ${empIds.length} nhân sự thành công`, firstCreated);
   });
 
-  app.put('/api/admin/tests/assignments/:id', { preHandler: requirePermission('test.manage', 'system.config') }, async (request) => {
+  app.put('/api/admin/tests/assignments/:id', { preHandler: requirePermission('test.manage') }, async (request) => {
     const { id } = request.params as { id: string };
     const body = zUpdateAssignmentBody.parse(request.body);
     const before = ctx.db.testAssignments.get(id);
@@ -140,7 +140,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(request, 'Đã cập nhật đợt giao bài kiểm tra thành công', updated);
   });
 
-  app.delete('/api/admin/tests/assignments/:id', { preHandler: requirePermission('test.manage', 'system.config') }, async (request) => {
+  app.delete('/api/admin/tests/assignments/:id', { preHandler: requirePermission('test.manage') }, async (request) => {
     const { id } = request.params as { id: string };
     const body = zDeleteVersionBody.parse(request.body ?? {});
     const before = ctx.db.testAssignments.get(id);
@@ -150,7 +150,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(request, 'Đã thu hồi đợt giao bài kiểm tra', { id });
   });
 
-  app.delete('/api/admin/tests/attempts/:id', { preHandler: requirePermission('test.manage', 'system.config') }, async (request) => {
+  app.delete('/api/admin/tests/attempts/:id', { preHandler: requirePermission('test.manage') }, async (request) => {
     const { id } = request.params as { id: string };
     const body = zDeleteVersionBody.parse(request.body ?? {});
     const before = ctx.db.testAttempts.get(id);
@@ -170,7 +170,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     const { id } = request.params as { id: string };
     const asg = ctx.db.testAssignments.get(id) ?? ctx.db.testAssignments.all()[0];
     if (!asg) throw Errors.notFound('Đợt giao bài kiểm tra', id);
-    const canManage = Boolean(request.auth?.permissions?.has('test.manage') || request.auth?.permissions?.has('system.config'));
+    const canManage = Boolean(request.auth?.permissions?.has('test.manage'));
     if (!canManage && !isSameEmployee(ctx, request.auth?.user, asg.employee_id)) throw Errors.forbidden('Chỉ nhân sự được giao bài kiểm tra này mới có quyền bắt đầu làm bài');
     if (asg.attempts_used >= asg.max_attempts) throw Errors.badRequest(`Bạn đã sử dụng hết số lần thi tối đa (${asg.max_attempts} lần) cho bài kiểm tra này`);
     if (asg.close_at && Date.now() > new Date(asg.close_at).getTime()) throw Errors.badRequest('Đợt giao bài kiểm tra này đã quá hạn nộp bài');

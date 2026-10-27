@@ -34,7 +34,7 @@ export function TopHeaderBar({
   const pendingAccounts = useQuery({
     queryKey: ['accounts', 'PENDING_ACTIVATION', 'header-badge'],
     queryFn: () => api.list<PendingAccountPreview>('/admin/accounts?status=PENDING_ACTIVATION&per_page=5'),
-    enabled: can('account.read'),
+    enabled: can('account.activate'),
   });
   const notifsQ = useQuery({
     queryKey: ['notifications', 'header-bell'],
@@ -157,7 +157,7 @@ export function TopHeaderBar({
           </Badge>
         </Popover>
 
-        {!isMobile && (
+        {!isMobile && user.role !== 'MKT' && (
           <Button
             size="small"
             className="umbm-header-pill"

@@ -93,7 +93,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
             label: <span><FileAddOutlined /> Phiếu bổ sung công ({adjQ.data?.meta.pagination.total ?? filteredAdjustments.length})</span>,
             children: (
               <>
-                {renderSubFilterBar(() => exportAdjustmentsExcel(filteredAdjustments), <GuardButton type="primary" icon={<FileAddOutlined />} perms={['attendance.confirm', 'adjustment.approve']} onClick={() => setAdjModal(true)}>Tạo phiếu bổ sung công</GuardButton>)}
+                {renderSubFilterBar(() => exportAdjustmentsExcel(filteredAdjustments), <GuardButton type="primary" icon={<FileAddOutlined />} perms={['attendance.confirm', 'adjustment.approve']} roles={['HR', 'STORE']} onClick={() => setAdjModal(true)}>Tạo phiếu bổ sung công</GuardButton>)}
                 <SelectableTable<Record<string, unknown>>
                   size="small" rowKey="id" loading={adjQ.isLoading} pagination={mkPag(adjQ.data?.meta.pagination.total)} dataSource={filteredAdjustments} bulkActions={buildAdjustmentsBulkActions(bulkOpts)}
                   columns={[
@@ -125,7 +125,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
             label: <span><CalendarOutlined /> Đơn xin nghỉ phép (OFF) ({leavesQ.data?.meta.pagination.total ?? filteredLeaves.length})</span>,
             children: (
               <>
-                {renderSubFilterBar(() => exportLeavesExcel(filteredLeaves), <GuardButton type="primary" icon={<PlusOutlined />} perms={['leave.approve']} onClick={() => setLeaveModal(true)}>Đăng ký nghỉ OFF</GuardButton>)}
+                {renderSubFilterBar(() => exportLeavesExcel(filteredLeaves), <GuardButton type="primary" icon={<PlusOutlined />} perms={['leave.approve']} roles={['HR', 'STORE']} onClick={() => setLeaveModal(true)}>Đăng ký nghỉ OFF</GuardButton>)}
                 <SelectableTable<Record<string, unknown>>
                   size="small" rowKey="id" loading={leavesQ.isLoading} pagination={mkPag(leavesQ.data?.meta.pagination.total)} dataSource={filteredLeaves} bulkActions={buildLeavesBulkActions(bulkOpts)}
                   columns={[
@@ -154,7 +154,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
             label: <span><SwapOutlined /> Đơn xin đổi ca ({swapsQ.data?.meta.pagination.total ?? filteredSwaps.length})</span>,
             children: (
               <>
-                {renderSubFilterBar(() => exportSwapsExcel(filteredSwaps), <GuardButton type="primary" icon={<PlusOutlined />} perms={['swap.approve']} onClick={() => setSwapModal(true)}>Tạo yêu cầu đổi ca</GuardButton>)}
+                {renderSubFilterBar(() => exportSwapsExcel(filteredSwaps), <GuardButton type="primary" icon={<PlusOutlined />} perms={['swap.approve']} roles={['HR', 'STORE']} onClick={() => setSwapModal(true)}>Tạo yêu cầu đổi ca</GuardButton>)}
                 <SelectableTable<Record<string, unknown>>
                   size="small" rowKey="id" loading={swapsQ.isLoading} pagination={mkPag(swapsQ.data?.meta.pagination.total)} dataSource={filteredSwaps} bulkActions={buildSwapsBulkActions(bulkOpts)}
                   columns={[
@@ -183,7 +183,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
             label: <span><AlertOutlined /> Báo nghỉ đột xuất ({emgQ.data?.meta.pagination.total ?? filteredEmg.length})</span>,
             children: (
               <>
-                {renderSubFilterBar(() => exportEmergencyExcel(filteredEmg), <GuardButton danger icon={<AlertOutlined />} perms={['emergency.handle']} onClick={() => setEmgModal(true)}>Báo nghỉ khẩn</GuardButton>)}
+                {renderSubFilterBar(() => exportEmergencyExcel(filteredEmg), <GuardButton danger icon={<AlertOutlined />} perms={['emergency.handle']} roles={['HR', 'STORE']} onClick={() => setEmgModal(true)}>Báo nghỉ khẩn</GuardButton>)}
                 <SelectableTable<Record<string, unknown>>
                   size="small" rowKey="id" loading={emgQ.isLoading} pagination={mkPag(emgQ.data?.meta.pagination.total)} dataSource={filteredEmg} bulkActions={buildEmergencyBulkActions(bulkOpts)}
                   columns={[

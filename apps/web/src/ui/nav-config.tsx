@@ -18,7 +18,7 @@ import {
   TeamOutlined,
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
-import type { Permission } from '@umbm/shared';
+import type { Permission, Role } from '@umbm/shared';
 
 export interface NavItem {
   key: string;
@@ -26,6 +26,7 @@ export interface NavItem {
   breadcrumbTitle: string;
   icon: ReactNode;
   perms: Permission[];
+  roles?: Role[];
 }
 
 export interface NavGroup {
@@ -45,13 +46,14 @@ export const BACKOFFICE_NAV: NavGroup[] = [
         breadcrumbTitle: 'Tổng quan & Thống kê',
         icon: <DashboardOutlined />,
         perms: [],
+        roles: ['ADMIN', 'HR', 'STORE', 'FINANCE', 'MKT'],
       },
       {
         key: '/admin/my-attendance',
         label: 'Điểm danh & Ca của bạn',
         breadcrumbTitle: 'Điểm danh GPS, Ca làm việc & Đơn cá nhân của bạn',
         icon: <EnvironmentOutlined />,
-        perms: ['self.attendance', 'attendance.read', 'schedule.read'],
+        perms: ['self.attendance'],
       },
       {
         key: '/admin/notifications',
@@ -59,6 +61,7 @@ export const BACKOFFICE_NAV: NavGroup[] = [
         breadcrumbTitle: 'Trung tâm Thông báo & Hộp thư Hệ thống',
         icon: <BellOutlined />,
         perms: [],
+        roles: ['ADMIN', 'HR', 'STORE', 'FINANCE', 'MKT'],
       },
     ],
   },
@@ -72,27 +75,31 @@ export const BACKOFFICE_NAV: NavGroup[] = [
         breadcrumbTitle: 'Hồ sơ Nhân sự & Chuyển Chính thức',
         icon: <IdcardOutlined />,
         perms: ['employee.read'],
+        roles: ['ADMIN', 'HR', 'STORE', 'FINANCE'],
       },
       {
         key: '/admin/employees?section=recruitment',
         label: 'Tuyển dụng & Phỏng vấn',
         breadcrumbTitle: 'Tuyển dụng & Lịch Phỏng vấn',
         icon: <SolutionOutlined />,
-        perms: ['candidate.manage', 'interview.manage', 'employee.read', 'system.config'],
+        perms: ['candidate.manage', 'interview.manage'],
+        roles: ['HR'],
       },
       {
         key: '/admin/employees?section=tests',
         label: 'Ngân hàng Đề & Thi TEST',
         breadcrumbTitle: 'Ngân hàng Đề & Thi TEST Nghiệp Vụ',
         icon: <BookOutlined />,
-        perms: ['test.manage', 'test.read', 'system.config'],
+        perms: ['test.manage'],
+        roles: ['HR'],
       },
       {
         key: '/admin/accounts',
         label: 'Tài khoản người dùng',
         breadcrumbTitle: 'Quản lý Tài khoản & Kích hoạt',
         icon: <TeamOutlined />,
-        perms: ['account.read'],
+        perms: ['account.manage', 'account.activate'],
+        roles: ['ADMIN'],
       },
       {
         key: '/admin/schedules',
@@ -100,20 +107,23 @@ export const BACKOFFICE_NAV: NavGroup[] = [
         breadcrumbTitle: 'Lịch làm việc, Phân ca & Theo dõi',
         icon: <CalendarOutlined />,
         perms: ['schedule.read'],
+        roles: ['ADMIN', 'HR', 'STORE', 'FINANCE'],
       },
       {
         key: '/admin/schedules?section=workflows',
         label: 'Điểm danh, Nghỉ phép & Đổi ca',
         breadcrumbTitle: 'Lịch sử Điểm danh, Nghỉ phép & Đổi ca',
         icon: <FileDoneOutlined />,
-        perms: ['schedule.read'],
+        perms: ['schedule.read', 'attendance.read'],
+        roles: ['ADMIN', 'HR', 'STORE', 'FINANCE'],
       },
       {
         key: '/admin/payroll',
         label: 'Kỳ lương & Thưởng',
         breadcrumbTitle: 'Kỳ lương, Thưởng, Phụ cấp & Phiếu lương',
         icon: <DollarOutlined />,
-        perms: ['payroll.read', 'system.config'],
+        perms: ['payroll.read', 'payroll.manage'],
+        roles: ['FINANCE'],
       },
     ],
   },
@@ -126,7 +136,8 @@ export const BACKOFFICE_NAV: NavGroup[] = [
         label: 'Chi nhánh & Ca làm',
         breadcrumbTitle: 'Quản lý Chi nhánh, GPS & Khung ca',
         icon: <ShopOutlined />,
-        perms: ['system.config', 'employee.manage'],
+        perms: ['system.config'],
+        roles: ['ADMIN'],
       },
       {
         key: '/admin/audit-logs',
@@ -134,6 +145,7 @@ export const BACKOFFICE_NAV: NavGroup[] = [
         breadcrumbTitle: 'Nhật ký Kiểm toán',
         icon: <AuditOutlined />,
         perms: ['system.audit.read'],
+        roles: ['ADMIN'],
       },
       {
         key: '/admin/integrations',
@@ -141,20 +153,23 @@ export const BACKOFFICE_NAV: NavGroup[] = [
         breadcrumbTitle: 'Tích hợp, Đối soát & Mẫu Email',
         icon: <ApiOutlined />,
         perms: ['integration.read'],
+        roles: ['ADMIN'],
       },
       {
         key: '/admin/integrations?section=governance',
         label: 'Chính sách & Sao lưu Bảo trì',
         breadcrumbTitle: 'Chính sách Vận hành & Sao lưu Bảo trì',
         icon: <SafetyCertificateOutlined />,
-        perms: [],
+        perms: ['system.config', 'system.maintenance', 'system.backup'],
+        roles: ['ADMIN'],
       },
       {
         key: '/admin/integrations?section=comms',
         label: 'Bản tin Truyền thông Nội bộ',
         breadcrumbTitle: 'Bản tin Truyền thông Nội bộ',
         icon: <NotificationOutlined />,
-        perms: [],
+        perms: ['comms.manage'],
+        roles: ['MKT'],
       },
     ],
   },

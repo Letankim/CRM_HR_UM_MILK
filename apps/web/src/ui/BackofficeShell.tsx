@@ -45,10 +45,12 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
 
   const menuItems = useMemo<ItemType[]>(() => {
     if (!data) return [];
-    const has = (perms: Permission[]) => perms.length === 0 || perms.some((p) => data.user.permissions.includes(p));
+    const has = (perms: Permission[], roles?: string[]) =>
+      (!roles || roles.length === 0 || roles.includes(data.user.role)) &&
+      (perms.length === 0 || perms.some((p) => data.user.permissions.includes(p)));
     const groups = BACKOFFICE_NAV.map((g) => ({
       ...g,
-      visibleItems: g.items.filter((i) => has(i.perms)),
+      visibleItems: g.items.filter((i) => has(i.perms, i.roles)),
     })).filter((g) => g.visibleItems.length > 0);
 
     if (isCompactSider) {

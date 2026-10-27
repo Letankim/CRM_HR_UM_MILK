@@ -23,48 +23,43 @@ export function canAccessPath(user: PublicUser, pathname: string, section?: stri
   if (path.startsWith('/admin/employees')) {
     if (effectiveSection === 'recruitment') {
       return (
-        user.permissions.includes('candidate.manage') ||
-        user.permissions.includes('interview.manage') ||
-        user.permissions.includes('employee.read') ||
-        user.permissions.includes('system.config')
+        user.role === 'HR' &&
+        (user.permissions.includes('candidate.manage') || user.permissions.includes('interview.manage'))
       );
     }
     if (effectiveSection === 'tests') {
-      return (
-        user.permissions.includes('test.manage') ||
-        user.permissions.includes('test.read') ||
-        user.permissions.includes('system.config')
-      );
+      return user.role === 'HR' && user.permissions.includes('test.manage');
     }
     return user.permissions.includes('employee.read');
   }
   if (path.startsWith('/admin/accounts')) {
-    return user.permissions.includes('account.read');
+    return user.role === 'ADMIN' && (user.permissions.includes('account.manage') || user.permissions.includes('account.activate'));
   }
   if (path.startsWith('/admin/schedules')) {
     return user.permissions.includes('schedule.read');
   }
   if (path.startsWith('/admin/payroll')) {
-    return user.permissions.includes('payroll.read') || user.permissions.includes('system.config');
+    return user.role === 'FINANCE' && (user.permissions.includes('payroll.read') || user.permissions.includes('payroll.manage'));
   }
   if (path.startsWith('/admin/branches')) {
-    return user.permissions.includes('system.config') || user.permissions.includes('employee.manage');
+    return user.role === 'ADMIN' && user.permissions.includes('system.config');
   }
   if (path.startsWith('/admin/audit-logs')) {
-    return user.permissions.includes('system.audit.read');
+    return user.role === 'ADMIN' && user.permissions.includes('system.audit.read');
   }
   if (path.startsWith('/admin/integrations')) {
-    if (effectiveSection === 'governance' || effectiveSection === 'comms') {
+    if (effectiveSection === 'governance') {
       return (
-        user.permissions.includes('integration.read') ||
-        user.permissions.includes('comms.manage') ||
-        user.permissions.includes('notification.send') ||
-        user.permissions.includes('employee.read') ||
-        user.permissions.includes('schedule.read') ||
-        user.permissions.includes('payroll.read')
+        user.role === 'ADMIN' &&
+        (user.permissions.includes('system.config') ||
+          user.permissions.includes('system.maintenance') ||
+          user.permissions.includes('system.backup'))
       );
     }
-    return user.permissions.includes('integration.read');
+    if (effectiveSection === 'comms') {
+      return user.role === 'MKT' && user.permissions.includes('comms.manage');
+    }
+    return user.role === 'ADMIN' && user.permissions.includes('integration.read');
   }
   return true;
 }
@@ -102,7 +97,7 @@ export function resolveLandingRoute(
     return '/admin/integrations?section=comms';
   }
   if (user.role === 'HR') {
-    return user.permissions.includes('employee.read') ? '/admin/employees' : '/admin/accounts';
+    return user.permissions.includes('employee.read') ? '/admin/employees' : '/dashboard';
   }
   if (user.role === 'FINANCE') {
     return '/admin/payroll';
