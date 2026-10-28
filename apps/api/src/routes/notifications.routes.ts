@@ -56,6 +56,8 @@ async function ensureSyncedNotifications(ctx: AppContext, actorId: string) {
   }
   for (const s of ctx.db.shiftSwaps.all().slice(0, 10)) {
     if (!hasKey('SWAP_STORE', s.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: s.branch_id || 'ALL', category: 'WORKFLOW', title: `Yêu cầu đổi ca 3 bước (${s.swap_code || s.id})`, body: `Yêu cầu đổi ca ngày ${s.from_work_date} đang ở trạng thái ${s.status === 'APPROVED' ? 'Đã phê duyệt' : s.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã xác nhận — Chờ duyệt' : 'Chờ xử lý'}.`, link: '/admin/schedules?section=workflows', severity: s.status === 'PEER_ACCEPTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_STORE', entity_id: s.id });
+    const reqUser = findUserByEmp(s.requester_id), peerUser = findUserByEmp(s.peer_id), swapKey = `${s.id}_${s.status}`;
+    if ((reqUser || peerUser) && !hasKey('SWAP_USER', swapKey)) await ins({ recipient_user_id: [reqUser?.id, peerUser?.id].filter(Boolean).join(','), recipient_role: '', branch_id: s.branch_id || 'ALL', category: 'WORKFLOW', title: `Cập nhật yêu cầu đổi ca (${s.swap_code || s.id})`, body: `Đổi ca ngày ${s.from_work_date} (${s.from_shift_code}): ${s.status === 'APPROVED' ? 'Đã được Quản lý phê duyệt & cập nhật lịch chính thức' : s.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã xác nhận — Chờ Quản lý duyệt' : s.status === 'REJECTED' ? 'Đã bị từ chối' : 'Chờ đồng nghiệp xác nhận'}.`, link: '/nv/doi-ca', severity: s.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_USER', entity_id: swapKey });
   }
   for (const iv of ctx.db.interviews.all().slice(0, 10)) {
     if (iv.status !== 'CANCELLED' && !hasKey('INTERVIEW_HR', iv.id)) {

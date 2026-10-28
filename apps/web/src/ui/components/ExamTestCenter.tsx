@@ -166,7 +166,7 @@ export function EmployeeTestCenterView({
         { title: 'Đề thi nghiệp vụ', dataIndex: 'testTitle', ellipsis: true },
         { title: 'Thời lượng', dataIndex: 'durationMinutes', width: 95, render: (v: number) => `${v ?? 15} phút` },
         { title: 'Lượt đã thi', width: 105, render: (_, r) => <Tag color="blue" style={{ margin: 0 }}>{`${r.attempts_used ?? 0}/${r.max_attempts ?? 3} lần`}</Tag> },
-        { title: 'Hạn nộp bài', dataIndex: 'close_at', width: 135, render: (v: string) => <span className="num" style={{ fontSize: 12 }}>{v ? dayjs(v).format('HH:mm DD/MM/YYYY') : '—'}</span> },
+        { title: 'Thời gian mở / Hạn nộp', width: 175, render: (_, r) => <div className="num" style={{ fontSize: 12 }}><div>Mở: {r.open_at ? dayjs(String(r.open_at)).format('HH:mm DD/MM') : 'Mở ngay'}</div><div style={{ color: '#64748B' }}>Hạn: {r.close_at ? dayjs(String(r.close_at)).format('HH:mm DD/MM/YYYY') : '—'}</div></div> },
         { title: 'Điểm cao nhất', dataIndex: 'best_score_percent', width: 115, render: (v: number) => <Tag color={v >= 80 ? 'green' : 'default'}>{v ?? 0}%</Tag> },
         { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag value={v} /> },
         {

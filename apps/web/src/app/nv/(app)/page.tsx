@@ -125,10 +125,11 @@ export default function EmployeeHome() {
   );
 
   const tasksCard = (
-    <Card size="small" title="Việc cần chú ý & Bài kiểm tra TEST">
+    <Card size="small" title="Việc cần chú ý, Yêu cầu chờ duyệt & Bài kiểm tra TEST">
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><SwapOutlined /> Yêu cầu đổi ca đang xử lý</span><Link href="/nv/lich"><Badge count={pendingSwaps.length} showZero color={BRAND.primary} /></Link></div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><BookOutlined /> Bài kiểm tra TEST được giao</span><Link href="/nv/bai-kiem-tra"><Tag color="blue" style={{ margin: 0 }}>{myTests.length} bài thi</Tag></Link></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><ClockCircleOutlined /> Đơn nghỉ OFF đang chờ duyệt</span><Link href="/nv/nghi-phep"><Badge count={myLeaves.filter((l) => l.status === 'PENDING').length} showZero color="#D97706" /></Link></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><SwapOutlined /> Yêu cầu đổi ca đang xử lý</span><Link href="/nv/doi-ca"><Badge count={pendingSwaps.length} showZero color={BRAND.primary} /></Link></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><BookOutlined /> Bài kiểm tra TEST sắp tới</span><Link href="/nv/bai-kiem-tra"><Tag color="blue" style={{ margin: 0 }}>{myTests.length} bài thi</Tag></Link></div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><NotificationOutlined /> Bản tin truyền thông nội bộ</span><Link href="/nv/ban-tin"><Tag color="geekblue" style={{ margin: 0 }}>{(commsQ.data?.announcements ?? []).length} bản tin · Xem ngay</Tag></Link></div>
       </Space>
     </Card>
@@ -153,10 +154,10 @@ export default function EmployeeHome() {
           <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
             {[
               { href: '/nv/diem-danh', label: 'Điểm danh GPS', icon: <EnvironmentOutlined />, primary: true },
-              { href: '/nv/lich', label: 'Lịch & Đăng ký ca', icon: <CalendarOutlined /> },
+              { href: '/nv/lich', label: 'Xem lịch & Đăng ký ca', icon: <CalendarOutlined /> },
               { href: '/nv/nghi-phep', label: 'Đăng ký Nghỉ OFF', icon: <ClockCircleOutlined /> },
-              { href: '/nv/doi-ca', label: 'Đổi ca nội bộ', icon: <SwapOutlined /> },
-              { href: '/nv/cong', label: 'Bảng công & Bù công', icon: <FieldTimeOutlined /> },
+              { href: '/nv/bai-kiem-tra', label: 'Thi TEST Nghiệp vụ', icon: <BookOutlined /> },
+              { href: '/nv/cong', label: 'Công của tôi & Bù công', icon: <FieldTimeOutlined /> },
               { href: '/nv/phieu-luong', label: 'Phiếu lương cá nhân', icon: <FileTextOutlined /> },
             ].map((btn) => (
               <Col span={8} key={btn.href}>
@@ -193,10 +194,10 @@ export default function EmployeeHome() {
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
         {[
           { href: '/nv/diem-danh', label: 'Điểm danh GPS', icon: <EnvironmentOutlined />, primary: true },
-          { href: '/nv/lich', label: 'Lịch & Đăng ký ca', icon: <CalendarOutlined /> },
+          { href: '/nv/lich', label: 'Xem lịch & Ca', icon: <CalendarOutlined /> },
           { href: '/nv/nghi-phep', label: 'Đăng ký Nghỉ OFF', icon: <ClockCircleOutlined /> },
-          { href: '/nv/doi-ca', label: 'Đổi ca nội bộ', icon: <SwapOutlined /> },
-          { href: '/nv/cong', label: 'Bảng công', icon: <FieldTimeOutlined /> },
+          { href: '/nv/bai-kiem-tra', label: 'Thi TEST', icon: <BookOutlined /> },
+          { href: '/nv/cong', label: 'Công & Bù công', icon: <FieldTimeOutlined /> },
           { href: '/nv/phieu-luong', label: 'Phiếu lương', icon: <FileTextOutlined /> },
         ].map((btn) => (
           <Col span={12} key={btn.href}><Link href={btn.href} style={{ display: 'block' }}><Button type={btn.primary ? 'primary' : 'default'} icon={btn.icon} block style={{ height: 40, justifyContent: 'flex-start', fontWeight: 600 }}>{btn.label}</Button></Link></Col>

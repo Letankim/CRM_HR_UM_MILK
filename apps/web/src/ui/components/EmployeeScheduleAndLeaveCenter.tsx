@@ -101,9 +101,9 @@ export function EmployeeScheduleAndLeaveCenter({
                     bulkActions={buildPortalShiftsBulkActions({ loading: cancelShiftMut.isPending, onCancelDrafts: (rows) => cancelShiftMut.mutate(rows.map((r) => String(r.id))), onCreateAbsentAdj: (row) => setDetailTarget({ kind: 'shift', record: { ...row, employeeId: empId } }) })}
                     locale={{ emptyText: 'Bạn chưa có ca làm việc nào được phân công trong kỳ này.' }}
                     columns={[
-                      { title: 'Ngày làm việc', dataIndex: 'workDate', width: 150, render: (v: string) => <Space size={6}><span className="num" style={{ fontWeight: 600 }}>{dayjs(v).format('DD/MM/YYYY')}</span>{v === todayDate && <Tag color="blue" style={{ margin: 0 }}>Hôm nay</Tag>}</Space> },
+                      { title: 'Ngày & Phân loại', dataIndex: 'workDate', width: 175, render: (v: string, r) => <Space size={4} wrap><span className="num" style={{ fontWeight: 600 }}>{dayjs(v).format('DD/MM/YYYY')}</span><Tag color={r.dayType === 'OFF' || r.status === 'ON_LEAVE' ? 'gold' : 'blue'} style={{ margin: 0 }}>{r.dayType === 'OFF' || r.status === 'ON_LEAVE' ? 'Nghỉ OFF' : 'Làm việc'}</Tag></Space> },
                       { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                      { title: 'Chi nhánh', dataIndex: 'branchName', width: 200, ellipsis: true },
+                      { title: 'Chi nhánh', dataIndex: 'branchName', width: 185, ellipsis: true },
                       { title: 'Điểm danh', width: 185, render: (_, r) => <Tag color={String(r.attendanceStatusColor || 'default')} style={{ margin: 0 }}>{String(r.attendanceStatusLabel || 'Chưa điểm danh')}</Tag> },
                       { title: 'Trạng thái lịch', dataIndex: 'status', width: 150, render: (v: string, r) => <StatusTag value={v} label={String(r.statusLabel || '') || undefined} /> },
                       {
@@ -138,10 +138,11 @@ export function EmployeeScheduleAndLeaveCenter({
                   bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportLeavesExcel(rows) }]}
                   locale={{ emptyText: 'Bạn chưa có đơn đăng ký nghỉ phép (OFF) nào trong kỳ.' }}
                   columns={[
-                    { title: 'Mã đơn', dataIndex: 'request_code', width: 115, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
-                    { title: 'Ngày xin nghỉ', dataIndex: 'leave_date', width: 125, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                    { title: 'Trạng thái', dataIndex: 'status', width: 155, render: (v: string) => <StatusTag value={v} /> },
+                    { title: 'Mã đơn', dataIndex: 'request_code', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
+                    { title: 'Ngày xin nghỉ', dataIndex: 'leave_date', width: 120, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
+                    { title: 'Khung ca & Giờ ca', width: 215, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                    { title: 'Lý do & Phản hồi / Từ chối', render: (_, r) => <div><div>{String(r.reason || '—')}</div>{Boolean(r.decision_reason) && <div style={{ fontSize: 11, color: r.status === 'REJECTED' ? '#DC2626' : '#15803D', marginTop: 2 }}>{r.status === 'REJECTED' ? 'Lý do từ chối: ' : 'Phản hồi: '}{String(r.decision_reason)}</div>}</div> },
+                    { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (v: string) => <StatusTag value={v} /> },
                     { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết đơn nghỉ OFF" onViewDetail={() => setDetailTarget({ kind: 'leave', record: r })} /> },
                   ]}
                 />
@@ -151,10 +152,11 @@ export function EmployeeScheduleAndLeaveCenter({
                     bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportEmergencyExcel(rows) }]}
                     title={() => <span style={{ fontWeight: 600, fontSize: 13 }}>Báo cáo nghỉ khẩn cấp sát giờ ca (&lt;12h)</span>}
                     columns={[
-                      { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 115, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
-                      { title: 'Ngày nghỉ', dataIndex: 'work_date', width: 125, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
-                      { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                      { title: 'Trạng thái', dataIndex: 'status', width: 155, render: (v: string) => <StatusTag value={v} /> },
+                      { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 110, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
+                      { title: 'Ngày nghỉ', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
+                      { title: 'Khung ca & Giờ ca', width: 215, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                      { title: 'Người thay / Tình trạng phủ ca', render: (_, r) => <Tag color={r.shift_coverage_status === 'COVERED' || r.status === 'RESOLVED' ? 'green' : 'volcano'} style={{ margin: 0 }}>{r.replacementName ? `Người thay: ${String(r.replacementName)}` : r.shift_coverage_status === 'COVERED' || r.status === 'RESOLVED' ? 'Đã có người thay ca' : 'Ca chưa được phủ — Đang tìm người thay'}</Tag> },
+                      { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (v: string) => <StatusTag value={v} /> },
                       { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết báo nghỉ khẩn" onViewDetail={() => setDetailTarget({ kind: 'emergency', record: r })} /> },
                     ]}
                   />

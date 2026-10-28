@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Alert, App, Form, Input, Modal, Select } from 'antd';
-import { CloseOutlined, PlusOutlined, SendOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Form, Input, Modal, Select, Space } from 'antd';
+import { CloseOutlined, PlusOutlined, SaveOutlined, SendOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
@@ -75,6 +75,21 @@ export function LeaveRequestModal({
   const [loading, setLoading] = useState(false);
   const { options: shiftOptions } = useShiftTemplates();
   const reqMode = Form.useWatch('req_mode', form) || 'LEAVE';
+  const draftKey = `umbm_leave_draft_${employeeId || 'me'}`;
+
+  useEffect(() => {
+    if (!open || typeof window === 'undefined') return;
+    try {
+      const saved = window.localStorage.getItem(draftKey);
+      if (saved) form.setFieldsValue(JSON.parse(saved));
+    } catch { /* ignore */ }
+  }, [open, draftKey, form]);
+
+  const handleSaveDraft = () => {
+    if (typeof window !== 'undefined') window.localStorage.setItem(draftKey, JSON.stringify(form.getFieldsValue()));
+    message.success('Đã lưu nháp đơn đăng ký nghỉ OFF trên thiết bị');
+    onClose();
+  };
 
   const handleSubmit = async () => {
     try {
@@ -87,13 +102,25 @@ export function LeaveRequestModal({
         await api.post('/admin/leave-requests', { ...vals, employee_id: employeeId });
         message.success('Đã gửi đơn đăng ký nghỉ OFF thành công');
       }
+      if (typeof window !== 'undefined') window.localStorage.removeItem(draftKey);
       form.resetFields(); onSuccess(); onClose();
     } catch (e) { if (e instanceof ApiClientError) message.error(e.message); }
     finally { setLoading(false); }
   };
 
   return (
-    <Modal width={640} open={open} forceRender title="Đăng ký Nghỉ phép OFF / Báo nghỉ Khẩn cấp (<12h)" onCancel={onClose} onOk={handleSubmit} confirmLoading={loading} okText={reqMode === 'EMERGENCY' ? 'Gửi báo nghỉ khẩn cấp' : 'Gửi đơn đăng ký OFF'} cancelText="Đóng" okButtonProps={{ icon: <SendOutlined />, danger: reqMode === 'EMERGENCY' }} cancelButtonProps={{ icon: <CloseOutlined /> }}>
+    <Modal
+      width={640} open={open} forceRender title="Đăng ký Nghỉ phép OFF / Báo nghỉ Khẩn cấp (<12h)" onCancel={onClose}
+      footer={
+        <Space wrap>
+          <Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
+          {reqMode === 'LEAVE' && <Button icon={<SaveOutlined />} onClick={handleSaveDraft}>Lưu nháp</Button>}
+          <Button type="primary" danger={reqMode === 'EMERGENCY'} icon={<SendOutlined />} loading={loading} onClick={handleSubmit}>
+            {reqMode === 'EMERGENCY' ? 'Gửi báo nghỉ khẩn cấp' : 'Gửi đơn đăng ký OFF'}
+          </Button>
+        </Space>
+      }
+    >
       <Form form={form} layout="vertical" initialValues={{ req_mode: 'LEAVE', leave_date: dayjs().add(1, 'day').format('YYYY-MM-DD'), shift_code: 'CA_SANG', reason: 'Xin nghỉ phép theo định mức chu kỳ' }}>
         <Form.Item name="req_mode" label="Loại đề nghị nghỉ"><Select options={[{ value: 'LEAVE', label: 'Đăng ký nghỉ phép OFF định kỳ (Theo định mức chu kỳ)' }, { value: 'EMERGENCY', label: 'Báo nghỉ khẩn cấp sát giờ ca (<12h trước giờ vào ca)' }]} /></Form.Item>
         <Form.Item name="leave_date" label="Ngày xin nghỉ" rules={[{ required: true, message: 'Chọn ngày nghỉ' }]}><DateStringPicker minDate={dayjs().format('YYYY-MM-DD')} /></Form.Item>

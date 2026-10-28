@@ -149,13 +149,29 @@ export default function EmployeeSection() {
         )}
 
         {section === 'cong' && (
-          <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-              <Typography.Text type="secondary">Nếu quên chấm công ra ca, vui lòng gửi Phiếu bổ sung công. Bấm nút thao tác để xem chi tiết.</Typography.Text>
-              <Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(undefined); setAdjOpen(true); }}>Gửi phiếu bổ sung công</Button>
-            </div>
-            <SelectableTable<Record<string, unknown>> size="small" rowKey="id" pagination={adjPag} dataSource={myAdjustments} bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAdjustmentsExcel(rows) }]} columns={[{ title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 115, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> }, { title: 'Ngày công', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> }, { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{String(r.shiftTimeRange || '07:00 – 12:00')}</Tag></Space> }, { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 115, render: (v: number) => <strong>{v} giờ</strong> }, { title: 'Trạng thái', dataIndex: 'status', width: 155, render: (v: string) => <StatusTag value={v} /> }, { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết phiếu bổ sung" onViewDetail={() => setDetailReq({ kind: 'adjustment', record: r })} /> }]} />
-          </>
+          <Tabs items={[
+            {
+              key: 'timesheet', label: <span><ClockCircleOutlined /> Công của tôi theo ca ({publishedShifts.length})</span>,
+              children: (
+                <>
+                  <Alert type="info" showIcon style={{ marginBottom: 10 }} message="Bảng công cá nhân chỉ đọc (không được sửa trực tiếp dữ liệu công gốc). Nếu có ca thiếu lượt check-in/out hoặc vắng mặt cần giải trình, vui lòng bấm 'Gửi phiếu bổ sung công'." action={<Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(undefined); setAdjOpen(true); }}>Gửi phiếu bổ sung công</Button>} />
+                  <SelectableTable<Record<string, unknown>> size="small" rowKey="id" pagination={attPag} dataSource={publishedShifts} bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAdjustmentsExcel(rows) }]} columns={[{ title: 'Ngày làm', dataIndex: 'workDate', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> }, { title: 'Ca & Tổng giờ', width: 210, render: (_, r) => <Space size={4} wrap><strong>{cleanShiftName(r.shiftLabel)}</strong><Tag color="blue" style={{ margin: 0 }}>{String(r.startAt || '07:00')}–{String(r.endAt || '12:00')} ({String(r.scheduledHours || 5)}h)</Tag></Space> }, { title: 'Check-in / Check-out & Cờ sự cố', render: (_, r) => { const inEv = r.checkInEvent as Record<string, unknown> | null; const outEv = r.checkOutEvent as Record<string, unknown> | null; return <Space size={4} wrap>{inEv ? <Tag color={inEv.punctualityStatus === 'LATE' ? 'volcano' : 'green'} style={{ margin: 0 }}>Vào: {String(inEv.checkTimeFormatted || '').slice(0, 5)} ({String(inEv.punctualityLabel)})</Tag> : <Tag style={{ margin: 0 }}>Chưa Check-in</Tag>}{outEv ? <Tag color={outEv.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} style={{ margin: 0 }}>Ra: {String(outEv.checkTimeFormatted || '').slice(0, 5)} ({String(outEv.punctualityLabel)})</Tag> : inEv ? <Tag color="orange" style={{ margin: 0 }}>Thiếu Check-out</Tag> : null}</Space>; } }, { title: 'Trạng thái công', width: 195, render: (_, r) => <Tag color={String(r.attendanceStatusColor || 'default')} style={{ margin: 0 }}>{String(r.attendanceStatusLabel || 'Chưa điểm danh')}</Tag> }, { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết ca công" onViewDetail={() => setDetailReq({ kind: 'shift', record: { ...r, employeeId: empId } })} /> }]} />
+                </>
+              ),
+            },
+            {
+              key: 'adjustments', label: <span><FileAddOutlined /> Phiếu bổ sung công ({myAdjustments.length})</span>,
+              children: (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                    <Typography.Text type="secondary">Báo quên check-in/check-out, lỗi GPS/Camera hoặc sự cố liên quan và theo dõi kết quả Cửa hàng / HR xử lý.</Typography.Text>
+                    <Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(undefined); setAdjOpen(true); }}>Gửi phiếu bổ sung công</Button>
+                  </div>
+                  <SelectableTable<Record<string, unknown>> size="small" rowKey="id" pagination={adjPag} dataSource={myAdjustments} bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAdjustmentsExcel(rows) }]} columns={[{ title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 115, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> }, { title: 'Ngày công', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> }, { title: 'Khung ca & Giờ ca', width: 220, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{String(r.shiftTimeRange || '07:00 – 12:00')}</Tag></Space> }, { title: 'Loại sự cố & Lý do', render: (_, r) => <div><Tag color="orange" style={{ margin: '0 6px 0 0' }}>{r.kind === 'FORGOT_CHECK_IN' ? 'Quên Check-in' : r.kind === 'FORGOT_CHECK_OUT' ? 'Quên Check-out' : r.kind === 'GPS_ERROR' ? 'Lỗi GPS' : r.kind === 'CAMERA_ERROR' ? 'Lỗi Camera' : 'Sự cố khác'}</Tag><span>{String(r.reason || '')}</span></div> }, { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 105, render: (v: number) => <strong>{v} giờ</strong> }, { title: 'Trạng thái xử lý', dataIndex: 'status', width: 155, render: (v: string) => <StatusTag value={v} /> }, { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết phiếu bổ sung" onViewDetail={() => setDetailReq({ kind: 'adjustment', record: r })} /> }]} />
+                </>
+              ),
+            },
+          ]} />
         )}
 
         {section === 'bai-kiem-tra' && <EmployeeTestCenterView assignments={myTests} attempts={myAttempts} tests={testsQ.data?.tests ?? []} onRefresh={() => qc.invalidateQueries({ queryKey: ['nv-tests'] })} />}
