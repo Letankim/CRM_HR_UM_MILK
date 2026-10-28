@@ -191,7 +191,9 @@ export function emitScheduleRealtime(
   event: string,
   opts: { branchId?: string; employeeIds?: (string | undefined)[]; kind?: string; message?: string; actorId?: string },
 ): void {
-  const kind = opts.kind ?? 'SCHEDULE_SYNC', batchKey = `${event}:${kind}`;
+  const firstEmpId = (opts.employeeIds ?? []).find(Boolean) ?? '';
+  const resolvedBranchId = resolveEmployeeBranchId(ctx, firstEmpId, opts.branchId ?? '') || opts.branchId || '';
+  const kind = opts.kind ?? 'SCHEDULE_SYNC', batchKey = `${event}:${kind}:${resolvedBranchId || 'ALL'}`;
   const existing = pendingRealtimeBatches.get(batchKey);
   const userIds = existing?.userIds ?? new Set<string>();
   for (const rawId of opts.employeeIds ?? []) {
@@ -203,7 +205,7 @@ export function emitScheduleRealtime(
   if (existing) clearTimeout(existing.timer);
   const count = (existing?.count ?? 0) + 1;
   const firstMsg = existing?.firstMsg || opts.message || '';
-  const branchId = existing && existing.branchId !== (opts.branchId ?? '') ? 'ALL' : (opts.branchId ?? '');
+  const branchId = resolvedBranchId || existing?.branchId || '';
   const actorId = opts.actorId ?? existing?.actorId ?? '';
   const timer = setTimeout(() => {
     pendingRealtimeBatches.delete(batchKey);

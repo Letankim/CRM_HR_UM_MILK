@@ -77,14 +77,23 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     const isSelfOrDup = (() => {
       let lastSig = '';
       let lastAt = 0;
-      return (eventKey: string, payload?: { actorId?: string; kind?: string; code?: string; title?: string; message?: string }) => {
-        const myId = userId || qc.getQueryData<{ user?: { id?: string } }>(['me'])?.user?.id;
+      return (eventKey: string, payload?: { actorId?: string; branchId?: string; kind?: string; code?: string; title?: string; message?: string }) => {
+        const meUser = qc.getQueryData<{ user?: { id?: string; role?: string; branchScope?: 'ALL' | string[] } }>(['me'])?.user;
+        const myId = userId || meUser?.id;
         const isSelf = Boolean((payload?.actorId && myId && payload.actorId === myId) || isInSelfActionWindow());
+        const outOfBranch = Boolean(
+          meUser?.role === 'STORE' &&
+          payload?.branchId &&
+          payload.branchId !== 'ALL' &&
+          (!Array.isArray(meUser.branchScope) || !meUser.branchScope.includes(payload.branchId)),
+        );
         const sig = `${eventKey}:${payload?.kind || ''}:${payload?.code || ''}:${payload?.title || ''}:${payload?.message || ''}`;
         const now = Date.now();
-        const isDup = sig === lastSig && now - lastAt < 1500;
-        lastSig = sig;
-        lastAt = now;
+        const isDup = outOfBranch || (sig === lastSig && now - lastAt < 1500);
+        if (!outOfBranch) {
+          lastSig = sig;
+          lastAt = now;
+        }
         return { isSelf, isDup };
       };
     })();

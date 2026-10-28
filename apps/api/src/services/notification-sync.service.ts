@@ -96,46 +96,46 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
     }
   }
   for (const a of ctx.db.shiftAssignments.all().slice(-40)) {
-    const emp = findEmp(a.employee_id), empUser = findUserByEmp(a.employee_id), empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : a.employee_id;
+    const emp = findEmp(a.employee_id), empUser = findUserByEmp(a.employee_id), empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : a.employee_id, brId = a.branch_id || emp?.branch_id || 'ALL';
     if (a.status === 'DRAFT' && !hasKey('SHIFT_DRAFT_ROLE', a.id)) {
-      await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: a.branch_id || 'ALL', category: 'WORKFLOW', title: `Đăng ký ca làm việc chờ duyệt: ${empLabel}`, body: `${shiftLabel(a.shift_code)} (${a.start_at}–${a.end_at}) ngày ${a.work_date} đang chờ Quản lý cửa hàng / HR duyệt phân ca.`, link: '/admin/schedules', severity: 'WARNING', entity_type: 'SHIFT_DRAFT_ROLE', entity_id: a.id }, empUser?.id || a.created_by);
+      await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Đăng ký ca làm việc chờ duyệt: ${empLabel}`, body: `${shiftLabel(a.shift_code)} (${a.start_at}–${a.end_at}) ngày ${a.work_date} đang chờ Quản lý cửa hàng / HR duyệt phân ca.`, link: '/admin/schedules', severity: 'WARNING', entity_type: 'SHIFT_DRAFT_ROLE', entity_id: a.id }, empUser?.id || a.created_by);
     }
     if (empUser && a.status === 'PUBLISHED' && a.source === 'EMPLOYEE_REGISTER' && !hasKey('SHIFT_PUB_USER', `${a.id}_PUBLISHED`)) {
-      await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: a.branch_id || 'ALL', category: 'WORKFLOW', title: `Ca đăng ký ngày ${a.work_date} đã được duyệt phân ca chính thức`, body: `${shiftLabel(a.shift_code)} (${a.start_at}–${a.end_at}) ngày ${a.work_date} đã được phê duyệt. Bạn đã có thể chấm công Vào/Ra ca.`, link: '/nv/lich', severity: 'INFO', entity_type: 'SHIFT_PUB_USER', entity_id: `${a.id}_PUBLISHED` }, a.updated_by);
+      await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: brId, category: 'WORKFLOW', title: `Ca đăng ký ngày ${a.work_date} đã được duyệt phân ca chính thức`, body: `${shiftLabel(a.shift_code)} (${a.start_at}–${a.end_at}) ngày ${a.work_date} đã được phê duyệt. Bạn đã có thể chấm công Vào/Ra ca.`, link: '/nv/lich', severity: 'INFO', entity_type: 'SHIFT_PUB_USER', entity_id: `${a.id}_PUBLISHED` }, a.updated_by);
     }
   }
   for (const l of ctx.db.leaveRequests.all().slice(-40)) {
-    const code = l.request_code || l.id, emp = findEmp(l.employee_id), empUser = findUserByEmp(l.employee_id), empKey = `${l.id}_${l.status}`;
+    const code = l.request_code || l.id, emp = findEmp(l.employee_id), empUser = findUserByEmp(l.employee_id), empKey = `${l.id}_${l.status}`, brId = l.branch_id || emp?.branch_id || 'ALL';
     const empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : l.employee_id;
     if (l.status === 'PENDING' && !hasKey('LEAVE_ROLE', l.id)) {
-      await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: l.branch_id || 'ALL', category: 'WORKFLOW', title: `Đơn xin nghỉ phép (OFF) chờ duyệt: ${code} — ${empLabel}`, body: `Nhân sự ${empLabel} xin nghỉ ngày ${l.leave_date} — Lý do: ${l.reason || 'Nghỉ phép cá nhân'}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'LEAVE_ROLE', entity_id: l.id }, empUser?.id || l.created_by);
+      await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Đơn xin nghỉ phép (OFF) chờ duyệt: ${code} — ${empLabel}`, body: `Nhân sự ${empLabel} xin nghỉ ngày ${l.leave_date} — Lý do: ${l.reason || 'Nghỉ phép cá nhân'}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'LEAVE_ROLE', entity_id: l.id }, empUser?.id || l.created_by);
     }
     if (empUser && (l.status === 'APPROVED' || l.status === 'REJECTED') && empUser.id !== l.decided_by && !hasKey('LEAVE_USER', empKey)) {
-      await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: l.branch_id || 'ALL', category: 'WORKFLOW', title: l.status === 'APPROVED' ? `Đơn xin nghỉ OFF (${l.leave_date}) đã được phê duyệt` : `Đơn xin nghỉ OFF (${l.leave_date}) bị từ chối`, body: `Mã đơn: ${code} · Ngày nghỉ: ${l.leave_date} · Lý do: ${l.decision_reason || l.reason || 'Cá nhân'}.`, link: '/nv/nghi-phep', severity: l.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'LEAVE_USER', entity_id: empKey }, l.decided_by);
+      await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: brId, category: 'WORKFLOW', title: l.status === 'APPROVED' ? `Đơn xin nghỉ OFF (${l.leave_date}) đã được phê duyệt` : `Đơn xin nghỉ OFF (${l.leave_date}) bị từ chối`, body: `Mã đơn: ${code} · Ngày nghỉ: ${l.leave_date} · Lý do: ${l.decision_reason || l.reason || 'Cá nhân'}.`, link: '/nv/nghi-phep', severity: l.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'LEAVE_USER', entity_id: empKey }, l.decided_by);
     }
   }
   for (const s of ctx.db.shiftSwaps.all().slice(-40)) {
-    const reqEmp = findEmp(s.requester_id), reqUser = findUserByEmp(s.requester_id), peerUser = findUserByEmp(s.peer_id), swapKey = `${s.id}_${s.status}`;
+    const reqEmp = findEmp(s.requester_id), reqUser = findUserByEmp(s.requester_id), peerUser = findUserByEmp(s.peer_id), swapKey = `${s.id}_${s.status}`, brId = s.branch_id || reqEmp?.branch_id || 'ALL';
     const reqLabel = reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id;
     if ((s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED') && !hasKey('SWAP_STORE', `${s.id}_${s.status}`)) {
-      await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: s.branch_id || 'ALL', category: 'WORKFLOW', title: `Yêu cầu đổi ca (${s.swap_code || s.id}): ${reqLabel}`, body: `Đổi ca ngày ${s.from_work_date} (${shiftLabel(s.from_shift_code)}) đang ở trạng thái ${s.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã xác nhận — Chờ Quản lý / HR duyệt' : 'Chờ đồng nghiệp xác nhận'}.`, link: '/admin/schedules?section=workflows', severity: s.status === 'PEER_ACCEPTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_STORE', entity_id: `${s.id}_${s.status}` }, s.status === 'PEER_ACCEPTED' ? (peerUser?.id || s.updated_by) : (reqUser?.id || s.created_by));
+      await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Yêu cầu đổi ca (${s.swap_code || s.id}): ${reqLabel}`, body: `Đổi ca ngày ${s.from_work_date} (${shiftLabel(s.from_shift_code)}) đang ở trạng thái ${s.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã xác nhận — Chờ Quản lý / HR duyệt' : 'Chờ đồng nghiệp xác nhận'}.`, link: '/admin/schedules?section=workflows', severity: s.status === 'PEER_ACCEPTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_STORE', entity_id: `${s.id}_${s.status}` }, s.status === 'PEER_ACCEPTED' ? (peerUser?.id || s.updated_by) : (reqUser?.id || s.created_by));
     }
     const targetIds = s.status === 'PENDING_PEER' ? [peerUser?.id] : (s.status === 'PEER_ACCEPTED' || s.status === 'PEER_DECLINED') ? [reqUser?.id] : [reqUser?.id, peerUser?.id].filter((id) => id !== s.decided_by);
     const cleanTargetIds = targetIds.filter(Boolean).join(',');
     if (cleanTargetIds && !hasKey('SWAP_USER', swapKey)) {
-      await ins({ recipient_user_id: cleanTargetIds, recipient_role: '', branch_id: s.branch_id || 'ALL', category: 'WORKFLOW', title: `Cập nhật yêu cầu đổi ca (${s.swap_code || s.id})`, body: `Đổi ca ngày ${s.from_work_date} (${shiftLabel(s.from_shift_code)}): ${s.status === 'APPROVED' ? 'Đã được Quản lý phê duyệt & cập nhật lịch chính thức' : s.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã xác nhận — Chờ Quản lý duyệt' : s.status === 'REJECTED' || s.status === 'PEER_DECLINED' ? 'Đã bị từ chối' : `${reqLabel} nhờ bạn nhận ca thay`}.`, link: '/nv/doi-ca', severity: s.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_USER', entity_id: swapKey }, s.status === 'PENDING_PEER' ? (reqUser?.id || s.created_by) : (s.decided_by || peerUser?.id || s.updated_by));
+      await ins({ recipient_user_id: cleanTargetIds, recipient_role: '', branch_id: brId, category: 'WORKFLOW', title: `Cập nhật yêu cầu đổi ca (${s.swap_code || s.id})`, body: `Đổi ca ngày ${s.from_work_date} (${shiftLabel(s.from_shift_code)}): ${s.status === 'APPROVED' ? 'Đã được Quản lý phê duyệt & cập nhật lịch chính thức' : s.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã xác nhận — Chờ Quản lý duyệt' : s.status === 'REJECTED' || s.status === 'PEER_DECLINED' ? 'Đã bị từ chối' : `${reqLabel} nhờ bạn nhận ca thay`}.`, link: '/nv/doi-ca', severity: s.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_USER', entity_id: swapKey }, s.status === 'PENDING_PEER' ? (reqUser?.id || s.created_by) : (s.decided_by || peerUser?.id || s.updated_by));
     }
   }
   const adjDecisionBatches = new Map<string, typeof adjList>();
   const adjList = ctx.db.attendanceAdjustments.all().slice(-50);
   for (const adj of adjList) {
-    const emp = findEmp(adj.employee_id), empUser = findUserByEmp(adj.employee_id), empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : adj.employee_id;
+    const emp = findEmp(adj.employee_id), empUser = findUserByEmp(adj.employee_id), empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : adj.employee_id, brId = adj.branch_id || emp?.branch_id || 'ALL';
     const hrEntityId = adj.status === 'STORE_CONFIRMED' ? `${adj.id}_STORE_CONFIRMED` : adj.id;
     if ((adj.status === 'PENDING' || adj.status === 'STORE_CONFIRMED') && !hasKey('ATT_ADJ_HR', hrEntityId)) {
-      await ins({ recipient_user_id: '', recipient_role: 'HR,STORE,FINANCE', branch_id: adj.branch_id || 'ALL', category: 'ATTENDANCE', title: adj.status === 'STORE_CONFIRMED' ? `CH đã xác nhận phiếu bù công chờ HR duyệt: ${adj.adjustment_code} (${empLabel})` : `Phiếu bổ sung / lỗi chấm công chờ chốt: ${adj.adjustment_code} (${empLabel})`, body: `Nhân sự ${empLabel} · Ngày công ${adj.work_date} (${adj.requested_hours}h) — Lý do: ${adj.reason}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'ATT_ADJ_HR', entity_id: hrEntityId }, adj.status === 'STORE_CONFIRMED' ? (adj.store_confirmed_by || adj.updated_by) : (empUser?.id || adj.created_by));
+      await ins({ recipient_user_id: '', recipient_role: adj.status === 'STORE_CONFIRMED' ? 'HR,FINANCE' : 'HR,STORE,FINANCE', branch_id: brId, category: 'ATTENDANCE', title: adj.status === 'STORE_CONFIRMED' ? `CH đã xác nhận phiếu bù công chờ HR duyệt: ${adj.adjustment_code} (${empLabel})` : `Phiếu bổ sung / lỗi chấm công chờ chốt: ${adj.adjustment_code} (${empLabel})`, body: `Nhân sự ${empLabel} · Ngày công ${adj.work_date} (${adj.requested_hours}h) — Lý do: ${adj.reason}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'ATT_ADJ_HR', entity_id: hrEntityId }, adj.status === 'STORE_CONFIRMED' ? (adj.store_confirmed_by || adj.updated_by) : (empUser?.id || adj.created_by));
     }
     if (adj.status === 'STORE_CONFIRMED' && empUser && empUser.id !== adj.store_confirmed_by && !hasKey('ATT_ADJ_USER', `${adj.id}_STORE_CONFIRMED`)) {
-      await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: adj.branch_id || 'ALL', category: 'ATTENDANCE', title: `Phiếu bổ sung công (${adj.adjustment_code}) đã được Cửa hàng xác nhận`, body: `Ngày công ${adj.work_date} (${adj.requested_hours}h) — ${adj.store_note || adj.reason}.`, link: '/nv/cong', severity: 'INFO', entity_type: 'ATT_ADJ_USER', entity_id: `${adj.id}_STORE_CONFIRMED` }, adj.store_confirmed_by);
+      await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: brId, category: 'ATTENDANCE', title: `Phiếu bổ sung công (${adj.adjustment_code}) đã được Cửa hàng xác nhận`, body: `Ngày công ${adj.work_date} (${adj.requested_hours}h) — ${adj.store_note || adj.reason}.`, link: '/nv/cong', severity: 'INFO', entity_type: 'ATT_ADJ_USER', entity_id: `${adj.id}_STORE_CONFIRMED` }, adj.store_confirmed_by);
     } else if (adj.status === 'APPROVED' || adj.status === 'REJECTED') {
       const bk = `${(adj.decided_at || adj.updated_at).slice(0, 16)}_${adj.status}`;
       adjDecisionBatches.set(bk, [...(adjDecisionBatches.get(bk) ?? []), adj]);
@@ -143,9 +143,9 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
   }
   for (const [bk, group] of adjDecisionBatches.entries()) {
     if (group.length === 1) {
-      const adj = group[0]!, empUser = findUserByEmp(adj.employee_id), adjUserKey = `${adj.id}_${adj.status}`;
+      const adj = group[0]!, emp = findEmp(adj.employee_id), empUser = findUserByEmp(adj.employee_id), adjUserKey = `${adj.id}_${adj.status}`;
       if (empUser && empUser.id !== adj.decided_by && !hasKey('ATT_ADJ_USER', adjUserKey)) {
-        await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: adj.branch_id || 'ALL', category: 'ATTENDANCE', title: adj.status === 'APPROVED' ? `Phiếu bổ sung công (${adj.adjustment_code}) đã được HR phê duyệt` : `Phiếu bổ sung công (${adj.adjustment_code}) bị từ chối`, body: `Ngày công ${adj.work_date} (${adj.requested_hours}h) — ${adj.decision_reason || adj.reason}.`, link: '/nv/cong', severity: adj.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'ATT_ADJ_USER', entity_id: adjUserKey }, adj.decided_by);
+        await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: adj.branch_id || emp?.branch_id || 'ALL', category: 'ATTENDANCE', title: adj.status === 'APPROVED' ? `Phiếu bổ sung công (${adj.adjustment_code}) đã được HR phê duyệt` : `Phiếu bổ sung công (${adj.adjustment_code}) bị từ chối`, body: `Ngày công ${adj.work_date} (${adj.requested_hours}h) — ${adj.decision_reason || adj.reason}.`, link: '/nv/cong', severity: adj.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'ATT_ADJ_USER', entity_id: adjUserKey }, adj.decided_by);
       }
     } else {
       const bulkKey = `BULK_${bk}`, codes = group.map((x) => x.adjustment_code), sample = group[0]!;
@@ -157,7 +157,7 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
   }
   for (const emg of ctx.db.emergencyLeaves.all().slice(-30)) {
     const emp = findEmp(emg.employee_id), empUser = findUserByEmp(emg.employee_id), empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : emg.employee_id;
-    if (!hasKey('EMG_STORE', emg.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: emg.branch_id || 'ALL', category: 'WORKFLOW', title: `Cảnh báo nghỉ đột xuất & thiếu người: ${emg.emergency_code} (${empLabel})`, body: `${empLabel} báo nghỉ ${shiftLabel(emg.shift_code)} ngày ${emg.work_date} — Lý do: ${emg.reason}. Cần tìm người thay hoặc báo HR.`, link: '/admin/schedules?section=workflows', severity: 'CRITICAL', entity_type: 'EMG_STORE', entity_id: emg.id }, empUser?.id || emg.created_by);
+    if (!hasKey('EMG_STORE', emg.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: emg.branch_id || emp?.branch_id || 'ALL', category: 'WORKFLOW', title: `Cảnh báo nghỉ đột xuất & thiếu người: ${emg.emergency_code} (${empLabel})`, body: `${empLabel} báo nghỉ ${shiftLabel(emg.shift_code)} ngày ${emg.work_date} — Lý do: ${emg.reason}. Cần tìm người thay hoặc báo HR.`, link: '/admin/schedules?section=workflows', severity: 'CRITICAL', entity_type: 'EMG_STORE', entity_id: emg.id }, empUser?.id || emg.created_by);
   }
   for (const ps of ctx.db.payslips.all().slice(-30)) {
     const empUser = findUserByEmp(ps.employee_id);

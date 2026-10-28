@@ -79,6 +79,17 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
 
     const seenVisibleKeys = new Set<string>();
     const isGlobalBackofficeRole = ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(user.role);
+    const resolveNotifBranch = (n: NotificationRow): string => {
+      if (n.branch_id && n.branch_id !== 'ALL') return n.branch_id;
+      const rawId = (n.entity_id || '').replace(/_(STORE_CONFIRMED|APPROVED|REJECTED|PENDING_PEER|PEER_ACCEPTED)$/, '');
+      const findEmpBr = (eid?: string) => eid ? (ctx.db.employees.get(eid) ?? ctx.db.employees.find((e) => e.employee_code === eid))?.branch_id : undefined;
+      if (n.entity_type === 'ATT_ADJ_HR') { const adj = ctx.db.attendanceAdjustments.get(rawId); return adj?.branch_id || findEmpBr(adj?.employee_id) || 'ALL'; }
+      if (n.entity_type === 'LEAVE_ROLE') { const l = ctx.db.leaveRequests.get(rawId); return l?.branch_id || findEmpBr(l?.employee_id) || 'ALL'; }
+      if (n.entity_type === 'SHIFT_DRAFT_ROLE') { const a = ctx.db.shiftAssignments.get(rawId); return a?.branch_id || findEmpBr(a?.employee_id) || 'ALL'; }
+      if (n.entity_type === 'SWAP_STORE') { const s = ctx.db.shiftSwaps.get(rawId); return s?.branch_id || findEmpBr(s?.requester_id) || 'ALL'; }
+      if (n.entity_type === 'EMG_STORE') { const e = ctx.db.emergencyLeaves.get(rawId); return e?.branch_id || findEmpBr(e?.employee_id) || 'ALL'; }
+      return n.branch_id || 'ALL';
+    };
     const visible = [...ctx.db.notifications.all()].reverse().filter((n) => {
       if (isNotificationCreatedByOrSelfAction(ctx, n, user.id)) return false;
       if (n.entity_type === 'MANUAL' && n.created_by === user.id && !splitCsv(n.recipient_user_id).includes(user.id)) return false;
@@ -95,7 +106,13 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
         } else if (user.role === 'ADMIN') {
           matched = true;
         } else {
-          const inBranch = isGlobalBackofficeRole || branchScope === 'ALL' || !n.branch_id || n.branch_id === 'ALL' || branchScope.includes(n.branch_id);
+          if (user.role === 'STORE' && n.entity_type === 'ATT_ADJ_HR' && n.entity_id.endsWith('_STORE_CONFIRMED')) return false;
+          const notifBranch = resolveNotifBranch(n);
+          const isWorkflowRoleNotif = ['ATT_ADJ_HR', 'LEAVE_ROLE', 'SHIFT_DRAFT_ROLE', 'SWAP_STORE', 'EMG_STORE'].includes(n.entity_type);
+          const inBranch = isGlobalBackofficeRole
+            || (branchScope === 'ALL' && !isWorkflowRoleNotif)
+            || (!isWorkflowRoleNotif && (!notifBranch || notifBranch === 'ALL'))
+            || (Array.isArray(branchScope) && Boolean(notifBranch && notifBranch !== 'ALL') && branchScope.includes(notifBranch));
           if (!inBranch) return false;
           if (roles.length > 0 && !roles.includes('ALL')) matched = roles.includes(user.role);
           else matched = userIds.includes('ALL') || roles.includes('ALL');

@@ -37,12 +37,13 @@ export function registerAuthContext(app: FastifyInstance, tokens: TokenService, 
     try {
       const claims = await tokens.verifyAccess(token);
       const user = auth.resolveSession(claims);
-      const publicUser = toPublicUser(user);
+      const branchScope = auth.resolveEffectiveBranchScope(user);
+      const publicUser = { ...toPublicUser(user), branchScope };
       request.auth = {
         user,
         publicUser,
         permissions: new Set(publicUser.permissions),
-        branchScope: publicUser.branchScope,
+        branchScope,
         app: claims.app,
       };
     } catch {

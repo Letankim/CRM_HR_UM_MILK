@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { Server, type Socket } from 'socket.io';
-import { parseBranchScope, type AuthService } from '../auth/auth.service.js';
+import type { AuthService } from '../auth/auth.service.js';
 import { ACCESS_COOKIE, type TokenService } from '../auth/tokens.js';
 
 export const SocketEvents = {
@@ -55,7 +55,7 @@ export class Realtime {
         const user = auth.resolveSession(claims);
         socket.data.userId = user.id;
         socket.data.role = user.role;
-        socket.data.branchScope = parseBranchScope(user.branch_scope);
+        socket.data.branchScope = auth.resolveEffectiveBranchScope(user);
         next();
       } catch {
         next(new Error('UNAUTHORIZED'));
@@ -90,20 +90,31 @@ export class Realtime {
 
   /** Gửi tới người phụ trách chi nhánh và người có phạm vi ALL. */
   toBranch(branchId: string, event: string, payload: unknown): void {
-    this.io.to([rooms.branch(branchId), rooms.allBranches]).emit(event, payload);
+    this.toTargets({ branchId, roles: ['ADMIN', 'HR', 'STORE', 'FINANCE'] }, event, payload);
   }
 
-  /** Gửi gộp tới nhiều room (Chi nhánh + Vai trò + Cá nhân) trong 1 lệnh duy nhất để Socket.IO tự động chống trùng gói tin và loại trừ người tạo. */
+  /** Gửi chính xác tới các kết nối khớp (Chi nhánh + Vai trò + Cá nhân), khóa chặt STORE theo đúng chi nhánh phụ trách và loại trừ người tạo. */
   toTargets(opts: { branchId?: string; roles?: string[]; userIds?: string[]; excludeUserId?: string }, event: string, payload: unknown): void {
-    const targets = new Set<string>([rooms.allBranches]);
-    if (opts.branchId && opts.branchId !== 'ALL') targets.add(rooms.branch(opts.branchId));
-    for (const r of opts.roles ?? []) if (r) targets.add(rooms.role(r));
-    for (const u of opts.userIds ?? []) if (u && u !== opts.excludeUserId) targets.add(rooms.user(u));
-    const broadcaster = this.io.to(Array.from(targets));
-    if (opts.excludeUserId) {
-      broadcaster.except(rooms.user(opts.excludeUserId)).emit(event, payload);
-    } else {
-      broadcaster.emit(event, payload);
+    const targetBranch = opts.branchId && opts.branchId !== 'ALL' ? opts.branchId : '';
+    const roleSet = new Set(opts.roles ?? []);
+    const userSet = new Set((opts.userIds ?? []).filter((u) => u && u !== opts.excludeUserId));
+    for (const s of this.io.sockets.sockets.values()) {
+      const uid = String(s.data.userId || '');
+      if (opts.excludeUserId && uid === opts.excludeUserId) continue;
+      if (userSet.has(uid)) {
+        s.emit(event, payload);
+        continue;
+      }
+      const role = String(s.data.role || '');
+      if (!roleSet.has(role) && role !== 'ADMIN') continue;
+      const scope = s.data.branchScope as 'ALL' | string[] | undefined;
+      if (role === 'STORE' || role === 'THU_VIEC' || role === 'CHINH_THUC') {
+        if (targetBranch && Array.isArray(scope) && scope.includes(targetBranch)) s.emit(event, payload);
+        continue;
+      }
+      if (!targetBranch || scope === 'ALL' || (Array.isArray(scope) && scope.includes(targetBranch))) {
+        s.emit(event, payload);
+      }
     }
   }
 
