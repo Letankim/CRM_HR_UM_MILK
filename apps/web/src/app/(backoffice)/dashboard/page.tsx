@@ -200,7 +200,7 @@ export default function DashboardPage() {
 
           {me && (
             <Card title="Thông tin phiên làm việc & Phạm vi phân quyền" size="small">
-              <Descriptions size="small" bordered column={{ xs: 1, md: 2 }}>
+              <Descriptions size="small" bordered column={2}>
                 <Descriptions.Item label="Người dùng hiện tại">{me.user.displayName} (@{me.user.username})</Descriptions.Item>
                 <Descriptions.Item label="Vai trò đảm nhiệm"><Tag color="blue" style={{ borderRadius: 2 }}>{ROLE_LABELS[me.user.role]}</Tag></Descriptions.Item>
                 <Descriptions.Item label="Phạm vi chi nhánh">{me.user.branchScope === 'ALL' ? 'Toàn chuỗi (4 chi nhánh)' : `${me.user.branchScope.length} chi nhánh được phân công`}</Descriptions.Item>

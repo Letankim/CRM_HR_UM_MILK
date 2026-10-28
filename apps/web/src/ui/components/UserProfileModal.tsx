@@ -123,7 +123,7 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
       }
     >
       {p && (
-        <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }} style={{ marginBottom: 12 }}>
+        <Descriptions size="small" bordered column={1} styles={{ label: { width: 175, fontWeight: 500, whiteSpace: 'nowrap' } }} style={{ marginBottom: 12 }}>
           <Descriptions.Item label="Tài khoản đăng nhập"><Tag color="geekblue" style={{ margin: 0 }}>@{p.username}</Tag></Descriptions.Item>
           <Descriptions.Item label="Vai trò hệ thống"><Tag color="blue" style={{ margin: 0 }}>{p.roleLabel}</Tag></Descriptions.Item>
           <Descriptions.Item label="Mã nhân sự liên kết">{p.employeeCode ? <Tag style={{ margin: 0 }}>{p.employeeCode}</Tag> : 'Tài khoản quản trị nội bộ'}</Descriptions.Item>

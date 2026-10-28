@@ -107,7 +107,7 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
         <div style={{ minHeight: 160 }}>
           {report && (
             <div>
-              <Descriptions size="small" bordered column={4} style={{ marginBottom: 12 }}>
+              <Descriptions size="small" bordered column={2} style={{ marginBottom: 12 }}>
                 <Descriptions.Item label="Trạng thái toàn vẹn"><StatusTag value={report.status} /></Descriptions.Item>
                 <Descriptions.Item label="Số bảng / dòng đã quét"><span className="num">{report.summary.tablesScanned} bảng ({report.summary.rowsScanned} bản ghi)</span></Descriptions.Item>
                 <Descriptions.Item label="Điểm lệch phát hiện"><span className="num">{report.summary.issuesFound}</span></Descriptions.Item>
@@ -149,7 +149,7 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
       <Spin spinning={emailPreviewQuery.isLoading || emailPreviewQuery.isFetching} tip="Đang tải mẫu email...">
         <div style={{ minHeight: 200 }}>
           {qStats && (
-            <Descriptions size="small" bordered column={4} style={{ marginBottom: 10 }}>
+            <Descriptions size="small" bordered column={2} style={{ marginBottom: 10 }}>
               <Descriptions.Item label="Cơ chế chống Spam / Limit"><Tag color="blue" style={{ borderRadius: 2 }}>Tối đa {qStats.batchSize} thư / {qStats.intervalSeconds}s (Khử trùng 60s)</Tag></Descriptions.Item>
               <Descriptions.Item label="Đang chờ hàng đợi"><span className="num" style={{ color: '#D97706', fontWeight: 600 }}>{qStats.queuedCount} thư</span></Descriptions.Item>
               <Descriptions.Item label="Đã xử lý gửi"><span className="num" style={{ color: '#16A34A', fontWeight: 600 }}>{qStats.sentCount} thư</span></Descriptions.Item>
