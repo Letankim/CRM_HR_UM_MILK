@@ -69,7 +69,7 @@ export default function MyAttendancePage() {
   const events = myQ.data?.events ?? [];
   const leaves = myQ.data?.leaves ?? [];
   const adjustments = myQ.data?.adjustments ?? [];
-  const activeShift = shifts.find((s) => String(s.id) === selectedShiftId) ?? shifts.find((s) => s.workDate === todayDate && s.status === 'PUBLISHED') ?? shifts.find((s) => s.workDate === todayDate) ?? shifts[0] ?? null;
+  const activeShift = shifts.find((s) => String(s.id) === selectedShiftId) ?? shifts.find((s) => s.workDate === todayDate && s.status === 'PUBLISHED' && !s.isAbsentShift && !s.isExpiredToday && !(s.checkInEvent && s.checkOutEvent)) ?? shifts.find((s) => s.workDate === todayDate && s.status === 'PUBLISHED') ?? shifts.find((s) => s.workDate === todayDate) ?? shifts[0] ?? null;
   const isSelectedToday = Boolean(activeShift && activeShift.workDate === todayDate);
   const checkInEvent = activeShift?.checkInEvent ?? null;
   const checkOutEvent = activeShift?.checkOutEvent ?? null;
@@ -105,9 +105,10 @@ export default function MyAttendancePage() {
               <Select
                 style={{ width: '100%' }} value={activeShift ? String(activeShift.id) : undefined} onChange={setSelectedShiftId}
                 options={shifts.map((s) => {
-                  const exp = s.status === 'ABSENT' || Boolean(s.isAbsentShift) || (!s.checkInEvent && s.status === 'PUBLISHED' && (s.workDate < todayDate || (s.workDate === todayDate && (s.isExpiredToday || nowHm > (s.endAt || '12:00')))));
-                  const state = s.status === 'DRAFT' ? 'Chờ CH / HR duyệt phân ca' : (s.status === 'COMPLETED' || (s.checkInEvent && s.checkOutEvent)) ? 'Đã hoàn thành ca' : exp ? 'Vắng mặt (Quá giờ ca — Cần bù công)' : s.checkInEvent ? 'Đã vào ca' : s.workDate === todayDate ? 'Đã duyệt · Chưa vào ca' : 'Đã duyệt · Chưa tới ngày';
-                  return { value: String(s.id), label: `${dayjs(s.workDate).format('DD/MM/YYYY')} · ${cleanShiftName(s.shiftLabel)} (${s.startAt || '07:00'} – ${s.endAt || '12:00'}) · ${state}` };
+                  const isT = s.workDate === todayDate;
+                  const exp = s.status === 'ABSENT' || Boolean(s.isAbsentShift) || (!s.checkInEvent && s.status === 'PUBLISHED' && (s.workDate < todayDate || (isT && (s.isExpiredToday || nowHm > (s.endAt || '12:00')))));
+                  const state = s.status === 'DRAFT' ? 'Chờ CH / HR duyệt phân ca' : (s.status === 'COMPLETED' || (s.checkInEvent && s.checkOutEvent)) ? 'Đã hoàn thành ca' : exp ? 'Vắng mặt (Quá giờ ca — Cần bù công)' : s.checkInEvent ? 'Đã vào ca (Chờ Ra ca)' : isT ? 'Hôm nay · Chưa vào ca' : 'Đã duyệt · Chưa tới ngày';
+                  return { value: String(s.id), label: `${isT ? '[HÔM NAY] ' : ''}${dayjs(s.workDate).format('DD/MM/YYYY')} · ${cleanShiftName(s.shiftLabel)} (${s.startAt || '07:00'} – ${s.endAt || '12:00'}) · ${state}` };
                 })}
               />
               {activeShift && (

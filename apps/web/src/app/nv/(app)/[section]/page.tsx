@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { notFound, useParams, useRouter } from 'next/navigation';
 import { Alert, App, Button, Card, Col, Empty, Grid, List, Row, Select, Space, Tabs, Tag, Tooltip, Typography } from 'antd';
 import {
@@ -74,9 +74,10 @@ export default function EmployeeSection() {
   });
 
   const todayDate = myQ.data?.todayDate || dayjs().format('YYYY-MM-DD');
+  useEffect(() => { if (section === 'diem-danh') setSelectedShiftId(''); }, [section, todayDate]);
   const empId = myQ.data?.profile.employeeId || session.data?.user.employeeId || '', empCode = myQ.data?.profile.employeeCode || session.data?.user.employeeId || '';
   const publishedShifts = myQ.data?.shifts ?? [], allEvents = myQ.data?.events ?? [];
-  const activeShift = publishedShifts.find((s) => String(s.id) === selectedShiftId) ?? publishedShifts.find((s) => String(s.workDate) === todayDate && s.status === 'PUBLISHED') ?? publishedShifts.find((s) => String(s.workDate) === todayDate) ?? publishedShifts[0] ?? null;
+  const activeShift = publishedShifts.find((s) => String(s.id) === selectedShiftId) ?? publishedShifts.find((s) => String(s.workDate) === todayDate && s.status === 'PUBLISHED' && !s.isAbsentShift && !s.isExpiredToday && !(s.checkInEvent && s.checkOutEvent)) ?? publishedShifts.find((s) => String(s.workDate) === todayDate && s.status === 'PUBLISHED') ?? publishedShifts.find((s) => String(s.workDate) === todayDate) ?? publishedShifts[0] ?? null;
   const isSelectedToday = Boolean(activeShift && String(activeShift.workDate) === todayDate), isSelectedApproved = Boolean(activeShift && activeShift.status !== 'DRAFT');
   const shiftEvents = allEvents.filter((e) => activeShift && String(e.assignment_id) === String(activeShift.id));
   const checkInEvent = shiftEvents.find((e) => e.type === 'CHECK_IN'), checkOutEvent = shiftEvents.find((e) => e.type === 'CHECK_OUT');
@@ -112,7 +113,7 @@ export default function EmployeeSection() {
                 <div style={{ fontSize: 12, fontWeight: 600, color: BRAND.textSecondary, marginBottom: 6 }}>Chọn ca làm việc của bạn để điểm danh</div>
                 {publishedShifts.length === 0 ? <Alert type="info" showIcon message="Bạn chưa có ca làm việc nào được phân công trong kỳ này để điểm danh." /> : (
                   <>
-                    <Select style={{ width: '100%', marginBottom: 10 }} value={String(activeShift?.id ?? '')} onChange={setSelectedShiftId} options={publishedShifts.map((s) => { const sEvs = allEvents.filter((e) => String(e.assignment_id) === String(s.id)); const isAbs = s.status === 'ABSENT' || Boolean(s.isAbsentShift); const stateTag = s.status === 'DRAFT' ? 'Chờ CH / HR duyệt ca' : (s.status === 'COMPLETED' || (sEvs.some((e) => e.type === 'CHECK_IN') && sEvs.some((e) => e.type === 'CHECK_OUT'))) ? 'Hoàn thành' : isAbs ? 'Vắng mặt (Cần bù công)' : sEvs.some((e) => e.type === 'CHECK_IN') ? 'Đã vào ca' : 'Đã duyệt · Chưa vào ca'; return { value: String(s.id), label: `${dayjs(String(s.workDate)).format('DD/MM/YYYY')} · ${cleanShiftName(s.shiftLabel)} (${s.startAt || '07:00'}–${s.endAt || '12:00'}) · ${stateTag}` }; })} />
+                    <Select style={{ width: '100%', marginBottom: 10 }} value={String(activeShift?.id ?? '')} onChange={setSelectedShiftId} options={publishedShifts.map((s) => { const sEvs = allEvents.filter((e) => String(e.assignment_id) === String(s.id)); const isAbs = s.status === 'ABSENT' || Boolean(s.isAbsentShift); const isT = String(s.workDate) === todayDate; const stateTag = s.status === 'DRAFT' ? 'Chờ CH / HR duyệt ca' : (s.status === 'COMPLETED' || (sEvs.some((e) => e.type === 'CHECK_IN') && sEvs.some((e) => e.type === 'CHECK_OUT'))) ? 'Hoàn thành' : isAbs ? 'Vắng mặt (Cần bù công)' : sEvs.some((e) => e.type === 'CHECK_IN') ? 'Đã vào ca (Chờ Ra ca)' : isT ? 'Hôm nay · Chưa vào ca' : 'Đã duyệt · Chưa tới ngày'; return { value: String(s.id), label: `${isT ? '[HÔM NAY] ' : ''}${dayjs(String(s.workDate)).format('DD/MM/YYYY')} · ${cleanShiftName(s.shiftLabel)} (${s.startAt || '07:00'}–${s.endAt || '12:00'}) · ${stateTag}` }; })} />
                     {activeShift && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                         <span style={{ fontSize: 13, fontWeight: 600 }}>{cleanShiftName(activeShift.shiftLabel)} ({String(activeShift.startAt || '07:00')} – {String(activeShift.endAt || '12:00')})</span>

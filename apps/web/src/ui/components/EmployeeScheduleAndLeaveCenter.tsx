@@ -94,7 +94,7 @@ export function EmployeeScheduleAndLeaveCenter({
                 </Flex>
 
                 {viewMode !== 'TABLE' ? (
-                  <ScheduleViewsPanel mode={viewMode} todayDate={todayDate} assignments={shifts as unknown as ScheduleAssignmentItem[]} canEdit={false} onAddAtCell={() => setAddShiftOpen(true)} onEditItem={(item) => setDetailTarget({ kind: 'shift', record: item as unknown as Record<string, unknown> })} />
+                  <ScheduleViewsPanel mode={viewMode} todayDate={todayDate} assignments={shifts as unknown as ScheduleAssignmentItem[]} canEdit={false} hideStaffingBadge onAddAtCell={() => setAddShiftOpen(true)} onEditItem={(item) => setDetailTarget({ kind: 'shift', record: item as unknown as Record<string, unknown> })} />
                 ) : (
                   <SelectableTable<Record<string, unknown>>
                     size="small" rowKey="id" pagination={shiftsPag} dataSource={shifts}

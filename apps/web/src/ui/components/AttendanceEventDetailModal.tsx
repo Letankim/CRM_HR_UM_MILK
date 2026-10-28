@@ -188,10 +188,11 @@ interface CheckInLauncherProps {
 
 export function BackofficeCheckInLauncherModal({ open, assignments, events, onClose, onSuccess }: CheckInLauncherProps) {
   const { message } = App.useApp();
-  const published = assignments.filter((a) => a.status === 'PUBLISHED' || !a.status);
+  const todayStr = dayjs().format('YYYY-MM-DD');
+  const published = assignments.filter((a) => a.status === 'PUBLISHED' || !a.status).sort((a, b) => (String(b.workDate === todayStr ? 1 : 0).localeCompare(String(a.workDate === todayStr ? 1 : 0))) || String(b.workDate || '').localeCompare(String(a.workDate || '')));
   const [shiftId, setShiftId] = useState<string>('');
   const [cameraKind, setCameraKind] = useState<'CHECK_IN' | 'CHECK_OUT' | null>(null);
-  const selectedShift = published.find((a) => String(a.id) === shiftId) ?? published[0] ?? null;
+  const selectedShift = published.find((a) => String(a.id) === shiftId) ?? published.find((a) => String(a.workDate) === todayStr && !events.some((e) => String(e.assignment_id) === String(a.id) && e.type === 'CHECK_OUT')) ?? published.find((a) => String(a.workDate) === todayStr) ?? published[0] ?? null;
   const sEvs = events.filter((e) => selectedShift && String(e.assignment_id) === String(selectedShift.id));
   const hasIn = sEvs.some((e) => e.type === 'CHECK_IN'), hasOut = sEvs.some((e) => e.type === 'CHECK_OUT');
 

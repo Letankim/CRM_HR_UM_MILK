@@ -11,6 +11,7 @@ export interface ScheduleViewsPanelProps {
   todayDate?: string;
   assignments: ScheduleAssignmentItem[];
   canEdit: boolean;
+  hideStaffingBadge?: boolean;
   onAddAtCell: (dateStr: string, shiftCode?: string) => void;
   onEditItem: (item: ScheduleAssignmentItem) => void;
   weekStart?: Dayjs;
@@ -24,6 +25,7 @@ export function ScheduleViewsPanel({
   todayDate,
   assignments,
   canEdit,
+  hideStaffingBadge = false,
   onAddAtCell,
   onEditItem,
   weekStart: controlledWeekStart,
@@ -59,6 +61,7 @@ export function ScheduleViewsPanel({
       todayDate={effectiveToday}
       assignments={assignments}
       canEdit={canEdit}
+      hideStaffingBadge={hideStaffingBadge}
       onAddAtCell={onAddAtCell}
       onEditItem={onEditItem}
       weekStart={weekStart}

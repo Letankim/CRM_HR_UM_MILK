@@ -3,7 +3,7 @@
 import { Button, Card, Flex, Space, Tag, Tooltip, Typography } from 'antd';
 import { CalendarOutlined, LeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { BRAND } from '../theme';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
@@ -20,6 +20,7 @@ export function getMonday(d: Dayjs): Dayjs {
 interface ScheduleCellHandlers {
   assignments: ScheduleAssignmentItem[];
   canEdit: boolean;
+  hideStaffingBadge?: boolean;
   onAddAtCell: (dateStr: string, shiftCode?: string) => void;
   onEditItem: (item: ScheduleAssignmentItem) => void;
 }
@@ -31,11 +32,13 @@ export interface ScheduleWeekMatrixProps extends ScheduleCellHandlers {
 }
 
 /** Chế độ xem Lưới Lịch Tuần (Ca × Ngày), bấm vào ô để thêm hoặc sửa phân ca. */
-export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, onAddAtCell, onEditItem, weekStart, onWeekStartChange }: ScheduleWeekMatrixProps) {
+export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, hideStaffingBadge = false, onAddAtCell, onEditItem, weekStart, onWeekStartChange }: ScheduleWeekMatrixProps) {
   const effectiveToday = todayDate || dayjs().format('YYYY-MM-DD');
   const currentWeekMonday = getMonday(dayjs(effectiveToday));
   const isCurrentWeek = weekStart.format('YYYY-MM-DD') === currentWeekMonday.format('YYYY-MM-DD');
   const days = Array.from({ length: 7 }, (_, idx) => weekStart.add(idx, 'day'));
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const todayColRef = useRef<HTMLTableCellElement | null>(null);
   const { shifts: dynamicShifts } = useShiftTemplates();
   const shiftRows = useMemo(() => {
     const rows = dynamicShifts
@@ -58,6 +61,15 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, onAddAtCel
     }
     return rows;
   }, [dynamicShifts, assignments]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    const todayEl = todayColRef.current;
+    if (container && todayEl && container.scrollWidth > container.clientWidth + 20) {
+      const targetLeft = Math.max(0, todayEl.offsetLeft - 140);
+      container.scrollTo({ left: targetLeft, behavior: 'smooth' });
+    }
+  }, [weekStart, effectiveToday, shiftRows.length]);
 
   return (
     <Card
@@ -89,11 +101,11 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, onAddAtCel
         </Flex>
       }
     >
-      <div style={{ overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' }}>
+      <div ref={scrollContainerRef} style={{ overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1040 }}>
           <thead>
             <tr>
-              <th style={{ width: 145, padding: '10px 12px', background: '#F8FAFC', border: `1px solid ${BRAND.border}`, textAlign: 'left' }}>
+              <th style={{ width: 140, padding: '10px 12px', background: '#F8FAFC', border: `1px solid ${BRAND.border}`, textAlign: 'left', position: 'sticky', left: 0, zIndex: 2 }}>
                 Khung ca / Ngày
               </th>
               {days.map((d, i) => {
@@ -101,10 +113,11 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, onAddAtCel
                 return (
                   <th
                     key={d.format('YYYY-MM-DD')}
+                    ref={isToday ? todayColRef : undefined}
                     style={{
                       padding: '8px 10px',
                       background: isToday ? '#EFF6FF' : '#F8FAFC',
-                      border: `1px solid ${BRAND.border}`,
+                      border: `1px solid ${isToday ? '#93C5FD' : BRAND.border}`,
                       textAlign: 'center',
                     }}
                   >
@@ -120,20 +133,21 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, onAddAtCel
           <tbody>
             {shiftRows.map((shift) => (
               <tr key={shift.code}>
-                <td style={{ padding: '10px 12px', border: `1px solid ${BRAND.border}`, background: '#FFFFFF', verticalAlign: 'top' }}>
+                <td style={{ padding: '10px 12px', border: `1px solid ${BRAND.border}`, background: '#FFFFFF', verticalAlign: 'top', position: 'sticky', left: 0, zIndex: 1 }}>
                   <div style={{ fontWeight: 700, color: shift.color, fontSize: 13 }}>{shift.label}</div>
                   <div className="num" style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>{shift.time}</div>
                 </td>
                 {days.map((d) => {
                   const dateStr = d.format('YYYY-MM-DD');
+                  const isToday = dateStr === effectiveToday;
                   const cellItems = assignments.filter((a) => a.workDate === dateStr && a.shiftCode === shift.code);
                   return (
                     <td
                       key={`${shift.code}-${dateStr}`}
-                      style={{ padding: 8, border: `1px solid ${BRAND.border}`, verticalAlign: 'top', background: '#FFFFFF', minHeight: 88 }}
+                      style={{ padding: 8, border: `1px solid ${isToday ? '#BFDBFE' : BRAND.border}`, verticalAlign: 'top', background: isToday ? '#F8FAFC' : '#FFFFFF', minHeight: 88 }}
                     >
                       <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                        {cellItems.length > 0 && (
+                        {!hideStaffingBadge && cellItems.length > 0 && (
                           <Tag color={cellItems.length >= 2 ? 'green' : 'volcano'} style={{ margin: 0, borderRadius: 2, fontSize: 10 }}>
                             {cellItems.length >= 2 ? `Đủ định biên (${cellItems.length}/2 NV)` : `Thiếu người (${cellItems.length}/2 NV)`}
                           </Tag>

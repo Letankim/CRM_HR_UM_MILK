@@ -70,11 +70,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       .reverse();
     const events = myRawEvents.map((e) => mapAttendanceEvent(e, ctx));
 
-    const myRawShifts = ctx.db.shiftAssignments
-      .filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code)
-      .reverse()
-      .sort((a, b) => b.work_date.localeCompare(a.work_date));
-
+    const myRawShifts = ctx.db.shiftAssignments.filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code).reverse();
     const shifts = myRawShifts.map((a) => {
       const base = mapShiftAssignment(a, ctx);
       const sEvs = events.filter((e) => e.assignment_id === a.id);
@@ -90,6 +86,12 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
         : isPendingApproval ? 'Chờ CH / HR duyệt phân ca' : isDone ? 'Đã hoàn thành ca' : inEv ? `Đã vào ca (${String(inEv.checkTimeFormatted || '').slice(0, 5)})` : 'Chưa điểm danh';
       const attendanceStatusColor = isAbsentShift ? 'red' : isPendingApproval ? 'gold' : isDone ? 'green' : inEv ? (inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : 'default';
       return { ...base, isToday, isExpiredToday, isAbsentShift, checkInEvent: inEv, checkOutEvent: outEv, attendanceStatusLabel, attendanceStatusColor };
+    }).sort((a, b) => {
+      const rank = (s: { workDate: string; isToday: boolean; status: string; isAbsentShift: boolean; isExpiredToday: boolean; checkInEvent: unknown; checkOutEvent: unknown }) =>
+        s.isToday ? (s.status === 'PUBLISHED' && !s.isAbsentShift && !s.isExpiredToday && !(s.checkInEvent && s.checkOutEvent) ? (s.checkInEvent ? 0 : 1) : s.status === 'PUBLISHED' ? 2 : 3) : s.workDate > todayStr ? 4 : 5;
+      const ra = rank(a), rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      return a.workDate >= todayStr ? a.workDate.localeCompare(b.workDate) || a.startAt.localeCompare(b.startAt) : b.workDate.localeCompare(a.workDate);
     });
 
     const leaves = ctx.db.leaveRequests
