@@ -1,9 +1,10 @@
-import { ROLE_LABELS, SYSTEM_CONFIG, type Candidate, type EmergencyLeave, type Employee, type Interview, type LeaveRequest, type PayPeriod, type Payslip, type Role, type ShiftSwap } from '@umbm/shared';
+import { DEFAULT_SHIFT_LABELS, ROLE_LABELS, STAFF_GROUP_LABELS, SYSTEM_CONFIG, type Candidate, type EmergencyLeave, type Employee, type Interview, type LeaveRequest, type PayPeriod, type Payslip, type Role, type ShiftSwap, type StaffGroup } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { resolveFallbackRealEmail } from './account-email-dispatcher.js';
 import { isSyntheticDemoEmail } from './email.service.js';
 
 export * from './account-email-dispatcher.js';
+const shiftLabel = (code: string) => (DEFAULT_SHIFT_LABELS as Record<string, string>)[code] ?? code;
 
 export function resolveEmployeeContact(ctx: AppContext, empIdOrCode: string, useFallback = true) {
   if (!empIdOrCode) return null;
@@ -48,7 +49,7 @@ export function queueInterviewEmails(ctx: AppContext, params: { candidate: Candi
       : `Phòng Nhân sự ${SYSTEM_CONFIG.brandName} trân trọng mời bạn tham dự buổi phỏng vấn tuyển dụng.`,
     metadata: [
       { label: 'Ứng viên', value: `${candidate.full_name} (${candidate.candidate_code})` },
-      { label: 'Vị trí ứng tuyển', value: candidate.position || candidate.staff_group },
+      { label: 'Vị trí ứng tuyển', value: candidate.position || STAFF_GROUP_LABELS[candidate.staff_group as StaffGroup] || candidate.staff_group },
       { label: 'Thời gian phỏng vấn', value: `${slot} (${interview.duration_minutes || 30} phút)` },
       { label: 'Chi nhánh đăng ký', value: branchName },
       { label: 'Đường dẫn phòng họp', value: interview.meet_link || 'Trực tiếp / Google Meet' },
@@ -132,7 +133,7 @@ export function queueSwapEventEmail(ctx: AppContext, swap: ShiftSwap, stage: 'CR
       summary: `Đồng nghiệp ${reqContact?.name || swap.requester_id} vừa gửi đề nghị nhờ bạn nhận thay ca ngày ${swap.from_work_date}.`,
       metadata: [
         { label: 'Mã yêu cầu đổi ca', value: swap.swap_code },
-        { label: 'Ngày & Khung ca', value: `${swap.from_work_date} (${swap.from_shift_code})` },
+        { label: 'Ngày & Khung ca', value: `${swap.from_work_date} (${shiftLabel(swap.from_shift_code)})` },
         { label: 'Người xin đổi', value: `${reqContact?.name || swap.requester_id} (${reqContact?.code || ''})` },
         { label: 'Lý do đổi ca', value: swap.reason },
       ],
@@ -152,7 +153,7 @@ export function queueSwapEventEmail(ctx: AppContext, swap: ShiftSwap, stage: 'CR
       summary: `Yêu cầu đổi ca ${swap.swap_code} ngày ${swap.from_work_date} đã ${approved ? 'được Quản lý phê duyệt (Bước 3/3 — Đã cập nhật lịch chính thức)' : 'bị từ chối'}.`,
       metadata: [
         { label: 'Mã đơn đổi ca', value: swap.swap_code },
-        { label: 'Ngày ca hoán đổi', value: `${swap.from_work_date} (${swap.from_shift_code})` },
+        { label: 'Ngày ca hoán đổi', value: `${swap.from_work_date} (${shiftLabel(swap.from_shift_code)})` },
         { label: 'Kết quả duyệt cuối', value: approved ? 'Đã phê duyệt & chuyển lịch chính thức' : 'Từ chối' },
         { label: 'Ghi chú Quản lý', value: swap.decision_reason || 'Đảm bảo định biên ca trực' },
       ],
@@ -175,7 +176,7 @@ export function queueEmergencyLeaveEmail(ctx: AppContext, emg: EmergencyLeave) {
       metadata: [
         { label: 'Mã báo cáo khẩn', value: emg.emergency_code },
         { label: 'Nhân sự báo nghỉ', value: `${empContact?.name || emg.employee_id} (${empContact?.code || ''})` },
-        { label: 'Ngày & Khung ca', value: `${emg.work_date} (${emg.shift_code})` },
+        { label: 'Ngày & Khung ca', value: `${emg.work_date} (${shiftLabel(emg.shift_code)})` },
         { label: 'Lý do khẩn cấp', value: emg.reason },
       ],
       actionLabel: 'Điều phối người thay thế ngay',

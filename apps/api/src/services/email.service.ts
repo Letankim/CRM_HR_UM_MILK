@@ -27,48 +27,38 @@ export function isSyntheticDemoEmail(email?: string): boolean {
 export class EmailService {
   private readonly history: SentEmailRecord[] = [];
   private readonly dedupeMap = new Map<string, { exp: number; record: SentEmailRecord }>();
-  private db?: Database;
-  private processing = false;
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  private readonly batchItems = new Map<string, SendEmailInput[]>();
+  private db?: Database; private processing = false; private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly senderOption?: (payload: { to: string; subject: string; html: string }) => Promise<void>) {}
-
   attachDatabase(db: Database): void { this.db = db; }
 
   private buildRecord(input: SendEmailInput, initialStatus: SentEmailRecord['status']): SentEmailRecord {
-    const prefix = SYSTEM_CONFIG.emailSubjectPrefix;
-    const subject = input.subject ?? `${prefix} ${EMAIL_TEMPLATE_LABELS[input.template]} (${input.referenceCode})`;
-    const now = nowIso();
+    const subject = input.subject ?? `${SYSTEM_CONFIG.emailSubjectPrefix} ${EMAIL_TEMPLATE_LABELS[input.template]} (${input.referenceCode})`, now = nowIso();
     return {
-      id: `mail_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      to: input.to.trim().toLowerCase(), recipientName: input.recipientName || 'Nhân sự Ụm Bò Milk',
-      referenceCode: input.referenceCode, template: input.template,
-      templateLabel: EMAIL_TEMPLATE_LABELS[input.template] ?? input.template,
+      id: `mail_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, to: input.to.trim().toLowerCase(),
+      recipientName: input.recipientName || 'Nhân sự Ụm Bò Milk', referenceCode: input.referenceCode,
+      template: input.template, templateLabel: EMAIL_TEMPLATE_LABELS[input.template] ?? input.template,
       subject, queuedAt: now, sentAt: initialStatus === 'QUEUED' ? '' : now,
-      attempts: initialStatus === 'QUEUED' ? 0 : 1, status: initialStatus,
-      html: renderEnterpriseEmailHtml(input),
+      attempts: initialStatus === 'QUEUED' ? 0 : 1, status: initialStatus, html: renderEnterpriseEmailHtml(input),
     };
   }
 
   hydrateFromDatabase(): void {
     if (!this.db || !this.db.isReady()) return;
     const knownLogIds = new Set(this.history.map((r) => r.deliveryLogId).filter(Boolean));
-    const emailLogs = this.db.deliveryLogs.all().filter((l) => l.channel === 'EMAIL');
     let addedPending = false;
-    for (const log of emailLogs) {
+    for (const log of this.db.deliveryLogs.all().filter((l) => l.channel === 'EMAIL')) {
       if (knownLogIds.has(log.id)) continue;
       const [rawTpl = 'ACCOUNT_ACTIVATED', ...refParts] = (log.announcement_id || '').split(':');
       const template = (EMAIL_TEMPLATE_CODES.includes(rawTpl as EmailTemplateCode) ? rawTpl : 'ACCOUNT_ACTIVATED') as EmailTemplateCode;
-      const referenceCode = refParts.join(':') || `REF-${log.id.slice(0, 6)}`;
-      const cleanTo = (log.recipient_user_id || '').trim().toLowerCase();
+      const referenceCode = refParts.join(':') || `REF-${log.id.slice(0, 6)}`, cleanTo = (log.recipient_user_id || '').trim().toLowerCase();
       if (!cleanTo.includes('@')) continue;
-      const matchedUser = this.db.users.find((u) => u.email.trim().toLowerCase() === cleanTo);
-      const matchedEmp = this.db.employees.find((e) => e.email.trim().toLowerCase() === cleanTo);
+      const matchedUser = this.db.users.find((u) => u.email.trim().toLowerCase() === cleanTo), matchedEmp = this.db.employees.find((e) => e.email.trim().toLowerCase() === cleanTo);
       const recipientName = matchedUser?.display_name || matchedEmp?.full_name || 'Nhân sự Ụm Bò Milk';
       const status: SentEmailRecord['status'] = log.status === 'PENDING' ? 'QUEUED' : log.status === 'FAILED' ? 'FAILED' : 'SENT';
       const rec = this.buildRecord({
-        to: cleanTo, template, recipientName, referenceCode,
-        summary: `Thông báo hệ thống ${SYSTEM_CONFIG.brandName} — ${EMAIL_TEMPLATE_LABELS[template]}.`,
+        to: cleanTo, template, recipientName, referenceCode, summary: `Thông báo hệ thống ${SYSTEM_CONFIG.brandName} — ${EMAIL_TEMPLATE_LABELS[template]}.`,
         metadata: [{ label: 'Mã tham chiếu', value: referenceCode }, { label: 'Người nhận', value: `${recipientName} (${cleanTo})` }, { label: 'Loại thông báo', value: EMAIL_TEMPLATE_LABELS[template] }],
       }, status);
       rec.id = `mail_${log.id}`; rec.deliveryLogId = log.id; rec.queuedAt = log.sent_at || log.created_at;
@@ -88,7 +78,7 @@ export class EmailService {
       if (record.deliveryLogId) {
         const existing = this.db.deliveryLogs.get(record.deliveryLogId);
         if (existing) {
-          await this.db.deliveryLogs.update(existing.id, existing.version, { status: logStatus, attempts: record.attempts, last_error: record.error || '', sent_at: record.sentAt || existing.sent_at, delivered_at: logStatus === 'SENT' ? (record.sentAt || nowIso()) : '' }, 'email-queue');
+          await this.db.deliveryLogs.update(existing.id, existing.version, { announcement_id: `${record.template}:${record.referenceCode}`, status: logStatus, attempts: record.attempts, last_error: record.error || '', sent_at: record.sentAt || existing.sent_at, delivered_at: logStatus === 'SENT' ? (record.sentAt || nowIso()) : '' }, 'email-queue');
           return;
         }
       }
@@ -105,17 +95,49 @@ export class EmailService {
     const key = opts?.dedupeKey ?? `${cleanTo}::${input.template}::${input.referenceCode}`;
     const existing = this.dedupeMap.get(key);
     if (existing && existing.exp > now && existing.record.status !== 'FAILED') return existing.record;
+
+    const baseTitle = (input.subject ?? `${SYSTEM_CONFIG.emailSubjectPrefix} ${EMAIL_TEMPLATE_LABELS[input.template]}`).replace(/\s*\([^)]*\)\s*$/, '').trim();
+    const queuedMatch = this.history.find((r) => r.status === 'QUEUED' && r.to === cleanTo && r.template === input.template && r.subject.startsWith(baseTitle));
+    if (queuedMatch) {
+      const list = this.batchItems.get(queuedMatch.id) ?? [];
+      if (!list.some((x) => x.referenceCode === input.referenceCode)) list.push({ ...input, to: cleanTo });
+      this.batchItems.set(queuedMatch.id, list);
+      const count = list.length, codes = list.map((x) => x.referenceCode);
+      const refSummary = count <= 3 ? codes.join(', ') : `${codes[0]} .. ${codes[count - 1]} (${count} mã)`;
+      const sameRecip = list.every((x) => x.recipientName === list[0]?.recipientName);
+      const mergedInput: SendEmailInput = {
+        ...input, to: cleanTo, referenceCode: refSummary,
+        recipientName: sameRecip ? (list[0]?.recipientName || 'Nhân sự Ụm Bò Milk') : `Tổng hợp ${count} bản ghi nhân sự`,
+        subject: `${baseTitle} (Tổng hợp ${count} bản ghi: ${codes[0]} .. ${codes[count - 1]})`,
+        summary: `Thông báo tổng hợp: Hệ thống vừa xử lý hàng loạt ${count} bản ghi (${EMAIL_TEMPLATE_LABELS[input.template]}). Chi tiết từng bản ghi được gộp trong bảng dưới đây:`,
+        metadata: [
+          { label: 'Tổng số bản ghi xử lý', value: `${count} bản ghi (${codes.slice(0, 6).join(', ')}${count > 6 ? `, ... +${count - 6} mã` : ''})` },
+          ...list.slice(0, 15).map((it, idx) => ({ label: `#${idx + 1} · ${it.referenceCode}`, value: `${it.recipientName ? `${it.recipientName}: ` : ''}${(it.metadata ?? []).map((m) => m.value).filter(Boolean).slice(0, 3).join(' · ') || it.summary}` })),
+        ],
+      };
+      queuedMatch.referenceCode = refSummary; queuedMatch.subject = mergedInput.subject!;
+      queuedMatch.recipientName = mergedInput.recipientName; queuedMatch.html = renderEnterpriseEmailHtml(mergedInput);
+      this.dedupeMap.set(key, { exp: now + DEDUPE_TTL_MS, record: queuedMatch });
+      this.scheduleNextBatch(1200, true);
+      return queuedMatch;
+    }
+
     const record = this.buildRecord({ ...input, to: cleanTo }, 'QUEUED');
+    this.batchItems.set(record.id, [{ ...input, to: cleanTo }]);
     this.dedupeMap.set(key, { exp: now + DEDUPE_TTL_MS, record });
     this.history.unshift(record);
     if (this.history.length > 200) this.history.pop();
-    void this.syncToDeliveryLog(record);
-    this.scheduleNextBatch(150);
+    this.scheduleNextBatch(1200, true);
     return record;
   }
 
-  private scheduleNextBatch(delayMs = BATCH_INTERVAL_MS): void {
-    if (this.timer || this.processing) return;
+  private scheduleNextBatch(delayMs = BATCH_INTERVAL_MS, resetTimer = false): void {
+    if (this.processing) return;
+    if (this.timer) {
+      if (!resetTimer) return;
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
     this.timer = setTimeout(() => { this.timer = null; void this.processQueueBatch(BATCH_SIZE); }, delayMs);
     if (typeof this.timer.unref === 'function') this.timer.unref();
   }

@@ -57,7 +57,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
   const batchMut = useMutation({
     mutationFn: async ({ items, buildCall, successMsg }: { items: Record<string, unknown>[]; buildCall: (r: Record<string, unknown>) => { url: string; body: unknown } | null; successMsg: string }) => {
       if (items.length === 0) throw new Error('Không có bản ghi nào ở trạng thái hợp lệ để thực hiện thao tác này');
-      for (const r of items) { const c = buildCall(r); if (c) await api.post(c.url, c.body); }
+      await Promise.all(items.map((r) => { const c = buildCall(r); return c ? api.post(c.url, c.body) : Promise.resolve(); }));
       return successMsg;
     },
     onSuccess: (msg) => { message.success(msg); refreshAll(); },

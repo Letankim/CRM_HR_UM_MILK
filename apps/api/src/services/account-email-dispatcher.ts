@@ -1,6 +1,8 @@
-import { ACCOUNT_STATUS_LABELS, ROLE_LABELS, SYSTEM_CONFIG, type AttendanceAdjustment, type EmergencyLeave, type Employee, type User } from '@umbm/shared';
+import { ACCOUNT_STATUS_LABELS, DEFAULT_SHIFT_LABELS, ROLE_LABELS, STAFF_GROUP_LABELS, SYSTEM_CONFIG, type AttendanceAdjustment, type EmergencyLeave, type Employee, type StaffGroup, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { isSyntheticDemoEmail } from './email.service.js';
+
+const shiftLabel = (code: string) => (DEFAULT_SHIFT_LABELS as Record<string, string>)[code] ?? code;
 
 export function resolveFallbackRealEmail(ctx: AppContext, preferred?: string): string {
   if (preferred && !isSyntheticDemoEmail(preferred)) return preferred.trim().toLowerCase();
@@ -91,7 +93,7 @@ export function queueEmployeeOnboardedEmail(ctx: AppContext, emp: Employee, acto
     to, template: 'ACCOUNT_ACTIVATED', subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Tiếp nhận hồ sơ nhân sự mới (${emp.employee_code})`,
     recipientName: emp.full_name, referenceCode: emp.employee_code,
     summary: `Hồ sơ nhân sự ${emp.full_name} (${emp.employee_code}) đã được khởi tạo trên hệ thống ${SYSTEM_CONFIG.brandName}.`,
-    metadata: [{ label: 'Mã & Họ tên nhân sự', value: `${emp.full_name} (${emp.employee_code})` }, { label: 'Chi nhánh làm việc', value: branchName }, { label: 'Vị trí công việc', value: emp.position_title || emp.staff_group }],
+    metadata: [{ label: 'Mã & Họ tên nhân sự', value: `${emp.full_name} (${emp.employee_code})` }, { label: 'Chi nhánh làm việc', value: branchName }, { label: 'Vị trí công việc', value: emp.position_title || STAFF_GROUP_LABELS[emp.staff_group as StaffGroup] || emp.staff_group }],
   }, { dedupeKey: `emp_onboard:${emp.id}` });
 }
 
@@ -103,8 +105,8 @@ export function queueAttendanceAdjustmentDecisionEmail(ctx: AppContext, adj: Att
     to, template: 'LEAVE_SWAP_DECISION', subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Kết quả xử lý phiếu bổ sung công (${adj.adjustment_code})`,
     recipientName: emp?.full_name || 'Nhân sự Ụm Bò Milk', referenceCode: adj.adjustment_code,
     summary: `Phiếu bổ sung công ${adj.adjustment_code} ngày ${adj.work_date} đã được cập nhật trạng thái: ${statusText}.`,
-    metadata: [{ label: 'Mã phiếu bổ sung công', value: adj.adjustment_code }, { label: 'Ngày công & Ca', value: `${adj.work_date} (${adj.shift_code})` }, { label: 'Trạng thái xử lý', value: statusText }, { label: 'Ghi chú phản hồi', value: adj.decision_reason || adj.store_note || adj.reason }],
-    actionLabel: 'Xem bảng công của tôi', actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}/nv/cong-cua-toi`,
+    metadata: [{ label: 'Mã phiếu bổ sung công', value: adj.adjustment_code }, { label: 'Ngày công & Ca', value: `${adj.work_date} (${shiftLabel(adj.shift_code)})` }, { label: 'Trạng thái xử lý', value: statusText }, { label: 'Ghi chú phản hồi', value: adj.decision_reason || adj.store_note || adj.reason }],
+    actionLabel: 'Xem bảng công của tôi', actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}/nv/cong`,
   }, { dedupeKey: `adj_decide:${adj.id}:v${adj.version}` });
 }
 
@@ -115,6 +117,6 @@ export function queueEmergencyHandledEmail(ctx: AppContext, emg: EmergencyLeave,
     to, template: 'EMERGENCY_LEAVE_ALERT', subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Cập nhật xử lý báo nghỉ khẩn cấp (${emg.emergency_code})`,
     recipientName: emp?.full_name || 'Nhân sự Ụm Bò Milk', referenceCode: emg.emergency_code,
     summary: `Báo cáo nghỉ đột xuất ${emg.emergency_code} ngày ${emg.work_date} đã được Quản lý xử lý.`,
-    metadata: [{ label: 'Mã báo cáo', value: emg.emergency_code }, { label: 'Ngày & Khung ca', value: `${emg.work_date} (${emg.shift_code})` }, { label: 'Ghi chú xử lý', value: emg.resolution_note || 'Đã điều phối lịch trực' }],
+    metadata: [{ label: 'Mã báo cáo', value: emg.emergency_code }, { label: 'Ngày & Khung ca', value: `${emg.work_date} (${shiftLabel(emg.shift_code)})` }, { label: 'Ghi chú xử lý', value: emg.resolution_note || 'Đã điều phối lịch trực' }],
   }, { dedupeKey: `emg_handle:${emg.id}:v${emg.version}` });
 }

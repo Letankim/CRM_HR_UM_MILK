@@ -7,10 +7,8 @@ import { sweepExpiredShiftsAndMarkAbsent } from '../services/shift-absent-scanne
 import { findLinkedEmployeeForUser, findLinkedUserForEmployee } from './employee-mapper.js';
 
 const SHIFT_FALLBACK: Record<string, { start: string; end: string; hours: number }> = {
-  CA_SANG: { start: '07:00', end: '12:00', hours: 5 },
-  CA_CHIEU: { start: '12:00', end: '17:00', hours: 5 },
-  CA_TOI: { start: '17:00', end: '22:00', hours: 5 },
-  CA_HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
+  CA_SANG: { start: '07:00', end: '12:00', hours: 5 }, CA_CHIEU: { start: '12:00', end: '17:00', hours: 5 },
+  CA_TOI: { start: '17:00', end: '22:00', hours: 5 }, CA_HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
 };
 
 export function findBranchShiftTemplate(ctx: AppContext, shiftCode: string, branchId = '') {
@@ -18,10 +16,7 @@ export function findBranchShiftTemplate(ctx: AppContext, shiftCode: string, bran
     const branchTpl = ctx.db.shiftTemplates.find((s) => s.code === shiftCode && s.shift_group === branchId);
     if (branchTpl) return branchTpl;
   }
-  return (
-    ctx.db.shiftTemplates.find((s) => s.code === shiftCode && (s.shift_group === 'ALL' || s.shift_group === 'STORE')) ??
-    ctx.db.shiftTemplates.find((s) => s.code === shiftCode)
-  );
+  return ctx.db.shiftTemplates.find((s) => s.code === shiftCode && (s.shift_group === 'ALL' || s.shift_group === 'STORE')) ?? ctx.db.shiftTemplates.find((s) => s.code === shiftCode);
 }
 
 export function resolveShiftTimeDetails(ctx: AppContext, shiftCode: string, assignmentId = '', branchId = '') {
@@ -38,29 +33,19 @@ export function resolveShiftTimeDetails(ctx: AppContext, shiftCode: string, assi
 
 /** Giải mã 1 mã/ID chi nhánh cụ thể từ chuỗi branch_scope (bỏ qua nếu là ALL) */
 export function resolveSingleBranchId(ctx: AppContext, branchScope?: string): string | undefined {
-  if (!branchScope) return undefined;
-  const raw = branchScope.trim();
-  if (!raw || raw === 'ALL') return undefined;
-  const firstToken = raw.split(',')[0]?.trim();
+  const firstToken = branchScope?.trim().split(',')[0]?.trim();
   if (!firstToken || firstToken === 'ALL') return undefined;
-  const found =
-    ctx.db.branches.get(firstToken) ??
-    ctx.db.branches.find((b) => b.code.trim().toUpperCase() === firstToken.toUpperCase());
-  return found?.id;
+  return (ctx.db.branches.get(firstToken) ?? ctx.db.branches.find((b) => b.code.trim().toUpperCase() === firstToken.toUpperCase()))?.id;
 }
 
 /** Lấy branch_id hiện hành của nhân sự làm chuẩn cho mọi bảng nghiệp vụ (Lịch ca, Điểm danh, Nghỉ phép, Đổi ca) */
 export function resolveEmployeeBranchId(ctx: AppContext, employeeId: string, fallbackBranchId = ''): string {
   if (!employeeId) return fallbackBranchId;
-  const emp =
-    ctx.db.employees.get(employeeId) ??
-    ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === employeeId.trim().toUpperCase());
+  const emp = ctx.db.employees.get(employeeId) ?? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === employeeId.trim().toUpperCase());
   if (!emp) return fallbackBranchId;
   const linkedUser = findLinkedUserForEmployee(emp, ctx);
   const userBranchId = linkedUser ? resolveSingleBranchId(ctx, linkedUser.branch_scope) : undefined;
-  if (userBranchId && userBranchId !== emp.branch_id && (linkedUser?.updated_at ?? '') > (emp.updated_at ?? '')) {
-    return userBranchId;
-  }
+  if (userBranchId && userBranchId !== emp.branch_id && (linkedUser?.updated_at ?? '') > (emp.updated_at ?? '')) return userBranchId;
   return emp.branch_id || fallbackBranchId;
 }
 
@@ -192,22 +177,42 @@ export async function syncAccountFromEmployee(ctx: AppContext, params: SyncAccou
   return targetUser.id;
 }
 
-/** Phát tín hiệu Socket.IO đồng bộ Lịch làm việc, Ca làm & Đơn từ tới đúng Room Chi nhánh, HR/Admin và Tài khoản nhân sự */
+const pendingRealtimeBatches = new Map<string, { count: number; branchId: string; userIds: Set<string>; firstMsg: string; actorId: string; timer: ReturnType<typeof setTimeout> }>();
+const BULK_KIND_LABELS: Record<string, (n: number) => string> = {
+  ADJUSTMENT_DECIDED: (n) => `Đã xử lý hàng loạt ${n} phiếu bổ sung công`, ADJUSTMENT_CREATED: (n) => `Có ${n} phiếu bổ sung công mới vừa gửi chờ duyệt`,
+  LEAVE_DECIDED: (n) => `Đã xử lý hàng loạt ${n} đơn xin nghỉ phép (OFF)`, LEAVE_CREATED: (n) => `Có ${n} đơn xin nghỉ phép (OFF) mới chờ duyệt`,
+  SWAP_DECIDED: (n) => `Đã xử lý hàng loạt ${n} yêu cầu đổi ca`, SWAP_PEER: (n) => `Đã cập nhật hàng loạt ${n} yêu cầu đổi ca`,
+  EMERGENCY_HANDLED: (n) => `Đã xử lý hàng loạt ${n} báo cáo nghỉ đột xuất`, SHIFT_APPROVED: (n) => `Đã duyệt và phát hành chính thức ${n} ca làm việc`,
+};
+
+/** Phát tín hiệu Socket.IO đồng bộ Lịch làm việc, Ca làm & Đơn từ (Tự động gom gộp thao tác hàng loạt thành 1 thông báo duy nhất) */
 export function emitScheduleRealtime(
   ctx: AppContext,
   event: string,
   opts: { branchId?: string; employeeIds?: (string | undefined)[]; kind?: string; message?: string; actorId?: string },
 ): void {
-  void ensureSyncedNotifications(ctx).catch(() => undefined);
-  const rt = ctx.realtime();
-  if (!rt) return;
-  const payload = { kind: opts.kind ?? 'SCHEDULE_SYNC', branchId: opts.branchId ?? '', message: opts.message ?? '', actorId: opts.actorId ?? '' };
-  const userIds: string[] = [];
+  const kind = opts.kind ?? 'SCHEDULE_SYNC', batchKey = `${event}:${kind}`;
+  const existing = pendingRealtimeBatches.get(batchKey);
+  const userIds = existing?.userIds ?? new Set<string>();
   for (const rawId of opts.employeeIds ?? []) {
     if (!rawId) continue;
     const emp = ctx.db.employees.get(rawId) ?? ctx.db.employees.find((e) => e.employee_code === rawId);
     const u = emp ? findLinkedUserForEmployee(emp, ctx) : undefined;
-    if (u) userIds.push(u.id);
+    if (u) userIds.add(u.id);
   }
-  rt.toTargets({ branchId: opts.branchId, roles: ['ADMIN', 'HR', 'STORE', 'FINANCE'], userIds, excludeUserId: opts.actorId }, event, payload);
+  if (existing) clearTimeout(existing.timer);
+  const count = (existing?.count ?? 0) + 1;
+  const firstMsg = existing?.firstMsg || opts.message || '';
+  const branchId = existing && existing.branchId !== (opts.branchId ?? '') ? 'ALL' : (opts.branchId ?? '');
+  const actorId = opts.actorId ?? existing?.actorId ?? '';
+  const timer = setTimeout(() => {
+    pendingRealtimeBatches.delete(batchKey);
+    void ensureSyncedNotifications(ctx).catch(() => undefined);
+    const rt = ctx.realtime();
+    if (!rt) return;
+    const message = count > 1 ? (BULK_KIND_LABELS[kind]?.(count) ?? firstMsg) : firstMsg;
+    rt.toTargets({ branchId, roles: ['ADMIN', 'HR', 'STORE', 'FINANCE'], userIds: Array.from(userIds), excludeUserId: actorId }, event, { kind, branchId, message, actorId });
+  }, 350);
+  if (typeof timer.unref === 'function') timer.unref();
+  pendingRealtimeBatches.set(batchKey, { count, branchId, userIds, firstMsg, actorId, timer });
 }
