@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, Avatar, Badge, Breadcrumb, Button, Dropdown, Flex, Grid, Layout, List, Menu, Popover, Space, Spin, Switch, Tag, Tooltip, Typography } from 'antd';
+import { Alert, App, Avatar, Badge, Breadcrumb, Button, Dropdown, Flex, Grid, Layout, List, Menu, Popover, Space, Spin, Switch, Tag, Tooltip, Typography } from 'antd';
 import type { ItemType } from 'antd/es/menu/interface';
 import {
   AppstoreOutlined, BellOutlined, BookOutlined, CalendarOutlined, DownOutlined, EnvironmentOutlined,
@@ -21,41 +21,26 @@ import { UserProfileModal } from './components/UserProfileModal';
 import { BRAND } from './theme';
 
 const MOBILE_TABS = [
-  { href: '/nv', label: 'Trang chủ', icon: <HomeOutlined /> },
-  { href: '/nv/lich', label: 'Lịch làm', icon: <CalendarOutlined /> },
-  { href: '/nv/diem-danh', label: 'Điểm danh', icon: <EnvironmentOutlined />, primary: true },
-  { href: '/nv/doi-ca', label: 'Đổi ca', icon: <SwapOutlined /> },
+  { href: '/nv', label: 'Trang chủ', icon: <HomeOutlined /> }, { href: '/nv/lich', label: 'Lịch làm', icon: <CalendarOutlined /> },
+  { href: '/nv/diem-danh', label: 'Điểm danh', icon: <EnvironmentOutlined />, primary: true }, { href: '/nv/doi-ca', label: 'Đổi ca', icon: <SwapOutlined /> },
 ];
-
 const DESKTOP_GROUPS = [
-  {
-    key: 'grp-work',
-    label: 'Bàn làm việc cá nhân',
-    items: [
-      { key: '/nv', label: 'Tổng quan & Ca hôm nay', icon: <HomeOutlined /> },
-      { key: '/nv/diem-danh', label: 'Điểm danh GPS & Camera', icon: <EnvironmentOutlined /> },
-      { key: '/nv/lich', label: 'Lịch làm việc & Đăng ký ca', icon: <CalendarOutlined /> },
-      { key: '/nv/nghi-phep', label: 'Đơn nghỉ OFF & Khẩn cấp', icon: <FileDoneOutlined /> },
-      { key: '/nv/doi-ca', label: 'Yêu cầu Đổi ca nội bộ', icon: <SwapOutlined /> },
-      { key: '/nv/cong', label: 'Bảng công & Bổ sung công', icon: <FieldTimeOutlined /> },
-    ],
-  },
-  {
-    key: 'grp-benefit',
-    label: 'Phúc lợi & Đào tạo',
-    items: [
-      { key: '/nv/thong-bao', label: 'Trung tâm Thông báo', icon: <BellOutlined /> },
-      { key: '/nv/phieu-luong', label: 'Phiếu lương cá nhân', icon: <FileTextOutlined /> },
-      { key: '/nv/bai-kiem-tra', label: 'Bài kiểm tra Nghiệp vụ', icon: <BookOutlined /> },
-      { key: '/nv/ban-tin', label: 'Bản tin truyền thông nội bộ', icon: <NotificationOutlined /> },
-    ],
-  },
+  { key: 'grp-work', label: 'Bàn làm việc cá nhân', items: [
+    { key: '/nv', label: 'Tổng quan & Ca hôm nay', icon: <HomeOutlined /> }, { key: '/nv/diem-danh', label: 'Điểm danh GPS & Camera', icon: <EnvironmentOutlined /> },
+    { key: '/nv/lich', label: 'Lịch làm việc & Đăng ký ca', icon: <CalendarOutlined /> }, { key: '/nv/nghi-phep', label: 'Đơn nghỉ OFF & Khẩn cấp', icon: <FileDoneOutlined /> },
+    { key: '/nv/doi-ca', label: 'Yêu cầu Đổi ca nội bộ', icon: <SwapOutlined /> }, { key: '/nv/cong', label: 'Bảng công & Bổ sung công', icon: <FieldTimeOutlined /> },
+  ]},
+  { key: 'grp-benefit', label: 'Phúc lợi & Đào tạo', items: [
+    { key: '/nv/thong-bao', label: 'Trung tâm Thông báo', icon: <BellOutlined /> }, { key: '/nv/phieu-luong', label: 'Phiếu lương cá nhân', icon: <FileTextOutlined /> },
+    { key: '/nv/bai-kiem-tra', label: 'Bài kiểm tra Nghiệp vụ', icon: <BookOutlined /> }, { key: '/nv/ban-tin', label: 'Bản tin truyền thông nội bộ', icon: <NotificationOutlined /> },
+  ]},
 ];
 
 export function EmployeeShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const qc = useQueryClient();
+  const { message } = App.useApp();
   const screens = Grid.useBreakpoint();
   const isDesktop = Boolean(screens.md);
   const { data, isLoading, error } = useMe();
@@ -72,7 +57,10 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   const unreadNotifCount = Number(notifsQ.data?.meta.filters?.unread_count ?? notifItems.filter((n) => n.readStatus === 'UNREAD').length);
   const { soundEnabled, setSoundEnabled, toggleSound, playTestSound } = useNotificationSound();
   const unreadKeys = useMemo(() => notifItems.filter((n) => n.readStatus === 'UNREAD').map((n) => `ntf:${n.id}`), [notifItems]);
-  useTrackUnreadNotifications(data?.user.id, unreadKeys, notifsQ.isSuccess);
+  useTrackUnreadNotifications(data?.user.id, unreadKeys, notifsQ.isSuccess, (newKeys) => {
+    const firstNew = notifItems.find((n) => newKeys.includes(`ntf:${n.id}`));
+    if (firstNew) message.info({ key: 'rt-nv-bell-toast', content: `Thông báo mới: ${firstNew.title}` });
+  });
   useRealtime('employee', !!data, data?.socketToken, data?.user.id);
 
   useEffect(() => {

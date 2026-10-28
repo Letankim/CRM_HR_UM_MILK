@@ -10,6 +10,7 @@ import { requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { resolveRealAccountEmail, resolveRolePortalPath } from '../services/account-email-dispatcher.js';
 import { ensureSyncedNotifications, isNotificationCreatedByOrSelfAction } from '../services/notification-sync.service.js';
+import { resolveEmployeeBranchId } from './account-employee-sync.js';
 import { doesUserMatchAudience } from './job-positions-and-audiences.routes.js';
 
 function resolveNotificationLinkForRole(n: NotificationRow, role: Role): string {
@@ -80,16 +81,21 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
 
     const seenVisibleKeys = new Set<string>();
     const isGlobalBackofficeRole = ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(user.role);
-    const resolveNotifBranch = (n: NotificationRow): string => {
-      if (n.branch_id && n.branch_id !== 'ALL') return n.branch_id;
+    const resolveNotifMeta = (n: NotificationRow): { branchId: string; isBoOrHr: boolean } => {
       const rawId = (n.entity_id || '').replace(/_(STORE_CONFIRMED|APPROVED|REJECTED|PENDING_PEER|PEER_ACCEPTED)$/, '');
-      const findEmpBr = (eid?: string) => eid ? (ctx.db.employees.get(eid) ?? ctx.db.employees.find((e) => e.employee_code === eid))?.branch_id : undefined;
-      if (n.entity_type === 'ATT_ADJ_HR') { const adj = ctx.db.attendanceAdjustments.get(rawId); return adj?.branch_id || findEmpBr(adj?.employee_id) || 'ALL'; }
-      if (n.entity_type === 'LEAVE_ROLE') { const l = ctx.db.leaveRequests.get(rawId); return l?.branch_id || findEmpBr(l?.employee_id) || 'ALL'; }
-      if (n.entity_type === 'SHIFT_DRAFT_ROLE') { const a = ctx.db.shiftAssignments.get(rawId); return a?.branch_id || findEmpBr(a?.employee_id) || 'ALL'; }
-      if (n.entity_type === 'SWAP_STORE') { const s = ctx.db.shiftSwaps.get(rawId); return s?.branch_id || findEmpBr(s?.requester_id) || 'ALL'; }
-      if (n.entity_type === 'EMG_STORE') { const e = ctx.db.emergencyLeaves.get(rawId); return e?.branch_id || findEmpBr(e?.employee_id) || 'ALL'; }
-      return n.branch_id || 'ALL';
+      const checkEmp = (eid?: string, fb = '', creatorId = '') => {
+        const emp = eid ? (ctx.db.employees.get(eid) ?? ctx.db.employees.find((e) => e.employee_code === eid)) : undefined;
+        const creatorRole = creatorId ? ctx.db.users.get(creatorId)?.role : undefined;
+        const empUserRole = emp?.user_id ? ctx.db.users.get(emp.user_id)?.role : undefined;
+        const isBoOrHr = emp?.staff_group === 'BACKOFFICE' || ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(empUserRole || '') || ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(creatorRole || '');
+        return { branchId: (eid ? resolveEmployeeBranchId(ctx, eid, fb || n.branch_id) : fb || n.branch_id) || 'ALL', isBoOrHr };
+      };
+      if (n.entity_type === 'ATT_ADJ_HR') { const adj = ctx.db.attendanceAdjustments.get(rawId); return checkEmp(adj?.employee_id, adj?.branch_id, adj?.created_by); }
+      if (n.entity_type === 'LEAVE_ROLE') { const l = ctx.db.leaveRequests.get(rawId); return checkEmp(l?.employee_id, l?.branch_id, l?.created_by); }
+      if (n.entity_type === 'SHIFT_DRAFT_ROLE') { const a = ctx.db.shiftAssignments.get(rawId); return checkEmp(a?.employee_id, a?.branch_id, a?.created_by); }
+      if (n.entity_type === 'SWAP_STORE') { const s = ctx.db.shiftSwaps.get(rawId); return checkEmp(s?.requester_id, s?.branch_id, s?.created_by); }
+      if (n.entity_type === 'EMG_STORE') { const e = ctx.db.emergencyLeaves.get(rawId); return checkEmp(e?.employee_id, e?.branch_id, e?.created_by); }
+      return { branchId: n.branch_id || 'ALL', isBoOrHr: false };
     };
     const visible = [...ctx.db.notifications.all()].reverse().filter((n) => {
       if (isNotificationCreatedByOrSelfAction(ctx, n, user.id)) return false;
@@ -107,9 +113,9 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
         } else if (user.role === 'ADMIN') {
           matched = !['ATT_ADJ_HR', 'LEAVE_ROLE', 'SHIFT_DRAFT_ROLE', 'SWAP_STORE', 'EMG_STORE'].includes(n.entity_type);
         } else {
-          if (user.role === 'STORE' && n.entity_type === 'ATT_ADJ_HR' && n.entity_id.endsWith('_STORE_CONFIRMED')) return false;
-          const notifBranch = resolveNotifBranch(n);
+          const { branchId: notifBranch, isBoOrHr } = resolveNotifMeta(n);
           const isWorkflowRoleNotif = ['ATT_ADJ_HR', 'LEAVE_ROLE', 'SHIFT_DRAFT_ROLE', 'SWAP_STORE', 'EMG_STORE'].includes(n.entity_type);
+          if (user.role === 'STORE' && ((n.entity_type === 'ATT_ADJ_HR' && n.entity_id.endsWith('_STORE_CONFIRMED')) || (isWorkflowRoleNotif && isBoOrHr))) return false;
           const inBranch = isGlobalBackofficeRole
             || (branchScope === 'ALL' && !isWorkflowRoleNotif)
             || (!isWorkflowRoleNotif && (!notifBranch || notifBranch === 'ALL'))

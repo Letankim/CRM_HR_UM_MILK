@@ -28,7 +28,7 @@ const rooms = {
 export class Realtime {
   readonly io: Server;
 
-  constructor(app: FastifyInstance, tokens: TokenService, auth: AuthService, corsOrigin: string) {
+  constructor(app: FastifyInstance, tokens: TokenService, private readonly auth: AuthService, corsOrigin: string) {
     this.io = new Server(app.server, {
       path: '/socket.io',
       cors: {
@@ -105,9 +105,10 @@ export class Realtime {
         s.emit(event, payload);
         continue;
       }
-      const role = String(s.data.role || '');
+      const liveUser = uid ? this.auth.getUserById(uid) : undefined;
+      const role = String(liveUser?.role ?? s.data.role ?? '');
       if (!roleSet.has(role)) continue;
-      const scope = s.data.branchScope as 'ALL' | string[] | undefined;
+      const scope = liveUser ? this.auth.resolveEffectiveBranchScope(liveUser) : (s.data.branchScope as 'ALL' | string[] | undefined);
       if (role === 'STORE' || role === 'THU_VIEC' || role === 'CHINH_THUC') {
         if (targetBranch && Array.isArray(scope) && scope.includes(targetBranch)) s.emit(event, payload);
         continue;

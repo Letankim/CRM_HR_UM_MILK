@@ -120,14 +120,14 @@ export class AuthService {
   /** Giải mã phạm vi chi nhánh thực tế (bao gồm cả ID và Mã chi nhánh; khóa chặt theo chi nhánh với vai trò STORE / Nhân viên). */
   resolveEffectiveBranchScope(user: User): BranchScope {
     const isBranchRole = user.role === 'STORE' || user.role === 'THU_VIEC' || user.role === 'CHINH_THUC';
-    const rawTokens = user.branch_scope && user.branch_scope.trim() !== 'ALL'
+    const emp = this.db.employees.find(
+      (e) => e.user_id === user.id || Boolean(user.employee_id && (e.id === user.employee_id || e.employee_code === user.employee_id)),
+    );
+    let rawTokens = user.branch_scope && user.branch_scope.trim() !== 'ALL'
       ? user.branch_scope.split(',').map((s) => s.trim()).filter(Boolean)
       : [];
-    if (isBranchRole && rawTokens.length === 0) {
-      const emp = this.db.employees.find(
-        (e) => e.user_id === user.id || Boolean(user.employee_id && (e.id === user.employee_id || e.employee_code === user.employee_id)),
-      );
-      if (emp?.branch_id) rawTokens.push(emp.branch_id);
+    if (isBranchRole && emp?.branch_id && (rawTokens.length === 0 || (emp.updated_at ?? '') > (user.updated_at ?? ''))) {
+      rawTokens = [emp.branch_id];
     }
     if (!isBranchRole && rawTokens.length === 0) return 'ALL';
     const expanded = new Set<string>();
@@ -140,6 +140,10 @@ export class AuthService {
       }
     }
     return expanded.size > 0 ? Array.from(expanded) : (isBranchRole ? ['NONE'] : 'ALL');
+  }
+
+  getUserById(userId: string): User | undefined {
+    return this.db.users.get(userId);
   }
 
   private findByIdentifier(identifier: string, app: 'backoffice' | 'employee'): User | undefined {

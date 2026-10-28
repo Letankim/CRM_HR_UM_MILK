@@ -182,33 +182,32 @@ const BULK_KIND_LABELS: Record<string, (n: number) => string> = {
 };
 const WORKFLOW_CREATE_KINDS = new Set(['ADJUSTMENT_CREATED', 'LEAVE_CREATED', 'SHIFT_REGISTERED', 'SWAP_CREATED', 'SWAP_PEER', 'EMERGENCY_REPORTED']);
 
-/** Phát tín hiệu Socket.IO đồng bộ Lịch làm việc, Ca làm & Đơn từ (Chỉ phát âm thanh cho đúng người/vai trò nhận thông báo) */
-export function emitScheduleRealtime(
-  ctx: AppContext,
-  event: string,
-  opts: { branchId?: string; employeeIds?: (string | undefined)[]; kind?: string; message?: string; actorId?: string },
-): void {
+/** Phát tín hiệu Socket.IO đồng bộ Lịch làm việc, Ca làm & Đơn từ (Đồng bộ thông báo trước khi phát sự kiện) */
+export function emitScheduleRealtime(ctx: AppContext, event: string, opts: { branchId?: string; employeeIds?: (string | undefined)[]; kind?: string; message?: string; actorId?: string }): void {
   const firstEmpId = (opts.employeeIds ?? []).find(Boolean) ?? '';
   const resolvedBranchId = resolveEmployeeBranchId(ctx, firstEmpId, opts.branchId ?? '') || opts.branchId || '';
   const kind = opts.kind ?? 'SCHEDULE_SYNC', batchKey = `${event}:${kind}:${resolvedBranchId || 'ALL'}`;
-  const existing = pendingRealtimeBatches.get(batchKey);
-  const userIds = existing?.userIds ?? new Set<string>();
+  const existing = pendingRealtimeBatches.get(batchKey), userIds = existing?.userIds ?? new Set<string>();
+  let isTargetBoOrHr = false;
   for (const rawId of opts.employeeIds ?? []) {
     if (!rawId) continue;
     const emp = ctx.db.employees.get(rawId) ?? ctx.db.employees.find((e) => e.employee_code === rawId);
     const u = emp ? findLinkedUserForEmployee(emp, ctx) : undefined;
     if (u) userIds.add(u.id);
+    if (emp?.staff_group === 'BACKOFFICE' || ['HR', 'ADMIN', 'FINANCE', 'MKT'].includes(u?.role ?? '')) isTargetBoOrHr = true;
   }
   if (existing) clearTimeout(existing.timer);
   const count = (existing?.count ?? 0) + 1, firstMsg = existing?.firstMsg || opts.message || '';
   const branchId = resolvedBranchId || existing?.branchId || '', actorId = opts.actorId ?? existing?.actorId ?? '';
-  const timer = setTimeout(() => {
+  const timer = setTimeout(async () => {
     pendingRealtimeBatches.delete(batchKey);
-    void ensureSyncedNotifications(ctx).catch(() => undefined);
+    await ensureSyncedNotifications(ctx).catch(() => undefined);
     const rt = ctx.realtime();
     if (!rt) return;
     const message = count > 1 ? (BULK_KIND_LABELS[kind]?.(count) ?? firstMsg) : firstMsg;
-    const alertRoles: Role[] = kind === 'ADJUSTMENT_STORE_CONFIRMED' ? ['HR'] : WORKFLOW_CREATE_KINDS.has(kind) ? ['HR', 'STORE'] : [];
+    const actorRole = actorId ? ctx.db.users.get(actorId)?.role : undefined;
+    const skipStore = isTargetBoOrHr || actorRole === 'HR' || actorRole === 'ADMIN' || actorRole === 'FINANCE' || kind === 'SWAP_CREATED';
+    const alertRoles: Role[] = kind === 'ADJUSTMENT_STORE_CONFIRMED' ? ['HR'] : WORKFLOW_CREATE_KINDS.has(kind) ? (skipStore ? ['HR'] : ['HR', 'STORE']) : [];
     if (message && (alertRoles.length > 0 || userIds.size > 0)) {
       rt.toTargets({ branchId, roles: alertRoles, userIds: Array.from(userIds), excludeUserId: actorId }, event, { kind, branchId, message, actorId });
     }

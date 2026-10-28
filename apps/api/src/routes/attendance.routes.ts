@@ -187,19 +187,19 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!isSelfEmp && !perms.has('attendance.confirm') && !perms.has('adjustment.approve')) {
       throw Errors.forbidden('Vai trò của bạn chỉ có quyền xem lịch và điểm danh, không được phép tạo phiếu bổ sung công cho nhân sự khác');
     }
-    assertBranchAccess(request, emp.branch_id);
-    const matchedShift = (body.assignment_id ? ctx.db.shiftAssignments.get(body.assignment_id) : undefined)
-      ?? ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.shift_code === body.shift_code);
+    const matchedShift = (body.assignment_id ? ctx.db.shiftAssignments.get(body.assignment_id) : undefined) ?? ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.shift_code === body.shift_code);
+    const effectiveBranchId = resolveEmployeeBranchId(ctx, emp.id, matchedShift?.branch_id || emp.branch_id);
+    assertBranchAccess(request, effectiveBranchId);
     assertDateNotLockedByPayroll(ctx.db, matchedShift?.work_date ?? body.work_date, 'tạo phiếu bổ sung công');
     assertNoDuplicateAdjustment(ctx.db, emp, matchedShift?.id ?? body.assignment_id, matchedShift?.work_date ?? body.work_date, matchedShift?.shift_code ?? body.shift_code);
     const shiftStart = matchedShift?.start_at || body.requested_check_in_at, shiftEnd = matchedShift?.end_at || body.requested_check_out_at, shiftHours = matchedShift?.scheduled_hours || body.requested_hours;
     const created = await ctx.db.attendanceAdjustments.insert({
-      adjustment_code: `ADJ-${String(ctx.db.attendanceAdjustments.all(true).length + 1).padStart(4, '0')}`, event_id: body.event_id, assignment_id: matchedShift?.id ?? body.assignment_id, employee_id: emp.id, branch_id: emp.branch_id,
+      adjustment_code: `ADJ-${String(ctx.db.attendanceAdjustments.all(true).length + 1).padStart(4, '0')}`, event_id: body.event_id, assignment_id: matchedShift?.id ?? body.assignment_id, employee_id: emp.id, branch_id: effectiveBranchId,
       work_date: matchedShift?.work_date ?? body.work_date, shift_code: matchedShift?.shift_code ?? body.shift_code, kind: body.kind, requested_time: shiftEnd, requested_check_in_at: shiftStart, requested_check_out_at: shiftEnd, requested_hours: shiftHours,
       reason: body.reason, evidence_file_id: '', exception_source: 'EMPLOYEE', status: 'PENDING', store_confirmed_by: '', store_confirmed_at: '', store_note: '', hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.create', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: created.id, after: { adjustment_code: created.adjustment_code, assignment_id: created.assignment_id, requested_hours: created.requested_hours } });
-    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'ADJUSTMENT_CREATED', message: `${emp.full_name} (${emp.employee_code}) vừa gửi phiếu bổ sung công ${created.adjustment_code} ngày ${created.work_date} chờ duyệt`, actorId: request.auth!.user.id });
+    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: effectiveBranchId, employeeIds: [emp.id], kind: 'ADJUSTMENT_CREATED', message: `${emp.full_name} (${emp.employee_code}) vừa gửi phiếu bổ sung công ${created.adjustment_code} ngày ${created.work_date} chờ duyệt`, actorId: request.auth!.user.id });
     return reply.code(201), sendSuccess(request, 'Đã tạo phiếu bổ sung / điều chỉnh công', created);
   });
 

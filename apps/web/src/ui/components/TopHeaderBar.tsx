@@ -1,6 +1,6 @@
 'use client';
 
-import { Avatar, Badge, Breadcrumb, Button, Dropdown, Flex, Layout, List, Popover, Space, Spin, Switch, Tag, Tooltip, Typography } from 'antd';
+import { App, Avatar, Badge, Breadcrumb, Button, Dropdown, Flex, Layout, List, Popover, Space, Spin, Switch, Tag, Tooltip, Typography } from 'antd';
 import {
   BellOutlined, DownOutlined, KeyOutlined, LogoutOutlined, MenuFoldOutlined,
   MenuOutlined, MenuUnfoldOutlined, MutedOutlined, ReloadOutlined, SafetyCertificateOutlined,
@@ -27,6 +27,7 @@ export function TopHeaderBar({
   const router = useRouter();
   const qc = useQueryClient();
   const can = useCan();
+  const { message } = App.useApp();
   const [loggingOut, setLoggingOut] = useState(false);
   const [profileTab, setProfileTab] = useState<'info' | 'password' | null>(null);
 
@@ -44,7 +45,10 @@ export function TopHeaderBar({
     () => notifItems.filter((n) => n.readStatus === 'UNREAD').map((n) => `ntf:${n.id}`),
     [notifItems],
   );
-  useTrackUnreadNotifications(user.id, unreadKeys, notifsQ.isSuccess);
+  useTrackUnreadNotifications(user.id, unreadKeys, notifsQ.isSuccess, (newKeys) => {
+    const firstNew = notifItems.find((n) => newKeys.includes(`ntf:${n.id}`));
+    if (firstNew) message.info({ key: 'rt-bell-toast', content: `Thông báo mới: ${firstNew.title}` });
+  });
 
   const handleLogout = async () => {
     setLoggingOut(true);

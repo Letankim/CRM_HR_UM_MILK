@@ -120,8 +120,15 @@ export function useNotificationSound() {
   return { soundEnabled, setSoundEnabled, toggleSound, playTestSound };
 }
 
-export function useTrackUnreadNotifications(userId: string | undefined, unreadKeys: string[], ready: boolean): void {
+export function useTrackUnreadNotifications(
+  userId: string | undefined,
+  unreadKeys: string[],
+  ready: boolean,
+  onNewKeys?: (newKeys: string[]) => void,
+): void {
   const initializedUserRef = useRef<string | null>(null);
+  const onNewKeysRef = useRef(onNewKeys);
+  onNewKeysRef.current = onNewKeys;
 
   useEffect(() => {
     if (!userId || !ready || typeof window === 'undefined') return;
@@ -160,6 +167,7 @@ export function useTrackUnreadNotifications(userId: string | undefined, unreadKe
       persistSeen();
       if (!isInSelfActionWindow()) {
         playNotificationSound();
+        onNewKeysRef.current?.(newKeys);
       }
     }
   }, [userId, unreadKeys, ready]);

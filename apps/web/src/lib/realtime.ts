@@ -6,7 +6,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { io, type Socket } from 'socket.io-client';
 import { loginPath, type AppKind } from './auth';
-import { isInSelfActionWindow, playNotificationSound } from './notification-sound';
 
 let socket: Socket | null = null;
 let currentToken: string | null = null;
@@ -74,14 +73,11 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
         message.success('Hệ thống đã hoàn tất bảo trì và hoạt động bình thường trở lại');
       }
     };
-    const isSelfOrDup = (() => {
+    const isOutOfBranchOrDup = (() => {
       let lastSig = '';
       let lastAt = 0;
       return (eventKey: string, payload?: { actorId?: string; branchId?: string; kind?: string; code?: string; title?: string; message?: string }) => {
         const meUser = qc.getQueryData<{ user?: { id?: string; role?: string; branchScope?: 'ALL' | string[] } }>(['me'])?.user;
-        const myId = userId || meUser?.id;
-        const isAdmin = meUser?.role === 'ADMIN';
-        const isSelf = Boolean((payload?.actorId && myId && payload.actorId === myId) || isInSelfActionWindow());
         const outOfBranch = Boolean(
           meUser?.role === 'STORE' &&
           payload?.branchId &&
@@ -90,23 +86,17 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
         );
         const sig = `${eventKey}:${payload?.kind || ''}:${payload?.code || ''}:${payload?.title || ''}:${payload?.message || ''}`;
         const now = Date.now();
-        const isDup = outOfBranch || (sig === lastSig && now - lastAt < 1500);
+        const isDup = outOfBranch || (sig === lastSig && now - lastAt < 800);
         if (!outOfBranch) {
           lastSig = sig;
           lastAt = now;
         }
-        return { isSelf, isDup, isAdmin };
+        return isDup;
       };
     })();
     const onNotification = (payload?: { actorId?: string; kind?: string; title?: string; summary?: string; code?: string }) => {
-      const { isSelf, isDup } = isSelfOrDup('ntf', payload);
-      if (isDup) return;
+      if (isOutOfBranchOrDup('ntf', payload)) return;
       ['notifications', 'mkt-comms', 'nv-comms'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-      if (isSelf) return;
-      playNotificationSound();
-      if (payload?.title) {
-        message.info({ key: `rt-ntf-${payload.code || payload.title}`, content: `${payload.kind === 'ANNOUNCEMENT' ? `Bản tin mới (${payload.code || 'Nội bộ'})` : 'Thông báo mới'}: ${payload.title}` });
-      }
     };
     let scheduleTimer: ReturnType<typeof setTimeout> | null = null;
     const triggerScheduleSync = () => {
@@ -117,41 +107,24 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
           'attendance-adjustments', 'attendance-sessions', 'attendance-sessions-count', 'nv-schedules', 'nv-swaps',
           'dashboard-schedules', 'dashboard-leaves', 'dashboard-leaves-full', 'dashboard-swaps', 'dashboard-emergencies', 'dashboard-attendance-adjustments',
         ].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-      }, 350);
+      }, 250);
     };
 
     const onAttendance = (payload?: { actorId?: string; branchId?: string; kind?: string; message?: string }) => {
-      const { isSelf, isDup, isAdmin } = isSelfOrDup('att', payload);
-      if (isDup) return;
+      if (isOutOfBranchOrDup('att', payload)) return;
       ['notifications', 'my-attendance', 'attendance-all', 'nv-attendance', 'attendance-sessions', 'attendance-sessions-count', 'attendance-adjustments', 'dashboard-attendance-adjustments', 'schedules', 'dashboard-shifts-full'].forEach((k) =>
         qc.invalidateQueries({ queryKey: [k] }),
       );
-      if (!isSelf && !(app === 'backoffice' && isAdmin) && payload?.message) {
-        playNotificationSound();
-        message.info({ key: app === 'backoffice' ? 'rt-att-alert' : 'rt-att-emp', content: payload.message });
-      }
     };
     const onSchedule = (payload?: { actorId?: string; branchId?: string; kind?: string; message?: string }) => {
-      const { isSelf, isDup, isAdmin } = isSelfOrDup('sched', payload);
-      if (isDup) return;
+      if (isOutOfBranchOrDup('sched', payload)) return;
       triggerScheduleSync();
-      if (!isSelf && !(app === 'backoffice' && isAdmin) && payload?.message) {
-        playNotificationSound();
-        message.info({ key: app === 'backoffice' ? 'rt-schedule-bo' : 'rt-schedule-emp', content: payload.message });
-      }
     };
     const onEmergency = (payload?: { actorId?: string; branchId?: string; message?: string }) => {
-      const { isSelf, isDup, isAdmin } = isSelfOrDup('emg', payload);
-      if (isDup) return;
+      if (isOutOfBranchOrDup('emg', payload)) return;
       triggerScheduleSync();
-      if (!isSelf && !(app === 'backoffice' && isAdmin) && payload?.message) {
-        playNotificationSound();
-        message.warning({ key: 'rt-emergency-mgr', content: payload.message });
-      }
     };
     const onAccountPending = () => {
-      const meRole = qc.getQueryData<{ user?: { role?: string } }>(['me'])?.user?.role;
-      if (app === 'backoffice' && (!meRole || meRole === 'ADMIN')) playNotificationSound();
       ['accounts', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
     };
     s.on('auth:forceLogout', onForceLogout);
