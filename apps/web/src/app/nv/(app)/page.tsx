@@ -58,6 +58,10 @@ export default function EmployeeHome() {
   const probationOffLimit = SYSTEM_CONFIG.defaults.probationOffDays;
   const usedOffCount = myLeaves.filter((l) => l.status !== 'REJECTED').length;
   const branchName = myQ.data?.profile.branchName || 'Chi nhánh Ụm Bò Milk';
+  const tomorrowDate = dayjs(todayDate).add(1, 'day').format('YYYY-MM-DD');
+  const todayShifts = displayShifts.filter((s) => String(s.workDate) === todayDate);
+  const tomorrowShifts = displayShifts.filter((s) => String(s.workDate) === tomorrowDate);
+  const abnormalShiftsCount = displayShifts.filter((s) => s.status === 'ABSENT' || Boolean(s.isAbsentShift)).length;
 
   const summaryCard = (
     <Card size="small" style={{ marginBottom: isDesktop ? 0 : 12, background: '#EFF6FF', borderColor: '#BFDBFE', overflow: 'hidden' }}>
@@ -78,7 +82,15 @@ export default function EmployeeHome() {
         <span>Nghỉ OFF: <strong>{usedOffCount}/{probationOffLimit} ngày</strong></span>
       </div>
     </Card>
-  ) : null;
+  ) : (
+    <Card size="small" title={<span><CalendarOutlined /> Tóm tắt Ca hôm nay, Lịch ngày mai &amp; Nghỉ OFF tuần</span>} style={{ marginBottom: isDesktop ? 0 : 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, fontSize: 12 }}>
+        <span>Ca hôm nay: <strong>{todayShifts.length > 0 ? `${todayShifts.length} ca (${String(todayShifts[0]?.startAt || '07:00')}–${String(todayShifts[0]?.endAt || '12:00')})` : 'Không có ca'}</strong></span>
+        <span>Ngày mai ({dayjs(tomorrowDate).format('DD/MM')}): <strong>{tomorrowShifts.length > 0 ? `${tomorrowShifts.length} ca (${String(tomorrowShifts[0]?.startAt || '07:00')}–${String(tomorrowShifts[0]?.endAt || '12:00')})` : 'Trống lịch / OFF'}</strong></span>
+        <span>OFF đã đăng ký: <strong>{usedOffCount} ngày</strong></span>
+      </div>
+    </Card>
+  );
 
   const shiftsCard = (
     <Card size="small" title={<span><CalendarOutlined /> Ca làm việc đã phát hành của bạn</span>} extra={<Space size={8}><Button size="small" icon={<ReloadOutlined />} loading={myQ.isFetching} onClick={() => { myQ.refetch(); swapsQ.refetch(); }}>Làm mới</Button><Link href="/nv/lich" style={{ fontSize: 12 }}>Xem tất cả</Link></Space>} style={{ marginBottom: isDesktop ? 0 : 12 }}>
@@ -125,11 +137,12 @@ export default function EmployeeHome() {
   );
 
   const tasksCard = (
-    <Card size="small" title="Việc cần chú ý, Yêu cầu chờ duyệt & Bài kiểm tra TEST">
+    <Card size="small" title="Việc cần chú ý, Yêu cầu chờ duyệt & Cảnh báo xử lý">
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><FieldTimeOutlined /> Cảnh báo công / Ca cần bổ sung</span><Link href="/nv/cong"><Badge count={abnormalShiftsCount} showZero color="#DC2626" /></Link></div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><ClockCircleOutlined /> Đơn nghỉ OFF đang chờ duyệt</span><Link href="/nv/nghi-phep"><Badge count={myLeaves.filter((l) => l.status === 'PENDING').length} showZero color="#D97706" /></Link></div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><SwapOutlined /> Yêu cầu đổi ca đang xử lý</span><Link href="/nv/doi-ca"><Badge count={pendingSwaps.length} showZero color={BRAND.primary} /></Link></div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><BookOutlined /> Bài kiểm tra TEST sắp tới</span><Link href="/nv/bai-kiem-tra"><Tag color="blue" style={{ margin: 0 }}>{myTests.length} bài thi</Tag></Link></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><BookOutlined /> Bài kiểm tra TEST / Đào tạo</span><Link href="/nv/bai-kiem-tra"><Tag color="blue" style={{ margin: 0 }}>{myTests.length} bài được giao</Tag></Link></div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><NotificationOutlined /> Bản tin truyền thông nội bộ</span><Link href="/nv/ban-tin"><Tag color="geekblue" style={{ margin: 0 }}>{(commsQ.data?.announcements ?? []).length} bản tin · Xem ngay</Tag></Link></div>
       </Space>
     </Card>
@@ -160,17 +173,12 @@ export default function EmployeeHome() {
               { href: '/nv/cong', label: 'Công của tôi & Bù công', icon: <FieldTimeOutlined /> },
               { href: '/nv/phieu-luong', label: 'Phiếu lương cá nhân', icon: <FileTextOutlined /> },
             ].map((btn) => (
-              <Col span={8} key={btn.href}>
-                <Link href={btn.href} style={{ display: 'block' }}><Button type={btn.primary ? 'primary' : 'default'} icon={btn.icon} block style={{ height: 40, justifyContent: 'flex-start', fontWeight: 600 }}>{btn.label}</Button></Link>
-              </Col>
+              <Col span={8} key={btn.href}><Link href={btn.href} style={{ display: 'block' }}><Button type={btn.primary ? 'primary' : 'default'} icon={btn.icon} block style={{ height: 40, justifyContent: 'flex-start', fontWeight: 600 }}>{btn.label}</Button></Link></Col>
             ))}
           </Row>
-          {shiftsCard}
-          {scheduleCenterCard}
+          {shiftsCard}{scheduleCenterCard}
         </Col>
-        <Col xs={24} lg={8}>
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>{summaryCard}{probationCard}{tasksCard}</Space>
-        </Col>
+        <Col xs={24} lg={8}><Space direction="vertical" size={12} style={{ width: '100%' }}>{summaryCard}{probationCard}{tasksCard}</Space></Col>
       </Row>
     );
   }
