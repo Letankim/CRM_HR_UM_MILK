@@ -191,7 +191,14 @@ export function GovernanceDetailDrawer({
             {kind === 'announcement' && (
               <>
                 <Descriptions.Item label="Mức độ ưu tiên"><Tag color={priorityColor}>{priorityLabel}</Tag></Descriptions.Item>
-                <Descriptions.Item label="Thời điểm phát hành">{isSent && record.sent_at ? dayjs(String(record.sent_at)).format('HH:mm DD/MM/YYYY') : 'Chưa gửi'}</Descriptions.Item>
+                <Descriptions.Item label="Thời điểm phát hành">{isSent && record.sent_at ? dayjs(String(record.sent_at)).format('HH:mm DD/MM/YYYY') : record.scheduled_at ? `Lịch phát: ${String(record.scheduled_at)}` : 'Bản nháp (Chưa gửi)'}</Descriptions.Item>
+                <Descriptions.Item label="Nhóm người nhận"><Tag color="blue">{String(record.audienceLabel || 'Toàn công ty')}</Tag></Descriptions.Item>
+                <Descriptions.Item label="Nút hành động (CTA) & Tệp đính kèm">
+                  <Space size={6} wrap>
+                    {Boolean(record.cta_label) && <Tag color="geekblue">CTA: {String(record.cta_label)} ({String(record.cta_link || '/nv/ban-tin')})</Tag>}
+                    {Boolean(record.media_ids && record.media_ids !== '[]') && <Tag color="cyan">Đính kèm: {String(record.media_ids)}</Tag>}
+                  </Space>
+                </Descriptions.Item>
               </>
             )}
             <Descriptions.Item label="Tiêu đề" span={2}><strong>{String(record.description ?? record.title)}</strong></Descriptions.Item>

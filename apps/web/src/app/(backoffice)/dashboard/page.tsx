@@ -42,7 +42,7 @@ export default function DashboardPage() {
   const schedules = useQuery({ queryKey: ['dashboard-schedules'], queryFn: () => api.list<{ id: string; status: string; branchId?: string; branch_id?: string }>('/admin/schedules?per_page=100'), enabled: can('schedule.read') });
   const leaves = useQuery({ queryKey: ['dashboard-leaves'], queryFn: () => api.list<{ id: string; status: string; branch_id?: string }>('/admin/leave-requests?per_page=50'), enabled: can('schedule.read') });
   const payroll = useQuery({ queryKey: ['dashboard-payroll'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/payroll/periods'), enabled: can('payroll.read') });
-  const comms = useQuery({ queryKey: ['mkt-comms'], queryFn: () => api.get<{ announcements: Record<string, unknown>[] }>('/admin/comms'), enabled: can('comms.manage') });
+  const comms = useQuery({ queryKey: ['mkt-comms'], queryFn: () => api.get<{ dashboard?: Record<string, number>; audienceGroups?: unknown[]; announcements: Record<string, unknown>[] }>('/admin/comms'), enabled: can('comms.manage') });
   const health = useQuery({ queryKey: ['integrations', 'health'], queryFn: () => api.get<Health>('/admin/integrations/health'), enabled: can('integration.read') });
 
   const handleRefreshAll = async () => {
@@ -171,7 +171,10 @@ export default function DashboardPage() {
               <Col xs={12} md={6}><Card size="small" loading={payroll.isLoading}><Statistic title="Kỳ lương hệ thống" value={Array.isArray(payroll.data) ? payroll.data.length : 0} prefix={<DollarOutlined />} /><Link href="/admin/payroll" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Đối soát &amp; Hồ sơ lương</Link></Card></Col>
             )}
             {can('comms.manage') && (
-              <Col xs={12} md={6}><Card size="small" loading={comms.isLoading}><Statistic title="Bản tin nội bộ" value={comms.data?.announcements.length ?? 0} prefix={<NotificationOutlined />} /><Link href="/admin/integrations?section=comms" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Xem &amp; Quản lý bản tin</Link></Card></Col>
+              <>
+                <Col xs={12} md={6}><Card size="small" loading={comms.isLoading}><Statistic title="Tin đang chạy / Đã phát" value={`${comms.data?.dashboard?.runningCount ?? 0} / ${comms.data?.announcements.length ?? 0}`} prefix={<NotificationOutlined />} /><Link href="/admin/integrations?section=comms" style={{ fontSize: 12, display: 'inline-block', marginTop: 4 }}>Mở Trung tâm Bản tin MKT</Link></Card></Col>
+                <Col xs={12} md={6}><Card size="small" loading={comms.isLoading}><Statistic title="Tin nháp / Lịch phát / Lỗi gửi" value={`${comms.data?.dashboard?.draftCount ?? 0} / ${comms.data?.dashboard?.scheduledCount ?? 0} / ${comms.data?.dashboard?.failedCount ?? 0}`} /><div style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>Nhóm nhận: {comms.data?.audienceGroups?.length ?? 0} nhóm · Đã đọc: {comms.data?.dashboard?.acknowledgedCount ?? 0}</div></Card></Col>
+              </>
             )}
           </Row>
 

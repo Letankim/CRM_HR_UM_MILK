@@ -88,6 +88,17 @@ async function ensureSyncedNotifications(ctx: AppContext, actorId: string) {
     const empUser = findUserByEmp(ps.employee_id);
     if (empUser && !hasKey('PAYSLIP_USER', ps.id)) await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: ps.branch_id || 'ALL', category: 'PAYROLL', title: `Phiếu lương cá nhân đã phát hành: ${ps.period_name || ps.payslip_code}`, body: `Thực lĩnh (NET): ${Number(ps.net_vnd || 0).toLocaleString('vi-VN')}đ — Vui lòng kiểm tra chi tiết và xác nhận phiếu lương.`, link: '/nv/phieu-luong', severity: 'INFO', entity_type: 'PAYSLIP_USER', entity_id: ps.id });
   }
+  for (const anc of ctx.db.announcements.all().filter((x) => x.status === 'DRAFT' || x.status === 'SCHEDULED' || x.status === 'FAILED').slice(0, 8)) {
+    const mktKey = `${anc.id}_${anc.status}`;
+    if (!hasKey('MKT_ANC', mktKey)) {
+      const title = anc.status === 'FAILED' ? `Cảnh báo lỗi phát tin: ${anc.title}` : anc.status === 'SCHEDULED' ? `Lịch phát thông báo sắp tới: ${anc.title}` : `Nội dung bản nháp chờ duyệt phát: ${anc.title}`;
+      const body = anc.status === 'FAILED' ? `Bản tin ${anc.code} gặp lỗi trong quá trình gửi — Vui lòng kiểm tra và thử gửi lại.` : anc.status === 'SCHEDULED' ? `Bản tin ${anc.code} đã đặt lịch phát vào ${anc.scheduled_at || 'khung giờ dự kiến'}.` : `Bản tin ${anc.code} đang lưu nháp (DRAFT) chờ kiểm duyệt và phát hành.`;
+      await ins({ recipient_user_id: '', recipient_role: 'MKT', branch_id: 'ALL', category: 'ANNOUNCEMENT', title, body, link: '/admin/integrations?section=comms', severity: anc.status === 'FAILED' ? 'CRITICAL' : anc.status === 'DRAFT' ? 'WARNING' : 'INFO', entity_type: 'MKT_ANC', entity_id: mktKey });
+    }
+  }
+  for (const dlv of ctx.db.deliveryLogs.all().filter((x) => x.status === 'FAILED').slice(0, 6)) {
+    if (!hasKey('MKT_DLV_ERR', dlv.id)) await ins({ recipient_user_id: '', recipient_role: 'MKT', branch_id: 'ALL', category: 'ANNOUNCEMENT', title: `Lỗi gửi thông báo tới người nhận (${dlv.channel})`, body: `Lượt gửi #${dlv.id} thất bại (Đã thử ${dlv.attempts} lần) — Lỗi: ${dlv.last_error || 'Mất kết nối kênh nhận'}.`, link: '/admin/integrations?section=comms', severity: 'WARNING', entity_type: 'MKT_DLV_ERR', entity_id: dlv.id });
+  }
 }
 
 export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) {

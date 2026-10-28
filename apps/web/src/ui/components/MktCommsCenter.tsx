@@ -56,13 +56,14 @@ export function MktCommsCenter() {
 
   const openCreateAnc = (presetAudienceKey = 'ALL|ALL', presetStatus = 'SENT') => {
     setEditingAnc(null); ancForm.resetFields();
-    ancForm.setFieldsValue({ priority: 'HIGH', status: presetStatus, audience_key: presetAudienceKey, scheduled_at: dayjs().add(1, 'day').format('YYYY-MM-DD'), requires_ack: true, media_list: [], body_md: '<p>Kính gửi toàn thể nhân sự hệ thống <strong>Ụm Bò Milk</strong>,</p>' });
+    ancForm.setFieldsValue({ priority: 'HIGH', status: presetStatus, audience_key: presetAudienceKey, scheduled_at: dayjs().add(1, 'day').format('YYYY-MM-DD'), scheduled_time: '08:00', requires_ack: true, media_list: [], body_md: '<p>Kính gửi toàn thể nhân sự hệ thống <strong>Ụm Bò Milk</strong>,</p>' });
     setAncModal(true);
   };
   const openEditAnc = (r: Record<string, unknown>) => {
     setEditingAnc(r);
-    const mediaList = String(r.media_ids || '').split(',').map((s) => s.trim()).filter(Boolean);
-    ancForm.setFieldsValue({ title: r.title, summary: r.summary, priority: r.priority || 'NORMAL', status: r.status || 'SENT', audience_key: `${r.audience_scope || 'ALL'}|${r.audience_target || 'ALL'}`, campaign_id: r.campaign_id || undefined, scheduled_at: r.scheduled_at ? String(r.scheduled_at).slice(0, 10) : '', cta_label: r.cta_label || '', cta_link: r.cta_link || '', requires_ack: Boolean(r.requires_ack), media_list: mediaList, body_md: r.body || `<p>${r.summary ?? ''}</p>` });
+    const mediaList = String(r.media_ids || '').replace(/[\[\]"]/g, '').split(',').map((s) => s.trim()).filter(Boolean);
+    const rawSched = String(r.scheduled_at || '');
+    ancForm.setFieldsValue({ title: r.title, summary: r.summary, priority: r.priority || 'NORMAL', status: r.status || 'SENT', audience_key: `${r.audience_scope || 'ALL'}|${r.audience_target || 'ALL'}`, campaign_id: r.campaign_id || undefined, scheduled_at: rawSched ? rawSched.slice(0, 10) : '', scheduled_time: rawSched.length >= 16 ? rawSched.slice(11, 16) : '08:00', cta_label: r.cta_label || '', cta_link: r.cta_link || '', requires_ack: Boolean(r.requires_ack), media_list: mediaList, body_md: r.body || `<p>${r.summary ?? ''}</p>` });
     setAncModal(true);
   };
   const openCreateAud = () => {
@@ -75,18 +76,17 @@ export function MktCommsCenter() {
     audForm.setFieldsValue({ label: r.label, scope: r.scope || 'CUSTOM', branch_id: r.branch_id || (r.scope === 'BRANCH' ? r.target : 'ALL'), stage: r.stage || (r.scope === 'STAGE' ? (r.target === 'THU_VIEC' ? 'PROBATION' : 'OFFICIAL') : 'ALL'), staff_group: r.staff_group || (r.scope === 'STAFF_GROUP' ? r.target : 'ALL'), note: r.note || '' });
     setAudModal(true);
   };
-
   const filteredAnc = useMemo(() => {
     const q = debouncedQ.trim().toLowerCase();
     return (data?.announcements ?? []).filter((a) => (canManage || a.status === 'SENT') && (statusFilter === 'ALL' || a.status === statusFilter) && (prioFilter === 'ALL' || a.priority === prioFilter) && (!q || `${a.announcement_code || ''} ${a.title || ''} ${a.summary || ''} ${a.audienceLabel || ''}`.toLowerCase().includes(q)));
   }, [data?.announcements, canManage, statusFilter, prioFilter, debouncedQ]);
-
+  const pendingOrFailedAncs = useMemo(() => (data?.announcements ?? []).filter((a) => a.status === 'DRAFT' || a.status === 'SCHEDULED' || a.status === 'FAILED'), [data?.announcements]);
   const db = data?.dashboard ?? {};
   const kpiCards = [
     { label: 'Tin đang chạy', val: db.runningCount ?? 0, color: '#16A34A', sub: 'Đã phát tới người nhận' },
     { label: 'Tin lưu nháp', val: db.draftCount ?? 0, color: '#D97706', sub: 'Chờ duyệt / hoàn thiện' },
     { label: 'Lịch phát dự kiến', val: db.scheduledCount ?? 0, color: '#2563EB', sub: 'Đặt lịch phát tự động' },
-    { label: 'Chiến dịch nội bộ', val: db.campaignCount ?? 0, color: '#0F172A', sub: 'Chiến dịch truyền thông' },
+    { label: 'Nhóm người nhận', val: data?.audienceGroups?.length ?? 0, color: '#0F172A', sub: `${db.campaignCount ?? 0} chiến dịch truyền thông` },
     { label: 'Đã xác nhận đọc', val: db.acknowledgedCount ?? 0, color: '#0284C7', sub: 'Có xác nhận đọc thực tế' },
     { label: 'Cảnh báo lỗi gửi', val: db.failedCount ?? 0, color: '#DC2626', sub: 'Cần kiểm tra & gửi lại' },
   ];
@@ -95,6 +95,9 @@ export function MktCommsCenter() {
     <Space direction="vertical" size={14} style={{ width: '100%' }}>
       <Alert type="info" showIcon message="Chuẩn phân quyền & bảo mật dữ liệu Truyền thông Nội bộ" description="Bộ phận Truyền thông được phép cấu hình Nhóm người nhận theo phạm vi cho phép (Toàn công ty, Chi nhánh, Thử việc/Chính thức, Nhóm vị trí); hệ thống tự động ẩn 100% lương, GPS, ảnh điểm danh và hồ sơ HR nhạy cảm. Trạng thái gửi không khẳng định người nhận đã đọc nếu chưa có xác nhận đọc thực tế." />
       <Row gutter={[12, 12]}>{kpiCards.map((k) => <Col xs={12} md={4} key={k.label}><Card size="small" styles={{ body: { padding: '12px 14px' } }}><div style={{ fontSize: 12, color: '#64748B' }}>{k.label}</div><div className="num" style={{ fontSize: 22, fontWeight: 700, color: k.color, margin: '4px 0' }}>{k.val}</div><div style={{ fontSize: 11, color: '#94A3B8' }}>{k.sub}</div></Card></Col>)}</Row>
+      <Card size="small" title={`Nội dung chờ duyệt / nháp, Lịch phát sắp tới & Cảnh báo lỗi gửi (${pendingOrFailedAncs.length})`} extra={<Space size={8}><Button size="small" onClick={() => openCreateAnc('ALL|ALL', 'DRAFT')}>Lưu nháp mới</Button><Button size="small" type="primary" onClick={() => openCreateAnc('ALL|ALL', 'SENT')}>Tạo &amp; Phát tin</Button></Space>}>
+        <SelectableTable size="small" rowKey="id" pagination={false} dataSource={pendingOrFailedAncs} columns={[{ title: 'Mã tin', dataIndex: 'announcement_code', width: 95, render: (v: string) => <Tag color="geekblue">{v}</Tag> }, { title: 'Tiêu đề thông báo', dataIndex: 'title', render: (v: string, r) => <Typography.Link strong onClick={() => setViewingAnc(r)}>{v}</Typography.Link> }, { title: 'Nhóm người nhận', dataIndex: 'audienceLabel', width: 185, render: (v: string) => <Tag color="blue">{v || 'Toàn công ty'}</Tag> }, { title: 'Lịch phát dự kiến', dataIndex: 'scheduled_at', width: 155, render: (v: string) => <span className="num">{v || 'Chưa đặt lịch'}</span> }, { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag value={v} label={v === 'SCHEDULED' ? 'Đã lên lịch' : v === 'FAILED' ? 'Lỗi gửi' : 'Chờ duyệt / Nháp'} /> }, { title: 'Thao tác', width: 120, align: 'right', render: (_, r) => <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => putMut.mutate({ url: `/mkt/announcements/${r.id}`, body: { ...r, status: 'SENT', publish_now: true, version: r.version } })}>Phát ngay</Button> }]} />
+      </Card>
     </Space>
   );
 

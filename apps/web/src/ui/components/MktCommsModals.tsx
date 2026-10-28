@@ -3,7 +3,7 @@
 import { Col, Form, Input, InputNumber, Modal, Row, Select, Switch } from 'antd';
 import type { FormInstance } from 'antd';
 import { CloseOutlined, PlusOutlined, SaveOutlined, SendOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { DateStringPicker } from './DateTimePickers';
+import { DateStringPicker, TimeSelect } from './DateTimePickers';
 import { RichHtmlEditor } from './RichHtmlEditor';
 
 export function MktAnnouncementModal({
@@ -30,19 +30,23 @@ export function MktAnnouncementModal({
     >
       <Form
         form={form} layout="vertical"
-        initialValues={{ priority: 'HIGH', status: 'SENT', audience_key: 'ALL|ALL', requires_ack: true, media_list: [] }}
+        initialValues={{ priority: 'HIGH', status: 'SENT', audience_key: 'ALL|ALL', scheduled_time: '08:00', requires_ack: true, media_list: [] }}
         onFinish={(vals) => {
           const rawKey = String(vals.audience_key || 'ALL|ALL'), sep = rawKey.indexOf('|');
           const audience_scope = sep >= 0 ? rawKey.slice(0, sep) : 'ALL', audience_target = sep >= 0 ? rawKey.slice(sep + 1) : 'ALL';
           const media_ids = Array.isArray(vals.media_list) ? vals.media_list.join(',') : String(vals.media_ids || '');
-          onSubmit({ ...vals, audience_scope, audience_target, media_ids, publish_now: vals.status === 'SENT' });
+          const datePart = String(vals.scheduled_at || '').slice(0, 10);
+          const timePart = String(vals.scheduled_time || '08:00').slice(0, 5);
+          const scheduled_at = datePart ? `${datePart} ${timePart}` : '';
+          onSubmit({ ...vals, scheduled_at, audience_scope, audience_target, media_ids, publish_now: vals.status === 'SENT' });
         }}
       >
         <Row gutter={12}>
-          <Col xs={24} md={10}><Form.Item name="title" label="Tiêu đề thông báo" rules={[{ required: true, message: 'Vui lòng nhập tiêu đề thông báo' }]}><Input placeholder="Nhập tiêu đề bản tin truyền thông nội bộ..." /></Form.Item></Col>
+          <Col xs={24} md={8}><Form.Item name="title" label="Tiêu đề thông báo" rules={[{ required: true, message: 'Vui lòng nhập tiêu đề thông báo' }]}><Input placeholder="Nhập tiêu đề bản tin truyền thông nội bộ..." /></Form.Item></Col>
           <Col xs={12} md={4}><Form.Item name="priority" label="Mức độ thông báo"><Select options={[{ value: 'NORMAL', label: 'Thông thường' }, { value: 'HIGH', label: 'Quan trọng' }, { value: 'URGENT', label: 'Khẩn cấp' }]} /></Form.Item></Col>
-          <Col xs={12} md={5}><Form.Item name="status" label="Chế độ phát hành"><Select options={[{ value: 'DRAFT', label: 'Lưu bản nháp trước khi phát' }, { value: 'SCHEDULED', label: 'Đặt lịch phát theo ngày' }, { value: 'SENT', label: 'Phát thông báo ngay' }]} /></Form.Item></Col>
-          <Col xs={24} md={5}><Form.Item name="scheduled_at" label="Ngày phát dự kiến"><DateStringPicker placeholder="Chọn ngày phát" /></Form.Item></Col>
+          <Col xs={12} md={5}><Form.Item name="status" label="Chế độ phát hành"><Select options={[{ value: 'DRAFT', label: 'Lưu bản nháp (DRAFT)' }, { value: 'SCHEDULED', label: 'Đặt lịch phát ngày/giờ' }, { value: 'SENT', label: 'Phát thông báo ngay' }]} /></Form.Item></Col>
+          <Col xs={12} md={4}><Form.Item name="scheduled_at" label="Ngày phát dự kiến"><DateStringPicker placeholder="Chọn ngày" /></Form.Item></Col>
+          <Col xs={12} md={3}><Form.Item name="scheduled_time" label="Giờ phát"><TimeSelect placeholder="08:00" /></Form.Item></Col>
         </Row>
         <Row gutter={12}>
           <Col xs={24} md={9}><Form.Item name="audience_key" label="Nhóm người nhận thông báo" rules={[{ required: true }]}><Select options={audienceOptions} showSearch optionFilterProp="label" /></Form.Item></Col>
