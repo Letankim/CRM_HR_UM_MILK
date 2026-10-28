@@ -96,12 +96,12 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     const leaves = ctx.db.leaveRequests
       .filter((l) => l.employee_id === emp.id || l.employee_id === emp.employee_code)
       .reverse()
-      .map((l) => ({ ...l, ...resolveShiftTimeDetails(ctx, l.shift_code, l.assignment_id), branchName: ctx.db.branches.get(l.branch_id)?.name ?? branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[l.status] }));
+      .map((l) => ({ ...l, ...resolveShiftTimeDetails(ctx, l.shift_code, l.assignment_id, l.branch_id, l.employee_id, l.leave_date), branchName: ctx.db.branches.get(l.branch_id)?.name ?? branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[l.status] }));
 
     const emergencyLeaves = ctx.db.emergencyLeaves
       .filter((el) => el.employee_id === emp.id || el.employee_id === emp.employee_code)
       .reverse()
-      .map((el) => ({ ...el, ...resolveShiftTimeDetails(ctx, el.shift_code, el.assignment_id), branchName: ctx.db.branches.get(el.branch_id)?.name ?? branch?.name ?? 'Chi nhánh' }));
+      .map((el) => ({ ...el, ...resolveShiftTimeDetails(ctx, el.shift_code, el.assignment_id, el.branch_id, el.employee_id, el.work_date), branchName: ctx.db.branches.get(el.branch_id)?.name ?? branch?.name ?? 'Chi nhánh' }));
 
     const swaps = ctx.db.shiftSwaps
       .filter((s) => s.requester_id === emp.id || s.requester_id === emp.employee_code || s.peer_id === emp.id || s.peer_id === emp.employee_code)
@@ -111,7 +111,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
         const peerEmp = ctx.db.employees.get(s.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === s.peer_id);
         const sBranch = ctx.db.branches.get(s.branch_id) ?? (reqEmp ? ctx.db.branches.get(reqEmp.branch_id) : undefined) ?? branch;
         return {
-          ...s, ...resolveShiftTimeDetails(ctx, s.from_shift_code, s.from_assignment_id),
+          ...s, ...resolveShiftTimeDetails(ctx, s.from_shift_code, s.from_assignment_id, sBranch?.id ?? s.branch_id, s.requester_id, s.from_work_date),
           branchName: sBranch?.name ?? 'Chi nhánh',
           requesterCode: reqEmp?.employee_code ?? s.requester_id, peerCode: peerEmp?.employee_code ?? s.peer_id,
           requesterName: reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id,

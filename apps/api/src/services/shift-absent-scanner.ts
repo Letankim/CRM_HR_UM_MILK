@@ -152,3 +152,36 @@ export function assertNoDuplicateShiftWorkflow(db: Database, emp: Employee, fiel
   const dupSwap = db.shiftSwaps.find((s) => (s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED') && (Boolean(assignmentId && s.from_assignment_id === assignmentId) || (isEmp(s.requester_id) && s.from_work_date === workDate && s.from_shift_code === shiftCode)));
   if (dupSwap) throw Errors.fieldValidation(field, 'DUPLICATE_VALUE', `Ca làm việc ngày ${workDate} đang có Yêu cầu đổi ca (${dupSwap.swap_code}) chờ duyệt, không được phép gửi trùng yêu cầu.`, assignmentId || workDate);
 }
+
+export function resolveWorkflowShiftStatus(db: Database, shiftCode: string, assignmentId = '', employeeId = '', workDate = '') {
+  const emp = employeeId ? (db.employees.get(employeeId) ?? db.employees.find((e) => e.employee_code === employeeId)) : undefined;
+  const matchEmp = (eid: string) => Boolean(employeeId && (eid === employeeId || (emp && (eid === emp.id || eid === emp.employee_code))));
+  const assign = (assignmentId ? db.shiftAssignments.get(assignmentId) : undefined)
+    ?? (employeeId && workDate
+      ? (db.shiftAssignments.find((a) => matchEmp(a.employee_id) && a.work_date === workDate && a.shift_code === shiftCode && a.day_type !== 'OFF')
+        ?? db.shiftAssignments.find((a) => matchEmp(a.employee_id) && a.work_date === workDate && a.day_type !== 'OFF'))
+      : undefined);
+  if (!assign) return { shiftAssignmentId: '', shiftStatus: 'MISSING', shiftStatusLabel: 'Không còn ca trên lịch', isShiftOfficialPublished: false };
+  const aEmp = db.employees.get(assign.employee_id) ?? db.employees.find((e) => e.employee_code === assign.employee_id);
+  const matchAEmp = (eid: string) => eid === assign.employee_id || Boolean(aEmp && (eid === aEmp.id || eid === aEmp.employee_code));
+  const evs = db.attendanceEvents.filter((ev) => ev.assignment_id === assign.id || (matchAEmp(ev.employee_id) && ev.work_date === assign.work_date && ev.shift_code === assign.shift_code));
+  const hasIn = evs.some((ev) => ev.type === 'CHECK_IN'), hasOut = evs.some((ev) => ev.type === 'CHECK_OUT');
+  const hasApprovedAdj = Boolean(db.attendanceAdjustments.find((a) => a.status === 'APPROVED' && (a.assignment_id === assign.id || (matchAEmp(a.employee_id) && a.work_date === assign.work_date && a.shift_code === assign.shift_code))));
+  if (assign.status === 'COMPLETED' || (hasIn && hasOut) || hasApprovedAdj) return { shiftAssignmentId: assign.id, shiftStatus: 'COMPLETED', shiftStatusLabel: 'Đã hoàn thành ca', isShiftOfficialPublished: false };
+  if (assign.status === 'ABSENT') return { shiftAssignmentId: assign.id, shiftStatus: 'ABSENT', shiftStatusLabel: 'Vắng mặt', isShiftOfficialPublished: false };
+  if (assign.status === 'DRAFT') return { shiftAssignmentId: assign.id, shiftStatus: 'DRAFT', shiftStatusLabel: 'Chờ duyệt phân ca', isShiftOfficialPublished: false };
+  if (assign.status === 'ON_LEAVE' || assign.day_type === 'OFF') return { shiftAssignmentId: assign.id, shiftStatus: 'ON_LEAVE', shiftStatusLabel: 'Nghỉ phép OFF', isShiftOfficialPublished: false };
+  if (hasIn) return { shiftAssignmentId: assign.id, shiftStatus: 'CHECKED_IN', shiftStatusLabel: 'Đã điểm danh vào ca', isShiftOfficialPublished: false };
+  return { shiftAssignmentId: assign.id, shiftStatus: 'PUBLISHED', shiftStatusLabel: 'Đã phân ca chính thức', isShiftOfficialPublished: true };
+}
+
+export async function clearShiftAttendanceOnWorkflowOverride(db: Database, shift: ShiftAssignment, actorId: string, reason: string): Promise<void> {
+  const emp = db.employees.get(shift.employee_id) ?? db.employees.find((e) => e.employee_code === shift.employee_id);
+  const matchEmp = (eid: string) => eid === shift.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
+  for (const ev of db.attendanceEvents.filter((e) => e.assignment_id === shift.id || (matchEmp(e.employee_id) && e.work_date === shift.work_date && e.shift_code === shift.shift_code))) {
+    await db.attendanceEvents.softDelete(ev.id, ev.version, actorId);
+  }
+  for (const adj of db.attendanceAdjustments.filter((a) => a.status !== 'REJECTED' && (a.assignment_id === shift.id || (matchEmp(a.employee_id) && a.work_date === shift.work_date && a.shift_code === shift.shift_code)))) {
+    await db.attendanceAdjustments.update(adj.id, adj.version, { status: 'REJECTED', decided_by: actorId, decision_reason: reason, decided_at: new Date().toISOString() }, actorId);
+  }
+}

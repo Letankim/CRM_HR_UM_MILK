@@ -6,6 +6,7 @@ import { ClockCircleOutlined, CloseOutlined, FileAddOutlined } from '@ant-design
 import dayjs from 'dayjs';
 import { StatusTag } from '../StatusTag';
 import { hasPendingAdjustmentRecord, isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
+import { renderDetailShiftStateAlert, renderWorkflowShiftStateTag } from './workflow-shift-warning';
 
 export type ScheduleDetailKind = 'shift' | 'leave' | 'emergency' | 'swap' | 'adjustment';
 
@@ -58,6 +59,7 @@ export function ScheduleRequestDetailModal({
         </Space>
       }
     >
+      {renderDetailShiftStateAlert(kind, r)}
       {hasPendingAdj && (
         <Alert
           type="warning" showIcon style={{ marginBottom: 10 }}
@@ -81,6 +83,7 @@ export function ScheduleRequestDetailModal({
               <Space size={6} wrap>
                 <strong>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</strong>
                 <Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>
+                {renderWorkflowShiftStateTag(r)}
               </Space>
             </Descriptions.Item>
             <Descriptions.Item label="Chi nhánh làm việc">{String(r.branchName || '—')}</Descriptions.Item>
@@ -118,6 +121,7 @@ export function ScheduleRequestDetailModal({
               <Space size={6} wrap>
                 <strong>{cleanShiftName(r.shiftLabel || r.shift_code)}</strong>
                 <Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>
+                {renderWorkflowShiftStateTag(r)}
               </Space>
             </Descriptions.Item>
             <Descriptions.Item label="Chi nhánh">{String(r.branchName || '—')}</Descriptions.Item>
@@ -147,6 +151,7 @@ export function ScheduleRequestDetailModal({
               <Space size={6} wrap>
                 <strong>{cleanShiftName(r.shiftLabel || r.shift_code)}</strong>
                 <Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>
+                {renderWorkflowShiftStateTag(r)}
               </Space>
             </Descriptions.Item>
             <Descriptions.Item label="Chi nhánh">{String(r.branchName || '—')}</Descriptions.Item>
@@ -177,6 +182,7 @@ export function ScheduleRequestDetailModal({
               <Space size={6} wrap>
                 <strong>{cleanShiftName(r.shiftLabel || r.shift_code)}</strong>
                 <Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>
+                {renderWorkflowShiftStateTag(r)}
               </Space>
             </Descriptions.Item>
             <Descriptions.Item label="Số giờ công đề nghị"><strong>{String(r.requested_hours || 5)} giờ</strong></Descriptions.Item>

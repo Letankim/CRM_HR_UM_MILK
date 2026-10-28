@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { exportToExcel } from '@/lib/export-excel';
 import type { BulkActionItem } from './BulkActionBar';
 import { isAbsentShiftRecord } from './QuickAbsentAdjustmentModal';
+import type { WorkflowConfirmKind } from './workflow-shift-warning';
 
 type RowRec = Record<string, unknown>;
 const tsSuffix = () => dayjs().format('YYYYMMDD_HHmm');
@@ -85,7 +86,7 @@ export interface WorkflowBulkRunnerOptions {
   canApproveSwap?: boolean;
   canHandleEmg?: boolean;
   loading?: boolean;
-  runBatch: (items: RowRec[], buildCall: (r: RowRec) => { url: string; body: unknown } | null, successMsg: string) => void;
+  runBatch: (items: RowRec[], buildCall: (r: RowRec) => { url: string; body: unknown } | null, successMsg: string, confirmKind?: WorkflowConfirmKind) => void;
 }
 
 export function buildAdjustmentsBulkActions(opts: WorkflowBulkRunnerOptions): BulkActionItem<RowRec>[] {
@@ -117,7 +118,7 @@ export function buildLeavesBulkActions(opts: WorkflowBulkRunnerOptions): BulkAct
       {
         key: 'approve', label: 'Duyệt đơn đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'PENDING',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/leave-requests/${r.id}/decide`, body: { version: r.version, decision: 'APPROVED', decision_reason: 'Duyệt nghỉ phép hàng loạt' } }), 'Đã phê duyệt các đơn xin nghỉ phép hợp lệ'),
+        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/leave-requests/${r.id}/decide`, body: { version: r.version, decision: 'APPROVED', decision_reason: 'Duyệt nghỉ phép hàng loạt' } }), 'Đã phê duyệt các đơn xin nghỉ phép hợp lệ', 'leave'),
       },
       {
         key: 'reject', label: 'Từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: opts.loading,
@@ -135,12 +136,12 @@ export function buildSwapsBulkActions(opts: WorkflowBulkRunnerOptions): BulkActi
       {
         key: 'peer-accept', label: 'Đồng nghiệp nhận đã chọn', icon: <CheckCircleOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'PENDING_PEER',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/shift-swaps/${r.id}/peer-respond`, body: { version: r.version, accept: true, peer_note: 'Đồng ý nhận ca thay' } }), 'Đã xác nhận đồng nghiệp nhận ca cho các đơn hợp lệ'),
+        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/shift-swaps/${r.id}/peer-respond`, body: { version: r.version, accept: true, peer_note: 'Đồng ý nhận ca thay' } }), 'Đã xác nhận đồng nghiệp nhận ca cho các đơn hợp lệ', 'swap'),
       },
       {
         key: 'approve', label: 'Duyệt đổi ca đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'PEER_ACCEPTED',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/shift-swaps/${r.id}/decide`, body: { version: r.version, decision: 'APPROVED', decision_reason: 'Duyệt đổi ca hàng loạt' } }), 'Đã phê duyệt đổi ca cho các đơn hợp lệ'),
+        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/shift-swaps/${r.id}/decide`, body: { version: r.version, decision: 'APPROVED', decision_reason: 'Duyệt đổi ca hàng loạt' } }), 'Đã phê duyệt đổi ca cho các đơn hợp lệ', 'swap'),
       },
       {
         key: 'reject', label: 'Từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: opts.loading,
@@ -158,7 +159,7 @@ export function buildEmergencyBulkActions(opts: WorkflowBulkRunnerOptions): Bulk
       {
         key: 'resolve', label: 'Đã có người thay đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'REPORTED',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/emergency-leaves/${r.id}/handle`, body: { version: r.version, action: 'RESOLVE', resolution_note: 'Cửa hàng đã bố trí nhân sự thay ca' } }), 'Đã cập nhật trạng thái có người thay ca cho các báo cáo hợp lệ'),
+        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/emergency-leaves/${r.id}/handle`, body: { version: r.version, action: 'RESOLVE', resolution_note: 'Cửa hàng đã bố trí nhân sự thay ca' } }), 'Đã cập nhật trạng thái có người thay ca cho các báo cáo hợp lệ', 'emergency'),
       },
       {
         key: 'escalate', label: 'Báo thiếu ca đã chọn', danger: true, icon: <AlertOutlined />, loading: opts.loading,

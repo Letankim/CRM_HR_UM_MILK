@@ -3,7 +3,7 @@ import type { AppContext } from '../context.js';
 import { singleFlight, tolerantWrite } from '../services/background-write.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { today } from '../services/salary-profile.service.js';
-import { sweepExpiredShiftsAndMarkAbsent } from '../services/shift-absent-scanner.js';
+import { resolveWorkflowShiftStatus, sweepExpiredShiftsAndMarkAbsent } from '../services/shift-absent-scanner.js';
 import { findLinkedEmployeeForUser, findLinkedUserForEmployee } from './employee-mapper.js';
 
 const SHIFT_FALLBACK: Record<string, { start: string; end: string; hours: number }> = {
@@ -19,14 +19,15 @@ export function findBranchShiftTemplate(ctx: AppContext, shiftCode: string, bran
   return ctx.db.shiftTemplates.find((s) => s.code === shiftCode && (s.shift_group === 'ALL' || s.shift_group === 'STORE')) ?? ctx.db.shiftTemplates.find((s) => s.code === shiftCode);
 }
 
-export function resolveShiftTimeDetails(ctx: AppContext, shiftCode: string, assignmentId = '', branchId = '') {
-  const assign = assignmentId ? ctx.db.shiftAssignments.get(assignmentId) : undefined;
+export function resolveShiftTimeDetails(ctx: AppContext, shiftCode: string, assignmentId = '', branchId = '', employeeId = '', workDate = '') {
+  const st = resolveWorkflowShiftStatus(ctx.db, shiftCode, assignmentId, employeeId, workDate);
+  const assign = (st.shiftAssignmentId ? ctx.db.shiftAssignments.get(st.shiftAssignmentId) : undefined) ?? (assignmentId ? ctx.db.shiftAssignments.get(assignmentId) : undefined);
   const tpl = findBranchShiftTemplate(ctx, shiftCode, branchId || assign?.branch_id || '');
   const fb = SHIFT_FALLBACK[shiftCode] ?? SHIFT_FALLBACK.CA_SANG!;
   const startAt = assign?.start_at || tpl?.start_time || fb.start, endAt = assign?.end_at || tpl?.end_time || fb.end;
   const scheduledHours = assign?.scheduled_hours || tpl?.standard_hours || fb.hours;
   const rawLabel = tpl?.name ?? DEFAULT_SHIFT_LABELS[shiftCode as keyof typeof DEFAULT_SHIFT_LABELS] ?? shiftCode;
-  return { shiftLabel: rawLabel.replace(/\s*\([^)]*\)\s*/g, '').trim(), startAt, endAt, scheduledHours, shiftTimeRange: `${startAt} – ${endAt}` };
+  return { shiftLabel: rawLabel.replace(/\s*\([^)]*\)\s*/g, '').trim(), startAt, endAt, scheduledHours, shiftTimeRange: `${startAt} – ${endAt}`, ...st };
 }
 
 export function resolveSingleBranchId(ctx: AppContext, branchScope?: string): string | undefined {

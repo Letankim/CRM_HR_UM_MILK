@@ -15,6 +15,7 @@ import { RowActionButtons } from './RowActionButtons';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
 import { ScheduleWorkflowModals, type WorkflowAssignmentOption } from './ScheduleWorkflowModals';
 import { buildAdjustmentsBulkActions, buildEmergencyBulkActions, buildLeavesBulkActions, buildSwapsBulkActions, exportAdjustmentsExcel, exportEmergencyExcel, exportLeavesExcel, exportSwapsExcel } from './workflow-bulk-helpers';
+import { confirmWorkflowShiftOverride, renderWorkflowShiftStateTag, type WorkflowConfirmKind } from './workflow-shift-warning';
 
 interface Props { employees: { value: string; label: string }[]; assignments: WorkflowAssignmentOption[] }
 const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
@@ -27,7 +28,7 @@ const SWAP_STATUS_OPTS = [{ value: 'ALL', label: 'Tất cả trạng thái' }, {
 const EMG_STATUS_OPTS = [{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'REPORTED', label: 'Mới báo nghỉ khẩn' }, { value: 'RESOLVED', label: 'Đã có người thay ca' }, { value: 'ESCALATED', label: 'Thiếu ca (Cảnh báo HR)' }];
 
 export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
-  const qc = useQueryClient(), { message } = App.useApp();
+  const qc = useQueryClient(), { message, modal } = App.useApp();
   const canConfirmAtt = usePermissionGuard({ perms: ['attendance.confirm'] }), canApproveAdj = usePermissionGuard({ perms: ['adjustment.approve'] });
   const canApproveLeave = usePermissionGuard({ perms: ['leave.approve'] }), canApproveSwap = usePermissionGuard({ perms: ['swap.approve'] }), canHandleEmg = usePermissionGuard({ perms: ['emergency.handle'] });
   const [activeTab, setActiveTab] = useState('attendance'), [leaveModal, setLeaveModal] = useState(false), [swapModal, setSwapModal] = useState(false), [emgModal, setEmgModal] = useState(false), [adjModal, setAdjModal] = useState(false);
@@ -54,6 +55,8 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
   const refreshAll = () => ['attendance-adjustments', 'leave-requests', 'shift-swaps', 'emergency-leaves', 'attendance-sessions', 'attendance-sessions-count', 'schedules', 'my-attendance'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const isRefreshing = adjQ.isFetching || leavesQ.isFetching || swapsQ.isFetching || emgQ.isFetching || attCountQ.isFetching;
   const actMut = useMutation({ mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body), onSuccess: () => { message.success('Đã thực hiện thao tác thành công'); setPage(1); refreshAll(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại') });
+  const runAct = (url: string, body: unknown, confirmKind?: WorkflowConfirmKind, row?: Record<string, unknown>) =>
+    confirmKind && row ? confirmWorkflowShiftOverride(modal, confirmKind, [row], () => actMut.mutate({ url, body })) : actMut.mutate({ url, body });
   const batchMut = useMutation({
     mutationFn: async ({ items, buildCall, successMsg }: { items: Record<string, unknown>[]; buildCall: (r: Record<string, unknown>) => { url: string; body: unknown } | null; successMsg: string }) => {
       if (items.length === 0) throw new Error('Không có bản ghi nào ở trạng thái hợp lệ để thực hiện thao tác này');
@@ -63,7 +66,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
     onSuccess: (msg) => { message.success(msg); refreshAll(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : e instanceof Error ? e.message : 'Thao tác hàng loạt thất bại'),
   });
-  const bulkOpts = { canConfirmAtt, canApproveAdj, canApproveLeave, canApproveSwap, canHandleEmg, loading: batchMut.isPending, runBatch: (items: Record<string, unknown>[], buildCall: (r: Record<string, unknown>) => { url: string; body: unknown } | null, successMsg: string) => batchMut.mutate({ items, buildCall, successMsg }) };
+  const bulkOpts = { canConfirmAtt, canApproveAdj, canApproveLeave, canApproveSwap, canHandleEmg, loading: batchMut.isPending, runBatch: (items: Record<string, unknown>[], buildCall: (r: Record<string, unknown>) => { url: string; body: unknown } | null, successMsg: string, confirmKind?: WorkflowConfirmKind) => confirmKind ? confirmWorkflowShiftOverride(modal, confirmKind, items, () => batchMut.mutate({ items, buildCall, successMsg })) : batchMut.mutate({ items, buildCall, successMsg }) };
 
   const branchList = branchesQ.data?.data ?? [];
   const branchOptions = branchList.length === 1 ? [{ value: 'ALL', label: `${branchList[0]!.code} — ${branchList[0]!.name}` }] : [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branchList.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))];
@@ -131,7 +134,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
                     { title: 'Mã đơn', dataIndex: 'request_code', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Nhân sự', width: 215, ellipsis: true, render: (_, r) => <strong>{String(r.employeeName)} ({String(r.employeeCode)})</strong> },
                     { title: 'Ngày nghỉ', dataIndex: 'leave_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                    { title: 'Khung ca & Giờ ca', width: 255, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
                     { title: 'Định mức & Định biên', width: 175, render: (_, r) => <Space size={4} wrap><Tag color="blue" style={{ margin: 0 }}>{String(r.quota_cycle_used)}/{String(r.quota_cycle_limit)} ngày</Tag><Tag color={Number(r.staffing_after_leave ?? 2) >= Number(r.min_staff_required ?? 2) ? 'green' : 'volcano'} style={{ margin: 0 }}>Còn {String(r.staffing_after_leave ?? 2)}/{String(r.min_staff_required ?? 2)} NV</Tag></Space> },
                     { title: 'Trạng thái', dataIndex: 'status', width: 155, render: (v: string) => <StatusTag value={v} /> },
                     {
@@ -139,7 +142,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
                       render: (_, r) => (
                         <RowActionButtons
                           detailTooltip="Xem chi tiết đơn nghỉ OFF" onViewDetail={() => setDetailTarget({ kind: 'leave', record: r })} loading={actMut.isPending}
-                          menuItems={r.status === 'PENDING' && canApproveLeave ? [{ key: 'approve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Phê duyệt đơn nghỉ phép', onClick: () => actMut.mutate({ url: `/admin/leave-requests/${r.id}/decide`, body: { version: r.version, decision: 'APPROVED', decision_reason: 'Đảm bảo đủ định biên ca' } }) }, { key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối đơn nghỉ phép', onClick: () => actMut.mutate({ url: `/admin/leave-requests/${r.id}/decide`, body: { version: r.version, decision: 'REJECTED', decision_reason: 'Ca đang thiếu định biên' } }) }] : []}
+                          menuItems={r.status === 'PENDING' && canApproveLeave ? [{ key: 'approve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Phê duyệt đơn nghỉ phép', onClick: () => runAct(`/admin/leave-requests/${r.id}/decide`, { version: r.version, decision: 'APPROVED', decision_reason: 'Đảm bảo đủ định biên ca' }, 'leave', r) }, { key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối đơn nghỉ phép', onClick: () => runAct(`/admin/leave-requests/${r.id}/decide`, { version: r.version, decision: 'REJECTED', decision_reason: 'Ca đang thiếu định biên' }) }] : []}
                         />
                       ),
                     },
@@ -159,7 +162,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
                   columns={[
                     { title: 'Mã đơn', dataIndex: 'swap_code', width: 110, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Ngày ca', dataIndex: 'from_work_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                    { title: 'Khung ca & Giờ ca', width: 255, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
                     { title: 'Người xin đổi', dataIndex: 'requesterName', width: 195, ellipsis: true },
                     { title: 'Người nhận thay', dataIndex: 'peerName', width: 195, ellipsis: true },
                     { title: 'Trạng thái', dataIndex: 'status', width: 170, render: (v: string) => <StatusTag value={v} /> },
@@ -168,7 +171,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
                       render: (_, r) => (
                         <RowActionButtons
                           detailTooltip="Xem chi tiết yêu cầu đổi ca" onViewDetail={() => setDetailTarget({ kind: 'swap', record: r })} loading={actMut.isPending}
-                          menuItems={canApproveSwap ? [...(r.status === 'PENDING_PEER' ? [{ key: 'peer-accept', icon: <CheckCircleOutlined style={{ color: '#2563EB' }} />, label: 'Xác nhận đồng nghiệp nhận ca', onClick: () => actMut.mutate({ url: `/admin/shift-swaps/${r.id}/peer-respond`, body: { version: r.version, accept: true, peer_note: 'Đồng ý nhận ca thay' } }) }] : []), ...(r.status === 'PEER_ACCEPTED' ? [{ key: 'approve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Phê duyệt đổi ca chính thức', onClick: () => actMut.mutate({ url: `/admin/shift-swaps/${r.id}/decide`, body: { version: r.version, decision: 'APPROVED', decision_reason: 'Hợp lệ, duyệt đổi ca' } }) }] : []), ...(r.status === 'PENDING_PEER' || r.status === 'PEER_ACCEPTED' ? [{ key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối yêu cầu đổi ca', onClick: () => actMut.mutate({ url: `/admin/shift-swaps/${r.id}/decide`, body: { version: r.version, decision: 'REJECTED', decision_reason: 'Không đạt yêu cầu vị trí' } }) }] : [])] : []}
+                          menuItems={canApproveSwap ? [...(r.status === 'PENDING_PEER' ? [{ key: 'peer-accept', icon: <CheckCircleOutlined style={{ color: '#2563EB' }} />, label: 'Xác nhận đồng nghiệp nhận ca', onClick: () => runAct(`/admin/shift-swaps/${r.id}/peer-respond`, { version: r.version, accept: true, peer_note: 'Đồng ý nhận ca thay' }, 'swap', r) }] : []), ...(r.status === 'PEER_ACCEPTED' ? [{ key: 'approve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Phê duyệt đổi ca chính thức', onClick: () => runAct(`/admin/shift-swaps/${r.id}/decide`, { version: r.version, decision: 'APPROVED', decision_reason: 'Hợp lệ, duyệt đổi ca' }, 'swap', r) }] : []), ...(r.status === 'PENDING_PEER' || r.status === 'PEER_ACCEPTED' ? [{ key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối yêu cầu đổi ca', onClick: () => runAct(`/admin/shift-swaps/${r.id}/decide`, { version: r.version, decision: 'REJECTED', decision_reason: 'Không đạt yêu cầu vị trí' }) }] : [])] : []}
                         />
                       ),
                     },
@@ -189,14 +192,14 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
                     { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 115, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Nhân sự', dataIndex: 'employeeName', width: 200, ellipsis: true },
                     { title: 'Ngày ca', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                    { title: 'Khung ca & Giờ ca', width: 255, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
                     { title: 'Trạng thái & Phủ ca', dataIndex: 'status', width: 185, render: (v: string, r) => <Space size={4} wrap><StatusTag value={v} />{v !== 'REPORTED' && <Tag color={v === 'RESOLVED' ? 'green' : 'red'} style={{ margin: 0 }}>{String(r.shift_coverage_status || (v === 'RESOLVED' ? 'Đã phủ ca' : 'Thiếu ca'))}</Tag>}</Space> },
                     {
                       title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
                       render: (_, r) => (
                         <RowActionButtons
                           detailTooltip="Xem chi tiết báo nghỉ khẩn" onViewDetail={() => setDetailTarget({ kind: 'emergency', record: r })} loading={actMut.isPending}
-                          menuItems={r.status === 'REPORTED' && canHandleEmg ? [{ key: 'resolve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Xác nhận đã có người thay ca', onClick: () => actMut.mutate({ url: `/admin/emergency-leaves/${r.id}/handle`, body: { version: r.version, action: 'RESOLVE', resolution_note: 'Cửa hàng đã bố trí nhân sự thay ca' } }) }, { key: 'escalate', icon: <AlertOutlined />, danger: true, label: 'Báo thiếu ca khẩn cấp lên HR', onClick: () => actMut.mutate({ url: `/admin/emergency-leaves/${r.id}/handle`, body: { version: r.version, action: 'ESCALATE', resolution_note: 'Không có người thay, chuyển cảnh báo lên HR' } }) }] : []}
+                          menuItems={r.status === 'REPORTED' && canHandleEmg ? [{ key: 'resolve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Xác nhận đã có người thay ca', onClick: () => runAct(`/admin/emergency-leaves/${r.id}/handle`, { version: r.version, action: 'RESOLVE', resolution_note: 'Cửa hàng đã bố trí nhân sự thay ca' }, 'emergency', r) }, { key: 'escalate', icon: <AlertOutlined />, danger: true, label: 'Báo thiếu ca khẩn cấp lên HR', onClick: () => runAct(`/admin/emergency-leaves/${r.id}/handle`, { version: r.version, action: 'ESCALATE', resolution_note: 'Không có người thay, chuyển cảnh báo lên HR' }) }] : []}
                         />
                       ),
                     },

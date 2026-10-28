@@ -20,6 +20,7 @@ import type { ScheduleAssignmentItem } from './ScheduleFormModal';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
 import { ScheduleViewsPanel } from './ScheduleViewsPanel';
 import { buildPortalShiftsBulkActions, exportEmergencyExcel, exportLeavesExcel, exportSwapsExcel } from './workflow-bulk-helpers';
+import { confirmWorkflowShiftOverride, renderWorkflowShiftStateTag } from './workflow-shift-warning';
 
 type ScheduleViewMode = 'WEEK_MATRIX' | 'CALENDAR' | 'TABLE';
 
@@ -36,7 +37,7 @@ const fmtShiftTime = (r: Record<string, unknown>) => `${String(r.startAt || r.st
 export function EmployeeScheduleAndLeaveCenter({
   todayDate, empId, empCode, stage, mode = 'all', initialTab = 'shifts', shifts, leaves, emergencyLeaves = [], swaps, branchPeers, refreshing = false, onRefresh,
 }: EmployeeScheduleAndLeaveCenterProps) {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [activeTab, setActiveTab] = useState<'shifts' | 'leaves' | 'swaps'>(initialTab);
   const [viewMode, setViewMode] = useState<ScheduleViewMode>('WEEK_MATRIX');
   useEffect(() => { setActiveTab(initialTab); }, [initialTab]);
@@ -140,7 +141,7 @@ export function EmployeeScheduleAndLeaveCenter({
                   columns={[
                     { title: 'Mã đơn', dataIndex: 'request_code', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Ngày xin nghỉ', dataIndex: 'leave_date', width: 120, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 215, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                    { title: 'Khung ca & Giờ ca', width: 235, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
                     { title: 'Lý do & Phản hồi / Từ chối', render: (_, r) => <div><div>{String(r.reason || '—')}</div>{Boolean(r.decision_reason) && <div style={{ fontSize: 11, color: r.status === 'REJECTED' ? '#DC2626' : '#15803D', marginTop: 2 }}>{r.status === 'REJECTED' ? 'Lý do từ chối: ' : 'Phản hồi: '}{String(r.decision_reason)}</div>}</div> },
                     { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (v: string) => <StatusTag value={v} /> },
                     { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết đơn nghỉ OFF" onViewDetail={() => setDetailTarget({ kind: 'leave', record: r })} /> },
@@ -154,7 +155,7 @@ export function EmployeeScheduleAndLeaveCenter({
                     columns={[
                       { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 110, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
                       { title: 'Ngày nghỉ', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
-                      { title: 'Khung ca & Giờ ca', width: 215, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                      { title: 'Khung ca & Giờ ca', width: 235, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
                       { title: 'Người thay / Tình trạng phủ ca', render: (_, r) => <Tag color={r.shift_coverage_status === 'COVERED' || r.status === 'RESOLVED' ? 'green' : 'volcano'} style={{ margin: 0 }}>{r.replacementName ? `Người thay: ${String(r.replacementName)}` : r.shift_coverage_status === 'COVERED' || r.status === 'RESOLVED' ? 'Đã có người thay ca' : 'Ca chưa được phủ — Đang tìm người thay'}</Tag> },
                       { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (v: string) => <StatusTag value={v} /> },
                       { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết báo nghỉ khẩn" onViewDetail={() => setDetailTarget({ kind: 'emergency', record: r })} /> },
@@ -173,7 +174,7 @@ export function EmployeeScheduleAndLeaveCenter({
                 <SelectableTable<Record<string, unknown>>
                   size="small" rowKey="id" loading={refreshing} pagination={swapsPag} dataSource={swaps}
                   bulkActions={[
-                    { key: 'accept', label: 'Đồng ý nhận ca đã chọn', type: 'primary', icon: <CheckCircleOutlined />, loading: peerRespondMut.isPending, eligibleFilter: (r) => r.status === 'PENDING_PEER' && (r.peer_id === empId || r.peerCode === empCode), onClick: (rows) => peerRespondMut.mutate(rows.map((r) => ({ id: String(r.id), version: Number(r.version), accept: true }))) },
+                    { key: 'accept', label: 'Đồng ý nhận ca đã chọn', type: 'primary', icon: <CheckCircleOutlined />, loading: peerRespondMut.isPending, eligibleFilter: (r) => r.status === 'PENDING_PEER' && (r.peer_id === empId || r.peerCode === empCode), onClick: (rows) => confirmWorkflowShiftOverride(modal, 'swap', rows, () => peerRespondMut.mutate(rows.map((r) => ({ id: String(r.id), version: Number(r.version), accept: true })))) },
                     { key: 'reject', label: 'Từ chối nhận ca đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: peerRespondMut.isPending, eligibleFilter: (r) => r.status === 'PENDING_PEER' && (r.peer_id === empId || r.peerCode === empCode), onClick: (rows) => peerRespondMut.mutate(rows.map((r) => ({ id: String(r.id), version: Number(r.version), accept: false }))) },
                     { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportSwapsExcel(rows) },
                   ]}
@@ -181,7 +182,7 @@ export function EmployeeScheduleAndLeaveCenter({
                   columns={[
                     { title: 'Mã đơn', dataIndex: 'swap_code', width: 115, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
                     { title: 'Ngày ca', dataIndex: 'from_work_date', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
+                    { title: 'Khung ca & Giờ ca', width: 255, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
                     { title: 'Người xin đổi', width: 195, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.requesterName || '')}</span>{(r.requester_id === empId || r.requesterCode === empCode) && <Tag color="blue" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
                     { title: 'Người nhận ca', width: 185, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.peerName || '')}</span>{(r.peer_id === empId || r.peerCode === empCode) && <Tag color="cyan" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
                     { title: 'Tiến trình & Trạng thái', dataIndex: 'status', width: 220, render: (v: string) => <Space size={4} wrap><StatusTag value={v} /><Tag color={v === 'APPROVED' ? 'green' : v === 'PEER_ACCEPTED' ? 'blue' : v === 'REJECTED' ? 'red' : 'gold'} style={{ margin: 0 }}>{v === 'APPROVED' ? 'Bước 3/3: Đã cập nhật lịch' : v === 'PEER_ACCEPTED' ? 'Bước 2/3: Chờ CH/HR duyệt' : v === 'REJECTED' ? 'Đã từ chối' : 'Bước 1/3: Chờ NV B xác nhận'}</Tag></Space> },
@@ -191,11 +192,9 @@ export function EmployeeScheduleAndLeaveCenter({
                         const isPeer = r.peer_id === empId || r.peerCode === empCode;
                         return (
                           <RowActionButtons
-                            detailTooltip="Xem chi tiết yêu cầu đổi ca"
-                            onViewDetail={() => setDetailTarget({ kind: 'swap', record: r })}
-                            loading={peerRespondMut.isPending}
+                            detailTooltip="Xem chi tiết yêu cầu đổi ca" onViewDetail={() => setDetailTarget({ kind: 'swap', record: r })} loading={peerRespondMut.isPending}
                             menuItems={r.status === 'PENDING_PEER' && isPeer ? [
-                              { key: 'accept', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Đồng ý nhận ca thay', onClick: () => peerRespondMut.mutate([{ id: String(r.id), version: Number(r.version), accept: true }]) },
+                              { key: 'accept', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Đồng ý nhận ca thay', onClick: () => confirmWorkflowShiftOverride(modal, 'swap', [r], () => peerRespondMut.mutate([{ id: String(r.id), version: Number(r.version), accept: true }])) },
                               { key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối nhận ca thay', onClick: () => peerRespondMut.mutate([{ id: String(r.id), version: Number(r.version), accept: false }]) },
                             ] : []}
                           />
