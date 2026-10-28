@@ -148,8 +148,8 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, hideStaffi
                     >
                       <Space direction="vertical" size={6} style={{ width: '100%' }}>
                         {!hideStaffingBadge && cellItems.length > 0 && (
-                          <Tag color={cellItems.length >= 2 ? 'green' : 'volcano'} style={{ margin: 0, borderRadius: 2, fontSize: 10 }}>
-                            {cellItems.length >= 2 ? `Đủ định biên (${cellItems.length}/2 NV)` : `Thiếu người (${cellItems.length}/2 NV)`}
+                          <Tag color={cellItems.length < 2 ? 'volcano' : cellItems.length === 2 ? 'green' : 'purple'} style={{ margin: 0, borderRadius: 2, fontSize: 11, fontWeight: 600 }}>
+                            {cellItems.length < 2 ? `Thiếu ${2 - cellItems.length} (${cellItems.length}/2)` : cellItems.length === 2 ? `Đủ (${cellItems.length}/2)` : `Dư +${cellItems.length - 2} (${cellItems.length}/2)`}
                           </Tag>
                         )}
                         {cellItems.map((item) => (
