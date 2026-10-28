@@ -1,9 +1,9 @@
 'use client';
 
-import { App, Badge, Button, Card, Col, Form, Row, Space, Statistic, Tag, Typography } from 'antd';
+import { App, Badge, Button, Card, Col, Form, Row, Space, Statistic, Switch, Tag, Typography } from 'antd';
 import {
   BellOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined,
-  ExclamationCircleOutlined, FileExcelOutlined, LinkOutlined, TeamOutlined,
+  ExclamationCircleOutlined, FileExcelOutlined, LinkOutlined, MutedOutlined, SoundOutlined, TeamOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
+import { useNotificationSound } from '@/lib/notification-sound';
 import { PageHeader } from '../PageHeader';
 import { DataTableCard } from './DataTableCard';
 import { FilterToolbar } from './FilterToolbar';
@@ -32,6 +33,7 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
   const can = useCan();
   const canSend = can('notification.send', 'comms.manage', 'system.config');
   const { message, modal } = App.useApp();
+  const { soundEnabled, setSoundEnabled, playTestSound } = useNotificationSound();
 
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(12);
@@ -91,20 +93,33 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
   const urgentCount = allItems.filter((i) => i.severity === 'CRITICAL' || i.severity === 'WARNING').length;
   const targetedCount = allItems.filter((i) => i.scopeType !== 'BROADCAST').length;
 
+  const soundControlBar = (
+    <Space size={8} wrap>
+      <Space size={6} style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #E5E7EB', background: '#F8FAFC' }}>
+        {soundEnabled ? <SoundOutlined style={{ color: '#2563EB' }} /> : <MutedOutlined style={{ color: '#64748B' }} />}
+        <span style={{ fontSize: 12, fontWeight: 600 }}>Chuông thông báo:</span>
+        <Switch size="small" checked={soundEnabled} onChange={(val) => { setSoundEnabled(val); message.success(val ? 'Đã bật âm thanh thông báo' : 'Đã tắt âm thanh thông báo'); }} checkedChildren="Đang bật" unCheckedChildren="Đang tắt" />
+      </Space>
+      <Button size="small" icon={<SoundOutlined />} onClick={playTestSound}>Nghe thử chuông</Button>
+      <Button size="small" icon={<CheckCircleOutlined />} onClick={() => markAllMut.mutate(undefined)} loading={markAllMut.isPending} disabled={unreadCount === 0}>
+        Đánh dấu tất cả đã đọc ({unreadCount})
+      </Button>
+    </Space>
+  );
+
   return (
     <div>
-      {portal === 'backoffice' && (
+      {portal === 'backoffice' ? (
         <PageHeader
           title="Trung tâm Thông báo & Hộp thư Hệ thống"
           description="Theo dõi toàn bộ bản tin nội bộ, thông báo theo vai trò và thông báo cá nhân được cập nhật tức thời."
-          extra={
-            <Space size={8}>
-              <Button icon={<CheckCircleOutlined />} onClick={() => markAllMut.mutate(undefined)} loading={markAllMut.isPending} disabled={unreadCount === 0}>
-                Đánh dấu tất cả đã đọc ({unreadCount})
-              </Button>
-            </Space>
-          }
+          extra={soundControlBar}
         />
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>Cấu hình bật / tắt âm thanh chuông báo khi có thông báo mới (lưu trên trình duyệt của bạn).</Typography.Text>
+          {soundControlBar}
+        </div>
       )}
 
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>

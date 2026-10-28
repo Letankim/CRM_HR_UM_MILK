@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { io, type Socket } from 'socket.io-client';
 import { loginPath, type AppKind } from './auth';
+import { playNotificationSound } from './notification-sound';
 
 let socket: Socket | null = null;
 let currentToken: string | null = null;
@@ -73,9 +74,10 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       }
     };
     const onNotification = (payload?: { kind?: string; title?: string; summary?: string; code?: string }) => {
+      playNotificationSound();
       ['notifications', 'mkt-comms', 'nv-comms'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-      if (payload?.kind === 'ANNOUNCEMENT' && payload.title) {
-        message.info(`Bản tin mới (${payload.code || 'Nội bộ'}): ${payload.title}`);
+      if (payload?.title) {
+        message.info({ key: `rt-ntf-${payload.code || payload.title}`, content: `${payload.kind === 'ANNOUNCEMENT' ? `Bản tin mới (${payload.code || 'Nội bộ'})` : 'Thông báo mới'}: ${payload.title}` });
       }
     };
     let scheduleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -83,6 +85,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       if (scheduleTimer) clearTimeout(scheduleTimer);
       scheduleTimer = setTimeout(() => {
         [
+          'notifications',
           'schedules',
           'my-attendance',
           'leave-requests',
@@ -104,27 +107,33 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     };
 
     const onAttendance = (payload?: { message?: string }) => {
-      ['my-attendance', 'attendance-all', 'nv-attendance', 'attendance-sessions', 'attendance-sessions-count', 'attendance-adjustments', 'schedules', 'dashboard-shifts-full'].forEach((k) =>
+      ['notifications', 'my-attendance', 'attendance-all', 'nv-attendance', 'attendance-sessions', 'attendance-sessions-count', 'attendance-adjustments', 'schedules', 'dashboard-shifts-full'].forEach((k) =>
         qc.invalidateQueries({ queryKey: [k] }),
       );
       if (app === 'backoffice' && payload?.message) {
+        playNotificationSound();
         message.warning({ key: 'rt-att-alert', content: payload.message });
       }
     };
     const onSchedule = (payload?: { kind?: string; message?: string }) => {
       triggerScheduleSync();
       if (app === 'employee' && payload?.message && ['SHIFT_APPROVED', 'SHIFT_ASSIGNED', 'LEAVE_DECIDED', 'SWAP_PEER', 'SWAP_DECIDED', 'EMERGENCY_HANDLED'].includes(payload.kind || '')) {
+        playNotificationSound();
         message.info({ key: 'rt-schedule-emp', content: payload.message });
+      } else if (app === 'backoffice' && payload?.kind && ['SHIFT_REGISTERED', 'LEAVE_CREATED', 'SWAP_CREATED', 'SWAP_PEER_ACCEPTED'].includes(payload.kind)) {
+        playNotificationSound();
       }
     };
     const onEmergency = (payload?: { message?: string }) => {
       triggerScheduleSync();
-      if (app === 'backoffice' && payload?.message) {
-        message.warning({ key: 'rt-emergency-mgr', content: payload.message });
+      if (app === 'backoffice') {
+        playNotificationSound();
+        if (payload?.message) message.warning({ key: 'rt-emergency-mgr', content: payload.message });
       }
     };
     const onAccountPending = () => {
-      qc.invalidateQueries({ queryKey: ['accounts'] });
+      if (app === 'backoffice') playNotificationSound();
+      ['accounts', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
     };
     s.on('auth:forceLogout', onForceLogout);
     s.on('system:maintenance', onMaintenance);

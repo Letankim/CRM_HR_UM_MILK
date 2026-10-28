@@ -7,6 +7,7 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
+import { SocketEvents } from '../realtime/realtime.js';
 import { buildPayslipPayload, mapPayslip } from '../services/payslip.service.js';
 
 const zRevisionBody = z.object({
@@ -125,6 +126,7 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!slip) throw Errors.notFound('Không tìm thấy phiếu lương');
     if (!emp || slip.employee_id !== emp.id) throw Errors.forbidden('Bạn chỉ được gửi phản hồi cho phiếu lương của chính mình');
     const updated = await ctx.db.payslips.update(slip.id, slip.version, { viewed_by_employee_at: slip.viewed_by_employee_at || nowIso(), dispute_status: 'OPEN', dispute_reason: body.reason }, request.auth!.user.id);
+    ['FINANCE', 'HR', 'ADMIN'].forEach((r) => ctx.realtime()?.toRole(r, SocketEvents.NOTIFICATION, { kind: 'PAYROLL_DISPUTE', code: slip.payslip_code, title: `Báo sai lệch phiếu lương (${slip.employee_code}): ${body.reason}` }));
     return sendSuccess(request, 'Đã gửi phản hồi thắc mắc phiếu lương tới bộ phận Kế toán / Nhân sự', mapPayslip(updated));
   });
 

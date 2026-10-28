@@ -1,20 +1,21 @@
 'use client';
 
-import { Alert, Avatar, Badge, Breadcrumb, Button, Dropdown, Flex, Grid, Layout, List, Menu, Popover, Space, Spin, Tag, Tooltip, Typography } from 'antd';
+import { Alert, Avatar, Badge, Breadcrumb, Button, Dropdown, Flex, Grid, Layout, List, Menu, Popover, Space, Spin, Switch, Tag, Tooltip, Typography } from 'antd';
 import type { ItemType } from 'antd/es/menu/interface';
 import {
   AppstoreOutlined, BellOutlined, BookOutlined, CalendarOutlined, DownOutlined, EnvironmentOutlined,
   FieldTimeOutlined, FileDoneOutlined, FileTextOutlined, HomeOutlined, KeyOutlined, LogoutOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined, NotificationOutlined, ReloadOutlined,
-  RightOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined, MutedOutlined, NotificationOutlined, ReloadOutlined,
+  RightOutlined, SoundOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ROLE_LABELS, ROLE_SHORT_LABELS, SYSTEM_CONFIG } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { isUnauthorized, loginPath, useLogout, useMe } from '@/lib/auth';
+import { useNotificationSound, useTrackUnreadNotifications } from '@/lib/notification-sound';
 import { useRealtime } from '@/lib/realtime';
 import { UserProfileModal } from './components/UserProfileModal';
 import { BRAND } from './theme';
@@ -69,6 +70,9 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   const notifItems = notifsQ.data?.data ?? [];
   const notifTotal = notifsQ.data?.meta.pagination.total ?? 0;
   const unreadNotifCount = notifItems.filter((n) => n.readStatus === 'UNREAD').length;
+  const { soundEnabled, setSoundEnabled, toggleSound, playTestSound } = useNotificationSound();
+  const unreadKeys = useMemo(() => notifItems.filter((n) => n.readStatus === 'UNREAD').map((n) => `ntf:${n.id}`), [notifItems]);
+  useTrackUnreadNotifications(data?.user.id, unreadKeys, !notifsQ.isLoading);
   useRealtime('employee', !!data, data?.socketToken);
 
   useEffect(() => {
@@ -97,14 +101,12 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
         { label: 'Phiếu lương cá nhân', desc: 'Xem chi tiết & xác nhận lương', icon: <FileTextOutlined />, onClick: () => router.push('/nv/phieu-luong') },
         { label: 'Bài kiểm tra Nghiệp vụ', desc: 'Làm bài thi SOP & quy chế', icon: <BookOutlined />, onClick: () => router.push('/nv/bai-kiem-tra') },
         { label: 'Bản tin truyền thông nội bộ', desc: 'Thông báo & chiến dịch mới', icon: <NotificationOutlined />, onClick: () => router.push('/nv/ban-tin') },
+        { label: `Âm thanh thông báo: ${soundEnabled ? 'Đang bật' : 'Đang tắt'}`, desc: 'Bấm để Bật / Tắt chuông báo thông báo mới', icon: soundEnabled ? <SoundOutlined /> : <MutedOutlined />, onClick: toggleSound },
         { label: 'Hồ sơ cá nhân & Ngân hàng', desc: 'Cập nhật SĐT, Email, STK', icon: <UserOutlined />, onClick: () => setProfileTab('info') },
         { label: 'Đổi mật khẩu / Mã PIN', desc: 'Cập nhật mã bảo mật cá nhân', icon: <KeyOutlined />, onClick: () => setProfileTab('password') },
       ].map((item) => (
         <div key={item.label} onClick={() => { setMoreOpen(false); item.onClick(); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${BRAND.border}`, background: '#F8FAFC' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ color: BRAND.primary, fontSize: 16 }}>{item.icon}</span>
-            <div><div style={{ fontSize: 13, fontWeight: 600, color: BRAND.text, lineHeight: 1.25 }}>{item.label}</div><div style={{ fontSize: 11, color: BRAND.textSecondary }}>{item.desc}</div></div>
-          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ color: BRAND.primary, fontSize: 16 }}>{item.icon}</span><div><div style={{ fontSize: 13, fontWeight: 600, color: BRAND.text, lineHeight: 1.25 }}>{item.label}</div><div style={{ fontSize: 11, color: BRAND.textSecondary }}>{item.desc}</div></div></div>
           <RightOutlined style={{ fontSize: 11, color: BRAND.textSecondary }} />
         </div>
       ))}
@@ -117,24 +119,15 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
         <Layout.Sider className="umbm-fixed-sider" width={260} collapsedWidth={68} collapsed={collapsed} style={{ borderRight: `1px solid ${BRAND.border}`, position: 'fixed', top: 0, left: 0, bottom: 0, height: '100dvh', maxHeight: '100dvh', overflow: 'hidden', zIndex: 100 }}>
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '100dvh', overflow: 'hidden' }}>
             <div style={{ flexShrink: 0, height: 56, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 10, padding: collapsed ? 0 : '0 16px', borderBottom: `1px solid ${BRAND.border}` }}>
-              <div style={{ width: 34, height: 34, borderRadius: 6, background: '#0F172A', border: `1px solid ${BRAND.primary}`, color: '#FFFFFF', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 12, cursor: 'pointer' }} onClick={() => router.push('/nv')}>
-                {SYSTEM_CONFIG.brandShortCode}
-              </div>
-              {!collapsed && (
-                <div style={{ lineHeight: 1.15, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                  <div style={{ fontWeight: 800, fontSize: 14, color: '#0F172A' }}>{SYSTEM_CONFIG.brandName}</div>
-                  <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.5, color: '#64748B' }}>CỔNG NHÂN VIÊN</div>
-                </div>
-              )}
+              <div style={{ width: 34, height: 34, borderRadius: 6, background: '#0F172A', border: `1px solid ${BRAND.primary}`, color: '#FFFFFF', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 12, cursor: 'pointer' }} onClick={() => router.push('/nv')}>{SYSTEM_CONFIG.brandShortCode}</div>
+              {!collapsed && <div style={{ lineHeight: 1.15, overflow: 'hidden', whiteSpace: 'nowrap' }}><div style={{ fontWeight: 800, fontSize: 14, color: '#0F172A' }}>{SYSTEM_CONFIG.brandName}</div><div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.5, color: '#64748B' }}>CỔNG NHÂN VIÊN</div></div>}
             </div>
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', padding: collapsed ? '8px 0' : '6px 4px' }}>
               <Menu className="umbm-sider-menu" mode="inline" inlineIndent={10} inlineCollapsed={collapsed} defaultOpenKeys={DESKTOP_GROUPS.map((g) => g.key)} items={desktopMenuItems} selectedKeys={[activeDesktopItem.item.key]} style={{ borderInlineEnd: 'none' }} />
             </div>
             <div style={{ flexShrink: 0, padding: collapsed ? '10px 4px' : '10px 16px', borderTop: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'space-between', background: '#FFFFFF' }}>
               {!collapsed && <span style={{ fontSize: 12, color: '#64748B' }}>Phiên bản hệ thống</span>}
-              <Tooltip placement="right" title={collapsed ? `Phiên bản hệ thống ${versionLabel}` : undefined}>
-                <Tag color="blue" style={{ margin: 0, borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{collapsed ? versionLabel.replace(/\.0$/, '') : versionLabel}</Tag>
-              </Tooltip>
+              <Tooltip placement="right" title={collapsed ? `Phiên bản hệ thống ${versionLabel}` : undefined}><Tag color="blue" style={{ margin: 0, borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{collapsed ? versionLabel.replace(/\.0$/, '') : versionLabel}</Tag></Tooltip>
             </div>
           </div>
         </Layout.Sider>
@@ -149,8 +142,15 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
               <Popover
                 trigger="click" placement="bottomRight"
                 content={
-                  <div style={{ width: 310 }}>
-                    <Flex justify="space-between" align="center" style={{ paddingBottom: 6, borderBottom: `1px solid ${BRAND.border}` }}><Typography.Text strong style={{ fontSize: 13 }}>Thông báo đã nhận ({notifTotal})</Typography.Text><Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => notifsQ.refetch()}>Làm mới</Button></Flex>
+                  <div style={{ width: 325 }}>
+                    <Flex justify="space-between" align="center" style={{ paddingBottom: 6, borderBottom: `1px solid ${BRAND.border}` }}>
+                      <Typography.Text strong style={{ fontSize: 13 }}>Thông báo đã nhận ({notifTotal})</Typography.Text>
+                      <Space size={4}>
+                        <Tooltip title="Nghe thử chuông thông báo"><Button size="small" type="text" icon={soundEnabled ? <SoundOutlined style={{ color: BRAND.primary }} /> : <MutedOutlined />} onClick={playTestSound} /></Tooltip>
+                        <Switch size="small" checked={soundEnabled} onChange={setSoundEnabled} checkedChildren="Chuông" unCheckedChildren="Tắt" />
+                        <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => notifsQ.refetch()}>Làm mới</Button>
+                      </Space>
+                    </Flex>
                     {notifItems.length === 0 ? <div style={{ padding: 12, textAlign: 'center', fontSize: 12, color: BRAND.textSecondary }}>Chưa có thông báo mới</div> : <List size="small" dataSource={notifItems} renderItem={(n) => <List.Item style={{ cursor: 'pointer', paddingInline: 4 }} onClick={() => router.push('/nv/thong-bao')}><List.Item.Meta title={<span style={{ fontSize: 12, fontWeight: 600 }}>{n.title}</span>} description={<span style={{ fontSize: 11 }}>{n.targetLabel} · {n.body}</span>} /></List.Item>} />}
                     <Button type="primary" ghost size="small" icon={<BellOutlined />} block style={{ marginTop: 6 }} onClick={() => router.push('/nv/thong-bao')}>Xem chi tiết tất cả thông báo ({notifTotal})</Button>
                   </div>
@@ -167,6 +167,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
                     { type: 'divider' },
                     { key: 'profile', icon: <UserOutlined />, label: 'Hồ sơ cá nhân & Cập nhật thông tin', onClick: () => setProfileTab('info') },
                     { key: 'password', icon: <KeyOutlined />, label: 'Đổi mật khẩu / Mã PIN bảo mật', onClick: () => setProfileTab('password') },
+                    { key: 'sound', icon: soundEnabled ? <SoundOutlined /> : <MutedOutlined />, label: `Âm thanh thông báo: ${soundEnabled ? 'Đang bật (Bấm để tắt)' : 'Đang tắt (Bấm để bật)'}`, onClick: toggleSound },
                     { key: 'sync', icon: <ReloadOutlined />, label: 'Làm mới toàn bộ dữ liệu trang', onClick: () => qc.invalidateQueries() },
                     { type: 'divider' },
                     { key: 'logout', icon: <LogoutOutlined />, danger: true, label: 'Đăng xuất hệ thống', onClick: logout },

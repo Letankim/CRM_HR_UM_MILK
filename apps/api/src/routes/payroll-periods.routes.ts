@@ -7,6 +7,7 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
+import { SocketEvents } from '../realtime/realtime.js';
 import { mapSnapshot, recalculatePeriodSnapshots } from '../services/payroll-snapshot.service.js';
 import { generatePayslips } from '../services/payslip.service.js';
 import { healBranchConsistency } from './account-employee-sync.js';
@@ -211,6 +212,9 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
       resultSelector: (s) => s.period,
     });
 
+    if (body.target_status === 'PUBLISHED') {
+      ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, { kind: 'PAYROLL', code: updated.period_code, title: `Phiếu lương ${updated.name} đã phát hành` });
+    }
     await ctx.audit.record(auditContext(request), { action: 'payroll_period.transition', entity: 'PAY_PERIODS', entityId: id, before: { status: before.status }, after: { status: updated.status } });
     return sendSuccess(request, `Đã chuyển trạng thái kỳ lương sang "${PAY_PERIOD_STATUS_LABELS[updated.status]}"`, withLabel(updated));
   });

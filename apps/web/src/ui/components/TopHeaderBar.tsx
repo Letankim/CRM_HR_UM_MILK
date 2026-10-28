@@ -1,17 +1,18 @@
 'use client';
 
-import { Avatar, Badge, Breadcrumb, Button, Dropdown, Flex, Layout, List, Popover, Space, Spin, Tag, Typography } from 'antd';
+import { Avatar, Badge, Breadcrumb, Button, Dropdown, Flex, Layout, List, Popover, Space, Spin, Switch, Tag, Tooltip, Typography } from 'antd';
 import {
   BellOutlined, DownOutlined, KeyOutlined, LogoutOutlined, MenuFoldOutlined,
-  MenuOutlined, MenuUnfoldOutlined, ReloadOutlined, SafetyCertificateOutlined,
-  ShopOutlined, UserOutlined, UserSwitchOutlined,
+  MenuOutlined, MenuUnfoldOutlined, MutedOutlined, ReloadOutlined, SafetyCertificateOutlined,
+  ShopOutlined, SoundOutlined, UserOutlined, UserSwitchOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ROLE_LABELS, ROLE_SHORT_LABELS, type PublicUser } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { useCan } from '@/lib/auth';
+import { useNotificationSound, useTrackUnreadNotifications } from '@/lib/notification-sound';
 import { BRAND } from '../theme';
 import { UserProfileModal } from './UserProfileModal';
 
@@ -47,23 +48,31 @@ export function TopHeaderBar({
   const notifTotal = notifsQ.data?.meta.pagination.total ?? 0;
   const unreadNotifCount = notifItems.filter((n) => n.readStatus === 'UNREAD').length;
   const totalBadge = pendingTotal + unreadNotifCount;
+  const { soundEnabled, setSoundEnabled, toggleSound, playTestSound } = useNotificationSound();
+  const unreadKeys = useMemo(
+    () => [...pendingItems.map((p) => `acc:${p.id}`), ...notifItems.filter((n) => n.readStatus === 'UNREAD').map((n) => `ntf:${n.id}`)],
+    [pendingItems, notifItems],
+  );
+  useTrackUnreadNotifications(user.id, unreadKeys, !notifsQ.isLoading);
 
   const handleLogout = async () => {
     setLoggingOut(true);
-    try {
-      await onLogout();
-    } finally {
-      setLoggingOut(false);
-    }
+    try { await onLogout(); } finally { setLoggingOut(false); }
   };
 
   const notificationContent = (
-    <div style={{ width: 340 }}>
-      <Flex justify="space-between" align="center" style={{ paddingBottom: 8, borderBottom: `1px solid ${BRAND.border}` }}>
+    <div style={{ width: 345 }}>
+      <Flex justify="space-between" align="center" style={{ paddingBottom: 6, borderBottom: `1px solid ${BRAND.border}` }}>
         <Typography.Text strong style={{ fontSize: 13 }}>Thông báo đã nhận ({notifTotal + pendingTotal})</Typography.Text>
-        <Button size="small" type="text" icon={<ReloadOutlined />} loading={pendingAccounts.isFetching || notifsQ.isFetching} onClick={() => { pendingAccounts.refetch(); notifsQ.refetch(); }}>
-          Làm mới
-        </Button>
+        <Space size={4}>
+          <Tooltip title="Nghe thử chuông thông báo">
+            <Button size="small" type="text" icon={soundEnabled ? <SoundOutlined style={{ color: BRAND.primary }} /> : <MutedOutlined />} onClick={playTestSound} />
+          </Tooltip>
+          <Switch size="small" checked={soundEnabled} onChange={setSoundEnabled} checkedChildren="Chuông" unCheckedChildren="Tắt" />
+          <Button size="small" type="text" icon={<ReloadOutlined />} loading={pendingAccounts.isFetching || notifsQ.isFetching} onClick={() => { pendingAccounts.refetch(); notifsQ.refetch(); }}>
+            Làm mới
+          </Button>
+        </Space>
       </Flex>
       <Spin spinning={pendingAccounts.isFetching || notifsQ.isFetching}>
         {pendingItems.length === 0 && notifItems.length === 0 ? (
@@ -164,6 +173,7 @@ export function TopHeaderBar({
               { type: 'divider' },
               { key: 'profile', icon: <UserOutlined />, label: 'Hồ sơ cá nhân & Cập nhật thông tin', onClick: () => setProfileTab('info') },
               { key: 'password', icon: <KeyOutlined />, label: 'Đổi mật khẩu / Mã PIN bảo mật', onClick: () => setProfileTab('password') },
+              { key: 'sound', icon: soundEnabled ? <SoundOutlined /> : <MutedOutlined />, label: `Âm thanh thông báo: ${soundEnabled ? 'Đang bật (Bấm để tắt)' : 'Đang tắt (Bấm để bật)'}`, onClick: toggleSound },
               { key: 'sync', icon: <ReloadOutlined />, label: 'Làm mới toàn bộ dữ liệu trang', onClick: () => qc.invalidateQueries() },
               { type: 'divider' },
               { key: 'logout', icon: <LogoutOutlined />, danger: true, label: loggingOut ? 'Đang đăng xuất...' : 'Đăng xuất hệ thống', onClick: handleLogout },
