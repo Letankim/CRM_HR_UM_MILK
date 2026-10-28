@@ -187,17 +187,21 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
     const processed: string[] = [];
     const skipped: { id: string; reason: string }[] = [];
 
+    const empPatches: Parameters<typeof ctx.db.employees.batchUpdate>[0] = [];
+    const userPatches: Parameters<typeof ctx.db.users.batchUpdate>[0] = [];
     for (const item of body.items) {
       const emp = ctx.db.employees.get(item.id);
       if (!emp) { skipped.push({ id: item.id, reason: 'Không tồn tại' }); continue; }
-      if (body.action === 'DELETE') { await ctx.db.employees.softDelete(emp.id, emp.version, actorId); processed.push(emp.id); continue; }
+      if (body.action === 'DELETE') { empPatches.push({ id: emp.id, expectedVersion: emp.version, patch: { is_deleted: true } }); processed.push(emp.id); continue; }
       if (emp.stage === 'OFFICIAL') { skipped.push({ id: item.id, reason: 'Đã là nhân viên chính thức' }); continue; }
-      const updated = await ctx.db.employees.update(emp.id, emp.version, { stage: 'OFFICIAL', official_from: effectiveDate }, actorId);
+      empPatches.push({ id: emp.id, expectedVersion: emp.version, patch: { stage: 'OFFICIAL', official_from: effectiveDate } });
       const u = emp.user_id ? ctx.db.users.get(emp.user_id) : undefined;
-      if (u && u.role === 'THU_VIEC') await ctx.db.users.update(u.id, u.version, { role: 'CHINH_THUC' }, actorId);
-      queuePromotionOfficialEmail(ctx, updated);
-      processed.push(updated.id);
+      if (u && u.role === 'THU_VIEC') userPatches.push({ id: u.id, expectedVersion: u.version, patch: { role: 'CHINH_THUC' } });
+      processed.push(emp.id);
     }
+    const updatedEmps = empPatches.length > 0 ? await ctx.db.employees.batchUpdate(empPatches, actorId) : [];
+    if (userPatches.length > 0) await ctx.db.users.batchUpdate(userPatches, actorId);
+    if (body.action === 'PROMOTE_OFFICIAL') updatedEmps.forEach((emp) => queuePromotionOfficialEmail(ctx, emp));
 
     await ctx.audit.record(auditContext(request), {
       action: body.action === 'DELETE' ? 'employee.delete' : 'employee.bulk.promote_official',

@@ -23,45 +23,40 @@ export function resolveShiftTimeDetails(ctx: AppContext, shiftCode: string, assi
   const assign = assignmentId ? ctx.db.shiftAssignments.get(assignmentId) : undefined;
   const tpl = findBranchShiftTemplate(ctx, shiftCode, branchId || assign?.branch_id || '');
   const fb = SHIFT_FALLBACK[shiftCode] ?? SHIFT_FALLBACK.CA_SANG!;
-  const startAt = assign?.start_at || tpl?.start_time || fb.start;
-  const endAt = assign?.end_at || tpl?.end_time || fb.end;
+  const startAt = assign?.start_at || tpl?.start_time || fb.start, endAt = assign?.end_at || tpl?.end_time || fb.end;
   const scheduledHours = assign?.scheduled_hours || tpl?.standard_hours || fb.hours;
   const rawLabel = tpl?.name ?? DEFAULT_SHIFT_LABELS[shiftCode as keyof typeof DEFAULT_SHIFT_LABELS] ?? shiftCode;
-  const shiftLabel = rawLabel.replace(/\s*\([^)]*\)\s*/g, '').trim();
-  return { shiftLabel, startAt, endAt, scheduledHours, shiftTimeRange: `${startAt} – ${endAt}` };
+  return { shiftLabel: rawLabel.replace(/\s*\([^)]*\)\s*/g, '').trim(), startAt, endAt, scheduledHours, shiftTimeRange: `${startAt} – ${endAt}` };
 }
 
-/** Giải mã 1 mã/ID chi nhánh cụ thể từ chuỗi branch_scope (bỏ qua nếu là ALL) */
 export function resolveSingleBranchId(ctx: AppContext, branchScope?: string): string | undefined {
   const firstToken = branchScope?.trim().split(',')[0]?.trim();
   if (!firstToken || firstToken === 'ALL') return undefined;
   return (ctx.db.branches.get(firstToken) ?? ctx.db.branches.find((b) => b.code.trim().toUpperCase() === firstToken.toUpperCase()))?.id;
 }
 
-/** Lấy branch_id hiện hành của nhân sự làm chuẩn cho mọi bảng nghiệp vụ (Lịch ca, Điểm danh, Nghỉ phép, Đổi ca) */
 export function resolveEmployeeBranchId(ctx: AppContext, employeeId: string, fallbackBranchId = ''): string {
   if (!employeeId) return fallbackBranchId;
   const emp = ctx.db.employees.get(employeeId) ?? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === employeeId.trim().toUpperCase());
   if (!emp) return fallbackBranchId;
-  const linkedUser = findLinkedUserForEmployee(emp, ctx);
-  const userBranchId = linkedUser ? resolveSingleBranchId(ctx, linkedUser.branch_scope) : undefined;
+  const linkedUser = findLinkedUserForEmployee(emp, ctx), userBranchId = linkedUser ? resolveSingleBranchId(ctx, linkedUser.branch_scope) : undefined;
   if (userBranchId && userBranchId !== emp.branch_id && (linkedUser?.updated_at ?? '') > (emp.updated_at ?? '')) return userBranchId;
   return emp.branch_id || fallbackBranchId;
 }
 
-/** Khi nhân sự chuyển chi nhánh, đồng bộ branch_id cho toàn bộ ca làm việc, điểm danh, đơn nghỉ và đổi ca của nhân sự đó */
 export async function cascadeEmployeeBranchChange(ctx: AppContext, emp: Employee, newBranchId: string, actorId: string): Promise<void> {
   if (!newBranchId) return;
   const matchEmp = (eid: string) => eid === emp.id || eid.trim().toUpperCase() === emp.employee_code.trim().toUpperCase();
   const moveBatch = <T extends { id: string; version: number }>(store: { batchUpdate: (items: { id: string; expectedVersion: number; patch: { branch_id: string } }[], a: string) => Promise<T[]> }, rows: T[]) =>
     rows.length > 0 ? tolerantWrite(() => store.batchUpdate(rows.map((r) => ({ id: r.id, expectedVersion: r.version, patch: { branch_id: newBranchId } })), actorId)) : Promise.resolve();
-
-  await moveBatch(ctx.db.shiftAssignments, ctx.db.shiftAssignments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId));
-  await moveBatch(ctx.db.leaveRequests, ctx.db.leaveRequests.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId));
-  await moveBatch(ctx.db.shiftSwaps, ctx.db.shiftSwaps.filter((x) => matchEmp(x.requester_id) && x.branch_id !== newBranchId));
-  await moveBatch(ctx.db.emergencyLeaves, ctx.db.emergencyLeaves.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId));
-  await moveBatch(ctx.db.attendanceEvents, ctx.db.attendanceEvents.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId));
-  await moveBatch(ctx.db.attendanceAdjustments, ctx.db.attendanceAdjustments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId));
+  await Promise.all([
+    moveBatch(ctx.db.shiftAssignments, ctx.db.shiftAssignments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)),
+    moveBatch(ctx.db.leaveRequests, ctx.db.leaveRequests.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)),
+    moveBatch(ctx.db.shiftSwaps, ctx.db.shiftSwaps.filter((x) => matchEmp(x.requester_id) && x.branch_id !== newBranchId)),
+    moveBatch(ctx.db.emergencyLeaves, ctx.db.emergencyLeaves.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)),
+    moveBatch(ctx.db.attendanceEvents, ctx.db.attendanceEvents.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)),
+    moveBatch(ctx.db.attendanceAdjustments, ctx.db.attendanceAdjustments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)),
+  ]);
 }
 
 const healsInFlight = new WeakMap<object, Promise<void>>();
@@ -83,6 +78,8 @@ export function healBranchConsistency(ctx: AppContext, actorId = 'system-sync'):
 }
 
 async function runHeal(ctx: AppContext, actorId: string): Promise<void> {
+  const empPatches: { id: string; expectedVersion: number; patch: { branch_id: string } }[] = [];
+  const userPatches: { id: string; expectedVersion: number; patch: { branch_scope: string } }[] = [];
   for (const snap of ctx.db.employees.all()) {
     const emp = ctx.db.employees.get(snap.id) ?? snap;
     let effectiveBranchId = emp.branch_id;
@@ -93,24 +90,28 @@ async function runHeal(ctx: AppContext, actorId: string): Promise<void> {
       if (userBranchId && userBranchId !== emp.branch_id) {
         if ((linkedUser.updated_at ?? '') >= (emp.updated_at ?? '')) {
           effectiveBranchId = userBranchId;
-          await tolerantWrite(() => ctx.db.employees.update(emp.id, emp.version, { branch_id: userBranchId }, actorId));
+          empPatches.push({ id: emp.id, expectedVersion: emp.version, patch: { branch_id: userBranchId } });
         } else if (isBranchRole || linkedUser.branch_scope !== 'ALL') {
-          await tolerantWrite(() => ctx.db.users.update(linkedUser.id, linkedUser.version, { branch_scope: emp.branch_id }, actorId));
+          userPatches.push({ id: linkedUser.id, expectedVersion: linkedUser.version, patch: { branch_scope: emp.branch_id } });
         }
       } else if (!userBranchId && isBranchRole && emp.branch_id) {
-        await tolerantWrite(() => ctx.db.users.update(linkedUser.id, linkedUser.version, { branch_scope: emp.branch_id }, actorId));
+        userPatches.push({ id: linkedUser.id, expectedVersion: linkedUser.version, patch: { branch_scope: emp.branch_id } });
       }
     }
     if (effectiveBranchId) await cascadeEmployeeBranchChange(ctx, emp, effectiveBranchId, actorId);
   }
+  if (empPatches.length > 0) await tolerantWrite(() => ctx.db.employees.batchUpdate(empPatches, actorId));
+  if (userPatches.length > 0) await tolerantWrite(() => ctx.db.users.batchUpdate(userPatches, actorId));
   const hasEventAssignIds = new Set(ctx.db.attendanceEvents.all().map((ev) => ev.assignment_id));
+  const shiftDeletes: { id: string; expectedVersion: number; patch: { is_deleted: boolean } }[] = [];
   for (const l of ctx.db.leaveRequests.filter((x) => x.status === 'APPROVED')) {
     const emp = ctx.db.employees.get(l.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === l.employee_id);
     const matchEmp = (eid: string) => eid === l.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
     for (const s of ctx.db.shiftAssignments.filter((a) => matchEmp(a.employee_id) && a.work_date === l.leave_date)) {
-      if (!hasEventAssignIds.has(s.id)) await tolerantWrite(() => ctx.db.shiftAssignments.softDelete(s.id, s.version, actorId));
+      if (!hasEventAssignIds.has(s.id)) shiftDeletes.push({ id: s.id, expectedVersion: s.version, patch: { is_deleted: true } });
     }
   }
+  if (shiftDeletes.length > 0) await tolerantWrite(() => ctx.db.shiftAssignments.batchUpdate(shiftDeletes, actorId));
   await sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId);
 }
 

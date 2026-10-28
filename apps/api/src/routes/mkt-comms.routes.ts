@@ -69,18 +69,19 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
     const notif = existingNotif
       ? await ctx.db.notifications.update(existingNotif.id, existingNotif.version, { recipient_user_id: recipientUserId, recipient_role: recipientRole, branch_id: branchId, title: anc.title, body: anc.summary || anc.title }, actorId)
       : await ctx.db.notifications.insert({ recipient_user_id: recipientUserId, category: 'ANNOUNCEMENT', title: anc.title, body: anc.summary || anc.title, link: anc.cta_link || '/nv/ban-tin', severity: anc.priority === 'URGENT' ? 'CRITICAL' : anc.priority === 'HIGH' ? 'WARNING' : 'INFO', read_at: '', recipient_role: recipientRole, branch_id: branchId, entity_type: 'ANNOUNCEMENTS', entity_id: anc.id }, actorId);
-    for (const oldLog of ctx.db.deliveryLogs.filter((l) => l.announcement_id === anc.id && !matchedUsers.some((u) => u.id === l.recipient_user_id))) {
-      await ctx.db.deliveryLogs.softDelete(oldLog.id, oldLog.version, actorId);
-    }
+    const obsoleteLogs = ctx.db.deliveryLogs.filter((l) => l.announcement_id === anc.id && !matchedUsers.some((u) => u.id === l.recipient_user_id));
+    if (obsoleteLogs.length > 0) await ctx.db.deliveryLogs.batchUpdate(obsoleteLogs.map((l) => ({ id: l.id, expectedVersion: l.version, patch: { is_deleted: true } })), actorId);
     const existingLogUserIds = new Set(ctx.db.deliveryLogs.filter((l) => l.announcement_id === anc.id).map((l) => l.recipient_user_id));
-    const prioLabel = anc.priority === 'URGENT' ? 'Khẩn cấp' : anc.priority === 'HIGH' ? 'Quan trọng' : 'Thông thường';
+    const prioLabel = anc.priority === 'URGENT' ? 'Khẩn cấp' : anc.priority === 'HIGH' ? 'Quan trọng' : 'Thông thường', now = nowIso();
+    const pendingLogInserts: Promise<unknown>[] = [];
     for (const u of matchedUsers) {
       if (!existingLogUserIds.has(u.id)) {
-        await ctx.db.deliveryLogs.insert({ announcement_id: anc.id, recipient_user_id: u.id, channel: 'IN_APP_SOCKET', status: 'SENT', attempts: 1, last_error: '', branch_id: u.branch_scope === 'ALL' ? 'ALL' : u.branch_scope.split(',')[0] || 'ALL', sent_at: nowIso(), delivered_at: nowIso(), read_at: '', ack_at: '' }, actorId);
+        pendingLogInserts.push(ctx.db.deliveryLogs.insert({ announcement_id: anc.id, recipient_user_id: u.id, channel: 'IN_APP_SOCKET', status: 'SENT', attempts: 1, last_error: '', branch_id: u.branch_scope === 'ALL' ? 'ALL' : u.branch_scope.split(',')[0] || 'ALL', sent_at: now, delivered_at: now, read_at: '', ack_at: '' }, actorId));
       }
       const ctaPath = (!anc.cta_link || anc.cta_link === '/nv/ban-tin' || (u.role === 'MKT' && anc.cta_link.startsWith('/nv')) || (isEmployeeRole(u.role as Role) && anc.cta_link.startsWith('/admin'))) ? resolveRolePortalPath(u.role as Role, 'comms') : anc.cta_link;
       ctx.email.enqueue({ to: resolveRealAccountEmail(ctx, u), template: 'INTERNAL_ANNOUNCEMENT', recipientName: u.display_name || u.username, referenceCode: anc.code, summary: anc.summary || anc.title, metadata: [{ label: 'Mã bản tin', value: anc.code }, { label: 'Tiêu đề', value: anc.title }, { label: 'Mức độ ưu tiên', value: prioLabel }], actionLabel: anc.cta_label || 'Xem chi tiết bản tin', actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${ctaPath}` });
     }
+    if (pendingLogInserts.length > 0) await Promise.all(pendingLogInserts);
     const payload = { kind: 'ANNOUNCEMENT', id: anc.id, notificationId: notif.id, code: anc.code, title: anc.title, summary: anc.summary, priority: anc.priority, sent_at: anc.sent_at };
     if (isGlobal) ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, payload);
     else matchedUsers.forEach((u) => ctx.realtime()?.toUser(u.id, SocketEvents.NOTIFICATION, payload));

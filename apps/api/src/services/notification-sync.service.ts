@@ -4,25 +4,31 @@ import { getMatchingUsersForAudience } from '../routes/job-positions-and-audienc
 import { singleFlight, tolerantWrite } from './background-write.js';
 
 const syncInFlight = new WeakMap<object, Promise<void>>();
+const lastSyncSig = new WeakMap<object, string>();
 const SYNC_ACTOR = 'system-sync';
 
+function computeSyncSig(ctx: AppContext): string {
+  const sumV = (rows: { version: number }[]) => rows.reduce((acc, r) => acc + r.version, rows.length * 97);
+  return [ctx.db.notifications, ctx.db.announcements, ctx.db.users, ctx.db.shiftAssignments, ctx.db.leaveRequests, ctx.db.shiftSwaps, ctx.db.attendanceAdjustments, ctx.db.emergencyLeaves, ctx.db.payslips].map((s) => sumV(s.all())).join(':');
+}
+
 export function ensureSyncedNotifications(ctx: AppContext): Promise<void> {
+  if (lastSyncSig.get(ctx.db) === computeSyncSig(ctx)) return Promise.resolve();
   return singleFlight(syncInFlight, ctx.db, () => runSyncNotifications(ctx));
 }
 
 async function deduplicateAdjustmentsAndNotifications(ctx: AppContext): Promise<void> {
   const empByCode = new Map(ctx.db.employees.all().map((e) => [e.employee_code, e.id]));
   const seenAdjKeys = new Set<string>();
+  const adjDeletes: { id: string; expectedVersion: number; patch: { is_deleted: boolean } }[] = [];
   for (const adj of ctx.db.attendanceAdjustments.all()) {
     if (adj.status === 'REJECTED') continue;
     const eid = empByCode.get(adj.employee_id) ?? adj.employee_id;
     const key = adj.assignment_id ? `asg:${adj.assignment_id}` : `emp:${eid}:${adj.work_date}:${adj.shift_code}`;
-    if (seenAdjKeys.has(key)) {
-      await tolerantWrite(() => ctx.db.attendanceAdjustments.softDelete(adj.id, adj.version, SYNC_ACTOR));
-    } else {
-      seenAdjKeys.add(key);
-    }
+    if (seenAdjKeys.has(key)) adjDeletes.push({ id: adj.id, expectedVersion: adj.version, patch: { is_deleted: true } });
+    else seenAdjKeys.add(key);
   }
+  if (adjDeletes.length > 0) await tolerantWrite(() => ctx.db.attendanceAdjustments.batchUpdate(adjDeletes, SYNC_ACTOR));
 
   const adjBatchCounts = new Map<string, number>();
   for (const adj of ctx.db.attendanceAdjustments.all()) {
@@ -33,6 +39,7 @@ async function deduplicateAdjustmentsAndNotifications(ctx: AppContext): Promise<
   }
 
   const seenNotifKeys = new Set<string>();
+  const notifDeletes: { id: string; expectedVersion: number; patch: { is_deleted: boolean } }[] = [];
   for (const n of [...ctx.db.notifications.all()].reverse()) {
     const rawAdjId = (n.entity_id || '').replace(/_(STORE_CONFIRMED|APPROVED|REJECTED)$/, '');
     const adj = n.entity_type.startsWith('ATT_ADJ_') && !n.entity_id.startsWith('BULK_') ? ctx.db.attendanceAdjustments.get(rawAdjId) : undefined;
@@ -48,37 +55,36 @@ async function deduplicateAdjustmentsAndNotifications(ctx: AppContext): Promise<
     const entKey = n.entity_type && n.entity_id ? `ent:${n.entity_type}:${n.entity_id}` : '';
     const txtKey = `txt:${n.category}:${n.recipient_role}:${n.recipient_user_id}:${n.title}`;
     if (isResolvedPending || isMergedIntoBulk || isSelfPendingLeave || (entKey && seenNotifKeys.has(entKey)) || seenNotifKeys.has(txtKey)) {
-      await tolerantWrite(() => ctx.db.notifications.softDelete(n.id, n.version, SYNC_ACTOR));
+      notifDeletes.push({ id: n.id, expectedVersion: n.version, patch: { is_deleted: true } });
       continue;
     }
     if (entKey) seenNotifKeys.add(entKey);
     seenNotifKeys.add(txtKey);
   }
+  if (notifDeletes.length > 0) await tolerantWrite(() => ctx.db.notifications.batchUpdate(notifDeletes, SYNC_ACTOR));
 }
 
 async function runSyncNotifications(ctx: AppContext): Promise<void> {
+  if (lastSyncSig.get(ctx.db) === computeSyncSig(ctx)) return;
   await deduplicateAdjustmentsAndNotifications(ctx);
-  const users = ctx.db.users.all();
-  const seenKeys = new Set<string>();
+  const users = ctx.db.users.all(), seenKeys = new Set<string>();
   for (const n of ctx.db.notifications.all(true)) {
     if (!n.is_deleted) {
       if (n.entity_type && n.entity_id) seenKeys.add(`${n.entity_type}:${n.entity_id}`);
       seenKeys.add(`title:${n.recipient_role}:${n.recipient_user_id}:${n.title}`);
     }
   }
-  const hasKey = (type: string, id: string, role = '', uid = '', title = '') =>
-    seenKeys.has(`${type}:${id}`) || (Boolean(title) && seenKeys.has(`title:${role}:${uid}:${title}`));
+  const hasKey = (type: string, id: string, role = '', uid = '', title = '') => seenKeys.has(`${type}:${id}`) || (Boolean(title) && seenKeys.has(`title:${role}:${uid}:${title}`));
   const findEmp = (empId: string) => ctx.db.employees.get(empId) ?? ctx.db.employees.find((e) => e.employee_code === empId);
-  const findUserByEmp = (empId: string) => {
-    const emp = findEmp(empId);
-    return (emp?.user_id ? ctx.db.users.get(emp.user_id) : undefined) ?? users.find((u) => u.employee_id === empId || (emp && u.employee_id === emp.employee_code));
-  };
+  const findUserByEmp = (empId: string) => { const emp = findEmp(empId); return (emp?.user_id ? ctx.db.users.get(emp.user_id) : undefined) ?? users.find((u) => u.employee_id === empId || (emp && u.employee_id === emp.employee_code)); };
   const shiftLabel = (code: string) => (DEFAULT_SHIFT_LABELS as Record<string, string>)[code] ?? code;
-  const ins = async (data: Omit<Parameters<typeof ctx.db.notifications.insert>[0], 'read_at'>, actorId = SYNC_ACTOR) => {
-    if (hasKey(data.entity_type, data.entity_id, data.recipient_role, data.recipient_user_id, data.title)) return;
+  const pendingInserts: Promise<unknown>[] = [];
+  const ins = (data: Omit<Parameters<typeof ctx.db.notifications.insert>[0], 'read_at'>, actorId = SYNC_ACTOR) => {
+    if (hasKey(data.entity_type, data.entity_id, data.recipient_role, data.recipient_user_id, data.title)) return Promise.resolve();
     seenKeys.add(`${data.entity_type}:${data.entity_id}`);
     seenKeys.add(`title:${data.recipient_role}:${data.recipient_user_id}:${data.title}`);
-    await tolerantWrite(() => ctx.db.notifications.insert({ ...data, read_at: '' }, actorId || SYNC_ACTOR));
+    pendingInserts.push(tolerantWrite(() => ctx.db.notifications.insert({ ...data, read_at: '' }, actorId || SYNC_ACTOR)));
+    return Promise.resolve();
   };
 
   for (const anc of ctx.db.announcements.all().slice(-30)) {
@@ -163,6 +169,8 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
     const empUser = findUserByEmp(ps.employee_id);
     if (empUser && !hasKey('PAYSLIP_USER', ps.id)) await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: ps.branch_id || 'ALL', category: 'PAYROLL', title: `Phiếu lương cá nhân đã phát hành: ${ps.period_name || ps.payslip_code}`, body: `Thực lĩnh (NET): ${Number(ps.net_vnd || 0).toLocaleString('vi-VN')}đ — Vui lòng kiểm tra chi tiết và xác nhận phiếu lương.`, link: '/nv/phieu-luong', severity: 'INFO', entity_type: 'PAYSLIP_USER', entity_id: ps.id });
   }
+  if (pendingInserts.length > 0) await Promise.all(pendingInserts);
+  lastSyncSig.set(ctx.db, computeSyncSig(ctx));
 }
 
 export function isNotificationCreatedByOrSelfAction(ctx: AppContext, n: NotificationRow, userId: string): boolean {

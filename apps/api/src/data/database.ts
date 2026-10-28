@@ -62,6 +62,7 @@ export class Database {
 
   private readonly auditStores = new Map<string, Promise<TableStore<AuditRow>>>();
   private timer: NodeJS.Timeout | null = null;
+  private refreshCursor = 0;
   private lastRefreshError: string | null = null;
   private ready = false;
   private readyPromise: Promise<void> | null = null;
@@ -146,11 +147,7 @@ export class Database {
     if (this.ready) return;
     if (this.readyPromise) return this.readyPromise;
     this.readyPromise = (async () => {
-      const allStores = this.stores;
-      const batchSize = 6;
-      for (let i = 0; i < allStores.length; i += batchSize) {
-        await Promise.all(allStores.slice(i, i + batchSize).map((s) => s.load()));
-      }
+      await Promise.all(this.stores.map((s) => s.load()));
       await this.audit();
       this.ready = true;
     })();
@@ -173,12 +170,19 @@ export class Database {
 
   startAutoRefresh(intervalSeconds: number, log: Logger): void {
     this.stopAutoRefresh();
+    const groups = [
+      [this.users, this.branches, this.shiftTemplates, this.staffingRules, this.policies, this.systemSettings, this.maintenance],
+      [this.candidates, this.interviews, this.employees, this.employeeStageHistory, this.testBank, this.testAssignments, this.testAttempts],
+      [this.shiftAssignments, this.leaveRequests, this.shiftSwaps, this.emergencyLeaves, this.attendanceEvents, this.attendanceAdjustments],
+      [this.payRates, this.payPeriods, this.payrollItems, this.payrollSnapshots, this.payslips, this.payslipRevisions, this.revenueInputs],
+      [this.notifications, this.campaigns, this.announcements, this.deliveryLogs, this.mediaAssets, this.deadLetters, this.backupLog, this.operationJournal],
+    ];
+    const cooldownMs = Math.max(30_000, intervalSeconds * 1000);
     this.timer = setInterval(async () => {
       try {
-        const allStores = this.stores;
-        for (let i = 0; i < allStores.length; i += 5) {
-          await Promise.all(allStores.slice(i, i + 5).map((s) => s.refreshIfIdle()));
-        }
+        const group = groups[this.refreshCursor % groups.length] ?? [];
+        this.refreshCursor = (this.refreshCursor + 1) % groups.length;
+        await Promise.all(group.map((s) => s.refreshIfIdle(cooldownMs)));
         this.lastRefreshError = null;
       } catch (error) {
         this.lastRefreshError = (error as Error).message;

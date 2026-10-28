@@ -186,7 +186,10 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
   app.post('/api/notifications/mark-all-read', { preHandler: requireAuth() }, async (request) => {
     const body = zBulkIdsBody.parse(request.body ?? {}), user = request.auth!.user, now = nowIso();
     const targets = ctx.db.notifications.all().filter((n) => !getUserReadAt(n.read_at, user.id) && (!body.ids?.length || body.ids.includes(n.id)));
-    for (const n of targets) { const map = parseReadMap(n.read_at); map[user.id] = now; await ctx.db.notifications.update(n.id, n.version, { read_at: JSON.stringify(map) }, user.id); }
+    if (targets.length > 0) {
+      const patches = targets.map((n) => { const map = parseReadMap(n.read_at); map[user.id] = now; return { id: n.id, expectedVersion: n.version, patch: { read_at: JSON.stringify(map) } }; });
+      await ctx.db.notifications.batchUpdate(patches, user.id);
+    }
     return sendSuccess(request, `Đã đánh dấu đã đọc ${targets.length} thông báo`, { updatedCount: targets.length });
   });
   app.delete('/api/notifications/:id', { preHandler: requireAuth() }, async (request) => {

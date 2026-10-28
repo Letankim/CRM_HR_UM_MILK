@@ -138,6 +138,7 @@ export class TableStore<T extends BaseRecord> {
         if (this.opts.cacheRows !== false) this.entries.set(b.record.id, { row: firstRow + i, data: b.record });
         b.resolve(b.record);
       });
+      this.lastLoadedMs = Date.now();
     } catch (err) {
       for (const b of batch) {
         this.pendingEntries.delete(b.record.id);
@@ -166,6 +167,7 @@ export class TableStore<T extends BaseRecord> {
       const next = this.validate({ ...entry.data, ...patch, id, version: expectedVersion + 1, updated_at: nowIso(), updated_by: actorId });
       await this.gateway.updateRow(this.opts.spreadsheetId, this.opts.tab, entry.row, this.toRow(next));
       this.entries.set(id, { row: entry.row, data: next });
+      this.lastLoadedMs = Date.now();
       return next;
     });
   }
@@ -186,6 +188,7 @@ export class TableStore<T extends BaseRecord> {
       }
       await this.gateway.batchUpdateRows(this.opts.spreadsheetId, this.opts.tab, staged.map((s) => ({ row: s.row, values: s.values })));
       for (const s of staged) this.entries.set(s.id, { row: s.row, data: s.next });
+      this.lastLoadedMs = Date.now();
       return staged.map((s) => s.next);
     });
   }

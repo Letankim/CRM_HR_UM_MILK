@@ -8,11 +8,11 @@ import { mapSnapshot } from './payroll-snapshot.service.js';
 /** Sinh Phiếu lương (PAYSLIPS) bản số 1 từ Snapshot khi kỳ lương chuyển sang PUBLISHED */
 export async function generatePayslips(ctx: AppContext, period: PayPeriod, actorId: string) {
   const snaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === period.id);
-  const created: Payslip[] = [];
-  for (const s of snaps) {
-    if (ctx.db.payslips.find((p) => p.period_id === period.id && p.employee_id === s.employee_id)) continue;
-    created.push(await ctx.db.payslips.insert(buildPayslipPayload(ctx, period, s, 1, s.net_vnd, s.gross_vnd), actorId));
-  }
+  const existingEmpIds = new Set(ctx.db.payslips.filter((p) => p.period_id === period.id).map((p) => p.employee_id));
+  const toCreate = snaps.filter((s) => !existingEmpIds.has(s.employee_id));
+  const created: Payslip[] = toCreate.length > 0
+    ? await Promise.all(toCreate.map((s) => ctx.db.payslips.insert(buildPayslipPayload(ctx, period, s, 1, s.net_vnd, s.gross_vnd), actorId)))
+    : [];
   queuePayslipPublishedEmails(ctx, period, created);
   return created;
 }

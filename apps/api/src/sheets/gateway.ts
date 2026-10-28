@@ -7,20 +7,11 @@ import { columnLetter, rowFromRange } from './a1.js';
  *  - sau này chuyển sang PostgreSQL chỉ cần thay tầng dưới TableStore.
  */
 export interface SheetsGateway {
-  /** Đọc toàn bộ tab, bao gồm dòng header. Mọi ô trả về dạng chuỗi. */
   readTab(spreadsheetId: string, tab: string): Promise<string[][]>;
-  /** Đọc một dòng (1-based). */
   readRow(spreadsheetId: string, tab: string, row: number, width: number): Promise<string[]>;
-  /**
-   * Thêm nhiều dòng vào cuối tab trong MỘT request (tiết kiệm quota).
-   * Trả về số dòng thực tế của dòng đầu tiên đã ghi.
-   */
   appendRows(spreadsheetId: string, tab: string, rows: string[][]): Promise<number>;
-  /** Ghi đè một dòng (1-based). */
   updateRow(spreadsheetId: string, tab: string, row: number, values: string[]): Promise<void>;
-  /** Ghi đè nhiều dòng trong MỘT request batchUpdate (tiết kiệm quota). */
   batchUpdateRows(spreadsheetId: string, tab: string, items: { row: number; values: string[] }[]): Promise<void>;
-  /** Tạo tab nếu chưa có, ghi header, định dạng toàn bộ ô là văn bản. */
   ensureTab(spreadsheetId: string, tab: string, headers: readonly string[]): Promise<void>;
 }
 
@@ -28,31 +19,61 @@ const quoteTab = (tab: string) => `'${tab.replace(/'/g, "''")}'`;
 
 export class GoogleSheetsGateway implements SheetsGateway {
   private readonly sheetTitlesCache = new Map<string, Promise<Set<string>>>();
+  private readonly pendingTabReads = new Map<string, { tab: string; resolve: (rows: string[][]) => void; reject: (err: unknown) => void }[]>();
 
-  constructor(
-    private readonly sheets: sheets_v4.Sheets,
-    private readonly onRetry?: (attempt: number, error: unknown) => void,
-  ) {}
+  constructor(private readonly sheets: sheets_v4.Sheets, private readonly onRetry?: (attempt: number, error: unknown) => void) {}
 
   private getSheetTitles(spreadsheetId: string): Promise<Set<string>> {
     let pending = this.sheetTitlesCache.get(spreadsheetId);
     if (!pending) {
-      pending = withRetry(
-        () => this.sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties(title,sheetId)' }),
-        { onRetry: this.onRetry },
-      ).then((meta) => new Set((meta.data.sheets ?? []).map((s) => s.properties?.title).filter((t): t is string => !!t)));
+      pending = withRetry(() => this.sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties(title,sheetId)' }), { onRetry: this.onRetry })
+        .then((meta) => new Set((meta.data.sheets ?? []).map((s) => s.properties?.title).filter((t): t is string => !!t)));
       pending.catch(() => this.sheetTitlesCache.delete(spreadsheetId));
       this.sheetTitlesCache.set(spreadsheetId, pending);
     }
     return pending;
   }
 
-  async readTab(spreadsheetId: string, tab: string): Promise<string[][]> {
-    const res = await withRetry(
-      () => this.sheets.spreadsheets.values.get({ spreadsheetId, range: quoteTab(tab), valueRenderOption: 'FORMATTED_VALUE', majorDimension: 'ROWS' }),
-      { onRetry: this.onRetry },
-    );
+  private async readSingleTab(spreadsheetId: string, tab: string): Promise<string[][]> {
+    const res = await withRetry(() => this.sheets.spreadsheets.values.get({ spreadsheetId, range: quoteTab(tab), valueRenderOption: 'FORMATTED_VALUE', majorDimension: 'ROWS' }), { onRetry: this.onRetry });
     return (res.data.values ?? []).map((r) => r.map((c) => String(c ?? '')));
+  }
+
+  readTab(spreadsheetId: string, tab: string): Promise<string[][]> {
+    return new Promise((resolve, reject) => {
+      let bucket = this.pendingTabReads.get(spreadsheetId);
+      if (!bucket) {
+        bucket = [];
+        this.pendingTabReads.set(spreadsheetId, bucket);
+        queueMicrotask(() => void this.flushTabReads(spreadsheetId));
+      }
+      bucket.push({ tab, resolve, reject });
+    });
+  }
+
+  private async flushTabReads(spreadsheetId: string): Promise<void> {
+    const bucket = this.pendingTabReads.get(spreadsheetId) ?? [];
+    this.pendingTabReads.delete(spreadsheetId);
+    if (bucket.length === 0) return;
+    if (bucket.length === 1) {
+      const only = bucket[0]!;
+      return this.readSingleTab(spreadsheetId, only.tab).then(only.resolve, only.reject);
+    }
+    const uniqueTabs = Array.from(new Set(bucket.map((b) => b.tab)));
+    try {
+      const res = await withRetry(
+        () => this.sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges: uniqueTabs.map(quoteTab), valueRenderOption: 'FORMATTED_VALUE', majorDimension: 'ROWS' }),
+        { onRetry: this.onRetry },
+      );
+      const map = new Map<string, string[][]>();
+      uniqueTabs.forEach((t, idx) => {
+        const vals = res.data.valueRanges?.[idx]?.values ?? [];
+        map.set(t, vals.map((r) => r.map((c) => String(c ?? ''))));
+      });
+      bucket.forEach((b) => b.resolve(map.get(b.tab) ?? []));
+    } catch {
+      await Promise.all(bucket.map((b) => this.readSingleTab(spreadsheetId, b.tab).then(b.resolve, b.reject)));
+    }
   }
 
   async readRow(spreadsheetId: string, tab: string, row: number, width: number): Promise<string[]> {

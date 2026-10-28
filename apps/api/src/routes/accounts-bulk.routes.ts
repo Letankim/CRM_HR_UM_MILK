@@ -26,21 +26,12 @@ const zUpdateAccountBody = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
-const zDeleteVersionBody = z.object({
-  version: z.coerce.number().int().min(1).optional(),
-});
-
+const zDeleteVersionBody = z.object({ version: z.coerce.number().int().min(1).optional() });
 const zBulkActionBody = z.object({
   action: z.enum(['ACTIVATE', 'LOCK', 'REVOKE', 'UNLOCK', 'DELETE'], {
     errorMap: () => ({ message: 'Hành động hàng loạt không hợp lệ (ACTIVATE, LOCK, REVOKE, UNLOCK, DELETE)' }),
   }),
-  items: z
-    .array(
-      z.object({
-        id: z.string().min(1, 'Mã tài khoản không được để trống'),
-        version: z.number().int().min(1, 'Phiên bản bản ghi không hợp lệ'),
-      }),
-    )
+  items: z.array(z.object({ id: z.string().min(1, 'Mã tài khoản không được để trống'), version: z.number().int().min(1, 'Phiên bản bản ghi không hợp lệ') }))
     .min(1, 'Vui lòng chọn ít nhất 1 tài khoản để thực hiện')
     .max(100, 'Tối đa 100 tài khoản trong một lần thao tác hàng loạt'),
   reason: z.string().max(500, 'Lý do tối đa 500 ký tự').optional(),
@@ -176,34 +167,37 @@ export async function accountBulkRoutes(app: FastifyInstance, ctx: AppContext) {
     const processedIds: string[] = [];
     const skippedIds: string[] = [];
 
+    const now = nowIso();
+    const patches: Parameters<typeof ctx.db.users.batchUpdate>[0] = [];
     for (const item of body.items) {
       const user = ctx.db.users.get(item.id);
       if (!user) { skippedIds.push(item.id); continue; }
       if (body.action === 'ACTIVATE' && user.status !== 'ACTIVE') {
-        const updated = await ctx.db.users.update(user.id, user.version, { status: 'ACTIVE', activated_by: actorId, activated_at: nowIso(), failed_login_count: 0, locked_until: '', revoked_at: '' }, actorId);
-        queueAccountActivatedEmail(ctx, updated, actorEmail);
+        patches.push({ id: user.id, expectedVersion: user.version, patch: { status: 'ACTIVE', activated_by: actorId, activated_at: now, failed_login_count: 0, locked_until: '', revoked_at: '' } });
         processedIds.push(user.id);
       } else if (body.action === 'LOCK' && user.id !== actorId && user.username !== 'admin' && user.status === 'ACTIVE') {
-        const updated = await ctx.db.users.update(user.id, user.version, { status: 'LOCKED', session_version: user.session_version + 1 }, actorId);
-        ctx.realtime()?.forceLogout(user.id, body.reason ?? 'Khóa tạm thời tài khoản hàng loạt');
-        queueAccountLockedEmail(ctx, updated, body.reason, actorEmail);
+        patches.push({ id: user.id, expectedVersion: user.version, patch: { status: 'LOCKED', session_version: user.session_version + 1 } });
         processedIds.push(user.id);
       } else if (body.action === 'UNLOCK') {
-        const updated = await ctx.db.users.update(user.id, user.version, { status: user.status === 'LOCKED' ? 'ACTIVE' : user.status, failed_login_count: 0, locked_until: '' }, actorId);
-        queueAccountUnlockedEmail(ctx, updated, actorEmail);
+        patches.push({ id: user.id, expectedVersion: user.version, patch: { status: user.status === 'LOCKED' ? 'ACTIVE' : user.status, failed_login_count: 0, locked_until: '' } });
         processedIds.push(user.id);
       } else if (body.action === 'REVOKE' && user.id !== actorId && user.status !== 'REVOKED') {
-        const updated = await ctx.db.users.update(user.id, user.version, { status: 'REVOKED', revoked_at: nowIso(), session_version: user.session_version + 1 }, actorId);
-        ctx.realtime()?.forceLogout(user.id, body.reason ?? 'Thu hồi quyền hàng loạt');
-        queueAccountRevokedEmail(ctx, updated, body.reason, actorEmail);
+        patches.push({ id: user.id, expectedVersion: user.version, patch: { status: 'REVOKED', revoked_at: now, session_version: user.session_version + 1 } });
         processedIds.push(user.id);
       } else if (body.action === 'DELETE' && user.id !== actorId && user.username !== 'admin') {
-        await ctx.db.users.softDelete(user.id, user.version, actorId);
-        ctx.realtime()?.forceLogout(user.id, 'Xóa tài khoản hàng loạt');
+        patches.push({ id: user.id, expectedVersion: user.version, patch: { is_deleted: true } });
         processedIds.push(user.id);
       } else {
         skippedIds.push(user.id);
       }
+    }
+    const updatedUsers = patches.length > 0 ? await ctx.db.users.batchUpdate(patches, actorId) : [];
+    for (const updated of updatedUsers) {
+      if (body.action === 'ACTIVATE') queueAccountActivatedEmail(ctx, updated, actorEmail);
+      else if (body.action === 'LOCK') { ctx.realtime()?.forceLogout(updated.id, body.reason ?? 'Khóa tạm thời tài khoản hàng loạt'); queueAccountLockedEmail(ctx, updated, body.reason, actorEmail); }
+      else if (body.action === 'UNLOCK') queueAccountUnlockedEmail(ctx, updated, actorEmail);
+      else if (body.action === 'REVOKE') { ctx.realtime()?.forceLogout(updated.id, body.reason ?? 'Thu hồi quyền hàng loạt'); queueAccountRevokedEmail(ctx, updated, body.reason, actorEmail); }
+      else if (body.action === 'DELETE') ctx.realtime()?.forceLogout(updated.id, 'Xóa tài khoản hàng loạt');
     }
 
     await ctx.audit.record(auditContext(request), {

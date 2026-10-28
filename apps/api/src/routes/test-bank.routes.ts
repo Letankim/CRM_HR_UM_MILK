@@ -55,7 +55,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
   };
   app.get('/api/admin/tests/bank', { preHandler: requirePermission('employee.read', 'system.config', 'test.manage', 'self.test') }, async (request) => {
     const q = (request.query ?? {}) as { include_answers?: string; refresh?: string };
-    if (q.refresh === '1') await Promise.all([ctx.db.testBank.load(), ctx.db.testAssignments.load(), ctx.db.testAttempts.load()]);
+    if (q.refresh === '1') await Promise.all([ctx.db.testBank.refreshIfIdle(), ctx.db.testAssignments.refreshIfIdle(), ctx.db.testAttempts.refreshIfIdle()]);
     await ensureDefaultTestBank(request.auth?.user.id ?? 'system');
     const perms = request.auth?.permissions, canManage = Boolean(perms?.has('test.manage')), includeAnswers = canManage && q.include_answers === '1';
     const tests = ctx.db.testBank.all().reverse().map((t) => {
@@ -111,15 +111,15 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     if (test.status && test.status !== 'APPROVED') throw Errors.badRequest('Chỉ được phép giao bộ đề kiểm tra đã được phê duyệt (APPROVED)');
     const empIds = body.employee_ids?.length ? body.employee_ids : body.employee_id ? [body.employee_id] : [];
     if (empIds.length === 0) throw Errors.fieldValidation('employee_id', 'REQUIRED_FIELD', 'Vui lòng chọn ít nhất 1 nhân sự nhận đề', '');
-    let firstCreated = null;
-    for (const rawEmpId of empIds) {
+    const resolvedEmps = empIds.map((rawEmpId) => {
       const emp = ctx.db.employees.get(rawEmpId) ?? ctx.db.employees.find((e) => e.employee_code === rawEmpId);
       if (!emp) throw Errors.notFound('Nhân sự', rawEmpId);
-      const created = await ctx.db.testAssignments.insert({ test_id: test.id, employee_id: emp.id, branch_id: emp.branch_id, open_at: nowIso(), close_at: body.close_at || body.due_at || '2026-11-30T23:59:59+07:00', assigned_by: request.auth!.user.id, status: 'ASSIGNED', max_attempts: body.max_attempts ?? test.max_attempts, attempts_used: 0, best_score_percent: 0, passed: false, note: body.note ?? '' }, request.auth!.user.id);
-      queueTestAssignedEmail(ctx, { empId: emp.id, testTitle: test.title, durationMinutes: test.duration_minutes, passScore: test.pass_percent, code: `ASG-${created.id.slice(0, 6)}` });
-      if (!firstCreated) firstCreated = created;
-    }
-    return reply.code(201), sendSuccess(request, `Đã giao bài kiểm tra nghiệp vụ cho ${empIds.length} nhân sự thành công`, firstCreated);
+      return emp;
+    });
+    const now = nowIso(), closeAt = body.close_at || body.due_at || '2026-11-30T23:59:59+07:00', actorId = request.auth!.user.id;
+    const createdList = await Promise.all(resolvedEmps.map((emp) => ctx.db.testAssignments.insert({ test_id: test.id, employee_id: emp.id, branch_id: emp.branch_id, open_at: now, close_at: closeAt, assigned_by: actorId, status: 'ASSIGNED', max_attempts: body.max_attempts ?? test.max_attempts, attempts_used: 0, best_score_percent: 0, passed: false, note: body.note ?? '' }, actorId)));
+    createdList.forEach((created, i) => queueTestAssignedEmail(ctx, { empId: resolvedEmps[i]!.id, testTitle: test.title, durationMinutes: test.duration_minutes, passScore: test.pass_percent, code: `ASG-${created.id.slice(0, 6)}` }));
+    return reply.code(201), sendSuccess(request, `Đã giao bài kiểm tra nghiệp vụ cho ${empIds.length} nhân sự thành công`, createdList[0] ?? null);
   });
 
   app.put('/api/admin/tests/assignments/:id', { preHandler: requirePermission('test.manage') }, async (request) => {
