@@ -22,7 +22,7 @@ import { BRAND } from './theme';
 
 const MOBILE_TABS = [
   { href: '/nv', label: 'Trang chủ', icon: <HomeOutlined /> },
-  { href: '/nv/lich', label: 'Lịch & OFF', icon: <CalendarOutlined /> },
+  { href: '/nv/lich', label: 'Lịch làm', icon: <CalendarOutlined /> },
   { href: '/nv/diem-danh', label: 'Điểm danh', icon: <EnvironmentOutlined />, primary: true },
   { href: '/nv/doi-ca', label: 'Đổi ca', icon: <SwapOutlined /> },
 ];

@@ -39,7 +39,7 @@ interface MyAttendanceData {
 }
 
 const SECTIONS: Record<string, string> = {
-  lich: 'Lịch làm việc & Đăng ký nghỉ phép / Đổi ca', 'nghi-phep': 'Đăng ký Nghỉ phép OFF & Báo nghỉ khẩn cấp',
+  lich: 'Lịch làm việc & Đăng ký ca của bạn', 'nghi-phep': 'Đăng ký Nghỉ phép OFF & Báo nghỉ khẩn cấp',
   'doi-ca': 'Yêu cầu Đổi ca nội bộ (Quy trình 3 bước)', 'diem-danh': 'Điểm danh GPS & Camera trực tiếp của bạn',
   cong: 'Bảng công cá nhân & Phiếu bổ sung công', 'bai-kiem-tra': 'Bài kiểm tra Nghiệp vụ (TEST)',
   'ban-tin': 'Bản tin Nội bộ & Chính sách Quy định Công ty', 'thong-bao': 'Trung tâm Thông báo & Hộp thư Cá nhân', them: 'Tiện ích mở rộng của bạn',
@@ -100,7 +100,8 @@ export default function EmployeeSection() {
   const refreshSection = () => ['my-attendance', 'schedules', 'nv-swaps', 'nv-tests', 'nv-comms', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const isRefreshing = myQ.isFetching || testsQ.isFetching || commsQ.isFetching;
   const isSchedSection = section === 'lich' || section === 'nghi-phep' || section === 'doi-ca';
-  const schedCenter = <EmployeeScheduleAndLeaveCenter todayDate={todayDate} empId={empId} empCode={empCode} stage={myQ.data?.profile.stage} initialTab={section === 'nghi-phep' ? 'leaves' : section === 'doi-ca' ? 'swaps' : 'shifts'} shifts={publishedShifts} leaves={myQ.data?.leaves ?? []} emergencyLeaves={myQ.data?.emergencyLeaves ?? []} swaps={mySwaps} branchPeers={myQ.data?.branchPeers ?? []} refreshing={myQ.isFetching} onRefresh={refreshSection} />;
+  const schedMode = section === 'nghi-phep' ? 'leaves' : section === 'doi-ca' ? 'swaps' : 'shifts';
+  const schedCenter = <EmployeeScheduleAndLeaveCenter todayDate={todayDate} empId={empId} empCode={empCode} stage={myQ.data?.profile.stage} mode={schedMode} initialTab={schedMode} shifts={publishedShifts} leaves={myQ.data?.leaves ?? []} emergencyLeaves={myQ.data?.emergencyLeaves ?? []} swaps={mySwaps} branchPeers={myQ.data?.branchPeers ?? []} refreshing={myQ.isFetching} onRefresh={refreshSection} />;
 
   return (
     <div style={{ padding: isDesktop ? 0 : '8px 6px', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
@@ -203,11 +204,6 @@ export default function EmployeeSection() {
           </Row>
         )}
       </Card>
-      {section === 'diem-danh' && (
-        <Card size="small" title="Lịch làm việc, Đăng ký Nghỉ OFF & Đổi ca nội bộ của bạn" style={{ marginBottom: 12 }}>
-          {schedCenter}
-        </Card>
-      )}
 
       <AttendanceCameraModal open={Boolean(cameraModalKind)} kind={cameraModalKind ?? 'CHECK_IN'} shift={activeShift} loading={postMut.isPending} onClose={() => setCameraModalKind(null)} onConfirm={(payload) => postMut.mutate({ url: '/attendance/check', body: payload })} />
       <AttendanceEventDetailModal event={detailEvent} onClose={() => setDetailEvent(null)} />

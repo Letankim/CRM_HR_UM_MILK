@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Alert, App, Button, Card, Col, Flex, Row, Select, Space, Tabs, Tag, Tooltip, Typography } from 'antd';
 import {
-  CameraOutlined, ClockCircleOutlined, DownloadOutlined, EnvironmentOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined,
+  CalendarOutlined, CameraOutlined, ClockCircleOutlined, DownloadOutlined, EnvironmentOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -146,14 +146,6 @@ export default function MyAttendancePage() {
         )}
       </Card>
 
-      <Card size="small" title="Lịch làm việc, Đăng ký Nghỉ OFF & Đổi ca nội bộ của bạn">
-        <EmployeeScheduleAndLeaveCenter
-          todayDate={todayDate} empId={profile?.employeeId || ''} empCode={profile?.employeeCode || ''} stage={profile?.stage}
-          shifts={shifts} leaves={leaves} emergencyLeaves={myQ.data?.emergencyLeaves ?? []} swaps={myQ.data?.swaps ?? []} branchPeers={myQ.data?.branchPeers ?? []}
-          refreshing={myQ.isFetching} onRefresh={refreshAll}
-        />
-      </Card>
-
       <Card size="small">
         <Tabs
           tabBarExtraContent={<Button size="small" icon={<ReloadOutlined />} loading={myQ.isFetching} onClick={refreshAll}>Làm mới</Button>}
@@ -195,6 +187,17 @@ export default function MyAttendancePage() {
                     ]}
                   />
                 </>
+              ),
+            },
+            {
+              key: 'my-schedule',
+              label: <span><CalendarOutlined /> Lịch cá nhân, Nghỉ OFF &amp; Đổi ca ({shifts.length})</span>,
+              children: (
+                <EmployeeScheduleAndLeaveCenter
+                  todayDate={todayDate} empId={profile?.employeeId || ''} empCode={profile?.employeeCode || ''} stage={profile?.stage}
+                  shifts={shifts} leaves={leaves} emergencyLeaves={myQ.data?.emergencyLeaves ?? []} swaps={myQ.data?.swaps ?? []} branchPeers={myQ.data?.branchPeers ?? []}
+                  refreshing={myQ.isFetching} onRefresh={refreshAll}
+                />
               ),
             },
           ]}

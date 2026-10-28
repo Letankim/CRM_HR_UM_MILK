@@ -16,7 +16,6 @@ import { api } from '@/lib/api';
 import { useLogout, useMe } from '@/lib/auth';
 import { StatusTag } from '@/ui/StatusTag';
 import { BRAND } from '@/ui/theme';
-import { EmployeeScheduleAndLeaveCenter } from '@/ui/components/EmployeeScheduleAndLeaveCenter';
 import { UserProfileModal } from '@/ui/components/UserProfileModal';
 
 interface MyAttendanceData {
@@ -148,18 +147,6 @@ export default function EmployeeHome() {
     </Card>
   );
 
-  const refreshHome = () => ['my-attendance', 'nv-swaps', 'nv-tests', 'nv-comms'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-  const scheduleCenterCard = (
-    <Card size="small" title="Lịch làm việc, Đăng ký Nghỉ OFF & Đổi ca nội bộ của bạn" style={{ marginTop: 12, marginBottom: isDesktop ? 0 : 12 }}>
-      <EmployeeScheduleAndLeaveCenter
-        todayDate={todayDate} empId={empId} empCode={empCode} stage={myQ.data?.profile.stage}
-        shifts={displayShifts} leaves={myLeaves} emergencyLeaves={myQ.data?.emergencyLeaves ?? []}
-        swaps={myQ.data?.swaps ?? []} branchPeers={myQ.data?.branchPeers ?? []}
-        refreshing={myQ.isFetching} onRefresh={refreshHome}
-      />
-    </Card>
-  );
-
   if (isDesktop) {
     return (
       <Row gutter={[16, 16]}>
@@ -176,7 +163,7 @@ export default function EmployeeHome() {
               <Col span={8} key={btn.href}><Link href={btn.href} style={{ display: 'block' }}><Button type={btn.primary ? 'primary' : 'default'} icon={btn.icon} block style={{ height: 40, justifyContent: 'flex-start', fontWeight: 600 }}>{btn.label}</Button></Link></Col>
             ))}
           </Row>
-          {shiftsCard}{scheduleCenterCard}
+          {shiftsCard}
         </Col>
         <Col xs={24} lg={8}><Space direction="vertical" size={12} style={{ width: '100%' }}>{summaryCard}{probationCard}{tasksCard}</Space></Col>
       </Row>
@@ -211,7 +198,7 @@ export default function EmployeeHome() {
           <Col span={12} key={btn.href}><Link href={btn.href} style={{ display: 'block' }}><Button type={btn.primary ? 'primary' : 'default'} icon={btn.icon} block style={{ height: 40, justifyContent: 'flex-start', fontWeight: 600 }}>{btn.label}</Button></Link></Col>
         ))}
       </Row>
-      {shiftsCard}{scheduleCenterCard}{tasksCard}
+      {shiftsCard}{tasksCard}
       <UserProfileModal open={profileTab !== null} initialTab={profileTab ?? 'info'} onClose={() => setProfileTab(null)} />
     </div>
   );

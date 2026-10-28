@@ -24,8 +24,7 @@ import { buildPortalShiftsBulkActions, exportEmergencyExcel, exportLeavesExcel, 
 type ScheduleViewMode = 'WEEK_MATRIX' | 'CALENDAR' | 'TABLE';
 
 export interface EmployeeScheduleAndLeaveCenterProps {
-  todayDate: string; empId: string; empCode: string; stage?: string;
-  initialTab?: 'shifts' | 'leaves' | 'swaps';
+  todayDate: string; empId: string; empCode: string; stage?: string; mode?: 'all' | 'shifts' | 'leaves' | 'swaps'; initialTab?: 'shifts' | 'leaves' | 'swaps';
   shifts: Record<string, unknown>[]; leaves: Record<string, unknown>[]; emergencyLeaves?: Record<string, unknown>[]; swaps: Record<string, unknown>[];
   branchPeers: { id: string; employeeCode: string; fullName: string; positionTitle?: string; branchName?: string; busyShiftsByDate?: Record<string, string> }[];
   refreshing?: boolean; onRefresh: () => void;
@@ -35,7 +34,7 @@ const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace
 const fmtShiftTime = (r: Record<string, unknown>) => `${String(r.startAt || r.start_at || '07:00')} – ${String(r.endAt || r.end_at || '12:00')}${r.scheduledHours || r.scheduled_hours ? ` (${r.scheduledHours || r.scheduled_hours}h)` : ''}`;
 
 export function EmployeeScheduleAndLeaveCenter({
-  todayDate, empId, empCode, stage, initialTab = 'shifts', shifts, leaves, emergencyLeaves = [], swaps, branchPeers, refreshing = false, onRefresh,
+  todayDate, empId, empCode, stage, mode = 'all', initialTab = 'shifts', shifts, leaves, emergencyLeaves = [], swaps, branchPeers, refreshing = false, onRefresh,
 }: EmployeeScheduleAndLeaveCenterProps) {
   const { message } = App.useApp();
   const [activeTab, setActiveTab] = useState<'shifts' | 'leaves' | 'swaps'>(initialTab);
@@ -62,18 +61,19 @@ export function EmployeeScheduleAndLeaveCenter({
 
   const usedOffCount = leaves.filter((l) => l.status !== 'REJECTED' && l.status !== 'CANCELLED').length;
   const offQuotaLimit = stage === 'PROBATION' ? SYSTEM_CONFIG.defaults.probationOffDays : 4;
+  const effectiveTab = mode === 'all' ? activeTab : mode;
 
   return (
     <>
       <Tabs
-        activeKey={activeTab}
+        activeKey={effectiveTab}
         onChange={(k) => setActiveTab(k as 'shifts' | 'leaves' | 'swaps')}
         tabBarExtraContent={
           <Space size={6} wrap>
             <Button size="small" icon={<ReloadOutlined />} loading={refreshing} onClick={onRefresh}>Làm mới</Button>
-            <Button size="small" icon={<PlusOutlined />} onClick={() => setAddShiftOpen(true)}>Đăng ký ca</Button>
-            <Button size="small" icon={<SwapOutlined />} onClick={() => setSwapOpen(true)}>Đổi ca</Button>
-            <Button size="small" type="primary" icon={<CalendarOutlined />} onClick={() => setLeaveOpen(true)}>Đăng ký nghỉ OFF</Button>
+            {(mode === 'all' || mode === 'shifts') && <Button size="small" type={mode === 'shifts' ? 'primary' : 'default'} icon={<PlusOutlined />} onClick={() => setAddShiftOpen(true)}>Đăng ký ca</Button>}
+            {(mode === 'all' || mode === 'swaps') && <Button size="small" type={mode === 'swaps' ? 'primary' : 'default'} icon={<SwapOutlined />} onClick={() => setSwapOpen(true)}>{mode === 'swaps' ? 'Tạo yêu cầu đổi ca' : 'Đổi ca'}</Button>}
+            {(mode === 'all' || mode === 'leaves') && <Button size="small" type="primary" icon={<CalendarOutlined />} onClick={() => setLeaveOpen(true)}>Đăng ký nghỉ OFF</Button>}
           </Space>
         }
         items={[
@@ -207,7 +207,7 @@ export function EmployeeScheduleAndLeaveCenter({
               </Space>
             ),
           },
-        ]}
+        ].filter((it) => mode === 'all' || it.key === mode)}
       />
 
       <ScheduleRequestDetailModal target={detailTarget} onClose={() => setDetailTarget(null)} />
