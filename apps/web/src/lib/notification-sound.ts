@@ -5,12 +5,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export const NOTIFICATION_SOUND_STORAGE_KEY = 'umbm_notification_sound_enabled';
 const SOUND_CHANGE_EVENT = 'umbm:notification-sound-change';
 const SOUND_SRC = '/thong_bao.mp3';
-const AUTO_CHIME_COOLDOWN_MS = 1200;
+const AUTO_CHIME_COOLDOWN_MS = 1500;
 
 let sharedAudio: HTMLAudioElement | null = null;
-let audioUnlocked = false;
-let unlockListenersAttached = false;
 let lastPlayedAt = 0;
+const sessionBaselineUsers = new Set<string>();
 
 function getAudioInstance(): HTMLAudioElement | null {
   if (typeof window === 'undefined') return null;
@@ -19,37 +18,6 @@ function getAudioInstance(): HTMLAudioElement | null {
     sharedAudio.preload = 'auto';
   }
   return sharedAudio;
-}
-
-function ensureAudioUnlockListeners(): void {
-  if (typeof window === 'undefined' || unlockListenersAttached) return;
-  unlockListenersAttached = true;
-
-  const unlock = () => {
-    if (audioUnlocked) return;
-    const audio = getAudioInstance();
-    if (!audio) return;
-    const prevVolume = audio.volume;
-    audio.volume = 0;
-    const p = audio.play();
-    if (p !== undefined) {
-      p.then(() => {
-        audio.pause();
-        audio.currentTime = 0;
-        audio.volume = prevVolume || 1;
-        audioUnlocked = true;
-      }).catch(() => {
-        audio.volume = prevVolume || 1;
-      });
-    }
-    window.removeEventListener('pointerdown', unlock);
-    window.removeEventListener('keydown', unlock);
-    window.removeEventListener('touchstart', unlock);
-  };
-
-  window.addEventListener('pointerdown', unlock, { passive: true });
-  window.addEventListener('keydown', unlock, { passive: true });
-  window.addEventListener('touchstart', unlock, { passive: true });
 }
 
 export function getNotificationSoundEnabled(): boolean {
@@ -105,7 +73,6 @@ export function useNotificationSound() {
   const [soundEnabled, setSoundEnabledState] = useState<boolean>(true);
 
   useEffect(() => {
-    ensureAudioUnlockListeners();
     setSoundEnabledState(getNotificationSoundEnabled());
 
     const onCustomChange = (e: Event) => {
@@ -143,43 +110,43 @@ export function useNotificationSound() {
 }
 
 export function useTrackUnreadNotifications(userId: string | undefined, unreadKeys: string[], ready: boolean): void {
-  const initializedRef = useRef(false);
-
-  useEffect(() => {
-    ensureAudioUnlockListeners();
-  }, []);
+  const initializedUserRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!userId || !ready || typeof window === 'undefined') return;
     const storageKey = `umbm_seen_notifs_${userId}`;
     let seenSet = new Set<string>();
-    let hadStored = false;
     try {
-      const raw = window.sessionStorage.getItem(storageKey);
+      const raw = window.localStorage.getItem(storageKey) || window.sessionStorage.getItem(storageKey);
       if (raw) {
-        hadStored = true;
         seenSet = new Set(JSON.parse(raw) as string[]);
       }
     } catch {
       seenSet = new Set<string>();
     }
 
-    if (!initializedRef.current && !hadStored) {
-      initializedRef.current = true;
-      unreadKeys.forEach((k) => seenSet.add(k));
+    const persistSeen = () => {
+      const serialized = JSON.stringify(Array.from(seenSet).slice(-400));
       try {
-        window.sessionStorage.setItem(storageKey, JSON.stringify(Array.from(seenSet).slice(-250)));
+        window.localStorage.setItem(storageKey, serialized);
+        window.sessionStorage.setItem(storageKey, serialized);
       } catch {}
+    };
+
+    // Khi vừa tải trang / reload (F5) hoặc lần đầu mount, chỉ ghi nhận danh sách thông báo hiện có làm mốc chuẩn,
+    // tuyệt đối không tự phát chuông cho các thông báo cũ đã có sẵn trước khi tải trang.
+    if (initializedUserRef.current !== userId || !sessionBaselineUsers.has(userId)) {
+      initializedUserRef.current = userId;
+      sessionBaselineUsers.add(userId);
+      unreadKeys.forEach((k) => seenSet.add(k));
+      persistSeen();
       return;
     }
 
-    initializedRef.current = true;
     const newKeys = unreadKeys.filter((k) => !seenSet.has(k));
     if (newKeys.length > 0) {
       newKeys.forEach((k) => seenSet.add(k));
-      try {
-        window.sessionStorage.setItem(storageKey, JSON.stringify(Array.from(seenSet).slice(-250)));
-      } catch {}
+      persistSeen();
       playNotificationSound();
     }
   }, [userId, unreadKeys, ready]);

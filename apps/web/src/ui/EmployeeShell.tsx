@@ -72,7 +72,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   const unreadNotifCount = notifItems.filter((n) => n.readStatus === 'UNREAD').length;
   const { soundEnabled, setSoundEnabled, toggleSound, playTestSound } = useNotificationSound();
   const unreadKeys = useMemo(() => notifItems.filter((n) => n.readStatus === 'UNREAD').map((n) => `ntf:${n.id}`), [notifItems]);
-  useTrackUnreadNotifications(data?.user.id, unreadKeys, !notifsQ.isLoading);
+  useTrackUnreadNotifications(data?.user.id, unreadKeys, notifsQ.isSuccess);
   useRealtime('employee', !!data, data?.socketToken);
 
   useEffect(() => {

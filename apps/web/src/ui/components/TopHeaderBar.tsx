@@ -53,7 +53,8 @@ export function TopHeaderBar({
     () => [...pendingItems.map((p) => `acc:${p.id}`), ...notifItems.filter((n) => n.readStatus === 'UNREAD').map((n) => `ntf:${n.id}`)],
     [pendingItems, notifItems],
   );
-  useTrackUnreadNotifications(user.id, unreadKeys, !notifsQ.isLoading);
+  const canActivate = can('account.activate');
+  useTrackUnreadNotifications(user.id, unreadKeys, notifsQ.isSuccess && (!canActivate || pendingAccounts.isSuccess));
 
   const handleLogout = async () => {
     setLoggingOut(true);
