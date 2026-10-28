@@ -114,14 +114,13 @@ describe('Kích hoạt, Thu hồi (FLOW-01), Saga & Đối soát toàn vẹn d�
     expect(recRes.statusCode).toBe(200);
     expect(recRes.json().data.status).toBe('ok');
 
-    const mailRes = await app.inject({
-      method: 'GET',
-      url: '/api/admin/integrations/email-templates?template=PAYSLIP_PUBLISHED',
-      headers: { cookie: admin.cookie },
-    });
+    const mailRes = await app.inject({ method: 'GET', url: '/api/admin/integrations/email-templates?template=PAYSLIP_PUBLISHED', headers: { cookie: admin.cookie } });
     expect(mailRes.statusCode).toBe(200);
     expect(mailRes.json().data.preview.html).toContain('ỤM BÒ MILK');
-    expect(mailRes.json().data.templates.length).toBe(6);
+    expect(mailRes.json().data.templates.length).toBe(11);
+    expect(mailRes.json().data.queueStats.batchSize).toBe(3);
+    const flushRes = await app.inject({ method: 'POST', url: '/api/admin/integrations/email-queue/flush', headers: { cookie: admin.cookie, 'x-umbm-client': 'web' }, payload: {} });
+    expect(flushRes.statusCode).toBe(200);
   });
 
   it('Hỗ trợ làm mới dữ liệu trực tiếp (?refresh=1) và thao tác hàng loạt (bulk-action: ACTIVATE, UNLOCK, REVOKE)', async () => {

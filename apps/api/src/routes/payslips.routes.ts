@@ -8,6 +8,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { queuePayslipPublishedEmails } from '../services/action-email-dispatcher.js';
 import { buildPayslipPayload, mapPayslip } from '../services/payslip.service.js';
 
 const zRevisionBody = z.object({
@@ -82,6 +83,7 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
       resultSelector: (s) => s.newSlip!,
     });
     await ctx.audit.record(auditContext(request), { action: 'payslip.revision', entity: 'PAYSLIPS', entityId: result.id, before: { payslip_code: slip.payslip_code, net_vnd: slip.net_vnd }, after: { payslip_code: result.payslip_code, net_vnd: result.net_vnd, reason: body.reason } });
+    queuePayslipPublishedEmails(ctx, period, [result]);
     reply.code(201);
     return sendSuccess(request, `Đã tạo phiếu lương điều chỉnh lần ${nextRevision} (phiếu gốc được giữ nguyên để truy vết)`, mapPayslip(result));
   });

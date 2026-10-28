@@ -94,77 +94,49 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext) {
       const status = values.includes('down') ? 'down' : values.includes('degraded') ? 'degraded' : 'ok';
 
       return sendSuccess(request, 'Lấy trạng thái tích hợp và đồng bộ thành công', {
-        status,
-        version: ctx.version,
-        time: nowIso(),
-        checks,
-        data: {
-          ...stats,
-          recentSagas,
-          recentEmails: ctx.email.recent().slice(0, 10),
-        },
+        status, version: ctx.version, time: nowIso(), checks,
+        data: { ...stats, recentSagas, recentEmails: ctx.email.recent(15), emailQueueStats: ctx.email.queueStats() },
       });
     },
   );
 
   /** Quét kiểm tra toàn vẹn dữ liệu trên Google Sheets (tự động sửa các lệch khóa/trùng lặp an toàn). */
-  app.get(
-    '/api/admin/integrations/reconcile',
-    { preHandler: requirePermission('integration.read') },
-    async (request) => {
-      const actorId = request.auth?.user.id ?? 'auto-reconcile';
-      const report = await ctx.reconciliation.scanAndRepair({ autoFix: true, actorId });
-      return sendSuccess(request, 'Kiểm tra đối soát toàn vẹn dữ liệu thành công', report);
-    },
-  );
+  app.get('/api/admin/integrations/reconcile', { preHandler: requirePermission('integration.read') }, async (request) => {
+    const actorId = request.auth?.user.id ?? 'auto-reconcile';
+    const report = await ctx.reconciliation.scanAndRepair({ autoFix: true, actorId });
+    return sendSuccess(request, 'Kiểm tra đối soát toàn vẹn dữ liệu thành công', report);
+  });
 
   /** Thực thi đối soát và tự động sửa các bất biến an toàn. */
-  app.post(
-    '/api/admin/integrations/reconcile',
-    { preHandler: requirePermission('integration.read') },
-    async (request) => {
-      const actorId = request.auth!.user.id;
-      await Promise.all([
-        ctx.db.users.refreshIfIdle(),
-        ctx.db.employees.refreshIfIdle(),
-        ctx.db.branches.refreshIfIdle(),
-        ctx.db.payRates.refreshIfIdle(),
-        ctx.db.deadLetters.refreshIfIdle(),
-        ctx.db.operationJournal.refreshIfIdle(),
-      ]);
-      const report = await ctx.reconciliation.scanAndRepair({ autoFix: true, actorId });
-      await ctx.audit.record(auditContext(request), {
-        action: 'system.reconcile',
-        entity: 'SYSTEM',
-        entityId: 'reconcile',
-        after: report.summary,
-      });
-      return sendSuccess(
-        request,
-        `Hoàn tất đối soát dữ liệu: phát hiện ${report.summary.issuesFound} điểm lệch, đã tự động sửa ${report.summary.autoRepaired} mục`,
-        report,
-      );
-    },
-  );
+  app.post('/api/admin/integrations/reconcile', { preHandler: requirePermission('integration.read') }, async (request) => {
+    const actorId = request.auth!.user.id;
+    await Promise.all([ctx.db.users.refreshIfIdle(), ctx.db.employees.refreshIfIdle(), ctx.db.branches.refreshIfIdle(), ctx.db.payRates.refreshIfIdle(), ctx.db.deadLetters.refreshIfIdle(), ctx.db.operationJournal.refreshIfIdle()]);
+    const report = await ctx.reconciliation.scanAndRepair({ autoFix: true, actorId });
+    await ctx.audit.record(auditContext(request), { action: 'system.reconcile', entity: 'SYSTEM', entityId: 'reconcile', after: report.summary });
+    const actorUser = request.auth!.user;
+    ctx.email.enqueue({ to: actorUser.email || `${actorUser.username}@umbomilk.vn`, template: 'SYSTEM_RECONCILIATION_REPORT', recipientName: actorUser.display_name, referenceCode: `REC-${nowIso().slice(0, 10)}`, summary: `Báo cáo đối soát toàn vẹn dữ liệu: Quét ${report.summary.tablesScanned} bảng (${report.summary.rowsScanned} bản ghi), phát hiện ${report.summary.issuesFound} điểm lệch, đã tự động sửa ${report.summary.autoRepaired} mục.`, metadata: [{ label: 'Số bảng / dòng đã quét', value: `${report.summary.tablesScanned} bảng (${report.summary.rowsScanned} dòng)` }, { label: 'Điểm lệch / Tự động sửa', value: `${report.summary.issuesFound} phát hiện / ${report.summary.autoRepaired} đã sửa` }, { label: 'Trạng thái toàn vẹn', value: report.status === 'ok' ? 'Đạt chuẩn 100%' : 'Cần kiểm tra' }] });
+    return sendSuccess(request, `Hoàn tất đối soát dữ liệu: phát hiện ${report.summary.issuesFound} điểm lệch, đã tự động sửa ${report.summary.autoRepaired} mục`, report);
+  });
 
-  /** Xem trước mẫu Email doanh nghiệp. */
-  app.get(
-    '/api/admin/integrations/email-templates',
-    { preHandler: requirePermission('integration.read') },
-    async (request) => {
-      const query = zPreviewQuery.parse(request.query);
-      const preview = ctx.email.previewTemplate(query.template, ctx.env.API_PUBLIC_ORIGIN);
-      const templates = EMAIL_TEMPLATE_CODES.map((code) => ({
-        code,
-        label: EMAIL_TEMPLATE_LABELS[code],
-      }));
-      return sendSuccess(request, 'Lấy mẫu thông báo email doanh nghiệp thành công', {
-        templates,
-        preview,
-        recentEmails: ctx.email.recent().slice(0, 15),
-      });
-    },
-  );
+  /** Xem trước mẫu Email doanh nghiệp & Hàng đợi gửi Email. */
+  app.get('/api/admin/integrations/email-templates', { preHandler: requirePermission('integration.read') }, async (request) => {
+    const query = zPreviewQuery.parse(request.query);
+    const preview = ctx.email.previewTemplate(query.template, ctx.env.API_PUBLIC_ORIGIN);
+    const templates = EMAIL_TEMPLATE_CODES.map((code) => ({ code, label: EMAIL_TEMPLATE_LABELS[code] }));
+    return sendSuccess(request, 'Lấy mẫu thông báo email doanh nghiệp thành công', {
+      templates, preview, recentEmails: ctx.email.recent(20), queueStats: ctx.email.queueStats(),
+    });
+  });
+
+  /** Quét & gửi ngay lô tiếp theo trong hàng đợi Email (Anti-Spam Batch Flush). */
+  app.post('/api/admin/integrations/email-queue/flush', { preHandler: requirePermission('integration.read', 'notification.send') }, async (request) => {
+    const retryRes = await ctx.email.retryFailed();
+    const batchRes = await ctx.email.processQueueBatch(5);
+    const stats = ctx.email.queueStats();
+    return sendSuccess(request, `Đã quét hàng đợi Email: xử lý ${retryRes.processed + batchRes.processed} thư, còn ${stats.queuedCount} thư đang chờ`, {
+      processed: retryRes.processed + batchRes.processed, queueStats: stats, recentEmails: ctx.email.recent(20),
+    });
+  });
 
   /** Gửi thử hoặc gửi thông báo Email doanh nghiệp trực tiếp từ giao diện Quản trị. */
   app.post(

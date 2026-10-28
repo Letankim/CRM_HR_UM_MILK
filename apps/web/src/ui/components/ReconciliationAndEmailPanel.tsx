@@ -22,13 +22,20 @@ interface ReconciliationReport {
 }
 
 interface EmailLogItem {
-  id: string; to: string; subject: string; template: EmailTemplateCode; status: 'SENT' | 'QUEUED_MEMORY' | 'DRY_RUN' | 'FAILED'; sentAt: string;
+  id: string; to: string; recipientName?: string; referenceCode?: string; subject: string;
+  template: EmailTemplateCode; templateLabel?: string; attempts?: number;
+  status: 'QUEUED' | 'SENT' | 'QUEUED_MEMORY' | 'DRY_RUN' | 'FAILED'; queuedAt?: string; sentAt: string; error?: string;
+}
+
+interface EmailQueueStats {
+  queuedCount: number; sentCount: number; failedCount: number; totalCount: number; batchSize: number; intervalSeconds: number; processing: boolean;
 }
 
 interface EmailTemplateResponse {
   templates: { code: EmailTemplateCode; label: string }[];
   preview: { template: EmailTemplateCode; label: string; subject: string; html: string };
   recentEmails?: EmailLogItem[];
+  queueStats?: EmailQueueStats;
 }
 
 export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'email' }) {
@@ -64,12 +71,7 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
   });
 
   const sendEmailMut = useMutation({
-    mutationFn: () =>
-      api.post('/admin/integrations/send-test-email', {
-        to: recipientEmail,
-        recipient_name: recipientName,
-        template: selectedTemplate,
-      }),
+    mutationFn: () => api.post('/admin/integrations/send-test-email', { to: recipientEmail, recipient_name: recipientName, template: selectedTemplate }),
     onSuccess: () => {
       message.success(`Đã gửi email mẫu "${EMAIL_TEMPLATE_LABELS[selectedTemplate]}" tới ${recipientEmail}`);
       qc.invalidateQueries({ queryKey: ['integrations', 'email-templates'] });
@@ -77,9 +79,19 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Gửi email thất bại'),
   });
 
+  const flushQueueMut = useMutation({
+    mutationFn: () => api.post<{ processed: number; queueStats: EmailQueueStats }>('/admin/integrations/email-queue/flush', {}),
+    onSuccess: (res) => {
+      message.success(`Đã quét hàng đợi Email: xử lý ${res.processed} thư, còn ${res.queueStats.queuedCount} thư đang chờ`);
+      qc.invalidateQueries({ queryKey: ['integrations', 'email-templates'] });
+    },
+    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Quét hàng đợi thất bại'),
+  });
+
   const report = reconcileQuery.data;
   const preview = emailPreviewQuery.data?.preview;
   const recentEmails = emailPreviewQuery.data?.recentEmails ?? [];
+  const qStats = emailPreviewQuery.data?.queueStats;
 
   const reconcilePane = (
     <Card
@@ -106,29 +118,11 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="100% bản ghi đạt chuẩn liên kết dữ liệu, không trùng lặp và đồng bộ trạng thái" />
               ) : (
                 <Table<ReconciliationIssue>
-                  size="small"
-                  rowKey="id"
-                  pagination={issuesPag}
-                  dataSource={report.issues}
+                  size="small" rowKey="id" pagination={issuesPag} dataSource={report.issues}
                   columns={[
                     { title: 'Bảng dữ liệu', dataIndex: 'table', width: 240, render: (v: string) => <Typography.Text strong>{TABLE_DISPLAY_LABELS[v] ?? v}</Typography.Text> },
-                    {
-                      title: 'Chi tiết kiểm tra',
-                      dataIndex: 'message',
-                      render: (v: string, r) => (
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 600 }}>{r.label}</div>
-                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{v}</Typography.Text>
-                        </div>
-                      ),
-                    },
-                    {
-                      title: 'Xử lý',
-                      dataIndex: 'autoRepaired',
-                      width: 130,
-                      align: 'right',
-                      render: (repaired: boolean) => repaired ? <Tag color="green" style={{ borderRadius: 2 }}>Đã tự sửa</Tag> : <Tag color="gold" style={{ borderRadius: 2 }}>Cần kiểm tra</Tag>,
-                    },
+                    { title: 'Chi tiết kiểm tra', dataIndex: 'message', render: (v: string, r) => <div><div style={{ fontSize: 13, fontWeight: 600 }}>{r.label}</div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{v}</Typography.Text></div> },
+                    { title: 'Xử lý', dataIndex: 'autoRepaired', width: 130, align: 'right', render: (repaired: boolean) => repaired ? <Tag color="green" style={{ borderRadius: 2 }}>Đã tự sửa</Tag> : <Tag color="gold" style={{ borderRadius: 2 }}>Cần kiểm tra</Tag> },
                   ]}
                 />
               )}
@@ -142,42 +136,54 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
   const emailPane = (
     <Card
       size="small"
-      title="Mẫu Email Doanh Nghiệp (Chuẩn Hành Chính Phẳng)"
+      title="Mẫu Email Doanh Nghiệp & Hàng Đợi Chống Nghẽn (Rate-Limited Batch Queue)"
       extra={
-        <Select
-          size="small"
-          value={selectedTemplate}
-          style={{ width: 280 }}
-          options={EMAIL_TEMPLATE_CODES.map((code) => ({ value: code, label: EMAIL_TEMPLATE_LABELS[code] }))}
-          onChange={(val) => setSelectedTemplate(val)}
-        />
+        <Space size={8} wrap>
+          <Button size="small" icon={<SyncOutlined />} loading={flushQueueMut.isPending} onClick={() => flushQueueMut.mutate()}>
+            Quét &amp; Gửi lô hàng đợi ngay
+          </Button>
+          <Select size="small" value={selectedTemplate} style={{ width: 290 }} options={EMAIL_TEMPLATE_CODES.map((code) => ({ value: code, label: EMAIL_TEMPLATE_LABELS[code] }))} onChange={(val) => setSelectedTemplate(val)} />
+        </Space>
       }
     >
       <Spin spinning={emailPreviewQuery.isLoading || emailPreviewQuery.isFetching} tip="Đang tải mẫu email...">
         <div style={{ minHeight: 200 }}>
+          {qStats && (
+            <Descriptions size="small" bordered column={4} style={{ marginBottom: 10 }}>
+              <Descriptions.Item label="Cơ chế chống Spam / Limit"><Tag color="blue" style={{ borderRadius: 2 }}>Tối đa {qStats.batchSize} thư / {qStats.intervalSeconds}s (Khử trùng 60s)</Tag></Descriptions.Item>
+              <Descriptions.Item label="Đang chờ hàng đợi"><span className="num" style={{ color: '#D97706', fontWeight: 600 }}>{qStats.queuedCount} thư</span></Descriptions.Item>
+              <Descriptions.Item label="Đã xử lý gửi"><span className="num" style={{ color: '#16A34A', fontWeight: 600 }}>{qStats.sentCount} thư</span></Descriptions.Item>
+              <Descriptions.Item label="Lỗi chờ thử lại"><span className="num" style={{ color: qStats.failedCount > 0 ? '#DC2626' : '#64748B', fontWeight: 600 }}>{qStats.failedCount} thư</span></Descriptions.Item>
+            </Descriptions>
+          )}
           {preview && (
             <div>
               <Flex gap={8} wrap="wrap" style={{ marginBottom: 10 }}>
                 <Input size="small" style={{ flex: 1, minWidth: 180 }} value={recipientName} onChange={(e) => setRecipientName(e.target.value)} placeholder="Tên người nhận" />
                 <Input size="small" style={{ flex: 1, minWidth: 220 }} value={recipientEmail} onChange={(e) => setRecipientEmail(e.target.value)} placeholder="Email người nhận" />
                 <Button size="small" type="primary" icon={<SendOutlined />} loading={sendEmailMut.isPending} onClick={() => sendEmailMut.mutate()}>
-                  Gửi Email này
+                  Gửi Email mẫu này
                 </Button>
               </Flex>
               <Flex justify="space-between" align="center" style={{ marginBottom: 8 }}>
                 <Typography.Text strong style={{ fontSize: 13 }}>Tiêu đề: {preview.subject}</Typography.Text>
                 <Tag color="blue" style={{ borderRadius: 2, margin: 0 }}>{preview.label}</Tag>
               </Flex>
-              <iframe
-                title={`Xem trước email ${preview.template}`}
-                srcDoc={preview.html}
-                style={{ width: '100%', height: 320, border: '1px solid #E5E7EB', borderRadius: 2, background: '#F1F5F9' }}
+              <iframe title={`Xem trước email ${preview.template}`} srcDoc={preview.html} style={{ width: '100%', height: 290, border: '1px solid #E5E7EB', borderRadius: 2, background: '#F1F5F9', marginBottom: 12 }} />
+              <Table<EmailLogItem>
+                size="small"
+                rowKey="id"
+                pagination={{ pageSize: 5, size: 'small', hideOnSinglePage: true }}
+                dataSource={recentEmails}
+                locale={{ emptyText: 'Chưa có thư nào trong lịch sử hàng đợi Email' }}
+                columns={[
+                  { title: 'Người nhận', dataIndex: 'to', width: 210, render: (v: string, r) => <div><div style={{ fontWeight: 600, fontSize: 12 }}>{r.recipientName || 'Nhân sự'}</div><Typography.Text type="secondary" style={{ fontSize: 11 }}>{v}</Typography.Text></div> },
+                  { title: 'Loại thông báo Email', dataIndex: 'template', render: (v: EmailTemplateCode, r) => <div><div style={{ fontSize: 12, fontWeight: 500 }}>{r.templateLabel || EMAIL_TEMPLATE_LABELS[v] || v}</div><Typography.Text type="secondary" style={{ fontSize: 11 }}>Mã: {r.referenceCode || '—'}</Typography.Text></div> },
+                  { title: 'Lần thử', dataIndex: 'attempts', width: 80, align: 'center', render: (v?: number) => <span className="num">{v ?? 1}/3</span> },
+                  { title: 'Trạng thái Hàng đợi', dataIndex: 'status', width: 150, render: (s: EmailLogItem['status']) => s === 'QUEUED' ? <Tag color="gold" style={{ borderRadius: 2 }}>Đang xếp hàng đợi</Tag> : s === 'FAILED' ? <Tag color="red" style={{ borderRadius: 2 }}>Lỗi kết nối</Tag> : <Tag color="green" style={{ borderRadius: 2 }}>{s === 'SENT' ? 'Đã gửi Gmail' : 'Đã xử lý hàng đợi'}</Tag> },
+                  { title: 'Thời gian', dataIndex: 'sentAt', width: 150, render: (v: string, r) => <span className="num" style={{ fontSize: 11 }}>{(v || r.queuedAt || '').slice(0, 19).replace('T', ' ')}</span> },
+                ]}
               />
-              {recentEmails.length > 0 && (
-                <div style={{ marginTop: 10, fontSize: 12, color: '#475569' }}>
-                  <strong>Đã gửi gần nhất:</strong> {recentEmails[0]!.to} — {EMAIL_TEMPLATE_LABELS[recentEmails[0]!.template]} ({recentEmails[0]!.status === 'SENT' ? 'Đã gửi Gmail' : 'Đã ghi nhận'})
-                </div>
-              )}
             </div>
           )}
         </div>

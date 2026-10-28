@@ -8,6 +8,7 @@ import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { dayjs } from '../lib/time.js';
 import { assertBranchAccess, auditContext, requirePermission } from '../plugins/auth-context.js';
+import { queuePromotionOfficialEmail } from '../services/action-email-dispatcher.js';
 import { currentProfile, isProfileLocked, profilesOf, today } from '../services/salary-profile.service.js';
 import { assertAmountInRange, createSalaryProfile } from '../services/salary-profile.writer.js';
 import { cascadeEmployeeBranchChange, syncAccountFromEmployee } from './account-employee-sync.js';
@@ -174,6 +175,7 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
       resultSelector: (s) => s.updatedEmp!,
     });
 
+    queuePromotionOfficialEmail(ctx, promoted);
     await ctx.audit.record(auditContext(request), { action: 'employee.promote_official', entity: 'EMPLOYEES', entityId: id, before: { employee_code: before.employee_code, stage: before.stage, official_from: before.official_from }, after: { employee_code: promoted.employee_code, stage: promoted.stage, official_from: promoted.official_from, probation_start: promoted.probation_start, probation_end: promoted.probation_end } });
     return sendSuccess(request, `Đã chuyển chính thức cho nhân sự ${promoted.full_name} (${promoted.employee_code}) từ ngày ${effectiveDate}`, mapEmployeeRecord(promoted, ctx));
   });
@@ -193,6 +195,7 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
       const updated = await ctx.db.employees.update(emp.id, emp.version, { stage: 'OFFICIAL', official_from: effectiveDate }, actorId);
       const u = emp.user_id ? ctx.db.users.get(emp.user_id) : undefined;
       if (u && u.role === 'THU_VIEC') await ctx.db.users.update(u.id, u.version, { role: 'CHINH_THUC' }, actorId);
+      queuePromotionOfficialEmail(ctx, updated);
       processed.push(updated.id);
     }
 

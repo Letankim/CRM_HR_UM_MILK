@@ -2,6 +2,7 @@ import type { PayPeriod, Payslip, PayrollSnapshot } from '@umbm/shared';
 import { PAYSLIP_STATUS_LABELS, EMPLOYEE_STAGE_LABELS } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { nowIso } from '../lib/time.js';
+import { queuePayslipPublishedEmails } from './action-email-dispatcher.js';
 import { mapSnapshot } from './payroll-snapshot.service.js';
 
 /** Sinh Phiếu lương (PAYSLIPS) bản số 1 từ Snapshot khi kỳ lương chuyển sang PUBLISHED */
@@ -12,6 +13,7 @@ export async function generatePayslips(ctx: AppContext, period: PayPeriod, actor
     if (ctx.db.payslips.find((p) => p.period_id === period.id && p.employee_id === s.employee_id)) continue;
     created.push(await ctx.db.payslips.insert(buildPayslipPayload(ctx, period, s, 1, s.net_vnd, s.gross_vnd), actorId));
   }
+  queuePayslipPublishedEmails(ctx, period, created);
   return created;
 }
 

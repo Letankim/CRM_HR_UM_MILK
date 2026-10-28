@@ -8,6 +8,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { queueInterviewEmails } from '../services/action-email-dispatcher.js';
 import { resolveStaffGroupLabel } from './employee-mapper.js';
 
 const LEGACY_INTERVIEWER_MAP: Record<string, { role: Role; label: string }> = {
@@ -149,6 +150,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       title: `Lịch phỏng vấn mới: ${cand.full_name} (${cand.candidate_code})`,
       body: `Bạn được đính kèm tham gia phỏng vấn ứng viên ${cand.full_name} vào lúc ${slotLocal} (${body.duration_minutes} phút). Link họp: ${meetLink}`,
     });
+    queueInterviewEmails(ctx, { candidate: cand, interview: created });
     await ctx.audit.record(auditContext(request), { action: 'interview.create', entity: 'INTERVIEWS', entityId: created.id, after: { candidate_id: created.candidate_id, start_at: created.start_at, interviewers: rawInterviewers, notified_users: notifiedUsers } });
     reply.code(201);
     return sendSuccess(request, 'Đã đặt lịch phỏng vấn và gửi thông báo tới tất cả người tham gia phỏng vấn thành công', created);
@@ -186,6 +188,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
         title: `Cập nhật lịch phỏng vấn: ${cand?.full_name ?? before.candidate_id}${cand?.candidate_code ? ` (${cand.candidate_code})` : ''}`,
         body: `Lịch phỏng vấn ứng viên ${cand?.full_name ?? before.candidate_id} đã được chỉnh sửa sang ${slotLocal} (${nextDuration} phút)${updatedConfirm.reschedule_reason ? ` — Ghi chú: ${updatedConfirm.reschedule_reason}` : ''}. Link họp: ${nextMeet}`,
       });
+      if (cand) queueInterviewEmails(ctx, { candidate: cand, interview: updatedConfirm, isUpdate: true });
       await ctx.audit.record(auditContext(request), { action: 'interview.update_status', entity: 'INTERVIEWS', entityId: id, before: { start_at: before.start_at, interviewer_id: before.interviewer_id, status: before.status }, after: { start_at: updatedConfirm.start_at, interviewer_id: updatedConfirm.interviewer_id, status: updatedConfirm.status } });
       return sendSuccess(request, 'Đã cập nhật lịch phỏng vấn và gửi thông báo đến những người liên quan', updatedConfirm);
     }

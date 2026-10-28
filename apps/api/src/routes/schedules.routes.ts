@@ -9,6 +9,7 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll, findLockedPayrollPeriodForDate } from '../services/salary-profile.service.js';
+import { queueScheduleShiftEmail } from '../services/action-email-dispatcher.js';
 import { emitScheduleRealtime, findBranchShiftTemplate, healBranchConsistency, resolveEmployeeBranchId } from './account-employee-sync.js';
 import { describePunctuality, parseHm } from './attendance-helpers.js';
 
@@ -146,19 +147,16 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'schedule.create', entity: 'SHIFT_ASSIGNMENTS', entityId: created.id, after: { employee_id: emp.employee_code, work_date: created.work_date, shift_code: created.shift_code, status: created.status } });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId, employeeIds: [emp.id], kind: 'SHIFT_ASSIGNED', message: `Đã phân ca ngày ${created.work_date} cho ${emp.full_name}`, actorId: request.auth!.user.id });
-    reply.code(201);
-    return sendSuccess(request, 'Đã thêm phân công ca làm việc thành công', mapShiftAssignment(created, ctx));
+    if (created.status === 'PUBLISHED') queueScheduleShiftEmail(ctx, { empId: emp.id, shiftLabel: tpl?.name ?? created.shift_code, workDate: created.work_date, startAt: created.start_at, endAt: created.end_at, branchId, code: `SHF-${created.id.slice(0, 6)}` });
+    return reply.code(201), sendSuccess(request, 'Đã thêm phân công ca làm việc thành công', mapShiftAssignment(created, ctx));
   });
 
   app.put('/api/admin/schedules/:id', { preHandler: requirePermission('schedule.propose', 'schedule.publish') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const body = zUpdateScheduleBody.parse(request.body);
-    const before = ctx.db.shiftAssignments.get(id);
+    const { id } = request.params as { id: string }, body = zUpdateScheduleBody.parse(request.body), before = ctx.db.shiftAssignments.get(id);
     if (!before) throw Errors.notFound('Không tìm thấy bản ghi phân ca');
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
     assertDateNotLockedByPayroll(ctx.db, before.work_date, 'chỉnh sửa ca làm việc');
     if (body.work_date && body.work_date !== before.work_date) assertDateNotLockedByPayroll(ctx.db, body.work_date, 'chuyển ca làm việc sang ngày');
-
     const { version, ...patch } = body;
     const nextEmp = patch.employee_id ? (ctx.db.employees.get(patch.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === patch.employee_id)) : undefined;
     if (patch.employee_id && !nextEmp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy hồ sơ nhân sự được chọn', patch.employee_id);
@@ -178,6 +176,7 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'schedule.update', entity: 'SHIFT_ASSIGNMENTS', entityId: id, before: { shift_code: before.shift_code, status: before.status }, after: { shift_code: updated.shift_code, status: updated.status } });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: updated.branch_id, employeeIds: [before.employee_id, updated.employee_id], kind: before.status === 'DRAFT' && updated.status === 'PUBLISHED' ? 'SHIFT_APPROVED' : 'SHIFT_UPDATED', message: before.status === 'DRAFT' && updated.status === 'PUBLISHED' ? `Ca làm ngày ${updated.work_date} đã được duyệt phát hành chính thức` : '', actorId: request.auth!.user.id });
+    if (before.status === 'DRAFT' && updated.status === 'PUBLISHED') queueScheduleShiftEmail(ctx, { empId: updated.employee_id, shiftLabel: tpl?.name ?? updated.shift_code, workDate: updated.work_date, startAt: updated.start_at, endAt: updated.end_at, branchId: updated.branch_id, code: `SHF-${updated.id.slice(0, 6)}` });
     return sendSuccess(request, 'Cập nhật phân công ca làm việc thành công', mapShiftAssignment(updated, ctx));
   });
 

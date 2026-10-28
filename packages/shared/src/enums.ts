@@ -168,8 +168,17 @@ export const RECONCILIATION_ISSUE_LABELS: Record<ReconciliationIssueCode, string
 };
 
 export const EMAIL_TEMPLATE_CODES = [
-  'ACCOUNT_ACTIVATED', 'ACCOUNT_REVOKED', 'INTERVIEW_INVITATION',
-  'EMERGENCY_LEAVE_ALERT', 'PAYSLIP_PUBLISHED', 'SYSTEM_RECONCILIATION_REPORT',
+  'ACCOUNT_ACTIVATED',
+  'ACCOUNT_REVOKED',
+  'INTERVIEW_INVITATION',
+  'PROBATION_TO_OFFICIAL',
+  'SCHEDULE_SHIFT_DECISION',
+  'LEAVE_SWAP_DECISION',
+  'EMERGENCY_LEAVE_ALERT',
+  'TEST_ASSIGNED',
+  'PAYSLIP_PUBLISHED',
+  'INTERNAL_ANNOUNCEMENT',
+  'SYSTEM_RECONCILIATION_REPORT',
 ] as const;
 export type EmailTemplateCode = (typeof EMAIL_TEMPLATE_CODES)[number];
 
@@ -177,8 +186,13 @@ export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplateCode, string> = {
   ACCOUNT_ACTIVATED: 'Thông báo kích hoạt tài khoản hệ thống',
   ACCOUNT_REVOKED: 'Thông báo thu hồi quyền truy cập tài khoản',
   INTERVIEW_INVITATION: 'Thư mời tham dự phỏng vấn tuyển dụng',
+  PROBATION_TO_OFFICIAL: 'Quyết định công nhận Nhân viên Chính thức',
+  SCHEDULE_SHIFT_DECISION: 'Thông báo phân ca & duyệt lịch làm việc',
+  LEAVE_SWAP_DECISION: 'Thông báo kết quả duyệt Nghỉ OFF / Đổi ca / Bù công',
   EMERGENCY_LEAVE_ALERT: 'Cảnh báo nhân sự báo nghỉ khẩn cấp trong ca',
+  TEST_ASSIGNED: 'Thông báo giao bài kiểm tra nghiệp vụ (TEST)',
   PAYSLIP_PUBLISHED: 'Thông báo phát hành phiếu lương kỳ mới',
+  INTERNAL_ANNOUNCEMENT: 'Bản tin truyền thông & Chính sách nội bộ',
   SYSTEM_RECONCILIATION_REPORT: 'Báo cáo đối soát toàn vẹn dữ liệu & sao lưu',
 };
 

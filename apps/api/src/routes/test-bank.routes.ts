@@ -5,6 +5,7 @@ import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
+import { queueTestAssignedEmail } from '../services/action-email-dispatcher.js';
 import { resolveStaffGroupLabel } from './employee-mapper.js';
 
 const DEFAULT_SOP_QUESTIONS = JSON.stringify([
@@ -52,14 +53,11 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     if (ctx.db.testBank.all(true).length > 0) return;
     await ctx.db.testBank.insert({ code: 'SOP-BARISTA-01', title: 'Quy chuẩn Pha chế, Bảo quản Sữa tươi & Nội quy Chấm công GPS', staff_group: 'BARISTA', target_stage: 'PROBATION', duration_minutes: 15, pass_percent: 80, total_questions: 3, max_attempts: 3, questions_json: DEFAULT_SOP_QUESTIONS, status: 'APPROVED', approved_by: actorId, approved_at: nowIso() }, actorId);
   };
-
   app.get('/api/admin/tests/bank', { preHandler: requirePermission('employee.read', 'system.config', 'test.manage', 'self.test') }, async (request) => {
     const q = (request.query ?? {}) as { include_answers?: string; refresh?: string };
     if (q.refresh === '1') await Promise.all([ctx.db.testBank.load(), ctx.db.testAssignments.load(), ctx.db.testAttempts.load()]);
     await ensureDefaultTestBank(request.auth?.user.id ?? 'system');
-    const perms = request.auth?.permissions;
-    const canManage = Boolean(perms?.has('test.manage'));
-    const includeAnswers = canManage && q.include_answers === '1';
+    const perms = request.auth?.permissions, canManage = Boolean(perms?.has('test.manage')), includeAnswers = canManage && q.include_answers === '1';
     const tests = ctx.db.testBank.all().reverse().map((t) => {
       const safeList = sanitizeQuestions(t.questions_json);
       return { ...t, questions_json: includeAnswers ? t.questions_json : JSON.stringify(safeList), duration_min: t.duration_minutes, questionsCount: safeList.length || t.total_questions, staffGroupLabel: resolveStaffGroupLabel(ctx, t.staff_group, t.staff_group) };
@@ -118,6 +116,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
       const emp = ctx.db.employees.get(rawEmpId) ?? ctx.db.employees.find((e) => e.employee_code === rawEmpId);
       if (!emp) throw Errors.notFound('Nhân sự', rawEmpId);
       const created = await ctx.db.testAssignments.insert({ test_id: test.id, employee_id: emp.id, branch_id: emp.branch_id, open_at: nowIso(), close_at: body.close_at || body.due_at || '2026-11-30T23:59:59+07:00', assigned_by: request.auth!.user.id, status: 'ASSIGNED', max_attempts: body.max_attempts ?? test.max_attempts, attempts_used: 0, best_score_percent: 0, passed: false, note: body.note ?? '' }, request.auth!.user.id);
+      queueTestAssignedEmail(ctx, { empId: emp.id, testTitle: test.title, durationMinutes: test.duration_minutes, passScore: test.pass_percent, code: `ASG-${created.id.slice(0, 6)}` });
       if (!firstCreated) firstCreated = created;
     }
     return reply.code(201), sendSuccess(request, `Đã giao bài kiểm tra nghiệp vụ cho ${empIds.length} nhân sự thành công`, firstCreated);

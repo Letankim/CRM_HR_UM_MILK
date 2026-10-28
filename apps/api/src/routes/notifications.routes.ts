@@ -185,31 +185,25 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
     if (body.target_scope === 'USER') pickedUsers.forEach((uid) => ctx.realtime()?.toUser(uid, SocketEvents.NOTIFICATION, payload));
     else if (body.target_scope === 'ROLE') pickedRoles.forEach((r) => ctx.realtime()?.toRole(r, SocketEvents.NOTIFICATION, payload));
     else ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, payload);
+    const mailUsers = ctx.db.users.filter((u) => u.status === 'ACTIVE' && (body.target_scope === 'ALL' || (body.target_scope === 'USER' && pickedUsers.includes(u.id)) || (body.target_scope === 'ROLE' && pickedRoles.includes(u.role))));
+    mailUsers.forEach((u) => ctx.email.enqueue({ to: u.email || `${u.username}@umbomilk.vn`, template: 'INTERNAL_ANNOUNCEMENT', recipientName: u.display_name || u.username, referenceCode: `NTF-${created.id.slice(0, 6)}`, summary: created.body, metadata: [{ label: 'Tiêu đề', value: created.title }, { label: 'Phân loại', value: NOTIFICATION_CATEGORY_LABELS[created.category] ?? created.category }, { label: 'Mức độ', value: NOTIFICATION_SEVERITY_LABELS[created.severity] ?? created.severity }] }));
     return reply.code(201), sendSuccess(request, 'Đã gửi thông báo thành công', created);
   });
-
   const handleMarkRead = async (request: FastifyRequest) => {
     const { id } = request.params as { id: string }, userId = request.auth!.user.id, notif = ctx.db.notifications.get(id);
     if (!notif) throw Errors.notFound('Thông báo', id);
-    const map = parseReadMap(notif.read_at);
-    if (!map[userId]) map[userId] = nowIso();
+    const map = parseReadMap(notif.read_at); if (!map[userId]) map[userId] = nowIso();
     const updated = await ctx.db.notifications.update(id, notif.version, { read_at: JSON.stringify(map) }, userId);
     return sendSuccess(request, 'Đã đánh dấu đã đọc thông báo', { ...updated, read_at: map[userId] });
   };
   app.patch('/api/notifications/:id/read', { preHandler: requireAuth() }, handleMarkRead);
   app.post('/api/notifications/:id/read', { preHandler: requireAuth() }, handleMarkRead);
-
   app.post('/api/notifications/mark-all-read', { preHandler: requireAuth() }, async (request) => {
     const body = zBulkIdsBody.parse(request.body ?? {}), user = request.auth!.user, now = nowIso();
     const targets = ctx.db.notifications.all().filter((n) => !getUserReadAt(n.read_at, user.id) && (!body.ids?.length || body.ids.includes(n.id)));
-    for (const n of targets) {
-      const map = parseReadMap(n.read_at);
-      map[user.id] = now;
-      await ctx.db.notifications.update(n.id, n.version, { read_at: JSON.stringify(map) }, user.id);
-    }
+    for (const n of targets) { const map = parseReadMap(n.read_at); map[user.id] = now; await ctx.db.notifications.update(n.id, n.version, { read_at: JSON.stringify(map) }, user.id); }
     return sendSuccess(request, `Đã đánh dấu đã đọc ${targets.length} thông báo`, { updatedCount: targets.length });
   });
-
   app.delete('/api/notifications/:id', { preHandler: requireAuth() }, async (request) => {
     const { id } = request.params as { id: string }, notif = ctx.db.notifications.get(id);
     if (!notif) throw Errors.notFound('Thông báo', id);

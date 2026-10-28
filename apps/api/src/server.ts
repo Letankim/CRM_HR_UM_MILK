@@ -119,6 +119,7 @@ async function main() {
   const reconciliation = new ReconciliationService(db);
   const backup = new BackupService(env, db, reconciliation, googleClients);
   const email = new EmailService(mailSender);
+  email.attachDatabase(db);
 
   let realtime: Realtime | null = null;
   // eslint-disable-next-line prefer-const
