@@ -27,7 +27,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
   const mntQ = useQuery({ queryKey: ['maintenance'], queryFn: () => api.get<{ enabled?: boolean; message?: string }[]>('/admin/maintenance'), enabled: !!data, retry: false });
   const activeMaint = mntQ.data?.[0]?.enabled ? mntQ.data[0] : null;
 
-  useRealtime('backoffice', !!data, data?.socketToken);
+  useRealtime('backoffice', !!data, data?.socketToken, data?.user.id);
 
   useEffect(() => {
     if (isUnauthorized(error) || (!isLoading && !data) || (data && data.app !== 'backoffice')) {

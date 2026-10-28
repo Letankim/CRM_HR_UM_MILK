@@ -49,7 +49,7 @@ export class Realtime {
         const cookies = app.parseCookie(socket.handshake.headers.cookie ?? '');
         const authToken =
           typeof socket.handshake.auth?.token === 'string' ? socket.handshake.auth.token : undefined;
-        const token = cookies[ACCESS_COOKIE] ?? authToken;
+        const token = authToken ?? cookies[ACCESS_COOKIE];
         if (!token) return next(new Error('UNAUTHORIZED'));
         const claims = await tokens.verifyAccess(token);
         const user = auth.resolveSession(claims);
@@ -65,9 +65,11 @@ export class Realtime {
     this.io.on('connection', (socket: Socket) => {
       socket.join(rooms.user(socket.data.userId));
       socket.join(rooms.role(socket.data.role));
-      const scope = socket.data.branchScope as 'ALL' | string[];
-      if (scope === 'ALL') socket.join(rooms.allBranches);
-      else for (const b of scope) socket.join(rooms.branch(b));
+      if (socket.data.role !== 'THU_VIEC' && socket.data.role !== 'CHINH_THUC') {
+        const scope = socket.data.branchScope as 'ALL' | string[];
+        if (scope === 'ALL') socket.join(rooms.allBranches);
+        else for (const b of scope) socket.join(rooms.branch(b));
+      }
     });
   }
 
@@ -91,13 +93,18 @@ export class Realtime {
     this.io.to([rooms.branch(branchId), rooms.allBranches]).emit(event, payload);
   }
 
-  /** Gửi gộp tới nhiều room (Chi nhánh + Vai trò + Cá nhân) trong 1 lệnh duy nhất để Socket.IO tự động chống trùng gói tin. */
-  toTargets(opts: { branchId?: string; roles?: string[]; userIds?: string[] }, event: string, payload: unknown): void {
+  /** Gửi gộp tới nhiều room (Chi nhánh + Vai trò + Cá nhân) trong 1 lệnh duy nhất để Socket.IO tự động chống trùng gói tin và loại trừ người tạo. */
+  toTargets(opts: { branchId?: string; roles?: string[]; userIds?: string[]; excludeUserId?: string }, event: string, payload: unknown): void {
     const targets = new Set<string>([rooms.allBranches]);
     if (opts.branchId && opts.branchId !== 'ALL') targets.add(rooms.branch(opts.branchId));
     for (const r of opts.roles ?? []) if (r) targets.add(rooms.role(r));
-    for (const u of opts.userIds ?? []) if (u) targets.add(rooms.user(u));
-    this.io.to(Array.from(targets)).emit(event, payload);
+    for (const u of opts.userIds ?? []) if (u && u !== opts.excludeUserId) targets.add(rooms.user(u));
+    const broadcaster = this.io.to(Array.from(targets));
+    if (opts.excludeUserId) {
+      broadcaster.except(rooms.user(opts.excludeUserId)).emit(event, payload);
+    } else {
+      broadcaster.emit(event, payload);
+    }
   }
 
   /** Phát sự kiện toàn hệ thống tới mọi kết nối đang mở (Backoffice & Cổng NV). */

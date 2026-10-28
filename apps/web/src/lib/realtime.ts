@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { io, type Socket } from 'socket.io-client';
 import { loginPath, type AppKind } from './auth';
-import { playNotificationSound } from './notification-sound';
+import { isInSelfActionWindow, playNotificationSound } from './notification-sound';
 
 let socket: Socket | null = null;
 let currentToken: string | null = null;
@@ -29,6 +29,7 @@ function getSocket(socketToken?: string | null): Socket {
   if (socket && socketToken && socketToken !== currentToken) {
     currentToken = socketToken;
     socket.auth = { token: socketToken };
+    if (socket.connected) socket.disconnect().connect();
   }
   if (!socket) {
     currentToken = socketToken ?? null;
@@ -48,7 +49,7 @@ function getSocket(socketToken?: string | null): Socket {
  * Kết nối realtime. Khi Admin thu hồi tài khoản, server phát auth:forceLogout
  * -> xóa cache và chuyển về trang đăng nhập ngay (FLOW-01).
  */
-export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string | null) {
+export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string | null, userId?: string) {
   const router = useRouter();
   const qc = useQueryClient();
   const { message } = App.useApp();
@@ -77,8 +78,8 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       let lastSig = '';
       let lastAt = 0;
       return (eventKey: string, payload?: { actorId?: string; kind?: string; code?: string; title?: string; message?: string }) => {
-        const myId = qc.getQueryData<{ user?: { id?: string } }>(['auth', 'me'])?.user?.id;
-        const isSelf = Boolean(payload?.actorId && myId && payload.actorId === myId);
+        const myId = userId || qc.getQueryData<{ user?: { id?: string } }>(['me'])?.user?.id;
+        const isSelf = Boolean((payload?.actorId && myId && payload.actorId === myId) || isInSelfActionWindow());
         const sig = `${eventKey}:${payload?.kind || ''}:${payload?.code || ''}:${payload?.title || ''}:${payload?.message || ''}`;
         const now = Date.now();
         const isDup = sig === lastSig && now - lastAt < 1500;
@@ -173,5 +174,5 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       s.off('emergency:new', onEmergency);
       s.off('account:pending', onAccountPending);
     };
-  }, [app, enabled, message, qc, router, socketToken]);
+  }, [app, enabled, message, qc, router, socketToken, userId]);
 }

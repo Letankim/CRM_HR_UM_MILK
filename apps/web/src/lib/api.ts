@@ -4,6 +4,7 @@ import type {
   ListMeta,
   ValidationErrorDetail,
 } from '@umbm/shared';
+import { markSelfAction } from './notification-sound';
 
 export const SESSION_STORAGE_FLAG = 'umbm_has_session';
 
@@ -113,6 +114,10 @@ async function requestEnvelope<TData, TMeta = Record<string, unknown> | null>(
     }
   }
 
+  const isAuthEndpoint = path === '/auth/login' || path === '/auth/refresh' || path === '/auth/logout';
+  const isUserMutation = method !== 'GET' && !isAuthEndpoint && !path.endsWith('/read') && !path.endsWith('/mark-all-read');
+  if (isUserMutation) markSelfAction();
+
   const res = await fetch(`${BASE}${path}`, {
     method,
     credentials: 'include',
@@ -123,8 +128,7 @@ async function requestEnvelope<TData, TMeta = Record<string, unknown> | null>(
     body: effectiveBody === undefined ? undefined : JSON.stringify(effectiveBody),
     cache: 'no-store',
   });
-
-  const isAuthEndpoint = path === '/auth/login' || path === '/auth/refresh' || path === '/auth/logout';
+  if (isUserMutation) markSelfAction();
 
   if (res.status === 401 && !retried && !isAuthEndpoint) {
     if (await refreshSession()) return requestEnvelope<TData, TMeta>(method, path, effectiveBody, true, versionRetryCount);

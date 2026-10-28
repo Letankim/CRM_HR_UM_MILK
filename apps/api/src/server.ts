@@ -12,6 +12,7 @@ import { Realtime } from './realtime/realtime.js';
 import { AuditService } from './services/audit.service.js';
 import { BackupService } from './services/backup.service.js';
 import { EmailService } from './services/email.service.js';
+import { ensureSyncedNotifications } from './services/notification-sync.service.js';
 import { ReconciliationService } from './services/reconciliation.service.js';
 import { sendSmtpTlsMail } from './services/smtp-sender.js';
 import { GoogleSheetsGateway, type SheetsGateway } from './sheets/gateway.js';
@@ -147,6 +148,7 @@ async function main() {
   await loadPromise;
   email.hydrateFromDatabase();
   await reconciliation.scanAndRepair({ autoFix: true, actorId: 'startup-sync' }).catch(() => undefined);
+  await ensureSyncedNotifications(ctx).catch(() => undefined);
   db.startAutoRefresh(env.CACHE_REFRESH_SECONDS, app.log);
   backup.startEmbeddedScheduler(app.log);
 

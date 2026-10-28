@@ -6,10 +6,21 @@ export const NOTIFICATION_SOUND_STORAGE_KEY = 'umbm_notification_sound_enabled';
 const SOUND_CHANGE_EVENT = 'umbm:notification-sound-change';
 const SOUND_SRC = '/thong_bao.mp3';
 const AUTO_CHIME_COOLDOWN_MS = 4000;
+const SELF_ACTION_SUPPRESS_MS = 6000;
 
 let sharedAudio: HTMLAudioElement | null = null;
 let lastPlayedAt = 0;
+let lastSelfActionAt = 0;
 const sessionBaselineUsers = new Set<string>();
+
+/** Đánh dấu tab hiện tại vừa thực hiện thao tác gửi dữ liệu để không tự phát chuông thông báo cho chính người tạo */
+export function markSelfAction(): void {
+  lastSelfActionAt = Date.now();
+}
+
+export function isInSelfActionWindow(): boolean {
+  return lastSelfActionAt > 0 && Date.now() - lastSelfActionAt < SELF_ACTION_SUPPRESS_MS;
+}
 
 function getAudioInstance(): HTMLAudioElement | null {
   if (typeof window === 'undefined') return null;
@@ -45,7 +56,7 @@ export function setNotificationSoundEnabled(enabled: boolean): void {
 
 export function playNotificationSound(options?: { force?: boolean }): void {
   if (typeof window === 'undefined') return;
-  if (!options?.force && !getNotificationSoundEnabled()) return;
+  if (!options?.force && (!getNotificationSoundEnabled() || isInSelfActionWindow())) return;
 
   const now = Date.now();
   if (!options?.force && now - lastPlayedAt < AUTO_CHIME_COOLDOWN_MS) return;
@@ -147,7 +158,9 @@ export function useTrackUnreadNotifications(userId: string | undefined, unreadKe
     if (newKeys.length > 0) {
       newKeys.forEach((k) => seenSet.add(k));
       persistSeen();
-      playNotificationSound();
+      if (!isInSelfActionWindow()) {
+        playNotificationSound();
+      }
     }
   }, [userId, unreadKeys, ready]);
 }

@@ -73,7 +73,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   const { soundEnabled, setSoundEnabled, toggleSound, playTestSound } = useNotificationSound();
   const unreadKeys = useMemo(() => notifItems.filter((n) => n.readStatus === 'UNREAD').map((n) => `ntf:${n.id}`), [notifItems]);
   useTrackUnreadNotifications(data?.user.id, unreadKeys, notifsQ.isSuccess);
-  useRealtime('employee', !!data, data?.socketToken);
+  useRealtime('employee', !!data, data?.socketToken, data?.user.id);
 
   useEffect(() => {
     if (isUnauthorized(error) || (!isLoading && !data)) router.replace(loginPath('employee'));

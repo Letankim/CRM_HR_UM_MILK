@@ -209,5 +209,5 @@ export function emitScheduleRealtime(
     const u = emp ? findLinkedUserForEmployee(emp, ctx) : undefined;
     if (u) userIds.push(u.id);
   }
-  rt.toTargets({ branchId: opts.branchId, roles: ['ADMIN', 'HR', 'STORE', 'FINANCE'], userIds }, event, payload);
+  rt.toTargets({ branchId: opts.branchId, roles: ['ADMIN', 'HR', 'STORE', 'FINANCE'], userIds, excludeUserId: opts.actorId }, event, payload);
 }
