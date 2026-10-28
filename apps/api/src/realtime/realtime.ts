@@ -106,7 +106,7 @@ export class Realtime {
         continue;
       }
       const role = String(s.data.role || '');
-      if (!roleSet.has(role) && role !== 'ADMIN') continue;
+      if (!roleSet.has(role)) continue;
       const scope = s.data.branchScope as 'ALL' | string[] | undefined;
       if (role === 'STORE' || role === 'THU_VIEC' || role === 'CHINH_THUC') {
         if (targetBranch && Array.isArray(scope) && scope.includes(targetBranch)) s.emit(event, payload);

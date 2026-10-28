@@ -179,8 +179,9 @@ export function isNotificationCreatedByOrSelfAction(ctx: AppContext, n: Notifica
   const isMyEmp = (eid?: string) => Boolean(eid && myEmp && (eid === myEmp.id || eid === myEmp.employee_code));
   const rawId = (n.entity_id || '').replace(/_(PUBLISHED|APPROVED|REJECTED|PENDING|STORE_CONFIRMED|PENDING_PEER|PEER_ACCEPTED|PEER_DECLINED)$/, '');
   const recipientUserIds = (n.recipient_user_id || '').split(',').map((s) => s.trim()).filter(Boolean);
-  if (n.created_by === userId && !recipientUserIds.includes(userId)) return true;
-  if (n.entity_id.startsWith('BULK_')) return n.created_by === userId;
+  if (n.entity_type === 'MANUAL' && n.created_by === userId && !recipientUserIds.includes(userId)) return true;
+  if (n.entity_id.startsWith('BULK_')) return n.created_by === userId || !recipientUserIds.includes(userId);
+  if (n.entity_type === 'USERS_PENDING') return n.entity_id === userId;
   if (n.entity_type === 'ATT_ADJ_HR') {
     const adj = ctx.db.attendanceAdjustments.get(rawId);
     return !adj || (n.entity_id.endsWith('_STORE_CONFIRMED') ? (adj.store_confirmed_by === userId || isMyEmp(adj.employee_id)) : (adj.created_by === userId || isMyEmp(adj.employee_id)));
@@ -189,18 +190,10 @@ export function isNotificationCreatedByOrSelfAction(ctx: AppContext, n: Notifica
     const adj = ctx.db.attendanceAdjustments.get(rawId);
     return !adj || adj.decided_by === userId || (n.entity_id.endsWith('_STORE_CONFIRMED') && adj.store_confirmed_by === userId);
   }
-  if (n.entity_type === 'SHIFT_DRAFT_ROLE' || n.entity_type === 'SCHED_STORE') {
-    const a = ctx.db.shiftAssignments.get(rawId);
-    return !a || a.created_by === userId || isMyEmp(a.employee_id);
-  }
-  if (n.entity_type === 'LEAVE_ROLE') {
-    const l = ctx.db.leaveRequests.get(rawId);
-    return !l || l.created_by === userId || isMyEmp(l.employee_id);
-  }
-  if (n.entity_type === 'LEAVE_USER') {
-    const l = ctx.db.leaveRequests.get(rawId);
-    return n.title.includes('Đã tiếp nhận') || !l || l.decided_by === userId;
-  }
+  if (n.entity_type === 'SHIFT_DRAFT_ROLE' || n.entity_type === 'SCHED_STORE') { const a = ctx.db.shiftAssignments.get(rawId); return !a || a.created_by === userId || isMyEmp(a.employee_id); }
+  if (n.entity_type === 'SHIFT_PUB_USER') { const a = ctx.db.shiftAssignments.get(rawId); return !a || a.updated_by === userId; }
+  if (n.entity_type === 'LEAVE_ROLE') { const l = ctx.db.leaveRequests.get(rawId); return !l || l.created_by === userId || isMyEmp(l.employee_id); }
+  if (n.entity_type === 'LEAVE_USER') { const l = ctx.db.leaveRequests.get(rawId); return n.title.includes('Đã tiếp nhận') || !l || l.decided_by === userId; }
   if (n.entity_type === 'SWAP_STORE') {
     const s = ctx.db.shiftSwaps.get(rawId);
     return !s || (n.entity_id.endsWith('_PEER_ACCEPTED') ? isMyEmp(s.peer_id) : (s.created_by === userId || isMyEmp(s.requester_id)));
@@ -209,9 +202,6 @@ export function isNotificationCreatedByOrSelfAction(ctx: AppContext, n: Notifica
     const s = ctx.db.shiftSwaps.get(rawId);
     return !s || (n.entity_id.endsWith('_PENDING_PEER') && (s.created_by === userId || isMyEmp(s.requester_id))) || ((n.entity_id.endsWith('_PEER_ACCEPTED') || n.entity_id.endsWith('_PEER_DECLINED')) && isMyEmp(s.peer_id)) || ((n.entity_id.endsWith('_APPROVED') || n.entity_id.endsWith('_REJECTED')) && s.decided_by === userId);
   }
-  if (n.entity_type === 'EMG_STORE') {
-    const emg = ctx.db.emergencyLeaves.get(rawId);
-    return !emg || emg.created_by === userId || isMyEmp(emg.employee_id);
-  }
-  return n.entity_type === 'USERS_PENDING' && n.entity_id === userId;
+  if (n.entity_type === 'EMG_STORE') { const emg = ctx.db.emergencyLeaves.get(rawId); return !emg || emg.created_by === userId || isMyEmp(emg.employee_id); }
+  return false;
 }

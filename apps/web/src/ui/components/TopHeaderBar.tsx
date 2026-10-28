@@ -21,8 +21,6 @@ export interface TopHeaderBarProps {
   breadcrumbGroup: string; breadcrumbTitle: string; user: PublicUser; onLogout: () => Promise<void> | void;
 }
 
-interface PendingAccountPreview { id: string; username: string; displayName: string; roleLabel: string; }
-
 export function TopHeaderBar({
   isMobile, collapsed, onToggleNav, breadcrumbGroup, breadcrumbTitle, user, onLogout,
 }: TopHeaderBarProps) {
@@ -32,29 +30,21 @@ export function TopHeaderBar({
   const [loggingOut, setLoggingOut] = useState(false);
   const [profileTab, setProfileTab] = useState<'info' | 'password' | null>(null);
 
-  const pendingAccounts = useQuery({
-    queryKey: ['accounts', 'PENDING_ACTIVATION', 'header-badge'],
-    queryFn: () => api.list<PendingAccountPreview>('/admin/accounts?status=PENDING_ACTIVATION&per_page=5'),
-    enabled: can('account.activate'),
-  });
   const notifsQ = useQuery({
     queryKey: ['notifications', 'header-bell'],
     queryFn: () => api.list<{ id: string; code: string; title: string; body: string; categoryLabel: string; targetLabel: string; readStatus: string; link?: string }>('/notifications?per_page=12'),
   });
 
-  const pendingTotal = pendingAccounts.data?.meta.pagination.total ?? 0;
-  const pendingItems = pendingAccounts.data?.data ?? [];
   const notifItems = notifsQ.data?.data ?? [];
   const notifTotal = notifsQ.data?.meta.pagination.total ?? 0;
   const unreadNotifCount = Number(notifsQ.data?.meta.filters?.unread_count ?? notifItems.filter((n) => n.readStatus === 'UNREAD').length);
-  const totalBadge = pendingTotal + unreadNotifCount;
+  const totalBadge = unreadNotifCount;
   const { soundEnabled, setSoundEnabled, toggleSound, playTestSound } = useNotificationSound();
   const unreadKeys = useMemo(
-    () => [...pendingItems.map((p) => `acc:${p.id}`), ...notifItems.filter((n) => n.readStatus === 'UNREAD').map((n) => `ntf:${n.id}`)],
-    [pendingItems, notifItems],
+    () => notifItems.filter((n) => n.readStatus === 'UNREAD').map((n) => `ntf:${n.id}`),
+    [notifItems],
   );
-  const canActivate = can('account.activate');
-  useTrackUnreadNotifications(user.id, unreadKeys, notifsQ.isSuccess && (!canActivate || pendingAccounts.isSuccess));
+  useTrackUnreadNotifications(user.id, unreadKeys, notifsQ.isSuccess);
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -64,30 +54,30 @@ export function TopHeaderBar({
   const notificationContent = (
     <div style={{ width: 440, maxWidth: 'calc(100vw - 32px)' }}>
       <Flex justify="space-between" align="center" style={{ paddingBottom: 8, borderBottom: `1px solid ${BRAND.border}` }}>
-        <Typography.Text strong style={{ fontSize: 13 }}>Thông báo đã nhận ({notifTotal + pendingTotal})</Typography.Text>
+        <Typography.Text strong style={{ fontSize: 13 }}>Thông báo đã nhận ({notifTotal})</Typography.Text>
         <Space size={4}>
           <Tooltip title="Nghe thử chuông thông báo">
             <Button size="small" type="text" icon={soundEnabled ? <SoundOutlined style={{ color: BRAND.primary }} /> : <MutedOutlined />} onClick={playTestSound} />
           </Tooltip>
           <Switch size="small" checked={soundEnabled} onChange={setSoundEnabled} checkedChildren="Chuông" unCheckedChildren="Tắt" />
-          <Button size="small" type="text" icon={<ReloadOutlined />} loading={pendingAccounts.isFetching || notifsQ.isFetching} onClick={() => { pendingAccounts.refetch(); notifsQ.refetch(); }}>
+          <Button size="small" type="text" icon={<ReloadOutlined />} loading={notifsQ.isFetching} onClick={() => { notifsQ.refetch(); }}>
             Làm mới
           </Button>
         </Space>
       </Flex>
-      <Spin spinning={pendingAccounts.isFetching || notifsQ.isFetching}>
+      <Spin spinning={notifsQ.isFetching}>
         <div style={{ maxHeight: 'min(340px, calc(100dvh - 180px))', overflowY: 'auto', paddingRight: 2 }}>
-          {pendingItems.length === 0 && notifItems.length === 0 ? (
+          {notifItems.length === 0 ? (
             <div style={{ padding: '14px 4px', textAlign: 'center', color: '#64748B', fontSize: 12 }}>
               Chưa có thông báo hoặc bản tin mới
             </div>
           ) : (
             <List
               size="small"
-              dataSource={[
-                ...notifItems.map((n) => ({ key: `ntf-${n.id}`, notifId: n.id, unread: n.readStatus === 'UNREAD', title: n.title, desc: `${n.targetLabel} · ${n.body}`, tag: n.code, href: n.link || '/admin/notifications' })),
-                ...pendingItems.map((i) => ({ key: `acc-${i.id}`, notifId: '', unread: true, title: `${i.displayName} (${i.username})`, desc: `Chờ kích hoạt · ${i.roleLabel}`, tag: 'Tài khoản', href: '/admin/accounts?status=PENDING_ACTIVATION' })),
-              ].slice(0, 12)}
+              dataSource={notifItems.map((n) => ({
+                key: `ntf-${n.id}`, notifId: n.id, unread: n.readStatus === 'UNREAD',
+                title: n.title, desc: `${n.targetLabel} · ${n.body}`, tag: n.code, href: n.link || '/admin/notifications',
+              }))}
               renderItem={(item) => (
                 <List.Item
                   style={{ cursor: 'pointer', padding: '8px 6px' }}
@@ -112,7 +102,7 @@ export function TopHeaderBar({
         </div>
       </Spin>
       <Button type="primary" ghost size="small" icon={<BellOutlined />} block style={{ marginTop: 8 }} onClick={() => router.push('/admin/notifications')}>
-        Xem chi tiết tất cả thông báo ({notifTotal + pendingTotal})
+        Xem chi tiết tất cả thông báo ({notifTotal})
       </Button>
     </div>
   );
@@ -147,7 +137,7 @@ export function TopHeaderBar({
               size="small"
               className="umbm-header-pill"
               icon={<BellOutlined />}
-              loading={pendingAccounts.isLoading}
+              loading={notifsQ.isLoading}
               style={{ width: 34, height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder }}
               aria-label="Thông báo"
             />

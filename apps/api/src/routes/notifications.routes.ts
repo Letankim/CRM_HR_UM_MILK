@@ -71,6 +71,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
     const query = zListQuery.parse(request.query);
     const user = request.auth!.user;
     const branchScope = request.auth!.branchScope;
+    if (query.refresh === '1') await Promise.all([ctx.db.notifications.refreshIfIdle(), ctx.db.users.refreshIfIdle()]);
     await ensureSyncedNotifications(ctx);
 
     const usersMap = new Map(ctx.db.users.all().map((u) => [u.id, u]));

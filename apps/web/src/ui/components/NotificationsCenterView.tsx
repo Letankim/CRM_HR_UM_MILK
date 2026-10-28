@@ -89,7 +89,7 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
 
   const allItems = allStatsQ.data?.data ?? listQ.data?.data ?? [];
   const totalCount = allStatsQ.data?.meta.pagination.total ?? listQ.data?.meta.pagination.total ?? 0;
-  const unreadCount = allItems.filter((i) => i.readStatus === 'UNREAD').length;
+  const unreadCount = Number(allStatsQ.data?.meta.filters?.unread_count ?? listQ.data?.meta.filters?.unread_count ?? allItems.filter((i) => i.readStatus === 'UNREAD').length);
   const urgentCount = allItems.filter((i) => i.severity === 'CRITICAL' || i.severity === 'WARNING').length;
   const targetedCount = allItems.filter((i) => i.scopeType !== 'BROADCAST').length;
 
