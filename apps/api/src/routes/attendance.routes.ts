@@ -128,10 +128,10 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       work_date: assign.work_date, shift_code: assign.shift_code, scheduled_time: schedTime, late_minutes: lateMinutes, early_leave_minutes: earlyLeaveMinutes, allowed_radius_m: branch.radius_m, gps_status: accuracyOk ? 'OK' : 'WARNING',
       photo_drive_file_id: uploadedPhoto.fileId, ip_address: request.ip, anomaly_flags_json: '[]', note: `${punc.punctualityLabel} · Khoảng cách GPS ${distanceM}m`,
     }, request.auth!.user.id);
+    if (checkType === 'CHECK_OUT' && assign.status !== 'COMPLETED') await ctx.db.shiftAssignments.update(assign.id, assign.version, { status: 'COMPLETED' }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: checkType === 'CHECK_IN' ? 'attendance.check_in' : 'attendance.check_out', entity: 'ATTENDANCE_EVENTS', entityId: created.id, after: { type: created.type, distance_m: distanceM, within_radius: withinRadius, result, late_minutes: lateMinutes, early_leave_minutes: earlyLeaveMinutes } });
     ctx.realtime()?.toBranch(branch.id, 'attendance:event', { id: created.id, type: created.type, result, distanceM, lateMinutes, earlyLeaveMinutes, message: (lateMinutes > 0 || earlyLeaveMinutes > 0 || result !== 'VALID') ? `Cảnh báo điểm danh tại ${branch.name}: ${empRecord.full_name} (${punc.punctualityLabel} · GPS ${distanceM}m)` : '' });
-    reply.code(201);
-    return sendSuccess(request, `Điểm danh ${checkType === 'CHECK_IN' ? 'vào ca' : 'ra ca'} thành công (${punc.punctualityLabel} · GPS ${distanceM}m)`, mapAttendanceEvent(created, ctx));
+    return reply.code(201), sendSuccess(request, `Điểm danh ${checkType === 'CHECK_IN' ? 'vào ca' : 'ra ca'} thành công (${punc.punctualityLabel} · GPS ${distanceM}m)`, mapAttendanceEvent(created, ctx));
   });
 
   app.put('/api/admin/attendance/events/:id', { preHandler: requirePermission('system.config') }, async (request) => {

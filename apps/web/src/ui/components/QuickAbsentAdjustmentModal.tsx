@@ -17,14 +17,18 @@ const KIND_OPTIONS = [
 
 const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
 
-/** Kiểm tra một bản ghi phân ca có đang ở trạng thái Vắng mặt cần bổ sung công (chưa gửi phiếu chờ duyệt) hay không. */
+/** Kiểm tra một bản ghi phân ca có đang ở trạng thái Vắng mặt hoặc Quên Ra ca cần bổ sung công (chưa gửi phiếu chờ duyệt) hay không. */
 export function isAbsentShiftRecord(r?: Record<string, unknown> | null): boolean {
-  if (!r) return false;
+  if (!r || r.status === 'COMPLETED' || r.status === 'DRAFT' || r.dayType === 'OFF' || r.status === 'ON_LEAVE') return false;
   if (r.pendingAdjustmentCode || String(r.attendanceStatusLabel || '').includes('Đã gửi bù công')) return false;
+  const lbl = String(r.attendanceStatusLabel || '');
   return (
     r.status === 'ABSENT' ||
     Boolean(r.isAbsentShift) ||
-    String(r.attendanceStatusLabel || '').includes('Vắng mặt')
+    Boolean(r.isForgotCheckout) ||
+    Boolean(r.checkInEvent && !r.checkOutEvent) ||
+    lbl.includes('Vắng mặt') ||
+    lbl.includes('Quên Ra ca')
   );
 }
 
@@ -64,9 +68,12 @@ export function QuickAbsentAdjustmentModal({
 
   useEffect(() => {
     if (!open || !shift) return;
+    const isForgotOut = Boolean(shift.isForgotCheckout) || Boolean(shift.checkInEvent && !shift.checkOutEvent) || String(shift.attendanceStatusLabel || '').includes('Quên Ra ca');
     form.setFieldsValue({
-      kind: 'FORGOT_CHECK_IN',
-      reason: `Bổ sung công bù ca Vắng mặt (${shiftLabel} ngày ${dayjs(workDate).format('DD/MM/YYYY')}) do nhân sự quên điểm danh đúng giờ`,
+      kind: isForgotOut ? 'FORGOT_CHECK_OUT' : 'FORGOT_CHECK_IN',
+      reason: isForgotOut
+        ? `Bổ sung công Ra ca (${shiftLabel} ngày ${dayjs(workDate).format('DD/MM/YYYY')}) do nhân sự đã Vào ca nhưng quên điểm danh Ra ca`
+        : `Bổ sung công bù ca Vắng mặt (${shiftLabel} ngày ${dayjs(workDate).format('DD/MM/YYYY')}) do nhân sự quên điểm danh đúng giờ`,
     });
   }, [open, shift, shiftLabel, workDate, form]);
 

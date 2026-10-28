@@ -12,19 +12,11 @@ import { emitScheduleRealtime, healBranchConsistency, resolveShiftTimeDetails } 
 import { mapAttendanceEvent, migrateLegacyBase64Photos } from './attendance-helpers.js';
 import { mapShiftAssignment } from './schedules.routes.js';
 
-const zCreateMyShiftBody = z.object({
-  work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng ngày YYYY-MM-DD'),
-  shift_code: z.string().trim().default('CA_SANG'),
-  note: z.string().trim().max(300).optional().default('Đăng ký ca làm việc cá nhân'),
-});
-
+const zCreateMyShiftBody = z.object({ work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng ngày YYYY-MM-DD'), shift_code: z.string().trim().default('CA_SANG'), note: z.string().trim().max(300).optional().default('Đăng ký ca làm việc cá nhân') });
 const SHIFT_DEFAULT_HOURS: Record<string, { start: string; end: string; hours: number }> = {
-  CA_SANG: { start: '07:00', end: '12:00', hours: 5 },
-  CA_CHIEU: { start: '12:00', end: '17:00', hours: 5 },
-  CA_TOI: { start: '17:00', end: '22:00', hours: 5 },
-  CA_HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
+  CA_SANG: { start: '07:00', end: '12:00', hours: 5 }, CA_CHIEU: { start: '12:00', end: '17:00', hours: 5 },
+  CA_TOI: { start: '17:00', end: '22:00', hours: 5 }, CA_HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
 };
-
 function getVnDateAndHm(): { todayStr: string; nowHm: string } {
   const vnNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
   return { todayStr: dayjs(vnNow).format('YYYY-MM-DD'), nowHm: dayjs(vnNow).format('HH:mm') };
@@ -65,29 +57,32 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     const branch = ctx.db.branches.get(emp.branch_id) ?? ctx.db.branches.all()[0];
     const { todayStr, nowHm } = getVnDateAndHm();
 
-    const myRawEvents = ctx.db.attendanceEvents
-      .filter((e) => e.employee_id === emp.id || e.employee_id === emp.employee_code)
-      .reverse();
+    const myRawEvents = ctx.db.attendanceEvents.filter((e) => e.employee_id === emp.id || e.employee_id === emp.employee_code).reverse();
     const events = myRawEvents.map((e) => mapAttendanceEvent(e, ctx));
 
     const myRawShifts = ctx.db.shiftAssignments.filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code).reverse();
     const shifts = myRawShifts.map((a) => {
       const base = mapShiftAssignment(a, ctx);
-      const sEvs = events.filter((e) => e.assignment_id === a.id);
+      const sEvs = events.filter((e) => e.assignment_id === a.id || (!e.assignment_id && e.work_date === a.work_date && e.shift_code === a.shift_code));
       const inEv = sEvs.find((e) => e.type === 'CHECK_IN') ?? null;
-      const outEv = sEvs.find((e) => e.type === 'CHECK_OUT') ?? null;
-      const isToday = a.work_date === todayStr;
+      let outEv = sEvs.find((e) => e.type === 'CHECK_OUT') ?? null;
+      if (a.status === 'COMPLETED' && inEv && !outEv) {
+        const rawIn = myRawEvents.find((e) => e.id === inEv.id);
+        if (rawIn) { outEv = mapAttendanceEvent({ ...rawIn, id: `${inEv.id}_auto_out`, type: 'CHECK_OUT', scheduled_time: a.end_at || '12:00', server_time: `${a.work_date}T${a.end_at || '12:00'}:00+07:00`, late_minutes: 0, early_leave_minutes: 0, note: 'Đã hoàn thành ca (Xác nhận bổ sung giờ ra ca)' }, ctx); events.push(outEv); }
+      }
+      const isToday = a.work_date === todayStr, isExpired = a.work_date < todayStr || (isToday && nowHm > (a.end_at || '12:00'));
       const isExpiredToday = isToday && !inEv && nowHm > (a.end_at || '12:00');
-      const isAbsentShift = a.status === 'ABSENT' || (!inEv && a.status === 'PUBLISHED' && (a.work_date < todayStr || isExpiredToday));
-      const isPendingApproval = a.status === 'DRAFT';
-      const isDone = a.status === 'COMPLETED' || Boolean(inEv && outEv);
+      const isAbsentShift = a.status === 'ABSENT' || (!inEv && a.status === 'PUBLISHED' && isExpired);
+      const isPendingApproval = a.status === 'DRAFT', isDone = a.status === 'COMPLETED' || Boolean(inEv && outEv);
+      const isForgotCheckout = Boolean(inEv && !outEv && !isDone && isExpired);
       const attendanceStatusLabel = isAbsentShift
         ? (base.pendingAdjustmentCode ? `Đã gửi bù công (${base.pendingAdjustmentCode} · Chờ duyệt)` : 'Vắng mặt (Quá giờ ca — Cần bổ sung công)')
-        : isPendingApproval ? 'Chờ CH / HR duyệt phân ca' : isDone ? 'Đã hoàn thành ca' : inEv ? `Đã vào ca (${String(inEv.checkTimeFormatted || '').slice(0, 5)})`
+        : isPendingApproval ? 'Chờ CH / HR duyệt phân ca' : isDone ? 'Đã hoàn thành ca'
+        : inEv ? (base.pendingAdjustmentCode ? `Đã gửi bù công (${base.pendingAdjustmentCode} · Chờ duyệt)` : isForgotCheckout ? `Quên Ra ca (Vào ${String(inEv.checkTimeFormatted || '').slice(0, 5)} — Cần bổ sung công)` : `Đã vào ca (${String(inEv.checkTimeFormatted || '').slice(0, 5)})`)
         : base.pendingSwapCode ? `Chờ duyệt đổi ca (${base.pendingSwapCode})`
         : (base.pendingLeaveCode || base.pendingEmergencyCode) ? `Chờ duyệt nghỉ (${base.pendingLeaveCode || base.pendingEmergencyCode})` : 'Chưa điểm danh';
-      const attendanceStatusColor = isAbsentShift ? (base.pendingAdjustmentCode ? 'orange' : 'red') : isPendingApproval ? 'gold' : isDone ? 'green' : inEv ? (inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : base.pendingSwapCode ? 'purple' : (base.pendingLeaveCode || base.pendingEmergencyCode) ? 'gold' : 'default';
-      return { ...base, isToday, isExpiredToday, isAbsentShift, checkInEvent: inEv, checkOutEvent: outEv, attendanceStatusLabel, attendanceStatusColor };
+      const attendanceStatusColor = isAbsentShift ? (base.pendingAdjustmentCode ? 'orange' : 'red') : isPendingApproval ? 'gold' : isDone ? 'green' : inEv ? (base.pendingAdjustmentCode ? 'orange' : isForgotCheckout || inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : base.pendingSwapCode ? 'purple' : (base.pendingLeaveCode || base.pendingEmergencyCode) ? 'gold' : 'default';
+      return { ...base, isToday, isExpiredToday, isAbsentShift, isForgotCheckout, checkInEvent: inEv, checkOutEvent: outEv, attendanceStatusLabel, attendanceStatusColor };
     }).sort((a, b) => {
       const rank = (s: { workDate: string; isToday: boolean; status: string; isAbsentShift: boolean; isExpiredToday: boolean; checkInEvent: unknown; checkOutEvent: unknown }) =>
         s.isToday ? (s.status === 'PUBLISHED' && !s.isAbsentShift && !s.isExpiredToday && !(s.checkInEvent && s.checkOutEvent) ? (s.checkInEvent ? 0 : 1) : s.status === 'PUBLISHED' ? 2 : 3) : s.workDate > todayStr ? 4 : 5;

@@ -91,7 +91,7 @@ export function ScheduleFormModal({
         : api.post('/admin/schedules', values),
     onSuccess: () => {
       message.success(editing ? 'Đã cập nhật phân công ca làm việc' : 'Đã xếp lịch ca làm việc thành công');
-      qc.invalidateQueries({ queryKey: ['schedules'] });
+      ['schedules', 'attendance-sessions', 'attendance-all', 'my-attendance', 'nv-attendance', 'nv-schedules'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
       onClose();
     },
     onError: (err) => {

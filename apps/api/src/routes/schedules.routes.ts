@@ -9,7 +9,7 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll, findLockedPayrollPeriodForDate } from '../services/salary-profile.service.js';
-import { resolveShiftActiveRequests } from '../services/shift-absent-scanner.js';
+import { ensureCompletedShiftAttendanceEvents, getVnNowDateAndHm, resolveShiftActiveRequests } from '../services/shift-absent-scanner.js';
 import { queueScheduleShiftEmail } from '../services/action-email-dispatcher.js';
 import { emitScheduleRealtime, findBranchShiftTemplate, healBranchConsistency, resolveEmployeeBranchId } from './account-employee-sync.js';
 import { describePunctuality, parseHm } from './attendance-helpers.js';
@@ -34,6 +34,8 @@ export function mapShiftAssignment(a: ShiftAssignment, ctx: AppContext, shiftEve
   const startAt = a.start_at || tpl?.start_time || '07:00', endAt = a.end_at || tpl?.end_time || '12:00';
 
   const activeReqs = resolveShiftActiveRequests(ctx.db, a, emp);
+  const { todayStr, nowHm } = getVnNowDateAndHm();
+  const isExpiredShift = a.work_date < todayStr || (a.work_date === todayStr && nowHm > endAt);
   let attendanceStatusLabel = 'Chưa điểm danh', attendanceStatusColor = 'default';
   if (a.status === 'DRAFT') { attendanceStatusLabel = 'Chờ CH / HR duyệt phân ca'; attendanceStatusColor = 'gold'; }
   else if (a.status === 'ABSENT') {
@@ -42,9 +44,9 @@ export function mapShiftAssignment(a: ShiftAssignment, ctx: AppContext, shiftEve
   } else if (a.status === 'COMPLETED' || (shiftEvents?.inHm && shiftEvents?.hasOut)) { attendanceStatusLabel = 'Đã hoàn thành ca'; attendanceStatusColor = 'green'; }
   else if (a.status === 'ON_LEAVE' || a.day_type === 'OFF') { attendanceStatusLabel = 'Nghỉ phép OFF'; attendanceStatusColor = 'default'; }
   else if (shiftEvents?.inHm) {
-    const punc = describePunctuality('CHECK_IN', shiftEvents.inLateMins ?? 0, 0);
-    attendanceStatusLabel = `Đã vào ca (${shiftEvents.inHm} · ${punc.punctualityLabel})`;
-    attendanceStatusColor = punc.punctualityStatus === 'LATE' ? 'volcano' : 'processing';
+    if (activeReqs.pendingAdjustmentCode) { attendanceStatusLabel = `Đã gửi bù công (${activeReqs.pendingAdjustmentCode} · Chờ duyệt)`; attendanceStatusColor = 'orange'; }
+    else if (isExpiredShift) { attendanceStatusLabel = `Quên Ra ca (Vào ${shiftEvents.inHm} — Cần bổ sung công)`; attendanceStatusColor = 'volcano'; }
+    else { const punc = describePunctuality('CHECK_IN', shiftEvents.inLateMins ?? 0, 0); attendanceStatusLabel = `Đã vào ca (${shiftEvents.inHm} · ${punc.punctualityLabel})`; attendanceStatusColor = punc.punctualityStatus === 'LATE' ? 'volcano' : 'processing'; }
   } else if (activeReqs.pendingSwapCode) { attendanceStatusLabel = `Chờ duyệt đổi ca (${activeReqs.pendingSwapCode})`; attendanceStatusColor = 'purple'; }
   else if (activeReqs.pendingLeaveCode || activeReqs.pendingEmergencyCode) {
     attendanceStatusLabel = `Chờ duyệt nghỉ (${activeReqs.pendingLeaveCode || activeReqs.pendingEmergencyCode})`; attendanceStatusColor = 'gold';
@@ -163,6 +165,10 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
       ...(tpl ? { start_at: tpl.start_time, end_at: tpl.end_time, shift_template_id: tpl.id } : {}),
       ...(patch.status === 'PUBLISHED' && !before.published_at ? { published_at: nowIso() } : {}),
     }, request.auth!.user.id);
+    if (updated.status === 'COMPLETED') {
+      await ensureCompletedShiftAttendanceEvents(ctx.db, updated, request.auth!.user.id);
+      emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: updated.branch_id, employeeIds: [updated.employee_id], kind: 'SHIFT_COMPLETED', actorId: request.auth!.user.id });
+    }
     await ctx.audit.record(auditContext(request), { action: 'schedule.update', entity: 'SHIFT_ASSIGNMENTS', entityId: id, before: { shift_code: before.shift_code, status: before.status }, after: { shift_code: updated.shift_code, status: updated.status } });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: updated.branch_id, employeeIds: [before.employee_id, updated.employee_id], kind: before.status === 'DRAFT' && updated.status === 'PUBLISHED' ? 'SHIFT_APPROVED' : 'SHIFT_UPDATED', message: before.status === 'DRAFT' && updated.status === 'PUBLISHED' ? `Ca làm ngày ${updated.work_date} đã được duyệt phát hành chính thức` : '', actorId: request.auth!.user.id });
     if (before.status === 'DRAFT' && updated.status === 'PUBLISHED') queueScheduleShiftEmail(ctx, { empId: updated.employee_id, shiftLabel: tpl?.name ?? updated.shift_code, workDate: updated.work_date, startAt: updated.start_at, endAt: updated.end_at, branchId: updated.branch_id, code: `SHF-${updated.id.slice(0, 6)}` });

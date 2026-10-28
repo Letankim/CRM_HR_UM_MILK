@@ -38,16 +38,17 @@ export function AttendanceAdjustmentModal({
   const { options: shiftOptions } = useShiftTemplates();
 
   const cachedMyAtt = qc.getQueryData<{ shifts?: Record<string, unknown>[] }>(['my-attendance']);
-  const isShiftAbsent = (s: Record<string, unknown>) =>
+  const isForgotOutShift = (s: Record<string, unknown>) =>
+    Boolean(s.isForgotCheckout) || Boolean(s.checkInEvent && !s.checkOutEvent) || String(s.attendanceStatusLabel || '').includes('Quên Ra ca');
+  const isShiftNeedsSupplement = (s: Record<string, unknown>) =>
     !s.pendingAdjustmentCode &&
     !String(s.attendanceStatusLabel || '').includes('Đã gửi bù công') &&
-    (s.status === 'ABSENT' || Boolean(s.isAbsentShift) || (s.status === 'PUBLISHED' && !s.checkInEvent && Boolean(s.isExpiredToday)));
+    (s.status === 'ABSENT' || Boolean(s.isAbsentShift) || isForgotOutShift(s) || (s.status === 'PUBLISHED' && !s.checkInEvent && Boolean(s.isExpiredToday)));
 
-  // Chỉ lấy duy nhất các ca VẮNG MẶT (ABSENT) chưa gửi phiếu bổ sung công, tuyệt đối không lấy ca đã gửi phiếu chờ duyệt
   const absentShifts = useMemo(() => {
     const raw = shifts && shifts.length > 0 ? shifts : (cachedMyAtt?.shifts ?? []);
     return raw
-      .filter((s) => s.status !== 'DRAFT' && s.dayType !== 'OFF' && s.status !== 'ON_LEAVE' && s.status !== 'COMPLETED' && isShiftAbsent(s))
+      .filter((s) => s.status !== 'DRAFT' && s.dayType !== 'OFF' && s.status !== 'ON_LEAVE' && s.status !== 'COMPLETED' && isShiftNeedsSupplement(s))
       .sort((a, b) => String(b.workDate || b.work_date).localeCompare(String(a.workDate || a.work_date)));
   }, [shifts, cachedMyAtt?.shifts]);
 
@@ -67,18 +68,22 @@ export function AttendanceAdjustmentModal({
   const applyShiftToForm = (s: Record<string, unknown>) => {
     const wDate = String(s.workDate || s.work_date || dayjs().format('YYYY-MM-DD'));
     const sCode = String(s.shiftCode || s.shift_code || 'CA_SANG');
-    const startAt = String(s.startAt || s.start_at || '07:00');
+    const inEv = s.checkInEvent as { checkTimeHm?: string; checkTimeFormatted?: string } | null | undefined;
+    const forgotOut = isForgotOutShift(s);
+    const startAt = (forgotOut && (inEv?.checkTimeHm || String(inEv?.checkTimeFormatted || '').slice(0, 5))) || String(s.startAt || s.start_at || '07:00');
     const endAt = String(s.endAt || s.end_at || '12:00');
     const hours = Number(s.scheduledHours || s.scheduled_hours || 5);
     form.setFieldsValue({
       assignment_id: String(s.id),
       work_date: wDate,
       shift_code: sCode,
-      kind: 'FORGOT_CHECK_IN',
+      kind: forgotOut ? 'FORGOT_CHECK_OUT' : 'FORGOT_CHECK_IN',
       requested_check_in_at: startAt,
       requested_check_out_at: endAt,
       requested_hours: hours,
-      reason: form.getFieldValue('reason') || 'Bổ sung công bù ca bị đánh dấu Vắng mặt do quên điểm danh đúng giờ',
+      reason: forgotOut
+        ? 'Đã điểm danh Vào ca nhưng quên chấm công Ra ca đúng giờ'
+        : 'Bổ sung công bù ca bị đánh dấu Vắng mặt do quên điểm danh đúng giờ',
     });
   };
 
@@ -104,9 +109,10 @@ export function AttendanceAdjustmentModal({
   const shiftSelectOptions = useMemo(() => {
     const formatShiftOption = (s: Record<string, unknown>) => {
       const wDate = dayjs(String(s.workDate || s.work_date)).format('DD/MM/YYYY');
+      const tag = isForgotOutShift(s) ? '[Quên Ra ca — Cần bổ sung công]' : '[Vắng mặt — Cần bù công]';
       return {
         value: String(s.id),
-        label: `[Vắng mặt — Cần bù công] ${wDate} · ${cleanShiftName(s.shiftLabel || s.shift_code)} (${String(s.startAt || '07:00')} – ${String(s.endAt || '12:00')} · ${Number(s.scheduledHours || 5)}h)`,
+        label: `${tag} ${wDate} · ${cleanShiftName(s.shiftLabel || s.shift_code)} (${String(s.startAt || '07:00')} – ${String(s.endAt || '12:00')} · ${Number(s.scheduledHours || 5)}h)`,
       };
     };
     return absentShiftsForSelectedDate.map(formatShiftOption);
