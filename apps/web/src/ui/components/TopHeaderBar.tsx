@@ -39,14 +39,14 @@ export function TopHeaderBar({
   });
   const notifsQ = useQuery({
     queryKey: ['notifications', 'header-bell'],
-    queryFn: () => api.list<{ id: string; code: string; title: string; body: string; categoryLabel: string; targetLabel: string; readStatus: string; link?: string }>('/notifications?per_page=6'),
+    queryFn: () => api.list<{ id: string; code: string; title: string; body: string; categoryLabel: string; targetLabel: string; readStatus: string; link?: string }>('/notifications?per_page=12'),
   });
 
   const pendingTotal = pendingAccounts.data?.meta.pagination.total ?? 0;
   const pendingItems = pendingAccounts.data?.data ?? [];
   const notifItems = notifsQ.data?.data ?? [];
   const notifTotal = notifsQ.data?.meta.pagination.total ?? 0;
-  const unreadNotifCount = notifItems.filter((n) => n.readStatus === 'UNREAD').length;
+  const unreadNotifCount = Number(notifsQ.data?.meta.filters?.unread_count ?? notifItems.filter((n) => n.readStatus === 'UNREAD').length);
   const totalBadge = pendingTotal + unreadNotifCount;
   const { soundEnabled, setSoundEnabled, toggleSound, playTestSound } = useNotificationSound();
   const unreadKeys = useMemo(
@@ -85,9 +85,9 @@ export function TopHeaderBar({
             <List
               size="small"
               dataSource={[
-                ...pendingItems.map((i) => ({ key: `acc-${i.id}`, notifId: '', unread: true, title: `${i.displayName} (${i.username})`, desc: `Chờ kích hoạt · ${i.roleLabel}`, tag: 'Tài khoản', href: '/admin/accounts?status=PENDING_ACTIVATION' })),
                 ...notifItems.map((n) => ({ key: `ntf-${n.id}`, notifId: n.id, unread: n.readStatus === 'UNREAD', title: n.title, desc: `${n.targetLabel} · ${n.body}`, tag: n.code, href: n.link || '/admin/notifications' })),
-              ].slice(0, 6)}
+                ...pendingItems.map((i) => ({ key: `acc-${i.id}`, notifId: '', unread: true, title: `${i.displayName} (${i.username})`, desc: `Chờ kích hoạt · ${i.roleLabel}`, tag: 'Tài khoản', href: '/admin/accounts?status=PENDING_ACTIVATION' })),
+              ].slice(0, 12)}
               renderItem={(item) => (
                 <List.Item
                   style={{ cursor: 'pointer', padding: '8px 6px' }}

@@ -91,6 +91,15 @@ export class Realtime {
     this.io.to([rooms.branch(branchId), rooms.allBranches]).emit(event, payload);
   }
 
+  /** Gửi gộp tới nhiều room (Chi nhánh + Vai trò + Cá nhân) trong 1 lệnh duy nhất để Socket.IO tự động chống trùng gói tin. */
+  toTargets(opts: { branchId?: string; roles?: string[]; userIds?: string[] }, event: string, payload: unknown): void {
+    const targets = new Set<string>([rooms.allBranches]);
+    if (opts.branchId && opts.branchId !== 'ALL') targets.add(rooms.branch(opts.branchId));
+    for (const r of opts.roles ?? []) if (r) targets.add(rooms.role(r));
+    for (const u of opts.userIds ?? []) if (u) targets.add(rooms.user(u));
+    this.io.to(Array.from(targets)).emit(event, payload);
+  }
+
   /** Phát sự kiện toàn hệ thống tới mọi kết nối đang mở (Backoffice & Cổng NV). */
   broadcast(event: string, payload: unknown): void {
     this.io.emit(event, payload);

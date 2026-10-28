@@ -1,6 +1,7 @@
 import { DEFAULT_SHIFT_LABELS, type Employee, type EmployeeStage, type Role, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { singleFlight, tolerantWrite } from '../services/background-write.js';
+import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { today } from '../services/salary-profile.service.js';
 import { sweepExpiredShiftsAndMarkAbsent } from '../services/shift-absent-scanner.js';
 import { findLinkedEmployeeForUser, findLinkedUserForEmployee } from './employee-mapper.js';
@@ -191,28 +192,22 @@ export async function syncAccountFromEmployee(ctx: AppContext, params: SyncAccou
   return targetUser.id;
 }
 
-/** Phát tín hiệu Socket.IO đồng bộ Lịch làm việc, Ca làm & Đơn từ tới đúng Room Chi nhánh và Tài khoản nhân sự */
+/** Phát tín hiệu Socket.IO đồng bộ Lịch làm việc, Ca làm & Đơn từ tới đúng Room Chi nhánh, HR/Admin và Tài khoản nhân sự */
 export function emitScheduleRealtime(
   ctx: AppContext,
   event: string,
   opts: { branchId?: string; employeeIds?: (string | undefined)[]; kind?: string; message?: string; actorId?: string },
 ): void {
+  void ensureSyncedNotifications(ctx).catch(() => undefined);
   const rt = ctx.realtime();
   if (!rt) return;
   const payload = { kind: opts.kind ?? 'SCHEDULE_SYNC', branchId: opts.branchId ?? '', message: opts.message ?? '', actorId: opts.actorId ?? '' };
-  const hasBranchRoom = Boolean(opts.branchId && opts.branchId !== 'ALL');
-  if (hasBranchRoom) rt.toBranch(opts.branchId!, event, payload);
-  else rt.broadcast(event, payload);
-  const sentUsers = new Set<string>();
+  const userIds: string[] = [];
   for (const rawId of opts.employeeIds ?? []) {
     if (!rawId) continue;
     const emp = ctx.db.employees.get(rawId) ?? ctx.db.employees.find((e) => e.employee_code === rawId);
     const u = emp ? findLinkedUserForEmployee(emp, ctx) : undefined;
-    if (!u || u.id === opts.actorId || sentUsers.has(u.id)) continue;
-    const alreadyInBranchRoom = hasBranchRoom && (u.branch_scope === 'ALL' || (u.branch_scope || '').split(',').map((s) => s.trim()).includes(opts.branchId!));
-    if (!alreadyInBranchRoom) {
-      sentUsers.add(u.id);
-      rt.toUser(u.id, event, payload);
-    }
+    if (u) userIds.push(u.id);
   }
+  rt.toTargets({ branchId: opts.branchId, roles: ['ADMIN', 'HR', 'STORE', 'FINANCE'], userIds }, event, payload);
 }

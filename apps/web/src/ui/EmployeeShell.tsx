@@ -65,11 +65,11 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   const [profileTab, setProfileTab] = useState<'info' | 'password' | null>(null);
 
   const mntQ = useQuery({ queryKey: ['maintenance'], queryFn: () => api.get<{ enabled?: boolean; message?: string }[]>('/admin/maintenance'), enabled: !!data, retry: false });
-  const notifsQ = useQuery({ queryKey: ['notifications', 'nv-bell'], queryFn: () => api.list<{ id: string; code: string; title: string; body: string; targetLabel: string; readStatus: string }>('/notifications?per_page=10'), enabled: !!data, retry: false });
+  const notifsQ = useQuery({ queryKey: ['notifications', 'nv-bell'], queryFn: () => api.list<{ id: string; code: string; title: string; body: string; targetLabel: string; readStatus: string }>('/notifications?per_page=12'), enabled: !!data, retry: false });
   const activeMaint = mntQ.data?.[0]?.enabled ? mntQ.data[0] : null;
   const notifItems = notifsQ.data?.data ?? [];
   const notifTotal = notifsQ.data?.meta.pagination.total ?? 0;
-  const unreadNotifCount = notifItems.filter((n) => n.readStatus === 'UNREAD').length;
+  const unreadNotifCount = Number(notifsQ.data?.meta.filters?.unread_count ?? notifItems.filter((n) => n.readStatus === 'UNREAD').length);
   const { soundEnabled, setSoundEnabled, toggleSound, playTestSound } = useNotificationSound();
   const unreadKeys = useMemo(() => notifItems.filter((n) => n.readStatus === 'UNREAD').map((n) => `ntf:${n.id}`), [notifItems]);
   useTrackUnreadNotifications(data?.user.id, unreadKeys, notifsQ.isSuccess);
@@ -150,7 +150,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
                     </Space>
                   </Flex>
                   <div style={{ maxHeight: 'min(340px, calc(100dvh - 180px))', overflowY: 'auto', paddingRight: 2 }}>
-                    {notifItems.length === 0 ? <div style={{ padding: 12, textAlign: 'center', fontSize: 12, color: BRAND.textSecondary }}>Chưa có thông báo mới</div> : <List size="small" dataSource={notifItems} renderItem={(n) => <List.Item style={{ cursor: 'pointer', padding: '8px 6px' }} onClick={() => router.push('/nv/thong-bao')}><div style={{ width: '100%', minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 600, color: '#0F172A', lineHeight: 1.45, wordBreak: 'break-word' }}><Tag color={n.readStatus === 'UNREAD' ? 'geekblue' : 'default'} style={{ margin: '0 6px 2px 0', fontSize: 10, paddingInline: 5, lineHeight: '16px', verticalAlign: 'text-top' }}>{n.code}</Tag><span>{n.title}</span></div><div style={{ fontSize: 11.5, color: '#64748B', lineHeight: 1.4, marginTop: 3, wordBreak: 'break-word' }}>{n.targetLabel} · {n.body}</div></div></List.Item>} />}
+                    {notifItems.length === 0 ? <div style={{ padding: 12, textAlign: 'center', fontSize: 12, color: BRAND.textSecondary }}>Chưa có thông báo mới</div> : <List size="small" dataSource={notifItems} renderItem={(n) => <List.Item style={{ cursor: 'pointer', padding: '8px 6px' }} onClick={() => { if (n.readStatus === 'UNREAD') void api.post(`/notifications/${n.id}/read`, {}).then(() => qc.invalidateQueries({ queryKey: ['notifications'] })); router.push('/nv/thong-bao'); }}><div style={{ width: '100%', minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 600, color: '#0F172A', lineHeight: 1.45, wordBreak: 'break-word' }}><Tag color={n.readStatus === 'UNREAD' ? 'geekblue' : 'default'} style={{ margin: '0 6px 2px 0', fontSize: 10, paddingInline: 5, lineHeight: '16px', verticalAlign: 'text-top' }}>{n.code}</Tag><span>{n.title}</span></div><div style={{ fontSize: 11.5, color: '#64748B', lineHeight: 1.4, marginTop: 3, wordBreak: 'break-word' }}>{n.targetLabel} · {n.body}</div></div></List.Item>} />}
                   </div>
                   <Button type="primary" ghost size="small" icon={<BellOutlined />} block style={{ marginTop: 8 }} onClick={() => router.push('/nv/thong-bao')}>Xem chi tiết tất cả thông báo ({notifTotal})</Button>
                 </div>

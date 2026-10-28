@@ -199,7 +199,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       reason: body.reason, evidence_file_id: '', exception_source: 'EMPLOYEE', status: 'PENDING', store_confirmed_by: '', store_confirmed_at: '', store_note: '', hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.create', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: created.id, after: { adjustment_code: created.adjustment_code, assignment_id: created.assignment_id, requested_hours: created.requested_hours } });
-    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'ADJUSTMENT_CREATED', actorId: request.auth!.user.id });
+    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'ADJUSTMENT_CREATED', message: `${emp.full_name} (${emp.employee_code}) vừa gửi phiếu bổ sung công ${created.adjustment_code} ngày ${created.work_date} chờ duyệt`, actorId: request.auth!.user.id });
     return reply.code(201), sendSuccess(request, 'Đã tạo phiếu bổ sung / điều chỉnh công', created);
   });
 
@@ -214,7 +214,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     if (body.action === 'HR_APPROVE') await applyApprovedAdjustmentToShift(ctx.db, id, actorId);
     queueAttendanceAdjustmentDecisionEmail(ctx, updated, request.auth?.user.email);
     await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.decide', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: id, before: { status: before.status }, after: { status: updated.status, hr_decision: updated.hr_decision } });
-    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: 'ADJUSTMENT_DECIDED', actorId });
+    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: 'ADJUSTMENT_DECIDED', message: `Phiếu bổ sung công ${updated.adjustment_code} ngày ${updated.work_date} đã ${body.action === 'STORE_CONFIRM' ? 'được Cửa hàng xác nhận' : body.action === 'HR_APPROVE' ? 'được HR phê duyệt' : 'bị từ chối'}`, actorId });
     return sendSuccess(request, body.action === 'STORE_CONFIRM' ? 'Cửa hàng đã xác nhận phiếu bổ sung công để chuyển HR duyệt' : body.action === 'HR_APPROVE' ? 'Đã phê duyệt phiếu bổ sung công và cập nhật trạng thái hoàn thành ca làm việc' : 'Đã từ chối phiếu bổ sung công', updated);
   });
 }

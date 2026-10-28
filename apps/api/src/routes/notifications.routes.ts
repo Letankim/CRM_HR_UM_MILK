@@ -53,7 +53,8 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
     const splitCsv = (raw: string) => (raw || '').split(',').map((s) => s.trim()).filter(Boolean);
 
     const seenVisibleKeys = new Set<string>();
-    const visible = ctx.db.notifications.all().filter((n) => {
+    const isGlobalBackofficeRole = ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(user.role);
+    const visible = [...ctx.db.notifications.all()].reverse().filter((n) => {
       if (isNotificationCreatedByOrSelfAction(ctx, n, user.id)) return false;
       if (n.entity_type === 'MANUAL' && n.created_by === user.id && !splitCsv(n.recipient_user_id).includes(user.id)) return false;
 
@@ -69,7 +70,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
         } else if (user.role === 'ADMIN') {
           matched = true;
         } else {
-          const inBranch = branchScope === 'ALL' || !n.branch_id || n.branch_id === 'ALL' || branchScope.includes(n.branch_id);
+          const inBranch = isGlobalBackofficeRole || branchScope === 'ALL' || !n.branch_id || n.branch_id === 'ALL' || branchScope.includes(n.branch_id);
           if (!inBranch) return false;
           if (roles.length > 0 && !roles.includes('ALL')) matched = roles.includes(user.role);
           else matched = userIds.includes('ALL') || roles.includes('ALL');
@@ -83,6 +84,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
       return true;
     });
 
+    const totalVisible = visible.length;
     const enriched = visible.map((n, idx) => {
       const anc = n.entity_type === 'ANNOUNCEMENTS' ? ancsMap.get(n.entity_id) : undefined;
       const userIds = splitCsv(n.recipient_user_id).filter((x) => x !== 'ALL' && x !== 'NONE');
@@ -96,18 +98,20 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
       const targetLabel = isAncGroup ? `Nhóm nhận (${userIds.length}): ${userNames.join(', ') || 'Theo nhóm cấu hình'}` : isPersonal ? `Cá nhân (${userNames.length}): ${userNames.join(', ')}` : isBroadcast ? 'Toàn hệ thống (Tất cả vai trò)' : `Nhóm nhân sự: ${roleLabels.join(', ')}`;
       const userReadAt = getUserReadAt(n.read_at, user.id), readStatus = userReadAt ? 'READ' : 'UNREAD';
       return {
-        ...n, body: n.body.replace(/^Mã:\s*[A-Z0-9_]+\s*\([^)]+\)\s*·\s*/i, ''), read_at: userReadAt, code: anc?.code || `NTF-${String(idx + 1).padStart(4, '0')}`,
+        ...n, body: n.body.replace(/^Mã:\s*[A-Z0-9_]+\s*\([^)]+\)\s*·\s*/i, ''), read_at: userReadAt, code: anc?.code || `NTF-${String(totalVisible - idx).padStart(4, '0')}`,
         categoryLabel: NOTIFICATION_CATEGORY_LABELS[n.category] ?? n.category, severityLabel: NOTIFICATION_SEVERITY_LABELS[n.severity] ?? n.severity,
         scopeType, targetLabel, readStatus, readStatusLabel: userReadAt ? 'Đã đọc' : 'Chưa đọc', detailHtml: anc?.body || `<p>${n.body.replace(/^Mã:\s*[A-Z0-9_]+\s*\([^)]+\)\s*·\s*/i, '')}</p>`,
       };
     });
 
+    const unreadCount = enriched.filter((n) => n.readStatus === 'UNREAD').length;
     const result = paginateAndSort(enriched, {
       page: query.page, perPage: query.per_page, sortBy: query.sort_by, sortOrder: query.sort_order, defaultSortBy: 'created_at',
       allowedSortFields: ['created_at', 'severity', 'title', 'category', 'readStatus'], q: query.q,
       searchExtractor: (item) => [item.code, item.title, item.body, item.categoryLabel, item.targetLabel],
       filters: { category: query.category, severity: query.severity, readStatus: query.read_status, scopeType: query.scope_type },
     });
+    result.meta.filters.unread_count = String(unreadCount);
     return sendPaginated(request, 'Lấy danh sách thông báo hệ thống thành công', result);
   });
 

@@ -112,12 +112,19 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     const onAttendance = (payload?: { actorId?: string; kind?: string; message?: string }) => {
       const { isSelf, isDup } = isSelfOrDup('att', payload);
       if (isDup) return;
-      ['notifications', 'my-attendance', 'attendance-all', 'nv-attendance', 'attendance-sessions', 'attendance-sessions-count', 'attendance-adjustments', 'schedules', 'dashboard-shifts-full'].forEach((k) =>
+      ['notifications', 'my-attendance', 'attendance-all', 'nv-attendance', 'attendance-sessions', 'attendance-sessions-count', 'attendance-adjustments', 'dashboard-attendance-adjustments', 'schedules', 'dashboard-shifts-full'].forEach((k) =>
         qc.invalidateQueries({ queryKey: [k] }),
       );
       if (!isSelf && app === 'backoffice' && payload?.message) {
         playNotificationSound();
-        message.warning({ key: 'rt-att-alert', content: payload.message });
+        if (payload.kind === 'ADJUSTMENT_CREATED' || payload.kind === 'ADJUSTMENT_DECIDED') {
+          message.info({ key: 'rt-att-alert', content: payload.message });
+        } else {
+          message.warning({ key: 'rt-att-alert', content: payload.message });
+        }
+      } else if (!isSelf && app === 'employee' && payload?.kind === 'ADJUSTMENT_DECIDED' && payload?.message) {
+        playNotificationSound();
+        message.info({ key: 'rt-att-emp', content: payload.message });
       }
     };
     const onSchedule = (payload?: { actorId?: string; kind?: string; message?: string }) => {
@@ -128,8 +135,9 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       if (app === 'employee' && payload?.message && ['SHIFT_APPROVED', 'SHIFT_ASSIGNED', 'LEAVE_DECIDED', 'SWAP_PEER', 'SWAP_DECIDED', 'EMERGENCY_HANDLED'].includes(payload.kind || '')) {
         playNotificationSound();
         message.info({ key: 'rt-schedule-emp', content: payload.message });
-      } else if (app === 'backoffice' && payload?.kind && ['SHIFT_REGISTERED', 'LEAVE_CREATED', 'SWAP_CREATED', 'SWAP_PEER_ACCEPTED'].includes(payload.kind)) {
+      } else if (app === 'backoffice' && payload?.kind && ['SHIFT_REGISTERED', 'LEAVE_CREATED', 'SWAP_CREATED', 'SWAP_PEER', 'SWAP_PEER_ACCEPTED'].includes(payload.kind)) {
         playNotificationSound();
+        if (payload.message) message.info({ key: 'rt-schedule-bo', content: payload.message });
       }
     };
     const onEmergency = (payload?: { actorId?: string; message?: string }) => {
