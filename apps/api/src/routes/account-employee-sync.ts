@@ -64,16 +64,10 @@ export function resolveEmployeeBranchId(ctx: AppContext, employeeId: string, fal
 }
 
 /** Khi nhân sự chuyển chi nhánh, đồng bộ branch_id cho toàn bộ ca làm việc, điểm danh, đơn nghỉ và đổi ca của nhân sự đó */
-export async function cascadeEmployeeBranchChange(
-  ctx: AppContext,
-  emp: Employee,
-  newBranchId: string,
-  actorId: string,
-): Promise<void> {
+export async function cascadeEmployeeBranchChange(ctx: AppContext, emp: Employee, newBranchId: string, actorId: string): Promise<void> {
   if (!newBranchId) return;
   const matchEmp = (eid: string) => eid === emp.id || eid.trim().toUpperCase() === emp.employee_code.trim().toUpperCase();
-  const move = <T extends { id: string; version: number }>(store: { update: (id: string, v: number, p: { branch_id: string }, a: string) => Promise<T> }, row: T) =>
-    tolerantWrite(() => store.update(row.id, row.version, { branch_id: newBranchId }, actorId));
+  const move = <T extends { id: string; version: number }>(store: { update: (id: string, v: number, p: { branch_id: string }, a: string) => Promise<T> }, row: T) => tolerantWrite(() => store.update(row.id, row.version, { branch_id: newBranchId }, actorId));
 
   for (const a of ctx.db.shiftAssignments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) await move(ctx.db.shiftAssignments, a);
   for (const l of ctx.db.leaveRequests.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) await move(ctx.db.leaveRequests, l);
@@ -206,12 +200,19 @@ export function emitScheduleRealtime(
   const rt = ctx.realtime();
   if (!rt) return;
   const payload = { kind: opts.kind ?? 'SCHEDULE_SYNC', branchId: opts.branchId ?? '', message: opts.message ?? '', actorId: opts.actorId ?? '' };
-  if (opts.branchId && opts.branchId !== 'ALL') rt.toBranch(opts.branchId, event, payload);
+  const hasBranchRoom = Boolean(opts.branchId && opts.branchId !== 'ALL');
+  if (hasBranchRoom) rt.toBranch(opts.branchId!, event, payload);
   else rt.broadcast(event, payload);
+  const sentUsers = new Set<string>();
   for (const rawId of opts.employeeIds ?? []) {
     if (!rawId) continue;
     const emp = ctx.db.employees.get(rawId) ?? ctx.db.employees.find((e) => e.employee_code === rawId);
     const u = emp ? findLinkedUserForEmployee(emp, ctx) : undefined;
-    if (u) rt.toUser(u.id, event, payload);
+    if (!u || u.id === opts.actorId || sentUsers.has(u.id)) continue;
+    const alreadyInBranchRoom = hasBranchRoom && (u.branch_scope === 'ALL' || (u.branch_scope || '').split(',').map((s) => s.trim()).includes(opts.branchId!));
+    if (!alreadyInBranchRoom) {
+      sentUsers.add(u.id);
+      rt.toUser(u.id, event, payload);
+    }
   }
 }

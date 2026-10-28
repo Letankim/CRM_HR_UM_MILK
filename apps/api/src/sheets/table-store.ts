@@ -13,6 +13,7 @@ const MAX_APPEND_BATCH = 200;
 
 export class TableStore<T extends BaseRecord> {
   private entries = new Map<string, Entry<T>>();
+  private pendingEntries = new Map<string, T>();
   private invalid: InvalidRow[] = [];
   private loadedAt: string | null = null;
   private lastLoadedMs = 0;
@@ -82,16 +83,18 @@ export class TableStore<T extends BaseRecord> {
   all(includeDeleted = false): T[] {
     const out: T[] = [];
     for (const e of this.entries.values()) if (includeDeleted || !e.data.is_deleted) out.push(e.data);
+    for (const [id, d] of this.pendingEntries.entries()) if (!this.entries.has(id) && (includeDeleted || !d.is_deleted)) out.push(d);
     return out;
   }
 
   get(id: string): T | undefined {
-    const e = this.entries.get(id);
-    return e && !e.data.is_deleted ? e.data : undefined;
+    const d = this.entries.get(id)?.data ?? this.pendingEntries.get(id);
+    return d && !d.is_deleted ? d : undefined;
   }
 
   find(predicate: (row: T) => boolean): T | undefined {
     for (const e of this.entries.values()) if (!e.data.is_deleted && predicate(e.data)) return e.data;
+    for (const [id, d] of this.pendingEntries.entries()) if (!this.entries.has(id) && !d.is_deleted && predicate(d)) return d;
     return undefined;
   }
 
@@ -102,9 +105,10 @@ export class TableStore<T extends BaseRecord> {
   async insert(input: InsertInput<T>, actorId: string): Promise<T> {
     const now = nowIso();
     const record = this.validate({ ...input, id: input.id ?? newId(), created_at: now, created_by: actorId, updated_at: now, updated_by: actorId, version: 1, is_deleted: false });
-    if (this.entries.has(record.id) || this.insertBuffer.some((b) => b.record.id === record.id)) {
+    if (this.entries.has(record.id) || this.pendingEntries.has(record.id)) {
       throw Errors.badRequest(`id ${record.id} đã tồn tại`);
     }
+    this.pendingEntries.set(record.id, record);
     return new Promise<T>((resolve, reject) => {
       this.insertBuffer.push({ record, resolve, reject });
       this.scheduleFlush();
@@ -130,11 +134,15 @@ export class TableStore<T extends BaseRecord> {
         batch.map((b) => this.toRow(b.record)),
       );
       batch.forEach((b, i) => {
+        this.pendingEntries.delete(b.record.id);
         if (this.opts.cacheRows !== false) this.entries.set(b.record.id, { row: firstRow + i, data: b.record });
         b.resolve(b.record);
       });
     } catch (err) {
-      for (const b of batch) b.reject(err);
+      for (const b of batch) {
+        this.pendingEntries.delete(b.record.id);
+        b.reject(err);
+      }
       throw err;
     }
   }

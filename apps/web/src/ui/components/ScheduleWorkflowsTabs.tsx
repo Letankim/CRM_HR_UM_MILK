@@ -208,7 +208,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
         ]}
       />
       <ScheduleRequestDetailModal target={detailTarget} onClose={() => setDetailTarget(null)} />
-      <ScheduleWorkflowModals employees={employees} assignments={assignments} leaveModal={leaveModal} swapModal={swapModal} emgModal={emgModal} adjModal={adjModal} onCloseLeave={() => setLeaveModal(false)} onCloseSwap={() => setSwapModal(false)} onCloseEmg={() => setEmgModal(false)} onCloseAdj={() => setAdjModal(false)} onSubmitAction={(url, body) => actMut.mutate({ url, body })} />
+      <ScheduleWorkflowModals employees={employees} assignments={assignments} leaveModal={leaveModal} swapModal={swapModal} emgModal={emgModal} adjModal={adjModal} submitting={actMut.isPending} onCloseLeave={() => setLeaveModal(false)} onCloseSwap={() => setSwapModal(false)} onCloseEmg={() => setEmgModal(false)} onCloseAdj={() => setAdjModal(false)} onSubmitAction={(url, body) => !actMut.isPending && actMut.mutate({ url, body })} />
     </Card>
   );
 }

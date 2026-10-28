@@ -73,9 +73,26 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
         message.success('Hệ thống đã hoàn tất bảo trì và hoạt động bình thường trở lại');
       }
     };
-    const onNotification = (payload?: { kind?: string; title?: string; summary?: string; code?: string }) => {
-      playNotificationSound();
+    const isSelfOrDup = (() => {
+      let lastSig = '';
+      let lastAt = 0;
+      return (eventKey: string, payload?: { actorId?: string; kind?: string; code?: string; title?: string; message?: string }) => {
+        const myId = qc.getQueryData<{ user?: { id?: string } }>(['auth', 'me'])?.user?.id;
+        const isSelf = Boolean(payload?.actorId && myId && payload.actorId === myId);
+        const sig = `${eventKey}:${payload?.kind || ''}:${payload?.code || ''}:${payload?.title || ''}:${payload?.message || ''}`;
+        const now = Date.now();
+        const isDup = sig === lastSig && now - lastAt < 1500;
+        lastSig = sig;
+        lastAt = now;
+        return { isSelf, isDup };
+      };
+    })();
+    const onNotification = (payload?: { actorId?: string; kind?: string; title?: string; summary?: string; code?: string }) => {
+      const { isSelf, isDup } = isSelfOrDup('ntf', payload);
+      if (isDup) return;
       ['notifications', 'mkt-comms', 'nv-comms'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      if (isSelf) return;
+      playNotificationSound();
       if (payload?.title) {
         message.info({ key: `rt-ntf-${payload.code || payload.title}`, content: `${payload.kind === 'ANNOUNCEMENT' ? `Bản tin mới (${payload.code || 'Nội bộ'})` : 'Thông báo mới'}: ${payload.title}` });
       }
@@ -85,38 +102,29 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       if (scheduleTimer) clearTimeout(scheduleTimer);
       scheduleTimer = setTimeout(() => {
         [
-          'notifications',
-          'schedules',
-          'my-attendance',
-          'leave-requests',
-          'shift-swaps',
-          'emergency-leaves',
-          'attendance-adjustments',
-          'attendance-sessions',
-          'attendance-sessions-count',
-          'nv-schedules',
-          'nv-swaps',
-          'dashboard-schedules',
-          'dashboard-leaves',
-          'dashboard-leaves-full',
-          'dashboard-swaps',
-          'dashboard-emergencies',
-          'dashboard-attendance-adjustments',
+          'notifications', 'schedules', 'my-attendance', 'leave-requests', 'shift-swaps', 'emergency-leaves',
+          'attendance-adjustments', 'attendance-sessions', 'attendance-sessions-count', 'nv-schedules', 'nv-swaps',
+          'dashboard-schedules', 'dashboard-leaves', 'dashboard-leaves-full', 'dashboard-swaps', 'dashboard-emergencies', 'dashboard-attendance-adjustments',
         ].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
       }, 350);
     };
 
-    const onAttendance = (payload?: { message?: string }) => {
+    const onAttendance = (payload?: { actorId?: string; kind?: string; message?: string }) => {
+      const { isSelf, isDup } = isSelfOrDup('att', payload);
+      if (isDup) return;
       ['notifications', 'my-attendance', 'attendance-all', 'nv-attendance', 'attendance-sessions', 'attendance-sessions-count', 'attendance-adjustments', 'schedules', 'dashboard-shifts-full'].forEach((k) =>
         qc.invalidateQueries({ queryKey: [k] }),
       );
-      if (app === 'backoffice' && payload?.message) {
+      if (!isSelf && app === 'backoffice' && payload?.message) {
         playNotificationSound();
         message.warning({ key: 'rt-att-alert', content: payload.message });
       }
     };
-    const onSchedule = (payload?: { kind?: string; message?: string }) => {
+    const onSchedule = (payload?: { actorId?: string; kind?: string; message?: string }) => {
+      const { isSelf, isDup } = isSelfOrDup('sched', payload);
+      if (isDup) return;
       triggerScheduleSync();
+      if (isSelf) return;
       if (app === 'employee' && payload?.message && ['SHIFT_APPROVED', 'SHIFT_ASSIGNED', 'LEAVE_DECIDED', 'SWAP_PEER', 'SWAP_DECIDED', 'EMERGENCY_HANDLED'].includes(payload.kind || '')) {
         playNotificationSound();
         message.info({ key: 'rt-schedule-emp', content: payload.message });
@@ -124,9 +132,11 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
         playNotificationSound();
       }
     };
-    const onEmergency = (payload?: { message?: string }) => {
+    const onEmergency = (payload?: { actorId?: string; message?: string }) => {
+      const { isSelf, isDup } = isSelfOrDup('emg', payload);
+      if (isDup) return;
       triggerScheduleSync();
-      if (app === 'backoffice') {
+      if (!isSelf && app === 'backoffice') {
         playNotificationSound();
         if (payload?.message) message.warning({ key: 'rt-emergency-mgr', content: payload.message });
       }

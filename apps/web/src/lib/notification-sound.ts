@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export const NOTIFICATION_SOUND_STORAGE_KEY = 'umbm_notification_sound_enabled';
 const SOUND_CHANGE_EVENT = 'umbm:notification-sound-change';
 const SOUND_SRC = '/thong_bao.mp3';
-const AUTO_CHIME_COOLDOWN_MS = 1500;
+const AUTO_CHIME_COOLDOWN_MS = 4000;
 
 let sharedAudio: HTMLAudioElement | null = null;
 let lastPlayedAt = 0;
