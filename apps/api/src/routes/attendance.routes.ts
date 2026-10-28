@@ -130,7 +130,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     }, request.auth!.user.id);
     if (checkType === 'CHECK_OUT' && assign.status !== 'COMPLETED') await ctx.db.shiftAssignments.update(assign.id, assign.version, { status: 'COMPLETED' }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: checkType === 'CHECK_IN' ? 'attendance.check_in' : 'attendance.check_out', entity: 'ATTENDANCE_EVENTS', entityId: created.id, after: { type: created.type, distance_m: distanceM, within_radius: withinRadius, result, late_minutes: lateMinutes, early_leave_minutes: earlyLeaveMinutes } });
-    ctx.realtime()?.toBranch(branch.id, 'attendance:event', { id: created.id, type: created.type, result, distanceM, lateMinutes, earlyLeaveMinutes, message: (lateMinutes > 0 || earlyLeaveMinutes > 0 || result !== 'VALID') ? `Cảnh báo điểm danh tại ${branch.name}: ${empRecord.full_name} (${punc.punctualityLabel} · GPS ${distanceM}m)` : '' });
+    ctx.realtime()?.toBranch(branch.id, 'attendance:event', { id: created.id, type: created.type, result, distanceM, lateMinutes, earlyLeaveMinutes, message: '' });
     return reply.code(201), sendSuccess(request, `Điểm danh ${checkType === 'CHECK_IN' ? 'vào ca' : 'ra ca'} thành công (${punc.punctualityLabel} · GPS ${distanceM}m)`, mapAttendanceEvent(created, ctx));
   });
 
@@ -214,7 +214,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     if (body.action === 'HR_APPROVE') await applyApprovedAdjustmentToShift(ctx.db, id, actorId);
     queueAttendanceAdjustmentDecisionEmail(ctx, updated, request.auth?.user.email);
     await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.decide', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: id, before: { status: before.status }, after: { status: updated.status, hr_decision: updated.hr_decision } });
-    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: 'ADJUSTMENT_DECIDED', message: `Phiếu bổ sung công ${updated.adjustment_code} ngày ${updated.work_date} đã ${body.action === 'STORE_CONFIRM' ? 'được Cửa hàng xác nhận' : body.action === 'HR_APPROVE' ? 'được HR phê duyệt' : 'bị từ chối'}`, actorId });
+    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: body.action === 'STORE_CONFIRM' ? 'ADJUSTMENT_STORE_CONFIRMED' : 'ADJUSTMENT_DECIDED', message: `Phiếu bổ sung công ${updated.adjustment_code} ngày ${updated.work_date} đã ${body.action === 'STORE_CONFIRM' ? 'được Cửa hàng xác nhận' : body.action === 'HR_APPROVE' ? 'được HR phê duyệt' : 'bị từ chối'}`, actorId });
     return sendSuccess(request, body.action === 'STORE_CONFIRM' ? 'Cửa hàng đã xác nhận phiếu bổ sung công để chuyển HR duyệt' : body.action === 'HR_APPROVE' ? 'Đã phê duyệt phiếu bổ sung công và cập nhật trạng thái hoàn thành ca làm việc' : 'Đã từ chối phiếu bổ sung công', updated);
   });
 }

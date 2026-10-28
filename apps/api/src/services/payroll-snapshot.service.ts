@@ -24,7 +24,7 @@ function computePeriodDirtySig(ctx: AppContext, period: PayPeriod): string {
   const inRange = <T extends { work_date: string; version: number; updated_at: string }>(rows: readonly T[]) =>
     sumVer(rows.filter((r) => r.work_date >= period.from_date && r.work_date <= period.to_date));
   return [
-    period.version, period.from_date, period.to_date,
+    'v2', period.version, period.from_date, period.to_date,
     sumVer(ctx.db.employees.all(true)),
     sumVer(ctx.db.payRates.all(true)),
     inRange(ctx.db.shiftAssignments.all(true)),

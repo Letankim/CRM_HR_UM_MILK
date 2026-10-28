@@ -53,32 +53,26 @@ export function resolveEmployeeBranchId(ctx: AppContext, employeeId: string, fal
 export async function cascadeEmployeeBranchChange(ctx: AppContext, emp: Employee, newBranchId: string, actorId: string): Promise<void> {
   if (!newBranchId) return;
   const matchEmp = (eid: string) => eid === emp.id || eid.trim().toUpperCase() === emp.employee_code.trim().toUpperCase();
-  const move = <T extends { id: string; version: number }>(store: { update: (id: string, v: number, p: { branch_id: string }, a: string) => Promise<T> }, row: T) => tolerantWrite(() => store.update(row.id, row.version, { branch_id: newBranchId }, actorId));
+  const moveBatch = <T extends { id: string; version: number }>(store: { batchUpdate: (items: { id: string; expectedVersion: number; patch: { branch_id: string } }[], a: string) => Promise<T[]> }, rows: T[]) =>
+    rows.length > 0 ? tolerantWrite(() => store.batchUpdate(rows.map((r) => ({ id: r.id, expectedVersion: r.version, patch: { branch_id: newBranchId } })), actorId)) : Promise.resolve();
 
-  for (const a of ctx.db.shiftAssignments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) await move(ctx.db.shiftAssignments, a);
-  for (const l of ctx.db.leaveRequests.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) await move(ctx.db.leaveRequests, l);
-  for (const s of ctx.db.shiftSwaps.filter((x) => matchEmp(x.requester_id) && x.branch_id !== newBranchId)) await move(ctx.db.shiftSwaps, s);
-  for (const e of ctx.db.emergencyLeaves.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) await move(ctx.db.emergencyLeaves, e);
-  for (const ev of ctx.db.attendanceEvents.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) await move(ctx.db.attendanceEvents, ev);
-  for (const adj of ctx.db.attendanceAdjustments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)) await move(ctx.db.attendanceAdjustments, adj);
+  await moveBatch(ctx.db.shiftAssignments, ctx.db.shiftAssignments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId));
+  await moveBatch(ctx.db.leaveRequests, ctx.db.leaveRequests.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId));
+  await moveBatch(ctx.db.shiftSwaps, ctx.db.shiftSwaps.filter((x) => matchEmp(x.requester_id) && x.branch_id !== newBranchId));
+  await moveBatch(ctx.db.emergencyLeaves, ctx.db.emergencyLeaves.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId));
+  await moveBatch(ctx.db.attendanceEvents, ctx.db.attendanceEvents.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId));
+  await moveBatch(ctx.db.attendanceAdjustments, ctx.db.attendanceAdjustments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId));
 }
 
 const healsInFlight = new WeakMap<object, Promise<void>>();
 const lastHealSig = new WeakMap<object, string>();
 
 function computeHealSig(ctx: AppContext): string {
-  const verSum = (rows: readonly { version: number }[]) => {
-    let s = rows.length;
-    for (let i = 0; i < rows.length; i++) s += rows[i]!.version;
-    return s;
-  };
+  const verSum = (rows: readonly { version: number }[]) => rows.reduce((s, r) => s + r.version, rows.length);
   return `${Math.floor(Date.now() / 60_000)}:${verSum(ctx.db.users.all())}:${verSum(ctx.db.employees.all())}:${verSum(ctx.db.shiftAssignments.all())}:${verSum(ctx.db.leaveRequests.all())}:${verSum(ctx.db.attendanceEvents.all())}:${verSum(ctx.db.attendanceAdjustments.all())}`;
 }
 
-/**
- * Tự động đồng bộ & làm sạch lệch chi nhánh giữa Tài khoản <-> Hồ sơ nhân sự <-> Lịch phân ca & Điểm danh.
- * Bỏ qua tức thì nếu dữ liệu trong bộ nhớ đệm không thay đổi trong cùng phút hiện tại.
- */
+/** Tự động đồng bộ & làm sạch lệch chi nhánh giữa Tài khoản <-> Hồ sơ nhân sự <-> Lịch phân ca & Điểm danh */
 export function healBranchConsistency(ctx: AppContext, actorId = 'system-sync'): Promise<void> {
   const sig = computeHealSig(ctx);
   if (lastHealSig.get(ctx.db) === sig) return Promise.resolve();
@@ -179,13 +173,15 @@ export async function syncAccountFromEmployee(ctx: AppContext, params: SyncAccou
 
 const pendingRealtimeBatches = new Map<string, { count: number; branchId: string; userIds: Set<string>; firstMsg: string; actorId: string; timer: ReturnType<typeof setTimeout> }>();
 const BULK_KIND_LABELS: Record<string, (n: number) => string> = {
-  ADJUSTMENT_DECIDED: (n) => `Đã xử lý hàng loạt ${n} phiếu bổ sung công`, ADJUSTMENT_CREATED: (n) => `Có ${n} phiếu bổ sung công mới vừa gửi chờ duyệt`,
+  ADJUSTMENT_DECIDED: (n) => `Đã xử lý hàng loạt ${n} phiếu bổ sung công`, ADJUSTMENT_STORE_CONFIRMED: (n) => `Cửa hàng đã xác nhận ${n} phiếu bổ sung công chờ HR duyệt`,
+  ADJUSTMENT_CREATED: (n) => `Có ${n} phiếu bổ sung công mới vừa gửi chờ duyệt`,
   LEAVE_DECIDED: (n) => `Đã xử lý hàng loạt ${n} đơn xin nghỉ phép (OFF)`, LEAVE_CREATED: (n) => `Có ${n} đơn xin nghỉ phép (OFF) mới chờ duyệt`,
   SWAP_DECIDED: (n) => `Đã xử lý hàng loạt ${n} yêu cầu đổi ca`, SWAP_PEER: (n) => `Đã cập nhật hàng loạt ${n} yêu cầu đổi ca`,
   EMERGENCY_HANDLED: (n) => `Đã xử lý hàng loạt ${n} báo cáo nghỉ đột xuất`, SHIFT_APPROVED: (n) => `Đã duyệt và phát hành chính thức ${n} ca làm việc`,
 };
+const WORKFLOW_CREATE_KINDS = new Set(['ADJUSTMENT_CREATED', 'LEAVE_CREATED', 'SHIFT_REGISTERED', 'SWAP_CREATED', 'SWAP_PEER', 'EMERGENCY_REPORTED']);
 
-/** Phát tín hiệu Socket.IO đồng bộ Lịch làm việc, Ca làm & Đơn từ (Tự động gom gộp thao tác hàng loạt thành 1 thông báo duy nhất) */
+/** Phát tín hiệu Socket.IO đồng bộ Lịch làm việc, Ca làm & Đơn từ (Chỉ phát âm thanh cho đúng người/vai trò nhận thông báo) */
 export function emitScheduleRealtime(
   ctx: AppContext,
   event: string,
@@ -203,17 +199,20 @@ export function emitScheduleRealtime(
     if (u) userIds.add(u.id);
   }
   if (existing) clearTimeout(existing.timer);
-  const count = (existing?.count ?? 0) + 1;
-  const firstMsg = existing?.firstMsg || opts.message || '';
-  const branchId = resolvedBranchId || existing?.branchId || '';
-  const actorId = opts.actorId ?? existing?.actorId ?? '';
+  const count = (existing?.count ?? 0) + 1, firstMsg = existing?.firstMsg || opts.message || '';
+  const branchId = resolvedBranchId || existing?.branchId || '', actorId = opts.actorId ?? existing?.actorId ?? '';
   const timer = setTimeout(() => {
     pendingRealtimeBatches.delete(batchKey);
     void ensureSyncedNotifications(ctx).catch(() => undefined);
     const rt = ctx.realtime();
     if (!rt) return;
     const message = count > 1 ? (BULK_KIND_LABELS[kind]?.(count) ?? firstMsg) : firstMsg;
-    rt.toTargets({ branchId, roles: ['ADMIN', 'HR', 'STORE', 'FINANCE'], userIds: Array.from(userIds), excludeUserId: actorId }, event, { kind, branchId, message, actorId });
+    const alertRoles: Role[] = kind === 'ADJUSTMENT_STORE_CONFIRMED' ? ['HR'] : WORKFLOW_CREATE_KINDS.has(kind) ? ['HR', 'STORE'] : [];
+    if (message && (alertRoles.length > 0 || userIds.size > 0)) {
+      rt.toTargets({ branchId, roles: alertRoles, userIds: Array.from(userIds), excludeUserId: actorId }, event, { kind, branchId, message, actorId });
+    }
+    const silentRoles = (['ADMIN', 'HR', 'STORE', 'FINANCE'] as Role[]).filter((r) => !message || !alertRoles.includes(r));
+    rt.toTargets({ branchId, roles: silentRoles, userIds: message ? [] : Array.from(userIds) }, event, { kind, branchId, message: '', actorId });
   }, 350);
   if (typeof timer.unref === 'function') timer.unref();
   pendingRealtimeBatches.set(batchKey, { count, branchId, userIds, firstMsg, actorId, timer });

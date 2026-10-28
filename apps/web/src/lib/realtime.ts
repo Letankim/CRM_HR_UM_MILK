@@ -119,44 +119,33 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       }, 350);
     };
 
-    const onAttendance = (payload?: { actorId?: string; kind?: string; message?: string }) => {
+    const onAttendance = (payload?: { actorId?: string; branchId?: string; kind?: string; message?: string }) => {
       const { isSelf, isDup } = isSelfOrDup('att', payload);
       if (isDup) return;
       ['notifications', 'my-attendance', 'attendance-all', 'nv-attendance', 'attendance-sessions', 'attendance-sessions-count', 'attendance-adjustments', 'dashboard-attendance-adjustments', 'schedules', 'dashboard-shifts-full'].forEach((k) =>
         qc.invalidateQueries({ queryKey: [k] }),
       );
-      if (!isSelf && app === 'backoffice' && payload?.message) {
+      if (!isSelf && payload?.message) {
         playNotificationSound();
-        if (payload.kind === 'ADJUSTMENT_CREATED' || payload.kind === 'ADJUSTMENT_DECIDED') {
-          message.info({ key: 'rt-att-alert', content: payload.message });
-        } else {
-          message.warning({ key: 'rt-att-alert', content: payload.message });
-        }
-      } else if (!isSelf && app === 'employee' && payload?.kind === 'ADJUSTMENT_DECIDED' && payload?.message) {
-        playNotificationSound();
-        message.info({ key: 'rt-att-emp', content: payload.message });
+        message.info({ key: app === 'backoffice' ? 'rt-att-alert' : 'rt-att-emp', content: payload.message });
       }
     };
-    const onSchedule = (payload?: { actorId?: string; kind?: string; message?: string }) => {
+    const onSchedule = (payload?: { actorId?: string; branchId?: string; kind?: string; message?: string }) => {
       const { isSelf, isDup } = isSelfOrDup('sched', payload);
       if (isDup) return;
       triggerScheduleSync();
-      if (isSelf) return;
-      if (app === 'employee' && payload?.message && ['SHIFT_APPROVED', 'SHIFT_ASSIGNED', 'LEAVE_DECIDED', 'SWAP_PEER', 'SWAP_DECIDED', 'EMERGENCY_HANDLED'].includes(payload.kind || '')) {
+      if (!isSelf && payload?.message) {
         playNotificationSound();
-        message.info({ key: 'rt-schedule-emp', content: payload.message });
-      } else if (app === 'backoffice' && payload?.kind && ['SHIFT_REGISTERED', 'LEAVE_CREATED', 'SWAP_CREATED', 'SWAP_PEER', 'SWAP_PEER_ACCEPTED'].includes(payload.kind)) {
-        playNotificationSound();
-        if (payload.message) message.info({ key: 'rt-schedule-bo', content: payload.message });
+        message.info({ key: app === 'backoffice' ? 'rt-schedule-bo' : 'rt-schedule-emp', content: payload.message });
       }
     };
-    const onEmergency = (payload?: { actorId?: string; message?: string }) => {
+    const onEmergency = (payload?: { actorId?: string; branchId?: string; message?: string }) => {
       const { isSelf, isDup } = isSelfOrDup('emg', payload);
       if (isDup) return;
       triggerScheduleSync();
-      if (!isSelf && app === 'backoffice') {
+      if (!isSelf && payload?.message) {
         playNotificationSound();
-        if (payload?.message) message.warning({ key: 'rt-emergency-mgr', content: payload.message });
+        message.warning({ key: 'rt-emergency-mgr', content: payload.message });
       }
     };
     const onAccountPending = () => {

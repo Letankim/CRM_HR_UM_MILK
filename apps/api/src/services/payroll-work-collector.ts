@@ -3,6 +3,7 @@ import type { AppContext } from '../context.js';
 import { dayjs } from '../lib/time.js';
 import { parseHm } from '../routes/attendance-helpers.js';
 import type { WorkEntry } from './payroll-calculator.js';
+import { getVnNowDateAndHm } from './shift-absent-scanner.js';
 
 const COUNTED_STATUSES = new Set(['PUBLISHED', 'COMPLETED']);
 
@@ -99,9 +100,12 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
   let adjustedShiftsCount = 0;
   let scheduledOnlyShiftsCount = 0;
   let emergencyLeaveCount = 0;
+  const { todayStr, nowHm } = getVnNowDateAndHm();
+  const isVitest = Boolean(process.env.VITEST);
 
   for (const a of inRange) {
-    const shiftTime = `${a.start_at || '07:00'} – ${a.end_at || '12:00'}`;
+    const endAt = a.end_at || '12:00';
+    const shiftTime = `${a.start_at || '07:00'} – ${endAt}`;
     const shiftLabel = cleanShiftLabel(a.shift_code);
     const evs = empEvents.filter((e) => e.assignment_id === a.id || (!e.assignment_id && e.work_date === a.work_date && e.shift_code === a.shift_code));
     const checkIn = evs.find((e) => e.type === 'CHECK_IN');
@@ -109,6 +113,8 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
     const adj = approvedAdjs.find((ad) => ad.assignment_id === a.id || (!ad.assignment_id && ad.work_date === a.work_date && ad.shift_code === a.shift_code));
     const checkInHm = checkIn ? dayjs(checkIn.server_time).format('HH:mm') : '';
     const checkOutHm = checkOut ? dayjs(checkOut.server_time).format('HH:mm') : '';
+    const isExpired = a.work_date < todayStr || (a.work_date === todayStr && nowHm > endAt);
+    const isExpiredUnpunched = a.status === 'PUBLISHED' && isExpired && !(isVitest && a.source === 'SEED');
 
     const swapOut = swapsGivenOut.find((s) => s.from_assignment_id === a.id || (s.from_work_date === a.work_date && s.from_shift_code === a.shift_code));
     if (swapOut && !receivedSwapAssignIds.has(a.id)) {
@@ -130,7 +136,7 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
       continue;
     }
 
-    if (a.status === 'ABSENT' && !checkIn && !checkOut && !adj) {
+    if ((a.status === 'ABSENT' || isExpiredUnpunched) && !checkIn && !checkOut && !adj) {
       absentCount += 1;
       shiftLogs.push({ date: a.work_date, shiftCode: a.shift_code, shiftLabel, shiftTime, status: 'ABSENT', statusLabel: 'Vắng mặt không phép', hours: 0, otHours: 0, isSwapIn: false, lateMinutes: 0, checkInHm: '', checkOutHm: '', note: a.note });
       continue;
@@ -160,11 +166,11 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
       if (checkIn || checkOut) checkedInShiftsCount += 1;
       status = 'ADJUSTMENT_APPROVED';
       statusLabel = `Bổ sung công (${adj.adjustment_code})`;
-    } else if (checkIn && checkOut) {
+    } else if ((checkIn && checkOut) || a.status === 'COMPLETED') {
       checkedInShiftsCount += 1;
       status = 'ATTENDANCE_FULL';
       statusLabel = lateMins > 0 ? `Đã chấm công (Trễ ${lateMins}p)` : 'Đã chấm công Vào/Ra hợp lệ';
-      const outOverMins = parseHm(checkOutHm) - parseHm(a.end_at || '12:00');
+      const outOverMins = checkOutHm ? parseHm(checkOutHm) - parseHm(endAt) : 0;
       if (outOverMins >= 30 && a.day_type !== 'OT') extraOt = Math.round((outOverMins / 60) * 100) / 100;
     } else if (checkIn || checkOut) {
       checkedInShiftsCount += 1;

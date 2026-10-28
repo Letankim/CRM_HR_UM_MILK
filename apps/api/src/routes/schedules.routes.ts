@@ -9,7 +9,7 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll, findLockedPayrollPeriodForDate } from '../services/salary-profile.service.js';
-import { ensureCompletedShiftAttendanceEvents, getVnNowDateAndHm, resolveShiftActiveRequests } from '../services/shift-absent-scanner.js';
+import { getVnNowDateAndHm, resolveShiftActiveRequests } from '../services/shift-absent-scanner.js';
 import { queueScheduleShiftEmail } from '../services/action-email-dispatcher.js';
 import { emitScheduleRealtime, findBranchShiftTemplate, healBranchConsistency, resolveEmployeeBranchId } from './account-employee-sync.js';
 import { describePunctuality, parseHm } from './attendance-helpers.js';
@@ -36,13 +36,15 @@ export function mapShiftAssignment(a: ShiftAssignment, ctx: AppContext, shiftEve
   const activeReqs = resolveShiftActiveRequests(ctx.db, a, emp);
   const { todayStr, nowHm } = getVnNowDateAndHm();
   const isExpiredShift = a.work_date < todayStr || (a.work_date === todayStr && nowHm > endAt);
+  const isCompleted = a.status === 'COMPLETED' || Boolean(shiftEvents?.inHm && shiftEvents?.hasOut) || activeReqs.hasApprovedAdjustment;
+  const effectiveStatus = isCompleted && (a.status === 'PUBLISHED' || a.status === 'ABSENT') ? 'COMPLETED' : a.status;
   let attendanceStatusLabel = 'Chưa điểm danh', attendanceStatusColor = 'default';
-  if (a.status === 'DRAFT') { attendanceStatusLabel = 'Chờ CH / HR duyệt phân ca'; attendanceStatusColor = 'gold'; }
-  else if (a.status === 'ABSENT') {
+  if (effectiveStatus === 'DRAFT') { attendanceStatusLabel = 'Chờ CH / HR duyệt phân ca'; attendanceStatusColor = 'gold'; }
+  else if (effectiveStatus === 'COMPLETED') { attendanceStatusLabel = 'Đã hoàn thành ca'; attendanceStatusColor = 'green'; }
+  else if (effectiveStatus === 'ABSENT') {
     attendanceStatusLabel = activeReqs.pendingAdjustmentCode ? `Đã gửi bù công (${activeReqs.pendingAdjustmentCode} · Chờ duyệt)` : 'Vắng mặt (Quá giờ ca — Cần bổ sung công)';
     attendanceStatusColor = activeReqs.pendingAdjustmentCode ? 'orange' : 'red';
-  } else if (a.status === 'COMPLETED' || (shiftEvents?.inHm && shiftEvents?.hasOut)) { attendanceStatusLabel = 'Đã hoàn thành ca'; attendanceStatusColor = 'green'; }
-  else if (a.status === 'ON_LEAVE' || a.day_type === 'OFF') { attendanceStatusLabel = 'Nghỉ phép OFF'; attendanceStatusColor = 'default'; }
+  } else if (effectiveStatus === 'ON_LEAVE' || a.day_type === 'OFF') { attendanceStatusLabel = 'Nghỉ phép OFF'; attendanceStatusColor = 'default'; }
   else if (shiftEvents?.inHm) {
     if (activeReqs.pendingAdjustmentCode) { attendanceStatusLabel = `Đã gửi bù công (${activeReqs.pendingAdjustmentCode} · Chờ duyệt)`; attendanceStatusColor = 'orange'; }
     else if (isExpiredShift) { attendanceStatusLabel = `Quên Ra ca (Vào ${shiftEvents.inHm} — Cần bổ sung công)`; attendanceStatusColor = 'volcano'; }
@@ -63,8 +65,8 @@ export function mapShiftAssignment(a: ShiftAssignment, ctx: AppContext, shiftEve
     employeeBranchId: empBranch?.id ?? emp?.branch_id ?? a.branch_id, employeeBranchName: empBranch?.name ?? branch?.name ?? 'Chi nhánh',
     workDate: a.work_date, shiftCode: a.shift_code,
     shiftLabel: tpl?.name ?? DEFAULT_SHIFT_LABELS[a.shift_code as keyof typeof DEFAULT_SHIFT_LABELS] ?? a.shift_code,
-    startAt, endAt, scheduledHours: a.scheduled_hours, dayType: a.day_type, status: a.status,
-    statusLabel: SHIFT_ASSIGNMENT_STATUS_LABELS[a.status], publishedAt: a.published_at || null,
+    startAt, endAt, scheduledHours: a.scheduled_hours, dayType: a.day_type, status: effectiveStatus,
+    statusLabel: SHIFT_ASSIGNMENT_STATUS_LABELS[effectiveStatus], publishedAt: a.published_at || null,
     attendanceStatusLabel, attendanceStatusColor, ...activeReqs,
     isLockedByPayroll: Boolean(lockedPeriod), lockedByPeriodCode: lockedPeriod?.period_code ?? null,
     note: a.note, version: a.version, created_at: a.created_at, updated_at: a.updated_at,
@@ -89,18 +91,19 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
 
     const evMap = new Map<string, { inHm?: string; inLateMins?: number; hasOut?: boolean }>();
     for (const ev of ctx.db.attendanceEvents.all()) {
-      if (!ev.assignment_id) continue;
-      const cur = evMap.get(ev.assignment_id) ?? {};
-      if (ev.type === 'CHECK_OUT') cur.hasOut = true;
-      else if (!cur.inHm) {
-        const hm = dayjs(ev.server_time).format('HH:mm');
-        cur.inHm = hm;
-        cur.inLateMins = ev.late_minutes || Math.max(0, parseHm(hm) - parseHm(ev.scheduled_time || '07:00'));
+      for (const k of [ev.assignment_id, `emp:${ev.employee_id}:${ev.work_date}:${ev.shift_code}`].filter(Boolean)) {
+        const cur = evMap.get(k) ?? {};
+        if (ev.type === 'CHECK_OUT') cur.hasOut = true;
+        else if (!cur.inHm) {
+          const hm = dayjs(ev.server_time).format('HH:mm');
+          cur.inHm = hm;
+          cur.inLateMins = ev.late_minutes || Math.max(0, parseHm(hm) - parseHm(ev.scheduled_time || '07:00'));
+        }
+        evMap.set(k, cur);
       }
-      evMap.set(ev.assignment_id, cur);
     }
 
-    const mapped = scoped.map((a) => mapShiftAssignment(a, ctx, evMap.get(a.id)));
+    const mapped = scoped.map((a) => mapShiftAssignment(a, ctx, evMap.get(a.id) ?? evMap.get(`emp:${a.employee_id}:${a.work_date}:${a.shift_code}`)));
     const draftCount = mapped.filter((m) => m.status === 'DRAFT' && (!query.branch_id || query.branch_id === 'ALL' || m.branchId === query.branch_id)).length;
     const result = paginateAndSort(mapped, {
       page: query.page, perPage: query.per_page, maxPerPage: 1000, sortBy: query.sort_by, sortOrder: query.sort_order,
@@ -166,7 +169,6 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
       ...(patch.status === 'PUBLISHED' && !before.published_at ? { published_at: nowIso() } : {}),
     }, request.auth!.user.id);
     if (updated.status === 'COMPLETED') {
-      await ensureCompletedShiftAttendanceEvents(ctx.db, updated, request.auth!.user.id);
       emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: updated.branch_id, employeeIds: [updated.employee_id], kind: 'SHIFT_COMPLETED', actorId: request.auth!.user.id });
     }
     await ctx.audit.record(auditContext(request), { action: 'schedule.update', entity: 'SHIFT_ASSIGNMENTS', entityId: id, before: { shift_code: before.shift_code, status: before.status }, after: { shift_code: updated.shift_code, status: updated.status } });

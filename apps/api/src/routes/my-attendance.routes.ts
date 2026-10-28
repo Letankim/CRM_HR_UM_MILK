@@ -73,16 +73,18 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       const isToday = a.work_date === todayStr, isExpired = a.work_date < todayStr || (isToday && nowHm > (a.end_at || '12:00'));
       const isExpiredToday = isToday && !inEv && nowHm > (a.end_at || '12:00');
       const isAbsentShift = a.status === 'ABSENT' || (!inEv && a.status === 'PUBLISHED' && isExpired);
-      const isPendingApproval = a.status === 'DRAFT', isDone = a.status === 'COMPLETED' || Boolean(inEv && outEv);
+      const isPendingApproval = a.status === 'DRAFT', isDone = a.status === 'COMPLETED' || Boolean(inEv && outEv) || base.hasApprovedAdjustment;
       const isForgotCheckout = Boolean(inEv && !outEv && !isDone && isExpired);
-      const attendanceStatusLabel = isAbsentShift
-        ? (base.pendingAdjustmentCode ? `Đã gửi bù công (${base.pendingAdjustmentCode} · Chờ duyệt)` : 'Vắng mặt (Quá giờ ca — Cần bổ sung công)')
-        : isPendingApproval ? 'Chờ CH / HR duyệt phân ca' : isDone ? 'Đã hoàn thành ca'
+      const effectiveStatus = isDone && (base.status === 'PUBLISHED' || base.status === 'ABSENT') ? 'COMPLETED' : base.status;
+      const effectiveStatusLabel = effectiveStatus === 'COMPLETED' ? 'Đã hoàn thành' : base.statusLabel;
+      const attendanceStatusLabel = isDone ? 'Đã hoàn thành ca'
+        : isAbsentShift ? (base.pendingAdjustmentCode ? `Đã gửi bù công (${base.pendingAdjustmentCode} · Chờ duyệt)` : 'Vắng mặt (Quá giờ ca — Cần bổ sung công)')
+        : isPendingApproval ? 'Chờ CH / HR duyệt phân ca'
         : inEv ? (base.pendingAdjustmentCode ? `Đã gửi bù công (${base.pendingAdjustmentCode} · Chờ duyệt)` : isForgotCheckout ? `Quên Ra ca (Vào ${String(inEv.checkTimeFormatted || '').slice(0, 5)} — Cần bổ sung công)` : `Đã vào ca (${String(inEv.checkTimeFormatted || '').slice(0, 5)})`)
         : base.pendingSwapCode ? `Chờ duyệt đổi ca (${base.pendingSwapCode})`
         : (base.pendingLeaveCode || base.pendingEmergencyCode) ? `Chờ duyệt nghỉ (${base.pendingLeaveCode || base.pendingEmergencyCode})` : 'Chưa điểm danh';
-      const attendanceStatusColor = isAbsentShift ? (base.pendingAdjustmentCode ? 'orange' : 'red') : isPendingApproval ? 'gold' : isDone ? 'green' : inEv ? (base.pendingAdjustmentCode ? 'orange' : isForgotCheckout || inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : base.pendingSwapCode ? 'purple' : (base.pendingLeaveCode || base.pendingEmergencyCode) ? 'gold' : 'default';
-      return { ...base, isToday, isExpiredToday, isAbsentShift, isForgotCheckout, checkInEvent: inEv, checkOutEvent: outEv, attendanceStatusLabel, attendanceStatusColor };
+      const attendanceStatusColor = isDone ? 'green' : isAbsentShift ? (base.pendingAdjustmentCode ? 'orange' : 'red') : isPendingApproval ? 'gold' : inEv ? (base.pendingAdjustmentCode ? 'orange' : isForgotCheckout || inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : base.pendingSwapCode ? 'purple' : (base.pendingLeaveCode || base.pendingEmergencyCode) ? 'gold' : 'default';
+      return { ...base, status: effectiveStatus, statusLabel: effectiveStatusLabel, isToday, isExpiredToday, isAbsentShift: !isDone && isAbsentShift, isForgotCheckout, checkInEvent: inEv, checkOutEvent: outEv, attendanceStatusLabel, attendanceStatusColor };
     }).sort((a, b) => {
       const rank = (s: { workDate: string; isToday: boolean; status: string; isAbsentShift: boolean; isExpiredToday: boolean; checkInEvent: unknown; checkOutEvent: unknown }) =>
         s.isToday ? (s.status === 'PUBLISHED' && !s.isAbsentShift && !s.isExpiredToday && !(s.checkInEvent && s.checkOutEvent) ? (s.checkInEvent ? 0 : 1) : s.status === 'PUBLISHED' ? 2 : 3) : s.workDate > todayStr ? 4 : 5;

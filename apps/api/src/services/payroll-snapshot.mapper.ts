@@ -51,13 +51,19 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
   const empAdjs = ctx.db.attendanceAdjustments.filter(
     (a) => (a.employee_id === s.employee_id || a.employee_id === s.employee_code) && a.work_date >= fromDate && a.work_date <= toDate,
   );
-  const standardHours = empShifts.reduce((sum, sh) => sum + (Number(sh.scheduled_hours) || 5), 0) || s.approved_hours;
-  const missingCheckoutCount =
-    (detail.absentCount ?? 0) +
-    empShifts.filter((sh) => {
-      const sEvs = empEvs.filter((e) => e.assignment_id === sh.id);
-      return sEvs.some((e) => e.type === 'CHECK_IN') && !sEvs.some((e) => e.type === 'CHECK_OUT');
-    }).length;
+  const standardHours = empShifts.filter((sh) => sh.day_type !== 'OFF' && sh.status !== 'ON_LEAVE' && sh.status !== 'DRAFT').reduce((sum, sh) => sum + (Number(sh.scheduled_hours) || 5), 0) || s.approved_hours;
+  const missingFromLogs = (detail.shiftLogs ?? []).filter(
+    (log) => log.status === 'ABSENT' || log.status === 'ATTENDANCE_CHECKIN' || log.status === 'SCHEDULE_PUBLISHED',
+  ).length;
+  const missingCheckoutCount = detail.shiftLogs
+    ? missingFromLogs
+    : (detail.absentCount ?? 0) +
+      (detail.scheduledOnlyShiftsCount ?? 0) +
+      empShifts.filter((sh) => {
+        if (sh.status === 'COMPLETED' || sh.day_type === 'OFF' || sh.status === 'ON_LEAVE' || sh.status === 'DRAFT') return false;
+        const sEvs = empEvs.filter((e) => e.assignment_id === sh.id || (!e.assignment_id && e.work_date === sh.work_date && e.shift_code === sh.shift_code));
+        return sEvs.some((e) => e.type === 'CHECK_IN') && !sEvs.some((e) => e.type === 'CHECK_OUT');
+      }).length;
   const pendingAdjCount = empAdjs.filter((a) => a.status === 'PENDING' || a.status === 'STORE_CONFIRMED').length;
   const approvedAdjCount = empAdjs.filter((a) => a.status === 'APPROVED').length;
   const hasAnomaly = missingCheckoutCount > 0 || pendingAdjCount > 0;

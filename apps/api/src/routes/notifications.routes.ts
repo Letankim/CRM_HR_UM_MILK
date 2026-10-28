@@ -104,7 +104,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
         if (userIds.length > 0 && !userIds.includes('ALL')) {
           matched = userIds.includes(user.id);
         } else if (user.role === 'ADMIN') {
-          matched = true;
+          matched = !['ATT_ADJ_HR', 'LEAVE_ROLE', 'SHIFT_DRAFT_ROLE', 'SWAP_STORE', 'EMG_STORE'].includes(n.entity_type);
         } else {
           if (user.role === 'STORE' && n.entity_type === 'ATT_ADJ_HR' && n.entity_id.endsWith('_STORE_CONFIRMED')) return false;
           const notifBranch = resolveNotifBranch(n);
