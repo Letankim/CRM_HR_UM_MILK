@@ -59,7 +59,7 @@ export function NotificationDetailDrawer({
 
   return (
     <Drawer
-      open={Boolean(record)} width={wide ? '92vw' : 680} onClose={onClose} destroyOnHidden
+      open={Boolean(record)} width={wide ? '95vw' : '70vw'} onClose={onClose} destroyOnHidden
       title={record ? `Chi tiết Thông báo — ${record.code}` : 'Chi tiết Thông báo'}
       extra={
         <Space wrap>
@@ -71,7 +71,7 @@ export function NotificationDetailDrawer({
     >
       {record && (
         <Space direction="vertical" size={14} style={{ width: '100%' }}>
-          <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }}>
+          <Descriptions size="small" bordered column={2}>
             <Descriptions.Item label="Mã thông báo"><Tag color="geekblue">{record.code}</Tag></Descriptions.Item>
             <Descriptions.Item label="Phân loại"><Tag color="blue">{record.categoryLabel}</Tag></Descriptions.Item>
             <Descriptions.Item label="Mức độ ưu tiên"><Tag color={sevColor}>{record.severityLabel}</Tag></Descriptions.Item>

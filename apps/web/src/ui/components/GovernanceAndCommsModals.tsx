@@ -113,13 +113,13 @@ export function BackupDetailDrawer({ record, onClose }: { record: Record<string,
 
   return (
     <Drawer
-      open={Boolean(record)} width={wide ? '95vw' : '72vw'} onClose={onClose} destroyOnHidden
+      open={Boolean(record)} width={wide ? '95vw' : '70vw'} onClose={onClose} destroyOnHidden
       title={record ? `Chi tiết Bản Sao lưu & Khôi phục: ${String(record.backup_code)}` : 'Chi tiết bản sao lưu'}
       extra={<Space wrap><Button size="small" icon={wide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setWide((v) => !v)}>{wide ? 'Thu gọn' : 'Mở rộng'}</Button><Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button></Space>}
     >
       {record && (
         <Space direction="vertical" size={14} style={{ width: '100%' }}>
-          <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }}>
+          <Descriptions size="small" bordered column={2}>
             <Descriptions.Item label="Mã bản sao lưu"><Tag color="geekblue">{String(record.backup_code)}</Tag></Descriptions.Item>
             <Descriptions.Item label="Trạng thái thực thi"><Space size={6}><StatusTag value={String(record.status)} />{Boolean(record.verified_restore) ? <Tag color="green" icon={<CheckCircleOutlined />}>Đã diễn tập khôi phục</Tag> : <Tag color="blue">Bản sao lưu hệ thống</Tag>}</Space></Descriptions.Item>
             <Descriptions.Item label="Loại sao lưu"><strong>{String(record.kindLabel || 'Sao lưu định kỳ')}</strong></Descriptions.Item>
@@ -179,7 +179,7 @@ export function GovernanceDetailDrawer({
     >
       {record && (
         <Space direction="vertical" size={14} style={{ width: '100%' }}>
-          <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }}>
+          <Descriptions size="small" bordered column={2}>
             <Descriptions.Item label="Mã định danh"><Tag color="geekblue">{String(record.key ?? record.announcement_code ?? record.code)}</Tag></Descriptions.Item>
             <Descriptions.Item label={kind === 'policy' ? 'Định mức / Giá trị áp dụng' : 'Trạng thái'}>{kind === 'policy' ? <Tag color="blue">{String(record.value_json)}</Tag> : <StatusTag value={isSent ? 'SENT' : 'UNSENT'} label={isSent ? 'Đã gửi' : 'Chưa gửi'} />}</Descriptions.Item>
             {kind === 'policy' && (

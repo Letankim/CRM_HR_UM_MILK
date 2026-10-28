@@ -109,7 +109,7 @@ export function TestDetailDrawer({
       <Drawer
         open={Boolean(viewingTest)}
         title={viewingTest ? `Chi tiết Bộ đề: ${viewingTest.code} — ${viewingTest.title}` : 'Chi tiết bộ đề'}
-        width={drawerWide ? '95vw' : '85vw'}
+        width={drawerWide ? '95vw' : '70vw'}
         onClose={onCloseTest}
         destroyOnHidden
         extra={
@@ -127,7 +127,7 @@ export function TestDetailDrawer({
         {viewingTest && (
           <Tabs
             items={[
-              { key: 'info', label: <span><SettingOutlined /> Cấu hình Kỳ thi</span>, children: <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }}><Descriptions.Item label="Mã bộ đề"><Tag color="geekblue">{String(viewingTest.code)}</Tag></Descriptions.Item><Descriptions.Item label="Tên bộ đề">{String(viewingTest.title)}</Descriptions.Item><Descriptions.Item label="Nhóm vị trí">{String(viewingTest.staffGroupLabel ?? viewingTest.staff_group)}</Descriptions.Item><Descriptions.Item label="Thời gian làm bài">{String(viewingTest.duration_minutes)} phút</Descriptions.Item><Descriptions.Item label="Điểm chuẩn đạt">{String(viewingTest.pass_percent)}%</Descriptions.Item><Descriptions.Item label="Số lần làm tối đa">{String(viewingTest.max_attempts ?? 3)} lần</Descriptions.Item></Descriptions> },
+              { key: 'info', label: <span><SettingOutlined /> Cấu hình Kỳ thi</span>, children: <Descriptions size="small" bordered column={2}><Descriptions.Item label="Mã bộ đề"><Tag color="geekblue">{String(viewingTest.code)}</Tag></Descriptions.Item><Descriptions.Item label="Tên bộ đề">{String(viewingTest.title)}</Descriptions.Item><Descriptions.Item label="Nhóm vị trí">{String(viewingTest.staffGroupLabel ?? viewingTest.staff_group)}</Descriptions.Item><Descriptions.Item label="Thời gian làm bài">{String(viewingTest.duration_minutes)} phút</Descriptions.Item><Descriptions.Item label="Điểm chuẩn đạt">{String(viewingTest.pass_percent)}%</Descriptions.Item><Descriptions.Item label="Số lần làm tối đa">{String(viewingTest.max_attempts ?? 3)} lần</Descriptions.Item></Descriptions> },
               {
                 key: 'qlist',
                 label: <span><UnorderedListOutlined /> Danh sách Câu hỏi ({parseQuestions(viewingTest.questions_json).length} câu)</span>,
@@ -150,7 +150,7 @@ export function TestDetailDrawer({
       <Drawer
         open={Boolean(viewingAssignment)}
         title={viewingAssignment ? `Chi tiết Đợt giao bài & Lịch sử làm bài — ${viewingAssignment.assignment_code}` : 'Chi tiết đợt giao bài'}
-        width={drawerWide ? '95vw' : '85vw'}
+        width={drawerWide ? '95vw' : '70vw'}
         onClose={onCloseAssignment}
         destroyOnHidden
         extra={
@@ -167,7 +167,7 @@ export function TestDetailDrawer({
       >
         {viewingAssignment && (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }}>
+            <Descriptions size="small" bordered column={2}>
               <Descriptions.Item label="Mã đợt giao bài"><Tag color="geekblue">{String(viewingAssignment.assignment_code)}</Tag></Descriptions.Item>
               <Descriptions.Item label="Trạng thái"><StatusTag value={String(viewingAssignment.status)} /></Descriptions.Item>
               <Descriptions.Item label="Nhân sự nhận đề"><strong>{String(viewingAssignment.employeeName)}</strong></Descriptions.Item>

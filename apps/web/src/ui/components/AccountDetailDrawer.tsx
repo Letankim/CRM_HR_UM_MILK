@@ -72,7 +72,7 @@ export function AccountDetailDrawer({
       title={account ? `Hồ sơ tài khoản: ${account.displayName} (@${account.username})` : 'Chi tiết tài khoản'}
       open={!!account}
       onClose={onClose}
-      width={expanded ? '95vw' : '72vw'}
+      width={expanded ? '95vw' : '70vw'}
       destroyOnHidden
       extra={
         <Space size={8}>

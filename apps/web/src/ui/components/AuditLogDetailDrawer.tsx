@@ -40,7 +40,7 @@ export function AuditLogDetailDrawer({ selected, onClose, onArchiveOrRestore }: 
       title={selected ? `Chi tiết Kiểm toán: ${selected.actionLabel}` : 'Chi tiết Kiểm toán'}
       open={!!selected}
       onClose={onClose}
-      width={expanded ? 980 : 720}
+      width={expanded ? '95vw' : '70vw'}
       destroyOnHidden
       extra={
         <Space size={8}>

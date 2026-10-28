@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Button, Card, Descriptions, Drawer, Empty, Form, Grid, Input, List, Modal, Space, Spin, Tag } from 'antd';
-import { CheckCircleOutlined, CloseOutlined, ExclamationCircleOutlined, FileTextOutlined, SendOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, CloseOutlined, ExclamationCircleOutlined, ExpandAltOutlined, FileTextOutlined, SendOutlined, ShrinkOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useState } from 'react';
@@ -32,6 +32,7 @@ interface MyPayslip {
 /** Phiếu lương cá nhân (PRB-09 / OFF-09 — hiển thị kỳ đã PUBLISHED / PAID + xác nhận / phản hồi). */
 export default function MyPayslipsPage() {
   const [open, setOpen] = useState<MyPayslip | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [disputeModal, setDisputeModal] = useState(false);
   const [form] = Form.useForm();
   const qc = useQueryClient();
@@ -82,7 +83,7 @@ export default function MyPayslipsPage() {
 
       <Drawer
         placement={isDesktop ? 'right' : 'bottom'}
-        width={isDesktop ? 560 : undefined}
+        width={isDesktop ? (expanded ? '95vw' : '70vw') : undefined}
         height={isDesktop ? undefined : '85%'}
         open={!!open}
         onClose={() => setOpen(null)}
@@ -97,6 +98,11 @@ export default function MyPayslipsPage() {
               <Button size="small" danger icon={<ExclamationCircleOutlined />} onClick={() => { form.resetFields(); setDisputeModal(true); }}>
                 Gửi thắc mắc
               </Button>
+              {isDesktop && (
+                <Button size="small" icon={expanded ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setExpanded((v) => !v)}>
+                  {expanded ? 'Thu gọn' : 'Mở rộng'}
+                </Button>
+              )}
             </Space>
           )
         }

@@ -57,7 +57,7 @@ export function SalaryProfileDetailModal({
               key: 'rate',
               label: <span><DollarOutlined /> Mức lương &amp; Công chuẩn</span>,
               children: (
-                <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+                <Descriptions column={2} bordered size="small">
                   <Descriptions.Item label="Nhân sự áp dụng" span={2}><strong>{profile.employeeName}</strong> ({profile.employeeCode})</Descriptions.Item>
                   <Descriptions.Item label="Hình thức tính lương">
                     <Tag color={profile.rateType === 'MONTHLY' ? 'purple' : profile.rateType === 'SHIFT' ? 'cyan' : 'blue'} style={{ borderRadius: 2, margin: 0 }}>{profile.rateTypeLabel}</Tag>
@@ -79,7 +79,7 @@ export function SalaryProfileDetailModal({
               key: 'allowances',
               label: <span><GiftOutlined /> Phụ cấp &amp; Thưởng cố định</span>,
               children: (
-                <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+                <Descriptions column={2} bordered size="small">
                   <Descriptions.Item label="Phụ cấp ăn ca / ca"><span className="num">{fmtVnd(profile.mealAllowancePerShiftVnd)}</span></Descriptions.Item>
                   <Descriptions.Item label="Thưởng chuyên cần / kỳ"><span className="num">{fmtVnd(profile.attendanceBonusVnd)}</span></Descriptions.Item>
                   <Descriptions.Item label="Phụ cấp đi lại / xăng xe"><span className="num">{fmtVnd(profile.transportAllowanceVnd)}</span></Descriptions.Item>

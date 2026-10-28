@@ -27,7 +27,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <Descriptions title="Tổng hợp Công thử việc, Kết quả TEST & Đơn từ liên quan" column={{ xs: 1, sm: 2 }} bordered size="small">
+      <Descriptions title="Tổng hợp Công thử việc, Kết quả TEST & Đơn từ liên quan" column={2} bordered size="small">
         <Descriptions.Item label="Tổng ca làm việc đã xếp">
           <span className="num" style={{ fontWeight: 600 }}>{employee.totalShiftsCount ?? 0} ca ({employee.probationHoursCompleted ?? 0} giờ)</span>
         </Descriptions.Item>
@@ -112,7 +112,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
 
       <Modal open={Boolean(viewingStage)} title="Chi tiết Quyết định Chuyển đổi Giai đoạn Nhân sự" onCancel={() => setViewingStage(null)} footer={<Button icon={<CloseOutlined />} onClick={() => setViewingStage(null)}>Đóng</Button>} width="min(920px, 94vw)" destroyOnHidden>
         {viewingStage && (
-          <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} styles={{ label: { width: 210, fontWeight: 600, background: '#F8FAFC' }, content: { minWidth: 220 } }}>
+          <Descriptions bordered size="small" column={2} styles={{ label: { width: 210, fontWeight: 600, background: '#F8FAFC' }, content: { minWidth: 220 } }}>
             <Descriptions.Item label="Nhân sự" span={2}><strong>{employee.fullName}</strong> ({employee.employeeCode})</Descriptions.Item>
             <Descriptions.Item label="Giai đoạn trước"><StatusTag value={viewingStage.fromStage} /></Descriptions.Item>
             <Descriptions.Item label="Giai đoạn chuyển sang"><StatusTag value={viewingStage.toStage} /></Descriptions.Item>
@@ -144,7 +144,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
         }
       >
         {viewingShift && (
-          <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} styles={{ label: { width: 200, fontWeight: 600, background: '#F8FAFC' }, content: { minWidth: 200 } }}>
+          <Descriptions bordered size="small" column={2} styles={{ label: { width: 200, fontWeight: 600, background: '#F8FAFC' }, content: { minWidth: 200 } }}>
             <Descriptions.Item label="Nhân sự" span={2}><strong>{employee.fullName}</strong> ({employee.employeeCode})</Descriptions.Item>
             <Descriptions.Item label="Ngày làm việc"><span className="num" style={{ fontWeight: 600 }}>{viewingShift.work_date}</span></Descriptions.Item>
             <Descriptions.Item label="Trạng thái ca"><StatusTag value={viewingShift.status} /></Descriptions.Item>

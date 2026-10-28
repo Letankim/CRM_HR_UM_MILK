@@ -144,7 +144,7 @@ function BranchesView() {
         title={viewing ? `Chi tiết Chi nhánh: ${viewing.name} (${viewing.code})` : 'Chi tiết Chi nhánh'}
         open={!!viewing}
         onClose={() => setViewing(null)}
-        width={drawerExpanded ? 920 : 660}
+        width={drawerExpanded ? '95vw' : '70vw'}
         destroyOnHidden
         extra={
           <Space size={8}>
