@@ -1,5 +1,6 @@
 'use client';
 
+import { Spin } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import { type Dispatch, type SetStateAction, useState } from 'react';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
@@ -11,6 +12,7 @@ export interface ScheduleViewsPanelProps {
   todayDate?: string;
   assignments: ScheduleAssignmentItem[];
   canEdit: boolean;
+  loading?: boolean;
   hideStaffingBadge?: boolean;
   onAddAtCell: (dateStr: string, shiftCode?: string) => void;
   onEditItem: (item: ScheduleAssignmentItem) => void;
@@ -25,6 +27,7 @@ export function ScheduleViewsPanel({
   todayDate,
   assignments,
   canEdit,
+  loading = false,
   hideStaffingBadge = false,
   onAddAtCell,
   onEditItem,
@@ -42,30 +45,30 @@ export function ScheduleViewsPanel({
   const calMonth = controlledCalMonth ?? innerCalMonth;
   const setCalMonth = onMonthChange ?? setInnerCalMonth;
 
-  if (mode === 'CALENDAR') {
-    return (
-      <ScheduleMonthCalendar
-        todayDate={effectiveToday}
-        assignments={assignments}
-        canEdit={canEdit}
-        onAddAtCell={onAddAtCell}
-        onEditItem={onEditItem}
-        calMonth={calMonth}
-        onMonthChange={setCalMonth}
-      />
-    );
-  }
-
   return (
-    <ScheduleWeekMatrix
-      todayDate={effectiveToday}
-      assignments={assignments}
-      canEdit={canEdit}
-      hideStaffingBadge={hideStaffingBadge}
-      onAddAtCell={onAddAtCell}
-      onEditItem={onEditItem}
-      weekStart={weekStart}
-      onWeekStartChange={setWeekStart}
-    />
+    <Spin spinning={loading} tip="Đang tải dữ liệu lịch làm việc...">
+      {mode === 'CALENDAR' ? (
+        <ScheduleMonthCalendar
+          todayDate={effectiveToday}
+          assignments={assignments}
+          canEdit={canEdit}
+          onAddAtCell={onAddAtCell}
+          onEditItem={onEditItem}
+          calMonth={calMonth}
+          onMonthChange={setCalMonth}
+        />
+      ) : (
+        <ScheduleWeekMatrix
+          todayDate={effectiveToday}
+          assignments={assignments}
+          canEdit={canEdit}
+          hideStaffingBadge={hideStaffingBadge}
+          onAddAtCell={onAddAtCell}
+          onEditItem={onEditItem}
+          weekStart={weekStart}
+          onWeekStartChange={setWeekStart}
+        />
+      )}
+    </Spin>
   );
 }

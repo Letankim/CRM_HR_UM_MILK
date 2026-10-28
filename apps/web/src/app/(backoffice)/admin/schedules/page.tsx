@@ -171,7 +171,7 @@ function SchedulesView() {
               } else exportScheduleExcel(items);
             }}
             onRefresh={handleManualRefresh}
-            refreshing={manualRefreshing}
+            refreshing={manualRefreshing || query.isFetching}
             primaryActionLabel={canEdit ? 'Phân ca mới' : undefined}
             onPrimaryAction={canEdit ? () => { setEditingRow(null); setPresetDate(undefined); setPresetShift(undefined); setModalOpen(true); } : undefined}
           />
@@ -194,7 +194,7 @@ function SchedulesView() {
           {viewMode === 'ATTENDANCE' ? (
             <AttendanceEventsTable externalFilters={{ q, branchId, shiftCode, status }} />
           ) : viewMode !== 'TABLE' ? (
-            <ScheduleViewsPanel mode={viewMode} assignments={items} canEdit={canEdit} weekStart={weekStart} onWeekStartChange={setWeekStart} calMonth={calMonth} onMonthChange={setCalMonth} onAddAtCell={(dateStr, sCode) => { setEditingRow(null); setPresetDate(dateStr); setPresetShift(sCode); setModalOpen(true); }} onEditItem={openEdit} />
+            <ScheduleViewsPanel mode={viewMode} assignments={items} canEdit={canEdit} loading={query.isLoading || query.isFetching || manualRefreshing} weekStart={weekStart} onWeekStartChange={setWeekStart} calMonth={calMonth} onMonthChange={setCalMonth} onAddAtCell={(dateStr, sCode) => { setEditingRow(null); setPresetDate(dateStr); setPresetShift(sCode); setModalOpen(true); }} onEditItem={openEdit} />
           ) : (
             <DataTableCard<ScheduleAssignmentItem>
               columns={buildScheduleColumns({

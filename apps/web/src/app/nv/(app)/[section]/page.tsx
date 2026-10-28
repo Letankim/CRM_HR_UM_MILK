@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { notFound, useParams, useRouter } from 'next/navigation';
-import { Alert, App, Button, Card, Col, Empty, Grid, List, Row, Select, Space, Tabs, Tag, Tooltip, Typography } from 'antd';
+import { Alert, App, Button, Card, Col, Empty, Grid, List, Row, Select, Space, Spin, Tabs, Tag, Tooltip, Typography } from 'antd';
 import {
   BookOutlined, CameraOutlined, CheckCircleOutlined, ClockCircleOutlined, DownloadOutlined,
   EyeOutlined, FileAddOutlined, FileProtectOutlined, FileTextOutlined, KeyOutlined, NotificationOutlined, ReloadOutlined, RightOutlined, UserOutlined,
@@ -106,6 +106,7 @@ export default function EmployeeSection() {
   return (
     <div style={{ padding: isDesktop ? 0 : '8px 6px', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
       <Card size="small" title={title} extra={isSchedSection || section === 'them' ? undefined : <Button size="small" icon={<ReloadOutlined />} loading={isRefreshing} onClick={refreshSection}>Làm mới</Button>} style={{ marginBottom: 12 }}>
+        <Spin spinning={section !== 'them' && section !== 'thong-bao' && isRefreshing} tip="Đang tải dữ liệu...">
         {isSchedSection && schedCenter}
         {section === 'diem-danh' && (
           <Row gutter={[16, 16]}>
@@ -203,6 +204,7 @@ export default function EmployeeSection() {
             ))}
           </Row>
         )}
+        </Spin>
       </Card>
 
       <AttendanceCameraModal open={Boolean(cameraModalKind)} kind={cameraModalKind ?? 'CHECK_IN'} shift={activeShift} loading={postMut.isPending} onClose={() => setCameraModalKind(null)} onConfirm={(payload) => postMut.mutate({ url: '/attendance/check', body: payload })} />

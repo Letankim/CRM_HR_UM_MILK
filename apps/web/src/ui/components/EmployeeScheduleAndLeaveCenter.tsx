@@ -94,10 +94,10 @@ export function EmployeeScheduleAndLeaveCenter({
                 </Flex>
 
                 {viewMode !== 'TABLE' ? (
-                  <ScheduleViewsPanel mode={viewMode} todayDate={todayDate} assignments={shifts as unknown as ScheduleAssignmentItem[]} canEdit={false} hideStaffingBadge onAddAtCell={() => setAddShiftOpen(true)} onEditItem={(item) => setDetailTarget({ kind: 'shift', record: item as unknown as Record<string, unknown> })} />
+                  <ScheduleViewsPanel mode={viewMode} todayDate={todayDate} assignments={shifts as unknown as ScheduleAssignmentItem[]} canEdit={false} loading={refreshing} hideStaffingBadge onAddAtCell={() => setAddShiftOpen(true)} onEditItem={(item) => setDetailTarget({ kind: 'shift', record: item as unknown as Record<string, unknown> })} />
                 ) : (
                   <SelectableTable<Record<string, unknown>>
-                    size="small" rowKey="id" pagination={shiftsPag} dataSource={shifts}
+                    size="small" rowKey="id" loading={refreshing} pagination={shiftsPag} dataSource={shifts}
                     bulkActions={buildPortalShiftsBulkActions({ loading: cancelShiftMut.isPending, onCancelDrafts: (rows) => cancelShiftMut.mutate(rows.map((r) => String(r.id))), onCreateAbsentAdj: (row) => setDetailTarget({ kind: 'shift', record: { ...row, employeeId: empId } }) })}
                     locale={{ emptyText: 'Bạn chưa có ca làm việc nào được phân công trong kỳ này.' }}
                     columns={[
@@ -134,7 +134,7 @@ export function EmployeeScheduleAndLeaveCenter({
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>Bấm nút thao tác ở từng dòng để xem chi tiết lý do và thời gian phê duyệt.</Typography.Text>
                 </Space>
                 <SelectableTable<Record<string, unknown>>
-                  size="small" rowKey="id" pagination={leavesPag} dataSource={leaves}
+                  size="small" rowKey="id" loading={refreshing} pagination={leavesPag} dataSource={leaves}
                   bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportLeavesExcel(rows) }]}
                   locale={{ emptyText: 'Bạn chưa có đơn đăng ký nghỉ phép (OFF) nào trong kỳ.' }}
                   columns={[
@@ -148,7 +148,7 @@ export function EmployeeScheduleAndLeaveCenter({
                 />
                 {emergencyLeaves.length > 0 && (
                   <SelectableTable<Record<string, unknown>>
-                    size="small" rowKey="id" pagination={emgPag} dataSource={emergencyLeaves}
+                    size="small" rowKey="id" loading={refreshing} pagination={emgPag} dataSource={emergencyLeaves}
                     bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportEmergencyExcel(rows) }]}
                     title={() => <span style={{ fontWeight: 600, fontSize: 13 }}>Báo cáo nghỉ khẩn cấp sát giờ ca (&lt;12h)</span>}
                     columns={[
@@ -171,7 +171,7 @@ export function EmployeeScheduleAndLeaveCenter({
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 <Alert type="info" showIcon message="Quy trình đổi ca 3 bước: (1) Bạn tạo yêu cầu -> (2) Đồng nghiệp xác nhận nhận ca -> (3) Quản lý duyệt cập nhật lịch chính thức." />
                 <SelectableTable<Record<string, unknown>>
-                  size="small" rowKey="id" pagination={swapsPag} dataSource={swaps}
+                  size="small" rowKey="id" loading={refreshing} pagination={swapsPag} dataSource={swaps}
                   bulkActions={[
                     { key: 'accept', label: 'Đồng ý nhận ca đã chọn', type: 'primary', icon: <CheckCircleOutlined />, loading: peerRespondMut.isPending, eligibleFilter: (r) => r.status === 'PENDING_PEER' && (r.peer_id === empId || r.peerCode === empCode), onClick: (rows) => peerRespondMut.mutate(rows.map((r) => ({ id: String(r.id), version: Number(r.version), accept: true }))) },
                     { key: 'reject', label: 'Từ chối nhận ca đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: peerRespondMut.isPending, eligibleFilter: (r) => r.status === 'PENDING_PEER' && (r.peer_id === empId || r.peerCode === empCode), onClick: (rows) => peerRespondMut.mutate(rows.map((r) => ({ id: String(r.id), version: Number(r.version), accept: false }))) },
