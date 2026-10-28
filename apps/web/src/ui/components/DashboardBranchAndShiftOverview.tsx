@@ -124,8 +124,11 @@ export function DashboardBranchAndShiftOverview({
 
   const periods = payrollQ.data ?? [];
   const activePeriod = periods[0];
-  const unpublishedPeriodsCount = periods.filter((p) => p.status === 'DRAFT' || p.status === 'RECONCILE' || p.status === 'APPROVED').length;
-  const pendingAdjsCount = (adjustmentsQ.data?.data ?? []).filter((a) => a.status === 'PENDING').length;
+  const unpublishedPeriods = periods.filter((p) => p.status === 'DRAFT' || p.status === 'RECONCILE' || p.status === 'APPROVED');
+  const unpublishedPeriodsCount = unpublishedPeriods.length;
+  const unpublishedPayslipsCount = unpublishedPeriods.reduce((s, p) => s + Number(p.total_employees || 0), 0);
+  const pendingAdjsCount = (adjustmentsQ.data?.data ?? []).filter((a) => a.status === 'PENDING' || a.status === 'STORE_CONFIRMED').length;
+  const unreconciledPayrollCount = Number(activePeriod?.unreconciled_records_count ?? 0);
   const showNewHireKpi = can('account.activate', 'candidate.manage');
 
   return (
@@ -148,11 +151,14 @@ export function DashboardBranchAndShiftOverview({
             <Col xs={12} md={4}><Statistic title="Tổng giờ công kỳ hiện tại" value={activePeriod?.total_approved_hours ?? 0} suffix="giờ" /></Col>
             <Col xs={12} md={5}><Statistic title="Tổng thu nhập dự kiến" value={fmtVnd(activePeriod?.total_gross_vnd ?? 0)} formatter={(v) => <span style={{ fontSize: 16, fontWeight: 700, color: '#2563EB' }}>{v}</span>} /></Col>
             <Col xs={12} md={5}><Statistic title="Thực lĩnh dự kiến" value={fmtVnd(activePeriod?.total_net_vnd ?? 0)} formatter={(v) => <span style={{ fontSize: 16, fontWeight: 700, color: '#16A34A' }}>{v}</span>} /></Col>
-            <Col xs={12} md={3}><Statistic title="Công chờ khóa / Bù công" value={pendingAdjsCount} suffix="đơn" formatter={(v) => <span style={{ color: pendingAdjsCount > 0 ? '#D97706' : '#16A34A' }}>{v}</span>} /></Col>
+            <Col xs={12} md={3}>
+              <Statistic title="Công chưa khóa / Lỗi công" value={pendingAdjsCount + unreconciledPayrollCount} suffix="mục" formatter={(v) => <span style={{ color: pendingAdjsCount + unreconciledPayrollCount > 0 ? '#D97706' : '#16A34A' }}>{v}</span>} />
+              <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>{pendingAdjsCount} bù công · {unreconciledPayrollCount} lỗi lương</div>
+            </Col>
             <Col xs={12} md={3}>
               <div style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>Trạng thái kỳ lương</div>
               {activePeriod ? <StatusTag value={activePeriod.status} label={activePeriod.statusLabel} /> : <Tag>Chưa mở kỳ</Tag>}
-              <div style={{ fontSize: 11, color: '#64748B', marginTop: 4 }}>Chưa phát hành: {unpublishedPeriodsCount} kỳ</div>
+              <div style={{ fontSize: 11, color: '#64748B', marginTop: 4 }}>Chưa phát: {unpublishedPayslipsCount} phiếu ({unpublishedPeriodsCount} kỳ)</div>
             </Col>
           </Row>
         </Card>

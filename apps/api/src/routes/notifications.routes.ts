@@ -73,7 +73,7 @@ async function ensureSyncedNotifications(ctx: AppContext, actorId: string) {
     }
   }
   for (const adj of ctx.db.attendanceAdjustments.all().filter((x) => x.status === 'PENDING' || x.status === 'STORE_CONFIRMED').slice(0, 8)) {
-    if (!hasKey('ATT_ADJ_HR', adj.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: adj.branch_id || 'ALL', category: 'ATTENDANCE', title: `Phiếu bổ sung / lỗi chấm công chờ duyệt: ${adj.adjustment_code}`, body: `Ngày công ${adj.work_date} (${adj.requested_hours}h) — Lý do: ${adj.reason}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'ATT_ADJ_HR', entity_id: adj.id });
+    if (!hasKey('ATT_ADJ_HR', adj.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE,FINANCE', branch_id: adj.branch_id || 'ALL', category: 'ATTENDANCE', title: `Phiếu bổ sung / lỗi chấm công chờ chốt: ${adj.adjustment_code}`, body: `Ngày công ${adj.work_date} (${adj.requested_hours}h) — Lý do: ${adj.reason}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'ATT_ADJ_HR', entity_id: adj.id });
   }
   for (const emg of ctx.db.emergencyLeaves.all().slice(0, 6)) {
     if (!hasKey('EMG_STORE', emg.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: emg.branch_id || 'ALL', category: 'WORKFLOW', title: `Cảnh báo nghỉ đột xuất & thiếu người: ${emg.emergency_code}`, body: `Ca ${emg.shift_code} ngày ${emg.work_date} — Lý do: ${emg.reason}. Cần tìm người thay hoặc báo HR.`, link: '/admin/schedules?section=workflows', severity: 'CRITICAL', entity_type: 'EMG_STORE', entity_id: emg.id });
@@ -82,7 +82,7 @@ async function ensureSyncedNotifications(ctx: AppContext, actorId: string) {
     if (!hasKey('SCHED_STORE', `${a.id}_${a.status}`)) await ins({ recipient_user_id: '', recipient_role: 'STORE', branch_id: a.branch_id || 'ALL', category: a.status === 'ABSENT' ? 'ATTENDANCE' : 'WORKFLOW', title: a.status === 'ABSENT' ? `Cảnh báo NV chưa điểm danh / Vắng mặt ca ngày ${a.work_date}` : `Lịch tuần mới đã phát hành (${a.work_date})`, body: `Khung ca ${a.shift_code} (${a.start_at}–${a.end_at}) tại chi nhánh phụ trách.`, link: '/admin/schedules', severity: a.status === 'ABSENT' ? 'WARNING' : 'INFO', entity_type: 'SCHED_STORE', entity_id: `${a.id}_${a.status}` });
   }
   for (const p of ctx.db.payPeriods.all().slice(0, 8)) {
-    if (!hasKey('PAY_PERIOD_FIN', p.id)) await ins({ recipient_user_id: '', recipient_role: 'FINANCE', branch_id: 'ALL', category: 'PAYROLL', title: `Kỳ lương hệ thống: ${p.name} (${p.period_code || p.id})`, body: `Chu kỳ lương từ ${p.from_date} đến ${p.to_date} hiện đang ở bước ${p.status}.`, link: '/admin/payroll', severity: 'INFO', entity_type: 'PAY_PERIOD_FIN', entity_id: p.id });
+    if (!hasKey('PAY_PERIOD_FIN', p.id)) await ins({ recipient_user_id: '', recipient_role: 'FINANCE', branch_id: 'ALL', category: 'PAYROLL', title: `Kỳ lương hệ thống: ${p.name} (${p.period_code || p.id})`, body: `Chu kỳ lương từ ${p.from_date} đến ${p.to_date} (${p.total_employees} NV, ${p.total_approved_hours}h công)${p.unreconciled_records_count > 0 ? ` — Cảnh báo: còn ${p.unreconciled_records_count} nhân sự lỗi tính lương / thiếu hồ sơ lương cần xử lý` : ' — Bảng lương sẵn sàng đối soát & phê duyệt'}.`, link: '/admin/payroll', severity: p.unreconciled_records_count > 0 ? 'WARNING' : 'INFO', entity_type: 'PAY_PERIOD_FIN', entity_id: p.id });
   }
   for (const ps of ctx.db.payslips.all().slice(0, 15)) {
     const empUser = findUserByEmp(ps.employee_id);

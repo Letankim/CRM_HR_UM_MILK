@@ -159,6 +159,11 @@ export interface PayPeriodRow {
   total_deductions_vnd: number;
   total_net_vnd: number;
   unreconciled_records_count: number;
+  published_at?: string | null;
+  published_by?: string | null;
+  paid_at?: string | null;
+  paid_by?: string | null;
+  note?: string;
   version: number;
 }
 

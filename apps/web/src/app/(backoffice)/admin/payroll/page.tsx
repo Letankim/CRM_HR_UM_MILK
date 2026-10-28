@@ -156,9 +156,9 @@ function PayrollView() {
                     columns={[
                       { title: 'Kỳ lương đối chiếu', dataIndex: 'periodName', render: (v: string) => <strong>{v || 'Kỳ lương hiện hành'}</strong> },
                       { title: 'Phạm vi chi nhánh', dataIndex: 'branchName', render: (v: string) => <Tag color="blue">{v}</Tag> },
-                      { title: 'Doanh thu kỳ (VNĐ)', dataIndex: 'revenue_vnd', align: 'right', render: (v: number) => <span className="num" style={{ fontWeight: 600 }}>{fmtVnd(v)}</span> },
+                      { title: 'Doanh thu kỳ (VNĐ)', dataIndex: 'revenue_vnd', align: 'right', render: (v: number) => <span className="num" style={{ fontWeight: 600 }}>{Number(v || 0) > 0 ? fmtVnd(v) : 'Chưa có dữ liệu'}</span> },
                       { title: 'Tổng chi phí lương (VNĐ)', dataIndex: 'payroll_cost_vnd', align: 'right', render: (v: number) => <span className="num" style={{ fontWeight: 600 }}>{fmtVnd(v)}</span> },
-                      { title: 'Tỷ lệ Chi phí Lương / Doanh thu', dataIndex: 'labor_cost_percent', align: 'right', render: (v: number) => <Tag color={v <= 25 ? 'green' : 'orange'} className="num">{v}%</Tag> },
+                      { title: 'Tỷ lệ Chi phí Lương / Doanh thu', dataIndex: 'labor_cost_percent', align: 'right', render: (v: number, r) => Number(r.revenue_vnd || 0) > 0 ? <Tag color={v <= 25 ? 'green' : 'orange'} className="num">{v}%</Tag> : <Tag>Chưa đủ dữ liệu doanh thu</Tag> },
                       { title: 'Ghi chú tài chính', dataIndex: 'note', render: (v: string) => v || '—' },
                     ]}
                   />
