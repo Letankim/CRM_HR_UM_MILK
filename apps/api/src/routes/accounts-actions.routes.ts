@@ -7,6 +7,7 @@ import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
+import { queueAccountActivatedEmail, queueAccountLockedEmail, queueAccountRevokedEmail, queueAccountUnlockedEmail } from '../services/action-email-dispatcher.js';
 import { accountBulkRoutes } from './accounts-bulk.routes.js';
 
 const zVersionBody = z.object({
@@ -99,16 +100,7 @@ export async function accountActionRoutes(app: FastifyInstance, ctx: AppContext)
           name: 'audit_and_notify_activation',
           run: async (sagaCtx) => {
             await ctx.audit.record(auditContext(request), { action: 'account.activate', entity: 'USERS', entityId: user.id, before: { status: user.status }, after: { status: sagaCtx.updatedUser.status } });
-            await ctx.email.send({
-              to: user.email || `${user.username}@umbomilk.vn`, template: 'ACCOUNT_ACTIVATED',
-              recipientName: user.display_name, referenceCode: `ACC-${user.id.slice(0, 8).toUpperCase()}`,
-              summary: 'Tài khoản hệ thống Ụm Bò Milk của bạn đã được kích hoạt chính thức.',
-              metadata: [
-                { label: 'Tên tài khoản', value: user.username },
-                { label: 'Vai trò', value: ROLE_LABELS[user.role] },
-                { label: 'Trạng thái', value: ACCOUNT_STATUS_LABELS.ACTIVE },
-              ],
-            });
+            queueAccountActivatedEmail(ctx, sagaCtx.updatedUser, request.auth?.user.email);
           },
         },
       ],
@@ -131,6 +123,7 @@ export async function accountActionRoutes(app: FastifyInstance, ctx: AppContext)
       action: 'account.lock', entity: 'USERS', entityId: user.id,
       before: { status: user.status }, after: { status: updated.status, reason: body.reason ?? 'Khóa tạm thời bởi Quản trị viên' },
     });
+    queueAccountLockedEmail(ctx, updated, body.reason, request.auth?.user.email);
     return sendSuccess(request, `Đã khóa tạm thời tài khoản ${user.display_name}`, { user: toPublicUser(updated), version: updated.version });
   });
 
@@ -145,6 +138,7 @@ export async function accountActionRoutes(app: FastifyInstance, ctx: AppContext)
       action: 'account.unlock', entity: 'USERS', entityId: user.id,
       before: { status: user.status, failed_login_count: user.failed_login_count }, after: { status: updated.status, failed_login_count: 0 },
     });
+    queueAccountUnlockedEmail(ctx, updated, request.auth?.user.email);
     return sendSuccess(request, `Đã mở khóa đăng nhập cho tài khoản ${user.display_name}`, { user: toPublicUser(updated), version: updated.version });
   });
 
@@ -175,16 +169,7 @@ export async function accountActionRoutes(app: FastifyInstance, ctx: AppContext)
           run: async (sagaCtx) => {
             ctx.realtime()?.forceLogout(user.id, body.reason ?? 'Tài khoản đã bị thu hồi');
             await ctx.audit.record(auditContext(request), { action: 'account.revoke', entity: 'USERS', entityId: user.id, before: { status: user.status }, after: { status: sagaCtx.updatedUser.status, reason: body.reason ?? '' } });
-            await ctx.email.send({
-              to: user.email || `${user.username}@umbomilk.vn`, template: 'ACCOUNT_REVOKED',
-              recipientName: user.display_name, referenceCode: `REV-${user.id.slice(0, 8).toUpperCase()}`,
-              summary: 'Quyền truy cập hệ thống của tài khoản dưới đây đã bị thu hồi.',
-              metadata: [
-                { label: 'Tên tài khoản', value: user.username },
-                { label: 'Lý do thu hồi', value: body.reason ?? 'Theo quyết định quản trị' },
-                { label: 'Trạng thái', value: ACCOUNT_STATUS_LABELS.REVOKED },
-              ],
-            });
+            queueAccountRevokedEmail(ctx, sagaCtx.updatedUser, body.reason, request.auth?.user.email);
           },
         },
       ],

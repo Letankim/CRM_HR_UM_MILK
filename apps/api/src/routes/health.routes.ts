@@ -130,6 +130,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext) {
 
   /** Quét & gửi ngay lô tiếp theo trong hàng đợi Email (Anti-Spam Batch Flush). */
   app.post('/api/admin/integrations/email-queue/flush', { preHandler: requirePermission('integration.read', 'notification.send') }, async (request) => {
+    await ctx.db.deliveryLogs.refreshIfIdle();
     const retryRes = await ctx.email.retryFailed();
     const batchRes = await ctx.email.processQueueBatch(5);
     const stats = ctx.email.queueStats();

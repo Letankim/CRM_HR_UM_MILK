@@ -1,7 +1,11 @@
 import { ROLE_LABELS, SYSTEM_CONFIG, type Candidate, type EmergencyLeave, type Employee, type Interview, type LeaveRequest, type PayPeriod, type Payslip, type Role, type ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
+import { resolveFallbackRealEmail } from './account-email-dispatcher.js';
+import { isSyntheticDemoEmail } from './email.service.js';
 
-export function resolveEmployeeContact(ctx: AppContext, empIdOrCode: string) {
+export * from './account-email-dispatcher.js';
+
+export function resolveEmployeeContact(ctx: AppContext, empIdOrCode: string, useFallback = true) {
   if (!empIdOrCode) return null;
   const emp = ctx.db.employees.get(empIdOrCode) ?? ctx.db.employees.find((e) => e.employee_code === empIdOrCode);
   const user = emp
@@ -10,7 +14,8 @@ export function resolveEmployeeContact(ctx: AppContext, empIdOrCode: string) {
   if (!emp && !user) return null;
   const code = emp?.employee_code || user?.employee_id || user?.username || empIdOrCode;
   const name = emp?.full_name || user?.display_name || user?.username || 'Nhân sự Ụm Bò Milk';
-  const email = (emp?.email || user?.email || `${code.toLowerCase()}@${SYSTEM_CONFIG.companyDomain}`).trim().toLowerCase();
+  const rawEmail = (emp?.email && !isSyntheticDemoEmail(emp.email) ? emp.email : user?.email && !isSyntheticDemoEmail(user.email) ? user.email : '') || (useFallback ? resolveFallbackRealEmail(ctx) : `${code.toLowerCase()}@${SYSTEM_CONFIG.companyDomain}`);
+  const email = rawEmail.trim().toLowerCase();
   const branchName = (emp?.branch_id ? ctx.db.branches.get(emp.branch_id)?.name : undefined) || 'Ụm Bò Milk';
   return { email, name, code, branchId: emp?.branch_id || 'ALL', branchName };
 }
@@ -22,8 +27,8 @@ export function resolveRoleContacts(ctx: AppContext, roles: string[], branchId?:
     if (u.status !== 'ACTIVE' || !roleSet.has(u.role)) continue;
     if (branchId && branchId !== 'ALL' && u.branch_scope !== 'ALL' && !u.branch_scope.split(',').map((s) => s.trim()).includes(branchId)) continue;
     const emp = u.employee_id ? ctx.db.employees.find((e) => e.employee_code === u.employee_id || e.id === u.employee_id) : undefined;
-    const email = (u.email || emp?.email || `${u.username.toLowerCase()}@${SYSTEM_CONFIG.companyDomain}`).trim().toLowerCase();
-    results.push({ email, name: u.display_name || emp?.full_name || u.username, roleLabel: ROLE_LABELS[u.role as Role] ?? u.role });
+    const rawEmail = (u.email && !isSyntheticDemoEmail(u.email) ? u.email : emp?.email && !isSyntheticDemoEmail(emp.email) ? emp.email : '') || resolveFallbackRealEmail(ctx);
+    results.push({ email: rawEmail.trim().toLowerCase(), name: u.display_name || emp?.full_name || u.username, roleLabel: ROLE_LABELS[u.role as Role] ?? u.role });
   }
   return results;
 }
@@ -32,7 +37,7 @@ export function queueInterviewEmails(ctx: AppContext, params: { candidate: Candi
   const { candidate, interview, isUpdate } = params;
   const branchName = ctx.db.branches.get(interview.branch_id || candidate.branch_pref)?.name || 'Ụm Bò Milk';
   const slot = interview.start_at.slice(0, 16).replace('T', ' ');
-  const candEmail = (candidate.email || `${candidate.candidate_code.toLowerCase()}@${SYSTEM_CONFIG.companyDomain}`).trim().toLowerCase();
+  const candEmail = (!isSyntheticDemoEmail(candidate.email) ? candidate.email : resolveFallbackRealEmail(ctx)).trim().toLowerCase();
   ctx.email.enqueue({
     to: candEmail,
     template: 'INTERVIEW_INVITATION',
@@ -200,17 +205,12 @@ export function queueTestAssignedEmail(ctx: AppContext, params: { empId: string;
 
 export function queuePayslipPublishedEmails(ctx: AppContext, period: PayPeriod, slips: Payslip[]) {
   for (const slip of slips) {
-    const contact = resolveEmployeeContact(ctx, slip.employee_id);
+    const contact = resolveEmployeeContact(ctx, slip.employee_id, slips.length === 1);
     if (!contact) continue;
     ctx.email.enqueue({
       to: contact.email, template: 'PAYSLIP_PUBLISHED', recipientName: contact.name, referenceCode: slip.payslip_code,
       summary: `Phiếu lương kỳ "${period.name}" (${period.from_date} đến ${period.to_date}) của bạn đã được phát hành chính thức.`,
-      metadata: [
-        { label: 'Mã phiếu lương', value: slip.payslip_code },
-        { label: 'Kỳ lương', value: `${period.name} (${period.from_date} - ${period.to_date})` },
-        { label: 'Tổng giờ công hợp lệ', value: `${slip.approved_hours} giờ (Tăng ca OT: ${slip.ot_hours} giờ)` },
-        { label: 'Thực lĩnh (NET)', value: `${Number(slip.net_vnd || 0).toLocaleString('vi-VN')} đ` },
-      ],
+      metadata: [{ label: 'Mã phiếu lương', value: slip.payslip_code }, { label: 'Kỳ lương', value: `${period.name} (${period.from_date} - ${period.to_date})` }, { label: 'Tổng giờ công', value: `${slip.approved_hours} giờ (OT: ${slip.ot_hours} giờ)` }, { label: 'Thực lĩnh (NET)', value: `${Number(slip.net_vnd || 0).toLocaleString('vi-VN')} đ` }],
       actionLabel: 'Xem & Xác nhận Phiếu lương', actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}/nv/phieu-luong`,
     });
   }

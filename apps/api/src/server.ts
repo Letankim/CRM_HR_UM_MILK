@@ -145,6 +145,7 @@ async function main() {
   const loadPromise = db.loadAll();
   await app.listen({ port: env.API_PORT, host: '0.0.0.0' });
   await loadPromise;
+  email.hydrateFromDatabase();
   await reconciliation.scanAndRepair({ autoFix: true, actorId: 'startup-sync' }).catch(() => undefined);
   db.startAutoRefresh(env.CACHE_REFRESH_SECONDS, app.log);
   backup.startEmbeddedScheduler(app.log);

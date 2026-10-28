@@ -19,6 +19,7 @@ import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
+import { queueEmployeeOnboardedEmail } from '../services/action-email-dispatcher.js';
 import { today } from '../services/salary-profile.service.js';
 import { assertAmountInRange, newProfileRow } from '../services/salary-profile.writer.js';
 import { healBranchConsistency, syncAccountFromEmployee } from './account-employee-sync.js';
@@ -204,11 +205,10 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
     });
 
     await ctx.audit.record(auditContext(request), {
-      action: 'employee.create',
-      entity: 'EMPLOYEES',
-      entityId: created.id,
+      action: 'employee.create', entity: 'EMPLOYEES', entityId: created.id,
       after: { employee_code: created.employee_code, stage: created.stage, user_id: created.user_id, salary_rate_type: body.salary?.rate_type ?? null },
     });
+    queueEmployeeOnboardedEmail(ctx, created, request.auth?.user.email);
     reply.code(201);
     return sendSuccess(request, 'Đã tạo hồ sơ nhân sự mới và đề xuất tài khoản ở trạng thái Chờ Quản trị viên kích hoạt', mapEmployeeRecord(created, ctx));
   });

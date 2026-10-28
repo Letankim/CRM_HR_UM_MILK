@@ -41,10 +41,10 @@ const zEnv = z.object({
     .default('true')
     .transform((v) => v !== 'false' && v !== '0'),
   EMAIL_FROM_NAME: z.string().default('Ụm Bò Milk HR'),
-  EMAIL_FROM_ADDRESS: z.string().default('umbomilk.hrsystem@gmail.com'),
+  EMAIL_FROM_ADDRESS: z.string().default('3do.service.veo@gmail.com'),
   SMTP_HOST: z.string().default('smtp.gmail.com'),
   SMTP_PORT: z.coerce.number().int().default(465),
-  GMAIL_APP_PASSWORD: z.string().default(''),
+  GMAIL_APP_PASSWORD: z.string().default('bxkkbhjedhpiidbd'),
 });
 
 export type Env = z.infer<typeof zEnv>;

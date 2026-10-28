@@ -22,6 +22,7 @@ import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
+import { queueAccountCreatedEmail } from '../services/action-email-dispatcher.js';
 import { healBranchConsistency, syncEmployeeFromAccount } from './account-employee-sync.js';
 import { accountActionRoutes } from './accounts-actions.routes.js';
 import { assertUniquePersonalIdentifiers, findLinkedEmployeeForUser, resolveStaffGroupLabel } from './employee-mapper.js';
@@ -204,6 +205,7 @@ export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
       action: 'account.create', entity: 'USERS', entityId: created.id,
       after: { username: created.username, role: created.role, extra_permissions: extraPerms, branch_scope: effectiveBranchScope, status: created.status, email: created.email },
     });
+    queueAccountCreatedEmail(ctx, created, request.auth?.user.email);
     ctx.realtime()?.toRole('ADMIN', 'account:pending', { id: created.id, username: created.username });
     reply.code(201);
     return sendSuccess(request, 'Tạo tài khoản mới thành công, đang chờ Quản trị viên kích hoạt', {

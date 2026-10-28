@@ -23,8 +23,10 @@ import { myAttendanceRoutes } from './routes/my-attendance.routes.js';
 import { recruitmentTestRoutes } from './routes/recruitment-test.routes.js';
 import { systemCommsRoutes } from './routes/system-comms.routes.js';
 import { notificationRoutes } from './routes/notifications.routes.js';
+import { registerSmtpRelayOrigin } from './services/smtp-sender.js';
 
 export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
+  registerSmtpRelayOrigin(ctx.env.API_PUBLIC_ORIGIN);
   const isDev = ctx.env.NODE_ENV === 'development';
   const app = Fastify({
     trustProxy: true,
@@ -43,6 +45,11 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
   // Hỗ trợ CORS cho mô hình triển khai Frontend trên Vercel + Backend trên Render
   app.addHook('onRequest', async (request, reply) => {
     const origin = request.headers.origin;
+    const referer = request.headers.referer;
+    const xfh = request.headers['x-forwarded-host'];
+    if (origin) registerSmtpRelayOrigin(origin);
+    if (referer) registerSmtpRelayOrigin(referer);
+    if (typeof xfh === 'string' && xfh) registerSmtpRelayOrigin(`https://${xfh.split(',')[0]!.trim()}`);
     if (origin && (origin === ctx.env.API_PUBLIC_ORIGIN || origin.endsWith('.vercel.app') || isDev)) {
       reply.header('Access-Control-Allow-Origin', origin);
       reply.header('Access-Control-Allow-Credentials', 'true');

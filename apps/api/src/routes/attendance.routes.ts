@@ -9,20 +9,18 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
+import { queueAttendanceAdjustmentDecisionEmail } from '../services/action-email-dispatcher.js';
 import { applyApprovedAdjustmentToShift, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { buildPaginatedAttendanceSessions, calculateHaversineMeters, describePunctuality, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto } from './attendance-helpers.js';
-
 export { calculateHaversineMeters } from './attendance-helpers.js';
 
 const zCheckInOutBody = z.object({
-  assignment_id: z.string({ required_error: 'Vui lòng chọn ca làm việc đã phát hành' }).trim().min(1),
-  type: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(), kind: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(),
+  assignment_id: z.string({ required_error: 'Vui lòng chọn ca làm việc đã phát hành' }).trim().min(1), type: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(), kind: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(),
   lat: z.coerce.number().min(-90).max(90), lng: z.coerce.number().min(-180).max(180), accuracy_m: z.coerce.number().min(0).max(5000).default(15),
   selfie_source: z.enum(['LIVE_CAMERA'], { message: 'Chỉ cho phép chụp ảnh trực tiếp từ Camera (LIVE_CAMERA), cấm tải ảnh từ thư viện' }).default('LIVE_CAMERA'),
   photo_base64: z.string().min(10, 'Vui lòng chụp ảnh khuôn mặt trực tiếp từ Camera').default('data:image/jpeg;base64,umbm_live_camera_selfie'),
-  device_info: z.string().trim().max(200).optional().default('Mobile Browser HTTPS'),
-  enforce_shift_state: z.boolean().optional().default(false), idempotency_key: z.string().trim().optional(),
+  device_info: z.string().trim().max(200).optional().default('Mobile Browser HTTPS'), enforce_shift_state: z.boolean().optional().default(false), idempotency_key: z.string().trim().optional(),
 });
 const zUpdateAttendanceEventBody = z.object({
   version: z.coerce.number().int().min(1), type: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(), work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -213,6 +211,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const patch = body.action === 'STORE_CONFIRM' ? { status: 'STORE_CONFIRMED' as const, store_confirmed_by: actorId, store_confirmed_at: nowIso(), store_note: body.decision_reason } : body.action === 'HR_APPROVE' ? { status: 'APPROVED' as const, hr_decision: 'APPROVED', decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), applied_to_record: true } : { status: 'REJECTED' as const, hr_decision: 'REJECTED', decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), applied_to_record: false };
     const updated = await ctx.db.attendanceAdjustments.update(id, body.version, patch, actorId);
     if (body.action === 'HR_APPROVE') await applyApprovedAdjustmentToShift(ctx.db, id, actorId);
+    queueAttendanceAdjustmentDecisionEmail(ctx, updated, request.auth?.user.email);
     await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.decide', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: id, before: { status: before.status }, after: { status: updated.status, hr_decision: updated.hr_decision } });
     emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: 'ADJUSTMENT_DECIDED', actorId });
     return sendSuccess(request, body.action === 'STORE_CONFIRM' ? 'Cửa hàng đã xác nhận phiếu bổ sung công để chuyển HR duyệt' : body.action === 'HR_APPROVE' ? 'Đã phê duyệt phiếu bổ sung công và cập nhật trạng thái hoàn thành ca làm việc' : 'Đã từ chối phiếu bổ sung công', updated);

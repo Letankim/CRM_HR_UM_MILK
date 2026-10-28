@@ -20,7 +20,7 @@ const nextConfig: NextConfig = {
   // trình duyệt chỉ thấy một origin nên cookie hoạt động và không cần CORS.
   async rewrites() {
     return [
-      { source: '/api/:path*', destination: `${API}/api/:path*` },
+      { source: '/api/:path((?!smtp-relay).*)', destination: `${API}/api/:path*` },
       { source: '/socket.io/', destination: `${API}/socket.io/` },
       { source: '/socket.io/:path*', destination: `${API}/socket.io/:path*` },
     ];

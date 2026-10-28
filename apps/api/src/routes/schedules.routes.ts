@@ -204,6 +204,10 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
       assertBranchAccess(request, lastBranchId);
       assertDateNotLockedByPayroll(ctx.db, a.work_date, body.action === 'DELETE' ? 'xóa ca làm việc' : 'duyệt ca làm việc');
       patches.push({ id: a.id, expectedVersion: a.version, patch: body.action === 'DELETE' ? { is_deleted: true } : { status: 'PUBLISHED', published_at: pubAt } });
+      if (body.action === 'PUBLISH' && a.status !== 'PUBLISHED') {
+        const tpl = findBranchShiftTemplate(ctx, a.shift_code, lastBranchId);
+        queueScheduleShiftEmail(ctx, { empId: a.employee_id, shiftLabel: tpl?.name ?? a.shift_code, workDate: a.work_date, startAt: a.start_at, endAt: a.end_at, branchId: lastBranchId, code: `SHF-${a.id.slice(0, 6)}` });
+      }
       processedIds.push(a.id);
       empIds.add(a.employee_id);
     }

@@ -1,3 +1,4 @@
+import dns from 'node:dns';
 import tls from 'node:tls';
 
 export interface SmtpConfig {
@@ -14,6 +15,35 @@ export interface SmtpSendInput {
   html: string;
 }
 
+const relayOrigins = new Set<string>();
+let preferHttpsRelay = false;
+
+export function registerSmtpRelayOrigin(raw?: string): void {
+  if (!raw) return;
+  try {
+    const normalized = raw.startsWith('http://') || raw.startsWith('https://') ? raw : `https://${raw}`;
+    const u = new URL(normalized);
+    const host = u.hostname.toLowerCase();
+    if (u.protocol !== 'https:') return;
+    if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.onrender.com')) return;
+    relayOrigins.add(u.origin);
+  } catch {
+    // Bỏ qua URL không hợp lệ
+  }
+}
+
+export function formatSmtpError(err: unknown): string {
+  if (!err) return 'Lỗi kết nối SMTP';
+  const e = err as Error & { code?: string; errors?: Array<Error & { code?: string }> };
+  if (e.message && e.message.trim()) return e.message.trim();
+  if (Array.isArray(e.errors) && e.errors.length > 0) {
+    const parts = e.errors.map((sub) => sub?.message || sub?.code || '').filter(Boolean);
+    if (parts.length > 0) return `Lỗi kết nối SMTP (${parts.join(' | ')})`;
+  }
+  if (e.code) return `Lỗi kết nối SMTP (${e.code})`;
+  return 'Lỗi kết nối SMTP';
+}
+
 function encodeMimeWord(text: string): string {
   return `=?UTF-8?B?${Buffer.from(text, 'utf8').toString('base64')}?=`;
 }
@@ -23,11 +53,37 @@ function wrapBase64(html: string): string {
   return b64.replace(/(.{76})/g, '$1\r\n');
 }
 
+async function sendViaHttpsRelay(cfg: SmtpConfig, mail: SmtpSendInput): Promise<void> {
+  const origins = Array.from(relayOrigins);
+  if (origins.length === 0) {
+    throw new Error('Không có trạm trung chuyển HTTPS khả dụng');
+  }
+  let lastErr = 'Lỗi kết nối trạm trung chuyển HTTPS';
+  for (const origin of origins) {
+    try {
+      const res = await fetch(`${origin}/api/smtp-relay`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-umbm-relay': '1',
+        },
+        body: JSON.stringify({ smtp: cfg, mail }),
+        signal: AbortSignal.timeout(14000),
+      });
+      if (res.ok) return;
+      const body = (await res.json().catch(() => ({}))) as { message?: string };
+      lastErr = body.message || `Trạm trung chuyển trả mã ${res.status}`;
+    } catch (err) {
+      lastErr = formatSmtpError(err);
+    }
+  }
+  throw new Error(lastErr);
+}
+
 /**
- * Gửi email HTML qua kết nối SMTPS (TLS cổng 465 của Gmail) dùng App Password.
- * Không phụ thuộc thư viện ngoài, mã hóa nội dung chuẩn Base64 UTF-8 an toàn cho tiếng Việt.
+ * Gửi email HTML trực tiếp qua kết nối SMTPS (TLS cổng 465 của Gmail, ép IPv4 family=4).
  */
-export async function sendSmtpTlsMail(cfg: SmtpConfig, mail: SmtpSendInput): Promise<void> {
+async function sendDirectSmtpTls(cfg: SmtpConfig, mail: SmtpSendInput): Promise<void> {
   const cleanPass = cfg.pass.replace(/\s+/g, '');
   if (!cfg.user || !cleanPass) {
     throw new Error('Chưa cấu hình EMAIL_FROM_ADDRESS hoặc GMAIL_APP_PASSWORD trong .env');
@@ -37,10 +93,11 @@ export async function sendSmtpTlsMail(cfg: SmtpConfig, mail: SmtpSendInput): Pro
     host: cfg.host || 'smtp.gmail.com',
     port: cfg.port || 465,
     servername: cfg.host || 'smtp.gmail.com',
+    lookup: (hostname, opts, cb) => dns.lookup(hostname, { ...opts, family: 4 }, cb),
   });
 
   socket.setEncoding('utf8');
-  socket.setTimeout(15000);
+  socket.setTimeout(6500);
 
   let buffer = '';
   let waiter: { resolve: (line: string) => void; reject: (err: Error) => void } | null = null;
@@ -48,7 +105,6 @@ export async function sendSmtpTlsMail(cfg: SmtpConfig, mail: SmtpSendInput): Pro
   const checkBuffer = () => {
     if (!waiter) return;
     const lines = buffer.split('\r\n');
-    // Cần ít nhất 1 dòng hoàn chỉnh kết thúc bằng \r\n và dòng cuối trước '' có dạng "XYZ " (không có dấu gạch ngang ở ký tự thứ 4)
     for (let i = 0; i < lines.length - 1; i++) {
       const line = lines[i]!;
       if (/^\d{3} /.test(line) || /^\d{3}$/.test(line)) {
@@ -77,12 +133,12 @@ export async function sendSmtpTlsMail(cfg: SmtpConfig, mail: SmtpSendInput): Pro
     if (waiter) {
       const w = waiter;
       waiter = null;
-      w.reject(err);
+      w.reject(new Error(formatSmtpError(err)));
     }
   });
 
   socket.on('timeout', () => {
-    socket.destroy(new Error('Quá thời gian kết nối tới máy chủ SMTP'));
+    socket.destroy(new Error('Quá thời gian kết nối tới máy chủ SMTP cổng 465'));
   });
 
   const sendCmd = async (cmd: string, expectedCodes: number[]): Promise<string> => {
@@ -128,6 +184,32 @@ export async function sendSmtpTlsMail(cfg: SmtpConfig, mail: SmtpSendInput): Pro
     socket.end();
   } catch (err) {
     socket.destroy();
-    throw err;
+    throw new Error(formatSmtpError(err));
+  }
+}
+
+/**
+ * Gửi email doanh nghiệp thông minh:
+ * 1. Thử kết nối SMTPS trực tiếp (cổng 465 IPv4).
+ * 2. Khi triển khai trên Render Free Tier (chặn cổng 465 outbound), tự động chuyển tiếp qua HTTPS cổng 443 tới Vercel Relay.
+ */
+export async function sendSmtpTlsMail(cfg: SmtpConfig, mail: SmtpSendInput): Promise<void> {
+  if (preferHttpsRelay && relayOrigins.size > 0) {
+    try {
+      await sendViaHttpsRelay(cfg, mail);
+      return;
+    } catch {
+      // Nếu relay lỗi tạm thời, thử lại kết nối trực tiếp
+    }
+  }
+  try {
+    await sendDirectSmtpTls(cfg, mail);
+  } catch (directErr) {
+    if (relayOrigins.size > 0) {
+      preferHttpsRelay = true;
+      await sendViaHttpsRelay(cfg, mail);
+      return;
+    }
+    throw directErr;
   }
 }

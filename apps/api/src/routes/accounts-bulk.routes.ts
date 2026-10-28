@@ -8,6 +8,7 @@ import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
+import { queueAccountActivatedEmail, queueAccountLockedEmail, queueAccountRevokedEmail, queueAccountUnlockedEmail, queueAccountUpdatedEmail } from '../services/action-email-dispatcher.js';
 import { syncEmployeeFromAccount } from './account-employee-sync.js';
 import { sanitizeExtraPermissions } from './accounts.routes.js';
 import { assertUniquePersonalIdentifiers, findLinkedEmployeeForUser } from './employee-mapper.js';
@@ -143,6 +144,7 @@ export async function accountBulkRoutes(app: FastifyInstance, ctx: AppContext) {
         before: { display_name: before.display_name, role: before.role, extra_permissions: beforeExtraPerms, branch_scope: before.branch_scope, phone: before.phone, employee_id: before.employee_id },
         after: { display_name: updated.display_name, role: updated.role, extra_permissions: nextExtraPerms, branch_scope: updated.branch_scope, phone: updated.phone, employee_id: updated.employee_id, ...(body.reason ? { reason: body.reason } : {}) },
       });
+      queueAccountUpdatedEmail(ctx, updated, body.reason || (body.secret ? 'Đặt lại mật khẩu/PIN và cập nhật thông tin' : 'Cập nhật thông tin và phân quyền'), request.auth?.user.email);
 
       return sendSuccess(request, 'Cập nhật thông tin tài khoản và phân quyền thành công', { user: toPublicUser(updated), version: updated.version });
     },
@@ -170,6 +172,7 @@ export async function accountBulkRoutes(app: FastifyInstance, ctx: AppContext) {
   app.post('/api/admin/accounts/bulk-action', { preHandler: requirePermission('account.activate') }, async (request) => {
     const body = zBulkActionBody.parse(request.body);
     const actorId = request.auth!.user.id;
+    const actorEmail = request.auth?.user.email;
     const processedIds: string[] = [];
     const skippedIds: string[] = [];
 
@@ -177,20 +180,22 @@ export async function accountBulkRoutes(app: FastifyInstance, ctx: AppContext) {
       const user = ctx.db.users.get(item.id);
       if (!user) { skippedIds.push(item.id); continue; }
       if (body.action === 'ACTIVATE' && user.status !== 'ACTIVE') {
-        await ctx.db.users.update(user.id, user.version, { status: 'ACTIVE', activated_by: actorId, activated_at: nowIso(), failed_login_count: 0, locked_until: '', revoked_at: '' }, actorId);
-        ctx.email.enqueue({ to: user.email || `${user.username}@umbomilk.vn`, template: 'ACCOUNT_ACTIVATED', recipientName: user.display_name, referenceCode: `ACC-${user.id.slice(0, 8).toUpperCase()}`, summary: 'Tài khoản hệ thống Ụm Bò Milk của bạn đã được kích hoạt chính thức.', metadata: [{ label: 'Tên tài khoản', value: user.username }, { label: 'Vai trò', value: ROLE_LABELS[user.role] }, { label: 'Trạng thái', value: ACCOUNT_STATUS_LABELS.ACTIVE }] });
+        const updated = await ctx.db.users.update(user.id, user.version, { status: 'ACTIVE', activated_by: actorId, activated_at: nowIso(), failed_login_count: 0, locked_until: '', revoked_at: '' }, actorId);
+        queueAccountActivatedEmail(ctx, updated, actorEmail);
         processedIds.push(user.id);
       } else if (body.action === 'LOCK' && user.id !== actorId && user.username !== 'admin' && user.status === 'ACTIVE') {
-        await ctx.db.users.update(user.id, user.version, { status: 'LOCKED', session_version: user.session_version + 1 }, actorId);
+        const updated = await ctx.db.users.update(user.id, user.version, { status: 'LOCKED', session_version: user.session_version + 1 }, actorId);
         ctx.realtime()?.forceLogout(user.id, body.reason ?? 'Khóa tạm thời tài khoản hàng loạt');
+        queueAccountLockedEmail(ctx, updated, body.reason, actorEmail);
         processedIds.push(user.id);
       } else if (body.action === 'UNLOCK') {
-        await ctx.db.users.update(user.id, user.version, { status: user.status === 'LOCKED' ? 'ACTIVE' : user.status, failed_login_count: 0, locked_until: '' }, actorId);
+        const updated = await ctx.db.users.update(user.id, user.version, { status: user.status === 'LOCKED' ? 'ACTIVE' : user.status, failed_login_count: 0, locked_until: '' }, actorId);
+        queueAccountUnlockedEmail(ctx, updated, actorEmail);
         processedIds.push(user.id);
       } else if (body.action === 'REVOKE' && user.id !== actorId && user.status !== 'REVOKED') {
-        await ctx.db.users.update(user.id, user.version, { status: 'REVOKED', revoked_at: nowIso(), session_version: user.session_version + 1 }, actorId);
+        const updated = await ctx.db.users.update(user.id, user.version, { status: 'REVOKED', revoked_at: nowIso(), session_version: user.session_version + 1 }, actorId);
         ctx.realtime()?.forceLogout(user.id, body.reason ?? 'Thu hồi quyền hàng loạt');
-        ctx.email.enqueue({ to: user.email || `${user.username}@umbomilk.vn`, template: 'ACCOUNT_REVOKED', recipientName: user.display_name, referenceCode: `REV-${user.id.slice(0, 8).toUpperCase()}`, summary: 'Quyền truy cập hệ thống của tài khoản đã bị thu hồi.', metadata: [{ label: 'Tên tài khoản', value: user.username }, { label: 'Lý do thu hồi', value: body.reason ?? 'Theo quyết định quản trị' }, { label: 'Trạng thái', value: ACCOUNT_STATUS_LABELS.REVOKED }] });
+        queueAccountRevokedEmail(ctx, updated, body.reason, actorEmail);
         processedIds.push(user.id);
       } else if (body.action === 'DELETE' && user.id !== actorId && user.username !== 'admin') {
         await ctx.db.users.softDelete(user.id, user.version, actorId);

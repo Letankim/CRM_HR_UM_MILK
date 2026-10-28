@@ -8,7 +8,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
-import { queueEmergencyLeaveEmail, queueLeaveDecisionEmail, queueSwapEventEmail } from '../services/action-email-dispatcher.js';
+import { queueEmergencyHandledEmail, queueEmergencyLeaveEmail, queueLeaveDecisionEmail, queueSwapEventEmail } from '../services/action-email-dispatcher.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 
@@ -212,6 +212,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     }
     await ctx.audit.record(auditContext(request), { action: 'emergency.handle', entity: 'EMERGENCY_LEAVES', entityId: id, before: { status: before.status }, after: { status: updated.status, escalated: updated.escalated } });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: before.branch_id, employeeIds: [before.employee_id, body.replacement_id], kind: 'EMERGENCY_HANDLED', message: `Ca nghỉ khẩn cấp ${before.emergency_code} ngày ${before.work_date} đã được xử lý`, actorId });
+    queueEmergencyHandledEmail(ctx, updated, request.auth?.user.email);
     return sendSuccess(request, isEscalate ? 'Đã chuyển cảnh báo thiếu ca lên cấp trên (Escalated) để điều phối vận hành' : 'Đã cập nhật phương án xử lý ca nghỉ đột xuất và đồng bộ lịch ca', updated);
   });
 }
