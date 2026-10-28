@@ -82,9 +82,11 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       const isPendingApproval = a.status === 'DRAFT';
       const isDone = a.status === 'COMPLETED' || Boolean(inEv && outEv);
       const attendanceStatusLabel = isAbsentShift
-        ? 'Vắng mặt (Quá giờ ca — Cần bổ sung công)'
-        : isPendingApproval ? 'Chờ CH / HR duyệt phân ca' : isDone ? 'Đã hoàn thành ca' : inEv ? `Đã vào ca (${String(inEv.checkTimeFormatted || '').slice(0, 5)})` : 'Chưa điểm danh';
-      const attendanceStatusColor = isAbsentShift ? 'red' : isPendingApproval ? 'gold' : isDone ? 'green' : inEv ? (inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : 'default';
+        ? (base.pendingAdjustmentCode ? `Đã gửi bù công (${base.pendingAdjustmentCode} · Chờ duyệt)` : 'Vắng mặt (Quá giờ ca — Cần bổ sung công)')
+        : isPendingApproval ? 'Chờ CH / HR duyệt phân ca' : isDone ? 'Đã hoàn thành ca' : inEv ? `Đã vào ca (${String(inEv.checkTimeFormatted || '').slice(0, 5)})`
+        : base.pendingSwapCode ? `Chờ duyệt đổi ca (${base.pendingSwapCode})`
+        : (base.pendingLeaveCode || base.pendingEmergencyCode) ? `Chờ duyệt nghỉ (${base.pendingLeaveCode || base.pendingEmergencyCode})` : 'Chưa điểm danh';
+      const attendanceStatusColor = isAbsentShift ? (base.pendingAdjustmentCode ? 'orange' : 'red') : isPendingApproval ? 'gold' : isDone ? 'green' : inEv ? (inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : base.pendingSwapCode ? 'purple' : (base.pendingLeaveCode || base.pendingEmergencyCode) ? 'gold' : 'default';
       return { ...base, isToday, isExpiredToday, isAbsentShift, checkInEvent: inEv, checkOutEvent: outEv, attendanceStatusLabel, attendanceStatusColor };
     }).sort((a, b) => {
       const rank = (s: { workDate: string; isToday: boolean; status: string; isAbsentShift: boolean; isExpiredToday: boolean; checkInEvent: unknown; checkOutEvent: unknown }) =>

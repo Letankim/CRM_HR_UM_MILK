@@ -9,56 +9,45 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll, findLockedPayrollPeriodForDate } from '../services/salary-profile.service.js';
+import { resolveShiftActiveRequests } from '../services/shift-absent-scanner.js';
 import { queueScheduleShiftEmail } from '../services/action-email-dispatcher.js';
 import { emitScheduleRealtime, findBranchShiftTemplate, healBranchConsistency, resolveEmployeeBranchId } from './account-employee-sync.js';
 import { describePunctuality, parseHm } from './attendance-helpers.js';
 
 const zScheduleQuery = zListQueryBase.extend({
   per_page: z.coerce.number().int().min(1, 'Số dòng mỗi trang tối thiểu là 1').max(1000, 'Số dòng mỗi trang tối đa là 1000').default(15),
-  branch_id: z.string().max(64).optional(),
-  shift_code: z.string().max(32).optional(),
+  branch_id: z.string().max(64).optional(), shift_code: z.string().max(32).optional(),
   status: z.enum([...SHIFT_ASSIGNMENT_STATUSES, 'ALL'] as const).optional(),
-  from_date: z.string().optional(),
-  to_date: z.string().optional(),
-  refresh: z.enum(['0', '1', 'true', 'false']).optional(),
+  from_date: z.string().optional(), to_date: z.string().optional(), refresh: z.enum(['0', '1', 'true', 'false']).optional(),
 });
 
 const zCreateScheduleBody = z.object({ employee_id: z.string({ required_error: 'Vui lòng chọn nhân sự' }).trim().min(1), branch_id: z.string().trim().optional(), work_date: z.string({ required_error: 'Ngày làm việc là bắt buộc' }).regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng ngày YYYY-MM-DD'), shift_code: z.string().trim().default('CA_SANG'), status: z.enum(SHIFT_ASSIGNMENT_STATUSES).default('PUBLISHED'), day_type: z.enum(['WORK', 'OFF', 'OT']).default('WORK'), scheduled_hours: z.coerce.number().min(0).max(24).optional(), note: z.string().trim().max(300).optional().default('') });
 const zUpdateScheduleBody = z.object({ version: z.coerce.number().int().min(1), employee_id: z.string().trim().optional(), work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), shift_code: z.string().trim().optional(), status: z.enum(SHIFT_ASSIGNMENT_STATUSES).optional(), day_type: z.enum(['WORK', 'OFF', 'OT']).optional(), scheduled_hours: z.coerce.number().min(0).max(24).optional(), note: z.string().trim().max(300).optional() });
 const zBulkScheduleBody = z.object({ action: z.enum(['PUBLISH', 'DELETE']), items: z.array(z.object({ id: z.string().min(1), version: z.coerce.number().int().min(1) })).min(1).max(100) });
 
-export function mapShiftAssignment(
-  a: ShiftAssignment,
-  ctx: AppContext,
-  shiftEvents?: { inHm?: string; inLateMins?: number; hasOut?: boolean },
-) {
+export function mapShiftAssignment(a: ShiftAssignment, ctx: AppContext, shiftEvents?: { inHm?: string; inLateMins?: number; hasOut?: boolean }) {
   const emp = ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === a.employee_id);
   const findBranch = (raw?: string) => raw ? (ctx.db.branches.get(raw) ?? ctx.db.branches.find((b) => b.code === raw)) : undefined;
   const effectiveBranchId = resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id);
-  const branch = findBranch(effectiveBranchId) ?? findBranch(a.branch_id);
-  const empBranch = findBranch(emp?.branch_id) ?? branch;
+  const branch = findBranch(effectiveBranchId) ?? findBranch(a.branch_id), empBranch = findBranch(emp?.branch_id) ?? branch;
   const tpl = findBranchShiftTemplate(ctx, a.shift_code, branch?.id ?? a.branch_id);
-  const startAt = a.start_at || tpl?.start_time || '07:00';
-  const endAt = a.end_at || tpl?.end_time || '12:00';
+  const startAt = a.start_at || tpl?.start_time || '07:00', endAt = a.end_at || tpl?.end_time || '12:00';
 
-  let attendanceStatusLabel = 'Chưa điểm danh';
-  let attendanceStatusColor = 'default';
-  if (a.status === 'DRAFT') {
-    attendanceStatusLabel = 'Chờ CH / HR duyệt phân ca';
-    attendanceStatusColor = 'gold';
-  } else if (a.status === 'ABSENT') {
-    attendanceStatusLabel = 'Vắng mặt (Quá giờ ca — Cần bổ sung công)';
-    attendanceStatusColor = 'red';
-  } else if (a.status === 'COMPLETED' || (shiftEvents?.inHm && shiftEvents?.hasOut)) {
-    attendanceStatusLabel = 'Đã hoàn thành ca';
-    attendanceStatusColor = 'green';
-  } else if (a.status === 'ON_LEAVE' || a.day_type === 'OFF') {
-    attendanceStatusLabel = 'Nghỉ phép OFF';
-    attendanceStatusColor = 'default';
-  } else if (shiftEvents?.inHm) {
+  const activeReqs = resolveShiftActiveRequests(ctx.db, a, emp);
+  let attendanceStatusLabel = 'Chưa điểm danh', attendanceStatusColor = 'default';
+  if (a.status === 'DRAFT') { attendanceStatusLabel = 'Chờ CH / HR duyệt phân ca'; attendanceStatusColor = 'gold'; }
+  else if (a.status === 'ABSENT') {
+    attendanceStatusLabel = activeReqs.pendingAdjustmentCode ? `Đã gửi bù công (${activeReqs.pendingAdjustmentCode} · Chờ duyệt)` : 'Vắng mặt (Quá giờ ca — Cần bổ sung công)';
+    attendanceStatusColor = activeReqs.pendingAdjustmentCode ? 'orange' : 'red';
+  } else if (a.status === 'COMPLETED' || (shiftEvents?.inHm && shiftEvents?.hasOut)) { attendanceStatusLabel = 'Đã hoàn thành ca'; attendanceStatusColor = 'green'; }
+  else if (a.status === 'ON_LEAVE' || a.day_type === 'OFF') { attendanceStatusLabel = 'Nghỉ phép OFF'; attendanceStatusColor = 'default'; }
+  else if (shiftEvents?.inHm) {
     const punc = describePunctuality('CHECK_IN', shiftEvents.inLateMins ?? 0, 0);
     attendanceStatusLabel = `Đã vào ca (${shiftEvents.inHm} · ${punc.punctualityLabel})`;
     attendanceStatusColor = punc.punctualityStatus === 'LATE' ? 'volcano' : 'processing';
+  } else if (activeReqs.pendingSwapCode) { attendanceStatusLabel = `Chờ duyệt đổi ca (${activeReqs.pendingSwapCode})`; attendanceStatusColor = 'purple'; }
+  else if (activeReqs.pendingLeaveCode || activeReqs.pendingEmergencyCode) {
+    attendanceStatusLabel = `Chờ duyệt nghỉ (${activeReqs.pendingLeaveCode || activeReqs.pendingEmergencyCode})`; attendanceStatusColor = 'gold';
   }
 
   const lockedPeriod = findLockedPayrollPeriodForDate(ctx.db, a.work_date);
@@ -74,7 +63,7 @@ export function mapShiftAssignment(
     shiftLabel: tpl?.name ?? DEFAULT_SHIFT_LABELS[a.shift_code as keyof typeof DEFAULT_SHIFT_LABELS] ?? a.shift_code,
     startAt, endAt, scheduledHours: a.scheduled_hours, dayType: a.day_type, status: a.status,
     statusLabel: SHIFT_ASSIGNMENT_STATUS_LABELS[a.status], publishedAt: a.published_at || null,
-    attendanceStatusLabel, attendanceStatusColor,
+    attendanceStatusLabel, attendanceStatusColor, ...activeReqs,
     isLockedByPayroll: Boolean(lockedPeriod), lockedByPeriodCode: lockedPeriod?.period_code ?? null,
     note: a.note, version: a.version, created_at: a.created_at, updated_at: a.updated_at,
   };

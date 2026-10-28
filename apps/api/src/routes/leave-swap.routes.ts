@@ -10,6 +10,7 @@ import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requireP
 import { SocketEvents } from '../realtime/realtime.js';
 import { queueEmergencyHandledEmail, queueEmergencyLeaveEmail, queueLeaveDecisionEmail, queueSwapEventEmail } from '../services/action-email-dispatcher.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
+import { assertNoDuplicateShiftWorkflow } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 
 const zCreateLeaveBody = z.object({ employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'), leave_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày nghỉ phải theo định dạng YYYY-MM-DD'), kind: z.enum(['PROBATION_OFF', 'WEEKLY_OFF', 'UNPAID_LEAVE']).default('WEEKLY_OFF'), shift_code: z.string().default('CA_SANG'), reason: z.string().trim().min(2, 'Vui lòng nhập lý do xin nghỉ').max(300), status: z.enum(['DRAFT', 'PENDING']).default('PENDING') });
@@ -42,11 +43,10 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy nhân sự', body.employee_id);
     assertBranchAccess(request, emp.branch_id); assertDateNotLockedByPayroll(ctx.db, body.leave_date, 'đăng ký nghỉ OFF');
     if (ctx.db.leaveRequests.find((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.leave_date === body.leave_date && l.status !== 'REJECTED' && l.status !== 'CANCELLED')) throw Errors.fieldValidation('leave_date', 'DUPLICATE_VALUE', `Nhân sự đã có đơn đăng ký nghỉ OFF trong ngày ${body.leave_date}`, body.leave_date);
-    const usedCount = ctx.db.leaveRequests.filter((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.status !== 'REJECTED' && l.status !== 'CANCELLED').length;
-    const limit = emp.stage === 'PROBATION' ? SYSTEM_CONFIG.defaults.probationOffDays : 4;
+    const usedCount = ctx.db.leaveRequests.filter((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.status !== 'REJECTED' && l.status !== 'CANCELLED').length, limit = emp.stage === 'PROBATION' ? SYSTEM_CONFIG.defaults.probationOffDays : 4;
     if (usedCount >= limit) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', `Nhân sự đã dùng hết định mức ${limit} ngày nghỉ OFF trong chu kỳ`, body.leave_date);
-    const existingShift = ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.leave_date && a.day_type !== 'OFF');
-    const shiftCode = existingShift?.shift_code || body.shift_code, st = computeLeaveStaffing(emp.branch_id, body.leave_date, shiftCode, emp.id);
+    const existingShift = ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.leave_date && a.day_type !== 'OFF'), shiftCode = existingShift?.shift_code || body.shift_code, st = computeLeaveStaffing(emp.branch_id, body.leave_date, shiftCode, emp.id);
+    assertNoDuplicateShiftWorkflow(ctx.db, emp, 'leave_date', existingShift?.id ?? '', body.leave_date, shiftCode);
     const created = await ctx.db.leaveRequests.insert({ request_code: `OFF-${String(ctx.db.leaveRequests.all(true).length + 1).padStart(4, '0')}`, employee_id: emp.id, branch_id: emp.branch_id, leave_date: body.leave_date, kind: emp.stage === 'PROBATION' ? 'PROBATION_OFF' : body.kind, shift_code: shiftCode, reason: body.reason, status: body.status, employee_stage: emp.stage, schedule_week_id: `WK-${body.leave_date.slice(0, 7)}`, assignment_id: existingShift?.id ?? '', quota_cycle_used: usedCount + 1, quota_cycle_limit: limit, ...st, submitted_at: nowIso(), store_reviewed_by: '', store_reviewed_at: '', decided_by: '', decision_reason: '', decided_at: '' }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'leave.create', entity: 'LEAVE_REQUESTS', entityId: created.id, after: { request_code: created.request_code, leave_date: created.leave_date, status: created.status } });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'LEAVE_CREATED', message: `${emp.full_name} gửi đơn nghỉ OFF ngày ${created.leave_date}`, actorId: request.auth!.user.id });
@@ -100,6 +100,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     assertDateNotLockedByPayroll(ctx.db, fromAssign.work_date, 'tạo yêu cầu đổi ca');
     if (fromAssign.status !== 'PUBLISHED') throw Errors.badRequest('Chỉ được phép tạo yêu cầu đổi ca đối với những ca đã được Quản lý cửa hàng hoặc HR duyệt phân ca chính thức');
     const reqEmp = ctx.db.employees.get(body.requester_id) ?? ctx.db.employees.find((e) => e.employee_code === body.requester_id);
+    if (reqEmp) assertNoDuplicateShiftWorkflow(ctx.db, reqEmp, 'from_assignment_id', fromAssign.id, fromAssign.work_date, fromAssign.shift_code);
     const peerEmp = ctx.db.employees.get(body.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === body.peer_id);
     if (!peerEmp) throw Errors.fieldValidation('peer_id', 'INVALID_VALUE', 'Không tìm thấy đồng nghiệp nhận ca thay', body.peer_id);
     if (body.requester_id === body.peer_id || (reqEmp && reqEmp.id === peerEmp.id)) throw Errors.fieldValidation('peer_id', 'INVALID_VALUE', 'Người nhận đổi ca phải khác người xin đổi ca', body.peer_id);
@@ -184,6 +185,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy nhân sự', body.employee_id);
     assertDateNotLockedByPayroll(ctx.db, body.work_date, 'báo nghỉ đột xuất');
     const existingShift = (body.assignment_id ? ctx.db.shiftAssignments.get(body.assignment_id) : undefined) ?? ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.day_type !== 'OFF');
+    assertNoDuplicateShiftWorkflow(ctx.db, emp, 'work_date', existingShift?.id || body.assignment_id, body.work_date, existingShift?.shift_code || body.shift_code);
     const created = await ctx.db.emergencyLeaves.insert({
       emergency_code: `EMG-${String(ctx.db.emergencyLeaves.all(true).length + 1).padStart(4, '0')}`, employee_id: emp.id, assignment_id: existingShift?.id || body.assignment_id,
       branch_id: emp.branch_id, work_date: body.work_date, shift_code: existingShift?.shift_code || body.shift_code, reason: body.reason, replacement_id: '', status: 'REPORTED',

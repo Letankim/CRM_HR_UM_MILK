@@ -39,9 +39,11 @@ export function AttendanceAdjustmentModal({
 
   const cachedMyAtt = qc.getQueryData<{ shifts?: Record<string, unknown>[] }>(['my-attendance']);
   const isShiftAbsent = (s: Record<string, unknown>) =>
-    s.status === 'ABSENT' || Boolean(s.isAbsentShift) || (s.status === 'PUBLISHED' && !s.checkInEvent && Boolean(s.isExpiredToday));
+    !s.pendingAdjustmentCode &&
+    !String(s.attendanceStatusLabel || '').includes('Đã gửi bù công') &&
+    (s.status === 'ABSENT' || Boolean(s.isAbsentShift) || (s.status === 'PUBLISHED' && !s.checkInEvent && Boolean(s.isExpiredToday)));
 
-  // Chỉ lấy duy nhất các ca VẮNG MẶT (ABSENT) cần bù công, tuyệt đối không lấy ca chưa điểm danh hoặc ca đã hoàn thành
+  // Chỉ lấy duy nhất các ca VẮNG MẶT (ABSENT) chưa gửi phiếu bổ sung công, tuyệt đối không lấy ca đã gửi phiếu chờ duyệt
   const absentShifts = useMemo(() => {
     const raw = shifts && shifts.length > 0 ? shifts : (cachedMyAtt?.shifts ?? []);
     return raw

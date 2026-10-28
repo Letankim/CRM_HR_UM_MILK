@@ -10,7 +10,7 @@ import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requireP
 import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { queueAttendanceAdjustmentDecisionEmail } from '../services/action-email-dispatcher.js';
-import { applyApprovedAdjustmentToShift, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
+import { applyApprovedAdjustmentToShift, assertNoDuplicateAdjustment, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { buildPaginatedAttendanceSessions, calculateHaversineMeters, describePunctuality, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto } from './attendance-helpers.js';
 export { calculateHaversineMeters } from './attendance-helpers.js';
@@ -191,6 +191,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const matchedShift = (body.assignment_id ? ctx.db.shiftAssignments.get(body.assignment_id) : undefined)
       ?? ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.shift_code === body.shift_code);
     assertDateNotLockedByPayroll(ctx.db, matchedShift?.work_date ?? body.work_date, 'tạo phiếu bổ sung công');
+    assertNoDuplicateAdjustment(ctx.db, emp, matchedShift?.id ?? body.assignment_id, matchedShift?.work_date ?? body.work_date, matchedShift?.shift_code ?? body.shift_code);
     const shiftStart = matchedShift?.start_at || body.requested_check_in_at, shiftEnd = matchedShift?.end_at || body.requested_check_out_at, shiftHours = matchedShift?.scheduled_hours || body.requested_hours;
     const created = await ctx.db.attendanceAdjustments.insert({
       adjustment_code: `ADJ-${String(ctx.db.attendanceAdjustments.all(true).length + 1).padStart(4, '0')}`, event_id: body.event_id, assignment_id: matchedShift?.id ?? body.assignment_id, employee_id: emp.id, branch_id: emp.branch_id,

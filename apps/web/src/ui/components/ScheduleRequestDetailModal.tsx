@@ -5,7 +5,7 @@ import { Alert, Button, Descriptions, Modal, Space, Tag } from 'antd';
 import { ClockCircleOutlined, CloseOutlined, FileAddOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { StatusTag } from '../StatusTag';
-import { isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
+import { hasPendingAdjustmentRecord, isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
 
 export type ScheduleDetailKind = 'shift' | 'leave' | 'emergency' | 'swap' | 'adjustment';
 
@@ -39,6 +39,7 @@ export function ScheduleRequestDetailModal({
   if (!target) return null;
   const { kind, record: r } = target;
   const isAbsentShift = kind === 'shift' && isAbsentShiftRecord(r);
+  const hasPendingAdj = kind === 'shift' && hasPendingAdjustmentRecord(r);
 
   return (
     <Modal
@@ -57,6 +58,12 @@ export function ScheduleRequestDetailModal({
         </Space>
       }
     >
+      {hasPendingAdj && (
+        <Alert
+          type="warning" showIcon style={{ marginBottom: 10 }}
+          message={`Ca làm việc này đã gửi Phiếu bổ sung công (${String(r.pendingAdjustmentCode || 'Chờ duyệt')}) và đang chờ Cửa hàng / HR phê duyệt. Không được phép gửi trùng yêu cầu.`}
+        />
+      )}
       {isAbsentShift && (
         <Alert
           type="error" showIcon style={{ marginBottom: 10 }}

@@ -129,8 +129,14 @@ export default function MyAttendancePage() {
                 <Alert type="success" showIcon message="Bạn đã hoàn thành đầy đủ ca làm việc này." />
               ) : isSelectedExpired ? (
                 <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                  <Alert type="error" showIcon message={`Ca làm việc (${activeShift?.startAt} – ${activeShift?.endAt}) đã qua giờ kết thúc ca mà chưa điểm danh nên đã khóa Vào ca và chuyển sang Vắng mặt.`} />
-                  <Button type="primary" danger block icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(String(activeShift?.id)); setAdjOpen(true); }}>Làm phiếu bổ sung công bù ca vắng mặt này</Button>
+                  {(activeShift as unknown as Record<string, unknown>)?.pendingAdjustmentCode ? (
+                    <Alert type="warning" showIcon message={`Ca làm việc này đã gửi Phiếu bổ sung công (${String((activeShift as unknown as Record<string, unknown>).pendingAdjustmentCode)}) và đang chờ Cửa hàng / HR phê duyệt.`} />
+                  ) : (
+                    <>
+                      <Alert type="error" showIcon message={`Ca làm việc (${activeShift?.startAt} – ${activeShift?.endAt}) đã qua giờ kết thúc ca mà chưa điểm danh nên đã khóa Vào ca và chuyển sang Vắng mặt.`} />
+                      <Button type="primary" danger block icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(String(activeShift?.id)); setAdjOpen(true); }}>Làm phiếu bổ sung công bù ca vắng mặt này</Button>
+                    </>
+                  )}
                 </Space>
               ) : !isSelectedToday ? (
                 <Alert type="warning" showIcon message={`Chỉ được điểm danh đúng ngày đăng ký ca (${dayjs(activeShift?.workDate).format('DD/MM/YYYY')}).`} />

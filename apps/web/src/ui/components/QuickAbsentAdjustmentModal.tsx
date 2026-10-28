@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { App, Descriptions, Form, Input, Modal, Select, Space, Tag } from 'antd';
+import { Alert, App, Descriptions, Form, Input, Modal, Select, Space, Tag } from 'antd';
 import { ClockCircleOutlined, CloseOutlined, FileAddOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -17,14 +17,21 @@ const KIND_OPTIONS = [
 
 const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
 
-/** Kiểm tra một bản ghi phân ca có đang ở trạng thái Vắng mặt cần bổ sung công hay không. */
+/** Kiểm tra một bản ghi phân ca có đang ở trạng thái Vắng mặt cần bổ sung công (chưa gửi phiếu chờ duyệt) hay không. */
 export function isAbsentShiftRecord(r?: Record<string, unknown> | null): boolean {
   if (!r) return false;
+  if (r.pendingAdjustmentCode || String(r.attendanceStatusLabel || '').includes('Đã gửi bù công')) return false;
   return (
     r.status === 'ABSENT' ||
     Boolean(r.isAbsentShift) ||
     String(r.attendanceStatusLabel || '').includes('Vắng mặt')
   );
+}
+
+/** Kiểm tra một ca làm việc đã gửi Phiếu bổ sung công đang chờ duyệt hay chưa. */
+export function hasPendingAdjustmentRecord(r?: Record<string, unknown> | null): boolean {
+  if (!r) return false;
+  return Boolean(r.pendingAdjustmentCode) || String(r.attendanceStatusLabel || '').includes('Đã gửi bù công');
 }
 
 export interface QuickAbsentAdjustmentModalProps {
@@ -53,6 +60,7 @@ export function QuickAbsentAdjustmentModal({
   const startAt = String(shift?.startAt || shift?.start_at || '07:00');
   const endAt = String(shift?.endAt || shift?.end_at || '12:00');
   const hours = Number(shift?.scheduledHours || shift?.scheduled_hours || 5);
+  const pendingAdjCode = shift?.pendingAdjustmentCode ? String(shift.pendingAdjustmentCode) : '';
 
   useEffect(() => {
     if (!open || !shift) return;
@@ -102,11 +110,14 @@ export function QuickAbsentAdjustmentModal({
       confirmLoading={submitting}
       okText="Xác nhận tạo phiếu bổ sung công"
       cancelText="Hủy bỏ"
-      okButtonProps={{ icon: <FileAddOutlined /> }}
+      okButtonProps={{ icon: <FileAddOutlined />, disabled: Boolean(pendingAdjCode) }}
       cancelButtonProps={{ icon: <CloseOutlined /> }}
     >
       {shift && (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          {pendingAdjCode && (
+            <Alert type="warning" showIcon message={`Ca làm việc này đã gửi Phiếu bổ sung công (${pendingAdjCode}) và đang chờ duyệt. Không được phép gửi trùng yêu cầu.`} />
+          )}
           <Descriptions
             bordered
             size="small"

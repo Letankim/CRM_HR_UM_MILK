@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, App, Button, Form, Input, Modal, Select, Space } from 'antd';
 import { CloseOutlined, PlusOutlined, SaveOutlined, SendOutlined } from '@ant-design/icons';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
@@ -15,16 +15,21 @@ export function MyShiftRegisterModal({
   open, todayDate, onClose, onCreated,
 }: { open: boolean; todayDate: string; onClose: () => void; onCreated: (createdId?: string) => void }) {
   const { message } = App.useApp();
+  const qc = useQueryClient();
   const [form] = Form.useForm();
   const { options: shiftOptions, endTimeMap } = useShiftTemplates();
   const watchedDate = Form.useWatch('work_date', form) || todayDate;
   const nowHm = dayjs().format('HH:mm');
   const isTodaySelected = watchedDate === todayDate;
+  const cachedShifts = qc.getQueryData<{ shifts?: Record<string, unknown>[] }>(['my-attendance'])?.shifts ?? [];
 
   const shiftOptionsForDate = shiftOptions.map((opt) => {
     const endHm = endTimeMap[opt.value] || '12:00';
     const isPassed = isTodaySelected && nowHm >= endHm;
-    return { value: opt.value, disabled: isPassed, label: isPassed ? `${opt.label} — Đã qua giờ ca hôm nay` : opt.label };
+    const existing = cachedShifts.find((s) => String(s.workDate || s.work_date) === watchedDate && String(s.shiftCode || s.shift_code) === opt.value);
+    const disabled = isPassed || Boolean(existing);
+    const suffix = existing ? ` — Đã đăng ký (${existing.status === 'DRAFT' ? 'Chờ duyệt' : 'Đã phân ca'})` : isPassed ? ' — Đã qua giờ ca hôm nay' : '';
+    return { value: opt.value, disabled, label: `${opt.label}${suffix}` };
   });
   const availableToday = shiftOptions.filter((opt) => nowHm < (endTimeMap[opt.value] || '12:00'));
 
@@ -79,10 +84,7 @@ export function LeaveRequestModal({
 
   useEffect(() => {
     if (!open || typeof window === 'undefined') return;
-    try {
-      const saved = window.localStorage.getItem(draftKey);
-      if (saved) form.setFieldsValue(JSON.parse(saved));
-    } catch { /* ignore */ }
+    try { const saved = window.localStorage.getItem(draftKey); if (saved) form.setFieldsValue(JSON.parse(saved)); } catch { /* ignore */ }
   }, [open, draftKey, form]);
 
   const handleSaveDraft = () => {
@@ -143,12 +145,16 @@ export function ShiftSwapRequestModal({
   const [loading, setLoading] = useState(false);
 
   const approvedShifts = shifts.filter((s) => s.status === 'PUBLISHED');
-  const shiftOptions = approvedShifts.map((s) => ({
-    value: String(s.id),
-    label: `${dayjs(String(s.workDate)).format('DD/MM/YYYY')} · ${String(s.shiftLabel || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim()} (${String(s.startAt || '07:00')} – ${String(s.endAt || '12:00')}) · ${String(s.branchName || '')}`,
-  }));
+  const shiftOptions = approvedShifts.map((s) => {
+    const pendingCode = String(s.pendingSwapCode || s.pendingLeaveCode || s.pendingEmergencyCode || '');
+    return {
+      value: String(s.id), disabled: Boolean(pendingCode),
+      label: `${dayjs(String(s.workDate)).format('DD/MM/YYYY')} · ${String(s.shiftLabel || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim()} (${String(s.startAt || '07:00')} – ${String(s.endAt || '12:00')}) · ${pendingCode ? `[Đang chờ duyệt ${pendingCode}]` : String(s.branchName || '')}`,
+    };
+  });
   const watchedAssignId = Form.useWatch('from_assignment_id', form);
-  const selectedShift = approvedShifts.find((s) => String(s.id) === String(watchedAssignId)) ?? approvedShifts[0];
+  const selectableShifts = approvedShifts.filter((s) => !s.pendingSwapCode && !s.pendingLeaveCode && !s.pendingEmergencyCode);
+  const selectedShift = selectableShifts.find((s) => String(s.id) === String(watchedAssignId)) ?? selectableShifts[0];
   const selectedWorkDate = String(selectedShift?.workDate || '');
 
   const peerOptions = peers.map((p) => {
@@ -165,11 +171,11 @@ export function ShiftSwapRequestModal({
 
   useEffect(() => {
     if (!open) return;
-    const firstAssign = approvedShifts[0];
+    const firstAssign = selectableShifts[0];
     const dateStr = String(firstAssign?.workDate || '');
     const firstFreePeer = peers.find((p) => !dateStr || !p.busyShiftsByDate?.[dateStr]);
     form.setFieldsValue({ from_assignment_id: firstAssign ? String(firstAssign.id) : undefined, peer_id: firstFreePeer?.id, reason: 'Bận lịch cá nhân đột xuất, nhờ đồng nghiệp cùng chi nhánh trực thay ca' });
-  }, [open]);
+  }, [open, selectableShifts.length]);
 
   const handleSubmit = async () => {
     try {

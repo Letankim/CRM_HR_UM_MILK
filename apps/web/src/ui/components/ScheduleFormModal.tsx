@@ -10,7 +10,7 @@ import { api, ApiClientError } from '@/lib/api';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { DateStringPicker } from './DateTimePickers';
 import { GuardButton, usePermissionGuard } from './GuardButton';
-import { isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
+import { hasPendingAdjustmentRecord, isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
 
 export interface ScheduleAssignmentItem {
   id: string; employeeId: string; employeeCode: string; employeeName: string;
@@ -19,6 +19,7 @@ export interface ScheduleAssignmentItem {
   scheduledHours: number; dayType: 'WORK' | 'OFF' | 'OT'; status: string; statusLabel: string;
   publishedAt: string | null; note: string; version: number; created_at: string;
   attendanceStatusLabel?: string; attendanceStatusColor?: string;
+  pendingAdjustmentCode?: string | null; pendingSwapCode?: string | null; pendingLeaveCode?: string | null; pendingEmergencyCode?: string | null;
   isLockedByPayroll?: boolean; lockedByPeriodCode?: string | null;
 }
 
@@ -45,7 +46,8 @@ export function ScheduleFormModal({
   const canModifyShift = hasSchedulePerm && !isLocked;
   const watchedEmpId = Form.useWatch('employee_id', form);
   const watchedStatus = Form.useWatch('status', form);
-  const isEditingAbsent = canCreateAdj && !isLocked && Boolean(editing && (watchedStatus === 'ABSENT' || isAbsentShiftRecord(editing as unknown as Record<string, unknown>)));
+  const hasPendingAdj = Boolean(editing && hasPendingAdjustmentRecord(editing as unknown as Record<string, unknown>));
+  const isEditingAbsent = canCreateAdj && !isLocked && !hasPendingAdj && Boolean(editing && (watchedStatus === 'ABSENT' || isAbsentShiftRecord(editing as unknown as Record<string, unknown>)));
   const selectedEmpBranchId = useMemo(
     () => employees.find((e) => e.value === watchedEmpId)?.branchId || editing?.branchId || 'ALL',
     [employees, watchedEmpId, editing?.branchId],
@@ -127,18 +129,8 @@ export function ScheduleFormModal({
         canModifyShift ? (
           <Flex justify={editing ? 'space-between' : 'flex-end'} align="center" wrap="wrap" gap={8} style={{ width: '100%' }}>
             {editing && (
-              <Popconfirm
-                title="Xác nhận xóa phân công ca này?"
-                description="Ca làm việc này sẽ bị xóa khỏi lịch phân công."
-                okText="Xác nhận xóa"
-                cancelText="Hủy bỏ"
-                okButtonProps={{ danger: true, icon: <DeleteOutlined /> }}
-                cancelButtonProps={{ icon: <CloseOutlined /> }}
-                onConfirm={() => deleteMutation.mutateAsync()}
-              >
-                <GuardButton danger icon={<DeleteOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={canModifyShift} loading={deleteMutation.isPending}>
-                  Xóa ca này
-                </GuardButton>
+              <Popconfirm title="Xác nhận xóa phân công ca này?" description="Ca làm việc này sẽ bị xóa khỏi lịch phân công." okText="Xác nhận xóa" cancelText="Hủy bỏ" okButtonProps={{ danger: true, icon: <DeleteOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onConfirm={() => deleteMutation.mutateAsync()}>
+                <GuardButton danger icon={<DeleteOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={canModifyShift} loading={deleteMutation.isPending}>Xóa ca này</GuardButton>
               </Popconfirm>
             )}
             <Space wrap size={8}>
@@ -186,6 +178,9 @@ export function ScheduleFormModal({
       )}
       {!isLocked && editing && editing.status === 'DRAFT' && (
         <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca đăng ký đang chờ Quản lý cửa hàng hoặc HR phê duyệt. Bấm 'Duyệt & Phát hành ca' để chuyển sang Đã phân ca chính thức và cho phép nhân sự điểm danh." />
+      )}
+      {hasPendingAdj && (
+        <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message={`Ca làm việc này đã gửi Phiếu bổ sung công (${editing?.pendingAdjustmentCode || 'Chờ duyệt'}) và đang chờ Cửa hàng / HR phê duyệt. Không được phép gửi trùng yêu cầu.`} />
       )}
       {isEditingAbsent && (
         <Alert
