@@ -1,12 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { STAFF_GROUP_LABELS } from '@umbm/shared';
+import { isEmployeeRole, STAFF_GROUP_LABELS, type Role } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { resolveRealAccountEmail, resolveRolePortalPath } from '../services/account-email-dispatcher.js';
 import { buildConfiguredAudienceGroups, doesUserMatchAudience, getMatchingUsersForAudience, jobPositionsAndAudiencesRoutes } from './job-positions-and-audiences.routes.js';
 
 const COMMS_PERMS = ['comms.manage', 'notification.send', 'employee.manage', 'system.config', 'payroll.manage', 'schedule.propose'] as const;
@@ -72,11 +73,13 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
       await ctx.db.deliveryLogs.softDelete(oldLog.id, oldLog.version, actorId);
     }
     const existingLogUserIds = new Set(ctx.db.deliveryLogs.filter((l) => l.announcement_id === anc.id).map((l) => l.recipient_user_id));
+    const prioLabel = anc.priority === 'URGENT' ? 'Khẩn cấp' : anc.priority === 'HIGH' ? 'Quan trọng' : 'Thông thường';
     for (const u of matchedUsers) {
       if (!existingLogUserIds.has(u.id)) {
         await ctx.db.deliveryLogs.insert({ announcement_id: anc.id, recipient_user_id: u.id, channel: 'IN_APP_SOCKET', status: 'SENT', attempts: 1, last_error: '', branch_id: u.branch_scope === 'ALL' ? 'ALL' : u.branch_scope.split(',')[0] || 'ALL', sent_at: nowIso(), delivered_at: nowIso(), read_at: '', ack_at: '' }, actorId);
       }
-      ctx.email.enqueue({ to: u.email || `${u.username}@umbomilk.vn`, template: 'INTERNAL_ANNOUNCEMENT', recipientName: u.display_name || u.username, referenceCode: anc.code, summary: anc.summary || anc.title, metadata: [{ label: 'Mã bản tin', value: anc.code }, { label: 'Tiêu đề', value: anc.title }, { label: 'Mức độ', value: anc.priority }], actionLabel: anc.cta_label || 'Xem chi tiết bản tin', actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${anc.cta_link || '/nv/ban-tin'}` });
+      const ctaPath = (!anc.cta_link || anc.cta_link === '/nv/ban-tin' || (u.role === 'MKT' && anc.cta_link.startsWith('/nv')) || (isEmployeeRole(u.role as Role) && anc.cta_link.startsWith('/admin'))) ? resolveRolePortalPath(u.role as Role, 'comms') : anc.cta_link;
+      ctx.email.enqueue({ to: resolveRealAccountEmail(ctx, u), template: 'INTERNAL_ANNOUNCEMENT', recipientName: u.display_name || u.username, referenceCode: anc.code, summary: anc.summary || anc.title, metadata: [{ label: 'Mã bản tin', value: anc.code }, { label: 'Tiêu đề', value: anc.title }, { label: 'Mức độ ưu tiên', value: prioLabel }], actionLabel: anc.cta_label || 'Xem chi tiết bản tin', actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${ctaPath}` });
     }
     const payload = { kind: 'ANNOUNCEMENT', id: anc.id, notificationId: notif.id, code: anc.code, title: anc.title, summary: anc.summary, priority: anc.priority, sent_at: anc.sent_at };
     if (isGlobal) ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, payload);

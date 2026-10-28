@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { ROLE_LABELS, ROLES, type Role } from '@umbm/shared';
+import { isEmployeeRole, ROLE_LABELS, ROLES, type NotificationRow, type Role } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
@@ -8,8 +8,33 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { resolveRealAccountEmail, resolveRolePortalPath } from '../services/account-email-dispatcher.js';
 import { ensureSyncedNotifications, isNotificationCreatedByOrSelfAction } from '../services/notification-sync.service.js';
 import { doesUserMatchAudience } from './job-positions-and-audiences.routes.js';
+
+function resolveNotificationLinkForRole(n: NotificationRow, role: Role): string {
+  const isEmp = isEmployeeRole(role), raw = (n.link || '').replace('/nv/cong-cua-toi', '/nv/cong');
+  if (n.entity_type === 'ANNOUNCEMENTS') return resolveRolePortalPath(role, 'comms');
+  if (n.entity_type === 'ATT_ADJ_USER') return resolveRolePortalPath(role, 'attendance');
+  if (n.entity_type === 'LEAVE_USER') return resolveRolePortalPath(role, 'leave');
+  if (n.entity_type === 'SWAP_USER') return resolveRolePortalPath(role, 'swap');
+  if (n.entity_type === 'SHIFT_PUB_USER') return resolveRolePortalPath(role, 'schedule');
+  if (n.entity_type === 'PAYSLIP_USER') return resolveRolePortalPath(role, 'payslip');
+  if (isEmp) {
+    if (raw.startsWith('/nv')) return raw;
+    if (raw.includes('my-attendance')) return '/nv/cong';
+    if (raw.includes('payroll')) return '/nv/phieu-luong';
+    if (raw.includes('schedules')) return '/nv/lich';
+    return '/nv/thong-bao';
+  }
+  if (raw.startsWith('/nv/cong') || raw.startsWith('/nv/lich') || raw.startsWith('/nv/nghi-phep') || raw.startsWith('/nv/doi-ca') || raw.startsWith('/nv/diem-danh')) {
+    return role === 'MKT' ? '/dashboard' : '/admin/my-attendance';
+  }
+  if (raw === '/nv/ban-tin') return resolveRolePortalPath(role, 'comms');
+  if (raw === '/nv/thong-bao') return '/admin/notifications';
+  if (raw === '/nv/phieu-luong' && (role === 'ADMIN' || role === 'HR' || role === 'FINANCE')) return '/admin/payroll';
+  return raw || '/admin/notifications';
+}
 
 export const NOTIFICATION_CATEGORY_LABELS: Record<string, string> = {
   ANNOUNCEMENT: 'Bản tin truyền thông nội bộ', WORKFLOW: 'Lịch ca, Nghỉ phép & Đổi ca',
@@ -98,7 +123,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
       const targetLabel = isAncGroup ? `Nhóm nhận (${userIds.length}): ${userNames.join(', ') || 'Theo nhóm cấu hình'}` : isPersonal ? `Cá nhân (${userNames.length}): ${userNames.join(', ')}` : isBroadcast ? 'Toàn hệ thống (Tất cả vai trò)' : `Nhóm nhân sự: ${roleLabels.join(', ')}`;
       const userReadAt = getUserReadAt(n.read_at, user.id), readStatus = userReadAt ? 'READ' : 'UNREAD';
       return {
-        ...n, body: n.body.replace(/^Mã:\s*[A-Z0-9_]+\s*\([^)]+\)\s*·\s*/i, ''), read_at: userReadAt, code: anc?.code || `NTF-${String(totalVisible - idx).padStart(4, '0')}`,
+        ...n, link: resolveNotificationLinkForRole(n, user.role), body: n.body.replace(/^Mã:\s*[A-Z0-9_]+\s*\([^)]+\)\s*·\s*/i, ''), read_at: userReadAt, code: anc?.code || `NTF-${String(totalVisible - idx).padStart(4, '0')}`,
         categoryLabel: NOTIFICATION_CATEGORY_LABELS[n.category] ?? n.category, severityLabel: NOTIFICATION_SEVERITY_LABELS[n.severity] ?? n.severity,
         scopeType, targetLabel, readStatus, readStatusLabel: userReadAt ? 'Đã đọc' : 'Chưa đọc', detailHtml: anc?.body || `<p>${n.body.replace(/^Mã:\s*[A-Z0-9_]+\s*\([^)]+\)\s*·\s*/i, '')}</p>`,
       };
@@ -129,7 +154,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
     else if (body.target_scope === 'ROLE') pickedRoles.forEach((r) => ctx.realtime()?.toRole(r, SocketEvents.NOTIFICATION, payload));
     else ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, payload);
     const mailUsers = ctx.db.users.filter((u) => u.status === 'ACTIVE' && (body.target_scope === 'ALL' || (body.target_scope === 'USER' && pickedUsers.includes(u.id)) || (body.target_scope === 'ROLE' && pickedRoles.includes(u.role))));
-    mailUsers.forEach((u) => ctx.email.enqueue({ to: u.email || `${u.username}@umbomilk.vn`, template: 'INTERNAL_ANNOUNCEMENT', recipientName: u.display_name || u.username, referenceCode: `NTF-${created.id.slice(0, 6)}`, summary: created.body, metadata: [{ label: 'Tiêu đề', value: created.title }, { label: 'Phân loại', value: NOTIFICATION_CATEGORY_LABELS[created.category] ?? created.category }, { label: 'Mức độ', value: NOTIFICATION_SEVERITY_LABELS[created.severity] ?? created.severity }] }));
+    mailUsers.forEach((u) => ctx.email.enqueue({ to: resolveRealAccountEmail(ctx, u), template: 'INTERNAL_ANNOUNCEMENT', recipientName: u.display_name || u.username, referenceCode: `NTF-${created.id.slice(0, 6)}`, summary: created.body, metadata: [{ label: 'Tiêu đề', value: created.title }, { label: 'Phân loại', value: NOTIFICATION_CATEGORY_LABELS[created.category] ?? created.category }, { label: 'Mức độ', value: NOTIFICATION_SEVERITY_LABELS[created.severity] ?? created.severity }], actionLabel: 'Xem thông báo trên hệ thống', actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${resolveNotificationLinkForRole(created, u.role as Role)}` }));
     return reply.code(201), sendSuccess(request, 'Đã gửi thông báo thành công', created);
   });
   const handleMarkRead = async (request: FastifyRequest) => {

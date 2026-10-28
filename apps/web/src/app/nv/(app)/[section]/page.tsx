@@ -44,9 +44,11 @@ const SECTIONS: Record<string, string> = {
   cong: 'Bảng công cá nhân & Phiếu bổ sung công', 'bai-kiem-tra': 'Bài kiểm tra Nghiệp vụ (TEST)',
   'ban-tin': 'Bản tin Nội bộ & Chính sách Quy định Công ty', 'thong-bao': 'Trung tâm Thông báo & Hộp thư Cá nhân', them: 'Tiện ích mở rộng của bạn',
 };
+const SECTION_ALIASES: Record<string, string> = { 'cong-cua-toi': 'cong', 'bang-cong': 'cong', 'cham-cong': 'diem-danh', 'lich-lam-viec': 'lich', 'don-nghi': 'nghi-phep', 'kiem-tra': 'bai-kiem-tra' };
 
 export default function EmployeeSection() {
-  const { section } = useParams<{ section: string }>();
+  const { section: rawSection } = useParams<{ section: string }>();
+  const section = SECTION_ALIASES[rawSection] ?? rawSection;
   const router = useRouter();
   const isDesktop = Boolean(Grid.useBreakpoint().md);
   const { message } = App.useApp();

@@ -1,6 +1,6 @@
-import { DEFAULT_SHIFT_LABELS, ROLE_LABELS, STAFF_GROUP_LABELS, SYSTEM_CONFIG, type Candidate, type EmergencyLeave, type Employee, type Interview, type LeaveRequest, type PayPeriod, type Payslip, type Role, type ShiftSwap, type StaffGroup } from '@umbm/shared';
+import { DEFAULT_SHIFT_LABELS, isEmployeeRole, ROLE_LABELS, STAFF_GROUP_LABELS, SYSTEM_CONFIG, type Candidate, type EmergencyLeave, type Employee, type Interview, type LeaveRequest, type PayPeriod, type Payslip, type Role, type ShiftSwap, type StaffGroup } from '@umbm/shared';
 import type { AppContext } from '../context.js';
-import { resolveFallbackRealEmail } from './account-email-dispatcher.js';
+import { resolveEmployeeRole, resolveFallbackRealEmail, resolveRolePortalPath } from './account-email-dispatcher.js';
 import { isSyntheticDemoEmail } from './email.service.js';
 
 export * from './account-email-dispatcher.js';
@@ -16,9 +16,9 @@ export function resolveEmployeeContact(ctx: AppContext, empIdOrCode: string, use
   const code = emp?.employee_code || user?.employee_id || user?.username || empIdOrCode;
   const name = emp?.full_name || user?.display_name || user?.username || 'Nhân sự Ụm Bò Milk';
   const rawEmail = (emp?.email && !isSyntheticDemoEmail(emp.email) ? emp.email : user?.email && !isSyntheticDemoEmail(user.email) ? user.email : '') || (useFallback ? resolveFallbackRealEmail(ctx) : `${code.toLowerCase()}@${SYSTEM_CONFIG.companyDomain}`);
-  const email = rawEmail.trim().toLowerCase();
+  const email = rawEmail.trim().toLowerCase(), role = resolveEmployeeRole(ctx, emp, user);
   const branchName = (emp?.branch_id ? ctx.db.branches.get(emp.branch_id)?.name : undefined) || 'Ụm Bò Milk';
-  return { email, name, code, branchId: emp?.branch_id || 'ALL', branchName };
+  return { email, name, code, role, branchId: emp?.branch_id || 'ALL', branchName };
 }
 
 export function resolveRoleContacts(ctx: AppContext, roles: string[], branchId?: string) {
@@ -55,7 +55,7 @@ export function queueInterviewEmails(ctx: AppContext, params: { candidate: Candi
       { label: 'Đường dẫn phòng họp', value: interview.meet_link || 'Trực tiếp / Google Meet' },
     ],
     actionLabel: 'Truy cập phòng họp phỏng vấn',
-    actionUrl: interview.meet_link || `${ctx.env.API_PUBLIC_ORIGIN}/login`,
+    actionUrl: interview.meet_link || `${ctx.env.API_PUBLIC_ORIGIN}/admin/employees?section=recruitment`,
   });
 }
 
@@ -74,8 +74,8 @@ export function queuePromotionOfficialEmail(ctx: AppContext, emp: Employee) {
       { label: 'Ngày chính thức', value: emp.official_from || 'Hôm nay' },
       { label: 'Chi nhánh làm việc', value: contact.branchName },
     ],
-    actionLabel: 'Mở Cổng Nhân Viên',
-    actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}/nv`,
+    actionLabel: isEmployeeRole(contact.role) ? 'Mở Cổng Nhân Viên' : 'Mở Hệ thống Quản trị',
+    actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${resolveRolePortalPath(contact.role, 'home')}`,
   });
 }
 
@@ -96,7 +96,7 @@ export function queueScheduleShiftEmail(ctx: AppContext, params: { empId: string
       { label: 'Chi nhánh', value: branchName },
     ],
     actionLabel: 'Xem lịch làm việc của bạn',
-    actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}/nv/lich`,
+    actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${resolveRolePortalPath(contact.role, 'schedule')}`,
   });
 }
 
@@ -117,7 +117,7 @@ export function queueLeaveDecisionEmail(ctx: AppContext, leave: LeaveRequest) {
       { label: 'Ghi chú / Lý do', value: leave.decision_reason || leave.reason || 'Theo định biên vận hành' },
     ],
     actionLabel: 'Xem chi tiết đơn nghỉ OFF',
-    actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}/nv/nghi-phep`,
+    actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${resolveRolePortalPath(contact.role, 'leave')}`,
   });
 }
 
@@ -138,7 +138,7 @@ export function queueSwapEventEmail(ctx: AppContext, swap: ShiftSwap, stage: 'CR
         { label: 'Lý do đổi ca', value: swap.reason },
       ],
       actionLabel: 'Xác nhận Đồng ý / Từ chối nhận ca',
-      actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}/nv/doi-ca`,
+      actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${resolveRolePortalPath(peerContact.role, 'swap')}`,
     });
     return;
   }
@@ -158,7 +158,7 @@ export function queueSwapEventEmail(ctx: AppContext, swap: ShiftSwap, stage: 'CR
         { label: 'Ghi chú Quản lý', value: swap.decision_reason || 'Đảm bảo định biên ca trực' },
       ],
       actionLabel: 'Kiểm tra lịch làm việc mới',
-      actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}/nv/lich`,
+      actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${resolveRolePortalPath(c.role, 'schedule')}`,
     });
   }
 }
@@ -200,7 +200,7 @@ export function queueTestAssignedEmail(ctx: AppContext, params: { empId: string;
       { label: 'Thời lượng & Điểm đạt', value: `${params.durationMinutes} phút · Tối thiểu ${params.passScore}/100 điểm` },
     ],
     actionLabel: 'Làm bài kiểm tra ngay',
-    actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}/nv/bai-kiem-tra`,
+    actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${resolveRolePortalPath(contact.role, 'test')}`,
   });
 }
 
@@ -212,7 +212,7 @@ export function queuePayslipPublishedEmails(ctx: AppContext, period: PayPeriod, 
       to: contact.email, template: 'PAYSLIP_PUBLISHED', recipientName: contact.name, referenceCode: slip.payslip_code,
       summary: `Phiếu lương kỳ "${period.name}" (${period.from_date} đến ${period.to_date}) của bạn đã được phát hành chính thức.`,
       metadata: [{ label: 'Mã phiếu lương', value: slip.payslip_code }, { label: 'Kỳ lương', value: `${period.name} (${period.from_date} - ${period.to_date})` }, { label: 'Tổng giờ công', value: `${slip.approved_hours} giờ (OT: ${slip.ot_hours} giờ)` }, { label: 'Thực lĩnh (NET)', value: `${Number(slip.net_vnd || 0).toLocaleString('vi-VN')} đ` }],
-      actionLabel: 'Xem & Xác nhận Phiếu lương', actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}/nv/phieu-luong`,
+      actionLabel: 'Xem & Xác nhận Phiếu lương', actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${resolveRolePortalPath(contact.role, 'payslip')}`,
     });
   }
 }

@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { SYSTEM_CONFIG, type Permission } from '@umbm/shared';
+import { isEmployeeRole, SYSTEM_CONFIG, type Permission } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { canAccessPath, isUnauthorized, loginPath, resolveLandingRoute, useLogout, useMe } from '@/lib/auth';
 import { useRealtime } from '@/lib/realtime';
@@ -30,8 +30,13 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
   useRealtime('backoffice', !!data, data?.socketToken, data?.user.id);
 
   useEffect(() => {
-    if (isUnauthorized(error) || (!isLoading && !data) || (data && data.app !== 'backoffice')) {
+    if (isUnauthorized(error) || (!isLoading && !data)) {
       router.replace(loginPath('backoffice'));
+      return;
+    }
+    if (data && isEmployeeRole(data.user.role)) {
+      const nvTarget = pathname.includes('my-attendance') ? '/nv/cong' : pathname.includes('payroll') ? '/nv/phieu-luong' : pathname.includes('schedules') ? '/nv/lich' : pathname.includes('notifications') ? '/nv/thong-bao' : '/nv';
+      router.replace(nvTarget);
       return;
     }
     if (data && !canAccessPath(data.user, pathname, searchParams.get('section'))) {
