@@ -99,7 +99,7 @@ export function DataTableCard<TRecord extends { id: string }>({
     const normalizedCols = columns.map((col, idx) => {
       const isLast = idx === columns.length - 1;
       const isAction = isLast && (col.key === 'actions' || col.key === 'act' || col.title === 'Thao tác');
-      const w = Number(col.width ?? (isAction ? 88 : 'ellipsis' in col && col.ellipsis ? 230 : 185));
+      const w = Number(col.width ?? (isAction ? 88 : 'ellipsis' in col && col.ellipsis ? 280 : 220));
       return {
         ...col,
         width: w,
@@ -107,7 +107,7 @@ export function DataTableCard<TRecord extends { id: string }>({
       };
     });
     const allCols = [noColumn, ...normalizedCols];
-    const sumW = allCols.reduce((acc, c) => acc + Number(c.width || 185), 56);
+    const sumW = allCols.reduce((acc, c) => acc + Number(c.width || 220), 56);
     return { fullColumns: allCols, totalScrollX: Math.max(sumW, 960) };
   }, [codeExtractor, columns, page, perPage]);
 

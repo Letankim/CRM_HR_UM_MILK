@@ -149,7 +149,7 @@ export function HrDashboardActionPanel() {
                 }
               >
                 <List.Item.Meta
-                  title={<Space size={8}><Tag color={item.color}>{item.priority}</Tag><span style={{ fontWeight: 600 }}>{item.title}</span></Space>}
+                  title={<div style={{ lineHeight: 1.45 }}><Tag color={item.color} style={{ margin: '0 8px 2px 0', verticalAlign: 'text-top' }}>{item.priority}</Tag><span style={{ fontWeight: 600 }}>{item.title}</span></div>}
                   description={item.desc}
                 />
               </List.Item>

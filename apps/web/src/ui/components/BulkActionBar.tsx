@@ -147,10 +147,10 @@ export function SelectableTable<TRecord extends object>({
     const cols = columns?.map((col, idx) => {
       const isLast = columns ? idx === columns.length - 1 : false;
       const isAction = isLast && (col.key === 'actions' || col.key === 'act' || col.title === 'Thao tác' || col.title === 'Điều phối' || col.title === 'Chi tiết');
-      const w = Number(col.width ?? (isAction ? 88 : 'ellipsis' in col && col.ellipsis ? 230 : 185));
+      const w = Number(col.width ?? (isAction ? 88 : 'ellipsis' in col && col.ellipsis ? 280 : 220));
       return { ...col, width: w, ...(isAction && !col.fixed ? { fixed: 'right' as const } : {}) };
     });
-    const sumW = (cols ?? []).reduce((acc, c) => acc + Number(c.width || 185), 56);
+    const sumW = (cols ?? []).reduce((acc, c) => acc + Number(c.width || 220), 56);
     return { normalizedColumns: cols, totalScrollX: Math.max(sumW, 920) };
   }, [columns]);
 

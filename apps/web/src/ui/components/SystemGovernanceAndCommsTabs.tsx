@@ -131,11 +131,11 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
         ]}
         columns={[
           { title: 'Mã chính sách', dataIndex: 'key', width: 165, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
-          { title: 'Nhóm quy định / Bộ phận', dataIndex: 'category', width: 190, render: (v: string) => POLICY_CATEGORY_LABELS[v] ?? v },
-          { title: 'Tên chính sách / Quy định phổ biến', dataIndex: 'description', ellipsis: true, render: (v: string, r) => <Typography.Link strong onClick={() => setViewing(r)}>{v}</Typography.Link> },
-          { title: 'Giá trị hiệu lực', dataIndex: 'value_json', width: 160, render: (v: string) => <Tag color="blue">{v}</Tag> },
+          { title: 'Nhóm quy định / Bộ phận', dataIndex: 'category', width: 195, render: (v: string) => POLICY_CATEGORY_LABELS[v] ?? v },
+          { title: 'Tên chính sách / Quy định phổ biến', dataIndex: 'description', width: 340, render: (v: string, r) => <Typography.Link strong onClick={() => setViewing(r)}>{v}</Typography.Link> },
+          { title: 'Giá trị hiệu lực', dataIndex: 'value_json', width: 210, render: (v: string) => <Tag color="blue">{v}</Tag> },
           { title: 'Hiệu lực & Ban hành', width: 195, render: (_, r) => <div><div className="num" style={{ fontSize: 12 }}>Từ: {String(r.effective_from || '—')}</div><div style={{ fontSize: 11, color: '#64748B' }}>Bởi: {String(r.creatorName || r.approved_by || 'Hệ thống')} {Boolean(r.isMine) && <Tag color="cyan" style={{ margin: '0 0 0 4px', fontSize: 10 }}>Của bạn</Tag>}</div></div> },
-          { title: 'Bảo vệ', dataIndex: 'is_locked_policy', width: 105, render: (v: boolean) => v ? <Tag color="red">Khóa cốt lõi</Tag> : <Tag color="green">Đang áp dụng</Tag> },
+          { title: 'Bảo vệ', dataIndex: 'is_locked_policy', width: 115, render: (v: boolean) => v ? <Tag color="red">Khóa cốt lõi</Tag> : <Tag color="green">Đang áp dụng</Tag> },
           {
             title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
             render: (_, r) => (

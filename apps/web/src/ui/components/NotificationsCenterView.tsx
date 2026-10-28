@@ -162,22 +162,22 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
           {
             title: 'Tiêu đề & Nội dung thông báo',
             dataIndex: 'title',
-            ellipsis: true,
+            width: 380,
             render: (_, r) => (
               <div style={{ cursor: 'pointer', minWidth: 0 }} onClick={() => handleOpenDetail(r)}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {r.readStatus === 'UNREAD' && <Badge status="processing" color="#2563EB" />}
-                  <Typography.Link strong={r.readStatus === 'UNREAD'} style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.title}</Typography.Link>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                  {r.readStatus === 'UNREAD' && <Badge status="processing" color="#2563EB" style={{ marginTop: 4 }} />}
+                  <Typography.Link strong={r.readStatus === 'UNREAD'} style={{ fontSize: 13, lineHeight: 1.4 }}>{r.title}</Typography.Link>
                 </div>
-                <div style={{ fontSize: 12, color: '#64748B', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.body}</div>
+                <div style={{ fontSize: 12, color: '#64748B', marginTop: 3, lineHeight: 1.4 }}>{r.body}</div>
               </div>
             ),
           },
-          { title: 'Phân loại', dataIndex: 'categoryLabel', width: 150, ellipsis: true, render: (v: string) => <Tag color="blue" style={{ margin: 0 }}>{v}</Tag> },
-          { title: 'Đối tượng nhận', dataIndex: 'targetLabel', width: 160, ellipsis: true, render: (v: string, r) => <Tag color={r.scopeType === 'PERSONAL' ? 'purple' : r.scopeType === 'ROLE' ? 'cyan' : 'geekblue'} style={{ margin: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v}</Tag> },
-          { title: 'Mức độ', dataIndex: 'severityLabel', width: 88, render: (v: string, r) => <Tag color={r.severity === 'CRITICAL' ? 'red' : r.severity === 'WARNING' ? 'gold' : 'default'} style={{ margin: 0 }}>{v}</Tag> },
-          { title: 'Trạng thái', dataIndex: 'readStatusLabel', width: 86, render: (v: string, r) => <Tag color={r.readStatus === 'READ' ? 'green' : 'gold'} style={{ margin: 0 }}>{v}</Tag> },
-          { title: 'Thời gian nhận', dataIndex: 'created_at', width: 118, render: (v: string) => <span className="num" style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{dayjs(v).format('HH:mm DD/MM/YYYY')}</span> },
+          { title: 'Phân loại', dataIndex: 'categoryLabel', width: 195, render: (v: string) => <Tag color="blue" style={{ margin: 0 }}>{v}</Tag> },
+          { title: 'Đối tượng nhận', dataIndex: 'targetLabel', width: 210, render: (v: string, r) => <Tag color={r.scopeType === 'PERSONAL' ? 'purple' : r.scopeType === 'ROLE' ? 'cyan' : 'geekblue'} style={{ margin: 0 }}>{v}</Tag> },
+          { title: 'Mức độ', dataIndex: 'severityLabel', width: 105, render: (v: string, r) => <Tag color={r.severity === 'CRITICAL' ? 'red' : r.severity === 'WARNING' ? 'gold' : 'default'} style={{ margin: 0 }}>{v}</Tag> },
+          { title: 'Trạng thái', dataIndex: 'readStatusLabel', width: 100, render: (v: string, r) => <Tag color={r.readStatus === 'READ' ? 'green' : 'gold'} style={{ margin: 0 }}>{v}</Tag> },
+          { title: 'Thời gian nhận', dataIndex: 'created_at', width: 135, render: (v: string) => <span className="num" style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{dayjs(v).format('HH:mm DD/MM/YYYY')}</span> },
           {
             title: 'Thao tác', key: 'actions', width: 84, fixed: 'right', align: 'right',
             render: (_, r) => (

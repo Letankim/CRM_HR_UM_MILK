@@ -128,9 +128,9 @@ export function MktCommsCenter() {
         ]}
         columns={[
           { title: 'Mã tin', dataIndex: 'announcement_code', width: 95, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
-          { title: 'Tiêu đề thông báo', dataIndex: 'title', width: 260, ellipsis: true, render: (v: string, r) => <Typography.Link strong onClick={() => setViewingAnc(r)}>{v}</Typography.Link> },
-          { title: 'Nhóm người nhận', dataIndex: 'audienceLabel', width: 175, render: (v: string) => <Tag color="blue">{v || 'Toàn công ty'}</Tag> },
-          { title: 'Chiến dịch', dataIndex: 'campaignName', width: 165, ellipsis: true },
+          { title: 'Tiêu đề thông báo', dataIndex: 'title', width: 320, render: (v: string, r) => <Typography.Link strong onClick={() => setViewingAnc(r)}>{v}</Typography.Link> },
+          { title: 'Nhóm người nhận', dataIndex: 'audienceLabel', width: 190, render: (v: string) => <Tag color="blue">{v || 'Toàn công ty'}</Tag> },
+          { title: 'Chiến dịch', dataIndex: 'campaignName', width: 195 },
           { title: 'Mức độ', dataIndex: 'priority', width: 95, render: (v: string) => <Tag color={v === 'URGENT' || v === 'HIGH' ? 'red' : 'blue'}>{v === 'URGENT' ? 'Khẩn cấp' : v === 'HIGH' ? 'Quan trọng' : 'Thông thường'}</Tag> },
           { title: 'Trạng thái', dataIndex: 'status', width: 115, render: (v: string) => <StatusTag value={v} label={v === 'SENT' ? 'Đã phát' : v === 'SCHEDULED' ? 'Đã lên lịch' : v === 'FAILED' ? 'Lỗi gửi' : 'Bản nháp'} /> },
           { title: 'Lịch phát / Ngày gửi & Người tạo', width: 185, render: (_, r) => <div><div className="num" style={{ fontSize: 12 }}>{r.status === 'SENT' && r.sent_at ? dayjs(String(r.sent_at)).format('HH:mm DD/MM/YYYY') : r.scheduled_at ? `Lịch: ${String(r.scheduled_at).slice(0, 10)}` : 'Bản nháp'}</div><div style={{ fontSize: 11, color: '#64748B' }}>Bởi: {String(r.creatorName || r.approved_by || 'Hệ thống')} {Boolean(r.isMine) && <Tag color="cyan" style={{ margin: '0 0 0 4px', fontSize: 10 }}>Của bạn</Tag>}</div></div> },
@@ -173,7 +173,7 @@ export function MktCommsCenter() {
                   size="small" rowKey="id" pagination={audPag} dataSource={data?.audienceGroups ?? []}
                   bulkActions={(rows) => [{ key: 'excel', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: () => exportToExcel({ fileName: 'Nhom_Nguoi_Nhan_Da_Chon', sheetTitle: 'Nhóm người nhận', columns: [{ header: 'Tên nhóm', render: (r) => String(r.label ?? '') }, { header: 'Quy mô dự kiến', render: (r) => String(r.recipientCount ?? 0) }], rows }) }]}
                   columns={[
-                    { title: 'Tên nhóm người nhận được cấu hình', dataIndex: 'label', render: (v: string, r) => <Space size={6}><Typography.Link strong onClick={() => setViewingAud(r)}>{v}</Typography.Link>{Boolean(r.isCustom) && <Tag color="purple">Đã cấu hình</Tag>}</Space> },
+                    { title: 'Tên nhóm người nhận được cấu hình', dataIndex: 'label', width: 340, render: (v: string, r) => <div><Typography.Link strong onClick={() => setViewingAud(r)}>{v}</Typography.Link>{Boolean(r.isCustom) && <Tag color="purple" style={{ margin: '0 0 0 6px' }}>Đã cấu hình</Tag>}</div> },
                     { title: 'Quy mô dự kiến', dataIndex: 'recipientCount', width: 140, render: (v: number) => <Tag color="blue">{v} nhân sự</Tag> },
                     { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết nhóm người nhận" onViewDetail={() => setViewingAud(r)} menuItems={[{ key: 'compose', icon: <SendOutlined style={{ color: '#2563EB' }} />, label: 'Soạn tin cho nhóm này', onClick: () => openCreateAnc(`${r.scope}|${r.target}`, 'SENT') }, { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa cấu hình nhóm', onClick: () => openEditAud(r) }, { key: 'del', icon: <DeleteOutlined />, danger: true, label: 'Xóa nhóm người nhận', onClick: () => modal.confirm({ title: `Xóa nhóm "${r.label}"?`, okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => delMut.mutateAsync({ url: `/mkt/audience-groups/${encodeURIComponent(String(r.id))}`, body: {} }) }) }]} /> },
                   ]}

@@ -61,8 +61,8 @@ export function TopHeaderBar({
   };
 
   const notificationContent = (
-    <div style={{ width: 345 }}>
-      <Flex justify="space-between" align="center" style={{ paddingBottom: 6, borderBottom: `1px solid ${BRAND.border}` }}>
+    <div style={{ width: 440, maxWidth: 'calc(100vw - 32px)' }}>
+      <Flex justify="space-between" align="center" style={{ paddingBottom: 8, borderBottom: `1px solid ${BRAND.border}` }}>
         <Typography.Text strong style={{ fontSize: 13 }}>Thông báo đã nhận ({notifTotal + pendingTotal})</Typography.Text>
         <Space size={4}>
           <Tooltip title="Nghe thử chuông thông báo">
@@ -75,37 +75,42 @@ export function TopHeaderBar({
         </Space>
       </Flex>
       <Spin spinning={pendingAccounts.isFetching || notifsQ.isFetching}>
-        {pendingItems.length === 0 && notifItems.length === 0 ? (
-          <div style={{ padding: '14px 4px', textAlign: 'center', color: '#64748B', fontSize: 12 }}>
-            Chưa có thông báo hoặc bản tin mới
-          </div>
-        ) : (
-          <List
-            size="small"
-            dataSource={[
-              ...pendingItems.map((i) => ({ key: `acc-${i.id}`, notifId: '', unread: true, title: `${i.displayName} (${i.username})`, desc: `Chờ kích hoạt · ${i.roleLabel}`, tag: 'Tài khoản', href: '/admin/accounts?status=PENDING_ACTIVATION' })),
-              ...notifItems.map((n) => ({ key: `ntf-${n.id}`, notifId: n.id, unread: n.readStatus === 'UNREAD', title: n.title, desc: `${n.targetLabel} · ${n.body}`, tag: n.code, href: n.link || '/admin/notifications' })),
-            ].slice(0, 6)}
-            renderItem={(item) => (
-              <List.Item
-                style={{ cursor: 'pointer', paddingInline: 4 }}
-                onClick={() => {
-                  if (item.notifId && item.unread) {
-                    void api.post(`/notifications/${item.notifId}/read`, {}).then(() => qc.invalidateQueries({ queryKey: ['notifications'] }));
-                  }
-                  router.push(item.href);
-                }}
-              >
-                <List.Item.Meta
-                  title={<Space size={4}><Tag color="geekblue" style={{ margin: 0, fontSize: 10, paddingInline: 4 }}>{item.tag}</Tag><span style={{ fontSize: 12, fontWeight: 600 }}>{item.title}</span></Space>}
-                  description={<span style={{ fontSize: 11 }}>{item.desc}</span>}
-                />
-              </List.Item>
-            )}
-          />
-        )}
+        <div style={{ maxHeight: 'min(340px, calc(100dvh - 180px))', overflowY: 'auto', paddingRight: 2 }}>
+          {pendingItems.length === 0 && notifItems.length === 0 ? (
+            <div style={{ padding: '14px 4px', textAlign: 'center', color: '#64748B', fontSize: 12 }}>
+              Chưa có thông báo hoặc bản tin mới
+            </div>
+          ) : (
+            <List
+              size="small"
+              dataSource={[
+                ...pendingItems.map((i) => ({ key: `acc-${i.id}`, notifId: '', unread: true, title: `${i.displayName} (${i.username})`, desc: `Chờ kích hoạt · ${i.roleLabel}`, tag: 'Tài khoản', href: '/admin/accounts?status=PENDING_ACTIVATION' })),
+                ...notifItems.map((n) => ({ key: `ntf-${n.id}`, notifId: n.id, unread: n.readStatus === 'UNREAD', title: n.title, desc: `${n.targetLabel} · ${n.body}`, tag: n.code, href: n.link || '/admin/notifications' })),
+              ].slice(0, 6)}
+              renderItem={(item) => (
+                <List.Item
+                  style={{ cursor: 'pointer', padding: '8px 6px' }}
+                  onClick={() => {
+                    if (item.notifId && item.unread) {
+                      void api.post(`/notifications/${item.notifId}/read`, {}).then(() => qc.invalidateQueries({ queryKey: ['notifications'] }));
+                    }
+                    router.push(item.href);
+                  }}
+                >
+                  <div style={{ width: '100%', minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: '#0F172A', lineHeight: 1.45, wordBreak: 'break-word' }}>
+                      <Tag color={item.unread ? 'geekblue' : 'default'} style={{ margin: '0 6px 2px 0', fontSize: 10, paddingInline: 5, lineHeight: '16px', verticalAlign: 'text-top' }}>{item.tag}</Tag>
+                      <span>{item.title}</span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: '#64748B', lineHeight: 1.4, marginTop: 3, wordBreak: 'break-word' }}>{item.desc}</div>
+                  </div>
+                </List.Item>
+              )}
+            />
+          )}
+        </div>
       </Spin>
-      <Button type="primary" ghost size="small" icon={<BellOutlined />} block style={{ marginTop: 6 }} onClick={() => router.push('/admin/notifications')}>
+      <Button type="primary" ghost size="small" icon={<BellOutlined />} block style={{ marginTop: 8 }} onClick={() => router.push('/admin/notifications')}>
         Xem chi tiết tất cả thông báo ({notifTotal + pendingTotal})
       </Button>
     </div>

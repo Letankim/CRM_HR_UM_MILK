@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { ROLE_LABELS, ROLES, type Role } from '@umbm/shared';
+import { DEFAULT_SHIFT_LABELS, ROLE_LABELS, ROLES, type Role } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
@@ -30,6 +30,7 @@ async function ensureSyncedNotifications(ctx: AppContext, actorId: string) {
   const existing = ctx.db.notifications.all(true), users = ctx.db.users.all();
   const hasKey = (type: string, id: string) => existing.some((n) => n.entity_type === type && n.entity_id === id);
   const findUserByEmp = (empId: string) => users.find((u) => u.employee_id === empId);
+  const shiftLabel = (code: string) => (DEFAULT_SHIFT_LABELS as Record<string, string>)[code] ?? code;
   const ins = (data: Omit<Parameters<typeof ctx.db.notifications.insert>[0], 'read_at'>) => ctx.db.notifications.insert({ ...data, read_at: '' }, actorId);
   for (const anc of ctx.db.announcements.all()) {
     if (anc.status === 'SENT' && !hasKey('ANNOUNCEMENTS', anc.id)) {
@@ -57,7 +58,7 @@ async function ensureSyncedNotifications(ctx: AppContext, actorId: string) {
   for (const s of ctx.db.shiftSwaps.all().slice(0, 10)) {
     if (!hasKey('SWAP_STORE', s.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: s.branch_id || 'ALL', category: 'WORKFLOW', title: `Yêu cầu đổi ca 3 bước (${s.swap_code || s.id})`, body: `Yêu cầu đổi ca ngày ${s.from_work_date} đang ở trạng thái ${s.status === 'APPROVED' ? 'Đã phê duyệt' : s.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã xác nhận — Chờ duyệt' : 'Chờ xử lý'}.`, link: '/admin/schedules?section=workflows', severity: s.status === 'PEER_ACCEPTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_STORE', entity_id: s.id });
     const reqUser = findUserByEmp(s.requester_id), peerUser = findUserByEmp(s.peer_id), swapKey = `${s.id}_${s.status}`;
-    if ((reqUser || peerUser) && !hasKey('SWAP_USER', swapKey)) await ins({ recipient_user_id: [reqUser?.id, peerUser?.id].filter(Boolean).join(','), recipient_role: '', branch_id: s.branch_id || 'ALL', category: 'WORKFLOW', title: `Cập nhật yêu cầu đổi ca (${s.swap_code || s.id})`, body: `Đổi ca ngày ${s.from_work_date} (${s.from_shift_code}): ${s.status === 'APPROVED' ? 'Đã được Quản lý phê duyệt & cập nhật lịch chính thức' : s.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã xác nhận — Chờ Quản lý duyệt' : s.status === 'REJECTED' ? 'Đã bị từ chối' : 'Chờ đồng nghiệp xác nhận'}.`, link: '/nv/doi-ca', severity: s.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_USER', entity_id: swapKey });
+    if ((reqUser || peerUser) && !hasKey('SWAP_USER', swapKey)) await ins({ recipient_user_id: [reqUser?.id, peerUser?.id].filter(Boolean).join(','), recipient_role: '', branch_id: s.branch_id || 'ALL', category: 'WORKFLOW', title: `Cập nhật yêu cầu đổi ca (${s.swap_code || s.id})`, body: `Đổi ca ngày ${s.from_work_date} (${shiftLabel(s.from_shift_code)}): ${s.status === 'APPROVED' ? 'Đã được Quản lý phê duyệt & cập nhật lịch chính thức' : s.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã xác nhận — Chờ Quản lý duyệt' : s.status === 'REJECTED' ? 'Đã bị từ chối' : 'Chờ đồng nghiệp xác nhận'}.`, link: '/nv/doi-ca', severity: s.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_USER', entity_id: swapKey });
   }
   for (const iv of ctx.db.interviews.all().slice(0, 10)) {
     if (iv.status !== 'CANCELLED' && !hasKey('INTERVIEW_HR', iv.id)) {
@@ -78,10 +79,10 @@ async function ensureSyncedNotifications(ctx: AppContext, actorId: string) {
     if (!hasKey('ATT_ADJ_HR', adj.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE,FINANCE', branch_id: adj.branch_id || 'ALL', category: 'ATTENDANCE', title: `Phiếu bổ sung / lỗi chấm công chờ chốt: ${adj.adjustment_code}`, body: `Ngày công ${adj.work_date} (${adj.requested_hours}h) — Lý do: ${adj.reason}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'ATT_ADJ_HR', entity_id: adj.id });
   }
   for (const emg of ctx.db.emergencyLeaves.all().slice(0, 6)) {
-    if (!hasKey('EMG_STORE', emg.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: emg.branch_id || 'ALL', category: 'WORKFLOW', title: `Cảnh báo nghỉ đột xuất & thiếu người: ${emg.emergency_code}`, body: `Ca ${emg.shift_code} ngày ${emg.work_date} — Lý do: ${emg.reason}. Cần tìm người thay hoặc báo HR.`, link: '/admin/schedules?section=workflows', severity: 'CRITICAL', entity_type: 'EMG_STORE', entity_id: emg.id });
+    if (!hasKey('EMG_STORE', emg.id)) await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: emg.branch_id || 'ALL', category: 'WORKFLOW', title: `Cảnh báo nghỉ đột xuất & thiếu người: ${emg.emergency_code}`, body: `${shiftLabel(emg.shift_code)} ngày ${emg.work_date} — Lý do: ${emg.reason}. Cần tìm người thay hoặc báo HR.`, link: '/admin/schedules?section=workflows', severity: 'CRITICAL', entity_type: 'EMG_STORE', entity_id: emg.id });
   }
   for (const a of ctx.db.shiftAssignments.all().filter((x) => x.status === 'ABSENT' || x.status === 'PUBLISHED').slice(0, 6)) {
-    if (!hasKey('SCHED_STORE', `${a.id}_${a.status}`)) await ins({ recipient_user_id: '', recipient_role: 'STORE', branch_id: a.branch_id || 'ALL', category: a.status === 'ABSENT' ? 'ATTENDANCE' : 'WORKFLOW', title: a.status === 'ABSENT' ? `Cảnh báo NV chưa điểm danh / Vắng mặt ca ngày ${a.work_date}` : `Lịch tuần mới đã phát hành (${a.work_date})`, body: `Khung ca ${a.shift_code} (${a.start_at}–${a.end_at}) tại chi nhánh phụ trách.`, link: '/admin/schedules', severity: a.status === 'ABSENT' ? 'WARNING' : 'INFO', entity_type: 'SCHED_STORE', entity_id: `${a.id}_${a.status}` });
+    if (!hasKey('SCHED_STORE', `${a.id}_${a.status}`)) await ins({ recipient_user_id: '', recipient_role: 'STORE', branch_id: a.branch_id || 'ALL', category: a.status === 'ABSENT' ? 'ATTENDANCE' : 'WORKFLOW', title: a.status === 'ABSENT' ? `Cảnh báo NV chưa điểm danh / Vắng mặt ca ngày ${a.work_date}` : `Lịch tuần mới đã phát hành (${a.work_date})`, body: `${shiftLabel(a.shift_code)} (${a.start_at}–${a.end_at}) tại chi nhánh phụ trách.`, link: '/admin/schedules', severity: a.status === 'ABSENT' ? 'WARNING' : 'INFO', entity_type: 'SCHED_STORE', entity_id: `${a.id}_${a.status}` });
   }
   for (const p of ctx.db.payPeriods.all().slice(0, 8)) {
     if (!hasKey('PAY_PERIOD_FIN', p.id)) await ins({ recipient_user_id: '', recipient_role: 'FINANCE', branch_id: 'ALL', category: 'PAYROLL', title: `Kỳ lương hệ thống: ${p.name} (${p.period_code || p.id})`, body: `Chu kỳ lương từ ${p.from_date} đến ${p.to_date} (${p.total_employees} NV, ${p.total_approved_hours}h công)${p.unreconciled_records_count > 0 ? ` — Cảnh báo: còn ${p.unreconciled_records_count} nhân sự lỗi tính lương / thiếu hồ sơ lương cần xử lý` : ' — Bảng lương sẵn sàng đối soát & phê duyệt'}.`, link: '/admin/payroll', severity: p.unreconciled_records_count > 0 ? 'WARNING' : 'INFO', entity_type: 'PAY_PERIOD_FIN', entity_id: p.id });
@@ -157,9 +158,9 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
       const targetLabel = isAncGroup ? `Nhóm nhận (${userIds.length}): ${userNames.join(', ') || 'Theo nhóm cấu hình'}` : isPersonal ? `Cá nhân (${userNames.length}): ${userNames.join(', ')}` : isBroadcast ? 'Toàn hệ thống (Tất cả vai trò)' : `Nhóm nhân sự: ${roleLabels.join(', ')}`;
       const userReadAt = getUserReadAt(n.read_at, user.id), readStatus = userReadAt ? 'READ' : 'UNREAD';
       return {
-        ...n, read_at: userReadAt, code: anc?.code || `NTF-${String(idx + 1).padStart(4, '0')}`,
+        ...n, body: n.body.replace(/^Mã:\s*[A-Z0-9_]+\s*\([^)]+\)\s*·\s*/i, ''), read_at: userReadAt, code: anc?.code || `NTF-${String(idx + 1).padStart(4, '0')}`,
         categoryLabel: NOTIFICATION_CATEGORY_LABELS[n.category] ?? n.category, severityLabel: NOTIFICATION_SEVERITY_LABELS[n.severity] ?? n.severity,
-        scopeType, targetLabel, readStatus, readStatusLabel: userReadAt ? 'Đã đọc' : 'Chưa đọc', detailHtml: anc?.body || `<p>${n.body}</p>`,
+        scopeType, targetLabel, readStatus, readStatusLabel: userReadAt ? 'Đã đọc' : 'Chưa đọc', detailHtml: anc?.body || `<p>${n.body.replace(/^Mã:\s*[A-Z0-9_]+\s*\([^)]+\)\s*·\s*/i, '')}</p>`,
       };
     });
 

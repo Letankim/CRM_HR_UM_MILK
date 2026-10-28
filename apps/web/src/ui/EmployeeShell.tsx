@@ -91,7 +91,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
     ? DESKTOP_GROUPS.flatMap((g) => g.items.map((i) => ({ key: i.key, icon: i.icon, label: <Link href={i.key}>{i.label}</Link> })))
     : DESKTOP_GROUPS.map((g) => ({ key: g.key, label: <span style={{ fontSize: 12, fontWeight: 600, color: '#64748B' }}>{g.label}</span>, children: g.items.map((i) => ({ key: i.key, icon: i.icon, label: <Link href={i.key}>{i.label}</Link> })) }));
   const mobileMoreMenu = (
-    <div style={{ width: 262, display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div style={{ width: 280, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100dvh - 140px)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.textSecondary, padding: '2px 8px 4px', borderBottom: `1px solid ${BRAND.border}` }}>CHỌN TIỆN ÍCH NHÂN SỰ</div>
       {[
         { label: 'Đơn nghỉ OFF & Nghỉ khẩn cấp', desc: 'Đăng ký nghỉ phép OFF & xem trạng thái duyệt', icon: <FileDoneOutlined />, onClick: () => router.push('/nv/nghi-phep') },
@@ -139,23 +139,22 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
               <Breadcrumb items={[{ title: 'Cổng Nhân viên' }, { title: activeDesktopItem.group }, { title: <Typography.Text strong style={{ color: '#0F172A', fontSize: 13 }}>{activeDesktopItem.item.label}</Typography.Text> }]} />
             </Flex>
             <Space size={10}>
-              <Popover
-                trigger="click" placement="bottomRight"
-                content={
-                  <div style={{ width: 325 }}>
-                    <Flex justify="space-between" align="center" style={{ paddingBottom: 6, borderBottom: `1px solid ${BRAND.border}` }}>
-                      <Typography.Text strong style={{ fontSize: 13 }}>Thông báo đã nhận ({notifTotal})</Typography.Text>
-                      <Space size={4}>
-                        <Tooltip title="Nghe thử chuông thông báo"><Button size="small" type="text" icon={soundEnabled ? <SoundOutlined style={{ color: BRAND.primary }} /> : <MutedOutlined />} onClick={playTestSound} /></Tooltip>
-                        <Switch size="small" checked={soundEnabled} onChange={setSoundEnabled} checkedChildren="Chuông" unCheckedChildren="Tắt" />
-                        <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => notifsQ.refetch()}>Làm mới</Button>
-                      </Space>
-                    </Flex>
-                    {notifItems.length === 0 ? <div style={{ padding: 12, textAlign: 'center', fontSize: 12, color: BRAND.textSecondary }}>Chưa có thông báo mới</div> : <List size="small" dataSource={notifItems} renderItem={(n) => <List.Item style={{ cursor: 'pointer', paddingInline: 4 }} onClick={() => router.push('/nv/thong-bao')}><List.Item.Meta title={<span style={{ fontSize: 12, fontWeight: 600 }}>{n.title}</span>} description={<span style={{ fontSize: 11 }}>{n.targetLabel} · {n.body}</span>} /></List.Item>} />}
-                    <Button type="primary" ghost size="small" icon={<BellOutlined />} block style={{ marginTop: 6 }} onClick={() => router.push('/nv/thong-bao')}>Xem chi tiết tất cả thông báo ({notifTotal})</Button>
+              <Popover trigger="click" placement="bottomRight" content={
+                <div style={{ width: 440, maxWidth: 'calc(100vw - 32px)' }}>
+                  <Flex justify="space-between" align="center" style={{ paddingBottom: 8, borderBottom: `1px solid ${BRAND.border}` }}>
+                    <Typography.Text strong style={{ fontSize: 13 }}>Thông báo đã nhận ({notifTotal})</Typography.Text>
+                    <Space size={4}>
+                      <Tooltip title="Nghe thử chuông thông báo"><Button size="small" type="text" icon={soundEnabled ? <SoundOutlined style={{ color: BRAND.primary }} /> : <MutedOutlined />} onClick={playTestSound} /></Tooltip>
+                      <Switch size="small" checked={soundEnabled} onChange={setSoundEnabled} checkedChildren="Chuông" unCheckedChildren="Tắt" />
+                      <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => notifsQ.refetch()}>Làm mới</Button>
+                    </Space>
+                  </Flex>
+                  <div style={{ maxHeight: 'min(340px, calc(100dvh - 180px))', overflowY: 'auto', paddingRight: 2 }}>
+                    {notifItems.length === 0 ? <div style={{ padding: 12, textAlign: 'center', fontSize: 12, color: BRAND.textSecondary }}>Chưa có thông báo mới</div> : <List size="small" dataSource={notifItems} renderItem={(n) => <List.Item style={{ cursor: 'pointer', padding: '8px 6px' }} onClick={() => router.push('/nv/thong-bao')}><div style={{ width: '100%', minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 600, color: '#0F172A', lineHeight: 1.45, wordBreak: 'break-word' }}><Tag color={n.readStatus === 'UNREAD' ? 'geekblue' : 'default'} style={{ margin: '0 6px 2px 0', fontSize: 10, paddingInline: 5, lineHeight: '16px', verticalAlign: 'text-top' }}>{n.code}</Tag><span>{n.title}</span></div><div style={{ fontSize: 11.5, color: '#64748B', lineHeight: 1.4, marginTop: 3, wordBreak: 'break-word' }}>{n.targetLabel} · {n.body}</div></div></List.Item>} />}
                   </div>
-                }
-              >
+                  <Button type="primary" ghost size="small" icon={<BellOutlined />} block style={{ marginTop: 8 }} onClick={() => router.push('/nv/thong-bao')}>Xem chi tiết tất cả thông báo ({notifTotal})</Button>
+                </div>
+              }>
                 <Badge count={unreadNotifCount} size="small" offset={[-2, 2]}><Button size="small" className="umbm-header-pill" icon={<BellOutlined />} style={{ width: 34, height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder }} /></Badge>
               </Popover>
               {isInternal && <Button size="small" className="umbm-header-pill" icon={<UserSwitchOutlined />} onClick={() => router.push('/dashboard')} style={{ height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder, paddingInline: 10 }}>Về Quản trị</Button>}

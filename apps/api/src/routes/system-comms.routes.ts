@@ -57,7 +57,7 @@ export async function systemCommsRoutes(app: FastifyInstance, ctx: AppContext) {
     u.role === 'ADMIN' || rec.created_by === u.id || Boolean(rec.approved_by && (rec.approved_by === u.username || rec.approved_by === u.display_name));
 
   const broadcastPolicy = async (pol: { id: string; key: string; title: string; value_json: string; policy_version: string; effective_from: string }, actorId: string) => {
-    const notifTitle = `[Chính sách mới] ${pol.title}`, notifBody = `Mã: ${pol.key} (${pol.policy_version}) · Áp dụng: ${pol.value_json} · Hiệu lực từ ${pol.effective_from}`;
+    const notifTitle = `[Chính sách mới] ${pol.title}`, notifBody = `Áp dụng: ${pol.value_json} · Hiệu lực từ ${pol.effective_from}`;
     const notif = await ctx.db.notifications.insert({ recipient_user_id: 'ALL', category: 'ANNOUNCEMENT', title: notifTitle, body: notifBody, link: '/nv/ban-tin', severity: 'WARNING', read_at: '', recipient_role: 'ALL', branch_id: 'ALL', entity_type: 'POLICIES', entity_id: pol.id }, actorId);
     ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, { kind: 'POLICY_PUBLISHED', id: pol.id, notificationId: notif.id, code: pol.key, title: notifTitle, summary: notifBody, priority: 'HIGH', sent_at: nowIso() });
   };
