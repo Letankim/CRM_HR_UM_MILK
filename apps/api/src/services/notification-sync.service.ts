@@ -1,5 +1,6 @@
 import { DEFAULT_SHIFT_LABELS, ROLE_LABELS, type NotificationRow, type Role } from '@umbm/shared';
 import type { AppContext } from '../context.js';
+import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 import { getMatchingUsersForAudience } from '../routes/job-positions-and-audiences.routes.js';
 import { singleFlight, tolerantWrite } from './background-write.js';
 
@@ -9,7 +10,7 @@ const SYNC_ACTOR = 'system-sync';
 
 function computeSyncSig(ctx: AppContext): string {
   const sumV = (rows: { version: number }[]) => rows.reduce((acc, r) => acc + r.version, rows.length * 97);
-  return [ctx.db.announcements, ctx.db.users, ctx.db.shiftAssignments, ctx.db.leaveRequests, ctx.db.shiftSwaps, ctx.db.attendanceAdjustments, ctx.db.emergencyLeaves, ctx.db.payslips].map((s) => sumV(s.all())).join(':');
+  return [ctx.db.announcements, ctx.db.users, ctx.db.shiftAssignments, ctx.db.leaveRequests, ctx.db.shiftSwaps, ctx.db.attendanceAdjustments, ctx.db.emergencyLeaves, ctx.db.payPeriods, ctx.db.payslips].map((s) => sumV(s.all())).join(':');
 }
 
 export function ensureSyncedNotifications(ctx: AppContext): Promise<void> {
@@ -76,8 +77,8 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
     }
   }
   const hasKey = (type: string, id: string, role = '', uid = '', title = '') => seenKeys.has(`${type}:${id}`) || (Boolean(title) && seenKeys.has(`title:${role}:${uid}:${title}`));
-  const findEmp = (empId: string) => ctx.db.employees.get(empId) ?? ctx.db.employees.find((e) => e.employee_code === empId);
-  const findUserByEmp = (empId: string) => { const emp = findEmp(empId); return (emp?.user_id ? ctx.db.users.get(emp.user_id) : undefined) ?? users.find((u) => u.employee_id === empId || (emp && u.employee_id === emp.employee_code)); };
+  const findEmp = (empId: string) => { const t = (empId || '').trim(); return t ? (ctx.db.employees.get(t) ?? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === t.toUpperCase())) : undefined; };
+  const findUserByEmp = (empId: string) => { const emp = findEmp(empId); return (emp ? findLinkedUserForEmployee(emp, ctx) : undefined) ?? users.find((u) => Boolean(empId && u.employee_id.trim().toUpperCase() === empId.trim().toUpperCase())); };
   const isBoOrHr = (emp?: { staff_group?: string }, empUser?: { role?: string }, creatorId?: string) => emp?.staff_group === 'BACKOFFICE' || ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(empUser?.role ?? '') || ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(ctx.db.users.get(creatorId || '')?.role ?? '');
   const shiftLabel = (code: string) => (DEFAULT_SHIFT_LABELS as Record<string, string>)[code] ?? code;
   const pendingInserts: Promise<unknown>[] = [];
@@ -168,9 +169,12 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
     const emp = findEmp(emg.employee_id), empUser = findUserByEmp(emg.employee_id), empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : emg.employee_id;
     if (!hasKey('EMG_STORE', emg.id)) await ins({ recipient_user_id: '', recipient_role: isBoOrHr(emp, empUser, emg.created_by) ? 'HR' : 'HR,STORE', branch_id: emp?.branch_id || emg.branch_id || 'ALL', category: 'WORKFLOW', title: `Cảnh báo nghỉ đột xuất & thiếu người: ${emg.emergency_code} (${empLabel})`, body: `${empLabel} báo nghỉ ${shiftLabel(emg.shift_code)} ngày ${emg.work_date} — Lý do: ${emg.reason}. Cần tìm người thay hoặc báo HR.`, link: '/admin/schedules?section=workflows', severity: 'CRITICAL', entity_type: 'EMG_STORE', entity_id: emg.id }, empUser?.id || emg.created_by);
   }
-  for (const ps of ctx.db.payslips.all().slice(-30)) {
-    const empUser = findUserByEmp(ps.employee_id);
-    if (empUser && !hasKey('PAYSLIP_USER', ps.id)) await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: ps.branch_id || 'ALL', category: 'PAYROLL', title: `Phiếu lương cá nhân đã phát hành: ${ps.period_name || ps.payslip_code}`, body: `Thực lĩnh (NET): ${Number(ps.net_vnd || 0).toLocaleString('vi-VN')}đ — Vui lòng kiểm tra chi tiết và xác nhận phiếu lương.`, link: '/nv/phieu-luong', severity: 'INFO', entity_type: 'PAYSLIP_USER', entity_id: ps.id });
+  const paidPeriodIds = new Set(ctx.db.payPeriods.filter((p) => p.status === 'PAID').map((p) => p.id));
+  for (const ps of ctx.db.payslips.filter((x) => x.status !== 'REVISED').slice(-150)) {
+    const empUser = findUserByEmp(ps.employee_id) ?? findUserByEmp(ps.employee_code);
+    if (!empUser) continue;
+    if (!hasKey('PAYSLIP_USER', ps.id)) await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: ps.branch_id || 'ALL', category: 'PAYROLL', title: `Phiếu lương cá nhân đã phát hành: ${ps.period_name || ps.payslip_code}`, body: `Thực lĩnh (NET): ${Number(ps.net_vnd || 0).toLocaleString('vi-VN')}đ — Vui lòng kiểm tra chi tiết và xác nhận phiếu lương.`, link: '/nv/phieu-luong', severity: 'INFO', entity_type: 'PAYSLIP_USER', entity_id: ps.id });
+    if ((ps.status === 'PAID' || paidPeriodIds.has(ps.period_id)) && !hasKey('PAYSLIP_USER', `${ps.id}_PAID`)) await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: ps.branch_id || 'ALL', category: 'PAYROLL', title: `Đã thanh toán lương cá nhân: ${ps.period_name || ps.payslip_code}`, body: `Kế toán đã xác nhận chi trả lương thực lĩnh ${Number(ps.net_vnd || 0).toLocaleString('vi-VN')}đ cho kỳ ${ps.period_name || ps.payslip_code}.`, link: '/nv/phieu-luong', severity: 'INFO', entity_type: 'PAYSLIP_USER', entity_id: `${ps.id}_PAID` });
   }
   if (pendingInserts.length > 0) await Promise.all(pendingInserts);
   const sigAfter = computeSyncSig(ctx);

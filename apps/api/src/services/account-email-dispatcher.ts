@@ -30,7 +30,7 @@ export function resolveRolePortalPath(role: Role | undefined, target: PortalLink
   if (target === 'schedule') return isEmp ? '/nv/lich' : role === 'MKT' ? '/dashboard' : '/admin/my-attendance';
   if (target === 'leave') return isEmp ? '/nv/nghi-phep' : role === 'MKT' ? '/dashboard' : '/admin/my-attendance';
   if (target === 'swap') return isEmp ? '/nv/doi-ca' : role === 'MKT' ? '/dashboard' : '/admin/my-attendance';
-  if (target === 'payslip') return isEmp || role === 'STORE' ? '/nv/phieu-luong' : role === 'MKT' ? '/dashboard' : '/admin/payroll';
+  if (target === 'payslip') return '/nv/phieu-luong';
   if (target === 'test') return role === 'MKT' ? '/dashboard' : '/nv/bai-kiem-tra';
   if (target === 'comms') return isEmp ? '/nv/ban-tin' : (role === 'ADMIN' || role === 'HR' || role === 'MKT') ? '/admin/integrations?section=comms' : '/admin/notifications';
   return isEmp ? '/nv' : '/dashboard';
@@ -38,8 +38,9 @@ export function resolveRolePortalPath(role: Role | undefined, target: PortalLink
 
 export function resolveFallbackRealEmail(ctx: AppContext, preferred?: string): string {
   if (preferred && !isSyntheticDemoEmail(preferred)) return preferred.trim().toLowerCase();
-  for (const u of ctx.db.users.all(true)) if (u.email && !isSyntheticDemoEmail(u.email)) return u.email.trim().toLowerCase();
-  for (const e of ctx.db.employees.all(true)) if (e.email && !isSyntheticDemoEmail(e.email)) return e.email.trim().toLowerCase();
+  for (const u of ctx.db.users.all()) {
+    if (u.status === 'ACTIVE' && u.role === 'ADMIN' && u.email && !isSyntheticDemoEmail(u.email)) return u.email.trim().toLowerCase();
+  }
   return (ctx.env.EMAIL_FROM_ADDRESS || '3do.service.veo@gmail.com').trim().toLowerCase();
 }
 

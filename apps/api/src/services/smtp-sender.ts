@@ -24,12 +24,17 @@ export function registerSmtpRelayOrigin(raw?: string): void {
     const normalized = raw.startsWith('http://') || raw.startsWith('https://') ? raw : `https://${raw}`;
     const u = new URL(normalized);
     const host = u.hostname.toLowerCase();
-    if (u.protocol !== 'https:') return;
-    if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.onrender.com')) return;
+    if (u.protocol !== 'https:' || host === 'localhost' || host === '127.0.0.1' || host.endsWith('.onrender.com')) return;
     relayOrigins.add(u.origin);
-  } catch {
-    // Bỏ qua URL không hợp lệ
-  }
+  } catch { /* Bỏ qua URL không hợp lệ */ }
+}
+
+export function hasSmtpRelayOrigin(): boolean { return relayOrigins.size > 0; }
+
+export function getPublicFrontendOrigin(fallbackOrigin: string): string {
+  const fb = (fallbackOrigin || '').trim().replace(/\/+$/, '');
+  if (fb && !fb.includes('localhost') && !fb.includes('127.0.0.1') && !fb.includes('.onrender.com')) return fb;
+  return Array.from(relayOrigins)[0] || fb || 'http://localhost:3000';
 }
 
 export function formatSmtpError(err: unknown): string {

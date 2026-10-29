@@ -10,6 +10,7 @@ import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { mapAttendanceEvent, migrateLegacyBase64Photos } from './attendance-helpers.js';
+import { findLinkedEmployeeForUser } from './employee-mapper.js';
 import { mapShiftAssignment } from './schedules.routes.js';
 
 const zCreateMyShiftBody = z.object({ work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng ngày YYYY-MM-DD'), shift_code: z.string().trim().default('CA_SANG'), note: z.string().trim().max(300).optional().default('Đăng ký ca làm việc cá nhân') });
@@ -23,10 +24,11 @@ function getVnDateAndHm(): { todayStr: string; nowHm: string } {
 }
 
 export async function ensurePersonalProfile(ctx: AppContext, user: User): Promise<Employee> {
-  const existing = ctx.db.employees.find((e) => e.user_id === user.id || Boolean(user.employee_id && (e.employee_code === user.employee_id || e.id === user.employee_id)));
+  const existing = findLinkedEmployeeForUser(user, ctx);
   if (existing) {
-    const autoShifts = ctx.db.shiftAssignments.filter((a) => (a.employee_id === existing.id || a.employee_id === existing.employee_code) && a.note === 'Ca làm việc cá nhân hôm nay');
-    for (const s of autoShifts) {
+    if (!existing.user_id) await ctx.db.employees.update(existing.id, existing.version, { user_id: user.id }, user.id).catch(() => undefined);
+    if (!user.employee_id) await ctx.db.users.update(user.id, user.version, { employee_id: existing.employee_code }, user.id).catch(() => undefined);
+    for (const s of ctx.db.shiftAssignments.filter((a) => (a.employee_id === existing.id || a.employee_id === existing.employee_code) && a.note === 'Ca làm việc cá nhân hôm nay')) {
       if (!ctx.db.attendanceEvents.find((e) => e.assignment_id === s.id)) await ctx.db.shiftAssignments.softDelete(s.id, s.version, user.id);
     }
     return existing;

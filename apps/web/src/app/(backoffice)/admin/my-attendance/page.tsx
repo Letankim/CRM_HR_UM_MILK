@@ -1,10 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Alert, App, Button, Card, Col, Flex, Row, Select, Space, Tabs, Tag, Tooltip, Typography } from 'antd';
-import {
-  CalendarOutlined, CameraOutlined, ClockCircleOutlined, DownloadOutlined, EnvironmentOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined,
-} from '@ant-design/icons';
+import { Alert, App, Button, Card, Col, Flex, Row, Select, Space, Tabs, Tag, Typography } from 'antd';
+import { CalendarOutlined, CameraOutlined, ClockCircleOutlined, DownloadOutlined, EnvironmentOutlined, FileAddOutlined, FileTextOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
@@ -16,6 +14,7 @@ import { exportAttendanceEventsExcel, groupAttendanceEventsByShift, renderShiftC
 import { SelectableTable } from '@/ui/components/BulkActionBar';
 import { AttendanceAdjustmentModal, MyShiftRegisterModal } from '@/ui/components/EmployeePortalModals';
 import { EmployeeScheduleAndLeaveCenter } from '@/ui/components/EmployeeScheduleAndLeaveCenter';
+import { MyPayslipsView } from '@/ui/components/MyPayslipsView';
 import { RowActionButtons } from '@/ui/components/RowActionButtons';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from '@/ui/components/ScheduleRequestDetailModal';
 import { exportAdjustmentsExcel } from '@/ui/components/workflow-bulk-helpers';
@@ -196,15 +195,12 @@ export default function MyAttendancePage() {
               ),
             },
             {
-              key: 'my-schedule',
-              label: <span><CalendarOutlined /> Lịch cá nhân, Nghỉ OFF &amp; Đổi ca ({shifts.length})</span>,
-              children: (
-                <EmployeeScheduleAndLeaveCenter
-                  todayDate={todayDate} empId={profile?.employeeId || ''} empCode={profile?.employeeCode || ''} stage={profile?.stage}
-                  shifts={shifts} leaves={leaves} emergencyLeaves={myQ.data?.emergencyLeaves ?? []} swaps={myQ.data?.swaps ?? []} branchPeers={myQ.data?.branchPeers ?? []}
-                  refreshing={myQ.isFetching} onRefresh={refreshAll}
-                />
-              ),
+              key: 'my-schedule', label: <span><CalendarOutlined /> Lịch cá nhân, Nghỉ OFF &amp; Đổi ca ({shifts.length})</span>,
+              children: <EmployeeScheduleAndLeaveCenter todayDate={todayDate} empId={profile?.employeeId || ''} empCode={profile?.employeeCode || ''} stage={profile?.stage} shifts={shifts} leaves={leaves} emergencyLeaves={myQ.data?.emergencyLeaves ?? []} swaps={myQ.data?.swaps ?? []} branchPeers={myQ.data?.branchPeers ?? []} refreshing={myQ.isFetching} onRefresh={refreshAll} />,
+            },
+            {
+              key: 'my-payslips', label: <span><FileTextOutlined /> Phiếu lương của bạn</span>,
+              children: <MyPayslipsView embedded />,
             },
           ]}
         />

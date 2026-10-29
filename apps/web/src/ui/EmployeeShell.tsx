@@ -65,8 +65,8 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (isUnauthorized(error) || (!isLoading && !data)) { router.replace(loginPath('employee')); return; }
-    if (data?.user.role === 'MKT') router.replace('/admin/integrations?section=comms');
-  }, [data, error, isLoading, router]);
+    if (data?.user.role === 'MKT' && !pathname.startsWith('/nv/phieu-luong')) router.replace('/admin/integrations?section=comms');
+  }, [data, error, isLoading, pathname, router]);
   if (isLoading || !data) return <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center' }}><Spin /></div>;
 
   const u = data.user, isInternal = !['THU_VIEC', 'CHINH_THUC'].includes(u.role);

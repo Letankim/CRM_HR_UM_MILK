@@ -77,40 +77,35 @@ export function assertUniquePersonalIdentifiers(ctx: AppContext, input: UniquePe
   }
 }
 
-/** Tìm tài khoản người dùng đang liên kết với hồ sơ nhân sự (ưu tiên user_id -> employee_id -> SĐT) */
+const normPhone = (raw?: string) => { const d = (raw || '').replace(/\D/g, ''); return d.length === 9 ? `0${d}` : d.startsWith('84') && d.length === 11 ? `0${d.slice(2)}` : d; };
+
+/** Tìm tài khoản người dùng đang liên kết với hồ sơ nhân sự (ưu tiên user_id -> employee_id -> SĐT -> Email) */
 export function findLinkedUserForEmployee(e: Employee, ctx: AppContext): User | undefined {
-  if (e.user_id) {
-    const byId = ctx.db.users.get(e.user_id);
-    if (byId) return byId;
-  }
+  if (e.user_id) { const byId = ctx.db.users.get(e.user_id); if (byId) return byId; }
   const codeUpper = e.employee_code.trim().toUpperCase();
-  const byEmpCode = ctx.db.users.find(
-    (u) => u.employee_id.trim().toUpperCase() === codeUpper || u.employee_id === e.id,
-  );
+  const byEmpCode = ctx.db.users.find((u) => u.employee_id.trim().toUpperCase() === codeUpper || u.employee_id === e.id || u.username.trim().toUpperCase() === codeUpper);
   if (byEmpCode) return byEmpCode;
-  if (e.phone) {
-    const byPhone = ctx.db.users.find((u) => Boolean(u.phone && u.phone === e.phone));
-    if (byPhone) return byPhone;
-  }
+  const phone = normPhone(e.phone), email = e.email.trim().toLowerCase();
+  if (phone) { const byPhone = ctx.db.users.find((u) => Boolean(u.phone && normPhone(u.phone) === phone)); if (byPhone) return byPhone; }
+  if (email) { const byEmail = ctx.db.users.find((u) => Boolean(u.email && u.email.trim().toLowerCase() === email)); if (byEmail) return byEmail; }
   return undefined;
 }
 
-/** Tìm hồ sơ nhân sự đang liên kết với tài khoản người dùng */
+/** Tìm toàn bộ hồ sơ nhân sự khớp với tài khoản (bao phủ cả trường hợp hồ sơ HR và hồ sơ tự sinh trùng SĐT/Email) */
+export function findAllLinkedEmployeesForUser(u: User, ctx: AppContext): Employee[] {
+  const codeUpper = (u.employee_id || '').trim().toUpperCase(), unameUpper = u.username.trim().toUpperCase();
+  const phone = normPhone(u.phone), email = u.email.trim().toLowerCase();
+  return ctx.db.employees.filter((e) => {
+    const ec = e.employee_code.trim().toUpperCase();
+    return e.user_id === u.id || (Boolean(codeUpper) && (ec === codeUpper || e.id === u.employee_id)) || ec === unameUpper || (Boolean(phone) && normPhone(e.phone) === phone) || (Boolean(email) && e.email.trim().toLowerCase() === email);
+  });
+}
+
+/** Tìm hồ sơ nhân sự chính đang liên kết với tài khoản người dùng */
 export function findLinkedEmployeeForUser(u: User, ctx: AppContext): Employee | undefined {
-  const byUserId = ctx.db.employees.find((e) => e.user_id === u.id);
-  if (byUserId) return byUserId;
-  if (u.employee_id) {
-    const codeUpper = u.employee_id.trim().toUpperCase();
-    const byCode = ctx.db.employees.find(
-      (e) => e.employee_code.trim().toUpperCase() === codeUpper || e.id === u.employee_id,
-    );
-    if (byCode) return byCode;
-  }
-  if (u.phone) {
-    const byPhone = ctx.db.employees.find((e) => Boolean(e.phone && e.phone === u.phone));
-    if (byPhone) return byPhone;
-  }
-  return undefined;
+  const all = findAllLinkedEmployeesForUser(u, ctx);
+  if (all.length <= 1) return all[0];
+  return all.find((e) => e.note !== 'Hồ sơ nhân sự liên kết tài khoản hệ thống') ?? all.find((e) => e.user_id === u.id) ?? all[0];
 }
 
 /** Tóm tắt hồ sơ lương cá nhân hiện hành để hiển thị trên danh sách nhân sự */

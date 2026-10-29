@@ -123,6 +123,7 @@ async function requestEnvelope<TData, TMeta = Record<string, unknown> | null>(
     credentials: 'include',
     headers: {
       'x-umbm-client': 'web',
+      ...(typeof window !== 'undefined' ? { 'x-umbm-origin': window.location.origin } : {}),
       ...(effectiveBody === undefined ? {} : { 'content-type': 'application/json' }),
     },
     body: effectiveBody === undefined ? undefined : JSON.stringify(effectiveBody),

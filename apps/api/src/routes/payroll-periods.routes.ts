@@ -7,9 +7,8 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
-import { SocketEvents } from '../realtime/realtime.js';
 import { mapSnapshot, recalculatePeriodSnapshots } from '../services/payroll-snapshot.service.js';
-import { generatePayslips } from '../services/payslip.service.js';
+import { ensurePublishedPeriodPayslips, generatePayslips } from '../services/payslip.service.js';
 import { healBranchConsistency } from './account-employee-sync.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -23,38 +22,35 @@ const zPeriodBody = z
   })
   .refine((v) => v.from_date <= v.to_date, { path: ['to_date'], message: 'Đến ngày phải sau hoặc bằng Từ ngày' });
 
-const zTransitionBody = z.object({
-  version: z.coerce.number().int().min(1),
-  target_status: z.enum(PAY_PERIOD_STATUSES),
-  note: z.string().trim().max(300).optional().default(''),
-});
+const zTransitionBody = z.object({ version: z.coerce.number().int().min(1), target_status: z.enum(PAY_PERIOD_STATUSES), note: z.string().trim().max(300).optional().default('') });
 
 /** Máy trạng thái kỳ lương: chỉ đi đúng thứ tự, cho phép trả về bước trước khi chưa phát hành */
 const ALLOWED: Record<PayPeriodStatus, PayPeriodStatus[]> = {
-  DRAFT: ['RECONCILE'],
-  RECONCILE: ['APPROVED', 'DRAFT'],
-  APPROVED: ['PUBLISHED', 'RECONCILE'],
-  PUBLISHED: ['PAID'],
-  PAID: [],
+  DRAFT: ['RECONCILE'], RECONCILE: ['APPROVED', 'DRAFT'], APPROVED: ['PUBLISHED', 'RECONCILE'], PUBLISHED: ['PAID'], PAID: [],
 };
 
-const withLabel = (p: PayPeriod) => ({ ...p, statusLabel: PAY_PERIOD_STATUS_LABELS[p.status] });
+const withLabel = (ctx: AppContext, p: PayPeriod) => ({
+  ...p,
+  statusLabel: PAY_PERIOD_STATUS_LABELS[p.status],
+  paid_by_name: p.paid_by ? (ctx.db.users.get(p.paid_by)?.display_name || ctx.db.users.find((u) => u.username === p.paid_by)?.display_name || 'Kế toán') : '',
+});
 
 export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/payroll/runs', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
-    const runs = ctx.db.payPeriods.all().reverse().sort((a, b) => b.from_date.localeCompare(a.from_date)).map(withLabel);
+    const runs = ctx.db.payPeriods.all().reverse().sort((a, b) => b.from_date.localeCompare(a.from_date)).map((p) => withLabel(ctx, p));
     return sendSuccess(request, 'Lấy tổng quan kỳ lương thành công', { runs, items: ctx.db.payrollItems.all().reverse() });
   });
 
   app.get('/api/admin/payroll/periods', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const q = (request.query ?? {}) as Record<string, string | undefined>;
     const force = q.refresh === '1' || q.refresh === 'true';
-    if (force) await Promise.all([ctx.db.payRates.load(), ctx.db.employees.load(), ctx.db.payPeriods.load(), ctx.db.payrollItems.load()]);
+    if (force) await Promise.all([ctx.db.payRates.load(), ctx.db.employees.load(), ctx.db.payPeriods.load(), ctx.db.payrollItems.load(), ctx.db.payrollSnapshots.load(), ctx.db.payslips.load()]);
     const actorId = request.auth?.user.id ?? 'system';
     for (const p of ctx.db.payPeriods.all()) {
       if (p.status === 'DRAFT' || p.status === 'RECONCILE') await recalculatePeriodSnapshots(ctx, p, actorId, force);
     }
-    const allItems = ctx.db.payPeriods.all().map(withLabel);
+    await ensurePublishedPeriodPayslips(ctx, actorId);
+    const allItems = ctx.db.payPeriods.all().map((p) => withLabel(ctx, p));
     const result = paginateAndSort(allItems, {
       page: Number(q.page) || 1, perPage: Number(q.per_page) || 50, maxPerPage: 200,
       defaultSortBy: 'from_date', defaultSortOrder: 'desc', q: q.q,
@@ -111,10 +107,10 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
       const result = paginateAndSort(filtered, {
         page: Number(q.page) || 1, perPage: Number(q.per_page) || 12, maxPerPage: 500, defaultSortBy: 'employeeCode', defaultSortOrder: 'asc',
       });
-      Object.assign(result.meta.filters as Record<string, unknown>, { summary, period: withLabel(period) });
+      Object.assign(result.meta.filters as Record<string, unknown>, { summary, period: withLabel(ctx, period) });
       return sendPaginated(request, 'Lấy chi tiết bảng lương thành công', result);
     }
-    return sendSuccess(request, 'Lấy chi tiết bảng lương thành công', { period: withLabel(period), snapshots: filtered, summary });
+    return sendSuccess(request, 'Lấy chi tiết bảng lương thành công', { period: withLabel(ctx, period), snapshots: filtered, summary });
   });
 
   app.post('/api/admin/payroll/periods', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request, reply) => {
@@ -140,7 +136,7 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
     const populated = await recalculatePeriodSnapshots(ctx, created, actorId, true);
     await ctx.audit.record(auditContext(request), { action: 'payroll_period.create', entity: 'PAY_PERIODS', entityId: populated.id, after: { period_code: populated.period_code, total_net_vnd: populated.total_net_vnd } });
     reply.code(201);
-    return sendSuccess(request, 'Đã khởi tạo kỳ lương và tự động tổng hợp bảng lương theo hồ sơ lương từng nhân sự', withLabel(populated));
+    return sendSuccess(request, 'Đã khởi tạo kỳ lương và tự động tổng hợp bảng lương theo hồ sơ lương từng nhân sự', withLabel(ctx, populated));
   });
 
   app.post('/api/admin/payroll/periods/:id/recalculate', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request) => {
@@ -151,7 +147,7 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
       throw Errors.conflict('Kỳ lương đã phê duyệt, snapshot đã đóng băng và không được tính lại');
     }
     const updated = await recalculatePeriodSnapshots(ctx, period, request.auth!.user.id, true);
-    return sendSuccess(request, 'Đã tính lại bảng lương theo dữ liệu công và hồ sơ lương mới nhất', withLabel(updated));
+    return sendSuccess(request, 'Đã tính lại bảng lương theo dữ liệu công và hồ sơ lương mới nhất', withLabel(ctx, updated));
   });
 
   app.delete('/api/admin/payroll/periods/:id', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request) => {
@@ -203,15 +199,18 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
             }, actorId);
           },
         },
-        { name: 'GENERATE_PAYSLIPS', run: async (s) => { if (body.target_status === 'PUBLISHED') await generatePayslips(ctx, s.period, actorId); } },
+        {
+          name: 'GENERATE_PAYSLIPS',
+          run: async (s) => {
+            if (body.target_status === 'PUBLISHED' || body.target_status === 'PAID') {
+              await generatePayslips(ctx, s.period, actorId, { actorEmail: request.auth?.user.email, isPaid: body.target_status === 'PAID' });
+            }
+          },
+        },
       ],
       resultSelector: (s) => s.period,
     });
-
-    if (body.target_status === 'PUBLISHED') {
-      ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, { kind: 'PAYROLL', code: updated.period_code, title: `Phiếu lương ${updated.name} đã phát hành` });
-    }
     await ctx.audit.record(auditContext(request), { action: 'payroll_period.transition', entity: 'PAY_PERIODS', entityId: id, before: { status: before.status }, after: { status: updated.status } });
-    return sendSuccess(request, `Đã chuyển trạng thái kỳ lương sang "${PAY_PERIOD_STATUS_LABELS[updated.status]}"`, withLabel(updated));
+    return sendSuccess(request, `Đã chuyển trạng thái kỳ lương sang "${PAY_PERIOD_STATUS_LABELS[updated.status]}"`, withLabel(ctx, updated));
   });
 }

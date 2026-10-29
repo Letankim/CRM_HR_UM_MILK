@@ -19,8 +19,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function isSyntheticDemoEmail(email?: string): boolean {
   const clean = (email || '').trim().toLowerCase();
-  if (!clean || !clean.includes('@')) return true;
-  if (clean.endsWith('@umbomilk.vn') || clean.endsWith(`@${SYSTEM_CONFIG.companyDomain.toLowerCase()}`)) return true;
+  if (!clean || !clean.includes('@') || clean === 'baongoc.uv@gmail.com') return true;
+  if (clean.endsWith('@umbomilk.vn') || clean.endsWith('@example.com') || clean.endsWith('@test.com') || clean.endsWith(`@${SYSTEM_CONFIG.companyDomain.toLowerCase()}`)) return true;
   return /^[a-z]+\.[a-z]+\d{3,4}@(yahoo|outlook|gmail)\.com$/i.test(clean);
 }
 
@@ -53,7 +53,7 @@ export class EmailService {
       const [rawTpl = 'ACCOUNT_ACTIVATED', ...refParts] = (log.announcement_id || '').split(':');
       const template = (EMAIL_TEMPLATE_CODES.includes(rawTpl as EmailTemplateCode) ? rawTpl : 'ACCOUNT_ACTIVATED') as EmailTemplateCode;
       const referenceCode = refParts.join(':') || `REF-${log.id.slice(0, 6)}`, cleanTo = (log.recipient_user_id || '').trim().toLowerCase();
-      if (!cleanTo.includes('@')) continue;
+      if (!cleanTo.includes('@') || isSyntheticDemoEmail(cleanTo)) continue;
       const matchedUser = this.db.users.find((u) => u.email.trim().toLowerCase() === cleanTo), matchedEmp = this.db.employees.find((e) => e.email.trim().toLowerCase() === cleanTo);
       const recipientName = matchedUser?.display_name || matchedEmp?.full_name || 'Nhân sự Ụm Bò Milk';
       const status: SentEmailRecord['status'] = log.status === 'PENDING' ? 'QUEUED' : log.status === 'FAILED' ? 'FAILED' : 'SENT';

@@ -1,3 +1,4 @@
+import type { Employee } from '@umbm/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
@@ -5,9 +6,10 @@ import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
-import { auditContext, requirePermission } from '../plugins/auth-context.js';
+import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
-import { applyPayslipAdjustment, mapPayslip } from '../services/payslip.service.js';
+import { applyPayslipAdjustment, ensurePublishedPeriodPayslips, generatePayslips, mapPayslip } from '../services/payslip.service.js';
+import { findAllLinkedEmployeesForUser } from './employee-mapper.js';
 
 const zRevisionBody = z.object({
   version: z.coerce.number().int().min(1).optional(),
@@ -16,16 +18,37 @@ const zRevisionBody = z.object({
   field_changed: z.string().trim().max(60).optional().default('ADJUSTMENT'),
 });
 
-/** Nhân sự gắn với tài khoản đang đăng nhập (self-only) */
-function selfEmployee(ctx: AppContext, user: { id: string; employee_id: string }) {
-  return ctx.db.employees.find((e) => e.user_id === user.id) ?? ctx.db.employees.find((e) => !!user.employee_id && e.employee_code === user.employee_id);
+function isOwnPayslip(p: { employee_id: string; employee_code: string }, emps: Employee[], user: { id: string; username: string; employee_id: string }): boolean {
+  const slipCode = (p.employee_code || '').trim().toUpperCase(), slipEmpId = (p.employee_id || '').trim().toUpperCase();
+  for (const emp of emps) {
+    const empCode = emp.employee_code.trim().toUpperCase();
+    if (p.employee_id === emp.id || (empCode && (slipEmpId === empCode || slipCode === empCode))) return true;
+  }
+  const uCode = (user.employee_id || '').trim().toUpperCase(), uname = (user.username || '').trim().toUpperCase();
+  return Boolean((uCode && (p.employee_id === user.employee_id || slipEmpId === uCode || slipCode === uCode)) || (uname && slipCode === uname));
 }
 
 export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/payroll/periods/:id/payslips', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const { id } = request.params as { id: string };
+    await ensurePublishedPeriodPayslips(ctx, request.auth?.user.id ?? 'system');
     const items = ctx.db.payslips.filter((p) => p.period_id === id).sort((a, b) => a.employee_code.localeCompare(b.employee_code) || a.revision - b.revision);
     return sendSuccess(request, 'Lấy danh sách phiếu lương của kỳ thành công', items.map(mapPayslip));
+  });
+
+  app.post('/api/admin/payroll/periods/:id/notify-payslips', { preHandler: requirePermission('payroll.publish', 'payroll.manage', 'payroll.pay', 'system.config') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const period = ctx.db.payPeriods.get(id);
+    if (!period) throw Errors.notFound('Không tìm thấy kỳ lương');
+    if (period.status !== 'PUBLISHED' && period.status !== 'PAID') {
+      throw Errors.badRequest('Chỉ gửi thông báo & Email phiếu lương cho kỳ đã Phát hành hoặc Đã thanh toán');
+    }
+    const slips = await generatePayslips(ctx, period, request.auth!.user.id, {
+      actorEmail: request.auth?.user.email,
+      isPaid: period.status === 'PAID',
+      forceEmail: true,
+    });
+    return sendSuccess(request, `Đã đồng bộ phiếu lương và gửi thông báo kèm Email cho ${slips.length} nhân sự trong kỳ ${period.name}`, { count: slips.length });
   });
 
   app.get('/api/admin/payroll/payslips/:id/revisions', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
@@ -44,52 +67,60 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
   app.post('/api/admin/payroll/payslips/:id/revisions', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = zRevisionBody.parse(request.body);
-    const out = await applyPayslipAdjustment(ctx, id, body, request.auth!.user.id);
+    const out = await applyPayslipAdjustment(ctx, id, body, request.auth!.user.id, request.auth?.user.email);
     await ctx.audit.record(auditContext(request), { action: 'payslip.revision', entity: out.entity, entityId: out.entityId, before: out.before, after: out.after });
     reply.code(201);
     return sendSuccess(request, out.message, out.data);
   });
 
-  app.get('/api/me/payslips', { preHandler: requirePermission('self.payslip') }, async (request) => {
-    const emp = selfEmployee(ctx, request.auth!.user);
-    if (!emp) return sendSuccess(request, 'Chưa có hồ sơ nhân sự gắn với tài khoản', []);
+  app.get('/api/me/payslips', { preHandler: requireAuth() }, async (request) => {
+    const q = (request.query ?? {}) as Record<string, string | undefined>;
+    if (q.refresh === '1' || q.refresh === 'true') {
+      await Promise.all([ctx.db.payPeriods.load(), ctx.db.payrollSnapshots.load(), ctx.db.payslips.load(), ctx.db.employees.load(), ctx.db.users.load()]);
+    }
+    const user = request.auth!.user;
+    await ensurePublishedPeriodPayslips(ctx, user.id);
+    const emps = findAllLinkedEmployeesForUser(user, ctx);
+    if (emps.length === 0 && !user.employee_id) return sendSuccess(request, 'Chưa có hồ sơ nhân sự gắn với tài khoản', []);
     const visiblePeriods = new Set(ctx.db.payPeriods.filter((p) => p.status === 'PUBLISHED' || p.status === 'PAID').map((p) => p.id));
+    const seenPeriods = new Set<string>();
     const items = ctx.db.payslips
-      .filter((p) => p.employee_id === emp.id && p.status !== 'REVISED' && visiblePeriods.has(p.period_id))
-      .sort((a, b) => b.from_date.localeCompare(a.from_date));
+      .filter((p) => p.status !== 'REVISED' && visiblePeriods.has(p.period_id) && isOwnPayslip(p, emps, user))
+      .sort((a, b) => b.from_date.localeCompare(a.from_date) || b.net_vnd - a.net_vnd || b.revision - a.revision)
+      .filter((p) => (seenPeriods.has(p.period_id) ? false : (seenPeriods.add(p.period_id), true)));
     return sendSuccess(request, 'Lấy danh sách phiếu lương cá nhân thành công', items.map(mapPayslip));
   });
 
-  app.get('/api/me/payslips/:id', { preHandler: requirePermission('self.payslip') }, async (request) => {
+  app.get('/api/me/payslips/:id', { preHandler: requireAuth() }, async (request) => {
     const { id } = request.params as { id: string };
-    const emp = selfEmployee(ctx, request.auth!.user);
+    const user = request.auth!.user, emps = findAllLinkedEmployeesForUser(user, ctx);
     const slip = ctx.db.payslips.get(id);
     if (!slip) throw Errors.notFound('Không tìm thấy phiếu lương');
-    if (!emp || slip.employee_id !== emp.id) throw Errors.forbidden('Bạn chỉ được xem phiếu lương của chính mình');
+    if (!isOwnPayslip(slip, emps, user)) throw Errors.forbidden('Bạn chỉ được xem phiếu lương của chính mình');
     const period = ctx.db.payPeriods.get(slip.period_id);
     if (!period || (period.status !== 'PUBLISHED' && period.status !== 'PAID')) throw Errors.forbidden('Phiếu lương chưa được phát hành');
     return sendSuccess(request, 'Lấy chi tiết phiếu lương thành công', mapPayslip(slip));
   });
 
-  app.post('/api/me/payslips/:id/confirm', { preHandler: requirePermission('self.payslip') }, async (request) => {
+  app.post('/api/me/payslips/:id/confirm', { preHandler: requireAuth() }, async (request) => {
     const { id } = request.params as { id: string };
-    const emp = selfEmployee(ctx, request.auth!.user);
+    const user = request.auth!.user, emps = findAllLinkedEmployeesForUser(user, ctx);
     const slip = ctx.db.payslips.get(id);
     if (!slip) throw Errors.notFound('Không tìm thấy phiếu lương');
-    if (!emp || slip.employee_id !== emp.id) throw Errors.forbidden('Bạn chỉ được xác nhận phiếu lương của chính mình');
+    if (!isOwnPayslip(slip, emps, user)) throw Errors.forbidden('Bạn chỉ được xác nhận phiếu lương của chính mình');
     const now = nowIso();
-    const updated = await ctx.db.payslips.update(slip.id, slip.version, { viewed_by_employee_at: slip.viewed_by_employee_at || now, employee_confirmed_at: now, dispute_status: 'NONE' }, request.auth!.user.id);
+    const updated = await ctx.db.payslips.update(slip.id, slip.version, { viewed_by_employee_at: slip.viewed_by_employee_at || now, employee_confirmed_at: now, dispute_status: 'NONE' }, user.id);
     return sendSuccess(request, 'Đã xác nhận đồng ý phiếu lương thành công', mapPayslip(updated));
   });
 
-  app.post('/api/me/payslips/:id/dispute', { preHandler: requirePermission('self.payslip') }, async (request) => {
+  app.post('/api/me/payslips/:id/dispute', { preHandler: requireAuth() }, async (request) => {
     const { id } = request.params as { id: string };
     const body = z.object({ reason: z.string().trim().min(5, 'Lý do thắc mắc phiếu lương tối thiểu 5 ký tự') }).parse(request.body);
-    const emp = selfEmployee(ctx, request.auth!.user);
+    const user = request.auth!.user, emps = findAllLinkedEmployeesForUser(user, ctx);
     const slip = ctx.db.payslips.get(id);
     if (!slip) throw Errors.notFound('Không tìm thấy phiếu lương');
-    if (!emp || slip.employee_id !== emp.id) throw Errors.forbidden('Bạn chỉ được gửi phản hồi cho phiếu lương của chính mình');
-    const updated = await ctx.db.payslips.update(slip.id, slip.version, { viewed_by_employee_at: slip.viewed_by_employee_at || nowIso(), dispute_status: 'OPEN', dispute_reason: body.reason }, request.auth!.user.id);
+    if (!isOwnPayslip(slip, emps, user)) throw Errors.forbidden('Bạn chỉ được gửi phản hồi cho phiếu lương của chính mình');
+    const updated = await ctx.db.payslips.update(slip.id, slip.version, { viewed_by_employee_at: slip.viewed_by_employee_at || nowIso(), dispute_status: 'OPEN', dispute_reason: body.reason }, user.id);
     ['FINANCE', 'HR', 'ADMIN'].forEach((r) => ctx.realtime()?.toRole(r, SocketEvents.NOTIFICATION, { kind: 'PAYROLL_DISPUTE', code: slip.payslip_code, title: `Báo sai lệch phiếu lương (${slip.employee_code}): ${body.reason}` }));
     return sendSuccess(request, 'Đã gửi phản hồi thắc mắc phiếu lương tới bộ phận Kế toán / Nhân sự', mapPayslip(updated));
   });

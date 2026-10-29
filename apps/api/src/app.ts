@@ -47,14 +47,16 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
     const origin = request.headers.origin;
     const referer = request.headers.referer;
     const xfh = request.headers['x-forwarded-host'];
+    const clientOrigin = request.headers['x-umbm-origin'];
     if (origin) registerSmtpRelayOrigin(origin);
     if (referer) registerSmtpRelayOrigin(referer);
+    if (typeof clientOrigin === 'string' && clientOrigin) registerSmtpRelayOrigin(clientOrigin);
     if (typeof xfh === 'string' && xfh) registerSmtpRelayOrigin(`https://${xfh.split(',')[0]!.trim()}`);
     if (origin && (origin === ctx.env.API_PUBLIC_ORIGIN || origin.endsWith('.vercel.app') || isDev)) {
       reply.header('Access-Control-Allow-Origin', origin);
       reply.header('Access-Control-Allow-Credentials', 'true');
       reply.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-      reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-umbm-client, x-internal-token');
+      reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-umbm-client, x-umbm-origin, x-internal-token');
     }
     if (request.method === 'OPTIONS') {
       return reply.code(204).send();

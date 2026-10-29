@@ -1,24 +1,30 @@
 import { DEFAULT_SHIFT_LABELS, isEmployeeRole, ROLE_LABELS, STAFF_GROUP_LABELS, SYSTEM_CONFIG, type Candidate, type EmergencyLeave, type Employee, type Interview, type LeaveRequest, type PayPeriod, type Payslip, type Role, type ShiftSwap, type StaffGroup } from '@umbm/shared';
 import type { AppContext } from '../context.js';
+import { findLinkedEmployeeForUser, findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 import { resolveEmployeeRole, resolveFallbackRealEmail, resolveRolePortalPath } from './account-email-dispatcher.js';
 import { isSyntheticDemoEmail } from './email.service.js';
+import { getPublicFrontendOrigin } from './smtp-sender.js';
 
 export * from './account-email-dispatcher.js';
 const shiftLabel = (code: string) => (DEFAULT_SHIFT_LABELS as Record<string, string>)[code] ?? code;
+const webOrigin = (ctx: AppContext) => getPublicFrontendOrigin(ctx.env.API_PUBLIC_ORIGIN);
 
-export function resolveEmployeeContact(ctx: AppContext, empIdOrCode: string, useFallback = true) {
-  if (!empIdOrCode) return null;
-  const emp = ctx.db.employees.get(empIdOrCode) ?? ctx.db.employees.find((e) => e.employee_code === empIdOrCode);
-  const user = emp
-    ? (emp.user_id ? ctx.db.users.get(emp.user_id) : undefined) ?? ctx.db.users.find((u) => u.employee_id === emp.employee_code)
-    : ctx.db.users.get(empIdOrCode);
+export function resolveEmployeeContact(ctx: AppContext, empIdOrCode: string, useFallback = true, actorEmail?: string) {
+  const token = (empIdOrCode || '').trim();
+  if (!token) return null;
+  const directUser = ctx.db.users.get(token);
+  const emp = ctx.db.employees.get(token)
+    ?? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === token.toUpperCase())
+    ?? (directUser ? findLinkedEmployeeForUser(directUser, ctx) : undefined);
+  const user = directUser ?? (emp ? findLinkedUserForEmployee(emp, ctx) : undefined);
   if (!emp && !user) return null;
-  const code = emp?.employee_code || user?.employee_id || user?.username || empIdOrCode;
+  const code = emp?.employee_code || user?.employee_id || user?.username || token;
   const name = emp?.full_name || user?.display_name || user?.username || 'Nhân sự Ụm Bò Milk';
-  const rawEmail = (emp?.email && !isSyntheticDemoEmail(emp.email) ? emp.email : user?.email && !isSyntheticDemoEmail(user.email) ? user.email : '') || (useFallback ? resolveFallbackRealEmail(ctx) : `${code.toLowerCase()}@${SYSTEM_CONFIG.companyDomain}`);
+  const personalEmail = emp?.email && !isSyntheticDemoEmail(emp.email) ? emp.email : user?.email && !isSyntheticDemoEmail(user.email) ? user.email : '';
+  const rawEmail = personalEmail || (useFallback ? resolveFallbackRealEmail(ctx, actorEmail) : `${code.toLowerCase()}@${SYSTEM_CONFIG.companyDomain}`);
   const email = rawEmail.trim().toLowerCase(), role = resolveEmployeeRole(ctx, emp, user);
   const branchName = (emp?.branch_id ? ctx.db.branches.get(emp.branch_id)?.name : undefined) || 'Ụm Bò Milk';
-  return { email, name, code, role, branchId: emp?.branch_id || 'ALL', branchName };
+  return { email, name, code, role, userId: user?.id || '', branchId: emp?.branch_id || 'ALL', branchName };
 }
 
 export function resolveRoleContacts(ctx: AppContext, roles: string[], branchId?: string) {
@@ -63,19 +69,10 @@ export function queuePromotionOfficialEmail(ctx: AppContext, emp: Employee) {
   const contact = resolveEmployeeContact(ctx, emp.id);
   if (!contact) return;
   ctx.email.enqueue({
-    to: contact.email,
-    template: 'PROBATION_TO_OFFICIAL',
-    recipientName: contact.name,
-    referenceCode: `PRO-${emp.employee_code}`,
+    to: contact.email, template: 'PROBATION_TO_OFFICIAL', recipientName: contact.name, referenceCode: `PRO-${emp.employee_code}`,
     summary: `Chúc mừng bạn đã hoàn thành chu kỳ thử việc và chính thức được bổ nhiệm làm Nhân viên Chính thức tại ${SYSTEM_CONFIG.brandName}.`,
-    metadata: [
-      { label: 'Họ tên & Mã nhân sự', value: `${emp.full_name} (${emp.employee_code})` },
-      { label: 'Giai đoạn nhân sự mới', value: 'Nhân viên chính thức' },
-      { label: 'Ngày chính thức', value: emp.official_from || 'Hôm nay' },
-      { label: 'Chi nhánh làm việc', value: contact.branchName },
-    ],
-    actionLabel: isEmployeeRole(contact.role) ? 'Mở Cổng Nhân Viên' : 'Mở Hệ thống Quản trị',
-    actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${resolveRolePortalPath(contact.role, 'home')}`,
+    metadata: [{ label: 'Họ tên & Mã nhân sự', value: `${emp.full_name} (${emp.employee_code})` }, { label: 'Giai đoạn nhân sự mới', value: 'Nhân viên chính thức' }, { label: 'Ngày chính thức', value: emp.official_from || 'Hôm nay' }, { label: 'Chi nhánh làm việc', value: contact.branchName }],
+    actionLabel: isEmployeeRole(contact.role) ? 'Mở Cổng Nhân Viên' : 'Mở Hệ thống Quản trị', actionUrl: `${webOrigin(ctx)}${resolveRolePortalPath(contact.role, 'home')}`,
   });
 }
 
@@ -84,19 +81,10 @@ export function queueScheduleShiftEmail(ctx: AppContext, params: { empId: string
   if (!contact) return;
   const branchName = ctx.db.branches.get(params.branchId)?.name || contact.branchName;
   ctx.email.enqueue({
-    to: contact.email,
-    template: 'SCHEDULE_SHIFT_DECISION',
-    recipientName: contact.name,
-    referenceCode: params.code,
+    to: contact.email, template: 'SCHEDULE_SHIFT_DECISION', recipientName: contact.name, referenceCode: params.code,
     summary: `Ca làm việc ngày ${params.workDate} của bạn đã được phê duyệt phân ca chính thức.`,
-    metadata: [
-      { label: 'Nhân sự', value: `${contact.name} (${contact.code})` },
-      { label: 'Ngày làm việc', value: params.workDate },
-      { label: 'Khung ca & Giờ ca', value: `${params.shiftLabel} (${params.startAt} - ${params.endAt})` },
-      { label: 'Chi nhánh', value: branchName },
-    ],
-    actionLabel: 'Xem lịch làm việc của bạn',
-    actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${resolveRolePortalPath(contact.role, 'schedule')}`,
+    metadata: [{ label: 'Nhân sự', value: `${contact.name} (${contact.code})` }, { label: 'Ngày làm việc', value: params.workDate }, { label: 'Khung ca & Giờ ca', value: `${params.shiftLabel} (${params.startAt} - ${params.endAt})` }, { label: 'Chi nhánh', value: branchName }],
+    actionLabel: 'Xem lịch làm việc của bạn', actionUrl: `${webOrigin(ctx)}${resolveRolePortalPath(contact.role, 'schedule')}`,
   });
 }
 
@@ -165,22 +153,12 @@ export function queueSwapEventEmail(ctx: AppContext, swap: ShiftSwap, stage: 'CR
 
 export function queueEmergencyLeaveEmail(ctx: AppContext, emg: EmergencyLeave) {
   const empContact = resolveEmployeeContact(ctx, emg.employee_id);
-  const managers = resolveRoleContacts(ctx, ['STORE', 'HR'], emg.branch_id);
-  for (const mgr of managers.slice(0, 3)) {
+  for (const mgr of resolveRoleContacts(ctx, ['STORE', 'HR'], emg.branch_id).slice(0, 3)) {
     ctx.email.enqueue({
-      to: mgr.email,
-      template: 'EMERGENCY_LEAVE_ALERT',
-      recipientName: mgr.name,
-      referenceCode: emg.emergency_code,
+      to: mgr.email, template: 'EMERGENCY_LEAVE_ALERT', recipientName: mgr.name, referenceCode: emg.emergency_code,
       summary: `Cảnh báo nghỉ đột xuất sát giờ ca (<12h): Nhân sự ${empContact?.name || emg.employee_id} vừa báo nghỉ khẩn cấp ngày ${emg.work_date}.`,
-      metadata: [
-        { label: 'Mã báo cáo khẩn', value: emg.emergency_code },
-        { label: 'Nhân sự báo nghỉ', value: `${empContact?.name || emg.employee_id} (${empContact?.code || ''})` },
-        { label: 'Ngày & Khung ca', value: `${emg.work_date} (${shiftLabel(emg.shift_code)})` },
-        { label: 'Lý do khẩn cấp', value: emg.reason },
-      ],
-      actionLabel: 'Điều phối người thay thế ngay',
-      actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}/admin/schedules?section=workflows`,
+      metadata: [{ label: 'Mã báo cáo khẩn', value: emg.emergency_code }, { label: 'Nhân sự báo nghỉ', value: `${empContact?.name || emg.employee_id} (${empContact?.code || ''})` }, { label: 'Ngày & Khung ca', value: `${emg.work_date} (${shiftLabel(emg.shift_code)})` }, { label: 'Lý do khẩn cấp', value: emg.reason }],
+      actionLabel: 'Điều phối người thay thế ngay', actionUrl: `${webOrigin(ctx)}/admin/schedules?section=workflows`,
     });
   }
 }
@@ -189,30 +167,46 @@ export function queueTestAssignedEmail(ctx: AppContext, params: { empId: string;
   const contact = resolveEmployeeContact(ctx, params.empId);
   if (!contact) return;
   ctx.email.enqueue({
-    to: contact.email,
-    template: 'TEST_ASSIGNED',
-    recipientName: contact.name,
-    referenceCode: params.code,
+    to: contact.email, template: 'TEST_ASSIGNED', recipientName: contact.name, referenceCode: params.code,
     summary: `Phòng Nhân sự vừa giao cho bạn bài kiểm tra nghiệp vụ "${params.testTitle}".`,
-    metadata: [
-      { label: 'Nhân sự dự thi', value: `${contact.name} (${contact.code})` },
-      { label: 'Tên bài kiểm tra', value: params.testTitle },
-      { label: 'Thời lượng & Điểm đạt', value: `${params.durationMinutes} phút · Tối thiểu ${params.passScore}/100 điểm` },
-    ],
-    actionLabel: 'Làm bài kiểm tra ngay',
-    actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${resolveRolePortalPath(contact.role, 'test')}`,
+    metadata: [{ label: 'Nhân sự dự thi', value: `${contact.name} (${contact.code})` }, { label: 'Tên bài kiểm tra', value: params.testTitle }, { label: 'Thời lượng & Điểm đạt', value: `${params.durationMinutes} phút · Tối thiểu ${params.passScore}/100 điểm` }],
+    actionLabel: 'Làm bài kiểm tra ngay', actionUrl: `${webOrigin(ctx)}${resolveRolePortalPath(contact.role, 'test')}`,
   });
 }
 
-export function queuePayslipPublishedEmails(ctx: AppContext, period: PayPeriod, slips: Payslip[]) {
+export function queuePayslipPublishedEmails(ctx: AppContext, period: PayPeriod, slips: Payslip[], opts?: { actorEmail?: string; isPaid?: boolean; force?: boolean }): number {
+  let queued = 0;
+  const isPaid = Boolean(opts?.isPaid), fallbackEmail = resolveFallbackRealEmail(ctx, opts?.actorEmail), sentTo = new Set<string>();
   for (const slip of slips) {
-    const contact = resolveEmployeeContact(ctx, slip.employee_id, slips.length === 1);
-    if (!contact) continue;
+    const contact = resolveEmployeeContact(ctx, slip.employee_id || slip.employee_code, true, opts?.actorEmail);
+    const to = (contact?.email || fallbackEmail).trim().toLowerCase();
+    if (!to) continue;
+    sentTo.add(to);
+    const recipientName = contact?.name || slip.full_name || 'Nhân sự Ụm Bò Milk';
+    const refCode = isPaid ? `${slip.payslip_code}-PAID` : slip.payslip_code;
+    const dedupeKey = `${isPaid ? 'payslip_paid' : 'payslip_pub'}:${slip.id}:r${slip.revision}${opts?.force ? `:t${Date.now()}` : ''}`;
     ctx.email.enqueue({
-      to: contact.email, template: 'PAYSLIP_PUBLISHED', recipientName: contact.name, referenceCode: slip.payslip_code,
-      summary: `Phiếu lương kỳ "${period.name}" (${period.from_date} đến ${period.to_date}) của bạn đã được phát hành chính thức.`,
-      metadata: [{ label: 'Mã phiếu lương', value: slip.payslip_code }, { label: 'Kỳ lương', value: `${period.name} (${period.from_date} - ${period.to_date})` }, { label: 'Tổng giờ công', value: `${slip.approved_hours} giờ (OT: ${slip.ot_hours} giờ)` }, { label: 'Thực lĩnh (NET)', value: `${Number(slip.net_vnd || 0).toLocaleString('vi-VN')} đ` }],
-      actionLabel: 'Xem & Xác nhận Phiếu lương', actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${resolveRolePortalPath(contact.role, 'payslip')}`,
-    });
+      to, template: 'PAYSLIP_PUBLISHED', recipientName, referenceCode: refCode,
+      ...(isPaid ? { subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Xác nhận đã thanh toán lương kỳ ${period.name} (${slip.payslip_code})` } : {}),
+      summary: isPaid
+        ? `Phiếu lương kỳ "${period.name}" (${period.from_date} đến ${period.to_date}) của ${recipientName} đã được Kế toán xác nhận chi trả / tất toán chính thức.`
+        : `Phiếu lương kỳ "${period.name}" (${period.from_date} đến ${period.to_date}) của ${recipientName} đã được phát hành chính thức.`,
+      metadata: [{ label: 'Nhân sự', value: `${recipientName} (${slip.employee_code || contact?.code || ''})` }, { label: 'Mã phiếu lương', value: slip.payslip_code }, { label: 'Kỳ lương', value: `${period.name} (${period.from_date} - ${period.to_date})` }, { label: 'Tổng công & Giờ làm', value: `${slip.total_shifts_count} ca · ${slip.approved_hours} giờ (OT: ${slip.ot_hours} giờ)` }, { label: 'Thực lĩnh (NET)', value: `${Number(slip.net_vnd || 0).toLocaleString('vi-VN')} đ` }],
+      actionLabel: isPaid ? 'Xem Phiếu lương đã thanh toán' : 'Xem & Xác nhận Phiếu lương', actionUrl: `${webOrigin(ctx)}${resolveRolePortalPath(contact?.role, 'payslip')}`,
+    }, { dedupeKey });
+    queued += 1;
   }
+  if (slips.length > 0 && fallbackEmail && !sentTo.has(fallbackEmail)) {
+    const sumRef = `PL-${period.period_code}-${isPaid ? 'PAID-SUM' : 'PUB-SUM'}`, totalNet = slips.reduce((s, x) => s + Number(x.net_vnd || 0), 0);
+    ctx.email.enqueue({
+      to: fallbackEmail, template: 'PAYSLIP_PUBLISHED', recipientName: 'Bộ phận Kế toán & Nhân sự', referenceCode: sumRef,
+      subject: `${SYSTEM_CONFIG.emailSubjectPrefix} ${isPaid ? 'Xác nhận chi trả lương kỳ' : 'Tổng hợp phát hành phiếu lương kỳ'} ${period.name} (${slips.length} nhân sự)`,
+      summary: `Kỳ lương "${period.name}" (${period.from_date} đến ${period.to_date}) đã ${isPaid ? 'được xác nhận thanh toán' : 'phát hành phiếu lương chính thức'} cho ${slips.length} nhân sự.`,
+      metadata: [{ label: 'Kỳ lương', value: `${period.name} (${period.period_code})` }, { label: 'Số phiếu lương', value: `${slips.length} nhân sự` }, { label: 'Tổng thực lĩnh (NET)', value: `${totalNet.toLocaleString('vi-VN')} đ` }],
+      actionLabel: 'Mở Bảng lương & Phiếu lương', actionUrl: `${webOrigin(ctx)}/admin/payroll`,
+    }, { dedupeKey: `${sumRef}${opts?.force ? `:t${Date.now()}` : ''}` });
+    queued += 1;
+  }
+  if (queued > 0) void ctx.email.processQueueBatch(Math.min(10, queued));
+  return queued;
 }

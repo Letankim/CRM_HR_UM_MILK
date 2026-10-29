@@ -13,8 +13,9 @@ import { AuditService } from './services/audit.service.js';
 import { BackupService } from './services/backup.service.js';
 import { EmailService } from './services/email.service.js';
 import { ensureSyncedNotifications } from './services/notification-sync.service.js';
+import { ensurePublishedPeriodPayslips } from './services/payslip.service.js';
 import { ReconciliationService } from './services/reconciliation.service.js';
-import { sendSmtpTlsMail } from './services/smtp-sender.js';
+import { hasSmtpRelayOrigin, sendSmtpTlsMail } from './services/smtp-sender.js';
 import { GoogleSheetsGateway, type SheetsGateway } from './sheets/gateway.js';
 import { WriteQueue } from './sheets/write-queue.js';
 
@@ -55,8 +56,17 @@ async function main() {
     if (env.EMAIL_ENABLED) {
       mailSender = async (payload) => {
         if (smtpSender) {
-          await smtpSender(payload);
-          return;
+          try {
+            await smtpSender(payload);
+            return;
+          } catch (smtpErr) {
+            try {
+              await clients.sendMail({ ...payload, fromName: env.EMAIL_FROM_NAME, fromAddress: env.EMAIL_FROM_ADDRESS });
+              return;
+            } catch {
+              throw smtpErr;
+            }
+          }
         }
         await clients.sendMail({
           ...payload,
@@ -148,6 +158,7 @@ async function main() {
   await loadPromise;
   email.hydrateFromDatabase();
   await reconciliation.scanAndRepair({ autoFix: true, actorId: 'startup-sync' }).catch(() => undefined);
+  await ensurePublishedPeriodPayslips(ctx, 'startup-sync', { skipEmail: env.NODE_ENV === 'production' && !hasSmtpRelayOrigin() }).catch(() => undefined);
   await ensureSyncedNotifications(ctx).catch(() => undefined);
   db.startAutoRefresh(env.CACHE_REFRESH_SECONDS, app.log);
   backup.startEmbeddedScheduler(app.log);

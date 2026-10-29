@@ -8,12 +8,18 @@ import { zBool, zSystemColumns } from './schemas.js';
  * Chính sách, Bảo trì, Cài đặt & Truyền thông nội bộ theo chuẩn V5.1.
  */
 
+const enumOrDefault = <T extends readonly [string, ...string[]]>(values: T, fallback: T[number]) =>
+  z.preprocess((v) => {
+    const s = typeof v === 'string' ? v.trim() : v;
+    return s === '' || s === null || s === undefined || !values.includes(String(s)) ? fallback : s;
+  }, z.enum(values));
+
 export const zPayslip = zSystemColumns.extend({
   period_id: z.string(),
   employee_id: z.string(),
-  snapshot_id: z.string(),
+  snapshot_id: z.string().default(''),
   revision: z.preprocess((v) => (v === '' || v === null || v === undefined || Number(v) < 1 ? 1 : Number(v)), z.number().int().min(1)),
-  status: z.enum(['DRAFT', 'PUBLISHED', 'REVISED', 'PAID']).default('PUBLISHED'),
+  status: enumOrDefault(['DRAFT', 'PUBLISHED', 'REVISED', 'PAID'] as const, 'PUBLISHED'),
   published_at: z.string().default(''),
   payslip_code: z.string().default(''),
   period_name: z.string().default(''),
@@ -38,7 +44,7 @@ export const zPayslip = zSystemColumns.extend({
   breakdown_json: z.string().default('{}'),
   viewed_by_employee_at: z.string().default(''),
   employee_confirmed_at: z.string().default(''),
-  dispute_status: z.enum(['NONE', 'OPEN', 'RESOLVED']).default('NONE'),
+  dispute_status: enumOrDefault(['NONE', 'OPEN', 'RESOLVED'] as const, 'NONE'),
   dispute_reason: z.string().default(''),
   pdf_drive_file_id: z.string().default(''),
 });

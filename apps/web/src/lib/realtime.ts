@@ -97,6 +97,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     const onNotification = (payload?: { actorId?: string; kind?: string; title?: string; summary?: string; code?: string }) => {
       if (isOutOfBranchOrDup('ntf', payload)) return;
       ['notifications', 'mkt-comms', 'nv-comms'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
     };
     let scheduleTimer: ReturnType<typeof setTimeout> | null = null;
     const triggerScheduleSync = () => {
@@ -133,9 +134,10 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       ['accounts', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
     };
     const onPayrollUpdated = () => {
-      ['salary-profiles', 'salary-history', 'employees', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items'].forEach((k) =>
+      ['salary-profiles', 'salary-history', 'employees', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items', 'notifications'].forEach((k) =>
         qc.invalidateQueries({ queryKey: [k] }),
       );
+      qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
     };
     s.on('auth:forceLogout', onForceLogout);
     s.on('system:maintenance', onMaintenance);

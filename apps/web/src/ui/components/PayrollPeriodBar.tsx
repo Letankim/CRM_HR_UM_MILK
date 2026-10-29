@@ -1,7 +1,7 @@
 'use client';
 
 import { Alert, App, Button, Flex, Input, Popconfirm, Space, Steps, Tag } from 'antd';
-import { CalculatorOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, RollbackOutlined } from '@ant-design/icons';
+import { CalculatorOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, MailOutlined, RollbackOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { PAY_PERIOD_STATUS_LABELS, type PayPeriodStatus } from '@umbm/shared';
 import { useState } from 'react';
@@ -47,8 +47,19 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
     onSuccess: () => { message.success('Đã xóa kỳ lương'); onDeleted(); refresh(); },
     onError,
   });
+  const notifyPayslips = useMutation({
+    mutationFn: () => api.post<{ count: number }>(`/admin/payroll/periods/${period.id}/notify-payslips`),
+    onSuccess: (d) => {
+      message.success(`Đã đồng bộ phiếu lương, gửi thông báo chuông và Email cho ${d?.count ?? period.total_employees} nhân sự`);
+      qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
+      refresh();
+    },
+    onError,
+  });
 
   const editable = period.status === 'DRAFT' || period.status === 'RECONCILE';
+  const isPublishedOrPaid = period.status === 'PUBLISHED' || period.status === 'PAID';
+  const canNotify = canManage || can('payroll.publish', 'payroll.pay');
   const next = NEXT[period.status];
   const back = BACK[period.status];
   const canDoNext = next?.next === 'PUBLISHED'
@@ -71,11 +82,16 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
           <span>Tổng thực lĩnh: <strong className="num" style={{ color: '#15803D', fontSize: 15 }}>{fmtVnd(period.total_net_vnd)}</strong></span>
           <StatusTag value={period.status} label={PAY_PERIOD_STATUS_LABELS[period.status]} />
           {period.paid_at && (
-            <Tag color="green">Đã thanh toán: {String(period.paid_at).slice(0, 16).replace('T', ' ')}{period.paid_by ? ` (${period.paid_by})` : ''}{period.note ? ` · CT: ${period.note}` : ''}</Tag>
+            <Tag color="green">Đã thanh toán: {String(period.paid_at).slice(0, 16).replace('T', ' ')}{period.paid_by_name ? ` (${period.paid_by_name})` : ''}{period.note ? ` · CT: ${period.note}` : ''}</Tag>
           )}
         </Space>
-        {(canManage || canDoNext) && (
+        {(canManage || canDoNext || (isPublishedOrPaid && canNotify)) && (
           <Space size={8} wrap>
+            {isPublishedOrPaid && canNotify && (
+              <Button size="small" icon={<MailOutlined />} loading={notifyPayslips.isPending} onClick={() => notifyPayslips.mutate()}>
+                Gửi lại thông báo &amp; Email
+              </Button>
+            )}
             {canManage && editable && <Button size="small" icon={<CalculatorOutlined />} loading={recalc.isPending} onClick={() => recalc.mutate()}>Tính lại</Button>}
             {canManage && editable && (
               <Popconfirm title="Xóa kỳ lương này?" description="Toàn bộ bảng lương nháp của kỳ sẽ bị xóa." okText="Xóa" cancelText="Hủy bỏ" okButtonProps={{ danger: true, icon: <DeleteOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onConfirm={() => remove.mutateAsync()}>

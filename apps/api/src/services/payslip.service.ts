@@ -1,21 +1,90 @@
 import type { PayPeriod, Payslip, PayrollSnapshot } from '@umbm/shared';
 import { PAYSLIP_STATUS_LABELS, EMPLOYEE_STAGE_LABELS } from '@umbm/shared';
 import type { AppContext } from '../context.js';
-import { Errors } from '../lib/errors.js';
 import { nowIso } from '../lib/time.js';
+import { SocketEvents } from '../realtime/realtime.js';
+import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 import { queuePayslipPublishedEmails } from './action-email-dispatcher.js';
+import { isSyntheticDemoEmail } from './email.service.js';
+import { ensureSyncedNotifications } from './notification-sync.service.js';
 import { mapSnapshot, recalculatePeriodSnapshots } from './payroll-snapshot.service.js';
 
-/** Sinh Phiếu lương (PAYSLIPS) bản số 1 từ Snapshot khi kỳ lương chuyển sang PUBLISHED */
-export async function generatePayslips(ctx: AppContext, period: PayPeriod, actorId: string) {
-  const snaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === period.id);
-  const existingEmpIds = new Set(ctx.db.payslips.filter((p) => p.period_id === period.id).map((p) => p.employee_id));
-  const toCreate = snaps.filter((s) => !existingEmpIds.has(s.employee_id));
+function collectRealPayslipEmailRefs(ctx: AppContext): string {
+  return [
+    ...ctx.db.deliveryLogs.all().filter((l) => l.channel === 'EMAIL' && l.status !== 'FAILED' && !isSyntheticDemoEmail(l.recipient_user_id) && l.announcement_id.startsWith('PAYSLIP_PUBLISHED:')).map((l) => l.announcement_id),
+    ...ctx.email.recent(200).filter((r) => r.template === 'PAYSLIP_PUBLISHED' && r.status !== 'FAILED' && !isSyntheticDemoEmail(r.to)).map((r) => `${r.referenceCode} ${r.subject}`),
+  ].join(' | ');
+}
+
+function emitPayslipRealtime(ctx: AppContext, period: PayPeriod, slips: Payslip[], isPaid = false) {
+  ctx.realtime()?.broadcast(SocketEvents.PAYROLL_UPDATED, { periodId: period.id, status: period.status });
+  const notifiedUsers = new Set<string>();
+  for (const s of slips) {
+    const emp = ctx.db.employees.get(s.employee_id) ?? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === s.employee_code.trim().toUpperCase());
+    const u = emp ? findLinkedUserForEmployee(emp, ctx) : undefined;
+    if (u && !notifiedUsers.has(u.id)) {
+      notifiedUsers.add(u.id);
+      ctx.realtime()?.toUser(u.id, SocketEvents.NOTIFICATION, {
+        kind: 'PAYROLL', code: s.payslip_code,
+        title: isPaid ? `Đã thanh toán lương kỳ ${period.name}` : `Phiếu lương ${period.name} đã phát hành`,
+      });
+    }
+  }
+}
+
+/** Sinh Phiếu lương (PAYSLIPS), đồng bộ thông báo chuông & gửi Email cho nhân viên */
+export async function generatePayslips(
+  ctx: AppContext,
+  period: PayPeriod,
+  actorId: string,
+  opts?: { actorEmail?: string; isPaid?: boolean; forceEmail?: boolean; skipEmail?: boolean },
+) {
+  let snaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === period.id);
+  if (snaps.length === 0) {
+    await recalculatePeriodSnapshots(ctx, period, actorId, true);
+    snaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === period.id);
+  }
+  const existingActive = ctx.db.payslips.filter((p) => p.period_id === period.id && p.status !== 'REVISED');
+  const hasSlipForSnap = (s: PayrollSnapshot) =>
+    existingActive.some((p) => p.employee_id === s.employee_id || (Boolean(s.employee_code) && p.employee_code.trim().toUpperCase() === s.employee_code.trim().toUpperCase()));
+  const toCreate = snaps.filter((s) => !hasSlipForSnap(s));
+  const targetStatus: Payslip['status'] = period.status === 'PAID' || opts?.isPaid ? 'PAID' : 'PUBLISHED';
   const created: Payslip[] = toCreate.length > 0
-    ? await Promise.all(toCreate.map((s) => ctx.db.payslips.insert(buildPayslipPayload(ctx, period, s, 1, s.net_vnd, s.gross_vnd), actorId)))
+    ? await Promise.all(toCreate.map((s) => ctx.db.payslips.insert({ ...buildPayslipPayload(ctx, period, s, 1, s.net_vnd, s.gross_vnd), status: targetStatus }, actorId)))
     : [];
-  queuePayslipPublishedEmails(ctx, period, created);
-  return created;
+  if (targetStatus === 'PAID') {
+    const unpaid = existingActive.filter((p) => p.status === 'PUBLISHED');
+    if (unpaid.length > 0) await ctx.db.payslips.batchUpdate(unpaid.map((p) => ({ id: p.id, expectedVersion: p.version, patch: { status: 'PAID' as const } })), actorId);
+  }
+  const activeSlips = ctx.db.payslips.filter((p) => p.period_id === period.id && p.status !== 'REVISED');
+  let slipsToEmail: Payslip[] = [];
+  if (!opts?.skipEmail) {
+    const sentRefs = collectRealPayslipEmailRefs(ctx);
+    const periodHasEmail = sentRefs.includes(period.period_code);
+    slipsToEmail = opts?.forceEmail || opts?.isPaid
+      ? activeSlips
+      : activeSlips.filter((p) => created.some((c) => c.id === p.id) || (!periodHasEmail && !sentRefs.includes(p.payslip_code)));
+    if (slipsToEmail.length > 0) queuePayslipPublishedEmails(ctx, period, slipsToEmail, { actorEmail: opts?.actorEmail, isPaid: opts?.isPaid, force: opts?.forceEmail });
+  }
+  await ensureSyncedNotifications(ctx);
+  if (created.length > 0 || slipsToEmail.length > 0 || opts?.isPaid) emitPayslipRealtime(ctx, period, activeSlips, Boolean(opts?.isPaid));
+  return activeSlips;
+}
+
+/** Tự động kiểm tra & sinh bù phiếu lương + thông báo/email còn thiếu cho các kỳ đã PUBLISHED / PAID */
+export async function ensurePublishedPeriodPayslips(ctx: AppContext, actorId = 'system-sync', opts?: { skipEmail?: boolean }): Promise<void> {
+  const closedPeriods = ctx.db.payPeriods.filter((p) => p.status === 'PUBLISHED' || p.status === 'PAID');
+  if (closedPeriods.length === 0) return;
+  const sentRefs = opts?.skipEmail ? '' : collectRealPayslipEmailRefs(ctx);
+  for (const p of closedPeriods) {
+    const snaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === p.id);
+    const active = ctx.db.payslips.filter((x) => x.period_id === p.id && x.status !== 'REVISED');
+    const needsPaidSync = p.status === 'PAID' && active.some((x) => x.status === 'PUBLISHED');
+    const missingEmail = !opts?.skipEmail && active.length > 0 && !sentRefs.includes(p.period_code) && active.some((x) => !sentRefs.includes(x.payslip_code));
+    if (snaps.length === 0 || active.length < snaps.length || needsPaidSync || missingEmail) {
+      await generatePayslips(ctx, p, actorId, { skipEmail: opts?.skipEmail });
+    }
+  }
 }
 
 export function buildPayslipPayload(ctx: AppContext, period: PayPeriod, s: PayrollSnapshot, revision: number, net: number, gross: number) {
@@ -46,138 +115,10 @@ export function mapPayslip(p: Payslip) {
     totalShiftsCount: p.total_shifts_count, approvedHours: p.approved_hours, otHours: p.ot_hours, baseSalaryVnd: p.base_salary_vnd,
     otPayVnd: p.ot_pay_vnd, totalAllowancesVnd: p.total_allowances_vnd, totalBonusVnd: p.total_bonus_vnd,
     totalAdjustmentsVnd: p.total_adjustments_vnd, totalDeductionsVnd: p.total_deductions_vnd,
-    grossVnd: p.gross_vnd, netVnd: p.net_vnd, disputeStatus: p.dispute_status, breakdown, version: p.version,
+    grossVnd: p.gross_vnd, netVnd: p.net_vnd, viewedByEmployeeAt: p.viewed_by_employee_at || null,
+    employeeConfirmedAt: p.employee_confirmed_at || null, disputeStatus: p.dispute_status, disputeReason: p.dispute_reason || '',
+    breakdown, version: p.version,
   };
 }
 
-export async function applyPayslipAdjustment(
-  ctx: AppContext,
-  id: string,
-  body: { version?: number; delta_vnd: number; reason: string; field_changed: string },
-  actorId: string,
-) {
-  const directSlip = ctx.db.payslips.get(id);
-  if (directSlip && directSlip.status === 'REVISED') {
-    throw Errors.conflict('Phiếu lương này đã được thay thế bởi bản điều chỉnh mới hơn');
-  }
-  const snapById = ctx.db.payrollSnapshots.get(id);
-  let slip =
-    directSlip ??
-    ctx.db.payslips.find((p) => p.snapshot_id === id && p.status !== 'REVISED') ??
-    (snapById
-      ? ctx.db.payslips.find(
-          (p) => p.period_id === snapById.period_id && (p.employee_id === snapById.employee_id || p.employee_code === snapById.employee_code) && p.status !== 'REVISED',
-        )
-      : undefined);
-  const snap =
-    snapById ??
-    (slip
-      ? ctx.db.payrollSnapshots.get(slip.snapshot_id) ??
-        ctx.db.payrollSnapshots.find((s) => s.period_id === slip!.period_id && (s.employee_id === slip!.employee_id || s.employee_code === slip!.employee_code))
-      : undefined);
-  const period = ctx.db.payPeriods.get(slip?.period_id ?? snap?.period_id ?? '');
-  if (!period || !snap) throw Errors.notFound('Không tìm thấy dữ liệu bảng lương hoặc phiếu lương của nhân sự này');
-
-  if (period.status === 'DRAFT' || period.status === 'RECONCILE') {
-    const beforeNet = snap.net_vnd;
-    const afterNet = beforeNet + body.delta_vnd;
-    if (afterNet < 0) throw Errors.fieldValidation('delta_vnd', 'OUT_OF_RANGE', 'Số tiền điều chỉnh làm thực lĩnh âm, vui lòng kiểm tra lại', body.delta_vnd);
-    const isAdd = body.delta_vnd > 0;
-    const absDelta = Math.abs(body.delta_vnd);
-    await ctx.db.payrollItems.insert(
-      {
-        period_id: period.id, employee_id: snap.employee_id, branch_id: snap.branch_id, work_date: period.to_date,
-        item_type: isAdd ? 'ADJUSTMENT_ADD' : 'DEDUCTION_APPROVED', category_code: isAdd ? 'ADJUSTMENT' : 'DEDUCTION',
-        title: body.reason, direction: isAdd ? 'ADD' : 'DEDUCT', quantity: 1, unit_amount_vnd: absDelta, total_amount_vnd: absDelta,
-        source_ref_id: snap.id, policy_version: 'v5.1', approval_status: 'APPROVED', approved_by: actorId, approved_at: nowIso(), note: body.reason,
-      },
-      actorId,
-    );
-    const nextRev = ctx.db.payslipRevisions.filter((r) => r.period_id === period.id && r.employee_id === snap.employee_id).length + 1;
-    await ctx.db.payslipRevisions.insert(
-      {
-        payslip_id: slip?.id ?? snap.id, revision: nextRev, reason: body.reason, delta_vnd: body.delta_vnd, created_reason_by: actorId,
-        period_id: period.id, employee_id: snap.employee_id, field_changed: body.field_changed,
-        before_amount_vnd: beforeNet, after_amount_vnd: afterNet, details_json: JSON.stringify({ mode: 'PAYROLL_SHEET_ADJUSTMENT', period_status: period.status }),
-        status: 'APPROVED', approved_by: actorId, approved_at: nowIso(),
-      },
-      actorId,
-    );
-    await recalculatePeriodSnapshots(ctx, period, actorId, true);
-    const updatedSnap = ctx.db.payrollSnapshots.get(snap.id) ?? snap;
-    return {
-      entity: 'PAYROLL_SNAPSHOTS' as const,
-      entityId: updatedSnap.id,
-      before: { net_vnd: beforeNet },
-      after: { net_vnd: updatedSnap.net_vnd, reason: body.reason },
-      message: `Đã điều chỉnh bảng lương lần ${nextRev} và cập nhật thực lĩnh mới`,
-      data: { ...mapSnapshot(updatedSnap, ctx), revision: nextRev },
-    };
-  }
-
-  if (!slip) slip = await ctx.db.payslips.insert(buildPayslipPayload(ctx, period, snap, 1, snap.net_vnd, snap.gross_vnd), actorId);
-  const activeSlip = slip;
-  const after = activeSlip.net_vnd + body.delta_vnd;
-  if (after < 0) throw Errors.fieldValidation('delta_vnd', 'OUT_OF_RANGE', 'Số tiền điều chỉnh làm thực lĩnh âm, vui lòng kiểm tra lại', body.delta_vnd);
-
-  const nextRevision = activeSlip.revision + 1;
-  const result = await ctx.reconciliation.executeSaga({
-    sagaKey: `payslip-revision-${activeSlip.id}-r${nextRevision}`,
-    operation: 'PAYROLL_PAYSLIP_REVISION',
-    actorId,
-    initialContext: { newSlip: null as Payslip | null },
-    steps: [
-      {
-        name: 'INSERT_REVISION_LOG',
-        run: async () => {
-          await ctx.db.payslipRevisions.insert(
-            {
-              payslip_id: activeSlip.id, revision: nextRevision, reason: body.reason, delta_vnd: body.delta_vnd, created_reason_by: actorId,
-              period_id: activeSlip.period_id, employee_id: activeSlip.employee_id, field_changed: body.field_changed,
-              before_amount_vnd: activeSlip.net_vnd, after_amount_vnd: after, details_json: JSON.stringify({ previous_payslip_code: activeSlip.payslip_code }),
-              status: 'APPROVED', approved_by: actorId, approved_at: nowIso(),
-            },
-            actorId,
-          );
-        },
-      },
-      {
-        name: 'INSERT_NEW_PAYSLIP_REVISION',
-        run: async (s) => { s.newSlip = await ctx.db.payslips.insert(buildPayslipPayload(ctx, period, snap, nextRevision, after, activeSlip.gross_vnd + Math.max(0, body.delta_vnd)), actorId); },
-      },
-      { name: 'MARK_PREVIOUS_REVISED', run: async () => { await ctx.db.payslips.update(activeSlip.id, body.version ?? activeSlip.version, { status: 'REVISED' }, actorId); } },
-      {
-        name: 'SYNC_SNAPSHOT_AND_PERIOD_TOTALS',
-        run: async () => {
-          const ls = ctx.db.payrollSnapshots.get(snap.id);
-          if (ls) {
-            await ctx.db.payrollSnapshots.update(ls.id, ls.version, {
-              positive_adjustments_vnd: body.delta_vnd > 0 ? ls.positive_adjustments_vnd + body.delta_vnd : ls.positive_adjustments_vnd,
-              approved_deductions_vnd: body.delta_vnd < 0 ? ls.approved_deductions_vnd + Math.abs(body.delta_vnd) : ls.approved_deductions_vnd,
-              gross_vnd: body.delta_vnd > 0 ? ls.gross_vnd + body.delta_vnd : ls.gross_vnd,
-              net_vnd: after,
-            }, actorId);
-          }
-          const lp = ctx.db.payPeriods.get(period.id);
-          if (lp) {
-            await ctx.db.payPeriods.update(lp.id, lp.version, {
-              total_gross_vnd: lp.total_gross_vnd + Math.max(0, body.delta_vnd),
-              total_deductions_vnd: lp.total_deductions_vnd + (body.delta_vnd < 0 ? Math.abs(body.delta_vnd) : 0),
-              total_net_vnd: lp.total_net_vnd + body.delta_vnd,
-            }, actorId);
-          }
-        },
-      },
-    ],
-    resultSelector: (s) => s.newSlip!,
-  });
-  queuePayslipPublishedEmails(ctx, period, [result]);
-  return {
-    entity: 'PAYSLIPS' as const,
-    entityId: result.id,
-    before: { payslip_code: activeSlip.payslip_code, net_vnd: activeSlip.net_vnd },
-    after: { payslip_code: result.payslip_code, net_vnd: result.net_vnd, reason: body.reason },
-    message: `Đã tạo phiếu lương điều chỉnh lần ${nextRevision} (phiếu gốc được giữ nguyên để truy vết)`,
-    data: mapPayslip(result),
-  };
-}
+export { applyPayslipAdjustment } from './payslip-adjustment.service.js';
