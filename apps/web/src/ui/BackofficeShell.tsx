@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, Drawer, Grid, Layout, Menu, Spin, Tag, Tooltip } from 'antd';
+import { Alert, Drawer, Grid, Layout, Menu, Spin, Tooltip } from 'antd';
 import type { ItemType } from 'antd/es/menu/interface';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -10,6 +10,7 @@ import { isEmployeeRole, SYSTEM_CONFIG, type Permission } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { canAccessPath, isUnauthorized, loginPath, resolveLandingRoute, useLogout, useMe } from '@/lib/auth';
 import { useRealtime } from '@/lib/realtime';
+import { SiderFooterHelpAndVersion } from './components/SiderFooterHelpAndVersion';
 import { TopHeaderBar } from './components/TopHeaderBar';
 import { BACKOFFICE_NAV } from './nav-config';
 import { BRAND } from './theme';
@@ -147,16 +148,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
     </div>
   );
 
-  const versionFooter = (
-    <div style={{ flexShrink: 0, padding: isCompactSider ? '10px 4px' : '10px 16px', borderTop: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', justifyContent: isCompactSider ? 'center' : 'space-between', background: '#FFFFFF' }}>
-      {!isCompactSider && <span style={{ fontSize: 12, color: '#64748B' }}>Phiên bản hệ thống</span>}
-      <Tooltip placement="right" title={isCompactSider ? `Phiên bản hệ thống ${versionLabel}` : undefined}>
-        <Tag color="blue" style={{ margin: 0, borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
-          {isCompactSider ? versionLabel.replace(/\.0$/, '') : versionLabel}
-        </Tag>
-      </Tooltip>
-    </div>
-  );
+  const versionFooter = <SiderFooterHelpAndVersion collapsed={isCompactSider} versionLabel={versionLabel} />;
 
   return (
     <Layout style={{ minHeight: '100dvh' }}>

@@ -5,7 +5,7 @@ import type { ItemType } from 'antd/es/menu/interface';
 import {
   AppstoreOutlined, BellOutlined, BookOutlined, CalendarOutlined, CustomerServiceOutlined, DownOutlined, EnvironmentOutlined,
   FieldTimeOutlined, FileDoneOutlined, FileTextOutlined, HomeOutlined, KeyOutlined, LogoutOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined, MutedOutlined, NotificationOutlined, ReloadOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined, MutedOutlined, NotificationOutlined, QuestionCircleOutlined, ReloadOutlined,
   RightOutlined, SoundOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,6 +18,7 @@ import { api } from '@/lib/api';
 import { isUnauthorized, loginPath, useLogout, useMe } from '@/lib/auth';
 import { useNotificationSound, useTrackUnreadNotifications } from '@/lib/notification-sound';
 import { useRealtime } from '@/lib/realtime';
+import { SiderFooterHelpAndVersion, USER_GUIDE_HTML_URL } from './components/SiderFooterHelpAndVersion';
 import { UserProfileModal } from './components/UserProfileModal';
 import { BRAND } from './theme';
 
@@ -96,6 +97,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
         { label: `Âm thanh thông báo: ${soundEnabled ? 'Đang bật' : 'Đang tắt'}`, desc: 'Bấm để Bật / Tắt chuông báo thông báo mới', icon: soundEnabled ? <SoundOutlined /> : <MutedOutlined />, onClick: toggleSound },
         { label: 'Hồ sơ cá nhân & Ngân hàng', desc: 'Cập nhật SĐT, Email, STK', icon: <UserOutlined />, onClick: () => setProfileTab('info') },
         { label: 'Đổi mật khẩu / Mã PIN', desc: 'Cập nhật mã bảo mật cá nhân', icon: <KeyOutlined />, onClick: () => setProfileTab('password') },
+        { label: 'Hướng dẫn sử dụng hệ thống', desc: 'Cẩm nang thao tác toàn bộ chức năng', icon: <QuestionCircleOutlined />, onClick: () => window.open(USER_GUIDE_HTML_URL, '_blank', 'noopener,noreferrer') },
       ].map((item) => (
         <div key={item.label} onClick={() => { setMoreOpen(false); item.onClick(); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${BRAND.border}`, background: '#F8FAFC' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ color: BRAND.primary, fontSize: 16 }}>{item.icon}</span><div><div style={{ fontSize: 13, fontWeight: 600, color: BRAND.text, lineHeight: 1.25 }}>{item.label}</div><div style={{ fontSize: 11, color: BRAND.textSecondary }}>{item.desc}</div></div></div>
@@ -117,10 +119,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', padding: collapsed ? '8px 0' : '6px 4px' }}>
               <Menu className="umbm-sider-menu" mode="inline" inlineIndent={10} inlineCollapsed={collapsed} defaultOpenKeys={DESKTOP_GROUPS.map((g) => g.key)} items={desktopMenuItems} selectedKeys={[activeDesktopItem.item.key]} style={{ borderInlineEnd: 'none' }} />
             </div>
-            <div style={{ flexShrink: 0, padding: collapsed ? '10px 4px' : '10px 16px', borderTop: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'space-between', background: '#FFFFFF' }}>
-              {!collapsed && <span style={{ fontSize: 12, color: '#64748B' }}>Phiên bản hệ thống</span>}
-              <Tooltip placement="right" title={collapsed ? `Phiên bản hệ thống ${versionLabel}` : undefined}><Tag color="blue" style={{ margin: 0, borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{collapsed ? versionLabel.replace(/\.0$/, '') : versionLabel}</Tag></Tooltip>
-            </div>
+            <SiderFooterHelpAndVersion collapsed={collapsed} versionLabel={versionLabel} />
           </div>
         </Layout.Sider>
 
