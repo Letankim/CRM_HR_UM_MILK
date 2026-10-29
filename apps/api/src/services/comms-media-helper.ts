@@ -131,7 +131,7 @@ export function enrichMediaAsset(
   const storageSourceLabel = !rawDrive || rawDrive.startsWith('drive://')
     ? 'Kho Media mẫu nội bộ'
     : driveId || rawDrive.startsWith('local_')
-      ? 'Google Drive Hệ thống (05_MKT_MEDIA)'
+      ? 'Google Drive Hệ thống'
       : 'Kho Media Hệ thống';
   const externalSourceUrl = /^https?:\/\//i.test(rawDrive) ? rawDrive : '';
   const creator = ctx.db.users.get(m.uploaded_by || m.created_by);

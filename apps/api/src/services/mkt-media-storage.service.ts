@@ -37,13 +37,13 @@ function putMediaRamCache(key: string, buf: Buffer): void {
   mktMediaRamCache.set(key, buf);
 }
 
-function saveMediaCache(ctx: AppContext, key: string, buf: Buffer): void {
+export function saveMediaCache(ctx: AppContext, key: string, buf: Buffer): void {
   if (!key || buf.length === 0) return;
   putMediaRamCache(key, buf);
   try { writeFileSync(join(getLocalMktMediaDir(ctx), `${key}.bin`), buf); } catch { /* ignore ephemeral disk */ }
 }
 
-function readMediaCache(ctx: AppContext, key: string): Buffer | null {
+export function readMediaCache(ctx: AppContext, key: string): Buffer | null {
   if (!key) return null;
   const ramHit = mktMediaRamCache.get(key);
   if (ramHit) { putMediaRamCache(key, ramHit); return ramHit; }
@@ -59,7 +59,7 @@ function readMediaCache(ctx: AppContext, key: string): Buffer | null {
 
 export function extractGoogleDriveFileId(rawInput: string): string | null {
   const raw = String(rawInput || '').trim();
-  if (!raw || raw.startsWith('drive://') || raw.startsWith('data:') || raw.startsWith('local_') || raw.startsWith('/')) {
+  if (!raw || raw.startsWith('drive://') || raw.startsWith('data:') || raw.startsWith('local_') || raw.startsWith('h_') || raw.startsWith('/')) {
     return null;
   }
   const pathMatch = raw.match(/(?:drive|docs)\.google\.com\/(?:file|document|presentation|spreadsheets)\/d\/([a-zA-Z0-9_-]{8,})/i);

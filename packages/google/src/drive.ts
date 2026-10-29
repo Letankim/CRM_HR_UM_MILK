@@ -78,6 +78,22 @@ export async function downloadFile(drive: drive_v3.Drive, fileId: string): Promi
   return Buffer.from(res.data as ArrayBuffer);
 }
 
+export async function getFileMeta(
+  drive: drive_v3.Drive,
+  fileId: string,
+): Promise<{ id: string; name: string; mimeType: string; sizeBytes: number } | null> {
+  const res = await withRetry(() =>
+    drive.files.get({ fileId, fields: 'id,name,mimeType,size', supportsAllDrives: true }),
+  );
+  if (!res.data.id) return null;
+  return {
+    id: res.data.id,
+    name: res.data.name ?? '',
+    mimeType: res.data.mimeType ?? '',
+    sizeBytes: Number(res.data.size ?? 0),
+  };
+}
+
 export async function listChildFolders(drive: drive_v3.Drive, parentId: string): Promise<{ id: string; name: string }[]> {
   const out: { id: string; name: string }[] = [];
   let pageToken: string | undefined;

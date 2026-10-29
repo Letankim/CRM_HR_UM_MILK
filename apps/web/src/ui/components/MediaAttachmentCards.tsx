@@ -57,7 +57,7 @@ export function normalizeClientMediaItem(raw: Record<string, unknown>): MediaAss
   const previewUrl = isImg ? openUrl : '';
   const cat = String(raw.category || 'BANNER'), internalOnly = raw.is_internal_only !== false;
   const externalSourceUrl = String(raw.externalSourceUrl || (/^https?:\/\//i.test(rawDriveField) ? rawDriveField : ''));
-  const storageSourceLabel = String(raw.storageSourceLabel || (isInternal ? 'Kho Media mẫu nội bộ' : 'Google Drive Hệ thống (05_MKT_MEDIA)'));
+  const storageSourceLabel = String(raw.storageSourceLabel || (isInternal ? 'Kho Media mẫu nội bộ' : 'Google Drive Hệ thống'));
 
   return {
     id, code: String(raw.code || 'MED'), version: ver, file_name: String(raw.file_name || 'Tệp đính kèm nội bộ'),

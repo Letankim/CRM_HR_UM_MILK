@@ -8,7 +8,7 @@ import {
   parseMediaIds,
   resolveAnnouncementMediaAttachments,
 } from './comms-media-helper.js';
-import { detectBufferMimeType, extractGoogleDriveFileId } from './mkt-media-storage.service.js';
+import { detectBufferMimeType, extractGoogleDriveFileId, saveMediaCache, toMktCacheKey } from './mkt-media-storage.service.js';
 
 // 1x1 PNG hợp lệ (68 bytes)
 const SAMPLE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -97,7 +97,8 @@ describe('comms-media-helper & mkt-media-storage proxy (cơ chế chuẩn Điể
     const enriched = enrichMediaAsset(mockCtx, sampleAsset);
     expect(enriched.mimeLabel).toBe('Hình ảnh PNG');
     expect(enriched.categoryLabel).toBe('Banner truyền thông');
-    expect(enriched.storageSourceLabel).toBe('Google Drive Hệ thống (05_MKT_MEDIA)');
+    expect(enriched.storageSourceLabel).toBe('Google Drive Hệ thống');
+    expect(enriched.storageSourceLabel).not.toContain('05_MKT_MEDIA');
     expect(enriched.openUrl).toBe('/api/mkt/media/files/01M6443WFJ4138EJY2WQ98JRJG?v=2');
     expect(enriched.previewUrl).toBe('/api/mkt/media/files/01M6443WFJ4138EJY2WQ98JRJG?v=2');
 
@@ -133,5 +134,35 @@ describe('comms-media-helper & mkt-media-storage proxy (cơ chế chuẩn Điể
     expect(streamRes.statusCode).toBe(200);
     expect(streamRes.headers['content-type']).toBe('image/png');
     expect(streamRes.rawPayload.equals(Buffer.from(SAMPLE_PNG_BASE64, 'base64'))).toBe(true);
+  });
+
+  it('auto-calculates file size, MIME type, and previewUrl via POST /api/mkt/media/probe when user pastes a link', async () => {
+    const fakeDriveId = '1tE88IVeIMSshLc2ZU0OR8WCdHIAgDW';
+    const pngBytes = Buffer.from(SAMPLE_PNG_BASE64, 'base64');
+    saveMediaCache({ env: { LOCAL_STORAGE_DIR: './storage' } } as unknown as AppContext, toMktCacheKey(fakeDriveId), pngBytes);
+
+    const probeRes = await t.app.inject({
+      method: 'POST',
+      url: '/api/mkt/media/probe',
+      headers: mktHeaders,
+      payload: {
+        url: `https://drive.google.com/file/d/${fakeDriveId}/view?usp=drive_link`,
+      },
+    });
+    expect(probeRes.statusCode).toBe(200);
+    const info = probeRes.json().data as {
+      reachable: boolean;
+      driveFileId: string;
+      mimeType: string;
+      sizeBytes: number;
+      sizeFormatted: string;
+      previewUrl: string;
+    };
+    expect(info.reachable).toBe(true);
+    expect(info.driveFileId).toBe(fakeDriveId);
+    expect(info.mimeType).toBe('image/png');
+    expect(info.sizeBytes).toBe(pngBytes.length);
+    expect(info.sizeFormatted).toBe(`${pngBytes.length} Bytes`);
+    expect(info.previewUrl).toBe(`/api/mkt/media/files/${fakeDriveId}`);
   });
 });

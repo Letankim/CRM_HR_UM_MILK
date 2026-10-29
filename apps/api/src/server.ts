@@ -1,4 +1,4 @@
-import { createGoogleClients, downloadFile, ensureFolderPath, isAuthRevokedError, uploadFile } from '@umbm/google';
+import { createGoogleClients, downloadFile, ensureFolderPath, getFileMeta, isAuthRevokedError, uploadFile } from '@umbm/google';
 import { DRIVE_FOLDERS } from '@umbm/shared';
 import { readFileSync } from 'node:fs';
 import { AuthService } from './auth/auth.service.js';
@@ -100,12 +100,7 @@ async function main() {
           folderId = await ensureFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, [DRIVE_FOLDERS.ATTENDANCE_PHOTOS, params.monthFolder]);
           driveFolderCache.set(cacheKey, folderId);
         }
-        const uploaded = await uploadFile(clients.drive, {
-          name: params.fileName,
-          mimeType: params.mimeType,
-          parentId: folderId,
-          data: params.data,
-        });
+        const uploaded = await uploadFile(clients.drive, { name: params.fileName, mimeType: params.mimeType, parentId: folderId, data: params.data });
         return { fileId: uploaded.id };
       },
       async uploadMktMedia(params) {
@@ -116,13 +111,11 @@ async function main() {
           folderId = await ensureFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, [DRIVE_FOLDERS.MKT_MEDIA, params.monthFolder]);
           driveFolderCache.set(cacheKey, folderId);
         }
-        const uploaded = await uploadFile(clients.drive, {
-          name: params.fileName,
-          mimeType: params.mimeType,
-          parentId: folderId,
-          data: params.data,
-        });
+        const uploaded = await uploadFile(clients.drive, { name: params.fileName, mimeType: params.mimeType, parentId: folderId, data: params.data });
         return { fileId: uploaded.id };
+      },
+      async getDriveFileMeta(fileId) {
+        try { return await getFileMeta(clients.drive, fileId); } catch { return null; }
       },
       async downloadDriveFile(fileId) {
         try {
