@@ -168,6 +168,10 @@ export interface PayrollSnapshotItem {
   netVnd: number;
   bankName: string;
   bankAccountNumber: string;
+  disputeStatus?: string;
+  disputeReason?: string;
+  disputeTicketId?: string;
+  disputeTicketCode?: string;
 }
 
 export interface PayPeriodRow {

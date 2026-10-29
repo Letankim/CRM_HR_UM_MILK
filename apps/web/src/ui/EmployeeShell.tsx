@@ -3,7 +3,7 @@
 import { Alert, App, Avatar, Badge, Breadcrumb, Button, Dropdown, Flex, Grid, Layout, List, Menu, Popover, Space, Spin, Switch, Tag, Tooltip, Typography } from 'antd';
 import type { ItemType } from 'antd/es/menu/interface';
 import {
-  AppstoreOutlined, BellOutlined, BookOutlined, CalendarOutlined, DownOutlined, EnvironmentOutlined,
+  AppstoreOutlined, BellOutlined, BookOutlined, CalendarOutlined, CustomerServiceOutlined, DownOutlined, EnvironmentOutlined,
   FieldTimeOutlined, FileDoneOutlined, FileTextOutlined, HomeOutlined, KeyOutlined, LogoutOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, MutedOutlined, NotificationOutlined, ReloadOutlined,
   RightOutlined, SoundOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined,
@@ -31,8 +31,9 @@ const DESKTOP_GROUPS = [
     { key: '/nv/doi-ca', label: 'Yêu cầu Đổi ca nội bộ', icon: <SwapOutlined /> }, { key: '/nv/cong', label: 'Bảng công & Bổ sung công', icon: <FieldTimeOutlined /> },
   ]},
   { key: 'grp-benefit', label: 'Phúc lợi & Đào tạo', items: [
-    { key: '/nv/thong-bao', label: 'Trung tâm Thông báo', icon: <BellOutlined /> }, { key: '/nv/phieu-luong', label: 'Phiếu lương cá nhân', icon: <FileTextOutlined /> },
-    { key: '/nv/bai-kiem-tra', label: 'Bài kiểm tra Nghiệp vụ', icon: <BookOutlined /> }, { key: '/nv/ban-tin', label: 'Bản tin truyền thông nội bộ', icon: <NotificationOutlined /> },
+    { key: '/nv/thong-bao', label: 'Trung tâm Thông báo', icon: <BellOutlined /> }, { key: '/nv/ho-tro', label: 'Phiếu hỗ trợ & Thắc mắc', icon: <CustomerServiceOutlined /> },
+    { key: '/nv/phieu-luong', label: 'Phiếu lương cá nhân', icon: <FileTextOutlined /> }, { key: '/nv/bai-kiem-tra', label: 'Bài kiểm tra Nghiệp vụ', icon: <BookOutlined /> },
+    { key: '/nv/ban-tin', label: 'Bản tin truyền thông nội bộ', icon: <NotificationOutlined /> },
   ]},
 ];
 
@@ -70,7 +71,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   if (isLoading || !data) return <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center' }}><Spin /></div>;
 
   const u = data.user, isInternal = !['THU_VIEC', 'CHINH_THUC'].includes(u.role);
-  const isMoreActive = ['/nv/them', '/nv/nghi-phep', '/nv/cong', '/nv/phieu-luong', '/nv/bai-kiem-tra', '/nv/ban-tin'].some((p) => pathname.startsWith(p));
+  const isMoreActive = ['/nv/them', '/nv/nghi-phep', '/nv/cong', '/nv/ho-tro', '/nv/phieu-luong', '/nv/bai-kiem-tra', '/nv/ban-tin'].some((p) => pathname.startsWith(p));
   const versionLabel = SYSTEM_CONFIG.version.startsWith('v') ? SYSTEM_CONFIG.version : `v${SYSTEM_CONFIG.version}`;
   const activeDesktopItem = (() => {
     for (const g of DESKTOP_GROUPS) for (const item of g.items) if (item.key === '/nv' ? pathname === '/nv' : pathname.startsWith(item.key)) return { group: g.label, item };
@@ -87,6 +88,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
         { label: 'Yêu cầu Đổi ca nội bộ', desc: 'Tạo đề nghị đổi ca & xác nhận nhận ca', icon: <SwapOutlined />, onClick: () => router.push('/nv/doi-ca') },
         { label: 'Bảng công & Bổ sung công', desc: 'Gửi phiếu giải trình bổ sung công', icon: <FieldTimeOutlined />, onClick: () => router.push('/nv/cong') },
         { label: 'Trung tâm Thông báo', desc: 'Tất cả thông báo cá nhân & vai trò', icon: <BellOutlined />, onClick: () => router.push('/nv/thong-bao') },
+        { label: 'Phiếu hỗ trợ & Giải đáp thắc mắc', desc: 'Gửi ticket chọn bộ phận & người xử lý', icon: <CustomerServiceOutlined />, onClick: () => router.push('/nv/ho-tro') },
         { label: 'Phiếu lương cá nhân', desc: 'Xem chi tiết & xác nhận lương', icon: <FileTextOutlined />, onClick: () => router.push('/nv/phieu-luong') },
         { label: 'Bài kiểm tra Nghiệp vụ', desc: 'Làm bài thi SOP & quy chế', icon: <BookOutlined />, onClick: () => router.push('/nv/bai-kiem-tra') },
         { label: 'Bản tin truyền thông nội bộ', desc: 'Thông báo & chiến dịch mới', icon: <NotificationOutlined />, onClick: () => router.push('/nv/ban-tin') },

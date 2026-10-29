@@ -127,6 +127,8 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
         actionGuide,
       };
     });
+  const slip = ctx.db.payslips.find((p) => p.status !== 'REVISED' && (p.snapshot_id === s.id || (p.period_id === s.period_id && (p.employee_id === s.employee_id || p.employee_code === s.employee_code))));
+  const disputeTicket = slip ? ctx.db.supportTickets.filter((t) => t.related_entity_type === 'PAYSLIP' && t.related_entity_id === slip.id).slice(-1)[0] : undefined;
 
   return {
     id: s.id,
@@ -196,6 +198,10 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
     netVnd: s.net_vnd,
     bankName: s.bank_name,
     bankAccountNumber: s.bank_account_number,
+    disputeStatus: slip?.dispute_status ?? 'NONE',
+    disputeReason: slip?.dispute_reason ?? '',
+    disputeTicketId: disputeTicket?.id ?? '',
+    disputeTicketCode: disputeTicket?.ticket_code ?? '',
     version: s.version,
   };
 }

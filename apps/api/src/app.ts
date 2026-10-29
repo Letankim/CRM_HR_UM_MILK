@@ -23,6 +23,7 @@ import { myAttendanceRoutes } from './routes/my-attendance.routes.js';
 import { recruitmentTestRoutes } from './routes/recruitment-test.routes.js';
 import { systemCommsRoutes } from './routes/system-comms.routes.js';
 import { notificationRoutes } from './routes/notifications.routes.js';
+import { ticketRoutes } from './routes/tickets.routes.js';
 import { registerSmtpRelayOrigin } from './services/smtp-sender.js';
 
 export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
@@ -130,6 +131,7 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
   await app.register(async (i) => recruitmentTestRoutes(i, ctx));
   await app.register(async (i) => systemCommsRoutes(i, ctx));
   await app.register(async (i) => notificationRoutes(i, ctx));
+  await app.register(async (i) => ticketRoutes(i, ctx));
   await app.register(async (i) => payrollRoutes(i, ctx));
   await app.register(async (i) => auditRoutes(i, ctx));
   await app.register(async (i) => internalRoutes(i, ctx));

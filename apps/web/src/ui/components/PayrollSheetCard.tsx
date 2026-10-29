@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Flex, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
-import { DownloadOutlined, EyeOutlined, SearchOutlined, WarningOutlined } from '@ant-design/icons';
+import { DownloadOutlined, EyeOutlined, MessageOutlined, SearchOutlined, WarningOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
@@ -51,6 +52,7 @@ export function exportPayrollSheet(period: PayPeriodRow, rows: PayrollSnapshotIt
 
 export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodRow; onOpenPayslip: (r: PayrollSnapshotItem) => void }) {
   const qc = useQueryClient();
+  const router = useRouter();
   const [searchInput, setSearchInput] = useState('');
   const debouncedQ = useDebouncedValue(searchInput, 400);
   const [branchFilter, setBranchFilter] = useState('ALL');
@@ -134,10 +136,17 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
             title: 'Nhân sự', key: 'emp', fixed: 'left',
             render: (_, r) => (
               <div>
-                <Space size={6}>
+                <Space size={6} wrap>
                   <Tag color="geekblue" style={{ margin: 0, borderRadius: 2 }}>{r.employeeCode}</Tag>
                   <Typography.Text strong>{r.fullName}</Typography.Text>
                   {(!r.hasSalaryProfile || r.missingProfileShifts > 0) && <Tooltip title="Chưa thiết lập hồ sơ lương hoặc có ca ngoài thời gian hiệu lực"><WarningOutlined style={{ color: '#D97706' }} /></Tooltip>}
+                  {r.disputeStatus === 'OPEN' && (
+                    <Tooltip title={r.disputeReason ? `Thắc mắc: ${r.disputeReason} (Bấm để mở Trung tâm Phiếu hỗ trợ)` : 'Nhân sự đang gửi thắc mắc phiếu lương'}>
+                      <Tag color="volcano" icon={<MessageOutlined />} style={{ margin: 0, cursor: 'pointer', fontSize: 11 }} onClick={() => router.push('/admin/tickets')}>
+                        Thắc mắc{r.disputeTicketCode ? ` ${r.disputeTicketCode}` : ''}
+                      </Tag>
+                    </Tooltip>
+                  )}
                 </Space>
                 <div style={{ fontSize: 12, color: '#64748B' }}>{r.branchName} · {r.stageLabel}</div>
               </div>

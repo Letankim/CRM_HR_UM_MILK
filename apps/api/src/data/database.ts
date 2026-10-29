@@ -56,6 +56,7 @@ export class Database {
   readonly announcements: TableStore<S.Announcement>;
   readonly deliveryLogs: TableStore<S.DeliveryLog>;
   readonly mediaAssets: TableStore<S.MediaAsset>;
+  readonly supportTickets: TableStore<S.SupportTicket>;
   readonly deadLetters: TableStore<DeadLetterRow>;
   readonly backupLog: TableStore<BackupLogRow>;
   readonly operationJournal: TableStore<OperationJournalRow>;
@@ -108,6 +109,7 @@ export class Database {
     this.announcements = new TableStore(gateway, queue, { spreadsheetKey: 'COMMS', spreadsheetId: ids.COMMS, tab: 'ANNOUNCEMENTS', headers: comms.ANNOUNCEMENTS, schema: S.zAnnouncement });
     this.deliveryLogs = new TableStore(gateway, queue, { spreadsheetKey: 'COMMS', spreadsheetId: ids.COMMS, tab: 'DELIVERY_LOGS', headers: comms.DELIVERY_LOGS, schema: S.zDeliveryLog });
     this.mediaAssets = new TableStore(gateway, queue, { spreadsheetKey: 'COMMS', spreadsheetId: ids.COMMS, tab: 'MEDIA_ASSETS', headers: comms.MEDIA_ASSETS, schema: S.zMediaAsset });
+    this.supportTickets = new TableStore(gateway, queue, { spreadsheetKey: 'COMMS', spreadsheetId: ids.COMMS, tab: 'SUPPORT_TICKETS', headers: comms.SUPPORT_TICKETS, schema: S.zSupportTicket });
 
     this.deadLetters = new TableStore(gateway, queue, { spreadsheetKey: 'SYSTEM', spreadsheetId: ids.SYSTEM, tab: 'SYNC_DEAD_LETTER', headers: sys.SYNC_DEAD_LETTER, schema: zDeadLetterRow });
     this.backupLog = new TableStore(gateway, queue, { spreadsheetKey: 'SYSTEM', spreadsheetId: ids.SYSTEM, tab: 'BACKUP_LOG', headers: sys.BACKUP_LOG, schema: zBackupLogRow });
@@ -121,7 +123,7 @@ export class Database {
       this.shiftAssignments, this.leaveRequests, this.shiftSwaps, this.emergencyLeaves,
       this.attendanceEvents, this.attendanceAdjustments,
       this.payRates, this.payPeriods, this.payrollItems, this.payrollSnapshots, this.payslips, this.payslipRevisions, this.revenueInputs,
-      this.notifications, this.campaigns, this.announcements, this.deliveryLogs, this.mediaAssets,
+      this.notifications, this.campaigns, this.announcements, this.deliveryLogs, this.mediaAssets, this.supportTickets,
       this.deadLetters, this.backupLog, this.operationJournal,
     ];
   }
@@ -175,7 +177,7 @@ export class Database {
       [this.candidates, this.interviews, this.employees, this.employeeStageHistory, this.testBank, this.testAssignments, this.testAttempts],
       [this.shiftAssignments, this.leaveRequests, this.shiftSwaps, this.emergencyLeaves, this.attendanceEvents, this.attendanceAdjustments],
       [this.payRates, this.payPeriods, this.payrollItems, this.payrollSnapshots, this.payslips, this.payslipRevisions, this.revenueInputs],
-      [this.notifications, this.campaigns, this.announcements, this.deliveryLogs, this.mediaAssets, this.deadLetters, this.backupLog, this.operationJournal],
+      [this.notifications, this.campaigns, this.announcements, this.deliveryLogs, this.mediaAssets, this.supportTickets, this.deadLetters, this.backupLog, this.operationJournal],
     ];
     const cooldownMs = Math.max(30_000, intervalSeconds * 1000);
     this.timer = setInterval(async () => {

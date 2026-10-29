@@ -35,7 +35,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
       return;
     }
     if (data && isEmployeeRole(data.user.role)) {
-      const nvTarget = pathname.includes('my-attendance') ? '/nv/cong' : pathname.includes('payroll') ? '/nv/phieu-luong' : pathname.includes('schedules') ? '/nv/lich' : pathname.includes('notifications') ? '/nv/thong-bao' : '/nv';
+      const nvTarget = pathname.includes('tickets') ? '/nv/ho-tro' : pathname.includes('my-attendance') ? '/nv/cong' : pathname.includes('payroll') ? '/nv/phieu-luong' : pathname.includes('schedules') ? '/nv/lich' : pathname.includes('notifications') ? '/nv/thong-bao' : '/nv';
       router.replace(nvTarget);
       return;
     }

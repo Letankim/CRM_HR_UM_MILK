@@ -7,4 +7,5 @@ export * from './api-contract.js';
 export * from './schemas.js';
 export * from './domain-schemas.js';
 export * from './schedule-payroll-schemas.js';
+export * from './ticket-schemas.js';
 export * from './sheets-schema.js';

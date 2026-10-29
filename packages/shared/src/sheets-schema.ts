@@ -170,6 +170,7 @@ export const SPREADSHEETS = {
       ANNOUNCEMENTS: cols('campaign_id', 'title', 'body', 'cta_link', 'media_ids', 'audience_json', 'status', 'scheduled_at', 'sent_at', 'code', 'summary', 'cta_label', 'priority', 'audience_scope', 'requires_ack', 'approved_by'),
       DELIVERY_LOGS: cols('announcement_id', 'recipient_user_id', 'channel', 'status', 'attempts', 'last_error', 'branch_id', 'sent_at', 'delivered_at', 'read_at', 'ack_at'),
       MEDIA_ASSETS: cols('drive_file_id', 'file_name', 'mime_type', 'size_bytes', 'uploaded_by', 'code', 'category', 'is_internal_only'),
+      SUPPORT_TICKETS: cols('ticket_code', 'requester_user_id', 'requester_employee_id', 'branch_id', 'category', 'priority', 'target_department', 'assignee_user_id', 'subject', 'description', 'related_entity_type', 'related_entity_id', 'related_label', 'status', 'messages_json', 'resolution_note', 'resolved_by', 'resolved_at', 'closed_at'),
     },
   },
   SYSTEM: {

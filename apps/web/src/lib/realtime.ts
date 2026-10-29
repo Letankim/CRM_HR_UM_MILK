@@ -134,9 +134,14 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       ['accounts', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
     };
     const onPayrollUpdated = () => {
-      ['salary-profiles', 'salary-history', 'employees', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items', 'notifications'].forEach((k) =>
+      ['salary-profiles', 'salary-history', 'employees', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items', 'notifications', 'tickets'].forEach((k) =>
         qc.invalidateQueries({ queryKey: [k] }),
       );
+      qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
+    };
+    const onTicketUpdated = (payload?: { actorId?: string; branchId?: string; entityId?: string; kind?: string }) => {
+      if (isOutOfBranchOrDup('tck', payload)) return;
+      ['tickets', 'ticket-detail', 'notifications', 'payroll-snapshots'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
       qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
     };
     s.on('auth:forceLogout', onForceLogout);
@@ -148,6 +153,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     s.on('emergency:new', onEmergency);
     s.on('account:pending', onAccountPending);
     s.on('payroll:updated', onPayrollUpdated);
+    s.on('ticket:updated', onTicketUpdated);
     if (!s.connected) s.connect();
     return () => {
       if (scheduleTimer) clearTimeout(scheduleTimer);
@@ -160,6 +166,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       s.off('emergency:new', onEmergency);
       s.off('account:pending', onAccountPending);
       s.off('payroll:updated', onPayrollUpdated);
+      s.off('ticket:updated', onTicketUpdated);
     };
   }, [app, enabled, message, qc, router, socketToken, userId]);
 }

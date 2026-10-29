@@ -21,8 +21,10 @@ function resolveNotificationLinkForRole(n: NotificationRow, role: Role): string 
   if (n.entity_type === 'SWAP_USER') return resolveRolePortalPath(role, 'swap');
   if (n.entity_type === 'SHIFT_PUB_USER') return resolveRolePortalPath(role, 'schedule');
   if (n.entity_type === 'PAYSLIP_USER') return resolveRolePortalPath(role, 'payslip');
+  if (n.entity_type === 'TICKET_ASSIGNEE' || n.entity_type === 'TICKET_REPLY_STAFF' || n.entity_type === 'TICKET_USER') return resolveRolePortalPath(role, 'tickets');
   if (isEmp) {
     if (raw.startsWith('/nv')) return raw;
+    if (raw.includes('tickets')) return '/nv/ho-tro';
     if (raw.includes('my-attendance')) return '/nv/cong';
     if (raw.includes('payroll')) return '/nv/phieu-luong';
     if (raw.includes('schedules')) return '/nv/lich';
@@ -31,6 +33,7 @@ function resolveNotificationLinkForRole(n: NotificationRow, role: Role): string 
   if (raw.startsWith('/nv/cong') || raw.startsWith('/nv/lich') || raw.startsWith('/nv/nghi-phep') || raw.startsWith('/nv/doi-ca') || raw.startsWith('/nv/diem-danh')) {
     return role === 'MKT' ? '/dashboard' : '/admin/my-attendance';
   }
+  if (raw === '/nv/ho-tro') return '/admin/tickets';
   if (raw === '/nv/ban-tin') return resolveRolePortalPath(role, 'comms');
   if (raw === '/nv/thong-bao') return '/admin/notifications';
   if (raw === '/nv/phieu-luong' && (role === 'ADMIN' || role === 'HR' || role === 'FINANCE')) return '/admin/payroll';
@@ -111,7 +114,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
         if (userIds.length > 0 && !userIds.includes('ALL')) {
           matched = userIds.includes(user.id);
         } else if (user.role === 'ADMIN') {
-          matched = !['ATT_ADJ_HR', 'LEAVE_ROLE', 'SHIFT_DRAFT_ROLE', 'SWAP_STORE', 'EMG_STORE'].includes(n.entity_type);
+          matched = (n.entity_type === 'TICKET_ASSIGNEE' || n.entity_type === 'TICKET_REPLY_STAFF') ? roles.includes('ADMIN') : !['ATT_ADJ_HR', 'LEAVE_ROLE', 'SHIFT_DRAFT_ROLE', 'SWAP_STORE', 'EMG_STORE'].includes(n.entity_type);
         } else {
           const { branchId: notifBranch, isBoOrHr } = resolveNotifMeta(n);
           const isWorkflowRoleNotif = ['ATT_ADJ_HR', 'LEAVE_ROLE', 'SHIFT_DRAFT_ROLE', 'SWAP_STORE', 'EMG_STORE'].includes(n.entity_type);

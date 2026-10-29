@@ -3,11 +3,12 @@ import type { AppContext } from '../context.js';
 import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 import { getMatchingUsersForAudience } from '../routes/job-positions-and-audiences.routes.js';
 import { singleFlight, tolerantWrite } from './background-write.js';
+import { healOpenPayslipDisputesToTickets, isStaleTicketNotification, syncSupportTicketBellNotifications } from './ticket-notification.service.js';
 
 const syncInFlight = new WeakMap<object, Promise<void>>(), lastSyncSig = new WeakMap<object, string>(), SYNC_ACTOR = 'system-sync';
 function computeSyncSig(ctx: AppContext): string {
   const sumV = (rows: { version: number }[]) => rows.reduce((acc, r) => acc + r.version, rows.length * 97);
-  return [ctx.db.announcements, ctx.db.users, ctx.db.shiftAssignments, ctx.db.leaveRequests, ctx.db.shiftSwaps, ctx.db.attendanceAdjustments, ctx.db.emergencyLeaves, ctx.db.payPeriods, ctx.db.payslips].map((s) => sumV(s.all())).join(':');
+  return [ctx.db.announcements, ctx.db.users, ctx.db.shiftAssignments, ctx.db.leaveRequests, ctx.db.shiftSwaps, ctx.db.attendanceAdjustments, ctx.db.emergencyLeaves, ctx.db.payPeriods, ctx.db.payslips, ctx.db.supportTickets].map((s) => sumV(s.all())).join(':');
 }
 function activePlusRecent<T extends { id: string }>(rows: T[], isActive: (r: T) => boolean, recentLimit = 50): T[] {
   const active = rows.filter(isActive), seen = new Set(active.map((r) => r.id));
@@ -51,7 +52,8 @@ async function deduplicateAdjustmentsAndNotifications(ctx: AppContext): Promise<
       (n.entity_type === 'SHIFT_DRAFT_ROLE' && ctx.db.shiftAssignments.get(n.entity_id)?.status !== 'DRAFT') ||
       (n.entity_type === 'SWAP_STORE' && ctx.db.shiftSwaps.get((n.entity_id || '').replace(/_(PENDING_PEER|PEER_ACCEPTED)$/, ''))?.status !== 'PEER_ACCEPTED') ||
       (n.entity_type === 'EMG_STORE' && (!emg || ['RESOLVED', 'REPLACEMENT_FOUND'].includes(emg.status) || (emg.status === 'ESCALATED' && !n.entity_id.endsWith('_ESCALATED')))) ||
-      (n.entity_type === 'USERS_PENDING' && ctx.db.users.get(n.entity_id)?.status !== 'PENDING_ACTIVATION');
+      (n.entity_type === 'USERS_PENDING' && ctx.db.users.get(n.entity_id)?.status !== 'PENDING_ACTIVATION') ||
+      isStaleTicketNotification(ctx, n);
     const isMergedIntoBulk = n.entity_type === 'ATT_ADJ_USER' && !n.entity_id.startsWith('BULK_') && adj?.decided_at && (adjBatchCounts.get(`${adj.decided_at.slice(0, 16)}_${adj.status}`) ?? 0) > 1;
     const isSelfPendingLeave = n.entity_type === 'LEAVE_USER' && n.title.includes('Đã tiếp nhận');
     const dedupKey = n.entity_type && n.entity_id ? `ent:${n.entity_type}:${n.entity_id}` : `txt:${n.category}:${n.recipient_role}:${n.recipient_user_id}:${n.title}:${n.body}`;
@@ -65,6 +67,7 @@ async function deduplicateAdjustmentsAndNotifications(ctx: AppContext): Promise<
 }
 
 async function runSyncNotifications(ctx: AppContext): Promise<void> {
+  await healOpenPayslipDisputesToTickets(ctx);
   const sigBefore = computeSyncSig(ctx);
   if (lastSyncSig.get(ctx.db) === sigBefore) return;
   await deduplicateAdjustmentsAndNotifications(ctx);
@@ -182,6 +185,7 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
     if (!hasKey('PAYSLIP_USER', ps.id)) await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: ps.branch_id || 'ALL', category: 'PAYROLL', title: `Phiếu lương cá nhân đã phát hành: ${ps.period_name || ps.payslip_code}`, body: `Thực lĩnh (NET): ${Number(ps.net_vnd || 0).toLocaleString('vi-VN')}đ — Vui lòng kiểm tra chi tiết và xác nhận phiếu lương.`, link: '/nv/phieu-luong', severity: 'INFO', entity_type: 'PAYSLIP_USER', entity_id: ps.id });
     if ((ps.status === 'PAID' || paidPeriodIds.has(ps.period_id)) && !hasKey('PAYSLIP_USER', `${ps.id}_PAID`)) await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: ps.branch_id || 'ALL', category: 'PAYROLL', title: `Đã thanh toán lương cá nhân: ${ps.period_name || ps.payslip_code}`, body: `Kế toán đã xác nhận chi trả lương thực lĩnh ${Number(ps.net_vnd || 0).toLocaleString('vi-VN')}đ cho kỳ ${ps.period_name || ps.payslip_code}.`, link: '/nv/phieu-luong', severity: 'INFO', entity_type: 'PAYSLIP_USER', entity_id: `${ps.id}_PAID` });
   }
+  await syncSupportTicketBellNotifications(ctx, ins);
   if (pendingInserts.length > 0) await Promise.all(pendingInserts);
   const sigAfter = computeSyncSig(ctx);
   if (sigAfter !== sigBefore) return runSyncNotifications(ctx);
@@ -197,6 +201,8 @@ export function isNotificationCreatedByOrSelfAction(ctx: AppContext, n: Notifica
   if (n.entity_type === 'MANUAL' && n.created_by === userId && !recipientUserIds.includes(userId)) return true;
   if (n.entity_id.startsWith('BULK_')) return n.created_by === userId || !recipientUserIds.includes(userId);
   if (n.entity_type === 'USERS_PENDING') return n.entity_id === userId;
+  if (n.entity_type === 'TICKET_ASSIGNEE' || n.entity_type === 'TICKET_REPLY_STAFF') { const tck = ctx.db.supportTickets.get((n.entity_id || '').split('::')[0] || ''); return !tck || (tck.requester_user_id === userId && tck.assignee_user_id !== userId); }
+  if (n.entity_type === 'TICKET_USER') { const tck = ctx.db.supportTickets.get((n.entity_id || '').split('::')[0] || ''); return !tck || tck.requester_user_id !== userId; }
   if (n.entity_type === 'ATT_ADJ_HR') { const adj = ctx.db.attendanceAdjustments.get(rawId); return !adj || (n.entity_id.endsWith('_STORE_CONFIRMED') ? adj.store_confirmed_by === userId : adj.created_by === userId); }
   if (n.entity_type === 'ATT_ADJ_USER') { const adj = ctx.db.attendanceAdjustments.get(rawId); return !adj || adj.decided_by === userId || (n.entity_id.endsWith('_STORE_CONFIRMED') && adj.store_confirmed_by === userId); }
   if (n.entity_type === 'SHIFT_DRAFT_ROLE' || n.entity_type === 'SCHED_STORE') { const a = ctx.db.shiftAssignments.get(rawId); return !a || a.created_by === userId; }

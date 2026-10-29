@@ -45,6 +45,8 @@ export const TABLE_DISPLAY_LABELS: Record<string, string> = {
   'COMMS.ANNOUNCEMENTS': 'Bản tin Truyền thông Nội bộ',
   'COMMS.DELIVERY_LOGS': 'Nhật ký Gửi & Xác nhận đọc Bản tin',
   'COMMS.MEDIA_ASSETS': 'Kho Tài liệu & Media Nội bộ',
+  'COMMS.SUPPORT_TICKETS': 'Phiếu Hỗ trợ & Giải đáp Thắc mắc (Ticket)',
+  SUPPORT_TICKETS: 'Phiếu Hỗ trợ & Giải đáp Thắc mắc (Ticket)',
   'SYSTEM.SYNC_DEAD_LETTER': 'Hàng đợi Bản ghi cần đối soát lại',
   'SYSTEM.BACKUP_LOG': 'Nhật ký Sao lưu dữ liệu tự động',
   'SYSTEM.OPERATION_JOURNAL': 'Nhật ký Giao dịch đa bảng (Saga)',
@@ -126,6 +128,11 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'mkt.campaign.create': 'Tạo chiến dịch truyền thông nội bộ',
   'mkt.announcement.create': 'Phát hành bản tin truyền thông nội bộ',
   'system.reconcile': 'Đối soát & sửa lỗi toàn vẹn dữ liệu',
+  'ticket.create': 'Tạo phiếu hỗ trợ / thắc mắc mới',
+  'ticket.update': 'Cập nhật / Điều phối phiếu hỗ trợ',
+  'ticket.reply': 'Phản hồi & xử lý phiếu hỗ trợ',
+  'ticket.delete': 'Xóa phiếu hỗ trợ',
+  'ticket.bulk': 'Thao tác hàng loạt phiếu hỗ trợ',
 };
 
 export interface StatusVisual {
@@ -204,4 +211,10 @@ export const STATUS_VISUAL_MAP: Record<string, StatusVisual> = {
   QUEUED: { color: 'processing', label: 'Đang chờ gửi' },
   DELIVERED: { color: 'success', label: 'Đã nhận' },
   READ: { color: 'success', label: 'Đã đọc' },
+  OPEN: { color: 'warning', label: 'Chờ tiếp nhận' },
+  CLOSED: { color: 'default', label: 'Đã đóng phiếu' },
+  LOW: { color: 'default', label: 'Thấp' },
+  NORMAL: { color: 'processing', label: 'Thông thường' },
+  HIGH: { color: 'warning', label: 'Ưu tiên cao' },
+  URGENT: { color: 'error', label: 'Khẩn cấp' },
 };

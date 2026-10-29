@@ -13,6 +13,7 @@ export const SocketEvents = {
   ACCOUNT_PENDING: 'account:pending',
   MAINTENANCE_UPDATED: 'system:maintenance',
   PAYROLL_UPDATED: 'payroll:updated',
+  TICKET_UPDATED: 'ticket:updated',
 } as const;
 
 const rooms = {

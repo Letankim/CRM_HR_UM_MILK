@@ -4,7 +4,7 @@ import { findLinkedEmployeeForUser, findLinkedUserForEmployee } from '../routes/
 import { isSyntheticDemoEmail } from './email.service.js';
 import { getPublicFrontendOrigin } from './smtp-sender.js';
 
-export type PortalLinkTarget = 'login' | 'home' | 'attendance' | 'schedule' | 'leave' | 'swap' | 'payslip' | 'test' | 'comms' | 'workflows';
+export type PortalLinkTarget = 'login' | 'home' | 'attendance' | 'schedule' | 'leave' | 'swap' | 'payslip' | 'test' | 'comms' | 'workflows' | 'tickets';
 
 export const webOrigin = (ctx: AppContext): string => getPublicFrontendOrigin(ctx.env.API_PUBLIC_ORIGIN);
 
@@ -33,6 +33,7 @@ export function resolveRolePortalPath(role: Role | undefined, target: PortalLink
   if (target === 'leave') return isEmp ? '/nv/nghi-phep' : role === 'MKT' ? '/dashboard' : '/admin/my-attendance';
   if (target === 'swap') return isEmp ? '/nv/doi-ca' : role === 'MKT' ? '/dashboard' : '/admin/my-attendance';
   if (target === 'payslip') return '/nv/phieu-luong';
+  if (target === 'tickets') return isEmp ? '/nv/ho-tro' : '/admin/tickets';
   if (target === 'test') return role === 'MKT' ? '/dashboard' : '/nv/bai-kiem-tra';
   if (target === 'comms') return isEmp ? '/nv/ban-tin' : (role === 'ADMIN' || role === 'HR' || role === 'MKT') ? '/admin/integrations?section=comms' : '/admin/notifications';
   return isEmp ? '/nv' : '/dashboard';
