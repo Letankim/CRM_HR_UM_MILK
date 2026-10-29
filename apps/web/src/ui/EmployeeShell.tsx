@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, App, Avatar, Badge, Breadcrumb, Button, Dropdown, Flex, Grid, Layout, List, Menu, Popover, Space, Spin, Switch, Tag, Tooltip, Typography } from 'antd';
+import { Alert, Avatar, Breadcrumb, Button, Dropdown, Flex, Grid, Layout, Menu, Popover, Space, Spin, Tag, Typography } from 'antd';
 import type { ItemType } from 'antd/es/menu/interface';
 import {
   AppstoreOutlined, BellOutlined, BookOutlined, CalendarOutlined, CustomerServiceOutlined, DownOutlined, EnvironmentOutlined,
@@ -9,15 +9,15 @@ import {
   RightOutlined, SoundOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import dayjs from 'dayjs';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ROLE_LABELS, ROLE_SHORT_LABELS, SYSTEM_CONFIG } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { isUnauthorized, loginPath, useLogout, useMe } from '@/lib/auth';
-import { useNotificationSound, useTrackUnreadNotifications } from '@/lib/notification-sound';
+import { useNotificationSound } from '@/lib/notification-sound';
 import { useRealtime } from '@/lib/realtime';
+import { HeaderNotificationBell } from './components/HeaderNotificationBell';
 import { SiderFooterHelpAndVersion, USER_GUIDE_HTML_URL } from './components/SiderFooterHelpAndVersion';
 import { UserProfileModal } from './components/UserProfileModal';
 import { BRAND } from './theme';
@@ -43,7 +43,6 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const qc = useQueryClient();
-  const { message } = App.useApp();
   const screens = Grid.useBreakpoint();
   const isDesktop = Boolean(screens.md);
   const { data, isLoading, error } = useMe();
@@ -53,17 +52,8 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   const [profileTab, setProfileTab] = useState<'info' | 'password' | null>(null);
 
   const mntQ = useQuery({ queryKey: ['maintenance'], queryFn: () => api.get<{ enabled?: boolean; message?: string }[]>('/admin/maintenance'), enabled: !!data, retry: false });
-  const notifsQ = useQuery({ queryKey: ['notifications', 'nv-bell'], queryFn: () => api.list<{ id: string; code: string; title: string; body: string; targetLabel: string; readStatus: string; created_at?: string; link?: string }>('/notifications?per_page=12&sort_by=created_at&sort_order=desc'), enabled: !!data, retry: false });
   const activeMaint = mntQ.data?.[0]?.enabled ? mntQ.data[0] : null;
-  const notifItems = notifsQ.data?.data ?? [];
-  const notifTotal = notifsQ.data?.meta.pagination.total ?? 0;
-  const unreadNotifCount = Number(notifsQ.data?.meta.filters?.unread_count ?? notifItems.filter((n) => n.readStatus === 'UNREAD').length);
   const { soundEnabled, setSoundEnabled, toggleSound, playTestSound } = useNotificationSound();
-  const unreadKeys = useMemo(() => notifItems.filter((n) => n.readStatus === 'UNREAD').map((n) => `ntf:${n.id}`), [notifItems]);
-  useTrackUnreadNotifications(data?.user.id, unreadKeys, notifsQ.isSuccess, (newKeys) => {
-    const firstNew = notifItems.find((n) => newKeys.includes(`ntf:${n.id}`));
-    if (firstNew) message.info({ key: 'rt-nv-bell-toast', content: `Thông báo mới: ${firstNew.title}` });
-  });
   useRealtime('employee', !!data, data?.socketToken, data?.user.id);
 
   useEffect(() => {
@@ -130,24 +120,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
               <Breadcrumb items={[{ title: 'Cổng Nhân viên' }, { title: activeDesktopItem.group }, { title: <Typography.Text strong style={{ color: '#0F172A', fontSize: 13 }}>{activeDesktopItem.item.label}</Typography.Text> }]} />
             </Flex>
             <Space size={10}>
-              <Popover trigger="click" placement="bottomRight" content={
-                <div style={{ width: 440, maxWidth: 'calc(100vw - 32px)' }}>
-                  <Flex justify="space-between" align="center" style={{ paddingBottom: 8, borderBottom: `1px solid ${BRAND.border}` }}>
-                    <Typography.Text strong style={{ fontSize: 13 }}>Thông báo đã nhận ({notifTotal})</Typography.Text>
-                    <Space size={4}>
-                      <Tooltip title="Nghe thử chuông thông báo"><Button size="small" type="text" icon={soundEnabled ? <SoundOutlined style={{ color: BRAND.primary }} /> : <MutedOutlined />} onClick={playTestSound} /></Tooltip>
-                      <Switch size="small" checked={soundEnabled} onChange={setSoundEnabled} checkedChildren="Chuông" unCheckedChildren="Tắt" />
-                      <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => notifsQ.refetch()}>Làm mới</Button>
-                    </Space>
-                  </Flex>
-                  <div style={{ maxHeight: 'min(340px, calc(100dvh - 180px))', overflowY: 'auto', paddingRight: 2 }}>
-                    {notifItems.length === 0 ? <div style={{ padding: 12, textAlign: 'center', fontSize: 12, color: BRAND.textSecondary }}>Chưa có thông báo mới</div> : <List size="small" dataSource={notifItems} renderItem={(n) => <List.Item style={{ cursor: 'pointer', padding: '8px 6px' }} onClick={() => { if (n.readStatus === 'UNREAD') void api.post(`/notifications/${n.id}/read`, {}).then(() => qc.invalidateQueries({ queryKey: ['notifications'] })); router.push(n.link || '/nv/thong-bao'); }}><div style={{ width: '100%', minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 600, color: '#0F172A', lineHeight: 1.45, wordBreak: 'break-word' }}><Tag color={n.readStatus === 'UNREAD' ? 'geekblue' : 'default'} style={{ margin: '0 6px 2px 0', fontSize: 10, paddingInline: 5, lineHeight: '16px', verticalAlign: 'text-top' }}>{n.code}</Tag><span>{n.title}</span></div><div style={{ fontSize: 11.5, color: '#64748B', lineHeight: 1.4, marginTop: 3, wordBreak: 'break-word' }}>{n.created_at ? `${dayjs(n.created_at).format('HH:mm DD/MM')} · ` : ''}{n.targetLabel} · {n.body}</div></div></List.Item>} />}
-                  </div>
-                  <Button type="primary" ghost size="small" icon={<BellOutlined />} block style={{ marginTop: 8 }} onClick={() => router.push('/nv/thong-bao')}>Xem chi tiết tất cả thông báo ({notifTotal})</Button>
-                </div>
-              }>
-                <Badge count={unreadNotifCount} size="small" offset={[-2, 2]}><Button size="small" className="umbm-header-pill" icon={<BellOutlined />} style={{ width: 34, height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder }} /></Badge>
-              </Popover>
+              <HeaderNotificationBell userId={u.id} portal="employee" soundEnabled={soundEnabled} setSoundEnabled={setSoundEnabled} playTestSound={playTestSound} />
               {isInternal && <Button size="small" className="umbm-header-pill" icon={<UserSwitchOutlined />} onClick={() => router.push('/dashboard')} style={{ height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder, paddingInline: 10 }}>Về Quản trị</Button>}
               <Dropdown
                 trigger={['click']}
