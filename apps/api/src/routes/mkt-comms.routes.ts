@@ -8,6 +8,7 @@ import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { resolveRolePortalPath, resolveUserPersonalRealEmail, webOrigin } from '../services/account-email-dispatcher.js';
+import { enrichMediaAsset, resolveAnnouncementMediaAttachments } from '../services/comms-media-helper.js';
 import { buildConfiguredAudienceGroups, doesUserMatchAudience, getMatchingUsersForAudience, jobPositionsAndAudiencesRoutes } from './job-positions-and-audiences.routes.js';
 
 const COMMS_PERMS = ['comms.manage', 'notification.send', 'employee.manage', 'system.config', 'payroll.manage', 'schedule.propose'] as const;
@@ -72,7 +73,7 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
     const obsoleteLogs = ctx.db.deliveryLogs.filter((l) => l.announcement_id === anc.id && !matchedUsers.some((u) => u.id === l.recipient_user_id));
     if (obsoleteLogs.length > 0) await ctx.db.deliveryLogs.batchUpdate(obsoleteLogs.map((l) => ({ id: l.id, expectedVersion: l.version, patch: { is_deleted: true } })), actorId);
     const existingLogUserIds = new Set(ctx.db.deliveryLogs.filter((l) => l.announcement_id === anc.id).map((l) => l.recipient_user_id));
-    const prioLabel = anc.priority === 'URGENT' ? 'Khẩn cấp' : anc.priority === 'HIGH' ? 'Quan trọng' : 'Thông thường', now = nowIso();
+    const prioLabel = anc.priority === 'URGENT' ? 'Khẩn cấp' : anc.priority === 'HIGH' ? 'Quan trọng' : 'Thông thường', now = nowIso(), attachedMedia = resolveAnnouncementMediaAttachments(ctx, anc.media_ids);
     const pendingLogInserts: Promise<unknown>[] = [], seenAncEmails = new Set<string>(), origin = webOrigin(ctx);
     for (const u of matchedUsers) {
       if (!existingLogUserIds.has(u.id)) {
@@ -82,7 +83,7 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
       if (!personalEmail || seenAncEmails.has(personalEmail)) continue;
       seenAncEmails.add(personalEmail);
       const ctaPath = (!anc.cta_link || anc.cta_link === '/nv/ban-tin' || (u.role === 'MKT' && anc.cta_link.startsWith('/nv')) || (isEmployeeRole(u.role as Role) && anc.cta_link.startsWith('/admin'))) ? resolveRolePortalPath(u.role as Role, 'comms') : anc.cta_link;
-      ctx.email.enqueue({ to: personalEmail, template: 'INTERNAL_ANNOUNCEMENT', recipientName: u.display_name || u.username, referenceCode: anc.code, summary: anc.summary || anc.title, metadata: [{ label: 'Mã bản tin', value: anc.code }, { label: 'Tiêu đề', value: anc.title }, { label: 'Mức độ ưu tiên', value: prioLabel }], actionLabel: anc.cta_label || 'Xem chi tiết bản tin', actionUrl: `${origin}${ctaPath}` });
+      ctx.email.enqueue({ to: personalEmail, template: 'INTERNAL_ANNOUNCEMENT', recipientName: u.display_name || u.username, referenceCode: anc.code, summary: anc.summary || anc.title, metadata: [{ label: 'Mã bản tin', value: anc.code }, { label: 'Tiêu đề', value: anc.title }, { label: 'Mức độ ưu tiên', value: prioLabel }, ...(attachedMedia.length ? [{ label: 'Tệp đính kèm', value: attachedMedia.map((m) => `${m.file_name} (${m.mimeLabel}, ${m.sizeFormatted})`).join('; ') }] : [])], actionLabel: anc.cta_label || 'Xem chi tiết bản tin', actionUrl: `${origin}${ctaPath}` });
     }
     if (seenAncEmails.size > 0) void ctx.email.processQueueBatch(Math.min(6, seenAncEmails.size));
     if (pendingLogInserts.length > 0) await Promise.all(pendingLogInserts);
@@ -111,9 +112,9 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
       const camp = ctx.db.campaigns.get(a.campaign_id), logs = allLogs.filter((l) => l.announcement_id === a.id);
       let target = 'ALL';
       try { target = JSON.parse(a.audience_json || '{}').target || 'ALL'; } catch { target = 'ALL'; }
-      return { ...a, announcement_code: a.code, campaignName: camp?.name || 'Thông báo độc lập', audience_target: target, audienceLabel: formatAudienceLabel(a.audience_scope || 'ALL', a.audience_json), creatorName: ctx.db.users.get(a.created_by)?.display_name || a.approved_by || 'Hệ thống', isMine: Boolean(u && (a.created_by === u.id || a.approved_by === u.username || a.approved_by === u.display_name)), canEdit: Boolean(u && canModify(u, a)), deliveredCount: logs.filter((l) => l.status === 'SENT').length, failedCount: logs.filter((l) => l.status === 'FAILED').length, readConfirmedCount: logs.filter((l) => Boolean(l.read_at || l.ack_at)).length };
+      return { ...a, announcement_code: a.code, campaignName: camp?.name || 'Thông báo độc lập', audience_target: target, audienceLabel: formatAudienceLabel(a.audience_scope || 'ALL', a.audience_json), mediaAttachments: resolveAnnouncementMediaAttachments(ctx, a.media_ids, u), creatorName: ctx.db.users.get(a.created_by)?.display_name || a.approved_by || 'Hệ thống', isMine: Boolean(u && (a.created_by === u.id || a.approved_by === u.username || a.approved_by === u.display_name)), canEdit: Boolean(u && canModify(u, a)), deliveredCount: logs.filter((l) => l.status === 'SENT').length, failedCount: logs.filter((l) => l.status === 'FAILED').length, readConfirmedCount: logs.filter((l) => Boolean(l.read_at || l.ack_at)).length };
     });
-    const mediaAssets = [...allMedia].reverse().map((m) => ({ ...m, drive_url: m.drive_file_id, creatorName: ctx.db.users.get(m.uploaded_by || m.created_by)?.display_name || 'Truyền thông MKT', isMine: Boolean(u && (m.created_by === u.id || m.uploaded_by === u.id)), canEdit: Boolean(u && canModify(u, m)) }));
+    const mediaAssets = [...allMedia].reverse().map((m) => enrichMediaAsset(ctx, m, u, canModify));
     const deliveryLogs = [...allLogs].reverse().map((l) => {
       const anc = ctx.db.announcements.get(l.announcement_id), recUser = ctx.db.users.get(l.recipient_user_id);
       return { ...l, announcementCode: anc?.code || 'ANC', announcementTitle: anc?.title || 'Bản tin nội bộ', recipientName: recUser?.display_name || l.recipient_user_id, readReceiptStatus: l.read_at || l.ack_at ? 'READ_CONFIRMED' : 'NO_RECEIPT', readReceiptLabel: l.read_at || l.ack_at ? 'Đã xác nhận đọc' : 'Chưa xác nhận đọc' };

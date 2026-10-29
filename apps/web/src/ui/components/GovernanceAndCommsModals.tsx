@@ -2,13 +2,14 @@
 
 import { Button, Col, Descriptions, Form, Input, Modal, Row, Select, Space, Switch, Table, Tag } from 'antd';
 import type { FormInstance } from 'antd';
-import { CheckCircleOutlined, CloseOutlined, EditOutlined, SaveOutlined, SendOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, CloseOutlined, EditOutlined, LinkOutlined, PaperClipOutlined, SaveOutlined, SendOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { TABLE_DISPLAY_LABELS } from '@umbm/shared';
 import { StatusTag } from '../StatusTag';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { BaseDetailDrawer } from './BaseDetailDrawer';
 import { DateStringPicker } from './DateTimePickers';
+import { MediaAttachmentSection, useResolvedMediaAttachments } from './MediaAttachmentCards';
 import { RichHtmlEditor } from './RichHtmlEditor';
 
 export const POLICY_CATEGORY_OPTIONS = [
@@ -151,15 +152,20 @@ export function BackupDetailDrawer({ record, onClose }: { record: Record<string,
 }
 
 export function GovernanceDetailDrawer({
-  record, kind, onClose, onEdit, onBroadcast,
+  record, kind, mediaPool, onClose, onEdit, onBroadcast,
 }: {
-  record: Record<string, unknown> | null; kind: 'policy' | 'announcement'; onClose: () => void;
+  record: Record<string, unknown> | null; kind: 'policy' | 'announcement'; mediaPool?: Record<string, unknown>[]; onClose: () => void;
   onEdit?: (r: Record<string, unknown>) => void; onBroadcast?: (r: Record<string, unknown>) => void;
 }) {
+  const attachments = useResolvedMediaAttachments(kind === 'announcement' ? record : null, mediaPool);
   const html = record ? String(kind === 'policy' ? record.content_html || record.note || `<p>${record.description ?? ''}</p>` : record.body || `<p>${record.summary ?? ''}</p>`) : '';
-  const isSent = record && String(record.status) === 'SENT';
+  const ancStatus = String(record?.status || 'DRAFT');
+  const isSent = ancStatus === 'SENT';
+  const ancStatusLabel = isSent ? 'Đã phát hành' : ancStatus === 'SCHEDULED' ? 'Đã đặt lịch phát' : ancStatus === 'FAILED' ? 'Lỗi gửi' : 'Bản nháp';
   const priorityLabel = record?.priority === 'URGENT' ? 'Khẩn cấp' : record?.priority === 'HIGH' ? 'Quan trọng' : 'Thông thường';
   const priorityColor = record?.priority === 'URGENT' || record?.priority === 'HIGH' ? 'red' : 'blue';
+  const schedFormatted = record?.scheduled_at && dayjs(String(record.scheduled_at)).isValid() ? dayjs(String(record.scheduled_at)).format('HH:mm DD/MM/YYYY') : String(record?.scheduled_at || '');
+  const ctaLink = String(record?.cta_link || '/nv/ban-tin');
 
   return (
     <BaseDetailDrawer
@@ -176,7 +182,7 @@ export function GovernanceDetailDrawer({
         <Space direction="vertical" size={14} style={{ width: '100%' }}>
           <Descriptions size="small" bordered column={2}>
             <Descriptions.Item label="Mã định danh"><Tag color="geekblue">{String(record.key ?? record.announcement_code ?? record.code)}</Tag></Descriptions.Item>
-            <Descriptions.Item label={kind === 'policy' ? 'Định mức / Giá trị áp dụng' : 'Trạng thái'}>{kind === 'policy' ? <Tag color="blue">{String(record.value_json)}</Tag> : <StatusTag value={isSent ? 'SENT' : 'UNSENT'} label={isSent ? 'Đã gửi' : 'Chưa gửi'} />}</Descriptions.Item>
+            <Descriptions.Item label={kind === 'policy' ? 'Định mức / Giá trị áp dụng' : 'Trạng thái'}>{kind === 'policy' ? <Tag color="blue">{String(record.value_json)}</Tag> : <StatusTag value={ancStatus} label={ancStatusLabel} />}</Descriptions.Item>
             {kind === 'policy' && (
               <>
                 <Descriptions.Item label="Nhóm quy định">{POLICY_CATEGORY_LABELS[String(record.category)] ?? String(record.category ?? 'Quy định chung')}</Descriptions.Item>
@@ -186,12 +192,12 @@ export function GovernanceDetailDrawer({
             {kind === 'announcement' && (
               <>
                 <Descriptions.Item label="Mức độ ưu tiên"><Tag color={priorityColor}>{priorityLabel}</Tag></Descriptions.Item>
-                <Descriptions.Item label="Thời điểm phát hành">{isSent && record.sent_at ? dayjs(String(record.sent_at)).format('HH:mm DD/MM/YYYY') : record.scheduled_at ? `Lịch phát: ${String(record.scheduled_at)}` : 'Bản nháp (Chưa gửi)'}</Descriptions.Item>
+                <Descriptions.Item label="Thời điểm phát hành">{isSent && record.sent_at ? dayjs(String(record.sent_at)).format('HH:mm DD/MM/YYYY') : schedFormatted ? `Lịch phát: ${schedFormatted}` : 'Chưa đặt lịch phát'}</Descriptions.Item>
                 <Descriptions.Item label="Nhóm người nhận"><Tag color="blue">{String(record.audienceLabel || 'Toàn công ty')}</Tag></Descriptions.Item>
                 <Descriptions.Item label="Nút hành động (CTA) & Tệp đính kèm">
                   <Space size={6} wrap>
-                    {Boolean(record.cta_label) && <Tag color="geekblue">CTA: {String(record.cta_label)} ({String(record.cta_link || '/nv/ban-tin')})</Tag>}
-                    {Boolean(record.media_ids && record.media_ids !== '[]') && <Tag color="cyan">Đính kèm: {String(record.media_ids)}</Tag>}
+                    {Boolean(record.cta_label) && <Button size="small" type="primary" ghost icon={<LinkOutlined />} href={ctaLink} target={ctaLink.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer">{String(record.cta_label)}</Button>}
+                    {attachments.length > 0 ? attachments.map((m) => <Tag key={m.id} color="cyan" icon={<PaperClipOutlined />} style={{ margin: 0 }}>{m.code ? `[${m.code}] ` : ''}{m.file_name} ({m.mimeLabel} · {m.sizeFormatted})</Tag>) : !record.cta_label && <span style={{ color: '#94A3B8' }}>Không có tệp đính kèm</span>}
                   </Space>
                 </Descriptions.Item>
               </>
@@ -202,6 +208,7 @@ export function GovernanceDetailDrawer({
             ) : null}
           </Descriptions>
           <div style={{ padding: '14px 18px', border: '1px solid #E5E7EB', borderRadius: 4, background: '#FFFFFF', lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: html }} />
+          {kind === 'announcement' && <MediaAttachmentSection items={attachments} />}
         </Space>
       )}
     </BaseDetailDrawer>

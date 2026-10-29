@@ -5,7 +5,7 @@ import { notFound, useParams, useRouter } from 'next/navigation';
 import { Alert, App, Button, Card, Col, Empty, Grid, List, Row, Select, Space, Spin, Tabs, Tag, Tooltip, Typography } from 'antd';
 import {
   BookOutlined, CameraOutlined, CheckCircleOutlined, ClockCircleOutlined, DownloadOutlined,
-  EyeOutlined, FileAddOutlined, FileProtectOutlined, FileTextOutlined, KeyOutlined, NotificationOutlined, ReloadOutlined, RightOutlined, UserOutlined,
+  EyeOutlined, FileAddOutlined, FileProtectOutlined, FileTextOutlined, KeyOutlined, NotificationOutlined, PaperClipOutlined, ReloadOutlined, RightOutlined, UserOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -67,7 +67,7 @@ export default function EmployeeSection() {
 
   const myQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<MyAttendanceData>('/my-attendance'), enabled: !!session.data });
   const testsQ = useQuery({ queryKey: ['nv-tests'], queryFn: () => api.get<{ tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts: Record<string, unknown>[] }>('/admin/tests/bank'), enabled: section === 'bai-kiem-tra' });
-  const commsQ = useQuery({ queryKey: ['nv-comms'], queryFn: () => api.get<{ announcements: Record<string, unknown>[]; policies: Record<string, unknown>[] }>('/announcements'), enabled: section === 'ban-tin' });
+  const commsQ = useQuery({ queryKey: ['nv-comms'], queryFn: () => api.get<{ announcements: Record<string, unknown>[]; policies: Record<string, unknown>[]; mediaAssets?: Record<string, unknown>[] }>('/announcements'), enabled: section === 'ban-tin' });
 
   const postMut = useMutation({
     mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body),
@@ -168,8 +168,7 @@ export default function EmployeeSection() {
               key: 'adjustments', label: <span><FileAddOutlined /> Phiếu bổ sung công ({myAdjustments.length})</span>,
               children: (
                 <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-                    <Typography.Text type="secondary">Báo quên check-in/check-out, lỗi GPS/Camera hoặc sự cố liên quan và theo dõi quyết định xử lý kèm lý do từ Cửa hàng / HR.</Typography.Text>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 10 }}>
                     <Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(undefined); setAdjOpen(true); }}>Gửi phiếu bổ sung công</Button>
                   </div>
                   <SelectableTable<Record<string, unknown>> size="small" rowKey="id" pagination={adjPag} dataSource={myAdjustments} bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAdjustmentsExcel(rows) }]} columns={[{ title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 115, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> }, { title: 'Ngày công', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> }, { title: 'Khung ca & Giờ ca', width: 220, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{String(r.shiftTimeRange || '07:00 – 12:00')}</Tag></Space> }, { title: 'Loại sự cố, Lý do & Quyết định xử lý', render: (_, r) => <div><Tag color="orange" style={{ margin: '0 6px 0 0' }}>{r.kind === 'FORGOT_CHECK_IN' ? 'Quên Check-in' : r.kind === 'FORGOT_CHECK_OUT' ? 'Quên Check-out' : r.kind === 'GPS_ERROR' ? 'Lỗi GPS' : r.kind === 'CAMERA_ERROR' ? 'Lỗi Camera' : 'Sự cố khác'}</Tag><span>{String(r.reason || '')}</span>{Boolean(r.decision_reason) && <div style={{ fontSize: 11, color: r.status === 'REJECTED' ? '#DC2626' : '#15803D', marginTop: 2 }}>{r.status === 'REJECTED' ? 'Lý do từ chối: ' : 'Quyết định xử lý: '}{String(r.decision_reason)}</div>}</div> }, { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 105, render: (v: number) => <strong>{v} giờ</strong> }, { title: 'Trạng thái xử lý', dataIndex: 'status', width: 155, render: (v: string) => <StatusTag value={v} /> }, { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết phiếu bổ sung" onViewDetail={() => setDetailReq({ kind: 'adjustment', record: r })} /> }]} />
@@ -186,7 +185,7 @@ export default function EmployeeSection() {
             { key: 'announcements', label: <span><NotificationOutlined /> Bản tin Truyền thông Nội bộ ({(commsQ.data?.announcements ?? []).length})</span>, children: (commsQ.data?.announcements ?? []).length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có bản tin truyền thông nội bộ nào mới" /> : (
               <List size="small" bordered dataSource={commsQ.data?.announcements ?? []} renderItem={(a) => (
                 <List.Item extra={<Space size={4}><Button size="small" icon={<CheckCircleOutlined />} onClick={() => postMut.mutate({ url: `/announcements/${a.id}/ack`, body: {} })}>Đã đọc</Button><Tooltip title="Xem chi tiết bản tin"><Button size="small" icon={<EyeOutlined />} onClick={() => setViewingDoc({ kind: 'announcement', record: a })} /></Tooltip></Space>}>
-                  <List.Item.Meta title={<div style={{ lineHeight: 1.45 }}><Tag color="geekblue" style={{ margin: '0 6px 2px 0', verticalAlign: 'text-top' }}>{String(a.code || a.announcement_code || 'BẢN TIN')}</Tag><Tag color={a.priority === 'URGENT' || a.priority === 'HIGH' ? 'red' : 'blue'} style={{ margin: '0 6px 2px 0', verticalAlign: 'text-top' }}>{a.priority === 'URGENT' ? 'Khẩn cấp' : a.priority === 'HIGH' ? 'Quan trọng' : 'Thông thường'}</Tag><Typography.Link strong onClick={() => setViewingDoc({ kind: 'announcement', record: a })}>{String(a.title)}</Typography.Link></div>} description={<div><div>{String(a.summary || '')}</div>{a.sent_at ? <div style={{ fontSize: 11, color: BRAND.textSecondary, marginTop: 2 }}>Phát hành lúc: {dayjs(String(a.sent_at)).format('HH:mm DD/MM/YYYY')}</div> : null}</div>} />
+                  <List.Item.Meta title={<div style={{ lineHeight: 1.45 }}><Tag color="geekblue" style={{ margin: '0 6px 2px 0', verticalAlign: 'text-top' }}>{String(a.code || a.announcement_code || 'BẢN TIN')}</Tag><Tag color={a.priority === 'URGENT' || a.priority === 'HIGH' ? 'red' : 'blue'} style={{ margin: '0 6px 2px 0', verticalAlign: 'text-top' }}>{a.priority === 'URGENT' ? 'Khẩn cấp' : a.priority === 'HIGH' ? 'Quan trọng' : 'Thông thường'}</Tag><Typography.Link strong onClick={() => setViewingDoc({ kind: 'announcement', record: a })}>{String(a.title)}</Typography.Link>{Array.isArray(a.mediaAttachments) && a.mediaAttachments.length > 0 && <Tag color="cyan" icon={<PaperClipOutlined />} style={{ margin: '0 0 2px 6px', verticalAlign: 'text-top' }}>{a.mediaAttachments.length} đính kèm</Tag>}</div>} description={<div><div>{String(a.summary || '')}</div>{a.sent_at ? <div style={{ fontSize: 11, color: BRAND.textSecondary, marginTop: 2 }}>Phát hành lúc: {dayjs(String(a.sent_at)).format('HH:mm DD/MM/YYYY')}</div> : null}</div>} />
                 </List.Item>
               )} />
             ) },
@@ -213,7 +212,7 @@ export default function EmployeeSection() {
       <AttendanceEventDetailModal event={detailEvent} onClose={() => setDetailEvent(null)} />
       <ScheduleRequestDetailModal target={detailReq} onClose={() => setDetailReq(null)} />
       <AttendanceAdjustmentModal open={adjOpen} employeeId={empId} shifts={publishedShifts} initialShiftId={presetAdjShiftId} onClose={() => setAdjOpen(false)} onSuccess={() => qc.invalidateQueries({ queryKey: ['my-attendance'] })} />
-      <GovernanceDetailDrawer record={viewingDoc?.record ?? null} kind={viewingDoc?.kind ?? 'announcement'} onClose={() => setViewingDoc(null)} />
+      <GovernanceDetailDrawer record={viewingDoc?.record ?? null} kind={viewingDoc?.kind ?? 'announcement'} mediaPool={commsQ.data?.mediaAssets} onClose={() => setViewingDoc(null)} />
       <UserProfileModal open={profileTab !== null} initialTab={profileTab ?? 'info'} onClose={() => setProfileTab(null)} />
     </div>
   );

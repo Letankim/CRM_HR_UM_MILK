@@ -9,6 +9,7 @@ import { nowIso } from '../lib/time.js';
 import { requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { resolveRolePortalPath, resolveUserPersonalRealEmail, webOrigin } from '../services/account-email-dispatcher.js';
+import { resolveAnnouncementMediaAttachments } from '../services/comms-media-helper.js';
 import { ensureSyncedNotifications, isNotificationCreatedByOrSelfAction } from '../services/notification-sync.service.js';
 import { resolveNotificationEventTime } from '../services/notification-time.js';
 import { resolveEmployeeBranchId } from './account-employee-sync.js';
@@ -73,9 +74,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
   });
 
   app.get('/api/notifications', { preHandler: requireAuth() }, async (request) => {
-    const query = zListQuery.parse(request.query);
-    const user = request.auth!.user;
-    const branchScope = request.auth!.branchScope;
+    const query = zListQuery.parse(request.query), user = request.auth!.user, branchScope = request.auth!.branchScope;
     if (query.refresh === '1') await Promise.all([ctx.db.notifications.refreshIfIdle(), ctx.db.users.refreshIfIdle()]);
     await ensureSyncedNotifications(ctx);
 
@@ -154,6 +153,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
         ...n, created_at: eventTime, link: resolveNotificationLinkForRole(n, user.role), body: n.body.replace(/^Mã:\s*[A-Z0-9_]+\s*\([^)]+\)\s*·\s*/i, ''), read_at: userReadAt, code: anc?.code || `NTF-${String(idx + 1).padStart(4, '0')}`,
         categoryLabel: NOTIFICATION_CATEGORY_LABELS[n.category] ?? n.category, severityLabel: NOTIFICATION_SEVERITY_LABELS[n.severity] ?? n.severity,
         scopeType, targetLabel, readStatus, readStatusLabel: userReadAt ? 'Đã đọc' : 'Chưa đọc', detailHtml: anc?.body || `<p>${n.body.replace(/^Mã:\s*[A-Z0-9_]+\s*\([^)]+\)\s*·\s*/i, '')}</p>`,
+        mediaAttachments: anc ? resolveAnnouncementMediaAttachments(ctx, anc.media_ids, user) : [], ctaLabel: anc?.cta_label || '', ctaLink: anc?.cta_link || '',
       };
     });
 

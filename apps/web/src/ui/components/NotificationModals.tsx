@@ -6,6 +6,7 @@ import { CloseOutlined, LinkOutlined, SendOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { ROLE_OPTIONS } from '@umbm/shared';
 import { BaseDetailDrawer } from './BaseDetailDrawer';
+import { MediaAttachmentSection, useResolvedMediaAttachments } from './MediaAttachmentCards';
 
 export interface NotificationItem {
   id: string; version: number; code: string; category: string; categoryLabel: string;
@@ -14,6 +15,7 @@ export interface NotificationItem {
   scopeType: 'BROADCAST' | 'ROLE' | 'PERSONAL'; targetLabel: string;
   recipient_user_id: string; recipient_role: string; read_at: string;
   readStatus: 'READ' | 'UNREAD'; readStatusLabel: string; created_at: string;
+  mediaAttachments?: Record<string, unknown>[]; ctaLabel?: string; ctaLink?: string;
 }
 
 export const NOTIFICATION_CATEGORY_OPTIONS = [
@@ -51,6 +53,7 @@ export function NotificationDetailDrawer({
 }: {
   record: NotificationItem | null; onClose: () => void; onNavigate?: (link: string) => void;
 }) {
+  const attachments = useResolvedMediaAttachments(record as unknown as Record<string, unknown> | null);
   const sevColor = record?.severity === 'CRITICAL' ? 'red' : record?.severity === 'WARNING' ? 'gold' : 'blue';
   const scopeColor = record?.scopeType === 'PERSONAL' ? 'purple' : record?.scopeType === 'ROLE' ? 'cyan' : 'geekblue';
 
@@ -92,6 +95,7 @@ export function NotificationDetailDrawer({
             style={{ padding: '14px 18px', border: '1px solid #E5E7EB', borderRadius: 4, background: '#FFFFFF', lineHeight: 1.7 }}
             dangerouslySetInnerHTML={{ __html: record.detailHtml || `<p>${record.body}</p>` }}
           />
+          <MediaAttachmentSection items={attachments} />
         </Space>
       )}
     </BaseDetailDrawer>

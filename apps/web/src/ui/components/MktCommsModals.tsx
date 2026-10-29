@@ -4,6 +4,7 @@ import { Col, Form, Input, InputNumber, Modal, Row, Select, Switch } from 'antd'
 import type { FormInstance } from 'antd';
 import { CloseOutlined, PlusOutlined, SaveOutlined, SendOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
+import { MEDIA_CATEGORY_OPTIONS, normalizeClientMediaItem } from './MediaAttachmentCards';
 import { RichHtmlEditor } from './RichHtmlEditor';
 
 export function MktAnnouncementModal({
@@ -51,7 +52,7 @@ export function MktAnnouncementModal({
         <Row gutter={12}>
           <Col xs={24} md={9}><Form.Item name="audience_key" label="Nhóm người nhận thông báo" rules={[{ required: true }]}><Select options={audienceOptions} showSearch optionFilterProp="label" /></Form.Item></Col>
           <Col xs={24} md={8}><Form.Item name="campaign_id" label="Chiến dịch truyền thông nội bộ"><Select allowClear placeholder="Chọn chiến dịch truyền thông..." options={campaigns.map((c) => ({ value: String(c.id), label: `${c.campaign_code} — ${c.name}` }))} /></Form.Item></Col>
-          <Col xs={24} md={7}><Form.Item name="media_list" label="Tệp / Ảnh đính kèm từ Kho Media"><Select mode="multiple" allowClear placeholder="Chọn ảnh/tài liệu đính kèm..." options={mediaAssets.map((m) => ({ value: String(m.id), label: String(m.file_name) }))} /></Form.Item></Col>
+          <Col xs={24} md={7}><Form.Item name="media_list" label="Tệp / Ảnh đính kèm từ Kho Media"><Select mode="multiple" allowClear showSearch optionFilterProp="label" placeholder="Chọn ảnh/tài liệu đính kèm..." options={mediaAssets.map((m) => { const norm = normalizeClientMediaItem(m); return { value: norm.id, label: `${norm.code ? `[${norm.code}] ` : ''}${norm.file_name} (${norm.mimeLabel} · ${norm.sizeFormatted})` }; })} /></Form.Item></Col>
         </Row>
         <Row gutter={12}>
           <Col xs={24} md={9}><Form.Item name="summary" label="Tóm tắt ngắn" rules={[{ required: true, message: 'Vui lòng nhập tóm tắt thông báo' }]}><Input placeholder="Tóm tắt hiển thị trên danh sách thông báo..." /></Form.Item></Col>
@@ -169,12 +170,13 @@ export function MktMediaModal({
       okButtonProps={{ icon: editing ? <SaveOutlined /> : <PlusOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }}
       onCancel={onClose} onOk={() => form.submit()}
     >
-      <Form form={form} layout="vertical" initialValues={{ mime_type: 'image/png', size_bytes: 245000, is_internal_only: true }} onFinish={onSubmit}>
+      <Form form={form} layout="vertical" initialValues={{ category: 'BANNER', mime_type: 'image/png', size_bytes: 245000, is_internal_only: true }} onFinish={onSubmit}>
         <Row gutter={12}>
-          <Col xs={24} md={14}><Form.Item name="file_name" label="Tên tệp / Tài liệu truyền thông" rules={[{ required: true }]}><Input placeholder="VD: banner-sop-pha-che-v5.png" /></Form.Item></Col>
-          <Col xs={24} md={10}><Form.Item name="mime_type" label="Định dạng tệp"><Select options={[{ value: 'image/png', label: 'Hình ảnh PNG' }, { value: 'image/jpeg', label: 'Hình ảnh JPEG' }, { value: 'application/pdf', label: 'Tài liệu PDF' }]} /></Form.Item></Col>
+          <Col xs={24} md={10}><Form.Item name="file_name" label="Tên tệp / Tài liệu truyền thông" rules={[{ required: true, message: 'Vui lòng nhập tên tệp' }]}><Input placeholder="VD: banner-sop-pha-che-v5.png" /></Form.Item></Col>
+          <Col xs={12} md={7}><Form.Item name="category" label="Phân loại nội dung"><Select options={MEDIA_CATEGORY_OPTIONS} /></Form.Item></Col>
+          <Col xs={12} md={7}><Form.Item name="mime_type" label="Định dạng tệp"><Select options={[{ value: 'image/png', label: 'Hình ảnh PNG' }, { value: 'image/jpeg', label: 'Hình ảnh JPEG' }, { value: 'image/webp', label: 'Hình ảnh WebP' }, { value: 'application/pdf', label: 'Tài liệu PDF' }]} /></Form.Item></Col>
         </Row>
-        <Form.Item name="drive_url" label="Đường dẫn tệp tài liệu / Hình ảnh nội bộ" rules={[{ required: true }]}><Input placeholder="https://..." /></Form.Item>
+        <Form.Item name="drive_url" label="Đường dẫn tệp tài liệu / Hình ảnh nội bộ (URL ảnh hoặc Google Drive)" rules={[{ required: true, message: 'Vui lòng nhập đường dẫn tệp' }]}><Input placeholder="https://..." /></Form.Item>
         <Row gutter={12}>
           <Col xs={24} md={10}><Form.Item name="size_bytes" label="Dung lượng tệp"><InputNumber style={{ width: '100%' }} min={1024} step={10240} suffix="Bytes" /></Form.Item></Col>
           <Col xs={24} md={14}><Form.Item name="is_internal_only" label="Phạm vi bảo mật tài liệu" valuePropName="checked"><Switch checkedChildren="Chỉ lưu hành nội bộ" unCheckedChildren="Công khai có kiểm soát" /></Form.Item></Col>
