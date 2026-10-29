@@ -81,7 +81,9 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
     (log) => !isDeletedRef(log.assignmentId, log.date, log.shiftCode),
   );
   const standardHours = empShifts.filter((sh) => sh.day_type !== 'OFF' && sh.status !== 'ON_LEAVE' && sh.status !== 'DRAFT').reduce((sum, sh) => sum + (Number(sh.scheduled_hours) || 5), 0) || s.approved_hours;
-  const missingLogs = shiftLogs.filter((log) => log.status === 'ABSENT' || log.status === 'ATTENDANCE_CHECKIN');
+  const missingLogs = shiftLogs.filter(
+    (log) => log.status === 'ABSENT' || log.status === 'ATTENDANCE_CHECKIN' || log.status === 'SCHEDULE_PUBLISHED',
+  );
   const missingCheckoutCount = missingLogs.length;
   const pendingAdjs = empAdjs.filter((a) => a.status === 'PENDING' || a.status === 'STORE_CONFIRMED');
   const pendingAdjCount = pendingAdjs.length;
@@ -89,20 +91,22 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
   const hasAnomaly = missingCheckoutCount > 0 || pendingAdjCount > 0;
 
   const missingShifts: MissingShiftDetailItem[] = shiftLogs
-    .filter((log) => log.status === 'ABSENT' || log.status === 'ATTENDANCE_CHECKIN' || Boolean(log.pendingAdjustmentCode))
+    .filter((log) => log.status === 'ABSENT' || log.status === 'ATTENDANCE_CHECKIN' || log.status === 'SCHEDULE_PUBLISHED' || Boolean(log.pendingAdjustmentCode))
     .map((log) => {
-      const issueType: MissingShiftDetailItem['issueType'] = log.status === 'ABSENT'
+      const issueType: MissingShiftDetailItem['issueType'] = log.status === 'ABSENT' || log.status === 'SCHEDULE_PUBLISHED'
         ? 'ABSENT'
         : log.status === 'ATTENDANCE_CHECKIN'
           ? (log.checkInHm && !log.checkOutHm ? 'MISSING_CHECKOUT' : 'MISSING_CHECKIN')
           : 'PENDING_ADJUSTMENT';
-      const issueLabel = issueType === 'ABSENT'
+      const issueLabel = log.status === 'ABSENT'
         ? 'Vắng mặt (Chưa chấm công Vào & Ra ca)'
-        : issueType === 'MISSING_CHECKOUT'
-          ? `Quên chấm công Ra ca (Đã vào ca lúc ${log.checkInHm})`
-          : issueType === 'MISSING_CHECKIN'
-            ? `Thiếu chấm công Vào ca (Chỉ có giờ Ra ${log.checkOutHm})`
-            : `Đang chờ duyệt phiếu bổ sung công (${log.pendingAdjustmentCode})`;
+        : log.status === 'SCHEDULE_PUBLISHED'
+          ? 'Chưa chấm công Vào & Ra ca (Ca phân công trong kỳ chưa hoàn thành)'
+          : issueType === 'MISSING_CHECKOUT'
+            ? `Quên chấm công Ra ca (Đã vào ca lúc ${log.checkInHm})`
+            : issueType === 'MISSING_CHECKIN'
+              ? `Thiếu chấm công Vào ca (Chỉ có giờ Ra ${log.checkOutHm})`
+              : `Đang chờ duyệt phiếu bổ sung công (${log.pendingAdjustmentCode})`;
       const bName = log.branchName || s.branch_name || 'Chi nhánh';
       const actionGuide = log.pendingAdjustmentCode
         ? `Đã có phiếu bù công ${log.pendingAdjustmentCode} (${log.pendingAdjustmentStatus === 'STORE_CONFIRMED' ? 'Cửa hàng đã xác nhận — Chờ HR duyệt' : 'Đang chờ Cửa hàng / HR duyệt'}) — Báo HR / Cửa hàng phê duyệt.`

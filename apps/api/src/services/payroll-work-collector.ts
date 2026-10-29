@@ -177,6 +177,7 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
       statusLabel = pendAdj ? `${missPart} · Chờ duyệt ${pendAdj.adjustment_code}` : missPart;
     } else {
       scheduledOnlyShiftsCount += 1;
+      statusLabel = pendAdj ? `Chưa chấm công · Chờ duyệt ${pendAdj.adjustment_code}` : 'Chưa chấm công Vào/Ra (Ca phân công trong kỳ)';
     }
 
     const hours = a.day_type === 'OT' ? 0 : baseHours, otHours = a.day_type === 'OT' ? baseHours : extraOt;
