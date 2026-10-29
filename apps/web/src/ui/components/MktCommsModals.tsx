@@ -22,7 +22,7 @@ export function MktAnnouncementModal({
 
   return (
     <Modal
-      open={open} forceRender width="76vw" style={{ top: 18, maxWidth: 1120 }}
+      open={open} forceRender width="84vw" style={{ top: 18, maxWidth: 1320 }}
       title={editing ? `Chỉnh sửa Thông báo Nội bộ — ${editing.announcement_code ?? editing.code}` : 'Tạo Thông báo Nội bộ & Đặt Lịch Phát'}
       okText={editing ? 'Lưu cập nhật thông báo' : statusVal === 'SENT' ? 'Phát thông báo ngay' : statusVal === 'SCHEDULED' ? 'Lưu & Đặt lịch phát' : 'Lưu bản nháp'}
       cancelText="Hủy bỏ"
@@ -76,7 +76,7 @@ export function MktAudienceModal({
 }) {
   return (
     <Modal
-      open={open} forceRender width={720}
+      open={open} forceRender width="74vw" style={{ top: 24, maxWidth: 1080 }}
       title={editing ? `Chỉnh sửa Nhóm Người Nhận — ${editing.label}` : 'Cấu hình Nhóm Người Nhận Thông Báo Mới'}
       okText={editing ? 'Lưu cập nhật nhóm' : 'Tạo nhóm người nhận'} cancelText="Hủy bỏ"
       okButtonProps={{ icon: editing ? <SaveOutlined /> : <PlusOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }}
@@ -133,7 +133,7 @@ export function MktCampaignModal({
 }) {
   return (
     <Modal
-      open={open} forceRender width={720}
+      open={open} forceRender width="74vw" style={{ top: 24, maxWidth: 1080 }}
       title={editing ? `Chỉnh sửa Chiến dịch — ${editing.campaign_code}` : 'Tạo Chiến dịch Truyền thông Nội bộ Mới'}
       okText={editing ? 'Lưu cập nhật' : 'Tạo chiến dịch'} cancelText="Hủy bỏ"
       okButtonProps={{ icon: editing ? <SaveOutlined /> : <PlusOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }}

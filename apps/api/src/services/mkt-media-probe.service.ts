@@ -5,7 +5,10 @@ import {
   extractGoogleDriveFileId,
   guessMimeByExtension,
   readMediaCache,
+  readMediaMetaCache,
+  resolveUploadExtension,
   saveMediaCache,
+  saveMediaMetaCache,
   toMktCacheKey,
 } from './mkt-media-storage.service.js';
 
@@ -19,6 +22,16 @@ export interface ProbedMktMediaInfo {
   sizeFormatted: string;
   isImage: boolean;
   previewUrl: string;
+}
+
+function decodeHtmlAttr(val: string): string {
+  return val
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .trim();
 }
 
 function parseContentDispositionName(header: string | null): string {
@@ -45,11 +58,12 @@ export async function probeMktMediaSource(ctx: AppContext, rawInput: string): Pr
   const raw = String(rawInput || '').trim();
   const driveId = extractGoogleDriveFileId(raw);
   const cacheKey = toMktCacheKey(driveId ?? raw);
-  let fileName = '';
-  let declaredMime = '';
-  let sizeBytes = 0;
+  const cachedMeta = cacheKey ? readMediaMetaCache(ctx, cacheKey) : null;
   let buf = cacheKey ? readMediaCache(ctx, cacheKey) : null;
-  let reachable = Boolean(buf && buf.length > 0);
+  let fileName = cachedMeta?.fileName || '';
+  let declaredMime = cachedMeta?.mimeType || '';
+  let sizeBytes = buf?.length || cachedMeta?.sizeBytes || 0;
+  let reachable = Boolean((buf && buf.length > 0) || (cachedMeta && cachedMeta.sizeBytes > 0));
 
   if (driveId) {
     if (ctx.google.getDriveFileMeta) {
@@ -61,18 +75,50 @@ export async function probeMktMediaSource(ctx: AppContext, rawInput: string): Pr
         if (meta.sizeBytes > 0 || meta.name) reachable = true;
       }
     }
-    const metaMime = normalizeKnownMime(declaredMime, fileName);
-    const shouldPrewarmBytes = !buf && (!reachable || sizeBytes <= 0 || (metaMime.startsWith('image/') && sizeBytes <= 12 * 1024 * 1024));
+    const canQueryPublicDrive = ctx.google.mode === 'google' || (!buf && raw.startsWith('http'));
+    const directDownloadUrl = `https://drive.usercontent.google.com/download?id=${encodeURIComponent(driveId)}&export=download&confirm=t`;
+
+    if (canQueryPublicDrive && (!fileName || sizeBytes <= 0)) {
+      try {
+        const headRes = await fetch(directDownloadUrl, { method: 'HEAD', redirect: 'follow', signal: AbortSignal.timeout(5_000) });
+        const ct = headRes.headers.get('content-type') || '';
+        const dispName = parseContentDispositionName(headRes.headers.get('content-disposition'));
+        if (dispName && !fileName) fileName = dispName;
+        if (headRes.ok && !ct.includes('text/html')) {
+          reachable = true;
+          const cl = Number(headRes.headers.get('content-length') || 0);
+          if (cl > 0 && sizeBytes <= 0) sizeBytes = cl;
+          if (!declaredMime) declaredMime = ct;
+        }
+      } catch { /* fallback to view / download */ }
+    }
+
+    if (canQueryPublicDrive && !fileName) {
+      try {
+        const viewRes = await fetch(`https://drive.google.com/file/d/${encodeURIComponent(driveId)}/view`, { redirect: 'follow', signal: AbortSignal.timeout(5_000) });
+        if (viewRes.ok) {
+          const html = await viewRes.text();
+          const ogMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+          if (ogMatch?.[1]) {
+            fileName = decodeHtmlAttr(ogMatch[1]);
+            if (/docs\.google\.com\/(?:document|spreadsheets|presentation)\//i.test(raw)) {
+              reachable = true;
+              if (!declaredMime) declaredMime = 'application/pdf';
+            }
+          }
+        }
+      } catch { /* ignore view fallback */ }
+    }
+
+    const currMime = normalizeKnownMime(declaredMime, fileName);
+    const shouldPrewarmBytes = !buf && (!reachable || sizeBytes <= 0 || (currMime.startsWith('image/') && sizeBytes <= 12 * 1024 * 1024) || (currMime === 'application/octet-stream' && sizeBytes > 0 && sizeBytes <= 4 * 1024 * 1024));
     if (shouldPrewarmBytes && ctx.google.downloadDriveFile) {
       buf = await ctx.google.downloadDriveFile(driveId);
       if (buf && buf.length > 0 && buf.length <= 20 * 1024 * 1024) saveMediaCache(ctx, cacheKey, buf);
     }
-    if (!buf && shouldPrewarmBytes && (raw.startsWith('http') || ctx.google.mode === 'google')) {
+    if (!buf && shouldPrewarmBytes && canQueryPublicDrive) {
       try {
-        const res = await fetch(`https://drive.google.com/uc?export=download&id=${encodeURIComponent(driveId)}`, {
-          redirect: 'follow',
-          signal: AbortSignal.timeout(8_000),
-        });
+        const res = await fetch(directDownloadUrl, { redirect: 'follow', signal: AbortSignal.timeout(9_000) });
         const ct = res.headers.get('content-type') || '';
         const dispName = parseContentDispositionName(res.headers.get('content-disposition'));
         if (dispName && !fileName) fileName = dispName;
@@ -90,7 +136,7 @@ export async function probeMktMediaSource(ctx: AppContext, rawInput: string): Pr
     try {
       const parsedUrl = new URL(raw);
       const lastSeg = decodeURIComponent(parsedUrl.pathname.split('/').filter(Boolean).pop() || '');
-      if (lastSeg && /\.[a-zA-Z0-9]{2,5}$/.test(lastSeg)) fileName = lastSeg;
+      if (lastSeg && /\.[a-zA-Z0-9]{2,5}$/.test(lastSeg)) fileName = fileName || lastSeg;
     } catch { /* ignore */ }
     if (!buf) {
       try {
@@ -119,6 +165,15 @@ export async function probeMktMediaSource(ctx: AppContext, rawInput: string): Pr
   }
 
   const mimeType = normalizeKnownMime(declaredMime, fileName);
+  if (reachable && !fileName) {
+    const ext = resolveUploadExtension(mimeType);
+    const shortId = (driveId || cacheKey || 'media').replace(/^h_/, '').slice(0, 8);
+    fileName = ext && ext !== 'bin' ? `tep-dinh-kem-${shortId}.${ext}` : `tep-dinh-kem-${shortId}`;
+  }
+  if (reachable && cacheKey) {
+    saveMediaMetaCache(ctx, cacheKey, { fileName, mimeType, sizeBytes });
+  }
+
   const isImage = mimeType.startsWith('image/');
   const previewTarget = driveId ?? cacheKey;
   const previewUrl = reachable && isImage && previewTarget ? `/api/mkt/media/files/${encodeURIComponent(previewTarget)}` : '';

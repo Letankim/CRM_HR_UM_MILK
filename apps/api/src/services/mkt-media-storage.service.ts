@@ -8,7 +8,15 @@ import { dayjs } from '../lib/time.js';
 const ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
 const SAFE_KEY_RE = /^[a-zA-Z0-9_-]{6,64}$/;
 const MAX_MEDIA_RAM_CACHE = 40;
+
+export interface CachedMktMediaMeta {
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 const mktMediaRamCache = new Map<string, Buffer>();
+const mktMediaMetaRamCache = new Map<string, CachedMktMediaMeta>();
 
 const CATEGORY_VI: Record<string, string> = {
   BANNER: 'Banner truyền thông', SOP_DOC: 'Tài liệu quy trình (SOP)',
@@ -30,6 +38,14 @@ const EXT_TO_MIME: Record<string, string> = {
 export function guessMimeByExtension(fileName = ''): string {
   const m = String(fileName || '').trim().toLowerCase().match(/\.([a-z0-9]{2,5})(?:\?.*)?$/);
   return (m?.[1] && EXT_TO_MIME[m[1]]) ? EXT_TO_MIME[m[1]]! : 'application/octet-stream';
+}
+
+export function resolveUploadExtension(mime: string, originalName = ''): string {
+  const origMatch = originalName.trim().toLowerCase().match(/\.([a-z0-9]{2,5})$/);
+  if (origMatch?.[1] && EXT_TO_MIME[origMatch[1]]) return origMatch[1];
+  const baseMime = String(mime || '').split(';')[0]!.trim().toLowerCase();
+  const found = Object.entries(EXT_TO_MIME).find(([, m]) => baseMime === m || baseMime.startsWith(m));
+  return found?.[0] ?? 'bin';
 }
 
 function getLocalMktMediaDir(ctx: AppContext): string {
@@ -54,10 +70,33 @@ function putMediaRamCache(key: string, buf: Buffer): void {
   mktMediaRamCache.set(key, buf);
 }
 
-export function saveMediaCache(ctx: AppContext, key: string, buf: Buffer): void {
+export function saveMediaMetaCache(ctx: AppContext, key: string, meta: CachedMktMediaMeta): void {
+  if (!key || (!meta.fileName && meta.sizeBytes <= 0)) return;
+  mktMediaMetaRamCache.set(key, meta);
+  try { writeFileSync(join(getLocalMktMediaDir(ctx), `${key}.meta.json`), JSON.stringify(meta), 'utf8'); } catch { /* ignore ephemeral disk */ }
+}
+
+export function readMediaMetaCache(ctx: AppContext, key: string): CachedMktMediaMeta | null {
+  if (!key) return null;
+  const ramHit = mktMediaMetaRamCache.get(key);
+  if (ramHit) return ramHit;
+  try {
+    const metaPath = join(getLocalMktMediaDir(ctx), `${key}.meta.json`);
+    if (existsSync(metaPath)) {
+      const parsed = JSON.parse(readFileSync(metaPath, 'utf8')) as CachedMktMediaMeta;
+      if (parsed && typeof parsed === 'object') { mktMediaMetaRamCache.set(key, parsed); return parsed; }
+    }
+  } catch { /* ignore corrupt meta */ }
+  return null;
+}
+
+export function saveMediaCache(ctx: AppContext, key: string, buf: Buffer, meta?: Partial<CachedMktMediaMeta>): void {
   if (!key || buf.length === 0) return;
   putMediaRamCache(key, buf);
   try { writeFileSync(join(getLocalMktMediaDir(ctx), `${key}.bin`), buf); } catch { /* ignore ephemeral disk */ }
+  if (meta?.fileName || meta?.mimeType) {
+    saveMediaMetaCache(ctx, key, { fileName: meta.fileName || '', mimeType: meta.mimeType || 'application/octet-stream', sizeBytes: meta.sizeBytes || buf.length });
+  }
 }
 
 export function readMediaCache(ctx: AppContext, key: string): Buffer | null {
@@ -79,7 +118,7 @@ export function extractGoogleDriveFileId(rawInput: string): string | null {
   if (!raw || raw.startsWith('drive://') || raw.startsWith('data:') || raw.startsWith('local_') || raw.startsWith('h_') || raw.startsWith('/')) return null;
   const pathMatch = raw.match(/(?:drive|docs)\.google\.com\/(?:file|document|presentation|spreadsheets)\/d\/([a-zA-Z0-9_-]{8,})/i);
   if (pathMatch?.[1]) return pathMatch[1];
-  const queryMatch = raw.match(/drive\.google\.com\/(?:open|uc|thumbnail)\?([^#]+)/i);
+  const queryMatch = raw.match(/(?:drive\.google\.com\/(?:open|uc|thumbnail)|drive\.usercontent\.google\.com\/download)\?([^#]+)/i);
   if (queryMatch?.[1]) {
     const idParam = new URLSearchParams(queryMatch[1]).get('id');
     if (idParam && idParam.trim().length >= 8) return idParam.trim();
@@ -90,8 +129,7 @@ export function extractGoogleDriveFileId(rawInput: string): string | null {
 }
 
 export function detectBufferMimeType(buf: Buffer, fallbackMime = 'application/octet-stream', fileName = ''): string {
-  const fb = String(fallbackMime || '').split(';')[0]!.trim().toLowerCase();
-  const extMime = guessMimeByExtension(fileName);
+  const fb = String(fallbackMime || '').split(';')[0]!.trim().toLowerCase(), extMime = guessMimeByExtension(fileName);
   if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
   if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
   if (buf.length >= 12 && buf.subarray(0, 4).toString('ascii') === 'RIFF' && buf.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
@@ -119,15 +157,7 @@ export function detectBufferMimeType(buf: Buffer, fallbackMime = 'application/oc
   if (buf.length >= 3 && (buf.subarray(0, 3).toString('ascii') === 'ID3' || (buf[0] === 0xff && (buf[1]! & 0xe0) === 0xe0))) return 'audio/mpeg';
   const headText = buf.subarray(0, 512).toString('utf8').trimStart();
   if (headText.startsWith('<svg') || (headText.startsWith('<?xml') && headText.includes('<svg'))) return 'image/svg+xml; charset=utf-8';
-  if (fb && fb !== 'application/octet-stream' && fb !== 'binary/octet-stream') return fb;
-  return extMime;
-}
-
-function resolveUploadExtension(mime: string, originalName: string): string {
-  const origMatch = originalName.trim().toLowerCase().match(/\.([a-z0-9]{2,5})$/);
-  if (origMatch?.[1] && EXT_TO_MIME[origMatch[1]]) return origMatch[1];
-  const found = Object.entries(EXT_TO_MIME).find(([, m]) => mime.startsWith(m));
-  return found?.[0] ?? 'bin';
+  return (fb && fb !== 'application/octet-stream' && fb !== 'binary/octet-stream') ? fb : extMime;
 }
 
 export async function persistMktMediaUpload(
@@ -138,18 +168,16 @@ export async function persistMktMediaUpload(
   const declaredMime = match?.[1] || params.mimeType || 'application/octet-stream';
   const buffer = Buffer.from((match?.[2] ?? params.base64).trim(), 'base64');
   const actualMime = detectBufferMimeType(buffer, declaredMime, params.fileName).split(';')[0]!.trim();
-  const sha = createHash('sha256').update(buffer).digest('hex').slice(0, 12);
-  const ext = resolveUploadExtension(actualMime, params.fileName);
+  const sha = createHash('sha256').update(buffer).digest('hex').slice(0, 12), ext = resolveUploadExtension(actualMime, params.fileName);
   const baseSlug = (params.fileName || 'mkt-media').replace(/\.[a-zA-Z0-9]{2,5}$/, '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 48) || 'mkt_media';
-  const uploadName = `${baseSlug}_${Date.now()}.${ext}`;
   let fileId = `local_mkt_${Date.now()}_${sha}`;
   if (ctx.google.uploadMktMedia && buffer.length > 0) {
     try {
-      const uploaded = await ctx.google.uploadMktMedia({ fileName: uploadName, mimeType: actualMime, data: buffer, monthFolder: dayjs().format('YYYY-MM') });
+      const uploaded = await ctx.google.uploadMktMedia({ fileName: `${baseSlug}_${Date.now()}.${ext}`, mimeType: actualMime, data: buffer, monthFolder: dayjs().format('YYYY-MM') });
       if (uploaded.fileId) fileId = uploaded.fileId;
     } catch { /* fallback local disk cache */ }
   }
-  saveMediaCache(ctx, toMktCacheKey(fileId), buffer);
+  saveMediaCache(ctx, toMktCacheKey(fileId), buffer, { fileName: params.fileName, mimeType: actualMime, sizeBytes: buffer.length });
   return { fileId, mimeType: actualMime, sizeBytes: buffer.length };
 }
 
@@ -157,46 +185,40 @@ function buildFallbackMktBannerSvg(asset?: Partial<MediaAsset>): Buffer {
   const safe = (s: string) => s.replace(/[<>&"']/g, '');
   const code = safe(asset?.code || 'MED'), title = safe((asset?.file_name || 'Tệp truyền thông nội bộ').slice(0, 56));
   const cat = safe(CATEGORY_VI[asset?.category || 'BANNER'] ?? 'Tài liệu truyền thông nội bộ');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="360" viewBox="0 0 720 360"><rect width="720" height="360" fill="#0F172A"/><rect x="18" y="18" width="684" height="324" rx="4" fill="#1E293B" stroke="#334155" stroke-width="1.5"/><rect x="36" y="36" width="218" height="28" rx="3" fill="#2563EB"/><text x="145" y="55" text-anchor="middle" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="12" font-weight="bold">KHO MEDIA NỘI BỘ ỤM BÒ MILK</text><text x="36" y="148" fill="#93C5FD" font-family="Arial, sans-serif" font-size="14" font-weight="bold">[${code}] · ${cat}</text><text x="36" y="188" fill="#F8FAFC" font-family="Arial, sans-serif" font-size="22" font-weight="bold">${title}</text><text x="36" y="232" fill="#94A3B8" font-family="Arial, sans-serif" font-size="13">Tài liệu truyền thông nội bộ được phân phối qua cổng bảo mật hệ thống</text></svg>`;
-  return Buffer.from(svg, 'utf8');
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="720" height="360" viewBox="0 0 720 360"><rect width="720" height="360" fill="#0F172A"/><rect x="18" y="18" width="684" height="324" rx="4" fill="#1E293B" stroke="#334155" stroke-width="1.5"/><rect x="36" y="36" width="218" height="28" rx="3" fill="#2563EB"/><text x="145" y="55" text-anchor="middle" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="12" font-weight="bold">KHO MEDIA NỘI BỘ ỤM BÒ MILK</text><text x="36" y="148" fill="#93C5FD" font-family="Arial, sans-serif" font-size="14" font-weight="bold">[${code}] · ${cat}</text><text x="36" y="188" fill="#F8FAFC" font-family="Arial, sans-serif" font-size="22" font-weight="bold">${title}</text><text x="36" y="232" fill="#94A3B8" font-family="Arial, sans-serif" font-size="13">Tài liệu truyền thông nội bộ được phân phối qua cổng bảo mật hệ thống</text></svg>`, 'utf8');
 }
 
 export async function loadMktMediaFile(ctx: AppContext, idOrFileId: string): Promise<{ buffer: Buffer; mimeType: string; fileName: string } | null> {
   const asset = ctx.db.mediaAssets.get(idOrFileId) ?? ctx.db.mediaAssets.all(true).find((m) => m.id === idOrFileId || m.code === idOrFileId || m.drive_file_id === idOrFileId);
   if (!asset && ULID_RE.test(idOrFileId)) return null;
   const rawSource = String(asset ? asset.drive_file_id : idOrFileId).trim();
-  const fileName = asset?.file_name || 'mkt-media-file', fallbackMime = asset?.mime_type || guessMimeByExtension(fileName);
+  const driveId = extractGoogleDriveFileId(rawSource), cacheKey = toMktCacheKey(driveId ?? rawSource);
+  const cachedMeta = cacheKey ? readMediaMetaCache(ctx, cacheKey) : null;
+  const fileName = asset?.file_name || cachedMeta?.fileName || 'mkt-media-file';
+  const fallbackMime = asset?.mime_type || cachedMeta?.mimeType || guessMimeByExtension(fileName);
   const isImage = fallbackMime.toLowerCase().startsWith('image/') || rawSource.startsWith('data:image/');
 
   if (rawSource.startsWith('data:')) {
     const match = rawSource.match(/^data:([a-zA-Z0-9.+/-]+);base64,([\s\S]+)$/), buf = Buffer.from((match?.[2] ?? '').trim(), 'base64');
     if (buf.length > 0) return { buffer: buf, mimeType: detectBufferMimeType(buf, match?.[1] || fallbackMime, fileName), fileName };
   }
-  const driveId = extractGoogleDriveFileId(rawSource), cacheKey = toMktCacheKey(driveId ?? rawSource);
   if (rawSource && !rawSource.startsWith('drive://')) {
     const cached = readMediaCache(ctx, cacheKey);
     if (cached) return { buffer: cached, mimeType: detectBufferMimeType(cached, fallbackMime, fileName), fileName };
   }
   if (driveId && ctx.google.downloadDriveFile) {
     const buf = await ctx.google.downloadDriveFile(driveId);
-    if (buf && buf.length > 0) {
-      if (buf.length <= 20 * 1024 * 1024) saveMediaCache(ctx, cacheKey, buf);
-      return { buffer: buf, mimeType: detectBufferMimeType(buf, fallbackMime, fileName), fileName };
-    }
+    if (buf && buf.length > 0) { if (buf.length <= 20 * 1024 * 1024) saveMediaCache(ctx, cacheKey, buf); return { buffer: buf, mimeType: detectBufferMimeType(buf, fallbackMime, fileName), fileName }; }
   }
-  const fetchTarget = driveId ? `https://drive.google.com/uc?export=download&id=${encodeURIComponent(driveId)}` : (/^https?:\/\//i.test(rawSource) ? rawSource : '');
+  const fetchTarget = driveId ? `https://drive.usercontent.google.com/download?id=${encodeURIComponent(driveId)}&export=download&confirm=t` : (/^https?:\/\//i.test(rawSource) ? rawSource : '');
   if (fetchTarget) {
     try {
-      const res = await fetch(fetchTarget, { redirect: 'follow', signal: AbortSignal.timeout(12_000) }), ct = res.headers.get('content-type') || '';
+      const res = await fetch(fetchTarget, { redirect: 'follow', signal: AbortSignal.timeout(15_000) }), ct = res.headers.get('content-type') || '';
       if (res.ok && !ct.includes('text/html')) {
         const buf = Buffer.from(await res.arrayBuffer());
-        if (buf.length > 0) {
-          if (buf.length <= 20 * 1024 * 1024) saveMediaCache(ctx, cacheKey, buf);
-          return { buffer: buf, mimeType: detectBufferMimeType(buf, ct.split(';')[0] || fallbackMime, fileName), fileName };
-        }
+        if (buf.length > 0) { if (buf.length <= 20 * 1024 * 1024) saveMediaCache(ctx, cacheKey, buf); return { buffer: buf, mimeType: detectBufferMimeType(buf, ct.split(';')[0] || fallbackMime, fileName), fileName }; }
       }
     } catch { /* fallback below */ }
   }
-  if (asset && isImage) return { buffer: buildFallbackMktBannerSvg(asset), mimeType: 'image/svg+xml; charset=utf-8', fileName: `${fileName}.svg` };
-  return null;
+  return (asset && isImage) ? { buffer: buildFallbackMktBannerSvg(asset), mimeType: 'image/svg+xml; charset=utf-8', fileName: `${fileName}.svg` } : null;
 }
