@@ -10,6 +10,7 @@ import { Database } from './data/database.js';
 import { createMemoryGateway, DEMO_PASSWORD, DEMO_PIN, MEMORY_IDS } from './data/memory-seed.js';
 import { Realtime } from './realtime/realtime.js';
 import { AuditService } from './services/audit.service.js';
+import { startAnnouncementScheduler, sweepDueScheduledAnnouncements } from './services/announcement-scheduler.service.js';
 import { BackupService } from './services/backup.service.js';
 import { EmailService } from './services/email.service.js';
 import { ensureSyncedNotifications } from './services/notification-sync.service.js';
@@ -159,9 +160,11 @@ async function main() {
   email.hydrateFromDatabase();
   await reconciliation.scanAndRepair({ autoFix: true, actorId: 'startup-sync' }).catch(() => undefined);
   await ensurePublishedPeriodPayslips(ctx, 'startup-sync', { skipEmail: env.NODE_ENV === 'production' && !hasSmtpRelayOrigin() }).catch(() => undefined);
+  await sweepDueScheduledAnnouncements(ctx, 'startup-sync').catch(() => undefined);
   await ensureSyncedNotifications(ctx).catch(() => undefined);
   db.startAutoRefresh(env.CACHE_REFRESH_SECONDS, app.log);
   backup.startEmbeddedScheduler(app.log);
+  const stopAnnouncementScheduler = startAnnouncementScheduler(ctx, app.log);
 
   app.log.info(`UMBM API v${version} — dữ liệu: ${google.mode}`);
   if (google.mode === 'memory') {
@@ -173,6 +176,7 @@ async function main() {
 
   const shutdown = async (signal: string) => {
     app.log.info(`Nhận ${signal}, đang dừng — chờ hàng đợi ghi hoàn tất...`);
+    stopAnnouncementScheduler();
     await backup.stopEmbeddedScheduler();
     db.stopAutoRefresh();
     await realtime?.close();

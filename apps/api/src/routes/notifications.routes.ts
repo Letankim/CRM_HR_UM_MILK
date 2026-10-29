@@ -9,6 +9,7 @@ import { nowIso } from '../lib/time.js';
 import { requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { resolveRolePortalPath, resolveUserPersonalRealEmail, webOrigin } from '../services/account-email-dispatcher.js';
+import { sweepDueScheduledAnnouncements } from '../services/announcement-scheduler.service.js';
 import { resolveAnnouncementMediaAttachments } from '../services/comms-media-helper.js';
 import { ensureSyncedNotifications, isNotificationCreatedByOrSelfAction } from '../services/notification-sync.service.js';
 import { resolveNotificationEventTime } from '../services/notification-time.js';
@@ -76,7 +77,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
   app.get('/api/notifications', { preHandler: requireAuth() }, async (request) => {
     const query = zListQuery.parse(request.query), user = request.auth!.user, branchScope = request.auth!.branchScope;
     if (query.refresh === '1') await Promise.all([ctx.db.notifications.refreshIfIdle(), ctx.db.users.refreshIfIdle()]);
-    await ensureSyncedNotifications(ctx);
+    await sweepDueScheduledAnnouncements(ctx); await ensureSyncedNotifications(ctx);
 
     const usersMap = new Map(ctx.db.users.all().map((u) => [u.id, u]));
     const ancsMap = new Map(ctx.db.announcements.all().map((a) => [a.id, a]));

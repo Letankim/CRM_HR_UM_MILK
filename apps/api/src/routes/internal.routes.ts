@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
+import { sweepDueScheduledAnnouncements } from '../services/announcement-scheduler.service.js';
 
 const zBackupStart = z.object({
   kind: z.enum(['DAILY', 'CRITICAL', 'PRE_OPERATION', 'WEEKLY', 'MONTHLY']),
@@ -92,8 +93,13 @@ export async function internalRoutes(app: FastifyInstance, ctx: AppContext) {
     const { job } = request.params as { job: string };
     switch (job) {
       case 'reconcile': {
+        const publishedAnnouncements = await sweepDueScheduledAnnouncements(ctx, 'cron-reconciler');
         const report = await ctx.reconciliation.scanAndRepair({ autoFix: true, actorId: 'cron-reconciler' });
-        return sendSuccess(request, 'Thực thi cron đối soát tự động thành công', report);
+        return sendSuccess(request, 'Thực thi cron đối soát tự động thành công', { ...report, publishedAnnouncements });
+      }
+      case 'publish-announcements': {
+        const publishedAnnouncements = await sweepDueScheduledAnnouncements(ctx, 'cron-announcements');
+        return sendSuccess(request, 'Quét và phát hành bản tin hẹn giờ thành công', { publishedAnnouncements });
       }
       case 'backup-daily': {
         const log = await ctx.backup.runBackup('DAILY', 'cron-daily');

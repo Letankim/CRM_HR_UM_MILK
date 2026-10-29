@@ -4,7 +4,7 @@ import type { Env } from '../config/env.js';
 import { sheetIds } from '../config/env.js';
 import type { Database } from '../data/database.js';
 import type { BackupLogRow } from '../data/system-schemas.js';
-import { dayjs, nowIso } from '../lib/time.js';
+import { APP_TZ, dayjs, nowIso } from '../lib/time.js';
 import type { ReconciliationService } from './reconciliation.service.js';
 import { sweepExpiredShiftsAndMarkAbsent } from './shift-absent-scanner.js';
 
@@ -182,7 +182,7 @@ export class BackupService {
       try {
         await sweepExpiredShiftsAndMarkAbsent(this.db, 'embedded-absent-scanner');
         await this.healInterruptedBackups();
-        const now = dayjs(), todayStr = now.format('YYYY-MM-DD'), hhmm = now.format('HH:mm');
+        const now = dayjs().tz(APP_TZ), todayStr = now.format('YYYY-MM-DD'), hhmm = now.format('HH:mm');
         const hasDailyToday = this.db.backupLog.all().some((b: BackupLogRow) => b.kind === 'DAILY' && String(b.started_at).startsWith(todayStr) && b.status === 'SUCCESS');
         if (!hasDailyToday && hhmm >= '01:00') {
           this.lastTriggeredSlot = `${todayStr} 01:00`;

@@ -82,6 +82,7 @@ export function MktCommsCenter() {
     return (data?.announcements ?? []).filter((a) => (canManage || a.status === 'SENT') && (statusFilter === 'ALL' || a.status === statusFilter) && (prioFilter === 'ALL' || a.priority === prioFilter) && (!q || `${a.announcement_code || ''} ${a.title || ''} ${a.summary || ''} ${a.audienceLabel || ''}`.toLowerCase().includes(q)));
   }, [data?.announcements, canManage, statusFilter, prioFilter, debouncedQ]);
   const pendingOrFailedAncs = useMemo(() => (data?.announcements ?? []).filter((a) => a.status === 'DRAFT' || a.status === 'SCHEDULED' || a.status === 'FAILED'), [data?.announcements]);
+  const liveViewingAnc = useMemo(() => (viewingAnc ? ((data?.announcements ?? []).find((a) => a.id === viewingAnc.id) ?? viewingAnc) : null), [viewingAnc, data?.announcements]);
   const db = data?.dashboard ?? {};
   const kpiCards = [
     { label: 'Tin đang chạy', val: db.runningCount ?? 0, color: '#16A34A', sub: 'Đã phát tới người nhận' },
@@ -209,7 +210,7 @@ export function MktCommsCenter() {
       <MktCampaignModal open={cmpModal} editing={editingCmp} form={cmpForm} loading={postMut.isPending || putMut.isPending} onClose={() => setCmpModal(false)} onSubmit={(v) => { if (editingCmp) putMut.mutate({ url: `/mkt/campaigns/${editingCmp.id}`, body: { ...v, version: editingCmp.version } }); else postMut.mutate({ url: '/mkt/campaigns', body: v }); setCmpModal(false); }} />
       <MktMediaModal open={medModal} editing={editingMed} form={medForm} loading={postMut.isPending || putMut.isPending} onClose={() => setMedModal(false)} onSubmit={(v) => { if (editingAud && false) return; if (editingMed) putMut.mutate({ url: `/mkt/media/${editingMed.id}`, body: { ...v, version: editingMed.version } }); else postMut.mutate({ url: '/mkt/media', body: v }); setMedModal(false); }} />
       <JobPositionsManagerModal open={posModal} onClose={() => setPosModal(false)} />
-      <GovernanceDetailDrawer record={viewingAnc} kind="announcement" mediaPool={data?.mediaAssets} onClose={() => setViewingAnc(null)} onEdit={viewingAnc && canManage && canEditRow(viewingAnc) ? openEditAnc : undefined} />
+      <GovernanceDetailDrawer record={liveViewingAnc} kind="announcement" mediaPool={data?.mediaAssets} onClose={() => setViewingAnc(null)} onEdit={liveViewingAnc && canManage && canEditRow(liveViewingAnc) ? openEditAnc : undefined} />
       <MediaAssetDetailDrawer item={viewingMed} onClose={() => setViewingMed(null)} onEdit={viewingMed && canEditRow(viewingMed) ? (r) => { setEditingMed(r); medForm.setFieldsValue({ ...r, drive_url: r.drive_url || r.openUrl || '' }); setMedModal(true); } : undefined} />
       <Modal open={Boolean(viewingAud)} title="Chi tiết Nhóm người nhận" width={640} destroyOnHidden onCancel={() => setViewingAud(null)} footer={<Button icon={<CloseOutlined />} onClick={() => setViewingAud(null)}>Đóng</Button>}>
         {viewingAud && <Descriptions bordered size="small" column={1} style={{ marginTop: 10 }} items={[{ key: 'label', label: 'Tên nhóm người nhận', children: <strong>{String(viewingAud.label)}</strong> }, { key: 'cnt', label: 'Quy mô dự kiến', children: <Tag color="blue">{Number(viewingAud.recipientCount ?? 0)} nhân sự</Tag> }, { key: 'note', label: 'Mô tả & Chính sách bảo mật', children: String(viewingAud.note || 'Ẩn 100% thông tin lương, GPS, ảnh điểm danh và CCCD nhân sự.') }]} />}
