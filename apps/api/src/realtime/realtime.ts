@@ -12,6 +12,7 @@ export const SocketEvents = {
   EMERGENCY: 'emergency:new',
   ACCOUNT_PENDING: 'account:pending',
   MAINTENANCE_UPDATED: 'system:maintenance',
+  PAYROLL_UPDATED: 'payroll:updated',
 } as const;
 
 const rooms = {

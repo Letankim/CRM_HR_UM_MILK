@@ -54,9 +54,21 @@ describe('Bộ tính lương theo Hồ sơ lương cá nhân (FIN-05)', () => {
     expect(absent.attendanceBonus).toBe(0);
   });
 
-  it('Ca làm ngoài thời gian hiệu lực của hồ sơ lương được đánh dấu để đối soát, không tự tính', () => {
-    const r = run(emp({}), [rate({ effective_from: '2026-10-15' })], [work('2026-10-10'), work('2026-10-20')]);
-    expect(r.missingProfileShifts).toBe(1);
-    expect(r.probationHours).toBe(5);
+  it('Thiết lập lương ban đầu giữa kỳ tự bao phủ cả các ca đầu kỳ, nhưng hồ sơ trống hoặc đã hết hạn được đánh dấu đối soát', () => {
+    const initialMidMonth = run(emp({}), [rate({ effective_from: '2026-10-29' })], [work('2026-10-10'), work('2026-10-20')]);
+    expect(initialMidMonth.missingProfileShifts).toBe(0);
+    expect(initialMidMonth.probationHours).toBe(10);
+    expect(initialMidMonth.primaryProfile?.id).toBe('RATE_TEST_1');
+
+    const noShiftWithScheduledProfile = run(emp({}), [rate({ effective_from: '2026-11-01' })], []);
+    expect(noShiftWithScheduledProfile.primaryProfile?.id).toBe('RATE_TEST_1');
+
+    const expiredOnly = run(emp({}), [rate({ effective_from: '2026-10-01', effective_to: '2026-10-14', status: 'EXPIRED' })], [work('2026-10-10'), work('2026-10-20')]);
+    expect(expiredOnly.missingProfileShifts).toBe(1);
+    expect(expiredOnly.probationHours).toBe(5);
+
+    const noProfile = run(emp({}), [], [work('2026-10-10')]);
+    expect(noProfile.missingProfileShifts).toBe(1);
+    expect(noProfile.primaryProfile).toBeUndefined();
   });
 });

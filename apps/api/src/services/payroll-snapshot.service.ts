@@ -6,9 +6,10 @@ import {
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { nowIso } from '../lib/time.js';
+import { SocketEvents } from '../realtime/realtime.js';
 import { computeEmployeePayroll } from './payroll-calculator.js';
 import { collectWorkEntries } from './payroll-work-collector.js';
-import { profilesOf } from './salary-profile.service.js';
+import { ensureLegacySalaryProfiles, profilesOf } from './salary-profile.service.js';
 import { sweepExpiredShiftsAndMarkAbsent } from './shift-absent-scanner.js';
 
 export { collectWorkEntries } from './payroll-work-collector.js';
@@ -25,7 +26,7 @@ function computePeriodDirtySig(ctx: AppContext, period: PayPeriod): string {
   const inRange = <T extends { work_date: string; version: number; updated_at: string }>(rows: readonly T[]) =>
     sumVer(rows.filter((r) => r.work_date >= period.from_date && r.work_date <= period.to_date));
   return [
-    'v3', period.version, period.from_date, period.to_date,
+    'v4', period.version, period.from_date, period.to_date,
     sumVer(ctx.db.employees.all(true)),
     sumVer(ctx.db.payRates.all(true)),
     inRange(ctx.db.shiftAssignments.all(true)),
@@ -51,8 +52,16 @@ export async function recalculatePeriodSnapshots(ctx: AppContext, period: PayPer
   return task;
 }
 
+export async function recalculateOpenPeriods(ctx: AppContext, actorId: string): Promise<void> {
+  const openPeriods = ctx.db.payPeriods.filter((p) => p.status === 'DRAFT' || p.status === 'RECONCILE');
+  for (const p of openPeriods) {
+    await recalculatePeriodSnapshots(ctx, p, actorId, true);
+  }
+  ctx.realtime()?.toTargets({ roles: ['ADMIN', 'FINANCE', 'HR'] }, SocketEvents.PAYROLL_UPDATED, { actorId });
+}
+
 async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, actorId: string, force = false): Promise<PayPeriod> {
-  await sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId);
+  await Promise.all([sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId), ensureLegacySalaryProfiles(ctx.db, actorId)]);
   let sigMap = periodSigByDb.get(ctx.db);
   if (!sigMap) { sigMap = new Map(); periodSigByDb.set(ctx.db, sigMap); }
   const existingSnaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === period.id);
@@ -108,7 +117,7 @@ async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, 
     });
 
     const dataHash = createHash('sha256')
-      .update(`${period.id}:${emp.id}:${r.gross}:${r.net}:${r.approvedHours}:${r.otHours}:${r.swapCount}:${workSummary.lateCount}:${workSummary.leaveOffCount}:${adjustmentsJson}`)
+      .update(`${period.id}:${emp.id}:${emp.stage}:${emp.branch_id}:${r.primaryProfile?.id ?? ''}:${r.primaryProfile?.rate_type ?? ''}:${r.primaryProfile?.amount_vnd ?? 0}:${r.primaryProfile?.probation_percent ?? 0}:${r.gross}:${r.net}:${r.approvedHours}:${r.otHours}:${r.swapCount}:${workSummary.lateCount}:${workSummary.leaveOffCount}:${emp.bank_name}:${emp.bank_account_number}:${adjustmentsJson}`)
       .digest('hex').slice(0, 16);
 
     const payload = {
@@ -130,15 +139,15 @@ async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, 
       snapshot_at: nowIso(),
     };
 
-    const existing = existingSnaps.find((s) => s.employee_id === emp.id);
+    const existing = existingSnaps.find((s) => s.employee_id === emp.id || (emp.employee_code && s.employee_code === emp.employee_code));
     if (existing) {
-      if (existing.data_hash !== dataHash) {
+      if (existing.data_hash !== dataHash || existing.pay_rate_id !== payload.pay_rate_id || existing.rate_vnd !== payload.rate_vnd) {
         toBatchUpdate.push({ id: existing.id, expectedVersion: existing.version, patch: payload });
       }
     } else {
       toInsert.push(payload);
     }
-    keepEmpIds.add(emp.id);
+    keepEmpIds.add(existing?.employee_id ?? emp.id);
 
     totals.hours += r.approvedHours;
     totals.ot += r.otHours;
@@ -154,7 +163,7 @@ async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, 
   if (toBatchUpdate.length > 0) await ctx.db.payrollSnapshots.batchUpdate(toBatchUpdate, actorId);
 
   const latest = ctx.db.payPeriods.get(period.id)!;
-  const nextSnapshotHash = createHash('sha256').update(`${period.id}:${totals.hours}:${totals.ot}:${totals.gross}:${totals.deduct}:${totals.net}`).digest('hex').slice(0, 16);
+  const nextSnapshotHash = createHash('sha256').update(`${period.id}:${totals.hours}:${totals.ot}:${totals.gross}:${totals.deduct}:${totals.net}:${totals.unreconciled}`).digest('hex').slice(0, 16);
   const unchangedPeriod =
     latest.snapshot_hash === nextSnapshotHash &&
     latest.total_employees === keepEmpIds.size &&

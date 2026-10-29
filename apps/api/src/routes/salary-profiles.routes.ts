@@ -13,7 +13,8 @@ import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
-import { currentProfile, dayBefore, isProfileLocked, mapSalaryProfile, profilesOf, profileStatus } from '../services/salary-profile.service.js';
+import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
+import { currentProfile, dayBefore, ensureLegacySalaryProfiles, findEmployeeByIdOrCode, isProfileLocked, mapSalaryProfile, profilesOf, profileStatus } from '../services/salary-profile.service.js';
 import { assertAmountInRange, createSalaryProfile, deleteLatestSalaryProfile } from '../services/salary-profile.writer.js';
 import { resolveStaffGroupLabel } from './employee-mapper.js';
 import { zCreateSalaryProfileBody, zUpdateSalaryProfileBody } from './salary-profile.schemas.js';
@@ -31,8 +32,9 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
     const query = zListQuery.parse(request.query);
     if (query.branch_id && query.branch_id !== 'ALL') assertBranchAccess(request, query.branch_id);
     if (query.refresh === '1' || query.refresh === 'true') {
-      await Promise.all([ctx.db.payRates.refreshIfIdle(), ctx.db.employees.refreshIfIdle()]);
+      await Promise.all([ctx.db.payRates.load(), ctx.db.employees.load()]);
     }
+    await ensureLegacySalaryProfiles(ctx.db, request.auth?.user.id ?? 'system');
     const scoped = filterByBranch(request, ctx.db.employees.all(), (e) => e.branch_id);
     const rows = scoped.map((e) => {
       const history = profilesOf(ctx.db, e.id);
@@ -79,20 +81,21 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
 
   app.get('/api/admin/employees/:id/salary-profiles', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const { id } = request.params as { id: string };
-    const emp = ctx.db.employees.get(id);
+    const emp = findEmployeeByIdOrCode(ctx.db, id);
     if (!emp) throw Errors.notFound('Không tìm thấy hồ sơ nhân sự');
     assertBranchAccess(request, emp.branch_id);
-    const history = profilesOf(ctx.db, id).map((p) => ({ ...mapSalaryProfile(p, ctx.db), locked: isProfileLocked(ctx.db, p.id) }));
+    const history = profilesOf(ctx.db, emp.id).map((p) => ({ ...mapSalaryProfile(p, ctx.db), locked: isProfileLocked(ctx.db, p.id) }));
     return sendSuccess(request, 'Lấy lịch sử lương của nhân sự thành công', history);
   });
 
   app.post('/api/admin/payroll/salary-profiles', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request, reply) => {
     const body = zCreateSalaryProfileBody.parse(request.body);
-    const emp = ctx.db.employees.get(body.employee_id);
+    const emp = findEmployeeByIdOrCode(ctx.db, body.employee_id);
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Nhân sự được chọn không tồn tại', body.employee_id);
     assertBranchAccess(request, emp.branch_id);
     const actorId = request.auth!.user.id;
     const created = await createSalaryProfile(ctx, emp, body, actorId);
+    await recalculateOpenPeriods(ctx, actorId);
     await ctx.audit.record(auditContext(request), {
       action: 'salary_profile.create',
       entity: 'PAY_RATES',
@@ -108,7 +111,7 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
     const body = zUpdateSalaryProfileBody.parse(request.body);
     const before = ctx.db.payRates.get(id);
     if (!before) throw Errors.notFound('Không tìm thấy mức lương');
-    const emp = ctx.db.employees.get(before.employee_id);
+    const emp = findEmployeeByIdOrCode(ctx.db, before.employee_id);
     if (emp) assertBranchAccess(request, emp.branch_id);
     if (isProfileLocked(ctx.db, id)) {
       throw Errors.conflict('Mức lương đã được dùng để chốt kỳ lương, không được sửa đè. Vui lòng tạo mức lương mới có ngày hiệu lực.');
@@ -119,7 +122,7 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
     assertAmountInRange(nextType, nextAmount);
     let olderToShift: ReturnType<typeof profilesOf>[number] | undefined;
     if (effective_from && effective_from !== before.effective_from) {
-      const history = profilesOf(ctx.db, before.employee_id);
+      const history = profilesOf(ctx.db, emp?.id ?? before.employee_id);
       const idx = history.findIndex((p) => p.id === id);
       const newer = history[idx - 1];
       const older = history[idx + 1];
@@ -132,12 +135,13 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
     const updated = await ctx.db.payRates.update(
       id,
       version,
-      { ...patch, ...(effective_from ? { effective_from } : {}), amount_vnd: Math.round(nextAmount) },
+      { ...patch, ...(effective_from ? { effective_from } : {}), ...(emp ? { employee_id: emp.id } : {}), amount_vnd: Math.round(nextAmount) },
       actorId,
     );
     if (olderToShift && effective_from) {
       await ctx.db.payRates.update(olderToShift.id, olderToShift.version, { effective_to: dayBefore(effective_from), status: 'EXPIRED' }, actorId);
     }
+    await recalculateOpenPeriods(ctx, actorId);
     await ctx.audit.record(auditContext(request), {
       action: 'salary_profile.update',
       entity: 'PAY_RATES',
@@ -153,9 +157,14 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
     const body = z.object({ version: z.coerce.number().int().min(1).optional() }).parse(request.body ?? {});
     const before = ctx.db.payRates.get(id);
     if (!before) throw Errors.notFound('Không tìm thấy mức lương');
-    const emp = ctx.db.employees.get(before.employee_id);
+    const emp = findEmployeeByIdOrCode(ctx.db, before.employee_id);
     if (emp) assertBranchAccess(request, emp.branch_id);
-    await deleteLatestSalaryProfile(ctx, before, body.version ?? before.version, request.auth!.user.id);
+    const actorId = request.auth!.user.id;
+    await deleteLatestSalaryProfile(ctx, before, body.version ?? before.version, actorId);
+    if (emp && profilesOf(ctx.db, emp.id).length === 0 && (emp.base_hourly_rate_vnd ?? 0) > 0) {
+      await ctx.db.employees.update(emp.id, emp.version, { base_hourly_rate_vnd: 0 }, actorId);
+    }
+    await recalculateOpenPeriods(ctx, actorId);
     await ctx.audit.record(auditContext(request), {
       action: 'salary_profile.delete',
       entity: 'PAY_RATES',

@@ -76,7 +76,7 @@ function PayrollView() {
   const isLocked = !!currentPeriod && currentPeriod.status !== 'DRAFT' && currentPeriod.status !== 'RECONCILE';
   const refreshAll = async () => {
     if (currentPeriod) await api.get(`/admin/payroll/periods/${currentPeriod.id}/snapshots?refresh=1`).catch(() => null);
-    ['payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items', 'payroll-revenue-inputs'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    ['payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items', 'payroll-revenue-inputs', 'salary-profiles'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
     message.success('Đã đồng bộ và cập nhật dữ liệu bảng lương & đối soát công mới nhất');
   };
   const openRevModal = () => {

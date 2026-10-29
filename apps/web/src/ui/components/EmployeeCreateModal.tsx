@@ -109,7 +109,7 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
     },
     onSuccess: () => {
       message.success(editing ? 'Đã cập nhật hồ sơ nhân sự và đồng bộ liên kết tài khoản thành công' : 'Đã tạo hồ sơ nhân sự và liên kết tài khoản thành công');
-      ['employees', 'accounts', 'branches', 'schedules', 'salary-profiles', 'salary-history', 'job-positions'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      ['employees', 'accounts', 'branches', 'schedules', 'salary-profiles', 'salary-history', 'job-positions', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
       onClose();
     },
     onError: (err) => {

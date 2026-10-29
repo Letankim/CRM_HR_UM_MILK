@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Flex, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { DownloadOutlined, EyeOutlined, SearchOutlined, WarningOutlined } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
@@ -50,6 +50,7 @@ export function exportPayrollSheet(period: PayPeriodRow, rows: PayrollSnapshotIt
 }
 
 export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodRow; onOpenPayslip: (r: PayrollSnapshotItem) => void }) {
+  const qc = useQueryClient();
   const [searchInput, setSearchInput] = useState('');
   const debouncedQ = useDebouncedValue(searchInput, 400);
   const [branchFilter, setBranchFilter] = useState('ALL');
@@ -85,6 +86,12 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
 
   const rows = snapshotsQ.data?.data ?? [];
   const totalCount = snapshotsQ.data?.meta.pagination.total ?? rows.length;
+  const freshPeriod = snapshotsQ.data?.meta.filters?.period as PayPeriodRow | undefined;
+  useEffect(() => {
+    if (freshPeriod && (freshPeriod.version !== period.version || freshPeriod.unreconciled_records_count !== period.unreconciled_records_count)) {
+      qc.invalidateQueries({ queryKey: ['payroll-periods'] });
+    }
+  }, [freshPeriod, period.version, period.unreconciled_records_count, qc]);
   const summary = (snapshotsQ.data?.meta.filters?.summary ?? {}) as Record<string, number>;
   const totalMissing = Number(summary.totalMissingPunches ?? 0);
   const allMissingShifts = useMemo(

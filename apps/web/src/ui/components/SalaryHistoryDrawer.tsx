@@ -136,9 +136,9 @@ export function SalaryHistoryDrawer({
     mutationFn: (p: SalaryProfile) => api.delete(`/admin/payroll/salary-profiles/${p.id}`, { version: p.version }),
     onSuccess: () => {
       message.success('Đã xóa mức lương và khôi phục mức lương liền trước');
-      qc.invalidateQueries({ queryKey: ['salary-history'] });
-      qc.invalidateQueries({ queryKey: ['salary-profiles'] });
-      qc.invalidateQueries({ queryKey: ['employees'] });
+      ['salary-history', 'salary-profiles', 'employees', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items'].forEach((k) =>
+        qc.invalidateQueries({ queryKey: [k] }),
+      );
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa mức lương thất bại'),
   });

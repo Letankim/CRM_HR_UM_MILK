@@ -129,7 +129,10 @@ export function SalaryProfilesTab({ canManage, employeeOptions }: { canManage: b
           { key: 'rate', value: rateType, width: 190, options: [{ label: 'Mọi hình thức lương', value: 'ALL' }, ...PAY_RATE_TYPE_OPTIONS], onChange: (v) => { setRateType(v); reset(); } },
           { key: 'status', value: status, width: 190, options: [{ label: 'Mọi trạng thái', value: 'ALL' }, { label: 'Đang áp dụng', value: 'ACTIVE' }, { label: 'Chờ hiệu lực', value: 'SCHEDULED' }, { label: 'Chưa thiết lập lương', value: 'MISSING' }], onChange: (v) => { setStatus(v); reset(); } },
         ]}
-        onRefresh={() => qc.invalidateQueries({ queryKey: ['salary-profiles'] })}
+        onRefresh={async () => {
+          await api.list('/admin/payroll/salary-profiles?per_page=1&refresh=1').catch(() => null);
+          ['salary-profiles', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+        }}
         refreshing={listQuery.isFetching}
         onExportExcel={() => exportSalaryExcel(rows)}
         primaryActionLabel={canManage ? 'Thiết lập lương' : undefined}

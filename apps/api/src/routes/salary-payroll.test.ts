@@ -176,26 +176,40 @@ describe('Kỳ lương 5 bước, Snapshot, Phiếu lương & Điều chỉnh (A
     const nv2Snap = snaps.find((s: { employeeCode: string }) => s.employeeCode === 'NV0002');
     const beforeNet = nv2Snap.netVnd;
 
-    const adjAdd = await t.app.inject({
-      method: 'POST',
-      url: `/api/admin/payroll/payslips/${nv2Snap.id}/revisions`,
-      headers: fin,
-      payload: { delta_vnd: 150000, reason: 'Thưởng hỗ trợ tăng cường chi nhánh' },
-    });
+    const adjAdd = await t.app.inject({ method: 'POST', url: `/api/admin/payroll/payslips/${nv2Snap.id}/revisions`, headers: fin, payload: { delta_vnd: 150000, reason: 'Thưởng hỗ trợ tăng cường chi nhánh' } });
     expect(adjAdd.statusCode).toBe(201);
     expect(adjAdd.json().data).toMatchObject({ netVnd: beforeNet + 150000, revision: 1 });
 
-    const adjDed = await t.app.inject({
-      method: 'POST',
-      url: `/api/admin/payroll/payslips/${nv2Snap.id}/revisions`,
-      headers: fin,
-      payload: { delta_vnd: -50000, reason: 'Khấu trừ tạm ứng đồng phục' },
-    });
+    const adjDed = await t.app.inject({ method: 'POST', url: `/api/admin/payroll/payslips/${nv2Snap.id}/revisions`, headers: fin, payload: { delta_vnd: -50000, reason: 'Khấu trừ tạm ứng đồng phục' } });
     expect(adjDed.statusCode).toBe(201);
     expect(adjDed.json().data).toMatchObject({ netVnd: beforeNet + 100000, revision: 2 });
 
     const revs = await t.app.inject({ method: 'GET', url: `/api/admin/payroll/payslips/${nv2Snap.id}/revisions`, headers: fin });
     expect(revs.statusCode).toBe(200);
     expect(revs.json().data).toHaveLength(2);
+  });
+
+  it('Thiết lập hồ sơ lương cá nhân giữa kỳ đồng bộ ngay vào bảng lương (cả nhân sự có ca đầu kỳ lẫn 0 giờ công) và cho phép duyệt kỳ lương', async () => {
+    const hr = await t.loginHeaders('hr');
+    const branchId = empByCode('NV0001').branch_id;
+    const empRes = await t.app.inject({ method: 'POST', url: '/api/admin/employees', headers: hr, payload: { full_name: 'Phạm Chờ Lương', phone_number: '0901000088', branch_id: branchId } });
+    const zeroRes = await t.app.inject({ method: 'POST', url: '/api/admin/employees', headers: hr, payload: { full_name: 'Phạm Không Giờ', phone_number: '0901000089', branch_id: branchId } });
+    const newEmp = empRes.json().data as { id: string; employeeCode: string };
+    const zeroEmp = zeroRes.json().data as { id: string; employeeCode: string };
+    await t.app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hr, payload: { employee_id: newEmp.id, branch_id: branchId, work_date: '2026-12-05', shift_code: 'CA_SANG', status: 'COMPLETED', day_type: 'WORK', scheduled_hours: 5 } });
+    const dec = (await t.app.inject({ method: 'POST', url: '/api/admin/payroll/periods', headers: fin, payload: { name: 'Kỳ lương tháng 12/2026', from_date: '2026-12-01', to_date: '2026-12-31' } })).json().data as { id: string; unreconciled_records_count: number };
+    expect(dec.unreconciled_records_count).toBe(1);
+
+    expect((await t.app.inject({ method: 'POST', url: '/api/admin/payroll/salary-profiles', headers: fin, payload: { employee_id: newEmp.employeeCode, rate_type: 'HOURLY', amount_vnd: 30000, probation_percent: 85, effective_from: '2026-12-29' } })).statusCode).toBe(201);
+    expect((await t.app.inject({ method: 'POST', url: '/api/admin/payroll/salary-profiles', headers: fin, payload: { employee_id: zeroEmp.id, rate_type: 'MONTHLY', amount_vnd: 9000000, probation_percent: 85, effective_from: '2026-12-29' } })).statusCode).toBe(201);
+    const decAfter = ((await t.app.inject({ method: 'GET', url: '/api/admin/payroll/periods', headers: fin })).json().data as { id: string; version: number; unreconciled_records_count: number }[]).find((p) => p.id === dec.id)!;
+    expect(decAfter.unreconciled_records_count).toBe(0);
+    const decSnaps = (await t.app.inject({ method: 'GET', url: `/api/admin/payroll/periods/${dec.id}/snapshots`, headers: fin })).json().data.snapshots as { employeeCode: string }[];
+    expect(decSnaps.find((s) => s.employeeCode === newEmp.employeeCode)).toMatchObject({ hasSalaryProfile: true, rateTypeLabel: 'Theo giờ', missingProfileShifts: 0, approvedHours: 5, probationPayVnd: 127500 });
+    expect(decSnaps.find((s) => s.employeeCode === zeroEmp.employeeCode)).toMatchObject({ hasSalaryProfile: true, rateTypeLabel: 'Theo tháng (lương cứng)', rateVnd: 9000000, missingProfileShifts: 0 });
+    const rec = await t.app.inject({ method: 'POST', url: `/api/admin/payroll/periods/${dec.id}/transition`, headers: fin, payload: { target_status: 'RECONCILE', version: decAfter.version } });
+    expect(rec.statusCode).toBe(200);
+    const app = await t.app.inject({ method: 'POST', url: `/api/admin/payroll/periods/${dec.id}/transition`, headers: fin, payload: { target_status: 'APPROVED', version: rec.json().data.version } });
+    expect(app.statusCode).toBe(200);
   });
 });

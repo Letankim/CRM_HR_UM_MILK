@@ -39,7 +39,7 @@ export function SalaryProfileModal({ open, mode, employee, base, employees, onCl
         ? base.effectiveFrom.slice(0, 10)
         : mode === 'ADJUST'
           ? dayjs().add(1, 'month').startOf('month').format('YYYY-MM-DD')
-          : dayjs().format('YYYY-MM-DD');
+          : dayjs().startOf('month').format('YYYY-MM-DD');
     const src = base
       ? {
           rate_type: base.rateType, amount_vnd: base.amountVnd, probation_percent: base.probationPercent, standard_work_days: base.standardWorkDays,
@@ -65,10 +65,10 @@ export function SalaryProfileModal({ open, mode, employee, base, employees, onCl
         : api.post('/admin/payroll/salary-profiles', payload);
     },
     onSuccess: () => {
-      message.success(mode === 'EDIT' ? 'Đã cập nhật mức lương' : 'Đã lưu mức lương mới cho nhân sự');
-      qc.invalidateQueries({ queryKey: ['salary-profiles'] });
-      qc.invalidateQueries({ queryKey: ['salary-history'] });
-      qc.invalidateQueries({ queryKey: ['employees'] });
+      message.success(mode === 'EDIT' ? 'Đã cập nhật mức lương và đồng bộ bảng lương' : 'Đã lưu mức lương mới và đồng bộ bảng lương cho nhân sự');
+      ['salary-profiles', 'salary-history', 'employees', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items'].forEach((k) =>
+        qc.invalidateQueries({ queryKey: [k] }),
+      );
       onClose();
     },
     onError: (err) => {

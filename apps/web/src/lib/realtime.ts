@@ -132,6 +132,11 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     const onAccountPending = () => {
       ['accounts', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
     };
+    const onPayrollUpdated = () => {
+      ['salary-profiles', 'salary-history', 'employees', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items'].forEach((k) =>
+        qc.invalidateQueries({ queryKey: [k] }),
+      );
+    };
     s.on('auth:forceLogout', onForceLogout);
     s.on('system:maintenance', onMaintenance);
     s.on('notification:new', onNotification);
@@ -140,6 +145,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     s.on('swap:updated', onSchedule);
     s.on('emergency:new', onEmergency);
     s.on('account:pending', onAccountPending);
+    s.on('payroll:updated', onPayrollUpdated);
     if (!s.connected) s.connect();
     return () => {
       if (scheduleTimer) clearTimeout(scheduleTimer);
@@ -151,6 +157,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       s.off('swap:updated', onSchedule);
       s.off('emergency:new', onEmergency);
       s.off('account:pending', onAccountPending);
+      s.off('payroll:updated', onPayrollUpdated);
     };
   }, [app, enabled, message, qc, router, socketToken, userId]);
 }

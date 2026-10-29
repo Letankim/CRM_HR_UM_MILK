@@ -5,7 +5,7 @@ import {
   CheckCircleOutlined, ClockCircleOutlined, DownloadOutlined, EyeOutlined, FileExcelOutlined,
   SafetyCertificateOutlined, SearchOutlined, WarningOutlined,
 } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
@@ -27,6 +27,7 @@ interface Props {
  * Chỉ dùng dữ liệu công đã xác nhận, phát hiện thiếu vào/ra ca, đi trễ và phiếu điều chỉnh chờ duyệt.
  */
 export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props) {
+  const qc = useQueryClient();
   const [searchInput, setSearchInput] = useState('');
   const debouncedQ = useDebouncedValue(searchInput, 400);
   const [branchFilter, setBranchFilter] = useState('ALL');
@@ -62,6 +63,12 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
 
   const rows = snapshotsQ.data?.data ?? [];
   const totalCount = snapshotsQ.data?.meta.pagination.total ?? rows.length;
+  const freshPeriod = snapshotsQ.data?.meta.filters?.period as PayPeriodRow | undefined;
+  useEffect(() => {
+    if (freshPeriod && (freshPeriod.version !== period.version || freshPeriod.unreconciled_records_count !== period.unreconciled_records_count)) {
+      qc.invalidateQueries({ queryKey: ['payroll-periods'] });
+    }
+  }, [freshPeriod, period.version, period.unreconciled_records_count, qc]);
   const summary = (snapshotsQ.data?.meta.filters?.summary ?? {}) as Record<string, unknown>;
   const totalPendingAdjs = Number(summary.totalPendingAdjs ?? 0);
   const totalMissingPunches = Number(summary.totalMissingPunches ?? 0);

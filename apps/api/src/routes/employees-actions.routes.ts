@@ -9,6 +9,7 @@ import { sendSuccess } from '../lib/response.js';
 import { dayjs } from '../lib/time.js';
 import { assertBranchAccess, auditContext, requirePermission } from '../plugins/auth-context.js';
 import { queuePromotionOfficialEmail } from '../services/action-email-dispatcher.js';
+import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { currentProfile, isProfileLocked, profilesOf, today } from '../services/salary-profile.service.js';
 import { assertAmountInRange, createSalaryProfile } from '../services/salary-profile.writer.js';
 import { cascadeEmployeeBranchChange, syncAccountFromEmployee } from './account-employee-sync.js';
@@ -104,12 +105,17 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
     await cascadeEmployeeBranchChange(ctx, updated, updated.branch_id, actorId);
     if (salary) {
       const cur = currentProfile(profilesOf(ctx.db, id));
-      if (!cur || isProfileLocked(ctx.db, cur.id)) {
-        await createSalaryProfile(ctx, updated, { ...salary, effective_from: salary.effective_from || today(), change_reason: 'Điều chỉnh lương từ hồ sơ nhân sự', note: salary.note ?? '' }, actorId);
-      } else {
+      const changed = !cur || cur.rate_type !== salary.rate_type || cur.amount_vnd !== Math.round(salary.amount_vnd) || cur.probation_percent !== salary.probation_percent || cur.attendance_bonus_vnd !== salary.attendance_bonus_vnd || cur.meal_allowance_per_shift_vnd !== salary.meal_allowance_per_shift_vnd || cur.transport_allowance_vnd !== salary.transport_allowance_vnd || cur.responsibility_allowance_vnd !== salary.responsibility_allowance_vnd || cur.other_allowance_vnd !== salary.other_allowance_vnd || cur.ot_multiplier !== salary.ot_multiplier || cur.standard_work_days !== salary.standard_work_days || cur.standard_hours_per_day !== salary.standard_hours_per_day;
+      if (!cur) {
+        await createSalaryProfile(ctx, updated, { ...salary, effective_from: salary.effective_from || updated.probation_start || dayjs().startOf('month').format('YYYY-MM-DD'), change_reason: 'Thiết lập lương từ hồ sơ nhân sự', note: salary.note ?? '' }, actorId);
+      } else if (changed && isProfileLocked(ctx.db, cur.id)) {
+        const nextFrom = salary.effective_from && salary.effective_from > cur.effective_from ? salary.effective_from : (today() > cur.effective_from ? today() : dayjs(cur.effective_from).add(1, 'day').format('YYYY-MM-DD'));
+        await createSalaryProfile(ctx, updated, { ...salary, effective_from: nextFrom, change_reason: 'Điều chỉnh lương từ hồ sơ nhân sự', note: salary.note ?? '' }, actorId);
+      } else if (changed) {
         await ctx.db.payRates.update(cur.id, cur.version, { ...salary, amount_vnd: Math.round(salary.amount_vnd) }, actorId);
       }
     }
+    await recalculateOpenPeriods(ctx, actorId);
     await ctx.audit.record(auditContext(request), {
       action: 'employee.update', entity: 'EMPLOYEES', entityId: id,
       before: { full_name: before.full_name, branch_id: before.branch_id, status: before.status, user_id: before.user_id },
@@ -124,8 +130,9 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
     const before = ctx.db.employees.get(id);
     if (!before) throw Errors.notFound('Không tìm thấy hồ sơ nhân sự');
     assertBranchAccess(request, before.branch_id);
-
-    await ctx.db.employees.softDelete(id, body.version ?? before.version, request.auth!.user.id);
+    const actorId = request.auth!.user.id;
+    await ctx.db.employees.softDelete(id, body.version ?? before.version, actorId);
+    await recalculateOpenPeriods(ctx, actorId);
     await ctx.audit.record(auditContext(request), { action: 'employee.delete', entity: 'EMPLOYEES', entityId: id, before: { employee_code: before.employee_code, full_name: before.full_name } });
     return sendSuccess(request, `Đã xóa hồ sơ nhân sự ${before.full_name} (${before.employee_code})`, { id });
   });
@@ -150,18 +157,12 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
       steps: [
         {
           name: 'UPDATE_EMPLOYEE_STAGE_OFFICIAL',
-          run: async (s) => {
-            s.updatedEmp = await ctx.db.employees.update(id, body.version, { stage: 'OFFICIAL', official_from: effectiveDate, employment_type: before.employment_type === 'PROBATION' ? 'PART_TIME' : before.employment_type, ...(body.note ? { note: body.note } : {}) }, actorId);
-          },
-          compensate: async (s) => {
-            if (s.updatedEmp) await ctx.db.employees.update(id, s.updatedEmp.version, { stage: before.stage, official_from: before.official_from, employment_type: before.employment_type }, actorId);
-          },
+          run: async (s) => { s.updatedEmp = await ctx.db.employees.update(id, body.version, { stage: 'OFFICIAL', official_from: effectiveDate, employment_type: before.employment_type === 'PROBATION' ? 'PART_TIME' : before.employment_type, ...(body.note ? { note: body.note } : {}) }, actorId); },
+          compensate: async (s) => { if (s.updatedEmp) await ctx.db.employees.update(id, s.updatedEmp.version, { stage: before.stage, official_from: before.official_from, employment_type: before.employment_type }, actorId); },
         },
         {
           name: 'SYNC_USER_ROLE_CHINH_THUC',
-          run: async (s) => {
-            if (s.prevUser && s.prevUser.role === 'THU_VIEC') await ctx.db.users.update(s.prevUser.id, s.prevUser.version, { role: 'CHINH_THUC' }, actorId);
-          },
+          run: async (s) => { if (s.prevUser && s.prevUser.role === 'THU_VIEC') await ctx.db.users.update(s.prevUser.id, s.prevUser.version, { role: 'CHINH_THUC' }, actorId); },
         },
         {
           name: 'RECORD_STAGE_HISTORY',
@@ -174,7 +175,7 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
       ],
       resultSelector: (s) => s.updatedEmp!,
     });
-
+    await recalculateOpenPeriods(ctx, actorId);
     queuePromotionOfficialEmail(ctx, promoted);
     await ctx.audit.record(auditContext(request), { action: 'employee.promote_official', entity: 'EMPLOYEES', entityId: id, before: { employee_code: before.employee_code, stage: before.stage, official_from: before.official_from }, after: { employee_code: promoted.employee_code, stage: promoted.stage, official_from: promoted.official_from, probation_start: promoted.probation_start, probation_end: promoted.probation_end } });
     return sendSuccess(request, `Đã chuyển chính thức cho nhân sự ${promoted.full_name} (${promoted.employee_code}) từ ngày ${effectiveDate}`, mapEmployeeRecord(promoted, ctx));
@@ -203,6 +204,7 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
     if (userPatches.length > 0) await ctx.db.users.batchUpdate(userPatches, actorId);
     if (body.action === 'PROMOTE_OFFICIAL') updatedEmps.forEach((emp) => queuePromotionOfficialEmail(ctx, emp));
 
+    await recalculateOpenPeriods(ctx, actorId);
     await ctx.audit.record(auditContext(request), {
       action: body.action === 'DELETE' ? 'employee.delete' : 'employee.bulk.promote_official',
       entity: 'EMPLOYEES', entityId: `bulk-${processed.length}`,

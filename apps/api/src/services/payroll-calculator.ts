@@ -108,7 +108,8 @@ export function computeEmployeePayroll(input: PayrollComputationInput) {
   const off = segList.filter((s) => s.stage === 'OFFICIAL');
   const sum = (arr: SalarySegment[], k: 'hours' | 'amountVnd') => arr.reduce((acc, s) => acc + s[k], 0);
 
-  const fixedProfile = resolveProfileAt(profiles, input.periodToDate) ?? lastProfile;
+  const dTo = (input.periodToDate ?? '').trim().slice(0, 10);
+  const fixedProfile = resolveProfileAt(profiles, dTo) ?? lastProfile ?? profiles.find((p) => !p.effective_to || p.effective_to.trim().slice(0, 10) >= dTo);
   const hasWork = workedDates.size > 0 && !!fixedProfile;
   const transport = hasWork ? fixedProfile!.transport_allowance_vnd : 0;
   const responsibility = hasWork ? fixedProfile!.responsibility_allowance_vnd + fixedProfile!.other_allowance_vnd : 0;

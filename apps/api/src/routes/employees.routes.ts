@@ -18,8 +18,10 @@ import { DEMO_PIN } from '../data/memory-seed.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
+import { dayjs } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
 import { queueEmployeeOnboardedEmail } from '../services/action-email-dispatcher.js';
+import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { today } from '../services/salary-profile.service.js';
 import { assertAmountInRange, newProfileRow } from '../services/salary-profile.writer.js';
 import { healBranchConsistency, syncAccountFromEmployee } from './account-employee-sync.js';
@@ -197,13 +199,14 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
           name: 'INSERT_INITIAL_SALARY_PROFILE',
           run: async (s) => {
             if (!body.salary || !s.emp) return;
-            await ctx.db.payRates.insert(newProfileRow(s.emp, body.salary, actorId, body.salary.effective_from || startDate, '', 'Thiết lập lương ban đầu khi tiếp nhận nhân sự'), actorId);
+            const initialFrom = body.salary.effective_from || body.probation_start || dayjs().startOf('month').format('YYYY-MM-DD');
+            await ctx.db.payRates.insert(newProfileRow(s.emp, body.salary, actorId, initialFrom, '', 'Thiết lập lương ban đầu khi tiếp nhận nhân sự'), actorId);
           },
         },
       ],
       resultSelector: (s) => s.emp!,
     });
-
+    await recalculateOpenPeriods(ctx, actorId);
     await ctx.audit.record(auditContext(request), {
       action: 'employee.create', entity: 'EMPLOYEES', entityId: created.id,
       after: { employee_code: created.employee_code, stage: created.stage, user_id: created.user_id, salary_rate_type: body.salary?.rate_type ?? null },
@@ -212,6 +215,5 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
     reply.code(201);
     return sendSuccess(request, 'Đã tạo hồ sơ nhân sự mới và đề xuất tài khoản ở trạng thái Chờ Quản trị viên kích hoạt', mapEmployeeRecord(created, ctx));
   });
-
   await employeeActionRoutes(app, ctx);
 }

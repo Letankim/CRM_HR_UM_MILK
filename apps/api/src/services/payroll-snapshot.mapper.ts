@@ -8,6 +8,7 @@ import {
 import type { AppContext } from '../context.js';
 import { resolveStaffGroupLabel } from '../routes/employee-mapper.js';
 import { collectWorkEntries, type ShiftPayrollLog } from './payroll-work-collector.js';
+import { currentProfile, profilesOf, resolveProfileAt } from './salary-profile.service.js';
 
 export interface MissingShiftDetailItem {
   assignmentId: string;
@@ -49,7 +50,13 @@ interface SnapshotAdjustmentsDetail {
 
 /** Chuyển Snapshot lương sang dạng hiển thị (kèm chi tiết phân đoạn lương & đối soát chấm công/nghỉ OFF/đổi ca) */
 export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
-  const rate = s.pay_rate_id ? ctx.db.payRates.get(s.pay_rate_id) : undefined;
+  const period = ctx.db.payPeriods.get(s.period_id);
+  const fromDate = period?.from_date || '2000-01-01';
+  const toDate = period?.to_date || '2099-12-31';
+  const isLockedFinal = period?.status === 'PUBLISHED' || period?.status === 'PAID';
+  const liveProfiles = !isLockedFinal ? profilesOf(ctx.db, s.employee_id || s.employee_code) : [];
+  const rate = (s.pay_rate_id ? ctx.db.payRates.get(s.pay_rate_id) : undefined)
+    ?? (!isLockedFinal ? (resolveProfileAt(liveProfiles, toDate) ?? currentProfile(liveProfiles)) : undefined);
   const rateType = rate?.rate_type ?? 'HOURLY';
   let detail: SnapshotAdjustmentsDetail = {};
   let allowanceLines: { code: string; label: string; amount: number }[] = [];
@@ -59,9 +66,6 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
   } catch {
     /* dữ liệu snapshot cũ không có chi tiết */
   }
-  const period = ctx.db.payPeriods.get(s.period_id);
-  const fromDate = period?.from_date || '2000-01-01';
-  const toDate = period?.to_date || '2099-12-31';
   const isEmp = (val?: string) => Boolean(val && (val === s.employee_id || val === s.employee_code));
   const empShifts = ctx.db.shiftAssignments.filter((sh) => isEmp(sh.employee_id) && sh.work_date >= fromDate && sh.work_date <= toDate);
   const deletedShifts = ctx.db.shiftAssignments.all(true).filter((sh) => sh.is_deleted && isEmp(sh.employee_id) && sh.work_date >= fromDate && sh.work_date <= toDate);
@@ -75,7 +79,6 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
   const empAdjs = ctx.db.attendanceAdjustments.filter(
     (a) => isEmp(a.employee_id) && a.work_date >= fromDate && a.work_date <= toDate && !isDeletedRef(a.assignment_id, a.work_date, a.shift_code),
   );
-  const isLockedFinal = period?.status === 'PUBLISHED' || period?.status === 'PAID';
   const liveWork = !isLockedFinal ? collectWorkEntries(ctx, s.employee_id || s.employee_code, fromDate, toDate) : null;
   const shiftLogs = (liveWork ? liveWork.shiftLogs : (detail.shiftLogs ?? [])).filter(
     (log) => !isDeletedRef(log.assignmentId, log.date, log.shiftCode),
@@ -137,11 +140,11 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
     staffGroupLabel: resolveStaffGroupLabel(ctx, s.staff_group, s.staff_group),
     stage: s.stage,
     stageLabel: EMPLOYEE_STAGE_LABELS[s.stage as keyof typeof EMPLOYEE_STAGE_LABELS] ?? s.stage,
-    hasSalaryProfile: !!s.pay_rate_id,
+    hasSalaryProfile: Boolean(s.pay_rate_id || rate),
     rateType,
     rateTypeLabel: rate ? PAY_RATE_TYPE_LABELS[rateType] : 'Chưa thiết lập lương',
     unitLabel: PAY_RATE_UNIT_LABELS[rateType],
-    rateVnd: s.rate_vnd,
+    rateVnd: s.rate_vnd || rate?.amount_vnd || 0,
     probationPercent: rate?.probation_percent ?? null,
     probationHours: s.probation_hours,
     probationRateVnd: s.probation_hourly_rate_vnd,

@@ -12,17 +12,26 @@ export * from './domain-comms-test-schemas.js';
  * theo đúng tài liệu bàn giao IT V5.1 (UM_BO_MILK_HR_V5_1_HOAN_CHINH_BAN_GIAO_IT.pdf).
  */
 
+const nonEmptyOrDefault = (fallback: string) =>
+  z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? fallback : v ?? fallback), z.string().trim().min(1));
+
+const enumOrDefault = <T extends readonly [string, ...string[]]>(values: T, fallback: T[number]) =>
+  z.preprocess((v) => {
+    const s = typeof v === 'string' ? v.trim() : '';
+    return (values as readonly string[]).includes(s) ? s : fallback;
+  }, z.enum(values));
+
 export const zEmployee = zSystemColumns.extend({
   employee_code: z.string().min(2),
   full_name: z.string().min(2),
   phone: z.string().default(''),
   branch_id: z.string().default(''),
-  staff_group: z.string().trim().min(1).default('BARISTA'),
-  stage: z.enum(EMPLOYEE_STAGES).default('PROBATION'),
+  staff_group: nonEmptyOrDefault('BARISTA'),
+  stage: enumOrDefault(EMPLOYEE_STAGES, 'PROBATION'),
   probation_start: z.string().default(''),
   probation_end: z.string().default(''),
   official_from: z.string().default(''),
-  status: z.enum(['ACTIVE', 'ON_LEAVE', 'RESIGNED', 'SUSPENDED']).default('ACTIVE'),
+  status: enumOrDefault(['ACTIVE', 'ON_LEAVE', 'RESIGNED', 'SUSPENDED'] as const, 'ACTIVE'),
   user_id: z.string().default(''),
   candidate_id: z.string().default(''),
   email: z.string().default(''),
@@ -35,7 +44,7 @@ export const zEmployee = zSystemColumns.extend({
   emergency_contact_name: z.string().default(''),
   emergency_contact_phone: z.string().default(''),
   position_title: z.string().default(''),
-  employment_type: z.enum(['FULL_TIME', 'PART_TIME', 'PROBATION']).default('PROBATION'),
+  employment_type: enumOrDefault(['FULL_TIME', 'PART_TIME', 'PROBATION'] as const, 'PROBATION'),
   default_shift_code: z.string().default('CA_SANG'),
   probation_cycle_days: z.coerce.number().int().default(12),
   probation_work_days: z.coerce.number().int().default(7),
@@ -84,14 +93,14 @@ const positiveOrDefault = (fallback: number, min = 1, max?: number) =>
   }, max !== undefined ? z.number().min(min).max(max) : z.number().min(min));
 
 export const zPayRate = zSystemColumns.extend({
-  employee_id: z.string().min(1),
-  rate_type: z.enum(['HOURLY', 'SHIFT', 'MONTHLY']).default('HOURLY'),
+  employee_id: z.string().trim().min(1),
+  rate_type: enumOrDefault(['HOURLY', 'SHIFT', 'MONTHLY'] as const, 'HOURLY'),
   amount_vnd: z.coerce.number().min(0),
-  effective_from: z.string(),
-  effective_to: z.string().default(''),
+  effective_from: z.string().transform((v) => v.trim().slice(0, 10)),
+  effective_to: z.string().default('').transform((v) => v.trim().slice(0, 10)),
   approved_by: z.string().default(''),
-  stage: z.enum(EMPLOYEE_STAGES).default('PROBATION'),
-  staff_group: z.string().trim().min(1).default('BARISTA'),
+  stage: enumOrDefault(EMPLOYEE_STAGES, 'PROBATION'),
+  staff_group: nonEmptyOrDefault('BARISTA'),
   ot_multiplier: positiveOrDefault(SYSTEM_CONFIG.defaults.overtimeMultiplier, 1),
   night_shift_allowance_vnd: z.coerce.number().min(0).default(0),
   attendance_bonus_vnd: z.coerce.number().min(0).default(0),
@@ -99,7 +108,7 @@ export const zPayRate = zSystemColumns.extend({
   transport_allowance_vnd: z.coerce.number().min(0).default(0),
   responsibility_allowance_vnd: z.coerce.number().min(0).default(0),
   approved_at: z.string().default(''),
-  status: z.enum(['ACTIVE', 'EXPIRED']).default('ACTIVE'),
+  status: enumOrDefault(['ACTIVE', 'EXPIRED'] as const, 'ACTIVE'),
   note: z.string().default(''),
   probation_percent: positiveOrDefault(SYSTEM_CONFIG.defaults.probationSalaryPercent, 1, 100),
   standard_work_days: positiveOrDefault(SYSTEM_CONFIG.defaults.standardWorkDaysPerMonth, 1, 31),

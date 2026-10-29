@@ -48,9 +48,11 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
 
   app.get('/api/admin/payroll/periods', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const q = (request.query ?? {}) as Record<string, string | undefined>;
+    const force = q.refresh === '1' || q.refresh === 'true';
+    if (force) await Promise.all([ctx.db.payRates.load(), ctx.db.employees.load(), ctx.db.payPeriods.load(), ctx.db.payrollItems.load()]);
     const actorId = request.auth?.user.id ?? 'system';
     for (const p of ctx.db.payPeriods.all()) {
-      if (p.status === 'DRAFT' || p.status === 'RECONCILE') await recalculatePeriodSnapshots(ctx, p, actorId);
+      if (p.status === 'DRAFT' || p.status === 'RECONCILE') await recalculatePeriodSnapshots(ctx, p, actorId, force);
     }
     const allItems = ctx.db.payPeriods.all().map(withLabel);
     const result = paginateAndSort(allItems, {
@@ -67,6 +69,7 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
     const forceRefresh = q.refresh === '1' || q.refresh === 'true';
     if (forceRefresh) {
       await Promise.all([
+        ctx.db.payRates.load(), ctx.db.employees.load(), ctx.db.payPeriods.load(), ctx.db.payrollItems.load(),
         ctx.db.shiftAssignments.load(), ctx.db.attendanceEvents.load(), ctx.db.attendanceAdjustments.load(),
         ctx.db.leaveRequests.load(), ctx.db.shiftSwaps.load(), ctx.db.emergencyLeaves.load(),
       ]);
@@ -108,7 +111,7 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
       const result = paginateAndSort(filtered, {
         page: Number(q.page) || 1, perPage: Number(q.per_page) || 12, maxPerPage: 500, defaultSortBy: 'employeeCode', defaultSortOrder: 'asc',
       });
-      (result.meta.filters as Record<string, unknown>).summary = summary;
+      Object.assign(result.meta.filters as Record<string, unknown>, { summary, period: withLabel(period) });
       return sendPaginated(request, 'Lấy chi tiết bảng lương thành công', result);
     }
     return sendSuccess(request, 'Lấy chi tiết bảng lương thành công', { period: withLabel(period), snapshots: filtered, summary });

@@ -1,7 +1,7 @@
 import type { Employee, PayRate } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
-import { nowIso } from '../lib/time.js';
+import { dayjs, nowIso } from '../lib/time.js';
 import { MAX_AMOUNT_BY_TYPE, MIN_AMOUNT_BY_TYPE, type SalaryProfileFields } from '../routes/salary-profile.schemas.js';
 import { dayBefore, isProfileLocked, profilesOf, today } from './salary-profile.service.js';
 
@@ -48,9 +48,10 @@ export function newProfileRow(emp: Employee, fields: SalaryProfileFields, actorI
  */
 export async function createSalaryProfile(ctx: AppContext, emp: Employee, fields: SalaryProfileFields, actorId: string): Promise<PayRate> {
   assertAmountInRange(fields.rate_type, fields.amount_vnd);
-  const effectiveFrom = fields.effective_from || emp.probation_start || today();
   const history = profilesOf(ctx.db, emp.id);
   const latest = history[0];
+  const defaultInitialFrom = (emp.probation_start || '').trim().slice(0, 10) || dayjs().startOf('month').format('YYYY-MM-DD');
+  const effectiveFrom = (fields.effective_from || '').trim().slice(0, 10) || (latest ? today() : defaultInitialFrom);
   if (latest && effectiveFrom <= latest.effective_from) {
     throw Errors.fieldValidation(
       'effective_from',
