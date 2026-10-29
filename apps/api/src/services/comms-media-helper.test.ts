@@ -45,7 +45,12 @@ describe('comms-media-helper & mkt-media-storage proxy (cơ chế chuẩn Điể
 
     const pngBuf = Buffer.from(SAMPLE_PNG_BASE64, 'base64');
     expect(detectBufferMimeType(pngBuf, 'application/octet-stream')).toBe('image/png');
-    expect(detectBufferMimeType(Buffer.from('%PDF-1.7 sample'), 'image/png')).toBe('application/pdf');
+    expect(detectBufferMimeType(Buffer.from('%PDF-1.7 sample'), 'application/octet-stream')).toBe('application/pdf');
+    // Tệp nén ZIP (PK\x03\x04) và Excel XLSX (PK\x03\x04 chứa xl/) không bao giờ bị nhận nhầm là ảnh PNG
+    const fakeZipBuf = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('tai-lieu-noi-bo/readme.txt')]);
+    expect(detectBufferMimeType(fakeZipBuf, 'application/octet-stream', 'tai-lieu.zip')).toBe('application/zip');
+    const fakeXlsxBuf = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('[Content_Types].xml xl/workbook.xml')]);
+    expect(detectBufferMimeType(fakeXlsxBuf, 'application/octet-stream')).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   });
 
   it('extracts Drive File ID from all Google Drive URL variants and routes through /api/mkt/media/files/:id', () => {
@@ -164,5 +169,51 @@ describe('comms-media-helper & mkt-media-storage proxy (cơ chế chuẩn Điể
     expect(info.sizeBytes).toBe(pngBytes.length);
     expect(info.sizeFormatted).toBe(`${pngBytes.length} Bytes`);
     expect(info.previewUrl).toBe(`/api/mkt/media/files/${fakeDriveId}`);
+
+    // Probe & tải xuống tệp nén ZIP: isImage = false, previewUrl rỗng, Content-Disposition = attachment
+    const zipDriveId = '1Kk7sjQkg6hPMF12ut1X1JLvasmkB5_R5';
+    const zipBytes = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('bo-tai-lieu-mkt-thang-11/data.csv')]);
+    saveMediaCache({ env: { LOCAL_STORAGE_DIR: './storage' } } as unknown as AppContext, toMktCacheKey(zipDriveId), zipBytes);
+
+    const zipProbeRes = await t.app.inject({
+      method: 'POST',
+      url: '/api/mkt/media/probe',
+      headers: mktHeaders,
+      payload: { url: `https://drive.google.com/file/d/${zipDriveId}/view` },
+    });
+    expect(zipProbeRes.statusCode).toBe(200);
+    const zipInfo = zipProbeRes.json().data as {
+      reachable: boolean; mimeType: string; mimeLabel: string; sizeBytes: number; isImage: boolean; previewUrl: string;
+    };
+    expect(zipInfo.reachable).toBe(true);
+    expect(zipInfo.mimeType).toBe('application/zip');
+    expect(zipInfo.mimeLabel).toBe('Tệp nén ZIP');
+    expect(zipInfo.isImage).toBe(false);
+    expect(zipInfo.previewUrl).toBe('');
+    expect(zipInfo.sizeBytes).toBe(zipBytes.length);
+
+    const saveZipRes = await t.app.inject({
+      method: 'POST',
+      url: '/api/mkt/media',
+      headers: mktHeaders,
+      payload: {
+        file_name: 'bo-tai-lieu-mkt-thang-11.zip',
+        mime_type: zipInfo.mimeType,
+        size_bytes: zipInfo.sizeBytes,
+        category: 'ARCHIVE_PACKAGE',
+        drive_url: `https://drive.google.com/file/d/${zipDriveId}/view`,
+      },
+    });
+    expect(saveZipRes.statusCode).toBe(201);
+    const savedZip = saveZipRes.json().data as { id: string; isImage: boolean; previewUrl: string; mimeLabel: string };
+    expect(savedZip.isImage).toBe(false);
+    expect(savedZip.previewUrl).toBe('');
+    expect(savedZip.mimeLabel).toBe('Tệp nén ZIP');
+
+    const dlZipRes = await t.app.inject({ method: 'GET', url: `/api/mkt/media/files/${savedZip.id}` });
+    expect(dlZipRes.statusCode).toBe(200);
+    expect(dlZipRes.headers['content-type']).toBe('application/zip');
+    expect(dlZipRes.headers['content-disposition']).toContain('attachment;');
+    expect(dlZipRes.rawPayload.equals(zipBytes)).toBe(true);
   });
 });

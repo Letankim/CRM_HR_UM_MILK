@@ -1,8 +1,9 @@
 import type { AppContext } from '../context.js';
-import { MEDIA_MIME_LABELS, formatMediaSize } from './comms-media-helper.js';
+import { formatMediaSize, resolveMediaMimeLabel } from './comms-media-helper.js';
 import {
   detectBufferMimeType,
   extractGoogleDriveFileId,
+  guessMimeByExtension,
   readMediaCache,
   saveMediaCache,
   toMktCacheKey,
@@ -30,22 +31,14 @@ function parseContentDispositionName(header: string | null): string {
   return plainMatch?.[1]?.trim() ?? '';
 }
 
-function guessMimeFromFileName(name: string): string {
-  const lower = name.toLowerCase();
-  if (lower.endsWith('.pdf')) return 'application/pdf';
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-  if (lower.endsWith('.webp')) return 'image/webp';
-  if (lower.endsWith('.gif')) return 'image/gif';
-  if (lower.endsWith('.svg')) return 'image/svg+xml';
-  return 'image/png';
-}
-
 function normalizeKnownMime(rawMime: string, fileName = ''): string {
   const base = String(rawMime || '').split(';')[0]!.trim().toLowerCase();
   if (base.startsWith('application/vnd.google-apps.')) return 'application/pdf';
   if (base === 'image/jpg') return 'image/jpeg';
+  if (base === 'application/x-zip-compressed' || base === 'multipart/x-zip') return 'application/zip';
+  if (base === 'application/x-rar-compressed') return 'application/vnd.rar';
   if (base && base !== 'application/octet-stream' && base !== 'binary/octet-stream') return base;
-  return guessMimeFromFileName(fileName);
+  return guessMimeByExtension(fileName);
 }
 
 export async function probeMktMediaSource(ctx: AppContext, rawInput: string): Promise<ProbedMktMediaInfo> {
@@ -68,11 +61,13 @@ export async function probeMktMediaSource(ctx: AppContext, rawInput: string): Pr
         if (meta.sizeBytes > 0 || meta.name) reachable = true;
       }
     }
-    if (!buf && ctx.google.downloadDriveFile) {
+    const metaMime = normalizeKnownMime(declaredMime, fileName);
+    const shouldPrewarmBytes = !buf && (!reachable || sizeBytes <= 0 || (metaMime.startsWith('image/') && sizeBytes <= 12 * 1024 * 1024));
+    if (shouldPrewarmBytes && ctx.google.downloadDriveFile) {
       buf = await ctx.google.downloadDriveFile(driveId);
-      if (buf && buf.length > 0) saveMediaCache(ctx, cacheKey, buf);
+      if (buf && buf.length > 0 && buf.length <= 20 * 1024 * 1024) saveMediaCache(ctx, cacheKey, buf);
     }
-    if (!buf && (raw.startsWith('http') || ctx.google.mode === 'google')) {
+    if (!buf && shouldPrewarmBytes && (raw.startsWith('http') || ctx.google.mode === 'google')) {
       try {
         const res = await fetch(`https://drive.google.com/uc?export=download&id=${encodeURIComponent(driveId)}`, {
           redirect: 'follow',
@@ -86,7 +81,7 @@ export async function probeMktMediaSource(ctx: AppContext, rawInput: string): Pr
           if (downloaded.length > 0) {
             buf = downloaded;
             if (!declaredMime) declaredMime = ct;
-            saveMediaCache(ctx, cacheKey, buf);
+            if (buf.length <= 20 * 1024 * 1024) saveMediaCache(ctx, cacheKey, buf);
           }
         }
       } catch { /* fallback below */ }
@@ -108,7 +103,7 @@ export async function probeMktMediaSource(ctx: AppContext, rawInput: string): Pr
           if (downloaded.length > 0) {
             buf = downloaded;
             declaredMime = ct;
-            saveMediaCache(ctx, cacheKey, buf);
+            if (buf.length <= 20 * 1024 * 1024) saveMediaCache(ctx, cacheKey, buf);
           } else {
             sizeBytes = Number(res.headers.get('content-length') || 0);
           }
@@ -120,7 +115,7 @@ export async function probeMktMediaSource(ctx: AppContext, rawInput: string): Pr
   if (buf && buf.length > 0) {
     reachable = true;
     sizeBytes = buf.length;
-    declaredMime = detectBufferMimeType(buf, declaredMime || guessMimeFromFileName(fileName));
+    declaredMime = detectBufferMimeType(buf, declaredMime, fileName);
   }
 
   const mimeType = normalizeKnownMime(declaredMime, fileName);
@@ -133,7 +128,7 @@ export async function probeMktMediaSource(ctx: AppContext, rawInput: string): Pr
     driveFileId: driveId,
     fileName,
     mimeType,
-    mimeLabel: MEDIA_MIME_LABELS[mimeType] ?? 'Tệp tài liệu',
+    mimeLabel: resolveMediaMimeLabel(mimeType, fileName),
     sizeBytes,
     sizeFormatted: formatMediaSize(sizeBytes),
     isImage,

@@ -31,17 +31,18 @@ const zAnnouncementBody = z.object({
 
 const zMediaBody = z.object({
   version: z.coerce.number().int().min(1).optional(), code: z.string().trim().optional().default(''),
-  file_name: z.string().trim().min(2, 'Tên tệp media tối thiểu 2 ký tự'), mime_type: z.string().trim().default('image/png'),
+  file_name: z.string().trim().min(2, 'Tên tệp media tối thiểu 2 ký tự'), mime_type: z.string().trim().default('application/octet-stream'),
   size_bytes: z.coerce.number().int().min(0).default(0), file_base64: z.string().optional().default(''),
   drive_file_id: z.string().trim().optional().default(''), drive_url: z.string().trim().optional().default(''),
-  category: z.enum(['BANNER', 'SOP_DOC', 'EVENT_PHOTO', 'POLICY_PDF']).default('BANNER'), is_internal_only: z.boolean().default(true),
+  category: z.enum(['BANNER', 'SOP_DOC', 'EVENT_PHOTO', 'POLICY_PDF', 'ARCHIVE_PACKAGE', 'OFFICE_SHEET', 'VIDEO_AUDIO']).default('BANNER'), is_internal_only: z.boolean().default(true),
 });
 
 export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/mkt/media/files/:id', async (req, reply) => {
     const { id } = req.params as { id: string }, loaded = await loadMktMediaFile(ctx, id);
     if (!loaded) throw Errors.notFound('Tệp Media nội bộ', id);
-    return reply.header('Content-Type', loaded.mimeType).header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(loaded.fileName)}`).header('Cache-Control', 'public, max-age=86400').send(loaded.buffer);
+    const disp = /^(image\/|video\/|audio\/|text\/|application\/pdf)/i.test(loaded.mimeType) ? 'inline' : 'attachment';
+    return reply.header('Content-Type', loaded.mimeType).header('Content-Disposition', `${disp}; filename*=UTF-8''${encodeURIComponent(loaded.fileName)}`).header('Cache-Control', 'public, max-age=86400').send(loaded.buffer);
   });
   const canModify = (u: { id: string; role: string; username: string; display_name?: string }, rec: { created_by: string; approved_by?: string; owner_id?: string; uploaded_by?: string }) =>
     u.role === 'ADMIN' || rec.created_by === u.id || rec.owner_id === u.id || rec.uploaded_by === u.id || Boolean(rec.approved_by && (rec.approved_by === u.username || rec.approved_by === u.display_name));

@@ -1,12 +1,15 @@
 import type { MediaAsset } from '@umbm/shared';
 import type { AppContext } from '../context.js';
-import { extractGoogleDriveFileId } from './mkt-media-storage.service.js';
+import { extractGoogleDriveFileId, guessMimeByExtension } from './mkt-media-storage.service.js';
 
 export const MEDIA_CATEGORY_LABELS: Record<string, string> = {
   BANNER: 'Banner truyền thông',
   SOP_DOC: 'Tài liệu quy trình (SOP)',
   EVENT_PHOTO: 'Hình ảnh sự kiện',
-  POLICY_PDF: 'Văn bản chính sách (PDF)',
+  POLICY_PDF: 'Văn bản chính sách',
+  ARCHIVE_PACKAGE: 'Gói tệp nén / Tư liệu (ZIP/RAR)',
+  OFFICE_SHEET: 'Biểu mẫu Word / Excel / Trình chiếu',
+  VIDEO_AUDIO: 'Video / Âm thanh đào tạo',
 };
 
 export const MEDIA_MIME_LABELS: Record<string, string> = {
@@ -16,9 +19,46 @@ export const MEDIA_MIME_LABELS: Record<string, string> = {
   'image/webp': 'Hình ảnh WebP',
   'image/gif': 'Hình ảnh GIF',
   'image/svg+xml': 'Hình ảnh Vector SVG',
+  'image/bmp': 'Hình ảnh BMP',
   'application/pdf': 'Tài liệu PDF',
+  'application/zip': 'Tệp nén ZIP',
+  'application/x-zip-compressed': 'Tệp nén ZIP',
+  'multipart/x-zip': 'Tệp nén ZIP',
+  'application/vnd.rar': 'Tệp nén RAR',
+  'application/x-rar-compressed': 'Tệp nén RAR',
+  'application/x-7z-compressed': 'Tệp nén 7-Zip',
+  'application/gzip': 'Tệp nén GZIP',
+  'application/msword': 'Tài liệu Word (DOC)',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Tài liệu Word (DOCX)',
+  'application/vnd.ms-excel': 'Bảng tính Excel (XLS)',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Bảng tính Excel (XLSX)',
+  'text/csv': 'Bảng dữ liệu CSV',
+  'application/vnd.ms-powerpoint': 'Trình chiếu PowerPoint (PPT)',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'Trình chiếu PowerPoint (PPTX)',
+  'text/plain': 'Tệp văn bản (TXT)',
+  'application/json': 'Dữ liệu JSON',
+  'text/markdown': 'Tài liệu Markdown',
   'video/mp4': 'Video MP4',
+  'video/webm': 'Video WebM',
+  'video/quicktime': 'Video MOV',
+  'audio/mpeg': 'Âm thanh MP3',
+  'audio/wav': 'Âm thanh WAV',
+  'application/octet-stream': 'Tệp dữ liệu đính kèm',
 };
+
+export function resolveMediaMimeLabel(mimeType: string, fileName = ''): string {
+  const cleanMime = String(mimeType || '').split(';')[0]!.trim().toLowerCase();
+  if (cleanMime && cleanMime !== 'application/octet-stream' && MEDIA_MIME_LABELS[cleanMime]) {
+    return MEDIA_MIME_LABELS[cleanMime]!;
+  }
+  const byExt = guessMimeByExtension(fileName);
+  if (byExt !== 'application/octet-stream' && MEDIA_MIME_LABELS[byExt]) {
+    return MEDIA_MIME_LABELS[byExt]!;
+  }
+  const extMatch = String(fileName || '').trim().match(/\.([a-zA-Z0-9]{2,5})$/);
+  if (extMatch?.[1]) return `Tệp đính kèm (${extMatch[1].toUpperCase()})`;
+  return MEDIA_MIME_LABELS[cleanMime] ?? 'Tệp dữ liệu đính kèm';
+}
 
 export interface EnrichedMediaAsset extends MediaAsset {
   drive_url: string;
@@ -54,25 +94,12 @@ export function parseMediaIds(raw: unknown): string[] {
   if (str.startsWith('[')) {
     try {
       const parsed = JSON.parse(str);
-      if (Array.isArray(parsed)) {
-        return parsed.map((x) => String(x || '').trim()).filter(Boolean);
-      }
-    } catch {
-      // Fallback sang tách chuỗi dấu phẩy bên dưới
-    }
+      if (Array.isArray(parsed)) return parsed.map((x) => String(x || '').trim()).filter(Boolean);
+    } catch { /* fallback CSV */ }
   }
-  return str
-    .replace(/[\[\]"]/g, '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  return str.replace(/[\[\]"]/g, '').split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-/**
- * Chuẩn hóa toàn bộ đường dẫn xem trước & tải tệp Media qua proxy OAuth2 cùng tên miền
- * (`/api/mkt/media/files/:id`), tương tự cơ chế ảnh điểm danh (`/api/attendance/photos/:fileId`),
- * triệt tiêu 100% lỗi 403 Forbidden khi người xem đăng nhập tài khoản Google khác.
- */
 export function normalizeMediaUrls(
   rawDriveField: string,
   mimeType: string,
@@ -84,8 +111,8 @@ export function normalizeMediaUrls(
   isImage: boolean;
 } {
   const raw = String(rawDriveField || '').trim();
-  const mime = String(mimeType || '').toLowerCase();
-  const isImageByExt = /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(raw) || raw.startsWith('data:image/');
+  const mime = String(mimeType || '').split(';')[0]!.trim().toLowerCase();
+  const isImageByExt = !mime && (/\.(png|jpe?g|webp|gif|svg|bmp)(\?.*)?$/i.test(raw) || raw.startsWith('data:image/'));
   const isImage = mime.startsWith('image/') || isImageByExt;
   const isInternalPlaceholder = !raw || raw.startsWith('drive://');
 
@@ -95,16 +122,10 @@ export function normalizeMediaUrls(
     }
     const verSuffix = version && version > 1 ? `?v=${version}` : '';
     const proxyUrl = `/api/mkt/media/files/${encodeURIComponent(mediaId)}${verSuffix}`;
-    return {
-      openUrl: proxyUrl,
-      previewUrl: isImage ? proxyUrl : '',
-      isImage,
-    };
+    return { openUrl: proxyUrl, previewUrl: isImage ? proxyUrl : '', isImage };
   }
 
-  if (isInternalPlaceholder) {
-    return { openUrl: '', previewUrl: '', isImage };
-  }
+  if (isInternalPlaceholder) return { openUrl: '', previewUrl: '', isImage };
 
   const driveId = extractGoogleDriveFileId(raw);
   if (driveId) {
@@ -126,7 +147,10 @@ export function enrichMediaAsset(
   canModify?: (user: { id: string; role: string; username: string; display_name?: string }, rec: { created_by: string; uploaded_by?: string }) => boolean,
 ): EnrichedMediaAsset {
   const rawDrive = String(m.drive_file_id || '').trim();
-  const { openUrl, previewUrl, isImage } = normalizeMediaUrls(rawDrive, m.mime_type, m.id, m.version);
+  const effectiveMime = (!m.mime_type || m.mime_type === 'application/octet-stream')
+    ? guessMimeByExtension(m.file_name)
+    : m.mime_type;
+  const { openUrl, previewUrl, isImage } = normalizeMediaUrls(rawDrive, effectiveMime, m.id, m.version);
   const driveId = extractGoogleDriveFileId(rawDrive);
   const storageSourceLabel = !rawDrive || rawDrive.startsWith('drive://')
     ? 'Kho Media mẫu nội bộ'
@@ -138,13 +162,14 @@ export function enrichMediaAsset(
 
   return {
     ...m,
+    mime_type: effectiveMime,
     code: m.code || 'MED',
     drive_url: openUrl,
     externalSourceUrl,
     openUrl,
     previewUrl,
     isImage,
-    mimeLabel: MEDIA_MIME_LABELS[m.mime_type] ?? 'Tệp tài liệu',
+    mimeLabel: resolveMediaMimeLabel(effectiveMime, m.file_name),
     categoryLabel: MEDIA_CATEGORY_LABELS[m.category] ?? 'Tài liệu nội bộ',
     sizeFormatted: formatMediaSize(m.size_bytes),
     securityLabel: m.is_internal_only ? 'Chỉ lưu hành nội bộ' : 'Công khai có kiểm soát',
@@ -171,9 +196,7 @@ export function resolveAnnouncementMediaAttachments(
     seen.add(rawId);
     const found = ctx.db.mediaAssets.get(rawId)
       ?? allIncludingArchived.find((m) => m.id === rawId || m.code === rawId || m.file_name === rawId);
-    if (found) {
-      resolved.push(enrichMediaAsset(ctx, found, u));
-    }
+    if (found) resolved.push(enrichMediaAsset(ctx, found, u));
   }
   return resolved;
 }

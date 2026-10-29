@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { ZoomInOutlined } from '@ant-design/icons';
+import { useEffect, useState } from 'react';
+import { FileImageOutlined, ZoomInOutlined } from '@ant-design/icons';
 import { Fancybox } from '@fancyapps/ui';
 import '@fancyapps/ui/dist/fancybox/fancybox.css';
 
@@ -53,6 +53,33 @@ export function FancyboxImage({
   objectFit = 'cover',
 }: FancyboxImageProps) {
   const [hovered, setHovered] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (failed) {
+    return (
+      <div
+        style={{
+          width: '100%',
+          height: typeof height === 'number' ? Math.min(height, 110) : 100,
+          borderRadius: 3,
+          background: '#F8FAFC',
+          border: '1px dashed #CBD5E1',
+          color: '#64748B',
+          fontSize: 12,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+        }}
+      >
+        <FileImageOutlined /> Không hiển thị trực tiếp bản xem trước của tệp này
+      </div>
+    );
+  }
 
   const handleOpen = () => {
     if (gallerySlides && gallerySlides.length > 0) {
@@ -89,6 +116,7 @@ export function FancyboxImage({
       <img
         src={src}
         alt={alt}
+        onError={() => setFailed(true)}
         style={{
           width: '100%',
           height: '100%',
