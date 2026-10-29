@@ -96,6 +96,7 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
   const baseLines = open?.breakdown?.segments ? payslipLines(open.breakdown) : [];
   const revisionDelta = open?.breakdown ? open.netVnd - open.breakdown.netVnd : 0;
   const lines = revisionDelta !== 0 && open ? [...baseLines, { label: 'Điều chỉnh sau phát hành', detail: `Phiếu điều chỉnh lần ${open.revision}`, amount: revisionDelta }] : baseLines;
+  const hasActiveTicket = Boolean(open?.linkedTicket && open.linkedTicket.status !== 'CLOSED');
   const deptAssignees = (assigneesQ.data ?? []).filter((a) => !selectedDept || a.department === selectedDept);
 
   const content = query.isLoading ? (
@@ -194,12 +195,12 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
           <Row gutter={12}>
             <Col xs={24} sm={12}>
               <Form.Item name="target_department" label="Chọn Bộ phận tiếp nhận" rules={[{ required: true, message: 'Vui lòng chọn bộ phận' }]}>
-                <Select options={TICKET_DEPARTMENT_OPTIONS} onChange={() => form.setFieldValue('assignee_user_id', '')} />
+                <Select disabled={hasActiveTicket} options={TICKET_DEPARTMENT_OPTIONS} onChange={() => form.setFieldValue('assignee_user_id', '')} />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
               <Form.Item name="assignee_user_id" label="Chọn cụ thể người xử lý (tùy chọn)">
-                <Select showSearch optionFilterProp="label" loading={assigneesQ.isLoading} options={[{ value: '', label: 'Toàn bộ phận tiếp nhận' }, ...deptAssignees.map((a) => ({ value: a.id, label: `${a.displayName} — ${a.roleLabel}` }))]} />
+                <Select disabled={hasActiveTicket} showSearch optionFilterProp="label" loading={assigneesQ.isLoading} options={[{ value: '', label: 'Toàn bộ phận tiếp nhận' }, ...deptAssignees.map((a) => ({ value: a.id, label: `${a.displayName} — ${a.roleLabel}` }))]} />
               </Form.Item>
             </Col>
           </Row>

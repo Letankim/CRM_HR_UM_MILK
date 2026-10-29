@@ -1,7 +1,6 @@
 import {
-  ROLE_LABELS, SYSTEM_CONFIG, TICKET_CATEGORY_LABELS, TICKET_DEPARTMENT_LABELS,
-  TICKET_PRIORITY_LABELS, TICKET_STATUS_LABELS,
-  type NotificationRow, type Payslip, type Role, type SupportTicket, type TicketDepartment, type TicketMessage, type User,
+  ROLE_LABELS, SYSTEM_CONFIG,
+  type NotificationRow, type Payslip, type SupportTicket, type TicketDepartment, type TicketMessage, type User,
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { newId, nowIso } from '../lib/time.js';
@@ -9,39 +8,9 @@ import { SocketEvents } from '../realtime/realtime.js';
 import { findLinkedEmployeeForUser, findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 import { resolveRolePortalPath, resolveSystemHrMailbox, resolveUserPersonalRealEmail, webOrigin } from './account-email-dispatcher.js';
 import { tolerantWrite } from './background-write.js';
+import { mapSupportTicket, parseTicketMessages } from './ticket-access.js';
 
-export function parseTicketMessages(raw: string): TicketMessage[] {
-  if (!raw || !raw.trim().startsWith('[')) return [];
-  try { const arr = JSON.parse(raw); return Array.isArray(arr) ? (arr as TicketMessage[]) : []; } catch { return []; }
-}
-
-export function mapSupportTicket(ctx: AppContext, t: SupportTicket) {
-  const reqUser = ctx.db.users.get(t.requester_user_id);
-  const reqEmp = (t.requester_employee_id ? ctx.db.employees.get(t.requester_employee_id) : undefined) ?? (reqUser ? findLinkedEmployeeForUser(reqUser, ctx) : undefined);
-  const assignee = t.assignee_user_id ? ctx.db.users.get(t.assignee_user_id) : undefined;
-  const resolver = t.resolved_by ? ctx.db.users.get(t.resolved_by) : undefined;
-  const branch = (t.branch_id && t.branch_id !== 'ALL' ? ctx.db.branches.get(t.branch_id) : undefined) ?? (reqEmp ? ctx.db.branches.get(reqEmp.branch_id) : undefined);
-  const messages = parseTicketMessages(t.messages_json);
-  const reqRole = (reqUser?.role ?? (reqEmp?.stage === 'OFFICIAL' ? 'CHINH_THUC' : 'THU_VIEC')) as Role;
-  return {
-    ...t,
-    branch_id: branch?.id ?? t.branch_id ?? 'ALL',
-    branchName: branch?.name ?? 'Toàn hệ thống',
-    requesterName: reqEmp?.full_name || reqUser?.display_name || reqUser?.username || 'Nhân sự',
-    requesterCode: reqEmp?.employee_code || reqUser?.employee_id || reqUser?.username || '',
-    requesterRole: reqRole,
-    requesterRoleLabel: ROLE_LABELS[reqRole] ?? reqRole,
-    categoryLabel: TICKET_CATEGORY_LABELS[t.category] ?? t.category,
-    priorityLabel: TICKET_PRIORITY_LABELS[t.priority] ?? t.priority,
-    departmentLabel: TICKET_DEPARTMENT_LABELS[t.target_department] ?? t.target_department,
-    statusLabel: TICKET_STATUS_LABELS[t.status] ?? t.status,
-    assigneeName: assignee ? (assignee.display_name || assignee.username) : 'Toàn bộ phận tiếp nhận',
-    assigneeRoleLabel: assignee ? ROLE_LABELS[assignee.role] : TICKET_DEPARTMENT_LABELS[t.target_department],
-    resolvedByName: resolver ? (resolver.display_name || resolver.username) : (t.resolved_by || ''),
-    messages,
-    messageCount: messages.length,
-  };
-}
+export { mapSupportTicket, parseTicketMessages };
 
 export async function healOpenPayslipDisputesToTickets(ctx: AppContext): Promise<void> {
   const existingSlipIds = new Set(ctx.db.supportTickets.filter((t) => t.related_entity_type === 'PAYSLIP' && Boolean(t.related_entity_id)).map((t) => t.related_entity_id));
@@ -75,8 +44,9 @@ export async function upsertPayslipDisputeTicket(
   if (activeExisting) {
     const msgs = [...parseTicketMessages(activeExisting.messages_json), msg];
     return ctx.db.supportTickets.update(activeExisting.id, activeExisting.version, {
-      target_department: dept, assignee_user_id: assigneeId || activeExisting.assignee_user_id, description: opts.reason,
-      status: activeExisting.status === 'RESOLVED' ? 'OPEN' : activeExisting.status, messages_json: JSON.stringify(msgs),
+      description: opts.reason,
+      status: activeExisting.status === 'RESOLVED' ? 'OPEN' : activeExisting.status,
+      messages_json: JSON.stringify(msgs),
     }, actorUser.id);
   }
   const nextNo = ctx.db.supportTickets.all(true).length + 1;

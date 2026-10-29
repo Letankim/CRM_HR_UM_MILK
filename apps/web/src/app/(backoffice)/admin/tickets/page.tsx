@@ -86,7 +86,12 @@ export default function AdminTicketsPage() {
   const inProgressCount = Number(meta?.filters?.in_progress_count ?? 0);
   const resolvedCount = Number(meta?.filters?.resolved_count ?? 0);
   const totalCount = meta?.pagination.total ?? rows.length;
-  const canDeleteRow = (r: SupportTicketItem) => me?.user.role === 'ADMIN' || me?.user.role === 'HR' || r.requester_user_id === me?.user.id;
+  const isRequesterRow = (r: SupportTicketItem) => Boolean(r.isRequester ?? r.requester_user_id === me?.user.id);
+  const isAssignedRow = (r: SupportTicketItem) =>
+    Boolean(r.isAssignedToMe ?? (!isRequesterRow(r) && (r.assignee_user_id ? r.assignee_user_id === me?.user.id : r.target_department === me?.user.role)));
+  const canForwardRow = (r: SupportTicketItem) => r.status !== 'CLOSED' && Boolean(r.canForward ?? isAssignedRow(r));
+  const canEditOwnRow = (r: SupportTicketItem) => r.status === 'OPEN' && isRequesterRow(r);
+  const canDeleteRow = (r: SupportTicketItem) => me?.user.role === 'ADMIN' || me?.user.role === 'HR' || isRequesterRow(r);
 
   return (
     <div>
@@ -137,8 +142,8 @@ export default function AdminTicketsPage() {
         codeExtractor={(r) => r.ticket_code}
         onPageChange={(p, ps) => { setPage(p); setPerPage(ps); }}
         bulkActions={[
-          { key: 'progress', label: 'Tiếp nhận xử lý', icon: <SyncOutlined />, eligibleFilter: (r) => r.status === 'OPEN', onClick: (sel, clr) => bulkMut.mutate({ ids: sel.map((r) => r.id), action: 'IN_PROGRESS' }, { onSuccess: clr }) },
-          { key: 'resolve', label: 'Đánh dấu Đã giải quyết', type: 'primary', icon: <CheckCircleOutlined />, eligibleFilter: (r) => r.status === 'OPEN' || r.status === 'IN_PROGRESS', confirm: 'Đánh dấu hoàn tất giải quyết các phiếu đã chọn?', onClick: (sel, clr) => bulkMut.mutate({ ids: sel.map((r) => r.id), action: 'RESOLVE' }, { onSuccess: clr }) },
+          { key: 'progress', label: 'Tiếp nhận xử lý', icon: <SyncOutlined />, eligibleFilter: (r) => isAssignedRow(r) && r.status === 'OPEN', onClick: (sel, clr) => bulkMut.mutate({ ids: sel.map((r) => r.id), action: 'IN_PROGRESS' }, { onSuccess: clr }) },
+          { key: 'resolve', label: 'Đánh dấu Đã giải quyết', type: 'primary', icon: <CheckCircleOutlined />, eligibleFilter: (r) => isAssignedRow(r) && (r.status === 'OPEN' || r.status === 'IN_PROGRESS'), confirm: 'Đánh dấu hoàn tất giải quyết các phiếu đã chọn?', onClick: (sel, clr) => bulkMut.mutate({ ids: sel.map((r) => r.id), action: 'RESOLVE' }, { onSuccess: clr }) },
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: (sel) => exportTicketsExcel(sel) },
           { key: 'delete', label: 'Xóa đã chọn', danger: true, icon: <DeleteOutlined />, eligibleFilter: canDeleteRow, confirm: 'Xóa các phiếu hỗ trợ đã chọn?', onClick: (sel, clr) => bulkMut.mutate({ ids: sel.map((r) => r.id), action: 'DELETE' }, { onSuccess: clr }) },
         ]}
@@ -186,7 +191,8 @@ export default function AdminTicketsPage() {
                 onViewDetail={() => setDetailId(r.id)}
                 loading={deleteMut.isPending}
                 menuItems={[
-                  { key: 'edit', icon: <EditOutlined />, label: 'Sửa / Điều phối bộ phận', onClick: () => { setEditing(r); setModalOpen(true); } },
+                  ...(canForwardRow(r) ? [{ key: 'forward', icon: <EditOutlined />, label: 'Điều phối / Chuyển bộ phận', onClick: () => { setEditing(r); setModalOpen(true); } }] : []),
+                  ...(canEditOwnRow(r) ? [{ key: 'edit', icon: <EditOutlined />, label: 'Sửa nội dung phiếu', onClick: () => { setEditing(r); setModalOpen(true); } }] : []),
                   ...(canDeleteRow(r) ? [{
                     key: 'del', danger: true, icon: <DeleteOutlined />, label: 'Xóa phiếu hỗ trợ',
                     onClick: () => modal.confirm({

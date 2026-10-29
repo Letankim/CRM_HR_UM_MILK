@@ -62,6 +62,9 @@ export interface SupportTicketItem {
   resolvedByName: string;
   resolved_at: string;
   closed_at: string;
+  isRequester?: boolean;
+  isAssignedToMe?: boolean;
+  canForward?: boolean;
   messages: TicketMessage[];
   messageCount: number;
 }

@@ -35,10 +35,12 @@ export function TicketCreateEditModal({
   const selectedCategory = Form.useWatch('category', form) as TicketCategory | undefined;
   const selectedDept = Form.useWatch('target_department', form) as TicketDepartment | undefined;
 
+  const canEditRouting = !editingTicket || Boolean(editingTicket.canForward);
+  const isForwarding = Boolean(editingTicket && editingTicket.canForward);
   const assigneesQ = useQuery({
     queryKey: ['ticket-assignees'],
     queryFn: () => api.get<TicketAssigneeOption[]>('/tickets/assignees'),
-    enabled: open,
+    enabled: open && canEditRouting,
   });
 
   const payslipsQ = useQuery({
@@ -84,7 +86,10 @@ export function TicketCreateEditModal({
   const saveMut = useMutation({
     mutationFn: (values: Record<string, unknown>) => {
       if (editingTicket) {
-        return api.put<SupportTicketItem>(`/tickets/${editingTicket.id}`, { ...values, version: editingTicket.version });
+        const updatePayload = isForwarding
+          ? { priority: values.priority, target_department: values.target_department, assignee_user_id: values.assignee_user_id, version: editingTicket.version }
+          : { category: values.category, priority: values.priority, subject: values.subject, description: values.description, version: editingTicket.version };
+        return api.put<SupportTicketItem>(`/tickets/${editingTicket.id}`, updatePayload);
       }
       const slip = (payslipsQ.data ?? []).find((p) => p.id === values.related_entity_id);
       return api.post<SupportTicketItem>('/tickets', {
@@ -94,7 +99,11 @@ export function TicketCreateEditModal({
       });
     },
     onSuccess: (saved) => {
-      message.success(editingTicket ? 'Đã cập nhật phiếu hỗ trợ thành công' : `Đã gửi phiếu hỗ trợ ${saved.ticket_code} tới ${saved.departmentLabel}`);
+      message.success(
+        editingTicket
+          ? (isForwarding ? `Đã điều phối phiếu ${saved.ticket_code} sang ${saved.departmentLabel}` : 'Đã cập nhật nội dung phiếu hỗ trợ thành công')
+          : `Đã gửi phiếu hỗ trợ ${saved.ticket_code} tới ${saved.departmentLabel}`,
+      );
       ['tickets', 'ticket-detail', 'notifications', 'payroll-snapshots'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
       void qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
       onSaved?.(saved);
@@ -109,8 +118,14 @@ export function TicketCreateEditModal({
       open={open}
       onCancel={onClose}
       onOk={() => form.submit()}
-      title={editingTicket ? `Cập nhật Phiếu hỗ trợ — ${editingTicket.ticket_code}` : 'Tạo Phiếu Hỗ Trợ & Giải Đáp Thắc Mắc'}
-      okText={editingTicket ? 'Lưu cập nhật' : 'Gửi phiếu hỗ trợ'}
+      title={
+        !editingTicket
+          ? 'Tạo Phiếu Hỗ Trợ & Giải Đáp Thắc Mắc'
+          : isForwarding
+            ? `Điều phối Bộ phận Xử lý — ${editingTicket.ticket_code}`
+            : `Chỉnh sửa Nội dung Phiếu — ${editingTicket.ticket_code}`
+      }
+      okText={!editingTicket ? 'Gửi phiếu hỗ trợ' : isForwarding ? 'Lưu điều phối & Chuyển xử lý' : 'Lưu cập nhật nội dung'}
       cancelText="Hủy bỏ"
       okButtonProps={{ icon: <SendOutlined /> }}
       cancelButtonProps={{ icon: <CloseOutlined /> }}
@@ -121,13 +136,20 @@ export function TicketCreateEditModal({
         type="info"
         showIcon
         style={{ marginBottom: 14 }}
-        message="Chọn đúng bộ phận tiếp nhận và có thể chỉ định trực tiếp người phụ trách cụ thể. Hệ thống sẽ gửi thông báo chuông và Email tức thời tới người nhận."
+        message={
+          !editingTicket
+            ? 'Chọn đúng bộ phận tiếp nhận và có thể chỉ định trực tiếp người phụ trách cụ thể. Hệ thống sẽ gửi thông báo chuông và Email tức thời tới người nhận.'
+            : isForwarding
+              ? 'Phiếu này được giao cho bạn xử lý — bạn có thể điều chỉnh bộ phận tiếp nhận hoặc chuyển tiếp tới người phụ trách cụ thể.'
+              : 'Phiếu hỗ trợ do bạn tạo không thể thay đổi bộ phận xử lý sau khi gửi. Bạn chỉ có thể cập nhật tiêu đề hoặc nội dung mô tả.'
+        }
       />
       <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
         <Row gutter={12}>
           <Col xs={24} sm={14}>
             <Form.Item name="category" label="Phân loại vấn đề cần hỗ trợ" rules={[{ required: true, message: 'Vui lòng chọn phân loại' }]}>
               <Select
+                disabled={isForwarding}
                 options={TICKET_CATEGORY_OPTIONS}
                 onChange={(val: TicketCategory) => {
                   if (!editingTicket) {
@@ -147,12 +169,12 @@ export function TicketCreateEditModal({
         <Row gutter={12}>
           <Col xs={24} sm={12}>
             <Form.Item name="target_department" label="Gửi tới Bộ phận tiếp nhận" rules={[{ required: true, message: 'Vui lòng chọn bộ phận tiếp nhận' }]}>
-              <Select options={TICKET_DEPARTMENT_OPTIONS} onChange={() => form.setFieldValue('assignee_user_id', '')} />
+              <Select disabled={!canEditRouting} options={TICKET_DEPARTMENT_OPTIONS} onChange={() => form.setFieldValue('assignee_user_id', '')} />
             </Form.Item>
           </Col>
           <Col xs={24} sm={12}>
             <Form.Item name="assignee_user_id" label="Chọn cụ thể người xử lý (tùy chọn)">
-              <Select showSearch optionFilterProp="label" loading={assigneesQ.isLoading} options={assigneeOptions} />
+              <Select disabled={!canEditRouting} showSearch optionFilterProp="label" loading={assigneesQ.isLoading} options={assigneeOptions} />
             </Form.Item>
           </Col>
         </Row>
@@ -177,11 +199,11 @@ export function TicketCreateEditModal({
         )}
 
         <Form.Item name="subject" label="Tiêu đề phiếu hỗ trợ" rules={[{ required: true, min: 4, message: 'Tiêu đề tối thiểu 4 ký tự' }]}>
-          <Input maxLength={200} placeholder="VD: Xin kiểm tra lại công ca tối ngày 18/10 và phụ cấp đổi ca..." />
+          <Input disabled={isForwarding} maxLength={200} placeholder="VD: Xin kiểm tra lại công ca tối ngày 18/10 và phụ cấp đổi ca..." />
         </Form.Item>
 
         <Form.Item name="description" label="Nội dung thắc mắc / yêu cầu chi tiết" rules={[{ required: true, min: 5, message: 'Nội dung chi tiết tối thiểu 5 ký tự' }]}>
-          <Input.TextArea rows={4} maxLength={2500} placeholder="Mô tả rõ ngày ca, mã phiếu hoặc nội dung cần bộ phận phụ trách kiểm tra và phản hồi..." />
+          <Input.TextArea disabled={isForwarding} rows={4} maxLength={2500} placeholder="Mô tả rõ ngày ca, mã phiếu hoặc nội dung cần bộ phận phụ trách kiểm tra và phản hồi..." />
         </Form.Item>
       </Form>
     </Modal>

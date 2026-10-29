@@ -73,9 +73,18 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Cập nhật phiếu hỗ trợ thất bại'),
   });
 
+  const isRequester = Boolean(t && (t.isRequester ?? me?.user.id === t.requester_user_id));
+  const isAssignedToMe = Boolean(
+    t &&
+      (t.isAssignedToMe ??
+        (!isRequester &&
+          isBackoffice &&
+          (t.assignee_user_id ? t.assignee_user_id === me?.user.id : t.target_department === me?.user.role))),
+  );
+  const canForward = Boolean(t && t.status !== 'CLOSED' && (t.canForward ?? isAssignedToMe));
+  const canResolve = Boolean(t && t.status !== 'CLOSED' && isAssignedToMe);
+  const canCloseTicket = Boolean(t && t.status !== 'CLOSED' && (isRequester || isAssignedToMe));
   const deptAssignees = (assigneesQ.data ?? []).filter((a) => a.department === nextDept);
-  const isRequester = Boolean(t && me?.user.id === t.requester_user_id);
-  const canResolve = isBackoffice && !isRequester && t?.status !== 'CLOSED';
   const routingDirty = Boolean(t && (nextDept !== t.target_department || nextAssignee !== (t.assignee_user_id || '')));
 
   return (
@@ -84,7 +93,7 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
       onClose={onClose}
       title={t ? `Chi tiết Phiếu hỗ trợ — ${t.ticket_code}` : 'Chi tiết Phiếu hỗ trợ'}
       extra={
-        t && t.status !== 'CLOSED' ? (
+        canCloseTicket ? (
           <Button size="small" icon={<CheckCircleOutlined />} loading={updateMut.isPending} onClick={() => updateMut.mutate({ status: 'CLOSED' })}>
             Đóng phiếu
           </Button>
@@ -120,7 +129,7 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
             </Descriptions.Item>
           </Descriptions>
 
-          {isBackoffice && t.status !== 'CLOSED' && (
+          {canForward && (
             <Card size="small" styles={{ body: { padding: '10px 14px', background: '#F8FAFC' } }}>
               <Flex align="center" justify="space-between" wrap gap={10}>
                 <Typography.Text strong style={{ fontSize: 12.5 }}><RetweetOutlined /> Điều phối Bộ phận / Người xử lý:</Typography.Text>
