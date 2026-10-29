@@ -129,7 +129,7 @@ export type PayrollItem = z.infer<typeof zPayrollItem>;
 /** Phiên bản điều chỉnh phiếu lương sau PUBLISHED (không sửa đè phiếu gốc) */
 export const zPayslipRevision = zSystemColumns.extend({
   payslip_id: z.string().min(1),
-  revision: z.coerce.number().int().min(2),
+  revision: z.coerce.number().int().min(1),
   reason: z.string().min(1),
   delta_vnd: z.coerce.number(),
   created_reason_by: z.string().default(''),

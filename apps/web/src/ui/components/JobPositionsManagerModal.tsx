@@ -119,7 +119,7 @@ export function JobPositionsTableCard({ canManage = true }: { canManage?: boolea
                   onViewDetail={() => setViewing(r)}
                   menuItems={canEditPos ? [
                     { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa vị trí công việc', onClick: () => openEdit(r) },
-                    { key: 'del', icon: <DeleteOutlined />, danger: true, label: 'Xóa vị trí công việc', onClick: () => modal.confirm({ title: `Xóa vị trí công việc "${r.label}"?`, okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => delMut.mutateAsync([r.code]) }) },
+                    { key: 'del', icon: <DeleteOutlined />, danger: true, label: 'Xóa vị trí công việc', onClick: () => modal.confirm({ title: `Xóa vị trí công việc "${r.label}"?`, okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => delMut.mutateAsync([r.code]) }) },
                   ] : []}
                 />
               ),

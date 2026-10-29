@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Alert, App, Button, Card, Col, Progress, Radio, Row, Space, Tag, Typography } from 'antd';
-import { CheckCircleOutlined, ClockCircleOutlined, ExpandOutlined, LockOutlined, SendOutlined, WarningOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, ExpandOutlined, LockOutlined, SendOutlined, WarningOutlined } from '@ant-design/icons';
 import { api, ApiClientError } from '@/lib/api';
 import { BRAND } from '../theme';
 
@@ -115,7 +115,7 @@ export function ExamFullscreenModal({ attempt, testRecord, onClose, onSubmitted 
       modal.confirm({
         title: `Bạn còn ${unanswered}/${totalQ} câu hỏi chưa chọn đáp án`,
         content: 'Bạn có chắc chắn muốn nộp bài và kết thúc lượt thi ngay bây giờ không?',
-        okText: 'Xác nhận nộp bài', cancelText: 'Tiếp tục làm bài', okButtonProps: { icon: <SendOutlined /> },
+        okText: 'Xác nhận nộp bài', cancelText: 'Tiếp tục làm bài', okButtonProps: { icon: <SendOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> },
         onOk: () => doSubmit(false),
       });
       return;

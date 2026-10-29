@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Button, Card, Flex, Form, Input, Select, Space, Switch, Tabs, Tag, Typography } from 'antd';
-import { CloudDownloadOutlined, DeleteOutlined, EditOutlined, FileExcelOutlined, FileProtectOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SendOutlined, ToolOutlined } from '@ant-design/icons';
+import { CloseOutlined, CloudDownloadOutlined, DeleteOutlined, EditOutlined, FileExcelOutlined, FileProtectOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SendOutlined, ToolOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
@@ -126,7 +126,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
           { key: 'excel', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: () => exportToExcel({ fileName: 'Chinh_Sach_Da_Chon', sheetTitle: 'Chính sách đã chọn', columns: [{ header: 'Mã chính sách', render: (r) => String(r.key ?? '') }, { header: 'Nhóm quy định', render: (r) => POLICY_CATEGORY_LABELS[String(r.category)] ?? String(r.category ?? '') }, { header: 'Tên chính sách', render: (r) => String(r.description ?? '') }, { header: 'Giá trị hiệu lực', render: (r) => String(r.value_json ?? '') }, { header: 'Hiệu lực từ', render: (r) => String(r.effective_from ?? '') }], rows }) },
           ...(canManagePolicies ? [
             { key: 'broadcast', label: 'Phổ biến chính sách đã chọn', icon: <SendOutlined />, type: 'primary' as const, onClick: async () => { for (const r of rows) await api.post(`/admin/policies/${r.id}/broadcast`, {}); message.success(`Đã phổ biến ${rows.length} chính sách đã chọn`); clear(); refreshAll(); } },
-            { key: 'delete', label: 'Xóa chính sách đã chọn', icon: <DeleteOutlined />, danger: true, eligibleFilter: (r: Record<string, unknown>) => !r.is_locked_policy, onClick: (sel: Record<string, unknown>[]) => modal.confirm({ title: `Xác nhận xóa ${sel.length} chính sách đã chọn?`, okText: 'Xóa đã chọn', cancelText: 'Hủy', okButtonProps: { danger: true }, onOk: async () => { for (const r of sel) await api.delete(`/admin/policies/${r.id}`, { version: r.version, owner_override_approved: true }); message.success(`Đã xóa ${sel.length} chính sách`); clear(); refreshAll(); } }) },
+            { key: 'delete', label: 'Xóa chính sách đã chọn', icon: <DeleteOutlined />, danger: true, eligibleFilter: (r: Record<string, unknown>) => !r.is_locked_policy, onClick: (sel: Record<string, unknown>[]) => modal.confirm({ title: `Xác nhận xóa ${sel.length} chính sách đã chọn?`, okText: 'Xóa đã chọn', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: async () => { for (const r of sel) await api.delete(`/admin/policies/${r.id}`, { version: r.version, owner_override_approved: true }); message.success(`Đã xóa ${sel.length} chính sách`); clear(); refreshAll(); } }) },
           ] : []),
         ]}
         columns={[
@@ -144,7 +144,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
                 menuItems={canManagePolicies && canEditItem(r) ? [
                   { key: 'broadcast', icon: <SendOutlined />, label: 'Phổ biến toàn công ty (Gửi thông báo)', onClick: () => postMut.mutate({ url: `/admin/policies/${r.id}/broadcast`, body: {} }) },
                   { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa chính sách', onClick: () => openEditPolicy(r) },
-                  { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa chính sách', onClick: () => modal.confirm({ title: `Xóa chính sách "${r.key}"?`, okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => delMut.mutateAsync({ url: `/admin/policies/${r.id}`, body: { version: r.version, owner_override_approved: true } }) }) },
+                  { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa chính sách', onClick: () => modal.confirm({ title: `Xóa chính sách "${r.key}"?`, okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => delMut.mutateAsync({ url: `/admin/policies/${r.id}`, body: { version: r.version, owner_override_approved: true } }) }) },
                 ] : []}
               />
             ),

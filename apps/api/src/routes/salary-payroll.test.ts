@@ -167,4 +167,35 @@ describe('Kỳ lương 5 bước, Snapshot, Phiếu lương & Điều chỉnh (A
     expect(paid.statusCode).toBe(200);
     expect(paid.json().data.status).toBe('PAID');
   });
+
+  it('Điều chỉnh trực tiếp từ Snapshot trên Bảng lương khi kỳ đang DRAFT / RECONCILE không bị lỗi 404 và lưu lịch sử đầy đủ', async () => {
+    const novRes = await t.app.inject({ method: 'POST', url: '/api/admin/payroll/periods', headers: fin, payload: { name: 'Kỳ lương tháng 11/2026', from_date: '2026-11-01', to_date: '2026-11-30' } });
+    expect(novRes.statusCode).toBe(201);
+    const novId = novRes.json().data.id;
+    const snaps = (await t.app.inject({ method: 'GET', url: `/api/admin/payroll/periods/${novId}/snapshots`, headers: fin })).json().data.snapshots;
+    const nv2Snap = snaps.find((s: { employeeCode: string }) => s.employeeCode === 'NV0002');
+    const beforeNet = nv2Snap.netVnd;
+
+    const adjAdd = await t.app.inject({
+      method: 'POST',
+      url: `/api/admin/payroll/payslips/${nv2Snap.id}/revisions`,
+      headers: fin,
+      payload: { delta_vnd: 150000, reason: 'Thưởng hỗ trợ tăng cường chi nhánh' },
+    });
+    expect(adjAdd.statusCode).toBe(201);
+    expect(adjAdd.json().data).toMatchObject({ netVnd: beforeNet + 150000, revision: 1 });
+
+    const adjDed = await t.app.inject({
+      method: 'POST',
+      url: `/api/admin/payroll/payslips/${nv2Snap.id}/revisions`,
+      headers: fin,
+      payload: { delta_vnd: -50000, reason: 'Khấu trừ tạm ứng đồng phục' },
+    });
+    expect(adjDed.statusCode).toBe(201);
+    expect(adjDed.json().data).toMatchObject({ netVnd: beforeNet + 100000, revision: 2 });
+
+    const revs = await t.app.inject({ method: 'GET', url: `/api/admin/payroll/payslips/${nv2Snap.id}/revisions`, headers: fin });
+    expect(revs.statusCode).toBe(200);
+    expect(revs.json().data).toHaveLength(2);
+  });
 });

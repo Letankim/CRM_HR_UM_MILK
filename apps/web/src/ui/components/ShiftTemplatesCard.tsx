@@ -105,7 +105,7 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
               loading={deleteShift.isPending}
               menuItems={canConfig ? [
                 { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa mẫu ca', onClick: () => openEditShift(s) },
-                { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa mẫu ca', onClick: () => modal.confirm({ title: `Xác nhận xóa mẫu ca "${s.name}"?`, okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => deleteShift.mutateAsync([s]) }) },
+                { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa mẫu ca', onClick: () => modal.confirm({ title: `Xác nhận xóa mẫu ca "${s.name}"?`, okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => deleteShift.mutateAsync([s]) }) },
               ] : []}
             />
           ),
@@ -127,7 +127,7 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
         { title: 'Định biên Tối thiểu – Tối đa', render: (_, r) => <span className="num"><strong>{String(r.min_staff)}</strong> – <strong>{String(r.max_staff)}</strong> nhân sự/ca</span> },
         { title: 'Chế độ kiểm soát', dataIndex: 'enforcement', render: (v: string) => <Tag color={v === 'HARD_BLOCK' ? 'red' : 'orange'}>{v === 'HARD_BLOCK' ? 'Chặn cứng khi thiếu định biên' : 'Cảnh báo mềm khi thiếu người'}</Tag> },
         { title: 'Ghi chú', dataIndex: 'note', ellipsis: true },
-        { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => canConfig ? <RowActionButtons menuItems={[{ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa định biên', onClick: () => openEditRule(r) }, { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa định biên ca', onClick: () => modal.confirm({ title: `Xóa định biên của "${r.branchName}" (${r.shiftName})?`, okText: 'Xóa định biên', cancelText: 'Hủy bỏ', okButtonProps: { danger: true }, onOk: () => deleteRule.mutateAsync([String(r.id)]) }) }]} /> : null },
+        { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => canConfig ? <RowActionButtons menuItems={[{ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa định biên', onClick: () => openEditRule(r) }, { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa định biên ca', onClick: () => modal.confirm({ title: `Xóa định biên của "${r.branchName}" (${r.shiftName})?`, okText: 'Xóa định biên', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => deleteRule.mutateAsync([String(r.id)]) }) }]} /> : null },
       ]}
     />
   );

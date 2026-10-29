@@ -1,15 +1,15 @@
 'use client';
 
 import { Alert, App, Button, Descriptions, Drawer, Form, Input, InputNumber, Modal, Space, Table, Tabs, Tag, Typography } from 'antd';
-import { CalendarOutlined, CloseOutlined, EditOutlined, ExpandAltOutlined, FileExcelOutlined, FileTextOutlined, HistoryOutlined, IdcardOutlined, ShrinkOutlined } from '@ant-design/icons';
+import { CalendarOutlined, CloseOutlined, EditOutlined, ExpandAltOutlined, FileExcelOutlined, FileTextOutlined, HistoryOutlined, IdcardOutlined, SaveOutlined, ShrinkOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
 import { useClientPagination } from '../hooks/useClientPagination';
-import { allowancesOf, deductionsOf, fmtVnd, type PayrollSnapshotItem, type ShiftPayrollLog } from './payroll-types';
+import { allowancesOf, deductionsOf, fmtVnd, MONEY_INPUT_PROPS, type PayrollSnapshotItem, type ShiftPayrollLog } from './payroll-types';
 
 interface Line { label: string; detail: string; amount: number }
 
@@ -41,7 +41,8 @@ export function payslipLines(s: PayrollSnapshotItem): Line[] {
   return lines;
 }
 
-export function PayslipDrawer({ snapshot: s, onClose }: { snapshot: PayrollSnapshotItem | null; onClose: () => void }) {
+export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: PayrollSnapshotItem | null; onClose: () => void }) {
+  const [s, setS] = useState<PayrollSnapshotItem | null>(propSnap);
   const [expanded, setExpanded] = useState(false);
   const [revModal, setRevModal] = useState(false);
   const [revForm] = Form.useForm();
@@ -52,6 +53,8 @@ export function PayslipDrawer({ snapshot: s, onClose }: { snapshot: PayrollSnaps
   const canManage = can('payroll.manage');
   const { message } = App.useApp();
 
+  useEffect(() => { setS(propSnap); }, [propSnap]);
+
   const revsQ = useQuery({
     queryKey: ['payslip-revisions', s?.id],
     queryFn: () => api.get<Record<string, unknown>[]>(`/admin/payroll/payslips/${s!.id}/revisions`),
@@ -61,13 +64,26 @@ export function PayslipDrawer({ snapshot: s, onClose }: { snapshot: PayrollSnaps
 
   const revMut = useMutation({
     mutationFn: (v: Record<string, unknown>) => api.post(`/admin/payroll/payslips/${s!.id}/revisions`, v),
-    onSuccess: () => {
-      message.success('Đã tạo phiếu lương điều chỉnh mới (Phiếu lương gốc vẫn được giữ nguyên để đối chiếu)');
+    onSuccess: (_res, vars) => {
+      const delta = Number(vars.delta_vnd || 0);
+      setS((prev) =>
+        prev
+          ? {
+              ...prev,
+              positiveAdjustmentsVnd: delta > 0 ? prev.positiveAdjustmentsVnd + delta : prev.positiveAdjustmentsVnd,
+              approvedDeductionsVnd: delta < 0 ? prev.approvedDeductionsVnd + Math.abs(delta) : prev.approvedDeductionsVnd,
+              grossVnd: delta > 0 ? prev.grossVnd + delta : prev.grossVnd,
+              netVnd: prev.netVnd + delta,
+            }
+          : prev,
+      );
+      message.success('Đã lưu điều chỉnh lương và cập nhật thực lĩnh của nhân sự');
       setRevModal(false);
-      qc.invalidateQueries({ queryKey: ['payslip-revisions', s?.id] });
-      qc.invalidateQueries({ queryKey: ['payroll-periods'] });
+      ['payslip-revisions', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items'].forEach((k) =>
+        qc.invalidateQueries({ queryKey: [k] }),
+      );
     },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Chỉ tạo được phiếu điều chỉnh sau khi kỳ lương đã được phát hành'),
+    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Không thể lưu điều chỉnh lương, vui lòng thử lại'),
   });
 
   const lines = s ? payslipLines(s) : [];
@@ -191,10 +207,10 @@ export function PayslipDrawer({ snapshot: s, onClose }: { snapshot: PayrollSnaps
               },
             ]}
           />
-          <Modal width={680} title="Tạo Phiếu Lương Điều Chỉnh Sau Phát Hành (Không sửa đè phiếu gốc)" open={revModal} onCancel={() => setRevModal(false)} onOk={() => revForm.submit()} okText="Tạo phiếu điều chỉnh" cancelText="Hủy bỏ" confirmLoading={revMut.isPending}>
+          <Modal width={680} title="Điều Chỉnh Bảng Lương / Phiếu Lương Nhân Sự" open={revModal} onCancel={() => setRevModal(false)} onOk={() => revForm.submit()} okText="Lưu điều chỉnh" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} confirmLoading={revMut.isPending}>
             <Form form={revForm} layout="vertical" onFinish={(v) => revMut.mutate(v)}>
-              <Form.Item name="delta_vnd" label="Số tiền điều chỉnh chênh lệch (+ cộng thêm / - khấu trừ)" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} step={50000} placeholder="VD: 150000 hoặc -50000" suffix="VNĐ" /></Form.Item>
-              <Form.Item name="reason" label="Lý do điều chỉnh phiếu lương (tối thiểu 5 ký tự)" rules={[{ required: true, min: 5 }]}><Input.TextArea rows={2} placeholder="VD: Bổ sung phụ cấp ca tối ngày 20/10 sau đối soát..." /></Form.Item>
+              <Form.Item name="delta_vnd" label="Số tiền điều chỉnh chênh lệch (+ cộng thêm / - khấu trừ)" rules={[{ required: true, message: 'Vui lòng nhập số tiền điều chỉnh' }]}><InputNumber style={{ width: '100%' }} step={50000} placeholder="VD: 150.000 hoặc -50.000" suffix="VNĐ" {...MONEY_INPUT_PROPS} /></Form.Item>
+              <Form.Item name="reason" label="Lý do điều chỉnh lương (tối thiểu 5 ký tự)" rules={[{ required: true, min: 5, message: 'Vui lòng nhập lý do điều chỉnh tối thiểu 5 ký tự' }]}><Input.TextArea rows={2} placeholder="VD: Bổ sung phụ cấp ca tối ngày 20/10 sau đối soát..." /></Form.Item>
             </Form>
           </Modal>
         </>

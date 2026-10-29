@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { Payslip } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
@@ -8,8 +7,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
-import { queuePayslipPublishedEmails } from '../services/action-email-dispatcher.js';
-import { buildPayslipPayload, mapPayslip } from '../services/payslip.service.js';
+import { applyPayslipAdjustment, mapPayslip } from '../services/payslip.service.js';
 
 const zRevisionBody = z.object({
   version: z.coerce.number().int().min(1).optional(),
@@ -32,60 +30,24 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.get('/api/admin/payroll/payslips/:id/revisions', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const { id } = request.params as { id: string };
-    const slip = ctx.db.payslips.get(id) ?? ctx.db.payslips.find((p) => p.snapshot_id === id);
-    if (!slip) return sendSuccess(request, 'Chưa có lịch sử điều chỉnh phiếu lương', []);
-    const revs = ctx.db.payslipRevisions.filter((r) => r.period_id === slip.period_id && r.employee_id === slip.employee_id).sort((a, b) => a.revision - b.revision);
+    const slip = ctx.db.payslips.get(id) ?? ctx.db.payslips.find((p) => p.snapshot_id === id && p.status !== 'REVISED') ?? ctx.db.payslips.find((p) => p.snapshot_id === id);
+    const snap = ctx.db.payrollSnapshots.get(id) ?? (slip ? ctx.db.payrollSnapshots.get(slip.snapshot_id) : undefined);
+    const periodId = slip?.period_id ?? snap?.period_id;
+    const employeeId = slip?.employee_id ?? snap?.employee_id;
+    if (!periodId || !employeeId) return sendSuccess(request, 'Chưa có lịch sử điều chỉnh phiếu lương', []);
+    const revs = ctx.db.payslipRevisions
+      .filter((r) => r.period_id === periodId && (r.employee_id === employeeId || Boolean(snap && r.employee_id === snap.employee_code)))
+      .sort((a, b) => a.revision - b.revision);
     return sendSuccess(request, 'Lấy lịch sử điều chỉnh phiếu lương thành công', revs);
   });
 
   app.post('/api/admin/payroll/payslips/:id/revisions', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = zRevisionBody.parse(request.body);
-    const slip = ctx.db.payslips.get(id) ?? ctx.db.payslips.find((p) => p.snapshot_id === id && p.status !== 'REVISED');
-    if (!slip) throw Errors.notFound('Không tìm thấy phiếu lương đã phát hành của nhân sự này');
-    if (slip.status === 'REVISED') throw Errors.conflict('Phiếu lương này đã được thay thế bởi bản điều chỉnh mới hơn');
-    const period = ctx.db.payPeriods.get(slip.period_id);
-    const snap = ctx.db.payrollSnapshots.get(slip.snapshot_id);
-    if (!period || !snap) throw Errors.notFound('Không tìm thấy kỳ lương hoặc dữ liệu gốc của phiếu lương');
-    const after = slip.net_vnd + body.delta_vnd;
-    if (after < 0) throw Errors.fieldValidation('delta_vnd', 'OUT_OF_RANGE', 'Số tiền điều chỉnh làm thực lĩnh âm, vui lòng kiểm tra lại', body.delta_vnd);
-
-    const actorId = request.auth!.user.id;
-    const nextRevision = slip.revision + 1;
-    const result = await ctx.reconciliation.executeSaga({
-      sagaKey: `payslip-revision-${id}-r${nextRevision}`,
-      operation: 'PAYROLL_PAYSLIP_REVISION',
-      actorId,
-      initialContext: { newSlip: null as Payslip | null },
-      steps: [
-        {
-          name: 'INSERT_REVISION_LOG',
-          run: async () => {
-            await ctx.db.payslipRevisions.insert(
-              {
-                payslip_id: slip.id, revision: nextRevision, reason: body.reason, delta_vnd: body.delta_vnd, created_reason_by: actorId,
-                period_id: slip.period_id, employee_id: slip.employee_id, field_changed: body.field_changed,
-                before_amount_vnd: slip.net_vnd, after_amount_vnd: after, details_json: JSON.stringify({ previous_payslip_code: slip.payslip_code }),
-                status: 'APPROVED', approved_by: actorId, approved_at: nowIso(),
-              },
-              actorId,
-            );
-          },
-        },
-        {
-          name: 'INSERT_NEW_PAYSLIP_REVISION',
-          run: async (s) => {
-            s.newSlip = await ctx.db.payslips.insert(buildPayslipPayload(ctx, period, snap, nextRevision, after, slip.gross_vnd + Math.max(0, body.delta_vnd)), actorId);
-          },
-        },
-        { name: 'MARK_PREVIOUS_REVISED', run: async () => { await ctx.db.payslips.update(slip.id, body.version ?? slip.version, { status: 'REVISED' }, actorId); } },
-      ],
-      resultSelector: (s) => s.newSlip!,
-    });
-    await ctx.audit.record(auditContext(request), { action: 'payslip.revision', entity: 'PAYSLIPS', entityId: result.id, before: { payslip_code: slip.payslip_code, net_vnd: slip.net_vnd }, after: { payslip_code: result.payslip_code, net_vnd: result.net_vnd, reason: body.reason } });
-    queuePayslipPublishedEmails(ctx, period, [result]);
+    const out = await applyPayslipAdjustment(ctx, id, body, request.auth!.user.id);
+    await ctx.audit.record(auditContext(request), { action: 'payslip.revision', entity: out.entity, entityId: out.entityId, before: out.before, after: out.after });
     reply.code(201);
-    return sendSuccess(request, `Đã tạo phiếu lương điều chỉnh lần ${nextRevision} (phiếu gốc được giữ nguyên để truy vết)`, mapPayslip(result));
+    return sendSuccess(request, out.message, out.data);
   });
 
   app.get('/api/me/payslips', { preHandler: requirePermission('self.payslip') }, async (request) => {

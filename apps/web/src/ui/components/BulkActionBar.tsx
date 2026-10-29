@@ -2,7 +2,7 @@
 
 import { Button, Flex, Popconfirm, Space, Table, Tag, Tooltip } from 'antd';
 import type { TableProps } from 'antd/es/table';
-import { CloseOutlined, FilterOutlined } from '@ant-design/icons';
+import { CheckOutlined, CloseOutlined, FilterOutlined } from '@ant-design/icons';
 import { type Key, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { BRAND } from '../theme';
 import {
@@ -107,7 +107,7 @@ export function BulkActionBar<TRecord>({
               );
             }
             return act.confirm ? (
-              <Popconfirm key={act.key} title={act.confirm} okText="Xác nhận" cancelText="Hủy bỏ" okButtonProps={{ danger: act.danger }} onConfirm={() => act.onClick(eligibleRows, onClearSelection)}>
+              <Popconfirm key={act.key} title={act.confirm} okText="Xác nhận" cancelText="Hủy bỏ" okButtonProps={{ danger: act.danger, icon: act.icon ?? <CheckOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onConfirm={() => act.onClick(eligibleRows, onClearSelection)}>
                 {btn}
               </Popconfirm>
             ) : btn;

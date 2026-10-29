@@ -2,6 +2,7 @@
 
 import '@ant-design/v5-patch-for-react-19';
 import { App as AntApp, ConfigProvider } from 'antd';
+import { CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import viVN from 'antd/locale/vi_VN';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
@@ -23,6 +24,8 @@ function VersionConflictBridge({ children }: { children: ReactNode }) {
           content: `Bản ghi này vừa được cập nhật lên phiên bản mới trên hệ thống (phiên bản #${latestVersion}). Toàn bộ thông tin bạn vừa nhập vẫn được giữ nguyên trên biểu mẫu. Bạn có muốn áp dụng nội dung đang nhập lên bản mới nhất và lưu ngay không?`,
           okText: 'Áp dụng & Lưu ngay',
           cancelText: 'Xem lại biểu mẫu',
+          okButtonProps: { icon: <CheckOutlined /> },
+          cancelButtonProps: { icon: <CloseOutlined /> },
           centered: true,
           onOk: () => resolve(true),
           onCancel: () => resolve(false),

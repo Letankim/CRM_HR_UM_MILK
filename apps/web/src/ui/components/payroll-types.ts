@@ -193,26 +193,26 @@ export interface PayPeriodRow {
 }
 
 export interface PayrollItemRow {
-  id: string;
-  periodId: string;
-  employeeId: string;
-  employeeCode: string;
-  employeeName: string;
-  itemType: string;
-  itemTypeLabel: string;
-  direction: 'ADD' | 'DEDUCT';
-  title: string;
-  quantity: number;
-  unitAmountVnd: number;
-  totalAmountVnd: number;
-  note: string;
-  version: number;
+  id: string; periodId: string; employeeId: string; employeeCode: string; employeeName: string;
+  itemType: string; itemTypeLabel: string; direction: 'ADD' | 'DEDUCT'; title: string;
+  quantity: number; unitAmountVnd: number; totalAmountVnd: number; note: string; version: number;
 }
 
 export const fmtVnd = (n: number) => `${Math.round(n || 0).toLocaleString('vi-VN')} đ`;
 export const MONEY_INPUT_PROPS = {
-  formatter: (v?: number | string) => `${v ?? ''}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.'),
-  parser: (v?: string) => Number((v ?? '').replace(/\./g, '')),
+  formatter: (v?: number | string) => {
+    if (v === undefined || v === null || v === '') return '';
+    const str = String(v);
+    const neg = str.startsWith('-') ? '-' : '';
+    const digits = str.replace(/[^\d]/g, '');
+    return digits ? `${neg}${digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}` : neg;
+  },
+  parser: (v?: string) => {
+    const raw = (v ?? '').replace(/\./g, '').replace(/,/g, '').trim();
+    if (!raw || raw === '-') return '' as unknown as number;
+    const n = Number(raw);
+    return Number.isNaN(n) ? ('' as unknown as number) : n;
+  },
 };
 export const allowancesOf = (r: PayrollSnapshotItem) => r.mealAllowanceVnd + r.transportAllowanceVnd + r.otherAllowancesVnd + r.shiftSwapAllowanceVnd;
 export const bonusesOf = (r: PayrollSnapshotItem) => r.attendanceBonusVnd + r.kpiBonusVnd + r.positiveAdjustmentsVnd;
