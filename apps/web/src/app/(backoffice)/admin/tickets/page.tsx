@@ -1,16 +1,14 @@
 'use client';
 
-import { App, Card, Col, Row, Space, Tag, Typography } from 'antd';
+import { App, Card, Col, Row, Typography } from 'antd';
 import {
-  CheckCircleOutlined, ClockCircleOutlined, CustomerServiceOutlined, DeleteOutlined,
-  EditOutlined, FileExcelOutlined, MessageOutlined, SyncOutlined,
+  CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, CustomerServiceOutlined,
+  DeleteOutlined, EditOutlined, FileExcelOutlined, SyncOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
-import {
-  TICKET_CATEGORY_OPTIONS, TICKET_DEPARTMENT_OPTIONS, TICKET_PRIORITY_OPTIONS, TICKET_STATUS_OPTIONS,
-} from '@umbm/shared';
+import { TICKET_DEPARTMENT_OPTIONS, TICKET_STATUS_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useMe } from '@/lib/auth';
 import { DataTableCard } from '@/ui/components/DataTableCard';
@@ -22,30 +20,30 @@ import { exportTicketsExcel, type SupportTicketItem } from '@/ui/components/tick
 import { StatusTag } from '@/ui/StatusTag';
 import { BRAND } from '@/ui/theme';
 
+const shortDept = (label: string) => label.replace(/^(Bộ phận|Phòng|Ban)\s+/i, '');
+const oneLineStyle = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
+
 export default function AdminTicketsPage() {
   const qc = useQueryClient();
   const { message, modal } = App.useApp();
   const { data: me } = useMe();
-  const [q, setQ] = useState(''), [scope, setScope] = useState('ALL'), [dept, setDept] = useState('');
-  const [category, setCategory] = useState(''), [priority, setPriority] = useState(''), [status, setStatus] = useState('');
+  const [q, setQ] = useState(''), [scope, setScope] = useState('ALL'), [dept, setDept] = useState(''), [status, setStatus] = useState('');
   const [page, setPage] = useState(1), [perPage, setPerPage] = useState(12), [refreshing, setRefreshing] = useState(false);
   const [modalOpen, setModalOpen] = useState(false), [editing, setEditing] = useState<SupportTicketItem | null>(null), [detailId, setDetailId] = useState<string | null>(null);
 
-  useEffect(() => { setPage(1); }, [q, scope, dept, category, priority, status]);
+  useEffect(() => { setPage(1); }, [q, scope, dept, status]);
 
   const buildQs = (refresh = false) => {
     const sp = new URLSearchParams({ page: String(page), per_page: String(perPage), scope });
     if (q.trim()) sp.set('q', q.trim());
     if (dept) sp.set('target_department', dept);
-    if (category) sp.set('category', category);
-    if (priority) sp.set('priority', priority);
     if (status) sp.set('status', status);
     if (refresh) sp.set('refresh', '1');
     return sp.toString();
   };
 
   const listQ = useQuery({
-    queryKey: ['tickets', page, perPage, q, scope, dept, category, priority, status],
+    queryKey: ['tickets', page, perPage, q, scope, dept, status],
     queryFn: () => api.list<SupportTicketItem>(`/tickets?${buildQs(false)}`),
   });
 
@@ -53,7 +51,7 @@ export default function AdminTicketsPage() {
     setRefreshing(true);
     try {
       const fresh = await api.list<SupportTicketItem>(`/tickets?${buildQs(true)}`);
-      qc.setQueryData(['tickets', page, perPage, q, scope, dept, category, priority, status], fresh);
+      qc.setQueryData(['tickets', page, perPage, q, scope, dept, status], fresh);
       message.success('Đã đồng bộ danh sách phiếu hỗ trợ mới nhất');
     } catch (e) {
       message.error(e instanceof ApiClientError ? e.message : 'Đồng bộ phiếu hỗ trợ thất bại');
@@ -109,23 +107,21 @@ export default function AdminTicketsPage() {
       </Row>
 
       <FilterToolbar
-        searchPlaceholder="Tìm mã phiếu, tiêu đề, người gửi, người phụ trách..."
+        searchPlaceholder="Tìm mã phiếu, tiêu đề, người gửi, phân loại..."
         searchValue={q}
         onSearchChange={setQ}
         selects={[
           {
-            key: 'scope', value: scope, width: 205, onChange: setScope,
+            key: 'scope', value: scope, width: 185, onChange: setScope,
             options: [
               { value: 'ALL', label: 'Tất cả phiếu thuộc phạm vi' },
-              { value: 'ASSIGNED_TO_ME', label: 'Giao cho tôi / Bộ phận tôi' },
+              { value: 'ASSIGNED_TO_ME', label: 'Giao cho tôi / Bộ phận' },
               { value: 'DIRECT_TO_ME', label: 'Chỉ định đích danh tôi' },
               { value: 'CREATED_BY_ME', label: 'Phiếu do tôi tạo' },
             ],
           },
-          { key: 'dept', value: dept, width: 205, onChange: setDept, options: [{ value: '', label: 'Tất cả bộ phận tiếp nhận' }, ...TICKET_DEPARTMENT_OPTIONS] },
-          { key: 'cat', value: category, width: 210, onChange: setCategory, options: [{ value: '', label: 'Tất cả phân loại' }, ...TICKET_CATEGORY_OPTIONS] },
+          { key: 'dept', value: dept, width: 190, onChange: setDept, options: [{ value: '', label: 'Tất cả bộ phận' }, ...TICKET_DEPARTMENT_OPTIONS.map((o) => ({ value: o.value, label: shortDept(o.label) }))] },
           { key: 'status', value: status, width: 175, onChange: setStatus, options: [{ value: '', label: 'Mọi trạng thái' }, ...TICKET_STATUS_OPTIONS] },
-          { key: 'prio', value: priority, width: 150, onChange: setPriority, options: [{ value: '', label: 'Mọi mức ưu tiên' }, ...TICKET_PRIORITY_OPTIONS] },
         ]}
         onRefresh={() => void handleRefresh()}
         refreshing={refreshing}
@@ -148,47 +144,42 @@ export default function AdminTicketsPage() {
         ]}
         columns={[
           {
-            title: 'Tiêu đề & Nội dung thắc mắc', key: 'subject', width: 310,
+            title: 'Tiêu đề phiếu hỗ trợ', key: 'subject', width: 245, ellipsis: true,
             render: (_, r) => (
-              <div style={{ cursor: 'pointer' }} onClick={() => setDetailId(r.id)}>
-                <Space size={6} wrap>
-                  <Typography.Text strong style={{ color: BRAND.primary }}>{r.subject}</Typography.Text>
-                  {r.related_label && <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>{r.related_label}</Tag>}
-                </Space>
-                <div style={{ fontSize: 12, color: BRAND.textSecondary, marginTop: 2 }}>{r.categoryLabel}</div>
+              <div style={{ cursor: 'pointer', minWidth: 0 }} onClick={() => setDetailId(r.id)} title={r.subject}>
+                <div style={{ ...oneLineStyle, fontWeight: 600, fontSize: 13, color: BRAND.primary }}>{r.subject}</div>
+                <div style={{ ...oneLineStyle, fontSize: 12, color: BRAND.textSecondary, marginTop: 2 }}>{r.categoryLabel}</div>
               </div>
             ),
           },
           {
-            title: 'Người gửi & Chi nhánh', key: 'req', width: 210,
+            title: 'Người gửi', key: 'req', width: 145, ellipsis: true,
             render: (_, r) => (
-              <div>
-                <Typography.Text strong>{r.requesterName}</Typography.Text>
-                <div style={{ fontSize: 12, color: BRAND.textSecondary }}>{r.requesterRoleLabel} · {r.branchName}</div>
+              <div style={{ minWidth: 0 }} title={`${r.requesterName} · ${r.branchName}`}>
+                <div style={{ ...oneLineStyle, fontWeight: 600, fontSize: 13 }}>{r.requesterName}</div>
+                <div style={{ ...oneLineStyle, fontSize: 12, color: BRAND.textSecondary, marginTop: 2 }}>{r.branchName}</div>
               </div>
             ),
           },
           {
-            title: 'Bộ phận & Người xử lý', key: 'dept', width: 235,
+            title: 'Bộ phận xử lý', key: 'dept', width: 155, ellipsis: true,
             render: (_, r) => (
-              <div>
-                <Typography.Text strong>{r.departmentLabel}</Typography.Text>
-                <div style={{ fontSize: 12, color: r.assignee_user_id ? BRAND.primary : BRAND.textSecondary }}>Phụ trách: {r.assigneeName}</div>
+              <div style={{ minWidth: 0 }} title={`${r.departmentLabel} — ${r.assigneeName}`}>
+                <div style={{ ...oneLineStyle, fontWeight: 600, fontSize: 13 }}>{shortDept(r.departmentLabel)}</div>
+                <div style={{ ...oneLineStyle, fontSize: 12, color: r.assignee_user_id ? BRAND.primary : BRAND.textSecondary, marginTop: 2 }}>
+                  {r.assignee_user_id ? r.assigneeName : 'Toàn bộ phận'}
+                </div>
               </div>
             ),
           },
-          { title: 'Ưu tiên', key: 'prio', width: 120, render: (_, r) => <StatusTag value={r.priority} label={r.priorityLabel} /> },
+          { title: 'Ưu tiên', key: 'prio', width: 96, render: (_, r) => <StatusTag value={r.priority} label={r.priorityLabel} /> },
+          { title: 'Trạng thái', key: 'st', width: 140, render: (_, r) => <StatusTag value={r.status} label={r.statusLabel} /> },
           {
-            title: 'Trạng thái & Trao đổi', key: 'st', width: 180,
-            render: (_, r) => (
-              <Space direction="vertical" size={2}>
-                <StatusTag value={r.status} label={r.statusLabel} />
-                <span style={{ fontSize: 11.5, color: BRAND.textSecondary }}><MessageOutlined /> {r.messageCount} tin trao đổi · {dayjs(r.updated_at || r.created_at).format('DD/MM HH:mm')}</span>
-              </Space>
-            ),
+            title: 'Cập nhật', key: 'time', width: 118,
+            render: (_, r) => <span className="num" style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap' }}>{dayjs(r.updated_at || r.created_at).format('HH:mm DD/MM/YYYY')}</span>,
           },
           {
-            title: 'Thao tác', key: 'actions', width: 92,
+            title: 'Thao tác', key: 'actions', width: 84, align: 'right',
             render: (_, r) => (
               <RowActionButtons
                 detailTooltip="Xem & Phản hồi phiếu hỗ trợ"
@@ -198,7 +189,11 @@ export default function AdminTicketsPage() {
                   { key: 'edit', icon: <EditOutlined />, label: 'Sửa / Điều phối bộ phận', onClick: () => { setEditing(r); setModalOpen(true); } },
                   ...(canDeleteRow(r) ? [{
                     key: 'del', danger: true, icon: <DeleteOutlined />, label: 'Xóa phiếu hỗ trợ',
-                    onClick: () => modal.confirm({ title: `Xóa phiếu hỗ trợ ${r.ticket_code}?`, content: 'Phiếu sẽ được ẩn an toàn khỏi danh sách.', okText: 'Xóa phiếu', okButtonProps: { danger: true }, cancelText: 'Hủy', onOk: () => deleteMut.mutateAsync(r.id) }),
+                    onClick: () => modal.confirm({
+                      title: `Xóa phiếu hỗ trợ ${r.ticket_code}?`, content: 'Phiếu sẽ được ẩn an toàn khỏi danh sách.',
+                      okText: 'Xóa phiếu', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelText: 'Hủy', cancelButtonProps: { icon: <CloseOutlined /> },
+                      onOk: () => deleteMut.mutateAsync(r.id),
+                    }),
                   }] : []),
                 ]}
               />

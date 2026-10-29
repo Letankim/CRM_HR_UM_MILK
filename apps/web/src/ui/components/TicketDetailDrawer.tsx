@@ -1,7 +1,10 @@
 'use client';
 
 import { Alert, App, Button, Card, Descriptions, Drawer, Flex, Input, Select, Space, Spin, Tag, Typography } from 'antd';
-import { CheckCircleOutlined, CloseOutlined, RetweetOutlined, SendOutlined, UserOutlined } from '@ant-design/icons';
+import {
+  CheckCircleOutlined, CloseOutlined, ExpandAltOutlined,
+  RetweetOutlined, SendOutlined, ShrinkOutlined, UserOutlined,
+} from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
@@ -22,6 +25,7 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
   const qc = useQueryClient();
   const { message } = App.useApp();
   const { data: me } = useMe();
+  const [expanded, setExpanded] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [nextDept, setNextDept] = useState<TicketDepartment>('HR');
   const [nextAssignee, setNextAssignee] = useState<string>('');
@@ -74,10 +78,12 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
   const isRequester = Boolean(t && me?.user.id === t.requester_user_id);
   const canResolve = isBackoffice && !isRequester && t?.status !== 'CLOSED';
   const routingDirty = Boolean(t && (nextDept !== t.target_department || nextAssignee !== (t.assignee_user_id || '')));
+  const drawerWidth = expanded ? '90vw' : '70vw';
 
   return (
     <Drawer
-      width={720}
+      width={drawerWidth}
+      styles={{ wrapper: { width: drawerWidth, maxWidth: '100vw' } }}
       open={Boolean(ticketId)}
       onClose={onClose}
       destroyOnHidden
@@ -89,6 +95,9 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
               Đóng phiếu
             </Button>
           )}
+          <Button size="small" icon={expanded ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setExpanded((v) => !v)}>
+            {expanded ? 'Thu nhỏ (70%)' : 'Phóng to (90%)'}
+          </Button>
           <Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
         </Space>
       }
@@ -97,31 +106,43 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
         <div style={{ padding: 32, textAlign: 'center' }}><Spin /></div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }}>
-            <Descriptions.Item label="Tiêu đề" span={2}><strong>{t.subject}</strong></Descriptions.Item>
+          <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }} styles={{ label: { width: 195, fontWeight: 500, background: '#F8FAFC' } }}>
+            <Descriptions.Item label="Tiêu đề phiếu hỗ trợ" span={2}><strong>{t.subject}</strong></Descriptions.Item>
             <Descriptions.Item label="Người gửi">{t.requesterName}{t.requesterCode ? ` (${t.requesterCode})` : ''} · {t.requesterRoleLabel}</Descriptions.Item>
             <Descriptions.Item label="Chi nhánh">{t.branchName}</Descriptions.Item>
-            <Descriptions.Item label="Phân loại">{t.categoryLabel}</Descriptions.Item>
+            <Descriptions.Item label="Phân loại vấn đề">{t.categoryLabel}</Descriptions.Item>
             <Descriptions.Item label="Ưu tiên & Trạng thái">
-              <Space size={6}><StatusTag value={t.priority} label={t.priorityLabel} /><StatusTag value={t.status} label={t.statusLabel} /></Space>
+              <Space size={6} wrap><StatusTag value={t.priority} label={t.priorityLabel} /><StatusTag value={t.status} label={t.statusLabel} /></Space>
             </Descriptions.Item>
-            <Descriptions.Item label="Bộ phận tiếp nhận"><strong>{t.departmentLabel}</strong></Descriptions.Item>
-            <Descriptions.Item label="Người phụ trách">{t.assigneeName}</Descriptions.Item>
-            {t.related_label && <Descriptions.Item label="Hồ sơ / Phiếu liên quan" span={2}><Tag color="blue" style={{ margin: 0 }}>{t.related_label}</Tag></Descriptions.Item>}
+            <Descriptions.Item label="Bộ phận tiếp nhận" span={2}>
+              <strong>{t.departmentLabel}</strong>
+            </Descriptions.Item>
+            <Descriptions.Item label="Người phụ trách xử lý" span={2}>
+              <span style={{ color: t.assignee_user_id ? BRAND.primary : undefined, fontWeight: t.assignee_user_id ? 600 : 400 }}>
+                {t.assigneeName}{t.assignee_user_id && t.assigneeRoleLabel ? ` (${t.assigneeRoleLabel})` : ''}
+              </span>
+            </Descriptions.Item>
+            <Descriptions.Item label="Hồ sơ / Phiếu liên quan" span={2}>
+              {t.related_label ? (
+                <Tag color="blue" style={{ margin: 0 }}>{t.related_label}</Tag>
+              ) : (
+                <Typography.Text type="secondary">Không đính kèm hồ sơ / phiếu cụ thể</Typography.Text>
+              )}
+            </Descriptions.Item>
           </Descriptions>
 
           {isBackoffice && t.status !== 'CLOSED' && (
-            <Card size="small" styles={{ body: { padding: '10px 12px', background: '#F8FAFC' } }}>
-              <Flex align="center" justify="space-between" wrap gap={8}>
-                <Typography.Text strong style={{ fontSize: 12 }}><RetweetOutlined /> Điều phối Bộ phận / Người xử lý:</Typography.Text>
+            <Card size="small" styles={{ body: { padding: '10px 14px', background: '#F8FAFC' } }}>
+              <Flex align="center" justify="space-between" wrap gap={10}>
+                <Typography.Text strong style={{ fontSize: 12.5 }}><RetweetOutlined /> Điều phối Bộ phận / Người xử lý:</Typography.Text>
                 <Space wrap size={8}>
-                  <Select size="small" style={{ width: 210 }} value={nextDept} options={TICKET_DEPARTMENT_OPTIONS} onChange={(d) => { setNextDept(d); setNextAssignee(''); }} />
+                  <Select size="small" style={{ width: 235 }} value={nextDept} options={TICKET_DEPARTMENT_OPTIONS} onChange={(d) => { setNextDept(d); setNextAssignee(''); }} />
                   <Select
-                    size="small" style={{ width: 220 }} value={nextAssignee}
+                    size="small" style={{ width: 250 }} value={nextAssignee}
                     options={[{ value: '', label: 'Toàn bộ phận tiếp nhận' }, ...deptAssignees.map((a) => ({ value: a.id, label: `${a.displayName} (${a.roleLabel})` }))]}
                     onChange={setNextAssignee}
                   />
-                  <Button size="small" type="primary" ghost disabled={!routingDirty} loading={updateMut.isPending} onClick={() => updateMut.mutate({ target_department: nextDept, assignee_user_id: nextAssignee })}>
+                  <Button size="small" type="primary" ghost icon={<RetweetOutlined />} disabled={!routingDirty} loading={updateMut.isPending} onClick={() => updateMut.mutate({ target_department: nextDept, assignee_user_id: nextAssignee })}>
                     Chuyển xử lý
                   </Button>
                 </Space>
@@ -133,12 +154,12 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
             <Alert type="success" showIcon message={`Kết quả giải quyết${t.resolvedByName ? ` (${t.resolvedByName})` : ''}`} description={t.resolution_note} />
           )}
 
-          <Card size="small" title={`Nội dung trao đổi & phản hồi (${t.messages.length})`} styles={{ body: { padding: 12, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 340, overflowY: 'auto' } }}>
+          <Card size="small" title={`Nội dung trao đổi & phản hồi (${t.messages.length})`} styles={{ body: { padding: 12, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 420, overflowY: 'auto' } }}>
             {t.messages.map((m) => {
               const isMine = m.sender_user_id === me?.user.id;
               const isReqMsg = m.sender_user_id === t.requester_user_id;
               return (
-                <div key={m.id} style={{ padding: '10px 12px', borderRadius: 4, border: `1px solid ${isReqMsg ? BRAND.border : '#BFDBFE'}`, background: isMine ? '#EFF6FF' : isReqMsg ? '#FFFFFF' : '#F8FAFC' }}>
+                <div key={m.id} style={{ padding: '10px 14px', borderRadius: 4, border: `1px solid ${isReqMsg ? BRAND.border : '#BFDBFE'}`, background: isMine ? '#EFF6FF' : isReqMsg ? '#FFFFFF' : '#F8FAFC' }}>
                   <Flex justify="space-between" align="center" wrap gap={6} style={{ marginBottom: 4 }}>
                     <Space size={6}>
                       <UserOutlined style={{ color: BRAND.primary, fontSize: 12 }} />
@@ -147,7 +168,7 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
                     </Space>
                     <Typography.Text type="secondary" style={{ fontSize: 11 }}>{dayjs(m.created_at).format('HH:mm DD/MM/YYYY')}</Typography.Text>
                   </Flex>
-                  <div style={{ fontSize: 13, color: BRAND.text, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{m.content}</div>
+                  <div style={{ fontSize: 13, color: BRAND.text, whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{m.content}</div>
                 </div>
               );
             })}
@@ -162,7 +183,7 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
                 </Button>
                 {canResolve && (
                   <Button type="primary" icon={<CheckCircleOutlined />} disabled={replyText.trim().length < 2} loading={replyMut.isPending} onClick={() => replyMut.mutate({ content: replyText.trim(), status: 'RESOLVED' })}>
-                    Phản hồi & Hoàn tất giải quyết
+                    Phản hồi &amp; Hoàn tất giải quyết
                   </Button>
                 )}
               </Flex>

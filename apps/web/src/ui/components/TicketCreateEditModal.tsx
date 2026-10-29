@@ -105,7 +105,7 @@ export function TicketCreateEditModal({
 
   return (
     <Modal
-      width={680}
+      width="70vw"
       open={open}
       onCancel={onClose}
       onOk={() => form.submit()}
