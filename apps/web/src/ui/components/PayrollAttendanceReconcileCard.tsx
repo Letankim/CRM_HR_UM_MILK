@@ -162,7 +162,7 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
             showTotal: (t) => `Tổng ${t} nhân sự`,
             onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); },
           }}
-          scroll={{ x: 1180 }}
+          scroll={{ x: 1440 }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có dữ liệu chấm công trong kỳ" /> }}
           columns={[
             { title: 'Nhân sự', width: 210, fixed: 'left', render: (_, r) => <div><strong>{r.fullName}</strong><div style={{ fontSize: 12, color: '#64748B' }}>{r.employeeCode} · {r.branchName}</div></div> },

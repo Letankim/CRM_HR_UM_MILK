@@ -128,7 +128,7 @@ export function PayrollMissingShiftsModal({
           </Flex>
         </div>
         <Table<MissingShiftDetailItem>
-          size="small" rowKey={(r, i) => `${r.assignmentId}-${r.date}-${r.shiftCode}-${i}`} pagination={pagination} dataSource={filtered} scroll={{ x: 1020 }}
+          size="small" rowKey={(r, i) => `${r.assignmentId}-${r.date}-${r.shiftCode}-${i}`} pagination={pagination} dataSource={filtered} scroll={{ x: 1180 }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có ca thiếu chấm công Vào/Ra nào — Dữ liệu công đã khớp hợp lệ" /> }}
           columns={[
             { title: 'Nhân sự & Chi nhánh', width: 195, fixed: 'left', render: (_, r) => <div><strong>{r.fullName}</strong><div style={{ fontSize: 12, color: '#64748B' }}>{r.employeeCode} · {r.branchName}</div></div> },
@@ -149,7 +149,7 @@ export function PayrollMissingShiftsModal({
                 <div><Tag color="gold" style={{ margin: 0 }}>{r.pendingAdjustmentCode}</Tag><div style={{ fontSize: 11, color: '#D97706', marginTop: 2 }}>{r.pendingAdjustmentStatus === 'STORE_CONFIRMED' ? 'CH đã xác nhận · Chờ HR duyệt' : 'Đang chờ CH / HR duyệt'}</div></div>
               ) : <Tag color="default" style={{ margin: 0 }}>Chưa gửi phiếu bù công</Tag>,
             },
-            { title: 'Hướng xử lý (Báo HR / Cửa hàng)', dataIndex: 'actionGuide', render: (v: string) => <span style={{ fontSize: 12, color: '#334155' }}>{v}</span> },
+            { title: 'Hướng xử lý (Báo HR / Cửa hàng)', dataIndex: 'actionGuide', width: 240, render: (v: string) => <span style={{ fontSize: 12, color: '#334155' }}>{v}</span> },
           ]}
         />
       </Space>

@@ -8,10 +8,12 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMemo } from 'react';
 import { api } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { StatusTag } from '../StatusTag';
+import { RowActionButtons } from './RowActionButtons';
 import { fmtVnd, type PayPeriodRow } from './payroll-types';
 
 interface Props {
@@ -25,7 +27,9 @@ interface Props {
 export function DashboardBranchAndShiftOverview({
   branchFilter, stageFilter, periodFilter, pendingAccountsCount, deadLettersCount,
 }: Props) {
+  const router = useRouter();
   const can = useCan();
+  const canEmployee = can('employee.read');
   const canSchedule = can('schedule.read', 'attendance.read');
   const canPayroll = can('payroll.read');
   const todayStr = dayjs().format('YYYY-MM-DD');
@@ -165,19 +169,36 @@ export function DashboardBranchAndShiftOverview({
       )}
 
       {canSchedule && (
-        <Card size="small" title={<span><EnvironmentOutlined /> Tình trạng Nhân sự, Điểm danh &amp; Ca đang diễn ra theo Chi nhánh</span>} extra={<Tag color="blue">{currentShiftLabel}</Tag>}>
+        <Card
+          size="small"
+          title={<span><EnvironmentOutlined /> Tình trạng Nhân sự, Điểm danh &amp; Ca đang diễn ra theo Chi nhánh</span>}
+          extra={<Tag color="blue" style={{ margin: 0 }}>{currentShiftLabel}</Tag>}
+          styles={{ header: { flexWrap: 'wrap', gap: 8 } }}
+        >
           <Table
-            size="small" rowKey="id" pagination={false} loading={branchesQ.isLoading || shiftsQ.isLoading} dataSource={branchRows} scroll={{ x: 960 }}
+            size="small" rowKey="id" pagination={false} loading={branchesQ.isLoading || shiftsQ.isLoading} dataSource={branchRows} scroll={{ x: 1480 }}
             locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có chi nhánh phù hợp bộ lọc" /> }}
             columns={[
-              { title: 'Chi nhánh', width: 200, render: (_, r) => <div><strong>{r.name}</strong><div style={{ fontSize: 12, color: '#64748B' }}>Mã: {r.code}</div></div> },
-              { title: 'Nhân sự (TV / CT)', width: 145, render: (_, r) => <span><strong>{r.totalStaff} NV</strong> <span style={{ color: '#64748B', fontSize: 12 }}>({r.probationCount} TV / {r.officialCount} CT)</span></span> },
-              { title: 'Số ca hôm nay / Kỳ', width: 135, align: 'center', render: (_, r) => <Tag color="geekblue">{r.todayShiftCount} ca hôm nay ({r.periodShiftCount} ca kỳ)</Tag> },
-              { title: 'Đang có mặt', dataIndex: 'present', width: 155, render: (v: number, r) => <div><Tag color="green">{v} có mặt</Tag>{r.presentNames.length > 0 && <div style={{ fontSize: 11, color: '#15803D', marginTop: 2 }}>{r.presentNames.join(', ')}</div>}</div> },
-              { title: 'Chưa Check-in', dataIndex: 'notCheckedIn', width: 155, render: (v: number, r) => <div><Tag color="blue">{v} chờ vào ca</Tag>{r.notCheckedInNames.length > 0 && <div style={{ fontSize: 11, color: '#1D4ED8', marginTop: 2 }}>{r.notCheckedInNames.join(', ')}</div>}</div> },
-              { title: 'Nghỉ OFF / Vắng', width: 130, align: 'center', render: (_, r) => <Space size={4}><Tag>{r.offCount} OFF</Tag>{r.absent > 0 && <Tag color="red">{r.absent} vắng</Tag>}</Space> },
-              { title: 'Cảnh báo vận hành', width: 145, render: (_, r) => r.isUnderstaffed ? <Badge status="warning" text={<Tag color="volcano">Thiếu người / Cần bù ca</Tag>} /> : <Badge status="success" text={<Tag color="green">Đủ định biên ca</Tag>} /> },
-              { title: 'Thao tác', width: 175, align: 'right', render: () => <Space size={6}><Link href="/admin/schedules"><Button size="small" icon={<CalendarOutlined />}>Lịch ca</Button></Link><Link href="/admin/schedules?section=workflows"><Button size="small" icon={<SafetyCertificateOutlined />}>Điểm danh</Button></Link></Space> },
+              { title: 'Chi nhánh', width: 220, fixed: 'left', render: (_, r) => <div><strong style={{ whiteSpace: 'nowrap' }}>{r.name}</strong><div style={{ fontSize: 12, color: '#64748B', whiteSpace: 'nowrap' }}>Mã: {r.code}</div></div> },
+              { title: 'Nhân sự (TV / CT)', width: 175, render: (_, r) => <div style={{ whiteSpace: 'nowrap' }}><strong>{r.totalStaff} NV</strong> <span style={{ color: '#64748B', fontSize: 12 }}>({r.probationCount} TV / {r.officialCount} CT)</span></div> },
+              { title: 'Số ca hôm nay / Kỳ', width: 215, align: 'center', render: (_, r) => <Tag color="geekblue" style={{ margin: 0, whiteSpace: 'nowrap' }}>{r.todayShiftCount} ca hôm nay ({r.periodShiftCount} ca kỳ)</Tag> },
+              { title: 'Đang có mặt', dataIndex: 'present', width: 200, render: (v: number, r) => <div><Tag color="green" style={{ margin: 0, whiteSpace: 'nowrap' }}>{v} có mặt</Tag>{r.presentNames.length > 0 && <div style={{ fontSize: 11, color: '#15803D', marginTop: 4, lineHeight: 1.4 }}>{r.presentNames.join(', ')}</div>}</div> },
+              { title: 'Chưa Check-in', dataIndex: 'notCheckedIn', width: 200, render: (v: number, r) => <div><Tag color="blue" style={{ margin: 0, whiteSpace: 'nowrap' }}>{v} chờ vào ca</Tag>{r.notCheckedInNames.length > 0 && <div style={{ fontSize: 11, color: '#1D4ED8', marginTop: 4, lineHeight: 1.4 }}>{r.notCheckedInNames.join(', ')}</div>}</div> },
+              { title: 'Nghỉ OFF / Vắng', width: 165, align: 'center', render: (_, r) => <Space size={4} style={{ whiteSpace: 'nowrap' }}><Tag style={{ margin: 0 }}>{r.offCount} OFF</Tag>{r.absent > 0 && <Tag color="red" style={{ margin: 0 }}>{r.absent} vắng</Tag>}</Space> },
+              { title: 'Cảnh báo vận hành', width: 215, render: (_, r) => <div style={{ whiteSpace: 'nowrap' }}>{r.isUnderstaffed ? <Badge status="warning" text={<Tag color="volcano" style={{ margin: 0 }}>Thiếu người / Cần bù ca</Tag>} /> : <Badge status="success" text={<Tag color="green" style={{ margin: 0 }}>Đủ định biên ca</Tag>} />}</div> },
+              {
+                title: 'Thao tác', key: 'actions', width: 84, fixed: 'right', align: 'center',
+                render: () => (
+                  <RowActionButtons
+                    menuItems={[
+                      { key: 'schedules', icon: <CalendarOutlined />, label: 'Mở lịch phân ca', onClick: () => router.push('/admin/schedules') },
+                      { key: 'workflows', icon: <SafetyCertificateOutlined />, label: 'Điểm danh & Đơn từ', onClick: () => router.push('/admin/schedules?section=workflows') },
+                      ...(canEmployee ? [{ key: 'employees', icon: <TeamOutlined />, label: 'Danh sách nhân sự', onClick: () => router.push('/admin/employees') }] : []),
+                      ...(canPayroll ? [{ key: 'payroll', icon: <DollarOutlined />, label: 'Bảng lương & Đối soát', onClick: () => router.push('/admin/payroll') }] : []),
+                    ]}
+                  />
+                ),
+              },
             ]}
           />
         </Card>

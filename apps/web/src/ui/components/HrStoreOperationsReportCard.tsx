@@ -1,15 +1,17 @@
 'use client';
 
 import { Button, Card, Empty, Flex, Select, Space, Table, Tag } from 'antd';
-import { BarChartOutlined, FileExcelOutlined } from '@ant-design/icons';
+import { BarChartOutlined, CalendarOutlined, FileExcelOutlined, SafetyCertificateOutlined, TeamOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { useJobPositions } from './JobPositionsManagerModal';
+import { RowActionButtons } from './RowActionButtons';
 
 interface Props {
   branchFilter: string;
@@ -21,9 +23,12 @@ interface Props {
  * Headcount, Thử việc/Chính thức, Tuyển dụng, Ngày công, Giờ làm, Đi trễ, Vắng mặt, Ca thiếu người và Tỷ lệ phủ ca.
  */
 export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Props) {
+  const router = useRouter();
   const can = useCan();
   const canViewReport = can('report.hr', 'report.store');
   const canRecruit = can('candidate.manage');
+  const canEmployee = can('employee.read');
+  const canSchedule = can('schedule.read', 'attendance.read');
   const [positionFilter, setPositionFilter] = useState('ALL');
   const [shiftFilter, setShiftFilter] = useState('ALL');
   const { options: jobPositionOptions } = useJobPositions();
@@ -145,17 +150,31 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
       }
     >
       <Table
-        size="small" rowKey="id" pagination={false} loading={branchesQ.isLoading || shiftsQ.isLoading} dataSource={reportRows} scroll={{ x: 980 }}
+        size="small" rowKey="id" pagination={false} loading={branchesQ.isLoading || shiftsQ.isLoading} dataSource={reportRows} scroll={{ x: 1350 }}
         locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có dữ liệu báo cáo theo bộ lọc" /> }}
         columns={[
-          { title: 'Chi nhánh', width: 200, render: (_, r) => <div><strong>{r.branchName}</strong><div style={{ fontSize: 12, color: '#64748B' }}>{r.branchCode}</div></div> },
-          { title: 'Tổng nhân sự', dataIndex: 'headcount', width: 110, align: 'right', render: (v: number) => <strong className="num">{v} NV</strong> },
-          { title: 'Thử việc / Chính thức', width: 145, align: 'center', render: (_, r) => <Space size={4}><Tag color="gold">{r.probationCount} TV</Tag><Tag color="blue">{r.officialCount} CT</Tag></Space> },
-          ...(canRecruit ? [{ title: 'Tuyển dụng', dataIndex: 'candidateCount', width: 105, align: 'right' as const, render: (v: number) => <span className="num">{v} hồ sơ</span> }] : []),
-          { title: 'Ngày công · Ca · Giờ làm', width: 175, align: 'right', render: (_, r) => <span className="num"><strong>{r.workDaysCount} ngày</strong> · {r.shiftCount} ca ({r.totalHours}h)</span> },
-          { title: 'Đi trễ', dataIndex: 'lateCount', width: 90, align: 'center', render: (v: number) => v > 0 ? <Tag color="volcano">{v} lượt</Tag> : <Tag color="green">0</Tag> },
-          { title: 'Vắng / Thiếu ca', width: 130, align: 'center', render: (_, r) => <Space size={4}><Tag color={r.absentCount > 0 ? 'red' : 'default'}>{r.absentCount} vắng</Tag><Tag color={r.understaffedCount > 0 ? 'orange' : 'default'}>{r.understaffedCount} thiếu</Tag></Space> },
-          { title: 'Tỷ lệ phủ ca', dataIndex: 'coverageRate', width: 115, align: 'right', render: (v: number) => <Tag color={v >= 90 ? 'green' : 'orange'} className="num">{v}%</Tag> },
+          { title: 'Chi nhánh', width: 220, fixed: 'left', render: (_, r) => <div><strong style={{ whiteSpace: 'nowrap' }}>{r.branchName}</strong><div style={{ fontSize: 12, color: '#64748B', whiteSpace: 'nowrap' }}>{r.branchCode}</div></div> },
+          { title: 'Tổng nhân sự', dataIndex: 'headcount', width: 130, align: 'right', render: (v: number) => <strong className="num" style={{ whiteSpace: 'nowrap' }}>{v} NV</strong> },
+          { title: 'Thử việc / Chính thức', width: 175, align: 'center', render: (_, r) => <Space size={4} style={{ whiteSpace: 'nowrap' }}><Tag color="gold" style={{ margin: 0 }}>{r.probationCount} TV</Tag><Tag color="blue" style={{ margin: 0 }}>{r.officialCount} CT</Tag></Space> },
+          ...(canRecruit ? [{ title: 'Tuyển dụng', dataIndex: 'candidateCount', width: 120, align: 'right' as const, render: (v: number) => <span className="num" style={{ whiteSpace: 'nowrap' }}>{v} hồ sơ</span> }] : []),
+          { title: 'Ngày công · Ca · Giờ làm', width: 215, align: 'right', render: (_, r) => <span className="num" style={{ whiteSpace: 'nowrap' }}><strong>{r.workDaysCount} ngày</strong> · {r.shiftCount} ca ({r.totalHours}h)</span> },
+          { title: 'Đi trễ', dataIndex: 'lateCount', width: 105, align: 'center', render: (v: number) => v > 0 ? <Tag color="volcano" style={{ margin: 0, whiteSpace: 'nowrap' }}>{v} lượt</Tag> : <Tag color="green" style={{ margin: 0 }}>0</Tag> },
+          { title: 'Vắng / Thiếu ca', width: 165, align: 'center', render: (_, r) => <Space size={4} style={{ whiteSpace: 'nowrap' }}><Tag color={r.absentCount > 0 ? 'red' : 'default'} style={{ margin: 0 }}>{r.absentCount} vắng</Tag><Tag color={r.understaffedCount > 0 ? 'orange' : 'default'} style={{ margin: 0 }}>{r.understaffedCount} thiếu</Tag></Space> },
+          { title: 'Tỷ lệ phủ ca', dataIndex: 'coverageRate', width: 125, align: 'right', render: (v: number) => <Tag color={v >= 90 ? 'green' : 'orange'} className="num" style={{ margin: 0 }}>{v}%</Tag> },
+          ...(canSchedule || canEmployee ? [{
+            title: 'Thao tác', key: 'actions', width: 84, fixed: 'right' as const, align: 'center' as const,
+            render: () => (
+              <RowActionButtons
+                menuItems={[
+                  ...(canSchedule ? [
+                    { key: 'schedules', icon: <CalendarOutlined />, label: 'Mở lịch phân ca', onClick: () => router.push('/admin/schedules') },
+                    { key: 'workflows', icon: <SafetyCertificateOutlined />, label: 'Điểm danh & Đơn từ', onClick: () => router.push('/admin/schedules?section=workflows') },
+                  ] : []),
+                  ...(canEmployee ? [{ key: 'employees', icon: <TeamOutlined />, label: 'Danh sách nhân sự', onClick: () => router.push('/admin/employees') }] : []),
+                ]}
+              />
+            ),
+          }] : []),
         ]}
       />
     </Card>
