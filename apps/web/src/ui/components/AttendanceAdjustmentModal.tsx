@@ -131,22 +131,19 @@ export function AttendanceAdjustmentModal({
 
   return (
     <Modal
-      width="min(840px, 94vw)" open={open} forceRender title="Gửi phiếu bổ sung công (Chỉ áp dụng cho ca Vắng mặt cần bù công)"
+      width="min(840px, 94vw)" open={open} forceRender title="Gửi phiếu bổ sung công"
       onCancel={onClose} onOk={handleSubmit} confirmLoading={loading}
       okText="Gửi phiếu bổ sung công" cancelText="Đóng"
       okButtonProps={{ icon: <SendOutlined />, disabled: !isShiftLocked }} cancelButtonProps={{ icon: <CloseOutlined /> }}
     >
-      <Alert
-        type={absentShifts.length > 0 ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
-        message={
-          absentShifts.length > 0
-            ? `Bạn hiện có ${absentShifts.length} ca Vắng mặt cần bù công. Chọn ngày để tải ca vắng mặt của ngày đó (hoặc bấm chọn nhanh bên dưới). Khi đã chọn ca, Ngày công và Thời gian ca sẽ khóa cố định.`
-            : 'Bạn hiện không có ca làm việc nào ở trạng thái Vắng mặt cần bù công.'
-        }
-      />
-      {absentShifts.length > 0 && (
+      {absentShifts.length === 0 ? (
+        <Alert
+          type="info" showIcon style={{ marginBottom: 12 }}
+          message="Bạn hiện không có ca làm việc nào ở trạng thái Vắng mặt cần bù công."
+        />
+      ) : (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>Ca Vắng mặt cần bù công của bạn (bấm để chọn):</div>
+          <div style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>Ca cần bổ sung công ({absentShifts.length} ca):</div>
           <Space size={6} wrap>
             {absentShifts.slice(0, 6).map((s) => (
               <Tag key={String(s.id)} color={String(s.id) === String(watchedAssignId) ? 'blue' : 'red'} style={{ margin: 0, cursor: 'pointer', fontWeight: 600 }} onClick={() => applyShiftToForm(s)}>
@@ -190,13 +187,13 @@ export function AttendanceAdjustmentModal({
           </Col>
         </Row>
         <Row gutter={12}>
-          <Col xs={24} md={12}><Form.Item name="shift_code" label="Khung ca (Cố định theo ca vắng)" rules={[{ required: true }]}><Select options={shiftOptions} disabled placeholder="Tự động điền khi chọn ca vắng mặt" /></Form.Item></Col>
+          <Col xs={24} md={12}><Form.Item name="shift_code" label="Khung ca" rules={[{ required: true }]}><Select options={shiftOptions} disabled placeholder="Theo ca đã chọn" /></Form.Item></Col>
           <Col xs={24} md={12}><Form.Item name="kind" label="Phân loại bổ sung công" rules={[{ required: true }]}><Select options={KIND_OPTIONS} /></Form.Item></Col>
         </Row>
         <Row gutter={12}>
-          <Col xs={12} md={8}><Form.Item name="requested_check_in_at" label="Giờ vào ca (Cố định)" rules={[{ required: true }]}><TimeStringPicker disabled /></Form.Item></Col>
-          <Col xs={12} md={8}><Form.Item name="requested_check_out_at" label="Giờ ra ca (Cố định)" rules={[{ required: true }]}><TimeStringPicker disabled /></Form.Item></Col>
-          <Col xs={24} md={8}><Form.Item name="requested_hours" label="Giờ công (Cố định)" rules={[{ required: true }]}><InputNumber min={0.5} max={16} step={0.5} style={{ width: '100%' }} suffix="giờ" disabled /></Form.Item></Col>
+          <Col xs={12} md={8}><Form.Item name="requested_check_in_at" label="Giờ vào ca" rules={[{ required: true }]}><TimeStringPicker disabled /></Form.Item></Col>
+          <Col xs={12} md={8}><Form.Item name="requested_check_out_at" label="Giờ ra ca" rules={[{ required: true }]}><TimeStringPicker disabled /></Form.Item></Col>
+          <Col xs={24} md={8}><Form.Item name="requested_hours" label="Giờ công" rules={[{ required: true }]}><InputNumber min={0.5} max={16} step={0.5} style={{ width: '100%' }} suffix="giờ" disabled /></Form.Item></Col>
         </Row>
         <Form.Item name="reason" label="Lý do giải trình bổ sung công" rules={[{ required: true, message: 'Vui lòng nhập lý do giải trình' }]}>
           <Input.TextArea rows={2} placeholder="Nêu rõ lý do cần bù ca vắng mặt để Cửa hàng xác nhận và HR phê duyệt..." />

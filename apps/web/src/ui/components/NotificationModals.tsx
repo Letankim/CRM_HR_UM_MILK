@@ -149,9 +149,9 @@ export function SendNotificationModal({
             <Form.Item name="target_scope" label="Phạm vi người nhận" rules={[{ required: true }]}>
               <Select
                 options={[
-                  { value: 'ALL', label: 'Toàn hệ thống (Tất cả nhân sự)' },
-                  { value: 'ROLE', label: 'Gửi theo Nhóm nhân sự (Chọn nhiều loại)' },
-                  { value: 'USER', label: 'Gửi cho Cá nhân (Chọn nhiều người)' },
+                  { value: 'ALL', label: 'Toàn hệ thống' },
+                  { value: 'ROLE', label: 'Theo nhóm vai trò' },
+                  { value: 'USER', label: 'Theo cá nhân' },
                 ]}
               />
             </Form.Item>
@@ -160,13 +160,13 @@ export function SendNotificationModal({
         {targetScope === 'ROLE' && (
           <Form.Item
             name="recipient_roles"
-            label="Chọn các loại nhân sự / nhóm vai trò nhận thông báo (Có thể chọn nhiều)"
+            label="Nhóm vai trò nhận thông báo"
             rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 nhóm nhân sự nhận thông báo' }]}
           >
             <Select
               mode="multiple"
               allowClear
-              placeholder="Chọn 1 hoặc nhiều nhóm nhân sự (Nhân viên thử việc, Chính thức, HR, Cửa hàng...)"
+              placeholder="Chọn nhóm vai trò nhận thông báo..."
               options={ROLE_OPTIONS}
             />
           </Form.Item>
@@ -174,7 +174,7 @@ export function SendNotificationModal({
         {targetScope === 'USER' && (
           <Form.Item
             name="recipient_user_ids"
-            label="Chọn các cá nhân nhận thông báo (Có thể chọn 1 hoặc nhiều người)"
+            label="Cá nhân nhận thông báo"
             rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 cá nhân nhận thông báo' }]}
           >
             <Select
@@ -182,7 +182,7 @@ export function SendNotificationModal({
               allowClear
               showSearch
               optionFilterProp="label"
-              placeholder="Tìm và chọn 1 hoặc nhiều cá nhân theo tên, tài khoản hoặc vai trò..."
+              placeholder="Tìm và chọn cá nhân theo tên, tài khoản hoặc vai trò..."
               options={userOptions}
             />
           </Form.Item>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Alert, App, Button, Col, Descriptions, Form, Input, Modal, Row, Space, Tabs, Tag } from 'antd';
+import { App, Button, Col, Descriptions, Form, Input, Modal, Row, Space, Tabs, Tag } from 'antd';
 import {
   BankOutlined, CloseOutlined, IdcardOutlined, KeyOutlined, LockOutlined,
   MailOutlined, PhoneOutlined, SafetyCertificateOutlined, SaveOutlined, UserOutlined,
@@ -175,10 +175,6 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
             label: <span><SafetyCertificateOutlined /> Đổi mật khẩu / Mã PIN bảo mật</span>,
             children: (
               <Form form={pwdForm} layout="vertical" onFinish={(v) => changePwdMut.mutate(v)} style={{ marginTop: 4 }}>
-                <Alert
-                  type="info" showIcon style={{ marginBottom: 12 }}
-                  message="Nhập mật khẩu hiện tại của bạn và mật khẩu mới tối thiểu 6 ký tự."
-                />
                 <Form.Item name="current_secret" label="Mật khẩu / Mã PIN hiện tại" rules={[{ required: true, message: 'Vui lòng nhập mật khẩu hoặc mã PIN hiện tại' }]}>
                   <Input.Password prefix={<LockOutlined />} placeholder="Nhập mật khẩu hoặc mã PIN đang sử dụng" />
                 </Form.Item>

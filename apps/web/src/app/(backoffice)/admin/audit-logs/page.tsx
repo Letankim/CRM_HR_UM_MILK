@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, App, Segmented, Space, Tag, Typography } from 'antd';
+import { App, Segmented, Space, Tag, Typography } from 'antd';
 import { AuditOutlined, CloseOutlined, DownloadOutlined, FolderOpenOutlined, RollbackOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Suspense, useState } from 'react';
@@ -121,11 +121,6 @@ function AuditLogsView() {
 
   return (
     <>
-      <Alert
-        type={view === 'ARCHIVED' ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
-        message={view === 'ARCHIVED' ? 'Kho Lưu trữ Đã dọn: Toàn bộ các phiên và nhật ký kiểm toán đã làm trống khỏi màn hình chính đều được lưu trữ an toàn tại đây. Bạn có thể tra cứu, xuất Excel hoặc khôi phục bất kỳ lúc nào.' : 'Nhật ký Kiểm toán Hệ thống: Bạn có thể chọn từng phiên hoặc bấm "Lưu trữ & Làm trống" để dọn gọn màn hình hiện hành mà vẫn bảo toàn 100% lịch sử trong Kho Lưu trữ.'}
-      />
-
       <FilterToolbar
         searchPlaceholder="Tìm người thực hiện, hành động, phân hệ..."
         searchValue={q}

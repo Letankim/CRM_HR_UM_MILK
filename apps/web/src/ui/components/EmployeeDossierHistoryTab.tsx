@@ -1,7 +1,7 @@
 'use client';
 
-import { Alert, Button, Card, Col, Descriptions, Empty, Form, Input, Modal, Row, Space, Table, Tag } from 'antd';
-import { CheckCircleOutlined, CloseOutlined, FileAddOutlined, RiseOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Descriptions, Empty, Form, Input, Modal, Row, Space, Table, Tag } from 'antd';
+import { CloseOutlined, FileAddOutlined, RiseOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { useClientPagination } from '../hooks/useClientPagination';
@@ -184,7 +184,6 @@ export function PromoteOfficialModal({
     <Modal width="min(860px, 94vw)" open={Boolean(employee)} destroyOnHidden title={employee ? `Xét duyệt Chuyển Chính thức: ${employee.fullName} (${employee.employeeCode})` : 'Chuyển Chính thức'} okText="Xác nhận Chuyển Chính thức" cancelText="Hủy bỏ" okButtonProps={{ icon: <RiseOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onClose} onOk={() => form.submit()}>
       {employee && (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Alert type="info" showIcon icon={<CheckCircleOutlined />} message="Quy tắc bảo toàn lịch sử khi chuyển chính thức" description={`Giữ nguyên Mã nhân sự (${employee.employeeCode}) và không xóa mốc thử việc gốc (${employee.probationStart || '—'} đến ${employee.probationEnd || '—'}). Hệ thống sẽ ghi nhận ngày hiệu lực chính thức và lưu vào lịch sử chuyển giai đoạn của nhân sự.`} />
           <Descriptions size="small" bordered column={2}>
             <Descriptions.Item label="Công thử việc tích lũy"><span className="num" style={{ fontWeight: 600 }}>{employee.totalShiftsCount ?? 0} ca ({employee.probationHoursCompleted ?? 0} giờ)</span></Descriptions.Item>
             <Descriptions.Item label="Điểm bài TEST nghiệp vụ"><Tag color={employee.testPassed ? 'success' : 'processing'} className="num">{employee.testBestScorePercent ?? 0}% ({employee.testPassed ? 'Đạt' : 'Chưa đạt / Đang thi'})</Tag></Descriptions.Item>

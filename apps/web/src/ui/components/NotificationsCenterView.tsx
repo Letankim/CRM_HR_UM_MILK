@@ -113,12 +113,10 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
       {portal === 'backoffice' ? (
         <PageHeader
           title="Trung tâm Thông báo & Hộp thư Hệ thống"
-          description="Theo dõi toàn bộ bản tin nội bộ, thông báo theo vai trò và thông báo cá nhân được cập nhật tức thời."
           extra={soundControlBar}
         />
       ) : (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>Cấu hình bật / tắt âm thanh chuông báo khi có thông báo mới (lưu trên trình duyệt của bạn).</Typography.Text>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
           {soundControlBar}
         </div>
       )}

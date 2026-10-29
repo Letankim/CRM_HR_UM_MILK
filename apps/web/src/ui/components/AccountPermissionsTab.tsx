@@ -1,7 +1,7 @@
 'use client';
 
-import { Alert, Button, Card, Checkbox, Empty, Flex, Form, Input, Space, Spin, Table, Tag, Typography } from 'antd';
-import { CheckCircleOutlined, ClearOutlined, HistoryOutlined, LockOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { Button, Card, Checkbox, Empty, Flex, Form, Input, Space, Spin, Table, Tag, Typography } from 'antd';
+import { CheckCircleOutlined, ClearOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import {
@@ -42,14 +42,6 @@ export function AccountPermissionsFormSection({ role }: { role: Role }) {
 
   return (
     <div>
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 12 }}
-        message={`Cấu hình Phân quyền cho vai trò: ${ROLE_LABELS[role]}`}
-        description="Hệ thống áp dụng tự động bộ quyền mặc định của vai trò. Nếu có phê duyệt bổ sung từ Ban Giám đốc / Quản trị viên, bạn có thể tích cấp thêm các quyền bổ sung hợp lệ bên dưới (các quyền trái quy tắc bảo mật SEC-01/SEC-02 đã tự động ẩn)."
-      />
-
       <Card size="small" title={`1. Quyền mặc định theo vai trò ${ROLE_LABELS[role]} (${defaultPerms.length} quyền cố định)`} style={{ marginBottom: 12 }}>
         <Space size={[6, 6]} wrap>
           {defaultPerms.map((p) => (
@@ -101,7 +93,7 @@ export function AccountPermissionsFormSection({ role }: { role: Role }) {
         )}
       </Card>
 
-      <Form.Item name="reason" label="Ghi chú / Căn cứ phê duyệt phân quyền (Lưu vào Lịch sử Kiểm toán)" style={{ marginBottom: 0 }}>
+      <Form.Item name="reason" label="Ghi chú phân quyền" style={{ marginBottom: 0 }}>
         <Input placeholder="Ví dụ: Cấp bổ sung quyền theo phê duyệt của Quản lý vận hành..." />
       </Form.Item>
     </div>
@@ -113,12 +105,7 @@ export function AccountPermissionsSummaryCard({ account }: { account: AccountRow
   const extraPerms = account.extraPermissions ?? [];
 
   return (
-    <Card size="small" title={<span><SafetyCertificateOutlined /> Chi tiết Quyền hạn &amp; Chuẩn Bảo mật Mật khẩu/PIN</span>} style={{ marginTop: 12 }}>
-      <div style={{ marginBottom: 10 }}>
-        <Tag color="green" style={{ borderRadius: 2 }}>
-          <LockOutlined /> Mật khẩu / Mã PIN: Đã băm một chiều chuẩn Argon2id (Không lưu mật khẩu/PIN thô trên Google Sheets)
-        </Tag>
-      </div>
+    <Card size="small" title={<span><SafetyCertificateOutlined /> Chi tiết Quyền hạn</span>} style={{ marginTop: 12 }}>
       <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>
         Quyền mặc định của vai trò {account.roleLabel} ({defaultPerms.length}):
       </div>
@@ -162,14 +149,6 @@ export function AccountAuditHistoryTab({ accountId }: { accountId: string }) {
   const rows = historyQuery.data ?? [];
   return (
     <div>
-      <Alert
-        type="info"
-        showIcon
-        icon={<HistoryOutlined />}
-        style={{ marginBottom: 12 }}
-        message="Lịch sử Thay đổi Quyền, Phạm vi Chi nhánh & Trạng thái Tài khoản"
-        description="Mọi thao tác khởi tạo, kích hoạt, khóa/mở khóa, thu hồi hoặc thay đổi vai trò & permission bổ sung đều được ghi nhận bất biến tại Nhật ký Kiểm toán."
-      />
       <Table<AccountAuditHistoryItem>
         size="small"
         rowKey="id"

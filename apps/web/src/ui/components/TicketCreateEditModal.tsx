@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, App, Col, Form, Input, Modal, Row, Select } from 'antd';
+import { App, Col, Form, Input, Modal, Row, Select } from 'antd';
 import { CloseOutlined, SendOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
@@ -76,7 +76,7 @@ export function TicketCreateEditModal({
 
   const deptAssignees = (assigneesQ.data ?? []).filter((a) => !selectedDept || a.department === selectedDept);
   const assigneeOptions = [
-    { value: '', label: 'Toàn bộ phận tiếp nhận (Bất kỳ nhân sự phụ trách nào)' },
+    { value: '', label: 'Toàn bộ phận tiếp nhận' },
     ...deptAssignees.map((a) => ({
       value: a.id,
       label: `${a.displayName} — ${a.roleLabel}${a.branchName && a.branchName !== 'Toàn hệ thống' ? ` (${a.branchName})` : ''}`,
@@ -132,19 +132,7 @@ export function TicketCreateEditModal({
       confirmLoading={saveMut.isPending}
       destroyOnHidden
     >
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 14 }}
-        message={
-          !editingTicket
-            ? 'Chọn đúng bộ phận tiếp nhận và có thể chỉ định trực tiếp người phụ trách cụ thể. Hệ thống sẽ gửi thông báo chuông và Email tức thời tới người nhận.'
-            : isForwarding
-              ? 'Phiếu này được giao cho bạn xử lý — bạn có thể điều chỉnh bộ phận tiếp nhận hoặc chuyển tiếp tới người phụ trách cụ thể.'
-              : 'Phiếu hỗ trợ do bạn tạo không thể thay đổi bộ phận xử lý sau khi gửi. Bạn chỉ có thể cập nhật tiêu đề hoặc nội dung mô tả.'
-        }
-      />
-      <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
+      <Form form={form} layout="vertical" style={{ marginTop: 8 }} onFinish={(v) => saveMut.mutate(v)}>
         <Row gutter={12}>
           <Col xs={24} sm={14}>
             <Form.Item name="category" label="Phân loại vấn đề cần hỗ trợ" rules={[{ required: true, message: 'Vui lòng chọn phân loại' }]}>
@@ -168,19 +156,19 @@ export function TicketCreateEditModal({
 
         <Row gutter={12}>
           <Col xs={24} sm={12}>
-            <Form.Item name="target_department" label="Gửi tới Bộ phận tiếp nhận" rules={[{ required: true, message: 'Vui lòng chọn bộ phận tiếp nhận' }]}>
+            <Form.Item name="target_department" label="Bộ phận tiếp nhận" rules={[{ required: true, message: 'Vui lòng chọn bộ phận tiếp nhận' }]}>
               <Select disabled={!canEditRouting} options={TICKET_DEPARTMENT_OPTIONS} onChange={() => form.setFieldValue('assignee_user_id', '')} />
             </Form.Item>
           </Col>
           <Col xs={24} sm={12}>
-            <Form.Item name="assignee_user_id" label="Chọn cụ thể người xử lý (tùy chọn)">
+            <Form.Item name="assignee_user_id" label="Người phụ trách xử lý">
               <Select disabled={!canEditRouting} showSearch optionFilterProp="label" loading={assigneesQ.isLoading} options={assigneeOptions} />
             </Form.Item>
           </Col>
         </Row>
 
         {!editingTicket && selectedCategory === 'PAYSLIP_INQUIRY' && (payslipsQ.data?.length ?? 0) > 0 && (
-          <Form.Item name="related_entity_id" label="Đính kèm Phiếu lương cần đối chiếu (tùy chọn)">
+          <Form.Item name="related_entity_id" label="Phiếu lương đính kèm">
             <Select
               allowClear
               placeholder="Chọn kỳ phiếu lương bạn muốn thắc mắc..."

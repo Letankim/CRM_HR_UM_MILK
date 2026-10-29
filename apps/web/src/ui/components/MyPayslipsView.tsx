@@ -194,12 +194,12 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
         <Form form={form} layout="vertical" onFinish={(v) => open && disputeMut.mutate({ id: open.id, reason: String(v.reason || ''), target_department: (v.target_department || 'FINANCE') as TicketDepartment, assignee_user_id: String(v.assignee_user_id || '') })}>
           <Row gutter={12}>
             <Col xs={24} sm={12}>
-              <Form.Item name="target_department" label="Chọn Bộ phận tiếp nhận" rules={[{ required: true, message: 'Vui lòng chọn bộ phận' }]}>
+              <Form.Item name="target_department" label="Bộ phận tiếp nhận" rules={[{ required: true, message: 'Vui lòng chọn bộ phận' }]}>
                 <Select disabled={hasActiveTicket} options={TICKET_DEPARTMENT_OPTIONS} onChange={() => form.setFieldValue('assignee_user_id', '')} />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
-              <Form.Item name="assignee_user_id" label="Chọn cụ thể người xử lý (tùy chọn)">
+              <Form.Item name="assignee_user_id" label="Người phụ trách xử lý">
                 <Select disabled={hasActiveTicket} showSearch optionFilterProp="label" loading={assigneesQ.isLoading} options={[{ value: '', label: 'Toàn bộ phận tiếp nhận' }, ...deptAssignees.map((a) => ({ value: a.id, label: `${a.displayName} — ${a.roleLabel}` }))]} />
               </Form.Item>
             </Col>

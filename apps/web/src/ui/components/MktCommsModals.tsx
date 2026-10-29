@@ -44,7 +44,7 @@ export function MktAnnouncementModal({
         <Row gutter={12}>
           <Col xs={24} md={8}><Form.Item name="title" label="Tiêu đề thông báo" rules={[{ required: true, message: 'Vui lòng nhập tiêu đề thông báo' }]}><Input placeholder="Nhập tiêu đề bản tin truyền thông nội bộ..." /></Form.Item></Col>
           <Col xs={12} md={4}><Form.Item name="priority" label="Mức độ thông báo"><Select options={[{ value: 'NORMAL', label: 'Thông thường' }, { value: 'HIGH', label: 'Quan trọng' }, { value: 'URGENT', label: 'Khẩn cấp' }]} /></Form.Item></Col>
-          <Col xs={12} md={5}><Form.Item name="status" label="Chế độ phát hành"><Select options={[{ value: 'DRAFT', label: 'Lưu bản nháp (DRAFT)' }, { value: 'SCHEDULED', label: 'Đặt lịch phát ngày/giờ' }, { value: 'SENT', label: 'Phát thông báo ngay' }]} /></Form.Item></Col>
+          <Col xs={12} md={5}><Form.Item name="status" label="Chế độ phát hành"><Select options={[{ value: 'DRAFT', label: 'Lưu bản nháp' }, { value: 'SCHEDULED', label: 'Đặt lịch phát ngày/giờ' }, { value: 'SENT', label: 'Phát thông báo ngay' }]} /></Form.Item></Col>
           <Col xs={12} md={4}><Form.Item name="scheduled_at" label="Ngày phát dự kiến"><DateStringPicker placeholder="Chọn ngày" /></Form.Item></Col>
           <Col xs={12} md={3}><Form.Item name="scheduled_time" label="Giờ phát"><TimeSelect placeholder="08:00" /></Form.Item></Col>
         </Row>
@@ -116,8 +116,8 @@ export function MktAudienceModal({
             </Form.Item>
           </Col>
         </Row>
-        <Form.Item name="note" label="Mô tả phạm vi & Chính sách bảo mật dữ liệu">
-          <Input placeholder="VD: Nhóm nhận thông báo quy trình pha chế mới (Tự động ẩn 100% lương, GPS, CCCD)" />
+        <Form.Item name="note" label="Ghi chú nhóm người nhận">
+          <Input placeholder="VD: Nhóm nhận thông báo quy trình pha chế mới" />
         </Form.Item>
       </Form>
     </Modal>

@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, App, Button, Card, Col, Descriptions, Flex, Form, Input, Modal, Progress, Row, Select, Space, Tabs, Tag, Typography } from 'antd';
+import { App, Button, Card, Col, Descriptions, Flex, Form, Input, Modal, Progress, Row, Select, Space, Tabs, Tag, Typography } from 'antd';
 import { AudioOutlined, BellOutlined, CalendarOutlined, CheckCircleOutlined, CloseOutlined, CloudUploadOutlined, DeleteOutlined, EditOutlined, FileExcelOutlined, FolderOpenOutlined, NotificationOutlined, PlusOutlined, ReloadOutlined, RetweetOutlined, SearchOutlined, SendOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -68,7 +68,7 @@ export function MktCommsCenter() {
   };
   const openCreateAud = () => {
     setEditingAud(null); audForm.resetFields();
-    audForm.setFieldsValue({ scope: 'CUSTOM', branch_id: 'ALL', stage: 'ALL', staff_group: 'ALL', note: 'Nhóm người nhận được cấu hình (ẩn 100% lương/GPS/CCCD)' });
+    audForm.setFieldsValue({ scope: 'CUSTOM', branch_id: 'ALL', stage: 'ALL', staff_group: 'ALL', note: '' });
     setAudModal(true);
   };
   const openEditAud = (r: Record<string, unknown>) => {
@@ -93,7 +93,6 @@ export function MktCommsCenter() {
 
   const dashboardPane = (
     <Space direction="vertical" size={14} style={{ width: '100%' }}>
-      <Alert type="info" showIcon message="Chuẩn phân quyền & bảo mật dữ liệu Truyền thông Nội bộ" description="Bộ phận Truyền thông được phép cấu hình Nhóm người nhận theo phạm vi cho phép (Toàn công ty, Chi nhánh, Thử việc/Chính thức, Nhóm vị trí); hệ thống tự động ẩn 100% lương, GPS, ảnh điểm danh và hồ sơ HR nhạy cảm. Trạng thái gửi không khẳng định người nhận đã đọc nếu chưa có xác nhận đọc thực tế." />
       <Row gutter={[12, 12]}>{kpiCards.map((k) => <Col xs={12} md={4} key={k.label}><Card size="small" styles={{ body: { padding: '12px 14px' } }}><div style={{ fontSize: 12, color: '#64748B' }}>{k.label}</div><div className="num" style={{ fontSize: 22, fontWeight: 700, color: k.color, margin: '4px 0' }}>{k.val}</div><div style={{ fontSize: 11, color: '#94A3B8' }}>{k.sub}</div></Card></Col>)}</Row>
       <Card size="small" title={`Nội dung chờ duyệt / nháp, Lịch phát sắp tới & Cảnh báo lỗi gửi (${pendingOrFailedAncs.length})`} extra={<Space size={8}><Button size="small" onClick={() => openCreateAnc('ALL|ALL', 'DRAFT')}>Lưu nháp mới</Button><Button size="small" type="primary" onClick={() => openCreateAnc('ALL|ALL', 'SENT')}>Tạo &amp; Phát tin</Button></Space>}>
         <SelectableTable size="small" rowKey="id" pagination={false} dataSource={pendingOrFailedAncs} columns={[{ title: 'Mã tin', dataIndex: 'announcement_code', width: 95, render: (v: string) => <Tag color="geekblue">{v}</Tag> }, { title: 'Tiêu đề thông báo', dataIndex: 'title', render: (v: string, r) => <Typography.Link strong onClick={() => setViewingAnc(r)}>{v}</Typography.Link> }, { title: 'Nhóm người nhận', dataIndex: 'audienceLabel', width: 185, render: (v: string) => <Tag color="blue">{v || 'Toàn công ty'}</Tag> }, { title: 'Lịch phát dự kiến', dataIndex: 'scheduled_at', width: 155, render: (v: string) => <span className="num">{v || 'Chưa đặt lịch'}</span> }, { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag value={v} label={v === 'SCHEDULED' ? 'Đã lên lịch' : v === 'FAILED' ? 'Lỗi gửi' : 'Chờ duyệt / Nháp'} /> }, { title: 'Thao tác', width: 120, align: 'right', render: (_, r) => <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => putMut.mutate({ url: `/mkt/announcements/${r.id}`, body: { ...r, status: 'SENT', publish_now: true, version: r.version } })}>Phát ngay</Button> }]} />
@@ -165,8 +164,7 @@ export function MktCommsCenter() {
             key: 'audiences', label: <span><TeamOutlined /> Nhóm người nhận ({data?.audienceGroups?.length ?? 0})</span>,
             children: (
               <>
-                <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 10 }}>
-                  <Typography.Text type="secondary" style={{ fontSize: 13 }}>Cấu hình các nhóm người nhận theo Chi nhánh, Giai đoạn hoặc Vị trí công việc (Ẩn 100% dữ liệu HR nhạy cảm).</Typography.Text>
+                <Flex justify="flex-end" align="center" wrap gap={8} style={{ marginBottom: 10 }}>
                   <Space size={8}><GuardButton perms={['employee.manage', 'system.config']} roles={['ADMIN', 'HR']} icon={<SettingOutlined />} onClick={() => setPosModal(true)}>Quản lý Vị trí công việc</GuardButton><GuardButton type="primary" perms={['comms.manage', 'employee.manage', 'system.config']} icon={<PlusOutlined />} onClick={openCreateAud}>Cấu hình nhóm người nhận mới</GuardButton></Space>
                 </Flex>
                 <SelectableTable

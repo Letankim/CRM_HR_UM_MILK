@@ -62,7 +62,7 @@ export function TestAssignmentFormModal({
             <Select showSearch optionFilterProp="label" placeholder="Chọn nhân sự nhận đề" options={employees} />
           </Form.Item>
         ) : (
-          <Form.Item name="employee_ids" label="Nhân sự nhận đề (Có thể chọn nhiều nhân sự)" rules={[{ required: true, message: 'Chọn ít nhất 1 nhân sự' }]}>
+          <Form.Item name="employee_ids" label="Nhân sự nhận đề" rules={[{ required: true, message: 'Chọn ít nhất 1 nhân sự' }]}>
             <Select mode="multiple" allowClear showSearch optionFilterProp="label" placeholder="Chọn một hoặc nhiều nhân sự" options={employees} />
           </Form.Item>
         )}
@@ -72,7 +72,7 @@ export function TestAssignmentFormModal({
           <Col xs={12} sm={8}><Form.Item name="due_time" label="Giờ hạn nộp" rules={[{ required: true, message: 'Chọn giờ hạn nộp' }]}><TimeSelect /></Form.Item></Col>
         </Row>
         {editing && (
-          <Form.Item name="reset_attempts" label="Đặt lại số lượt đã thi về 0 (Cấp lại lượt làm bài)" valuePropName="checked">
+          <Form.Item name="reset_attempts" label="Đặt lại số lượt đã thi về 0" valuePropName="checked">
             <Switch checkedChildren="Đặt lại về 0" unCheckedChildren="Giữ nguyên" />
           </Form.Item>
         )}

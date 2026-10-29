@@ -124,17 +124,11 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
       {(totalPendingAdjs > 0 || totalMissingPunches > 0) && (
         <Alert
           type="warning" showIcon
-          message="Phát hiện dữ liệu chấm công cần đối soát trước khi khóa sổ lương"
+          message={`Phát hiện ${totalMissingPunches} ca thiếu lượt Vào/Ra hoặc vắng và ${totalPendingAdjs} phiếu điều chỉnh công chờ duyệt trước khi khóa sổ lương`}
           action={
             <Button size="small" type="primary" danger icon={<EyeOutlined />} onClick={openAllMissing}>
               Xem chi tiết ca thiếu ({allMissingShifts.length || totalMissingPunches} ca)
             </Button>
-          }
-          description={
-            <span>
-              Hệ thống ghi nhận <strong>{totalMissingPunches} ca thiếu lượt Vào/Ra ca hoặc vắng</strong> và <strong>{totalPendingAdjs} phiếu điều chỉnh công đang chờ duyệt</strong>. Nhấn <strong>Xem chi tiết ca thiếu</strong> để biết cụ thể nhân sự nào đang thiếu ca ngày nào, khung giờ nào để báo Cửa hàng / HR xử lý tại mục{' '}
-              <Link href="/admin/schedules?section=workflows"><strong>Đơn từ &amp; Điều chỉnh công</strong></Link>.
-            </span>
           }
         />
       )}

@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, App, Button, Col, Form, Input, Modal, Row, Select, Space, Tabs } from 'antd';
+import { App, Button, Col, Form, Input, Modal, Row, Select, Space, Tabs } from 'antd';
 import { CloseOutlined, KeyOutlined, SafetyCertificateOutlined, SaveOutlined, SettingOutlined, TeamOutlined, ThunderboltOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
@@ -159,7 +159,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
                       </Form.Item>
                     </Col>
                   </Row>
-                  <Form.Item label={editing ? 'Mật khẩu mới (Được băm bảo mật Argon2id)' : 'Mật khẩu / Mã PIN (Được băm bảo mật Argon2id)'} required={!editing}>
+                  <Form.Item label={editing ? 'Mật khẩu mới' : 'Mật khẩu / Mã PIN'} required={!editing}>
                     <Space.Compact style={{ width: '100%' }}>
                       <Form.Item name="secret" noStyle rules={editing ? [] : [{ required: true, min: 6, message: 'Mật khẩu tối thiểu 6 ký tự' }]}>
                         <Input.Password
@@ -202,7 +202,6 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
                     />
                   </Form.Item>
                   <Form.Item name="branch_scope" label="Phạm vi chi nhánh"><Select options={branchOptions} /></Form.Item>
-                  <Alert type="info" showIcon message="Khi chọn một Hồ sơ Nhân sự ở trên, hệ thống sẽ tự động liên kết tài khoản với hồ sơ nhân sự để đồng bộ lịch làm việc, điểm danh và phiếu lương." />
                 </>
               ),
             },

@@ -206,7 +206,7 @@ function PayrollView() {
           </Row>
           <Row gutter={12}>
             <Col xs={24} md={12}><Form.Item name="revenue_vnd" label="Doanh thu thuần trong kỳ lương (VNĐ)" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} min={1000000} step={5000000} suffix="VNĐ" {...MONEY_INPUT_PROPS} /></Form.Item></Col>
-            <Col xs={24} md={12}><Form.Item name="payroll_cost_vnd" label="Quỹ lương đối chiếu (Để trống = tự lấy theo kỳ)"><InputNumber style={{ width: '100%' }} min={0} step={1000000} suffix="VNĐ" placeholder="Tự động tổng hợp từ kỳ lương" {...MONEY_INPUT_PROPS} /></Form.Item></Col>
+            <Col xs={24} md={12}><Form.Item name="payroll_cost_vnd" label="Quỹ lương đối chiếu"><InputNumber style={{ width: '100%' }} min={0} step={1000000} suffix="VNĐ" placeholder="Để trống lấy theo kỳ lương" {...MONEY_INPUT_PROPS} /></Form.Item></Col>
           </Row>
           <Form.Item name="note" label="Ghi chú báo cáo tài chính"><Input placeholder="VD: Doanh thu POS chốt kỳ tháng 10/2026" /></Form.Item>
         </Form>

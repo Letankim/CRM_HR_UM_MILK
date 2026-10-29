@@ -81,7 +81,6 @@ export function EmployeeAccountLinkFields({ form, editing }: EmployeeAccountLink
               {editing.userRoleLabel && <span style={{ color: '#475569' }}>({editing.userRoleLabel})</span>}
             </Space>
           }
-          description="Bạn có thể giữ nguyên tài khoản đang liên kết, chọn liên kết sang một tài khoản khác hoặc gỡ liên kết bên dưới."
         />
       )}
 
@@ -103,13 +102,10 @@ export function EmployeeAccountLinkFields({ form, editing }: EmployeeAccountLink
         <div style={{ border: '1px solid #E5E7EB', borderRadius: 4, padding: 12, background: '#F8FAFC' }}>
           <Row gutter={12}>
             <Col span={12}>
-              <Form.Item
-                label="Tên đăng nhập"
-                extra="Bỏ trống hệ thống sẽ tự lấy theo mã nv.xxxx"
-              >
+              <Form.Item label="Tên đăng nhập">
                 <Space.Compact style={{ width: '100%' }}>
                   <Form.Item name="username" noStyle>
-                    <Input prefix={<UserOutlined />} placeholder="Ví dụ: nv.minhanh" />
+                    <Input prefix={<UserOutlined />} placeholder="Để trống tự sinh theo mã NV" />
                   </Form.Item>
                   <Button icon={<ThunderboltOutlined />} onClick={handleGenUsername}>
                     Tự sinh
@@ -134,11 +130,6 @@ export function EmployeeAccountLinkFields({ form, editing }: EmployeeAccountLink
               </Form.Item>
             </Col>
           </Row>
-          <Alert
-            type="info"
-            showIcon
-            message="Tài khoản mới tạo sẽ ở trạng thái Chờ Quản trị viên kích hoạt và tự động liên kết với hồ sơ nhân sự này."
-          />
         </div>
       )}
 
@@ -178,11 +169,6 @@ export function EmployeeAccountLinkFields({ form, editing }: EmployeeAccountLink
               </Form.Item>
             </Col>
           </Row>
-          <Alert
-            type="info"
-            showIcon
-            message="Khi lưu, hệ thống sẽ tự động đồng bộ liên kết và cập nhật mật khẩu (nếu có nhập mật khẩu mới) cho tài khoản nhân sự."
-          />
         </div>
       )}
     </div>

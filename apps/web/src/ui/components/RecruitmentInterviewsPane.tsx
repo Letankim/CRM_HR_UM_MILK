@@ -64,7 +64,7 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
     mutationFn: ({ url, body }: { url: string; body: unknown }) => api.put(url, body),
     onSuccess: (_, vars) => {
       const isEval = typeof vars.body === 'object' && vars.body !== null && 'decision' in vars.body;
-      message.success(isEval ? 'Đã lưu kết quả đánh giá phỏng vấn' : 'Đã cập nhật lịch phỏng vấn và gửi thông báo đến những người liên quan');
+      message.success(isEval ? 'Đã lưu kết quả đánh giá phỏng vấn' : 'Đã cập nhật lịch phỏng vấn thành công');
       setEvalTarget(null); setReschedTarget(null); refreshAll();
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Cập nhật thất bại'),
@@ -193,10 +193,10 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
         </Form>
       </Modal>
 
-      <Modal width={640} open={Boolean(reschedTarget)} forceRender destroyOnHidden title={reschedTarget ? `Chỉnh sửa / Đổi lịch Phỏng vấn: ${reschedTarget.candidateName}` : 'Chỉnh sửa lịch phỏng vấn'} okText="Lưu chỉnh sửa & Thông báo" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined />, loading: putMut.isPending }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={() => setReschedTarget(null)} onOk={() => reschedForm.submit()}>
+      <Modal width={640} open={Boolean(reschedTarget)} forceRender destroyOnHidden title={reschedTarget ? `Chỉnh sửa / Đổi lịch Phỏng vấn: ${reschedTarget.candidateName}` : 'Chỉnh sửa lịch phỏng vấn'} okText="Lưu cập nhật" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined />, loading: putMut.isPending }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={() => setReschedTarget(null)} onOk={() => reschedForm.submit()}>
         <Form form={reschedForm} layout="vertical" onFinish={(v) => putMut.mutate({ url: `/admin/interviews/${reschedTarget!.id}/evaluate`, body: { version: reschedTarget!.version, interviewer_ids: v.interviewer_ids, duration_minutes: Number(v.duration_minutes || 30), meet_link: v.meet_link, candidate_confirmed: Boolean(v.candidate_confirmed), reschedule_requested: Boolean(v.reschedule_requested), reschedule_reason: v.reschedule_reason, scheduled_at: `${v.interview_date}T${v.interview_slot}:00+07:00` } })}>
           <Row gutter={12}>
-            <Col span={24}><Form.Item name="interviewer_ids" label="Người tham gia phỏng vấn (tự động nhận thông báo chỉnh sửa)" rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 người phỏng vấn' }]}><Select mode="multiple" allowClear showSearch optionFilterProp="label" placeholder="Chọn người tham gia phỏng vấn" options={interviewerOptions} /></Form.Item></Col>
+            <Col span={24}><Form.Item name="interviewer_ids" label="Người tham gia phỏng vấn" rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 người phỏng vấn' }]}><Select mode="multiple" allowClear showSearch optionFilterProp="label" placeholder="Chọn người tham gia phỏng vấn" options={interviewerOptions} /></Form.Item></Col>
             <Col span={8}><Form.Item name="interview_date" label="Ngày phỏng vấn" rules={[{ required: true }]}><DateStringPicker minDate={todayStr} /></Form.Item></Col>
             <Col span={8}><Form.Item name="interview_slot" label="Giờ bắt đầu" rules={[{ required: true }]}><TimeSelect minTime={reschedDate === todayStr ? nowTimeStr : undefined} /></Form.Item></Col>
             <Col span={8}><Form.Item name="duration_minutes" label="Thời lượng" rules={[{ required: true }]}><InputNumber min={5} max={240} step={5} style={{ width: '100%' }} suffix="phút" /></Form.Item></Col>

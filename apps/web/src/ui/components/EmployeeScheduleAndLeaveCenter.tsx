@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Alert, App, Button, Flex, Segmented, Space, Tabs, Tag, Typography } from 'antd';
+import { Alert, App, Button, Flex, Segmented, Space, Tabs, Tag } from 'antd';
 import {
   AppstoreOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined,
   DeleteOutlined, DownloadOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined, SwapOutlined, TableOutlined,
@@ -89,8 +89,7 @@ export function EmployeeScheduleAndLeaveCenter({
                 {shifts.some((s) => s.status === 'ABSENT' || Boolean(s.isAbsentShift)) && (
                   <Alert type="error" showIcon message="Bạn có ca làm việc ở trạng thái Vắng mặt (do quá giờ kết thúc ca chưa điểm danh). Để bù công cho ca vắng mặt, vui lòng gửi Phiếu bổ sung công." />
                 )}
-                <Flex justify="space-between" align="center" wrap gap={8}>
-                  <Typography.Text type="secondary">Chuyển đổi chế độ xem Lưới Tuần, Lịch Tháng hoặc Bảng chi tiết ca làm việc của bạn.</Typography.Text>
+                <Flex justify="flex-end" align="center" wrap gap={8}>
                   <Segmented value={viewMode} onChange={(v) => setViewMode(v as ScheduleViewMode)} options={[{ value: 'WEEK_MATRIX', icon: <AppstoreOutlined />, label: 'Lưới Lịch Tuần' }, { value: 'CALENDAR', icon: <CalendarOutlined />, label: 'Lịch Tháng' }, { value: 'TABLE', icon: <TableOutlined />, label: 'Bảng Danh Sách' }]} />
                 </Flex>
 
@@ -132,7 +131,6 @@ export function EmployeeScheduleAndLeaveCenter({
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 <Space size={8} wrap>
                   <Tag color="blue" style={{ margin: 0, fontWeight: 600 }}>Định mức nghỉ OFF đã đăng ký: {usedOffCount} / {offQuotaLimit} ngày trong chu kỳ</Tag>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>Bấm nút thao tác ở từng dòng để xem chi tiết lý do và thời gian phê duyệt.</Typography.Text>
                 </Space>
                 <SelectableTable<Record<string, unknown>>
                   size="small" rowKey="id" loading={refreshing} pagination={leavesPag} dataSource={leaves}
@@ -170,7 +168,6 @@ export function EmployeeScheduleAndLeaveCenter({
             label: <span><SwapOutlined /> Yêu cầu đổi ca ({swaps.length})</span>,
             children: (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                <Alert type="info" showIcon message="Quy trình đổi ca 3 bước: (1) Bạn tạo yêu cầu -> (2) Đồng nghiệp xác nhận nhận ca -> (3) Quản lý duyệt cập nhật lịch chính thức." />
                 <SelectableTable<Record<string, unknown>>
                   size="small" rowKey="id" loading={refreshing} pagination={swapsPag} dataSource={swaps}
                   bulkActions={[

@@ -110,7 +110,7 @@ export function ScheduleWorkflowModals({
       <Modal width="min(760px, 94vw)" open={leaveModal} forceRender title="Tạo đơn xin nghỉ phép (OFF)" okText="Gửi đơn nghỉ phép" cancelText="Hủy bỏ" confirmLoading={submitting} okButtonProps={{ icon: <PlusOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseLeave} onOk={() => !submitting && leaveForm.submit()}>
         <Form form={leaveForm} layout="vertical" initialValues={{ shift_code: 'CA_SANG', kind: 'WEEKLY_OFF', leave_date: dayjs().add(1, 'day').format('YYYY-MM-DD') }} onFinish={(v) => { if (submitting) return; onSubmitAction('/admin/leave-requests', v); onCloseLeave(); }}>
           <Form.Item name="employee_id" label="Nhân sự" rules={[{ required: true }]}><Select options={employees} showSearch optionFilterProp="label" placeholder="Chọn nhân sự" /></Form.Item>
-          <Row gutter={12}><Col span={12}><Form.Item name="leave_date" label="Ngày nghỉ" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col><Col span={12}><Form.Item name="shift_code" label="Khung ca (theo chi nhánh)"><Select options={leaveShiftOptions} /></Form.Item></Col></Row>
+          <Row gutter={12}><Col span={12}><Form.Item name="leave_date" label="Ngày nghỉ" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col><Col span={12}><Form.Item name="shift_code" label="Khung ca"><Select options={leaveShiftOptions} /></Form.Item></Col></Row>
           <Form.Item name="reason" label="Lý do xin nghỉ" rules={[{ required: true }]}><Input.TextArea rows={2} /></Form.Item>
         </Form>
       </Modal>
@@ -119,7 +119,7 @@ export function ScheduleWorkflowModals({
         <Form form={swapForm} layout="vertical" onFinish={(v) => { if (submitting) return; onSubmitAction('/admin/shift-swaps', v); onCloseSwap(); }}>
           <Form.Item name="from_assignment_id" label="Ca làm việc cần đổi" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" placeholder="Chọn ca làm việc cần đổi" onChange={(id) => { const found = assignments.find((a) => a.id === id); if (found) { swapForm.setFieldValue('requester_id', found.employeeId); swapForm.setFieldValue('peer_id', undefined); } }} options={assignments.filter((a) => a.status === 'PUBLISHED').map((a) => { const pCode = a.pendingSwapCode || a.pendingLeaveCode || a.pendingEmergencyCode; return { value: a.id, disabled: Boolean(pCode), label: `${a.workDate} — ${a.shiftLabel} (${a.employeeName})${pCode ? ` [Đang chờ duyệt ${pCode}]` : ''}` }; })} /></Form.Item>
           <Form.Item name="requester_id" label="Người xin đổi ca" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" placeholder="Chọn người xin đổi ca" options={employees} disabled /></Form.Item>
-          <Form.Item name="peer_id" label="Đồng nghiệp nhận ca thay (Bắt buộc chưa có ca ngày đó)" rules={[{ required: true, message: 'Vui lòng chọn đồng nghiệp trống lịch trong ngày đó' }]}><Select showSearch optionFilterProp="label" placeholder="Chọn đồng nghiệp chưa có ca trong ngày đó" options={swapPeerOptions} /></Form.Item>
+          <Form.Item name="peer_id" label="Đồng nghiệp nhận ca thay" rules={[{ required: true, message: 'Vui lòng chọn đồng nghiệp trống lịch trong ngày đó' }]}><Select showSearch optionFilterProp="label" placeholder="Chọn đồng nghiệp chưa có ca trong ngày đó" options={swapPeerOptions} /></Form.Item>
           <Form.Item name="reason" label="Lý do đổi ca" rules={[{ required: true }]}><Input.TextArea rows={2} /></Form.Item>
         </Form>
       </Modal>
@@ -127,12 +127,12 @@ export function ScheduleWorkflowModals({
       <Modal width="min(760px, 94vw)" open={emgModal} forceRender title="Báo nghỉ đột xuất / Khẩn cấp" okText="Gửi báo nghỉ khẩn" cancelText="Hủy bỏ" confirmLoading={submitting} okButtonProps={{ danger: true, icon: <AlertOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseEmg} onOk={() => !submitting && emgForm.submit()}>
         <Form form={emgForm} layout="vertical" initialValues={{ work_date: dayjs().format('YYYY-MM-DD'), shift_code: 'CA_TOI' }} onFinish={(v) => { if (submitting) return; onSubmitAction('/admin/emergency-leaves', v); onCloseEmg(); }}>
           <Form.Item name="employee_id" label="Nhân sự" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" placeholder="Chọn nhân sự" options={employees} /></Form.Item>
-          <Row gutter={12}><Col span={12}><Form.Item name="work_date" label="Ngày ca làm việc" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col><Col span={12}><Form.Item name="shift_code" label="Khung ca (theo chi nhánh)"><Select options={emgShiftOptions} /></Form.Item></Col></Row>
+          <Row gutter={12}><Col span={12}><Form.Item name="work_date" label="Ngày ca làm việc" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col><Col span={12}><Form.Item name="shift_code" label="Khung ca"><Select options={emgShiftOptions} /></Form.Item></Col></Row>
           <Form.Item name="reason" label="Lý do khẩn cấp" rules={[{ required: true }]}><Input.TextArea rows={2} /></Form.Item>
         </Form>
       </Modal>
 
-      <Modal width="min(840px, 94vw)" open={adjModal} forceRender title="Tạo phiếu bổ sung công (Chỉ áp dụng cho ca Vắng mặt cần bù công)" okText="Tạo phiếu bổ sung" cancelText="Hủy bỏ" confirmLoading={submitting} okButtonProps={{ icon: <FileAddOutlined />, disabled: !isAdjShiftLocked || submitting }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseAdj} onOk={() => !submitting && adjForm.submit()}>
+      <Modal width="min(840px, 94vw)" open={adjModal} forceRender title="Tạo phiếu bổ sung công" okText="Tạo phiếu bổ sung" cancelText="Hủy bỏ" confirmLoading={submitting} okButtonProps={{ icon: <FileAddOutlined />, disabled: !isAdjShiftLocked || submitting }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseAdj} onOk={() => !submitting && adjForm.submit()}>
         <Form
           form={adjForm} layout="vertical"
           initialValues={{ kind: 'FORGOT_CHECK_IN', reason: 'Bổ sung công bù ca Vắng mặt do nhân sự quên điểm danh đúng giờ' }}
@@ -173,14 +173,14 @@ export function ScheduleWorkflowModals({
             />
           </Form.Item>
           <Row gutter={12}>
-            <Col xs={24} md={8}><Form.Item name="work_date" label="Ngày công (Cố định)" rules={[{ required: true }]}><DateStringPicker disabled /></Form.Item></Col>
-            <Col xs={24} md={8}><Form.Item name="shift_code" label="Khung ca (Cố định)" rules={[{ required: true }]}><Select options={allShiftOptions} disabled placeholder="Tự động theo ca vắng" /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="work_date" label="Ngày công" rules={[{ required: true }]}><DateStringPicker disabled /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="shift_code" label="Khung ca" rules={[{ required: true }]}><Select options={allShiftOptions} disabled placeholder="Theo ca đã chọn" /></Form.Item></Col>
             <Col xs={24} md={8}><Form.Item name="kind" label="Phân loại" rules={[{ required: true }]}><Select options={KIND_OPTIONS} /></Form.Item></Col>
           </Row>
           <Row gutter={12}>
-            <Col xs={12} md={8}><Form.Item name="requested_check_in_at" label="Giờ vào ca (Cố định)"><TimeStringPicker disabled /></Form.Item></Col>
-            <Col xs={12} md={8}><Form.Item name="requested_check_out_at" label="Giờ ra ca (Cố định)"><TimeStringPicker disabled /></Form.Item></Col>
-            <Col xs={24} md={8}><Form.Item name="requested_hours" label="Giờ công (Cố định)" rules={[{ required: true }]}><InputNumber min={0.5} max={16} step={0.5} style={{ width: '100%' }} suffix="giờ" disabled /></Form.Item></Col>
+            <Col xs={12} md={8}><Form.Item name="requested_check_in_at" label="Giờ vào ca"><TimeStringPicker disabled /></Form.Item></Col>
+            <Col xs={12} md={8}><Form.Item name="requested_check_out_at" label="Giờ ra ca"><TimeStringPicker disabled /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="requested_hours" label="Giờ công" rules={[{ required: true }]}><InputNumber min={0.5} max={16} step={0.5} style={{ width: '100%' }} suffix="giờ" disabled /></Form.Item></Col>
           </Row>
           <Form.Item name="reason" label="Giải trình lý do bổ sung công" rules={[{ required: true }]}><Input.TextArea rows={2} /></Form.Item>
         </Form>

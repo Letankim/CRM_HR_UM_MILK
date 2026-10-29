@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { App, Button, Card, Col, Form, Input, InputNumber, Modal, Radio, Row, Select, Space, Tabs, Tag, Typography } from 'antd';
+import { App, Button, Card, Col, Form, Input, InputNumber, Modal, Radio, Row, Select, Space, Tabs, Tag } from 'antd';
 import { BookOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, FileDoneOutlined, HistoryOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined, SendOutlined, SettingOutlined, ThunderboltOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -182,7 +182,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
               key: 'questions', forceRender: true, label: <span><UnorderedListOutlined /> Danh sách Câu hỏi Trắc nghiệm ({questions.length} câu)</span>,
               children: (
                 <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}><Typography.Text type="secondary">Chọn nút &quot;Đúng&quot; ở phương án chính xác để hệ thống tự động chấm điểm khi nhân sự nộp bài.</Typography.Text><Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setQuestions((prev) => [...prev, { id: `q${Date.now()}`, q: '', options: ['Phương án A', 'Phương án B', 'Phương án C', 'Phương án D'], answer: 0 }])}>Thêm câu hỏi mới</Button></div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 10 }}><Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setQuestions((prev) => [...prev, { id: `q${Date.now()}`, q: '', options: ['Phương án A', 'Phương án B', 'Phương án C', 'Phương án D'], answer: 0 }])}>Thêm câu hỏi mới</Button></div>
                   <Space direction="vertical" size={10} style={{ width: '100%', maxHeight: 420, overflowY: 'auto' }}>
                     {questions.map((item, idx) => (
                       <Card key={item.id} size="small" title={`Câu hỏi ${idx + 1}`} extra={questions.length > 1 && <Button size="small" danger icon={<DeleteOutlined />} onClick={() => setQuestions((prev) => prev.filter((_, i) => i !== idx))} />}>

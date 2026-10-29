@@ -102,7 +102,7 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
   const postMut = useMutation({
     mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body),
     onSuccess: () => {
-      message.success('Đã đặt lịch phỏng vấn và gửi thông báo tới tất cả người tham gia phỏng vấn');
+      message.success('Đã đặt lịch phỏng vấn thành công');
       refreshAll();
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Đặt lịch phỏng vấn thất bại'),
@@ -174,8 +174,8 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
             setRecSubTab('interviews');
           }}
         >
-          <Form.Item name="candidate_id" label="Ứng viên (chỉ chọn ứng viên chưa có lịch phỏng vấn)" rules={[{ required: true, message: 'Vui lòng chọn ứng viên' }]}><Select showSearch optionFilterProp="label" placeholder="Chọn ứng viên phỏng vấn" options={(candQ.data?.data ?? []).map((c) => { const hasIv = scheduledCandidateIds.has(String(c.id)) || scheduledCandidateIds.has(String(c.candidate_code)); return { value: String(c.id), disabled: hasIv, label: `${c.candidate_code} — ${c.full_name} (${c.phone})${hasIv ? ' — Đã có lịch phỏng vấn (chỉ chỉnh sửa)' : ''}` }; })} /></Form.Item>
-          <Form.Item name="interviewer_ids" label="Người tham gia phỏng vấn (tự động nhận thông báo lịch phỏng vấn)" rules={[{ required: true, message: 'Chọn ít nhất 1 người phỏng vấn' }]}><Select mode="multiple" allowClear showSearch optionFilterProp="label" placeholder="Chọn một hoặc nhiều người phỏng vấn" options={interviewerOptions} /></Form.Item>
+          <Form.Item name="candidate_id" label="Ứng viên phỏng vấn" rules={[{ required: true, message: 'Vui lòng chọn ứng viên' }]}><Select showSearch optionFilterProp="label" placeholder="Chọn ứng viên phỏng vấn" options={(candQ.data?.data ?? []).map((c) => { const hasIv = scheduledCandidateIds.has(String(c.id)) || scheduledCandidateIds.has(String(c.candidate_code)); return { value: String(c.id), disabled: hasIv, label: `${c.candidate_code} — ${c.full_name} (${c.phone})${hasIv ? ' — Đã có lịch phỏng vấn' : ''}` }; })} /></Form.Item>
+          <Form.Item name="interviewer_ids" label="Người tham gia phỏng vấn" rules={[{ required: true, message: 'Chọn ít nhất 1 người phỏng vấn' }]}><Select mode="multiple" allowClear showSearch optionFilterProp="label" placeholder="Chọn người tham gia phỏng vấn" options={interviewerOptions} /></Form.Item>
           <Row gutter={12}>
             <Col span={8}>
               <Form.Item

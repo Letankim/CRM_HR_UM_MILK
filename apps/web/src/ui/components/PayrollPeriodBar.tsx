@@ -50,7 +50,7 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
   const notifyPayslips = useMutation({
     mutationFn: () => api.post<{ count: number }>(`/admin/payroll/periods/${period.id}/notify-payslips`),
     onSuccess: (d) => {
-      message.success(`Đã đồng bộ phiếu lương, gửi thông báo chuông và Email cho ${d?.count ?? period.total_employees} nhân sự`);
+      message.success(`Đã đồng bộ và gửi phiếu lương cho ${d?.count ?? period.total_employees} nhân sự`);
       qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
       refresh();
     },
@@ -89,7 +89,7 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
           <Space size={8} wrap>
             {isPublishedOrPaid && canNotify && (
               <Button size="small" icon={<MailOutlined />} loading={notifyPayslips.isPending} onClick={() => notifyPayslips.mutate()}>
-                Gửi lại thông báo &amp; Email
+                Gửi lại phiếu lương
               </Button>
             )}
             {canManage && editable && <Button size="small" icon={<CalculatorOutlined />} loading={recalc.isPending} onClick={() => recalc.mutate()}>Tính lại</Button>}

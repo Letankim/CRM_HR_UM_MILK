@@ -50,8 +50,7 @@ export function MyShiftRegisterModal({
   });
 
   return (
-    <Modal width={640} open={open} forceRender title="Đăng ký ca làm việc cá nhân của bạn" onCancel={onClose} onOk={() => form.submit()} okText="Gửi đăng ký ca (Chờ duyệt)" cancelText="Hủy bỏ" okButtonProps={{ icon: <PlusOutlined />, loading: createShiftMut.isPending }} cancelButtonProps={{ icon: <CloseOutlined /> }}>
-      <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Quy trình đăng ký ca: Ca đăng ký mới sẽ ở trạng thái Chờ duyệt. Sau khi Quản lý cửa hàng (chi nhánh trực thuộc) hoặc HR phê duyệt chuyển sang Đã phân ca chính thức, bạn mới được phép chấm công Vào/Ra ca." />
+    <Modal width={640} open={open} forceRender title="Đăng ký ca làm việc cá nhân" onCancel={onClose} onOk={() => form.submit()} okText="Gửi đăng ký ca" cancelText="Hủy bỏ" okButtonProps={{ icon: <PlusOutlined />, loading: createShiftMut.isPending }} cancelButtonProps={{ icon: <CloseOutlined /> }}>
       {isTodaySelected && availableToday.length === 0 && (
         <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`Tất cả các khung ca trong ngày hôm nay (${dayjs(todayDate).format('DD/MM/YYYY')}) đã trôi qua (hiện tại ${nowHm}). Vui lòng chọn ngày làm việc từ ngày mai trở đi.`} />
       )}
@@ -193,7 +192,7 @@ export function ShiftSwapRequestModal({
   };
 
   return (
-    <Modal width={640} open={open} forceRender title="Tạo yêu cầu đổi ca nội bộ (Quy trình 3 bước)" onCancel={onClose} onOk={handleSubmit} confirmLoading={loading} okText="Gửi yêu cầu đổi ca" cancelText="Đóng" okButtonProps={{ icon: <SendOutlined />, disabled: shiftOptions.length === 0 || availablePeers.length === 0 }} cancelButtonProps={{ icon: <CloseOutlined /> }}>
+    <Modal width={640} open={open} forceRender title="Tạo yêu cầu đổi ca" onCancel={onClose} onOk={handleSubmit} confirmLoading={loading} okText="Gửi yêu cầu đổi ca" cancelText="Đóng" okButtonProps={{ icon: <SendOutlined />, disabled: shiftOptions.length === 0 || availablePeers.length === 0 }} cancelButtonProps={{ icon: <CloseOutlined /> }}>
       {shiftOptions.length === 0 ? (
         <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Bạn chưa có ca làm việc đã phát hành nào để tạo yêu cầu đổi ca. Hãy đăng ký ca và chờ Quản lý cửa hàng / HR duyệt trước." />
       ) : availablePeers.length === 0 && selectedWorkDate ? (
@@ -210,8 +209,8 @@ export function ShiftSwapRequestModal({
           }
         }}
       >
-        <Form.Item name="from_assignment_id" label="Chọn ca làm việc của bạn cần đổi" rules={[{ required: true, message: 'Vui lòng chọn ca làm việc cần đổi' }]}><Select showSearch optionFilterProp="label" options={shiftOptions} placeholder="Chọn ca làm việc của bạn" /></Form.Item>
-        <Form.Item name="peer_id" label="Chọn đồng nghiệp nhận ca thay (Bắt buộc chưa có ca trong ngày đó)" rules={[{ required: true, message: 'Vui lòng chọn đồng nghiệp trống lịch trong ngày đó' }]}><Select showSearch optionFilterProp="label" options={peerOptions} placeholder="Chọn đồng nghiệp chưa có ca trong ngày đó" /></Form.Item>
+        <Form.Item name="from_assignment_id" label="Ca làm việc cần đổi" rules={[{ required: true, message: 'Vui lòng chọn ca làm việc cần đổi' }]}><Select showSearch optionFilterProp="label" options={shiftOptions} placeholder="Chọn ca làm việc của bạn" /></Form.Item>
+        <Form.Item name="peer_id" label="Đồng nghiệp nhận ca thay" rules={[{ required: true, message: 'Vui lòng chọn đồng nghiệp trống lịch trong ngày đó' }]}><Select showSearch optionFilterProp="label" options={peerOptions} placeholder="Chọn đồng nghiệp chưa có ca trong ngày đó" /></Form.Item>
         <Form.Item name="reason" label="Lý do xin đổi ca" rules={[{ required: true, message: 'Vui lòng nhập lý do đổi ca' }]}><Input.TextArea rows={2} placeholder="Nêu rõ lý do xin đổi ca để đồng nghiệp và Quản lý cửa hàng phê duyệt..." /></Form.Item>
       </Form>
     </Modal>

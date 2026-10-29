@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, Button, Empty, Flex, Input, Modal, Select, Space, Table, Tag } from 'antd';
+import { Button, Empty, Flex, Input, Modal, Select, Space, Table, Tag } from 'antd';
 import { CloseOutlined, EyeOutlined, FileExcelOutlined, SafetyCertificateOutlined, SearchOutlined, TeamOutlined, WarningOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import Link from 'next/link';
@@ -101,11 +101,6 @@ export function PayrollMissingShiftsModal({
       }
     >
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
-        <Alert
-          type="warning" showIcon
-          message="Hướng dẫn đối soát dành cho Kế toán"
-          description="Dưới đây là danh sách cụ thể từng ngày, từng ca làm việc đang bị thiếu giờ Vào/Ra hoặc chưa hoàn tất trong kỳ lương. Kế toán có thể xuất file Excel hoặc báo trực tiếp ngày ca / khung ca bên dưới cho Quản lý cửa hàng và HR để duyệt phiếu bổ sung công (hoặc xóa ca trên lịch nếu phân ca nhầm)."
-        />
         <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '10px 12px' }}>
           <Flex justify="space-between" align="center" wrap gap={8}>
             <Space wrap size={8}>

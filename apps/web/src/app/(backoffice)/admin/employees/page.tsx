@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, App, Button } from 'antd';
+import { App } from 'antd';
 import { CloseOutlined, DeleteOutlined, SettingOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -154,9 +154,6 @@ function EmployeesView() {
     <>
       {section === 'employees' ? (
         <>
-          {!canManage && (
-            <Alert type="info" showIcon style={{ marginBottom: 12 }} message={canSeeSalary ? 'Chế độ Quan sát Quản trị: Vai trò hiện tại chỉ xem và giám sát hồ sơ nhân sự. Nghiệp vụ thêm/sửa/xóa và chuyển chính thức do bộ phận Nhân sự (HR) thực hiện.' : 'Chế độ Quản lý Cửa hàng: Chỉ hiển thị nhân sự thuộc chi nhánh được phân công (ẩn thông tin lương, tài khoản ngân hàng và CCCD nhạy cảm).'} />
-          )}
           <FilterToolbar
             searchPlaceholder="Tìm tên nhân viên, mã NV0001, SĐT 09..."
             searchValue={q}

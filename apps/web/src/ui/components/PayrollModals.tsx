@@ -41,7 +41,7 @@ export function CreatePeriodModal({ open, onClose }: { open: boolean; onClose: (
   return (
     <Modal
       width={640}
-      title="Khởi tạo Kỳ Lương Mới (Tự động tổng hợp Công, Lương & Thưởng)"
+      title="Khởi tạo Kỳ Lương Mới"
       open={open}
       onOk={async () => mut.mutate(await form.validateFields())}
       onCancel={onClose}
