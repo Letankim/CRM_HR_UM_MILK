@@ -4,6 +4,7 @@ import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 import { getMatchingUsersForAudience } from '../routes/job-positions-and-audiences.routes.js';
 import { singleFlight, tolerantWrite } from './background-write.js';
 import { resolveNotificationEventTime } from './notification-time.js';
+import { syncPayslipConfirmNotifications } from './payslip.service.js';
 import { healOpenPayslipDisputesToTickets, isStaleTicketNotification, syncSupportTicketBellNotifications } from './ticket-notification.service.js';
 
 const syncInFlight = new WeakMap<object, Promise<void>>(), lastSyncSig = new WeakMap<object, string>(), SYNC_ACTOR = 'system-sync';
@@ -184,7 +185,7 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
     if (!hasKey('PAYSLIP_USER', ps.id)) await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: ps.branch_id || 'ALL', category: 'PAYROLL', title: `Phiếu lương cá nhân đã phát hành: ${ps.period_name || ps.payslip_code}`, body: `Thực lĩnh (NET): ${Number(ps.net_vnd || 0).toLocaleString('vi-VN')}đ — Vui lòng kiểm tra chi tiết và xác nhận phiếu lương.`, link: '/nv/phieu-luong', severity: 'INFO', entity_type: 'PAYSLIP_USER', entity_id: ps.id });
     if ((ps.status === 'PAID' || paidPeriodIds.has(ps.period_id)) && !hasKey('PAYSLIP_USER', `${ps.id}_PAID`)) await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: ps.branch_id || 'ALL', category: 'PAYROLL', title: `Đã thanh toán lương cá nhân: ${ps.period_name || ps.payslip_code}`, body: `Kế toán đã xác nhận chi trả lương thực lĩnh ${Number(ps.net_vnd || 0).toLocaleString('vi-VN')}đ cho kỳ ${ps.period_name || ps.payslip_code}.`, link: '/nv/phieu-luong', severity: 'INFO', entity_type: 'PAYSLIP_USER', entity_id: `${ps.id}_PAID` });
   }
-  await syncSupportTicketBellNotifications(ctx, ins);
+  await syncPayslipConfirmNotifications(ctx, ins); await syncSupportTicketBellNotifications(ctx, ins);
   if (pendingInserts.length > 0) await Promise.all(pendingInserts);
   const sigAfter = computeSyncSig(ctx);
   if (sigAfter !== sigBefore) return runSyncNotifications(ctx);
@@ -192,11 +193,11 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
 }
 
 export function isNotificationCreatedByOrSelfAction(ctx: AppContext, n: NotificationRow, userId: string): boolean {
-  const meUser = ctx.db.users.get(userId);
-  const myEmp = ctx.db.employees.find((e) => e.user_id === userId || Boolean(meUser?.employee_id && (e.id === meUser.employee_id || e.employee_code === meUser.employee_id)));
+  const meUser = ctx.db.users.get(userId), myEmp = ctx.db.employees.find((e) => e.user_id === userId || Boolean(meUser?.employee_id && (e.id === meUser.employee_id || e.employee_code === meUser.employee_id)));
   const isMyEmp = (eid?: string) => Boolean(eid && myEmp && (eid === myEmp.id || eid === myEmp.employee_code));
   const rawId = (n.entity_id || '').replace(/_(PUBLISHED|APPROVED|REJECTED|PENDING|STORE_CONFIRMED|PENDING_PEER|PEER_ACCEPTED|PEER_DECLINED|ESCALATED|RESOLVED|REPLACEMENT_FOUND)$/, '');
   const recipientUserIds = (n.recipient_user_id || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (n.entity_type === 'PAYSLIP_CONFIRMED_FINANCE') { const ps = ctx.db.payslips.get(n.entity_id); return !ps || isMyEmp(ps.employee_id) || isMyEmp(ps.employee_code); }
   if (n.entity_type === 'MANUAL' && n.created_by === userId && !recipientUserIds.includes(userId)) return true;
   if (n.entity_id.startsWith('BULK_')) return n.created_by === userId || !recipientUserIds.includes(userId);
   if (n.entity_type === 'USERS_PENDING') return n.entity_id === userId;

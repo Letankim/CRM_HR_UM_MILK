@@ -11,23 +11,11 @@ import { collectWorkEntries, type ShiftPayrollLog } from './payroll-work-collect
 import { currentProfile, profilesOf, resolveProfileAt } from './salary-profile.service.js';
 
 export interface MissingShiftDetailItem {
-  assignmentId: string;
-  employeeId: string;
-  employeeCode: string;
-  fullName: string;
-  branchName: string;
-  date: string;
-  shiftCode: string;
-  shiftLabel: string;
-  shiftTime: string;
-  hours: number;
-  checkInHm: string;
-  checkOutHm: string;
+  assignmentId: string; employeeId: string; employeeCode: string; fullName: string; branchName: string;
+  date: string; shiftCode: string; shiftLabel: string; shiftTime: string; hours: number;
+  checkInHm: string; checkOutHm: string;
   issueType: 'ABSENT' | 'MISSING_CHECKOUT' | 'MISSING_CHECKIN' | 'PENDING_ADJUSTMENT';
-  issueLabel: string;
-  pendingAdjustmentCode: string | null;
-  pendingAdjustmentStatus: string | null;
-  actionGuide: string;
+  issueLabel: string; pendingAdjustmentCode: string | null; pendingAdjustmentStatus: string | null; actionGuide: string;
 }
 
 interface SnapshotAdjustmentsDetail {
@@ -127,40 +115,47 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
         actionGuide,
       };
     });
-  const slip = ctx.db.payslips.find((p) => p.status !== 'REVISED' && (p.snapshot_id === s.id || (p.period_id === s.period_id && (p.employee_id === s.employee_id || p.employee_code === s.employee_code))));
+  const slip = ctx.db.payslips.find(
+    (p) => p.status !== 'REVISED' && (p.snapshot_id === s.id || (p.period_id === s.period_id && (p.employee_id === s.employee_id || p.employee_code.trim().toUpperCase() === s.employee_code.trim().toUpperCase()))),
+  );
   const disputeTicket = slip ? ctx.db.supportTickets.filter((t) => t.related_entity_type === 'PAYSLIP' && t.related_entity_id === slip.id).slice(-1)[0] : undefined;
+  const periodStatus = period?.status ?? 'DRAFT';
+  const isPaid = periodStatus === 'PAID' || slip?.status === 'PAID';
+  const isConfirmed = Boolean(slip?.employee_confirmed_at);
+  const confirmationStatus: 'CONFIRMED' | 'DISPUTED' | 'PENDING' | 'NOT_ISSUED' = isConfirmed
+    ? 'CONFIRMED'
+    : slip?.dispute_status === 'OPEN'
+      ? 'DISPUTED'
+      : slip || periodStatus === 'PUBLISHED' || periodStatus === 'PAID'
+        ? 'PENDING'
+        : 'NOT_ISSUED';
+  const confirmationLabel = confirmationStatus === 'CONFIRMED'
+    ? 'Đã xác nhận'
+    : confirmationStatus === 'DISPUTED'
+      ? 'Đang thắc mắc'
+      : confirmationStatus === 'PENDING'
+        ? (slip?.dispute_status === 'RESOLVED' ? 'Đã phản hồi · Chờ xác nhận' : isPaid ? 'Đã thanh toán' : 'Chờ nhân sự xác nhận')
+        : 'Chưa phát hành';
+  const canAdjust = !isPaid && !isConfirmed;
+  const adjustLockReason = isPaid
+    ? 'Kỳ lương đã chuyển sang Đã thanh toán nên đã khóa toàn bộ dữ liệu, không thể điều chỉnh.'
+    : isConfirmed
+      ? 'Nhân sự đã xác nhận đồng ý phiếu lương này nên đã khóa điều chỉnh.'
+      : '';
 
   return {
-    id: s.id,
-    periodId: s.period_id,
-    periodCode: s.period_code,
-    employeeId: s.employee_id,
-    employeeCode: s.employee_code,
-    fullName: s.full_name,
-    branchId: s.branch_id,
-    branchName: s.branch_name,
+    id: s.id, periodId: s.period_id, periodCode: s.period_code, periodStatus,
+    employeeId: s.employee_id, employeeCode: s.employee_code, fullName: s.full_name,
+    branchId: s.branch_id, branchName: s.branch_name,
     staffGroupLabel: resolveStaffGroupLabel(ctx, s.staff_group, s.staff_group),
-    stage: s.stage,
-    stageLabel: EMPLOYEE_STAGE_LABELS[s.stage as keyof typeof EMPLOYEE_STAGE_LABELS] ?? s.stage,
+    stage: s.stage, stageLabel: EMPLOYEE_STAGE_LABELS[s.stage as keyof typeof EMPLOYEE_STAGE_LABELS] ?? s.stage,
     hasSalaryProfile: Boolean(s.pay_rate_id || rate),
-    rateType,
-    rateTypeLabel: rate ? PAY_RATE_TYPE_LABELS[rateType] : 'Chưa thiết lập lương',
-    unitLabel: PAY_RATE_UNIT_LABELS[rateType],
-    rateVnd: s.rate_vnd || rate?.amount_vnd || 0,
-    probationPercent: rate?.probation_percent ?? null,
-    probationHours: s.probation_hours,
-    probationRateVnd: s.probation_hourly_rate_vnd,
-    probationPayVnd: s.probation_pay_vnd,
-    officialHours: s.official_hours,
-    officialRateVnd: s.official_hourly_rate_vnd,
-    officialPayVnd: s.official_pay_vnd,
-    approvedHours: s.approved_hours,
-    standardHours,
-    actualHours: s.approved_hours,
-    approvedPayrollHours: s.approved_hours,
-    totalShiftsCount: s.total_shifts_count,
-    workedDays: detail.workedDays ?? 0,
-    missingProfileShifts: detail.missingProfileShifts ?? 0,
+    rateType, rateTypeLabel: rate ? PAY_RATE_TYPE_LABELS[rateType] : 'Chưa thiết lập lương', unitLabel: PAY_RATE_UNIT_LABELS[rateType],
+    rateVnd: s.rate_vnd || rate?.amount_vnd || 0, probationPercent: rate?.probation_percent ?? null,
+    probationHours: s.probation_hours, probationRateVnd: s.probation_hourly_rate_vnd, probationPayVnd: s.probation_pay_vnd,
+    officialHours: s.official_hours, officialRateVnd: s.official_hourly_rate_vnd, officialPayVnd: s.official_pay_vnd,
+    approvedHours: s.approved_hours, standardHours, actualHours: s.approved_hours, approvedPayrollHours: s.approved_hours,
+    totalShiftsCount: s.total_shifts_count, workedDays: detail.workedDays ?? 0, missingProfileShifts: detail.missingProfileShifts ?? 0,
     checkedInShiftsCount: liveWork?.checkedInShiftsCount ?? detail.checkedInShiftsCount ?? 0,
     adjustedShiftsCount: liveWork?.adjustedShiftsCount ?? detail.adjustedShiftsCount ?? 0,
     scheduledOnlyShiftsCount: liveWork?.scheduledOnlyShiftsCount ?? detail.scheduledOnlyShiftsCount ?? 0,
@@ -170,38 +165,22 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
     absentCount: liveWork?.absentCount ?? detail.absentCount ?? 0,
     lateCount: liveWork?.lateCount ?? detail.lateCount ?? s.late_count ?? 0,
     lateMinutesTotal: liveWork?.lateMinutesTotal ?? detail.lateMinutesTotal ?? s.late_minutes_total ?? 0,
-    missingCheckoutCount,
-    pendingAdjCount,
-    approvedAdjCount,
-    hasAnomaly,
-    missingShifts,
-    shiftLogs,
+    missingCheckoutCount, pendingAdjCount, approvedAdjCount, hasAnomaly, missingShifts, shiftLogs,
     workSourceLabel: (liveWork?.source ?? detail.source) ? PAYROLL_WORK_SOURCE_LABELS[(liveWork?.source ?? detail.source)!] : '',
-    segments: detail.segments ?? [],
-    items: detail.items ?? [],
-    allowanceLines,
-    baseSalaryVnd: s.base_salary_vnd,
-    otHours: s.ot_hours,
-    otRateVnd: s.ot_rate_vnd,
-    otPayVnd: s.ot_pay_vnd,
-    shiftSwapCount: s.shift_swap_count,
-    shiftSwapAllowanceVnd: s.shift_swap_allowance_vnd,
-    mealAllowanceVnd: s.meal_allowance_vnd,
-    transportAllowanceVnd: s.transport_allowance_vnd,
-    attendanceBonusVnd: s.attendance_bonus_vnd,
-    kpiBonusVnd: s.kpi_bonus_vnd,
-    otherAllowancesVnd: s.other_allowances_vnd,
-    positiveAdjustmentsVnd: s.positive_adjustments_vnd,
-    approvedDeductionsVnd: s.approved_deductions_vnd,
-    advanceDeductionVnd: s.advance_deduction_vnd,
-    grossVnd: s.gross_vnd,
-    netVnd: s.net_vnd,
-    bankName: s.bank_name,
-    bankAccountNumber: s.bank_account_number,
-    disputeStatus: slip?.dispute_status ?? 'NONE',
+    segments: detail.segments ?? [], items: detail.items ?? [], allowanceLines,
+    baseSalaryVnd: s.base_salary_vnd, otHours: s.ot_hours, otRateVnd: s.ot_rate_vnd, otPayVnd: s.ot_pay_vnd,
+    shiftSwapCount: s.shift_swap_count, shiftSwapAllowanceVnd: s.shift_swap_allowance_vnd,
+    mealAllowanceVnd: s.meal_allowance_vnd, transportAllowanceVnd: s.transport_allowance_vnd,
+    attendanceBonusVnd: s.attendance_bonus_vnd, kpiBonusVnd: s.kpi_bonus_vnd, otherAllowancesVnd: s.other_allowances_vnd,
+    positiveAdjustmentsVnd: s.positive_adjustments_vnd, approvedDeductionsVnd: s.approved_deductions_vnd,
+    advanceDeductionVnd: s.advance_deduction_vnd, grossVnd: s.gross_vnd, netVnd: s.net_vnd,
+    bankName: s.bank_name, bankAccountNumber: s.bank_account_number,
+    payslipId: slip?.id ?? '', payslipCode: slip?.payslip_code ?? '', payslipRevision: slip?.revision ?? 0, payslipStatus: slip?.status ?? '',
+    viewedByEmployeeAt: slip?.viewed_by_employee_at || null, employeeConfirmedAt: slip?.employee_confirmed_at || null,
+    confirmationStatus, confirmationLabel, canAdjust, adjustLockReason,
+    disputeStatus: isConfirmed ? 'NONE' : (slip?.dispute_status ?? 'NONE'),
     disputeReason: slip?.dispute_reason ?? '',
-    disputeTicketId: disputeTicket?.id ?? '',
-    disputeTicketCode: disputeTicket?.ticket_code ?? '',
+    disputeTicketId: disputeTicket?.id ?? '', disputeTicketCode: disputeTicket?.ticket_code ?? '',
     version: s.version,
   };
 }

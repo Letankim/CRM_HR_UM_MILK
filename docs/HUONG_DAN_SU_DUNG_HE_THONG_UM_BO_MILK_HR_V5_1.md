@@ -587,14 +587,14 @@ Trên đầu bảng lương hiển thị thanh 5 bước trạng thái rõ ràng
 | **1** | **Bản nháp** | **`Chuyển sang Đối soát công`** | Cho phép bấm **`Tính lại`**, thêm/sửa thưởng & khấu trừ, hoặc **`Xóa kỳ`** nếu tạo nhầm. |
 | **2** | **Đang đối soát** | **`Phê duyệt & Chốt bảng lương`** | Kế toán và Nhân sự rà soát lần cuối. Nếu còn nhân sự có giờ công nhưng chưa thiết lập Hồ sơ lương cá nhân, hệ thống sẽ hiện cảnh báo vàng và chặn phê duyệt cho tới khi bổ sung đủ hồ sơ lương. Có thể bấm **`Trả về Bản nháp`** nếu cần. |
 | **3** | **Đã phê duyệt** | **`Phát hành Phiếu lương`** | Số liệu bảng lương và các ca làm việc thuộc kỳ được **khóa bảo vệ**, không bị biến động ngầm. Vẫn có thể **`Trả về Đang đối soát`** trước khi phát hành. |
-| **4** | **Đã phát hành** | **`Xác nhận Đã thanh toán`** | Hệ thống chính thức sinh **Phiếu lương cá nhân** gửi tới từng nhân viên trên Cổng Nhân viên và qua Email (có nút **`Gửi lại phiếu lương`** khi cần đồng bộ lại thông báo). Từ bước này, bảng lương **bất biến — không thể mở khóa sửa đè**. |
-| **5** | **Đã thanh toán** | *(Hoàn tất chu kỳ)* | Khi bấm **`Xác nhận Đã thanh toán`**, Kế toán nhập **Mã chứng từ / Ủy nhiệm chi** (ví dụ: `UNC-202610-01`) để lưu vết thanh toán ngân hàng hoàn chỉnh. |
+| **4** | **Đã phát hành** | **`Xác nhận Đã thanh toán`** | Hệ thống chính thức sinh **Phiếu lương cá nhân** gửi tới từng nhân viên trên Cổng Nhân viên và qua Email (có nút **`Gửi lại phiếu lương`** khi cần đồng bộ lại thông báo). Thanh trạng thái và cột **`Xác nhận của NV`** hiển thị trực tiếp tiến độ từng người (`Đã xác nhận`, `Chờ xác nhận`, `Đang thắc mắc`). **Ở bước này, Kế toán vẫn điều chỉnh được phiếu lương của những nhân sự chưa bấm xác nhận; nhân sự đã bấm xác nhận sẽ tự động khóa điều chỉnh.** |
+| **5** | **Đã thanh toán** | *(Hoàn tất chu kỳ — Khóa 100%)* | Khi bấm **`Xác nhận Đã thanh toán`**, Kế toán nhập **Mã chứng từ / Ủy nhiệm chi** (ví dụ: `UNC-202610-01`) để lưu vết thanh toán ngân hàng. **Từ thời điểm này, toàn bộ kỳ lương và mọi phiếu lương khóa vĩnh viễn 100%, không thể thay đổi bất cứ thông tin nào.** |
 
-#### C. Xem Phiếu lương Chi tiết, Xuất Excel & Tạo Bản Điều chỉnh Sau Phát hành
-- Bấm **`Xuất Bảng lương Excel`** để tải bảng tổng hợp thanh toán lương toàn công ty.
+#### C. Xem Phiếu lương Chi tiết, Theo dõi Xác nhận NV, Xuất Excel & Tạo Bản Điều chỉnh Sau Phát hành
+- Trên bảng lương, sử dụng bộ lọc **`Mọi trạng thái xác nhận NV`** (`Đã xác nhận đồng ý`, `Chưa xác nhận (Còn điều chỉnh)`, `Đang gửi thắc mắc`) để rà soát nhanh tiến độ xác nhận trước khi chi trả; bấm **`Xuất Bảng lương Excel`** để tải bảng tổng hợp kèm cột trạng thái và thời điểm xác nhận của từng nhân sự.
 - Bấm vào bất kỳ dòng nhân sự nào trên bảng lương để mở ngăn trượt **`Phiếu lương chi tiết`**:
   - Xem đầy đủ 4 Tab phân rã từng ngày công, đơn giá áp dụng, phụ cấp, thưởng/khấu trừ và bấm **`Xuất phiếu lương Excel`**.
-  - **Xử lý sai lệch sau khi kỳ lương đã phát hành**: Tuyệt đối không sửa đè phiếu lương cũ; Kế toán bấm nút **`Tạo bản điều chỉnh`** ngay trong ngăn Phiếu lương để ghi nhận khoản chênh lệch cộng/trừ minh bạch kèm lý do kiểm toán.
+  - **Xử lý sai lệch khi kỳ lương đang `Đã phát hành`**: Tuyệt đối không sửa đè phiếu lương cũ; với nhân sự **chưa xác nhận** (hoặc đang gửi thắc mắc), Kế toán bấm nút **`Tạo bản điều chỉnh`** ngay trong ngăn Phiếu lương để phát hành bản điều chỉnh mới kèm lý do kiểm toán. Ngay khi nhân sự đã bấm **`Xác nhận phiếu lương`** hoặc kỳ lương chuyển sang **`Đã thanh toán`**, nút điều chỉnh tự động khóa bảo vệ hoàn toàn.
 
 ### 14.2. Phân mục 2: `Bảng chấm công & Đối soát`
 - Tổng hợp số ca, tổng giờ công chuẩn, giờ tăng ca, số ca quên chấm công hoặc còn phiếu bù công treo chưa duyệt của từng nhân sự trong kỳ để xử lý dứt điểm trước khi bấm Phê duyệt bảng lương.
@@ -885,8 +885,8 @@ Hệ thống phân tách rõ **2 loại báo nghỉ** tùy theo thời điểm g
   - **Phụ cấp nhận đổi ca** (`30.000đ` × số ca nhận thay).
   - Các khoản **Phụ cấp cố định**, **Thưởng KPI / Doanh số** và **Khấu trừ / Tạm ứng** (nếu có) ▸ Ra số tiền **Thực lĩnh cuối cùng**.
 - **Thao tác bắt buộc của nhân viên sau khi kiểm tra phiếu lương**:
-  - Nếu toàn bộ số công và tiền lương đã chính xác: Nhấn nút **`Xác nhận phiếu lương`**.
-  - Nếu phát hiện bất kỳ điểm nào chưa khớp: Nhấn nút **`Gửi thắc mắc`** ngay trên phiếu lương — hệ thống sẽ mở sẵn Phiếu hỗ trợ đính kèm đúng mã phiếu lương đó gửi thẳng tới **Phòng Kế toán** để đối chiếu.
+  - Nếu toàn bộ số công và tiền lương đã chính xác: Nhấn nút **`Xác nhận phiếu lương`** ▸ Xác nhận đồng ý. **Lưu ý quan trọng**: Ngay sau khi bấm xác nhận, trạng thái **`Đã xác nhận`** sẽ đồng bộ tức thời sang màn hình Phòng Kế toán và hệ thống sẽ **khóa hoàn toàn nút `Gửi thắc mắc`** (đồng thời khóa chỉnh sửa trên phiếu lương đó để chuẩn bị chi trả).
+  - Nếu phát hiện bất kỳ điểm nào chưa khớp (**trước khi bấm xác nhận**): Nhấn nút **`Gửi thắc mắc`** ngay trên phiếu lương — hệ thống sẽ mở sẵn Phiếu hỗ trợ đính kèm đúng mã phiếu lương đó gửi thẳng tới **Phòng Kế toán** để đối chiếu và phát hành bản điều chỉnh.
 
 ### 26.2. `Phiếu hỗ trợ & Thắc mắc` (`/nv/ho-tro`) & `Trung tâm Thông báo` (`/nv/thong-bao`)
 - Tại **`Phiếu hỗ trợ & Thắc mắc`** (`Thanh đáy ▸ Thêm ▸ Phiếu hỗ trợ & Thắc mắc`): Nhân viên có thể tạo yêu cầu hỗ trợ gửi tới Kế toán, Nhân sự, Quản lý cửa hàng hoặc Quản trị kỹ thuật, trao đổi hai chiều trong luồng hội thoại của phiếu và bấm **`Đóng phiếu`** khi đã được giải đáp thỏa đáng.

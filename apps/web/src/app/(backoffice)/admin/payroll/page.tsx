@@ -140,7 +140,7 @@ function PayrollView() {
       {tab === 'SHEET' && currentPeriod && <PayrollSheetCard period={currentPeriod} onOpenPayslip={setPayslipSnap} />}
       {tab === 'RECONCILE' && currentPeriod && <PayrollAttendanceReconcileCard period={currentPeriod} onOpenPayslip={setPayslipSnap} />}
       {tab === 'ITEMS' && currentPeriod && (
-        <PayrollItemsCard periodId={currentPeriod.id} canManage={canManage} isLockedPeriod={isLocked} onAddItem={() => { setEditingItem(null); setItemModalOpen(true); }} onEditItem={(i) => { setEditingItem(i); setItemModalOpen(true); }} />
+        <PayrollItemsCard periodId={currentPeriod.id} periodStatus={currentPeriod.status} canManage={canManage} isLockedPeriod={isLocked} onAddItem={() => { setEditingItem(null); setItemModalOpen(true); }} onEditItem={(i) => { setEditingItem(i); setItemModalOpen(true); }} />
       )}
       {tab === 'REPORTS' && (
         <Card size="small" styles={{ body: { padding: '10px 18px 18px' } }}>
@@ -197,7 +197,7 @@ function PayrollView() {
 
       <CreatePeriodModal open={periodModalOpen} onClose={() => setPeriodModalOpen(false)} />
       {currentPeriod && <PayrollItemModal open={itemModalOpen} periodId={currentPeriod.id} employees={empOptions} editing={editingItem} onClose={() => { setItemModalOpen(false); setEditingItem(null); }} />}
-      <PayslipDrawer snapshot={payslipSnap} onClose={() => setPayslipSnap(null)} />
+      <PayslipDrawer snapshot={payslipSnap} periodStatus={currentPeriod?.status} onClose={() => setPayslipSnap(null)} />
       <Modal width={680} title="Nhập Doanh Thu Đối Chiếu & Tính Tỷ Lệ Chi Phí Lương" open={revInputOpen} onCancel={() => setRevInputOpen(false)} onOk={() => revForm.submit()} okText="Lưu đối chiếu" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} confirmLoading={saveRevMut.isPending}>
         <Form form={revForm} layout="vertical" onFinish={(v) => saveRevMut.mutate(v)} style={{ marginTop: 12 }}>
           <Row gutter={12}>

@@ -121,4 +121,20 @@ export function mapPayslip(p: Payslip) {
   };
 }
 
+export async function syncPayslipConfirmNotifications(
+  ctx: AppContext,
+  ins: (data: Omit<Parameters<typeof ctx.db.notifications.insert>[0], 'read_at'>, actorId?: string) => Promise<void>,
+): Promise<void> {
+  for (const ps of ctx.db.payslips.filter((x) => x.status !== 'REVISED' && Boolean(x.employee_confirmed_at)).slice(-100)) {
+    const emp = ctx.db.employees.get(ps.employee_id) ?? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === ps.employee_code.trim().toUpperCase());
+    const empUser = emp ? findLinkedUserForEmployee(emp, ctx) : undefined;
+    await ins({
+      recipient_user_id: '', recipient_role: 'FINANCE', branch_id: ps.branch_id || 'ALL', category: 'PAYROLL', severity: 'INFO',
+      title: `Nhân sự đã xác nhận phiếu lương: ${ps.full_name} (${ps.employee_code})`,
+      body: `${ps.full_name} (${ps.employee_code}) đã xác nhận đồng ý phiếu lương ${ps.payslip_code} (${ps.period_name}) — Thực lĩnh ${Number(ps.net_vnd || 0).toLocaleString('vi-VN')}đ.`,
+      link: '/admin/payroll', entity_type: 'PAYSLIP_CONFIRMED_FINANCE', entity_id: ps.id, created_at: ps.employee_confirmed_at,
+    }, empUser?.id || ps.updated_by);
+  }
+}
+
 export { applyPayslipAdjustment } from './payslip-adjustment.service.js';

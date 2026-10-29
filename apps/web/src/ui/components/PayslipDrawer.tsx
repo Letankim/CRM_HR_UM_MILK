@@ -1,8 +1,9 @@
 'use client';
 
 import { Alert, App, Button, Descriptions, Form, Input, InputNumber, Modal, Space, Table, Tabs, Tag, Typography } from 'antd';
-import { CalendarOutlined, CloseOutlined, EditOutlined, FileExcelOutlined, FileTextOutlined, HistoryOutlined, IdcardOutlined, SaveOutlined } from '@ant-design/icons';
+import { CalendarOutlined, CheckCircleOutlined, CloseOutlined, EditOutlined, FileExcelOutlined, FileTextOutlined, HistoryOutlined, IdcardOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { PayPeriodStatus } from '@umbm/shared';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
@@ -10,39 +11,12 @@ import { useCan } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { BaseDetailDrawer } from './BaseDetailDrawer';
-import { allowancesOf, deductionsOf, fmtVnd, MONEY_INPUT_PROPS, type PayrollSnapshotItem, type ShiftPayrollLog } from './payroll-types';
+import { LOG_STATUS_COLORS, payslipLines, type PayslipLine } from './payroll-sheet-helpers';
+import { allowancesOf, fmtVnd, MONEY_INPUT_PROPS, type PayrollSnapshotItem, type ShiftPayrollLog } from './payroll-types';
 
-interface Line { label: string; detail: string; amount: number }
+export { payslipLines };
 
-const LOG_STATUS_COLORS: Record<ShiftPayrollLog['status'], string> = {
-  ATTENDANCE_FULL: 'green',
-  ATTENDANCE_CHECKIN: 'processing',
-  ADJUSTMENT_APPROVED: 'cyan',
-  SCHEDULE_PUBLISHED: 'blue',
-  LEAVE_OFF: 'gold',
-  SWAPPED_OUT: 'purple',
-  EMERGENCY_LEAVE: 'volcano',
-  ABSENT: 'red',
-};
-
-/** Dựng các dòng phiếu lương (dùng chung cho Drawer và Xuất Excel phiếu lương) */
-export function payslipLines(s: PayrollSnapshotItem): Line[] {
-  const lines: Line[] = s.segments.map((seg) => ({
-    label: `Lương ${seg.stage === 'PROBATION' ? `thử việc (${seg.percent}%)` : 'chính thức'}`,
-    detail: `${seg.quantity} ${seg.unit} x ${fmtVnd(seg.unitRateVnd)} (${dayjs(seg.fromDate).format('DD/MM')} - ${dayjs(seg.toDate).format('DD/MM')}, ${seg.hours} giờ)`,
-    amount: seg.amountVnd,
-  }));
-  if (s.otPayVnd > 0) lines.push({ label: 'Tăng ca (OT)', detail: `${s.otHours} giờ x ${fmtVnd(s.otRateVnd)}`, amount: s.otPayVnd });
-  for (const a of s.allowanceLines) {
-    lines.push({ label: a.label, detail: a.code === 'ALLOWANCE_SWAP' ? `${s.shiftSwapCount} ca nhận đổi` : 'Theo hồ sơ lương / khoản mục đã duyệt', amount: a.amount });
-  }
-  if (s.kpiBonusVnd > 0) lines.push({ label: 'Thưởng KPI / Doanh số', detail: 'Khoản thưởng đã duyệt trong kỳ', amount: s.kpiBonusVnd });
-  if (s.positiveAdjustmentsVnd > 0) lines.push({ label: 'Điều chỉnh cộng', detail: 'Khoản bổ sung đã duyệt', amount: s.positiveAdjustmentsVnd });
-  if (deductionsOf(s) > 0) lines.push({ label: 'Khấu trừ & tạm ứng đã duyệt', detail: 'Chỉ áp dụng khoản đã phê duyệt', amount: -deductionsOf(s) });
-  return lines;
-}
-
-export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: PayrollSnapshotItem | null; onClose: () => void }) {
+export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { snapshot: PayrollSnapshotItem | null; periodStatus?: PayPeriodStatus; onClose: () => void }) {
   const [s, setS] = useState<PayrollSnapshotItem | null>(propSnap);
   const [revModal, setRevModal] = useState(false);
   const [revForm] = Form.useForm();
@@ -70,6 +44,7 @@ export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: Payro
         prev
           ? {
               ...prev,
+              payslipRevision: (prev.payslipRevision || 1) + 1,
               positiveAdjustmentsVnd: delta > 0 ? prev.positiveAdjustmentsVnd + delta : prev.positiveAdjustmentsVnd,
               approvedDeductionsVnd: delta < 0 ? prev.approvedDeductionsVnd + Math.abs(delta) : prev.approvedDeductionsVnd,
               grossVnd: delta > 0 ? prev.grossVnd + delta : prev.grossVnd,
@@ -86,7 +61,12 @@ export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: Payro
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Không thể lưu điều chỉnh lương, vui lòng thử lại'),
   });
 
+  const effStatus = periodStatus ?? s?.periodStatus ?? 'DRAFT';
+  const isPaid = effStatus === 'PAID' || s?.payslipStatus === 'PAID';
+  const isConfirmed = Boolean(s?.employeeConfirmedAt);
+  const canAdjustSlip = Boolean(s && canManage && !isPaid && !isConfirmed && s.canAdjust !== false);
   const lines = s ? payslipLines(s) : [];
+
   return (
     <BaseDetailDrawer
       title={s ? `Phiếu lương chi tiết — ${s.fullName} (${s.employeeCode})` : 'Phiếu lương'}
@@ -94,9 +74,15 @@ export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: Payro
       extra={
         <>
           {s && canManage && (
-            <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { revForm.resetFields(); setRevModal(true); }}>
-              Tạo bản điều chỉnh
-            </Button>
+            canAdjustSlip ? (
+              <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { revForm.resetFields(); setRevModal(true); }}>
+                Tạo bản điều chỉnh
+              </Button>
+            ) : isPaid ? (
+              <Tag icon={<LockOutlined />} style={{ margin: 0, borderRadius: 2 }}>Đã thanh toán — Đã khóa thay đổi</Tag>
+            ) : isConfirmed ? (
+              <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>NV đã xác nhận — Đã khóa điều chỉnh</Tag>
+            ) : null
           )}
           {s && (
             <Button
@@ -105,7 +91,7 @@ export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: Payro
                 exportToExcel({
                   fileName: `Phieu_Luong_${s.employeeCode}_${s.periodCode}.xls`,
                   sheetTitle: `PHIẾU LƯƠNG CÁ NHÂN — ${s.fullName} (${s.employeeCode})`,
-                  subtitle: `Kỳ lương: ${s.periodCode} | Chi nhánh: ${s.branchName} | Hình thức: ${s.rateTypeLabel}`,
+                  subtitle: `Kỳ lương: ${s.periodCode} | Chi nhánh: ${s.branchName} | Hình thức: ${s.rateTypeLabel} | Xác nhận NV: ${s.confirmationLabel || 'Chưa phát hành'}`,
                   columns: [{ header: 'Khoản mục', key: 'label' }, { header: 'Cách tính', key: 'detail' }, { header: 'Số tiền (VNĐ)', key: 'amount', isCurrency: true }],
                   rows: lines,
                   summaryRow: ['THỰC LĨNH', `${s.bankName || ''} ${s.bankAccountNumber || ''}`.trim(), s.netVnd],
@@ -120,6 +106,15 @@ export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: Payro
     >
       {s && (
         <>
+          {isPaid ? (
+            <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Kỳ lương đã chuyển sang Đã thanh toán — Toàn bộ số liệu bảng lương và phiếu lương đã khóa vĩnh viễn." />
+          ) : isConfirmed ? (
+            <Alert type="success" showIcon style={{ marginBottom: 12 }} message={`Nhân sự đã xác nhận đồng ý phiếu lương lúc ${dayjs(s.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')} — Phiếu lương này đã khóa điều chỉnh và khóa gửi thắc mắc.`} />
+          ) : s.disputeStatus === 'OPEN' ? (
+            <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`Nhân sự đang gửi thắc mắc${s.disputeTicketCode ? ` (${s.disputeTicketCode})` : ''} — Kế toán vẫn có thể tạo bản điều chỉnh phiếu lương.`} description={s.disputeReason || undefined} />
+          ) : effStatus === 'PUBLISHED' ? (
+            <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Nhân sự chưa bấm xác nhận phiếu lương — Kế toán vẫn có thể tạo bản điều chỉnh nếu phát hiện sai lệch." />
+          ) : null}
           {!s.hasSalaryProfile && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Nhân sự chưa được thiết lập hồ sơ lương cá nhân. Vui lòng thiết lập tại tab Hồ sơ lương nhân sự rồi tính lại kỳ lương." />}
           {s.missingProfileShifts > 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`Có ${s.missingProfileShifts} ca làm nằm ngoài thời gian hiệu lực của hồ sơ lương nên chưa được tính.`} />}
           <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '10px 12px', marginBottom: 12 }}>
@@ -139,7 +134,7 @@ export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: Payro
               {
                 key: 'lines', label: <span><FileTextOutlined /> Chi tiết Khoản mục Lương</span>,
                 children: (
-                  <Table<Line>
+                  <Table<PayslipLine>
                     size="small" rowKey={(r, i) => `${r.label}-${i}`} pagination={false} dataSource={lines}
                     columns={[
                       { title: 'Khoản mục', dataIndex: 'label', render: (v: string) => <Typography.Text strong>{v}</Typography.Text> },
@@ -182,6 +177,10 @@ export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: Payro
                 children: (
                   <Descriptions column={1} bordered size="small">
                     <Descriptions.Item label="Nhân sự">{s.fullName} ({s.employeeCode}) · {s.branchName} · {s.stageLabel}</Descriptions.Item>
+                    <Descriptions.Item label="Trạng thái xác nhận NV">
+                      {s.employeeConfirmedAt ? `Đã xác nhận lúc ${dayjs(s.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')}` : (s.confirmationLabel || 'Chưa phát hành')}
+                      {s.payslipCode ? ` · Mã phiếu: ${s.payslipCode}` : ''}
+                    </Descriptions.Item>
                     <Descriptions.Item label="Hình thức &amp; Mức lương">{s.rateTypeLabel} — {fmtVnd(s.rateVnd)}/{s.unitLabel}{s.probationPercent ? ` · Thử việc ${s.probationPercent}%` : ''}</Descriptions.Item>
                     <Descriptions.Item label="Công tính lương">{s.totalShiftsCount} ca · {s.workedDays} ngày · {s.approvedHours} giờ ({s.workSourceLabel || '—'})</Descriptions.Item>
                     <Descriptions.Item label="Đối soát chấm công &amp; phép">Điểm danh GPS: {s.checkedInShiftsCount ?? 0} ca · Bổ sung công: {s.adjustedShiftsCount ?? 0} ca · Nghỉ OFF: {s.leaveOffCount ?? 0} ngày · Nhận đổi ca: {s.shiftSwapCount} ca · Chuyển ca: {s.swappedOutCount ?? 0} ca</Descriptions.Item>
@@ -205,7 +204,7 @@ export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: Payro
               },
             ]}
           />
-          <Modal width={680} title="Điều Chỉnh Bảng Lương / Phiếu Lương Nhân Sự" open={revModal} onCancel={() => setRevModal(false)} onOk={() => revForm.submit()} okText="Lưu điều chỉnh" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} confirmLoading={revMut.isPending}>
+          <Modal width={680} title="Điều Chỉnh Bảng Lương / Phiếu Lương Nhân Sự" open={revModal} onCancel={() => setRevModal(false)} onOk={() => revForm.submit()} okText="Lưu điều chỉnh" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} confirmLoading={revMut.isPending} destroyOnHidden>
             <Form form={revForm} layout="vertical" onFinish={(v) => revMut.mutate(v)}>
               <Form.Item name="delta_vnd" label="Số tiền điều chỉnh chênh lệch (+ cộng thêm / - khấu trừ)" rules={[{ required: true, message: 'Vui lòng nhập số tiền điều chỉnh' }]}><InputNumber style={{ width: '100%' }} step={50000} placeholder="VD: 150.000 hoặc -50.000" suffix="VNĐ" {...MONEY_INPUT_PROPS} /></Form.Item>
               <Form.Item name="reason" label="Lý do điều chỉnh lương (tối thiểu 5 ký tự)" rules={[{ required: true, min: 5, message: 'Vui lòng nhập lý do điều chỉnh tối thiểu 5 ký tự' }]}><Input.TextArea rows={2} placeholder="VD: Bổ sung phụ cấp ca tối ngày 20/10 sau đối soát..." /></Form.Item>

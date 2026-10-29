@@ -2,6 +2,7 @@ import type { Payslip } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { nowIso } from '../lib/time.js';
+import { SocketEvents } from '../realtime/realtime.js';
 import { queuePayslipPublishedEmails } from './action-email-dispatcher.js';
 import { ensureSyncedNotifications } from './notification-sync.service.js';
 import { mapSnapshot, recalculatePeriodSnapshots } from './payroll-snapshot.service.js';
@@ -35,6 +36,12 @@ export async function applyPayslipAdjustment(
       : undefined);
   const period = ctx.db.payPeriods.get(slip?.period_id ?? snap?.period_id ?? '');
   if (!period || !snap) throw Errors.notFound('Không tìm thấy dữ liệu bảng lương hoặc phiếu lương của nhân sự này');
+  if (period.status === 'PAID' || slip?.status === 'PAID') {
+    throw Errors.conflict('Kỳ lương đã chuyển sang Đã thanh toán nên đã khóa toàn bộ dữ liệu, không thể điều chỉnh.');
+  }
+  if (slip?.employee_confirmed_at) {
+    throw Errors.conflict(`Nhân sự ${snap.full_name} (${snap.employee_code}) đã xác nhận đồng ý phiếu lương nên không thể điều chỉnh.`);
+  }
 
   if (period.status === 'DRAFT' || period.status === 'RECONCILE') {
     const beforeNet = snap.net_vnd;
@@ -62,6 +69,7 @@ export async function applyPayslipAdjustment(
       actorId,
     );
     await recalculatePeriodSnapshots(ctx, period, actorId, true);
+    ctx.realtime()?.broadcast(SocketEvents.PAYROLL_UPDATED, { periodId: period.id, action: 'ADJUSTED' });
     const updatedSnap = ctx.db.payrollSnapshots.get(snap.id) ?? snap;
     return {
       entity: 'PAYROLL_SNAPSHOTS' as const,
@@ -100,16 +108,6 @@ export async function applyPayslipAdjustment(
         },
       },
       {
-        name: 'INSERT_NEW_PAYSLIP_REVISION',
-        run: async (s) => {
-          s.newSlip = await ctx.db.payslips.insert(
-            { ...buildPayslipPayload(ctx, period, snap, nextRevision, after, activeSlip.gross_vnd + Math.max(0, body.delta_vnd)), status: period.status === 'PAID' ? 'PAID' : 'PUBLISHED' },
-            actorId,
-          );
-        },
-      },
-      { name: 'MARK_PREVIOUS_REVISED', run: async () => { await ctx.db.payslips.update(activeSlip.id, body.version ?? activeSlip.version, { status: 'REVISED' }, actorId); } },
-      {
         name: 'SYNC_SNAPSHOT_AND_PERIOD_TOTALS',
         run: async () => {
           const ls = ctx.db.payrollSnapshots.get(snap.id);
@@ -131,11 +129,36 @@ export async function applyPayslipAdjustment(
           }
         },
       },
+      { name: 'MARK_PREVIOUS_REVISED', run: async () => { await ctx.db.payslips.update(activeSlip.id, body.version ?? activeSlip.version, { status: 'REVISED' }, actorId); } },
+      {
+        name: 'INSERT_NEW_PAYSLIP_REVISION',
+        run: async (s) => {
+          const latestSnap = ctx.db.payrollSnapshots.get(snap.id) ?? snap;
+          const linkedTickets = ctx.db.supportTickets.filter((t) => t.related_entity_type === 'PAYSLIP' && t.related_entity_id === activeSlip.id);
+          const openTicket = linkedTickets.find((t) => t.status !== 'CLOSED' && t.status !== 'RESOLVED');
+          s.newSlip = await ctx.db.payslips.insert(
+            {
+              ...buildPayslipPayload(ctx, period, latestSnap, nextRevision, after, activeSlip.gross_vnd + Math.max(0, body.delta_vnd)),
+              status: 'PUBLISHED',
+              dispute_status: openTicket ? 'OPEN' : linkedTickets.length > 0 ? 'RESOLVED' : 'NONE',
+              dispute_reason: activeSlip.dispute_reason || '',
+            },
+            actorId,
+          );
+          for (const tck of linkedTickets) {
+            await ctx.db.supportTickets.update(tck.id, tck.version, {
+              related_entity_id: s.newSlip.id,
+              related_label: `${s.newSlip.payslip_code} — ${s.newSlip.period_name}`,
+            }, actorId);
+          }
+        },
+      },
     ],
     resultSelector: (s) => s.newSlip!,
   });
   queuePayslipPublishedEmails(ctx, period, [result], { actorEmail });
   await ensureSyncedNotifications(ctx);
+  ctx.realtime()?.broadcast(SocketEvents.PAYROLL_UPDATED, { periodId: period.id, payslipId: result.id, action: 'REVISED' });
   return {
     entity: 'PAYSLIPS' as const,
     entityId: result.id,

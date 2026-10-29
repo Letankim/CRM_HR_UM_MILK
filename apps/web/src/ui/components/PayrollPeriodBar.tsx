@@ -14,8 +14,8 @@ const STEP_ORDER: PayPeriodStatus[] = ['DRAFT', 'RECONCILE', 'APPROVED', 'PUBLIS
 const NEXT: Partial<Record<PayPeriodStatus, { next: PayPeriodStatus; label: string; confirm: string }>> = {
   DRAFT: { next: 'RECONCILE', label: 'Chuyển sang Đối soát công', confirm: 'Hệ thống sẽ tính lại bảng lương theo công và hồ sơ lương mới nhất.' },
   RECONCILE: { next: 'APPROVED', label: 'Phê duyệt & Chốt bảng lương', confirm: 'Sau khi phê duyệt, bảng lương được khóa số liệu và không tự tính lại khi dữ liệu nguồn thay đổi.' },
-  APPROVED: { next: 'PUBLISHED', label: 'Phát hành Phiếu lương', confirm: 'Phiếu lương sẽ được phát cho từng nhân viên và không thể sửa đè. Mọi sai lệch phải tạo phiếu điều chỉnh.' },
-  PUBLISHED: { next: 'PAID', label: 'Xác nhận Đã thanh toán', confirm: 'Xác nhận đã chi trả lương cho toàn bộ nhân sự trong kỳ và ghi nhận chứng từ thanh toán.' },
+  APPROVED: { next: 'PUBLISHED', label: 'Phát hành Phiếu lương', confirm: 'Phiếu lương sẽ được phát cho từng nhân viên kiểm tra và xác nhận. Ở bước Đã phát hành, Kế toán vẫn điều chỉnh được cho nhân sự chưa xác nhận; nhân sự đã xác nhận sẽ khóa điều chỉnh.' },
+  PUBLISHED: { next: 'PAID', label: 'Xác nhận Đã thanh toán', confirm: 'Sau khi chuyển sang Đã thanh toán, toàn bộ bảng lương và mọi phiếu lương sẽ khóa vĩnh viễn 100%, không thể thay đổi bất cứ thông tin nào.' },
 };
 const BACK: Partial<Record<PayPeriodStatus, PayPeriodStatus>> = { RECONCILE: 'DRAFT', APPROVED: 'RECONCILE' };
 
@@ -81,6 +81,23 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
           <span>Tổng thu nhập: <strong className="num">{fmtVnd(period.total_gross_vnd)}</strong></span>
           <span>Tổng thực lĩnh: <strong className="num" style={{ color: '#15803D', fontSize: 15 }}>{fmtVnd(period.total_net_vnd)}</strong></span>
           <StatusTag value={period.status} label={PAY_PERIOD_STATUS_LABELS[period.status]} />
+          {isPublishedOrPaid && (
+            <>
+              <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>
+                NV đã xác nhận: {period.confirmed_count ?? 0}/{period.issued_payslips_count || period.total_employees}
+              </Tag>
+              {period.status === 'PUBLISHED' && (period.unconfirmed_count ?? 0) > 0 && (
+                <Tag color="gold" style={{ margin: 0, borderRadius: 2 }}>
+                  Chưa xác nhận (còn điều chỉnh): {period.unconfirmed_count}
+                </Tag>
+              )}
+              {(period.disputed_count ?? 0) > 0 && (
+                <Tag color="volcano" style={{ margin: 0, borderRadius: 2 }}>
+                  Đang thắc mắc: {period.disputed_count}
+                </Tag>
+              )}
+            </>
+          )}
           {period.paid_at && (
             <Tag color="green">Đã thanh toán: {String(period.paid_at).slice(0, 16).replace('T', ' ')}{period.paid_by_name ? ` (${period.paid_by_name})` : ''}{period.note ? ` · CT: ${period.note}` : ''}</Tag>
           )}
@@ -103,15 +120,21 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
               <Popconfirm
                 title={next.label}
                 description={
-                  <div style={{ maxWidth: 320 }}>
+                  <div style={{ maxWidth: 340 }}>
                     <div>{next.confirm}</div>
                     {next.next === 'PAID' && (
-                      <Input
-                        size="small" style={{ marginTop: 8 }}
-                        placeholder="Mã chứng từ / Ủy nhiệm chi (VD: UNC-202610-01)"
-                        value={payVoucherNote}
-                        onChange={(e) => setPayVoucherNote(e.target.value)}
-                      />
+                      <>
+                        <div style={{ marginTop: 6, fontSize: 12, color: (period.disputed_count ?? 0) > 0 ? '#DC2626' : '#0F172A' }}>
+                          Tiến độ xác nhận: <strong>{period.confirmed_count ?? 0}/{period.issued_payslips_count || period.total_employees}</strong> nhân sự đã xác nhận
+                          {(period.disputed_count ?? 0) > 0 ? ` · Đang có ${period.disputed_count} phiếu thắc mắc mở` : ''}.
+                        </div>
+                        <Input
+                          size="small" style={{ marginTop: 8 }}
+                          placeholder="Mã chứng từ / Ủy nhiệm chi (VD: UNC-202610-01)"
+                          value={payVoucherNote}
+                          onChange={(e) => setPayVoucherNote(e.target.value)}
+                        />
+                      </>
                     )}
                   </div>
                 }

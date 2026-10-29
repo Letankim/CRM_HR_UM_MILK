@@ -7,6 +7,7 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
+import { SocketEvents } from '../realtime/realtime.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { applyPayslipAdjustment, ensurePublishedPeriodPayslips, generatePayslips, mapPayslip } from '../services/payslip.service.js';
 import { emitAndEmailTicketEvent, mapSupportTicket, upsertPayslipDisputeTicket } from '../services/ticket-notification.service.js';
@@ -104,11 +105,12 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/me/payslips/:id', { preHandler: requireAuth() }, async (request) => {
     const { id } = request.params as { id: string };
     const user = request.auth!.user, emps = findAllLinkedEmployeesForUser(user, ctx);
-    const slip = ctx.db.payslips.get(id);
+    let slip = ctx.db.payslips.get(id);
     if (!slip) throw Errors.notFound('Không tìm thấy phiếu lương');
     if (!isOwnPayslip(slip, emps, user)) throw Errors.forbidden('Bạn chỉ được xem phiếu lương của chính mình');
     const period = ctx.db.payPeriods.get(slip.period_id);
     if (!period || (period.status !== 'PUBLISHED' && period.status !== 'PAID')) throw Errors.forbidden('Phiếu lương chưa được phát hành');
+    if (!slip.viewed_by_employee_at) slip = await ctx.db.payslips.update(slip.id, slip.version, { viewed_by_employee_at: nowIso() }, user.id);
     return sendSuccess(request, 'Lấy chi tiết phiếu lương thành công', mapPayslipWithTicket(ctx, slip));
   });
 
@@ -118,13 +120,24 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
     const slip = ctx.db.payslips.get(id);
     if (!slip) throw Errors.notFound('Không tìm thấy phiếu lương');
     if (!isOwnPayslip(slip, emps, user)) throw Errors.forbidden('Bạn chỉ được xác nhận phiếu lương của chính mình');
+    const period = ctx.db.payPeriods.get(slip.period_id);
+    if (!period || (period.status !== 'PUBLISHED' && period.status !== 'PAID')) throw Errors.forbidden('Phiếu lương chưa được phát hành');
+    if (slip.employee_confirmed_at) return sendSuccess(request, 'Phiếu lương này đã được bạn xác nhận đồng ý trước đó', mapPayslipWithTicket(ctx, slip));
+    if (period.status === 'PAID' || slip.status === 'PAID') throw Errors.conflict('Kỳ lương đã chuyển sang Đã thanh toán nên đã khóa hoàn tất.');
     const now = nowIso();
     const updated = await ctx.db.payslips.update(slip.id, slip.version, { viewed_by_employee_at: slip.viewed_by_employee_at || now, employee_confirmed_at: now, dispute_status: 'NONE' }, user.id);
     const openTck = ctx.db.supportTickets.find((t) => t.related_entity_type === 'PAYSLIP' && t.related_entity_id === slip.id && t.status !== 'CLOSED');
     if (openTck) {
       await ctx.db.supportTickets.update(openTck.id, openTck.version, { status: 'CLOSED', closed_at: now, resolved_by: openTck.resolved_by || user.id, resolved_at: openTck.resolved_at || now }, user.id);
-      await ensureSyncedNotifications(ctx);
     }
+    await ensureSyncedNotifications(ctx);
+    const rt = ctx.realtime();
+    rt?.broadcast(SocketEvents.PAYROLL_UPDATED, { periodId: slip.period_id, payslipId: updated.id, action: 'CONFIRMED' });
+    rt?.toTargets({ roles: ['FINANCE', 'ADMIN'], excludeUserId: user.id }, SocketEvents.NOTIFICATION, {
+      kind: 'PAYROLL_CONFIRMED', entityId: updated.id, code: updated.payslip_code,
+      title: `Nhân sự ${updated.full_name} (${updated.employee_code}) đã xác nhận phiếu lương`,
+    });
+    await ctx.audit.record(auditContext(request), { action: 'payslip.confirm', entity: 'PAYSLIPS', entityId: updated.id, after: { payslip_code: updated.payslip_code, employee_confirmed_at: now } });
     return sendSuccess(request, 'Đã xác nhận đồng ý phiếu lương thành công', mapPayslipWithTicket(ctx, updated));
   });
 
@@ -140,6 +153,9 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
     const slip = ctx.db.payslips.get(id);
     if (!slip) throw Errors.notFound('Không tìm thấy phiếu lương');
     if (!isOwnPayslip(slip, emps, user)) throw Errors.forbidden('Bạn chỉ được gửi phản hồi cho phiếu lương của chính mình');
+    const period = ctx.db.payPeriods.get(slip.period_id);
+    if (slip.employee_confirmed_at) throw Errors.conflict('Phiếu lương này đã được bạn xác nhận đồng ý nên không thể gửi thắc mắc.');
+    if (period?.status === 'PAID' || slip.status === 'PAID') throw Errors.conflict('Kỳ lương đã chuyển sang Đã thanh toán nên không thể gửi thắc mắc trên phiếu lương này.');
     const updated = await ctx.db.payslips.update(slip.id, slip.version, { viewed_by_employee_at: slip.viewed_by_employee_at || nowIso(), dispute_status: 'OPEN', dispute_reason: body.reason }, user.id);
     const ticket = await upsertPayslipDisputeTicket(ctx, updated, user, { reason: body.reason, targetDepartment: body.target_department, assigneeUserId: body.assignee_user_id });
     await ensureSyncedNotifications(ctx);

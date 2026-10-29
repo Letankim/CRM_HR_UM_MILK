@@ -91,9 +91,12 @@ export async function ticketRoutes(app: FastifyInstance, ctx: AppContext) {
     validateAssigneeForDepartment(ctx, body.target_department, body.assignee_user_id);
     const emp = findLinkedEmployeeForUser(user, ctx);
     let relType = body.related_entity_type, relId = body.related_entity_id, relLabel = body.related_label;
-    if (body.category === 'PAYSLIP_INQUIRY' && relId) {
+    if ((body.category === 'PAYSLIP_INQUIRY' || body.related_entity_type === 'PAYSLIP') && relId) {
       const slip = ctx.db.payslips.get(relId);
       if (slip) {
+        const period = ctx.db.payPeriods.get(slip.period_id);
+        if (slip.employee_confirmed_at) throw Errors.conflict('Phiếu lương đính kèm đã được bạn xác nhận đồng ý nên không thể gửi thắc mắc.');
+        if (slip.status === 'PAID' || period?.status === 'PAID') throw Errors.conflict('Kỳ lương của phiếu lương đính kèm đã thanh toán hoàn tất nên không thể gửi thắc mắc.');
         relType = 'PAYSLIP'; relLabel = relLabel || `${slip.payslip_code} — ${slip.period_name}`;
         await ctx.db.payslips.update(slip.id, slip.version, { dispute_status: 'OPEN', dispute_reason: body.description, viewed_by_employee_at: slip.viewed_by_employee_at || nowIso() }, user.id);
       }

@@ -29,11 +29,21 @@ const ALLOWED: Record<PayPeriodStatus, PayPeriodStatus[]> = {
   DRAFT: ['RECONCILE'], RECONCILE: ['APPROVED', 'DRAFT'], APPROVED: ['PUBLISHED', 'RECONCILE'], PUBLISHED: ['PAID'], PAID: [],
 };
 
-const withLabel = (ctx: AppContext, p: PayPeriod) => ({
-  ...p,
-  statusLabel: PAY_PERIOD_STATUS_LABELS[p.status],
-  paid_by_name: p.paid_by ? (ctx.db.users.get(p.paid_by)?.display_name || ctx.db.users.find((u) => u.username === p.paid_by)?.display_name || 'Kế toán') : '',
-});
+const withLabel = (ctx: AppContext, p: PayPeriod) => {
+  const slips = ctx.db.payslips.filter((x) => x.period_id === p.id && x.status !== 'REVISED');
+  const confirmed = slips.filter((x) => Boolean(x.employee_confirmed_at)).length;
+  const disputed = slips.filter((x) => !x.employee_confirmed_at && x.dispute_status === 'OPEN').length;
+  const totalIssued = slips.length || (p.status === 'PUBLISHED' || p.status === 'PAID' ? p.total_employees : 0);
+  return {
+    ...p,
+    statusLabel: PAY_PERIOD_STATUS_LABELS[p.status],
+    paid_by_name: p.paid_by ? (ctx.db.users.get(p.paid_by)?.display_name || ctx.db.users.find((u) => u.username === p.paid_by)?.display_name || 'Kế toán') : '',
+    issued_payslips_count: slips.length,
+    confirmed_count: confirmed,
+    unconfirmed_count: Math.max(0, totalIssued - confirmed),
+    disputed_count: disputed,
+  };
+};
 
 export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/payroll/runs', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
@@ -60,12 +70,12 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.get('/api/admin/payroll/periods/:id/snapshots', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const q = (request.query ?? {}) as Record<string, string | undefined>;
-    const forceRefresh = q.refresh === '1' || q.refresh === 'true';
+    const { id } = request.params as { id: string }, q = (request.query ?? {}) as Record<string, string | undefined>;
+    const forceRefresh = q.refresh === '1' || q.refresh === 'true', actorId = request.auth?.user.id ?? 'system';
     if (forceRefresh) {
       await Promise.all([
         ctx.db.payRates.load(), ctx.db.employees.load(), ctx.db.payPeriods.load(), ctx.db.payrollItems.load(),
+        ctx.db.payrollSnapshots.load(), ctx.db.payslips.load(), ctx.db.supportTickets.load(),
         ctx.db.shiftAssignments.load(), ctx.db.attendanceEvents.load(), ctx.db.attendanceAdjustments.load(),
         ctx.db.leaveRequests.load(), ctx.db.shiftSwaps.load(), ctx.db.emergencyLeaves.load(),
       ]);
@@ -74,25 +84,27 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
     if (!period) throw Errors.notFound('Không tìm thấy kỳ lương');
     if (period.status === 'DRAFT' || period.status === 'RECONCILE') {
       await healBranchConsistency(ctx);
-      period = await recalculatePeriodSnapshots(ctx, period, request.auth?.user.id ?? 'system', forceRefresh);
+      period = await recalculatePeriodSnapshots(ctx, period, actorId, forceRefresh);
+    } else if (period.status === 'PUBLISHED' || period.status === 'PAID') {
+      await ensurePublishedPeriodPayslips(ctx, actorId, { skipEmail: true });
     }
-    const allSnaps = ctx.db.payrollSnapshots
-      .filter((s) => s.period_id === id)
-      .map((s) => mapSnapshot(s, ctx))
-      .sort((a, b) => a.employeeCode.localeCompare(b.employeeCode));
-    const branchFilter = q.branch_id && q.branch_id !== 'ALL' ? q.branch_id : '';
-    const rateFilter = q.rate_type && q.rate_type !== 'ALL' ? q.rate_type : '';
-    const anomalyFilter = q.anomaly && q.anomaly !== 'ALL' ? q.anomaly : '';
+    const allSnaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === id).map((s) => mapSnapshot(s, ctx)).sort((a, b) => a.employeeCode.localeCompare(b.employeeCode));
+    const branchFilter = q.branch_id && q.branch_id !== 'ALL' ? q.branch_id : '', rateFilter = q.rate_type && q.rate_type !== 'ALL' ? q.rate_type : '';
+    const anomalyFilter = q.anomaly && q.anomaly !== 'ALL' ? q.anomaly : '', confirmFilter = q.confirm_status && q.confirm_status !== 'ALL' ? q.confirm_status : '';
     const keyword = (q.q ?? '').trim().toLowerCase();
     const filtered = allSnaps.filter((r) => {
       if (branchFilter && r.branchId !== branchFilter && r.branchName !== branchFilter) return false;
       if (rateFilter && r.rateType !== rateFilter) return false;
       if (anomalyFilter === 'ANOMALY' && !r.hasAnomaly && (r.lateCount ?? 0) === 0) return false;
       if (anomalyFilter === 'CLEAN' && (r.hasAnomaly || (r.lateCount ?? 0) > 0)) return false;
+      if (confirmFilter === 'CONFIRMED' && r.confirmationStatus !== 'CONFIRMED') return false;
+      if (confirmFilter === 'UNCONFIRMED' && r.confirmationStatus === 'CONFIRMED') return false;
+      if (confirmFilter === 'DISPUTED' && r.confirmationStatus !== 'DISPUTED') return false;
       if (keyword && !`${r.employeeCode} ${r.fullName} ${r.branchName} ${r.stageLabel}`.toLowerCase().includes(keyword)) return false;
       return true;
     });
     const sumBy = (fn: (r: (typeof filtered)[number]) => number) => filtered.reduce((s, r) => s + fn(r), 0);
+    const confirmedCount = allSnaps.filter((r) => r.confirmationStatus === 'CONFIRMED').length;
     const summary = {
       totalEmployees: filtered.length, probationHours: sumBy((r) => r.probationHours), probationPayVnd: sumBy((r) => r.probationPayVnd),
       officialHours: sumBy((r) => r.officialHours), officialPayVnd: sumBy((r) => r.officialPayVnd), otHours: sumBy((r) => r.otHours), otPayVnd: sumBy((r) => r.otPayVnd),
@@ -101,12 +113,12 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
       deductionsVnd: sumBy((r) => r.approvedDeductionsVnd + r.advanceDeductionVnd),
       grossVnd: sumBy((r) => r.grossVnd), netVnd: sumBy((r) => r.netVnd), totalApprovedHours: sumBy((r) => r.approvedHours),
       totalMissingPunches: sumBy((r) => r.missingCheckoutCount ?? 0), totalPendingAdjs: sumBy((r) => r.pendingAdjCount ?? 0),
+      confirmedCount, unconfirmedCount: Math.max(0, allSnaps.length - confirmedCount),
+      disputedCount: allSnaps.filter((r) => r.confirmationStatus === 'DISPUTED').length,
       allMissingShifts: filtered.flatMap((r) => r.missingShifts ?? []),
     };
     if (q.page !== undefined) {
-      const result = paginateAndSort(filtered, {
-        page: Number(q.page) || 1, perPage: Number(q.per_page) || 12, maxPerPage: 500, defaultSortBy: 'employeeCode', defaultSortOrder: 'asc',
-      });
+      const result = paginateAndSort(filtered, { page: Number(q.page) || 1, perPage: Number(q.per_page) || 12, maxPerPage: 500, defaultSortBy: 'employeeCode', defaultSortOrder: 'asc' });
       Object.assign(result.meta.filters as Record<string, unknown>, { summary, period: withLabel(ctx, period) });
       return sendPaginated(request, 'Lấy chi tiết bảng lương thành công', result);
     }
@@ -114,25 +126,17 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.post('/api/admin/payroll/periods', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request, reply) => {
-    const body = zPeriodBody.parse(request.body);
+    const body = zPeriodBody.parse(request.body), actorId = request.auth!.user.id;
     const overlap = ctx.db.payPeriods.find((p) => p.from_date <= body.to_date && p.to_date >= body.from_date);
-    if (overlap) {
-      throw Errors.fieldValidation('from_date', 'DUPLICATE_VALUE', `Khoảng thời gian bị trùng với kỳ lương "${overlap.name}" (${overlap.from_date} đến ${overlap.to_date})`, body.from_date);
-    }
-    const actorId = request.auth!.user.id;
+    if (overlap) throw Errors.fieldValidation('from_date', 'DUPLICATE_VALUE', `Khoảng thời gian bị trùng với kỳ lương "${overlap.name}" (${overlap.from_date} đến ${overlap.to_date})`, body.from_date);
     const code = (body.period_code || `KL-${body.from_date.slice(0, 7).replace('-', '')}-${ctx.db.payPeriods.all(true).length + 1}`).toUpperCase();
-    if (ctx.db.payPeriods.find((p) => p.period_code === code)) {
-      throw Errors.fieldValidation('period_code', 'DUPLICATE_VALUE', 'Mã kỳ lương đã tồn tại', code);
-    }
-    const created = await ctx.db.payPeriods.insert(
-      {
-        name: body.name, from_date: body.from_date, to_date: body.to_date, status: 'DRAFT', snapshot_hash: '', approved_by: '',
-        published_at: '', paid_at: '', period_code: code, month_key: body.from_date.slice(0, 7), branch_scope: 'ALL',
-        total_employees: 0, total_approved_hours: 0, total_ot_hours: 0, total_gross_vnd: 0, total_deductions_vnd: 0, total_net_vnd: 0,
-        unreconciled_records_count: 0, reconciled_by: '', reconciled_at: '', approved_at: '', published_by: '', paid_by: '', note: body.note,
-      },
-      actorId,
-    );
+    if (ctx.db.payPeriods.find((p) => p.period_code === code)) throw Errors.fieldValidation('period_code', 'DUPLICATE_VALUE', 'Mã kỳ lương đã tồn tại', code);
+    const created = await ctx.db.payPeriods.insert({
+      name: body.name, from_date: body.from_date, to_date: body.to_date, status: 'DRAFT', snapshot_hash: '', approved_by: '',
+      published_at: '', paid_at: '', period_code: code, month_key: body.from_date.slice(0, 7), branch_scope: 'ALL',
+      total_employees: 0, total_approved_hours: 0, total_ot_hours: 0, total_gross_vnd: 0, total_deductions_vnd: 0, total_net_vnd: 0,
+      unreconciled_records_count: 0, reconciled_by: '', reconciled_at: '', approved_at: '', published_by: '', paid_by: '', note: body.note,
+    }, actorId);
     const populated = await recalculatePeriodSnapshots(ctx, created, actorId, true);
     await ctx.audit.record(auditContext(request), { action: 'payroll_period.create', entity: 'PAY_PERIODS', entityId: populated.id, after: { period_code: populated.period_code, total_net_vnd: populated.total_net_vnd } });
     reply.code(201);
@@ -140,24 +144,18 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.post('/api/admin/payroll/periods/:id/recalculate', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const period = ctx.db.payPeriods.get(id);
+    const { id } = request.params as { id: string }, period = ctx.db.payPeriods.get(id);
     if (!period) throw Errors.notFound('Không tìm thấy kỳ lương');
-    if (period.status !== 'DRAFT' && period.status !== 'RECONCILE') {
-      throw Errors.conflict('Kỳ lương đã phê duyệt, snapshot đã đóng băng và không được tính lại');
-    }
+    if (period.status !== 'DRAFT' && period.status !== 'RECONCILE') throw Errors.conflict('Kỳ lương đã phê duyệt, snapshot đã đóng băng và không được tính lại');
     const updated = await recalculatePeriodSnapshots(ctx, period, request.auth!.user.id, true);
     return sendSuccess(request, 'Đã tính lại bảng lương theo dữ liệu công và hồ sơ lương mới nhất', withLabel(ctx, updated));
   });
 
   app.delete('/api/admin/payroll/periods/:id', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const body = z.object({ version: z.coerce.number().int().min(1).optional() }).parse(request.body ?? {});
+    const { id } = request.params as { id: string }, body = z.object({ version: z.coerce.number().int().min(1).optional() }).parse(request.body ?? {});
     const before = ctx.db.payPeriods.get(id);
     if (!before) throw Errors.notFound('Không tìm thấy kỳ lương');
-    if (before.status !== 'DRAFT' && before.status !== 'RECONCILE') {
-      throw Errors.conflict('Chỉ được xóa kỳ lương ở trạng thái Nháp hoặc Đối soát');
-    }
+    if (before.status !== 'DRAFT' && before.status !== 'RECONCILE') throw Errors.conflict('Chỉ được xóa kỳ lương ở trạng thái Nháp hoặc Đối soát');
     await ctx.db.payPeriods.softDelete(id, body.version ?? before.version, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'payroll_period.delete', entity: 'PAY_PERIODS', entityId: id, before: { period_code: before.period_code } });
     return sendSuccess(request, `Đã xóa kỳ lương ${before.name}`, { id });

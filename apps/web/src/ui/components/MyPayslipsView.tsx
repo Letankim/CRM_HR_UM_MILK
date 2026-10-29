@@ -1,9 +1,9 @@
 'use client';
 
-import { Alert, App, Button, Card, Col, Descriptions, Empty, Form, Grid, Input, List, Modal, Row, Select, Space, Spin, Tag } from 'antd';
+import { Alert, App, Button, Card, Col, Descriptions, Empty, Form, Grid, Input, List, Modal, Popconfirm, Row, Select, Space, Spin, Tag } from 'antd';
 import {
   CheckCircleOutlined, CloseOutlined, CustomerServiceOutlined, ExclamationCircleOutlined,
-  FileTextOutlined, ReloadOutlined, SendOutlined,
+  FileTextOutlined, LockOutlined, ReloadOutlined, SendOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -19,37 +19,19 @@ import { StatusTag } from '@/ui/StatusTag';
 import { BRAND } from '@/ui/theme';
 
 export interface MyPayslip {
-  id: string;
-  payslipCode: string;
-  periodName: string;
-  fromDate: string;
-  toDate: string;
-  revision: number;
-  status: string;
-  statusLabel: string;
-  approvedHours: number;
-  totalShiftsCount: number;
-  grossVnd: number;
-  netVnd: number;
-  totalDeductionsVnd: number;
-  employeeConfirmedAt?: string | null;
-  disputeStatus?: string;
-  disputeReason?: string;
-  linkedTicket?: LinkedPayslipTicketSummary | null;
-  breakdown: PayrollSnapshotItem;
+  id: string; payslipCode: string; periodName: string; fromDate: string; toDate: string;
+  revision: number; status: string; statusLabel: string; approvedHours: number; totalShiftsCount: number;
+  grossVnd: number; netVnd: number; totalDeductionsVnd: number;
+  employeeConfirmedAt?: string | null; disputeStatus?: string; disputeReason?: string;
+  linkedTicket?: LinkedPayslipTicketSummary | null; breakdown: PayrollSnapshotItem;
 }
 
 export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [disputeModal, setDisputeModal] = useState(false);
-  const [ticketDrawerId, setTicketDrawerId] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null), [disputeModal, setDisputeModal] = useState(false);
+  const [ticketDrawerId, setTicketDrawerId] = useState<string | null>(null), [refreshing, setRefreshing] = useState(false);
   const [form] = Form.useForm();
   const selectedDept = Form.useWatch('target_department', form) as TicketDepartment | undefined;
-  const qc = useQueryClient();
-  const { message } = App.useApp();
-  const screens = Grid.useBreakpoint();
-  const isDesktop = Boolean(screens.md);
+  const qc = useQueryClient(), { message } = App.useApp(), screens = Grid.useBreakpoint(), isDesktop = Boolean(screens.md);
 
   const query = useQuery({ queryKey: ['me', 'payslips'], queryFn: () => api.get<MyPayslip[]>('/me/payslips') });
   const assigneesQ = useQuery({ queryKey: ['ticket-assignees'], queryFn: () => api.get<TicketAssigneeOption[]>('/tickets/assignees'), enabled: disputeModal });
@@ -57,8 +39,7 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
   const handleManualRefresh = async () => {
     setRefreshing(true);
     try {
-      const fresh = await api.get<MyPayslip[]>('/me/payslips?refresh=1');
-      qc.setQueryData(['me', 'payslips'], fresh);
+      qc.setQueryData(['me', 'payslips'], await api.get<MyPayslip[]>('/me/payslips?refresh=1'));
       message.success('Đã đồng bộ danh sách phiếu lương cá nhân mới nhất');
     } catch (e) {
       message.error(e instanceof ApiClientError ? e.message : 'Đồng bộ phiếu lương thất bại');
@@ -71,8 +52,8 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
     mutationFn: (id: string) => api.post<MyPayslip>(`/me/payslips/${id}/confirm`, {}),
     onSuccess: () => {
       message.success('Đã xác nhận đồng ý phiếu lương thành công');
+      ['tickets', 'payroll-snapshots', 'payroll-periods', 'notifications'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
       void qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
-      void qc.invalidateQueries({ queryKey: ['tickets'] });
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xác nhận phiếu lương thất bại'),
   });
@@ -85,14 +66,16 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
     onSuccess: (updated) => {
       message.success(`Đã tạo phiếu hỗ trợ ${updated.linkedTicket?.ticketCode || ''} và gửi tới ${updated.linkedTicket?.departmentLabel || 'bộ phận phụ trách'}`);
       setDisputeModal(false);
+      ['tickets', 'payroll-snapshots', 'payroll-periods', 'notifications'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
       void qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
-      void qc.invalidateQueries({ queryKey: ['tickets'] });
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Gửi thắc mắc thất bại'),
   });
 
   const items = query.data ?? [];
   const open = openId ? items.find((x) => x.id === openId) ?? null : null;
+  const isConfirmed = Boolean(open?.employeeConfirmedAt);
+  const isPaid = open?.status === 'PAID';
   const baseLines = open?.breakdown?.segments ? payslipLines(open.breakdown) : [];
   const revisionDelta = open?.breakdown ? open.netVnd - open.breakdown.netVnd : 0;
   const lines = revisionDelta !== 0 && open ? [...baseLines, { label: 'Điều chỉnh sau phát hành', detail: `Phiếu điều chỉnh lần ${open.revision}`, amount: revisionDelta }] : baseLines;
@@ -119,12 +102,12 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
                 <span style={{ fontWeight: 600 }}>{p.periodName}</span>
                 <StatusTag value={p.status || 'PUBLISHED'} label={p.statusLabel} />
                 {p.revision > 1 && <Tag color="blue" style={{ margin: 0, borderRadius: 2 }}>Điều chỉnh lần {p.revision}</Tag>}
-                {p.disputeStatus === 'OPEN' ? (
+                {p.employeeConfirmedAt ? (
+                  <Tag color="green" style={{ margin: 0, borderRadius: 2 }}>Đã xác nhận</Tag>
+                ) : p.disputeStatus === 'OPEN' ? (
                   <Tag color="volcano" style={{ margin: 0, borderRadius: 2 }}>Đang thắc mắc{p.linkedTicket ? ` (${p.linkedTicket.ticketCode})` : ''}</Tag>
                 ) : p.disputeStatus === 'RESOLVED' ? (
                   <Tag color="cyan" style={{ margin: 0, borderRadius: 2 }}>Đã phản hồi thắc mắc</Tag>
-                ) : p.employeeConfirmedAt ? (
-                  <Tag color="green" style={{ margin: 0, borderRadius: 2 }}>Đã xác nhận</Tag>
                 ) : null}
               </Space>
             }
@@ -153,26 +136,41 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
                   Xem phiếu hỗ trợ ({open.linkedTicket.ticketCode})
                 </Button>
               )}
-              <Button size="small" type="primary" icon={<CheckCircleOutlined />} disabled={Boolean(open.employeeConfirmedAt && open.disputeStatus !== 'OPEN')} loading={confirmMut.isPending} onClick={() => confirmMut.mutate(open.id)}>
-                {open.employeeConfirmedAt && open.disputeStatus !== 'OPEN' ? 'Đã xác nhận' : 'Xác nhận phiếu lương'}
-              </Button>
-              <Button size="small" danger icon={<ExclamationCircleOutlined />} onClick={() => { form.resetFields(); form.setFieldsValue({ target_department: open.linkedTicket?.department || 'FINANCE', assignee_user_id: '' }); setDisputeModal(true); }}>
-                Gửi thắc mắc
-              </Button>
+              {isConfirmed ? (
+                <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2, padding: '2px 8px' }}>Đã xác nhận đồng ý</Tag>
+              ) : isPaid ? (
+                <Tag icon={<LockOutlined />} style={{ margin: 0, borderRadius: 2, padding: '2px 8px' }}>Đã thanh toán hoàn tất</Tag>
+              ) : (
+                <>
+                  <Popconfirm
+                    title="Xác nhận đồng ý số liệu phiếu lương?"
+                    description={<div style={{ maxWidth: 290 }}>Sau khi xác nhận, số liệu phiếu lương sẽ được chốt với Kế toán để chi trả và bạn sẽ không thể gửi thắc mắc thêm.</div>}
+                    okText="Đồng ý xác nhận" cancelText="Hủy bỏ" okButtonProps={{ icon: <CheckCircleOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
+                    onConfirm={() => confirmMut.mutateAsync(open.id)}
+                  >
+                    <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={confirmMut.isPending}>Xác nhận phiếu lương</Button>
+                  </Popconfirm>
+                  <Button size="small" danger icon={<ExclamationCircleOutlined />} onClick={() => { form.resetFields(); form.setFieldsValue({ target_department: open.linkedTicket?.department || 'FINANCE', assignee_user_id: '' }); setDisputeModal(true); }}>
+                    Gửi thắc mắc
+                  </Button>
+                </>
+              )}
             </>
           )
         }
       >
         {open && (
           <>
-            {(open.disputeStatus === 'OPEN' || open.disputeStatus === 'RESOLVED') && (
+            {isConfirmed ? (
+              <Alert type="success" showIcon style={{ marginBottom: 12 }} message={`Bạn đã xác nhận đồng ý phiếu lương lúc ${dayjs(open.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')} — Đã chốt số liệu và khóa gửi thắc mắc.`} />
+            ) : (open.disputeStatus === 'OPEN' || open.disputeStatus === 'RESOLVED') ? (
               <Alert
                 type={open.disputeStatus === 'RESOLVED' ? 'success' : 'warning'} showIcon style={{ marginBottom: 12 }}
                 message={open.linkedTicket ? `Phiếu hỗ trợ ${open.linkedTicket.ticketCode} — ${open.linkedTicket.departmentLabel} (${open.linkedTicket.assigneeName}) · ${open.linkedTicket.statusLabel}` : 'Đã gửi thắc mắc đối chiếu'}
                 description={open.disputeReason}
                 action={open.linkedTicket ? <Button size="small" type="primary" ghost onClick={() => setTicketDrawerId(open.linkedTicket!.id)}>Xem phản hồi ({open.linkedTicket.messageCount})</Button> : undefined}
               />
-            )}
+            ) : null}
             <Descriptions column={1} size="small" bordered style={{ marginBottom: 12 }}>
               <Descriptions.Item label="Mã phiếu">{open.payslipCode}</Descriptions.Item>
               <Descriptions.Item label="Trạng thái">{open.statusLabel}{open.employeeConfirmedAt ? ` · Đã xác nhận lúc ${dayjs(open.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')}` : ''}</Descriptions.Item>

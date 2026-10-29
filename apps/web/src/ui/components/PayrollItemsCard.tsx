@@ -14,12 +14,14 @@ import { RowActionButtons } from './RowActionButtons';
 /** Danh sách khoản Thưởng / Phụ cấp / Khấu trừ đã duyệt trong kỳ lương */
 export function PayrollItemsCard({
   periodId,
+  periodStatus,
   canManage,
   isLockedPeriod,
   onAddItem,
   onEditItem,
 }: {
   periodId: string;
+  periodStatus?: string;
   canManage: boolean;
   isLockedPeriod: boolean;
   onAddItem: () => void;
@@ -75,7 +77,11 @@ export function PayrollItemsCard({
       >
         {isLockedPeriod && (
           <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-            Kỳ lương đã phê duyệt / phát hành nên khoản mục bị khóa. Sau khi phát hành, sai lệch được xử lý bằng phiếu lương điều chỉnh.
+            {periodStatus === 'PAID'
+              ? 'Kỳ lương đã chuyển sang Đã thanh toán nên toàn bộ khoản mục và phiếu lương đã khóa vĩnh viễn, không thể thay đổi.'
+              : periodStatus === 'PUBLISHED'
+                ? 'Kỳ lương đã phát hành phiếu lương nên khoản mục gốc đã chốt. Với nhân sự chưa bấm xác nhận phiếu lương, Kế toán vẫn điều chỉnh được tại chi tiết phiếu lương ở tab Bảng lương & Phiếu lương.'
+                : 'Kỳ lương đã phê duyệt chờ phát hành nên khoản mục bị khóa. Nếu cần sửa trước khi phát hành, hãy bấm Trả về Đang đối soát.'}
           </Typography.Paragraph>
         )}
         <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '12px 16px', marginBottom: 14 }}>

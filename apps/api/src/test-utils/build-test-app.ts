@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
+import type { AppContext } from '../context.js';
 import { AuthService } from '../auth/auth.service.js';
 import { ACCESS_COOKIE, TokenService } from '../auth/tokens.js';
 import { loadEnv } from '../config/env.js';
@@ -13,6 +14,7 @@ import { WriteQueue } from '../sheets/write-queue.js';
 
 export interface TestAppContext {
   app: FastifyInstance;
+  ctx: AppContext;
   db: Database;
   reconciliation: ReconciliationService;
   email: EmailService;
@@ -46,22 +48,20 @@ export async function buildTestApp(secretChar = 'x'): Promise<TestAppContext> {
   const reconciliation = new ReconciliationService(db);
   const backup = new BackupService(env, db, reconciliation);
   const email = new EmailService();
-  const app = await buildApp(
-    {
-      env,
-      version: 'test',
-      db,
-      tokens,
-      auth,
-      audit: new AuditService(db, () => {}),
-      reconciliation,
-      backup,
-      email,
-      google: { mode: 'memory', check: async () => ({ ok: true, detail: '' }) },
-      realtime: () => null,
-    },
-    { logger: false },
-  );
+  const ctx: AppContext = {
+    env,
+    version: 'test',
+    db,
+    tokens,
+    auth,
+    audit: new AuditService(db, () => {}),
+    reconciliation,
+    backup,
+    email,
+    google: { mode: 'memory', check: async () => ({ ok: true, detail: '' }) },
+    realtime: () => null,
+  };
+  const app = await buildApp(ctx, { logger: false });
 
   const login: TestAppContext['login'] = async (identifier, secretValue, appKind) => {
     const res = await app.inject({
@@ -79,5 +79,5 @@ export async function buildTestApp(secretChar = 'x'): Promise<TestAppContext> {
     return { cookie, 'x-umbm-client': 'web' };
   };
 
-  return { app, db, reconciliation, email, login, loginHeaders };
+  return { app, ctx, db, reconciliation, email, login, loginHeaders };
 }

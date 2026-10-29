@@ -15,6 +15,8 @@ interface SimplePayslipOption {
   id: string;
   payslipCode: string;
   periodName: string;
+  status?: string;
+  employeeConfirmedAt?: string | null;
 }
 
 export interface TicketCreateEditModalProps {
@@ -174,7 +176,11 @@ export function TicketCreateEditModal({
               placeholder="Chọn kỳ phiếu lương bạn muốn thắc mắc..."
               options={[
                 { value: '', label: 'Không đính kèm phiếu lương cụ thể' },
-                ...(payslipsQ.data ?? []).map((p) => ({ value: p.id, label: `${p.payslipCode} — ${p.periodName}` })),
+                ...(payslipsQ.data ?? []).map((p) => {
+                  const locked = Boolean(p.employeeConfirmedAt) || p.status === 'PAID';
+                  const suffix = p.employeeConfirmedAt ? ' (Đã xác nhận — Không thể gửi thắc mắc)' : p.status === 'PAID' ? ' (Đã thanh toán — Đã khóa)' : '';
+                  return { value: p.id, label: `${p.payslipCode} — ${p.periodName}${suffix}`, disabled: locked };
+                }),
               ]}
               onChange={(val) => {
                 const slip = (payslipsQ.data ?? []).find((p) => p.id === val);

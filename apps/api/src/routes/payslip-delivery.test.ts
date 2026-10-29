@@ -122,7 +122,59 @@ describe('Phát hành phiếu lương, hiển thị Cổng Nhân viên & Gửi E
     expect(healedMails.every((m) => !isSyntheticDemoEmail(m.to))).toBe(true);
   });
 
-  it('Chuyển PUBLISHED -> PAID đồng bộ trạng thái phiếu lương sang PAID, hiện tên người thanh toán tiếng Việt và hỗ trợ nút Gửi lại thông báo & Email', async () => {
+  it('Khi Đã phát hành: NV đã xác nhận bị khóa gửi thắc mắc & hiển thị ngay bên Kế toán; chỉ điều chỉnh được NV chưa xác nhận', async () => {
+    const periodsRes = await t.app.inject({ method: 'GET', url: '/api/admin/payroll/periods', headers: fin });
+    const pubPeriod = periodsRes.json().data.find((p: { name: string }) => p.name === 'Kỳ lương T10/2026');
+    expect(pubPeriod).toMatchObject({ status: 'PUBLISHED', confirmed_count: 1 });
+
+    // NV0002 đã xác nhận ở bước trên -> bị chặn gửi thắc mắc cả qua /dispute lẫn tạo ticket đính kèm phiếu lương
+    const nv2Login = await t.login('0901000002', DEMO_PIN, 'employee');
+    const nv2Headers = { cookie: nv2Login.cookie, 'x-umbm-client': 'web' };
+    const nv2Slip = (await t.app.inject({ method: 'GET', url: '/api/me/payslips', headers: nv2Headers })).json().data[0];
+    const blockedDispute = await t.app.inject({
+      method: 'POST', url: `/api/me/payslips/${nv2Slip.id}/dispute`, headers: nv2Headers,
+      payload: { reason: 'Thử gửi thắc mắc sau khi đã xác nhận', target_department: 'FINANCE' },
+    });
+    expect(blockedDispute.statusCode).toBe(409);
+    const blockedTicket = await t.app.inject({
+      method: 'POST', url: '/api/tickets', headers: nv2Headers,
+      payload: { category: 'PAYSLIP_INQUIRY', target_department: 'FINANCE', subject: 'Thắc mắc phiếu lương', description: 'Đã xác nhận nhưng vẫn tạo phiếu', related_entity_id: nv2Slip.id },
+    });
+    expect(blockedTicket.statusCode).toBe(409);
+
+    // Bên Kế toán thấy rõ trạng thái xác nhận + chuông thông báo + lọc theo trạng thái xác nhận
+    const snapsRes = await t.app.inject({ method: 'GET', url: `/api/admin/payroll/periods/${pubPeriod.id}/snapshots?page=1&per_page=20`, headers: fin });
+    expect(snapsRes.statusCode).toBe(200);
+    const snaps = snapsRes.json().data as { id: string; employeeCode: string; confirmationStatus: string; confirmationLabel: string; employeeConfirmedAt: string | null; canAdjust: boolean; netVnd: number }[];
+    const nv2Snap = snaps.find((s) => s.employeeCode === 'NV0002')!;
+    const nv1Snap = snaps.find((s) => s.employeeCode === 'NV0001')!;
+    expect(nv2Snap).toMatchObject({ confirmationStatus: 'CONFIRMED', confirmationLabel: 'Đã xác nhận', canAdjust: false });
+    expect(nv2Snap.employeeConfirmedAt).toBeTruthy();
+    expect(nv1Snap).toMatchObject({ confirmationStatus: 'PENDING', canAdjust: true });
+    expect(snapsRes.json().meta.filters.summary.confirmedCount).toBe(1);
+
+    const onlyConfirmed = await t.app.inject({ method: 'GET', url: `/api/admin/payroll/periods/${pubPeriod.id}/snapshots?confirm_status=CONFIRMED`, headers: fin });
+    expect(onlyConfirmed.json().data.snapshots.map((s: { employeeCode: string }) => s.employeeCode)).toEqual(['NV0002']);
+
+    const finNotifs = await t.app.inject({ method: 'GET', url: '/api/notifications?per_page=30', headers: fin });
+    expect(finNotifs.json().data.some((n: { title: string }) => n.title.includes('Nhân sự đã xác nhận phiếu lương') && n.title.includes('NV0002'))).toBe(true);
+
+    // Kế toán điều chỉnh NV0002 (đã xác nhận) -> bị chặn 409; điều chỉnh NV0001 (chưa xác nhận) -> thành công 201
+    const lockConfirmedAdj = await t.app.inject({
+      method: 'POST', url: `/api/admin/payroll/payslips/${nv2Snap.id}/revisions`, headers: fin,
+      payload: { delta_vnd: 50000, reason: 'Thử điều chỉnh nhân sự đã xác nhận' },
+    });
+    expect(lockConfirmedAdj.statusCode).toBe(409);
+
+    const allowUnconfirmedAdj = await t.app.inject({
+      method: 'POST', url: `/api/admin/payroll/payslips/${nv1Snap.id}/revisions`, headers: fin,
+      payload: { delta_vnd: 45000, reason: 'Bổ sung phụ cấp cho nhân sự chưa xác nhận' },
+    });
+    expect(allowUnconfirmedAdj.statusCode).toBe(201);
+    expect(allowUnconfirmedAdj.json().data.netVnd).toBe(nv1Snap.netVnd + 45000);
+  });
+
+  it('Chuyển PUBLISHED -> PAID khóa toàn bộ 100% (không ai điều chỉnh hay thắc mắc được nữa), đồng bộ PAID & nút Gửi lại Email', async () => {
     const periodsRes = await t.app.inject({ method: 'GET', url: '/api/admin/payroll/periods', headers: fin });
     const pubPeriod = periodsRes.json().data.find((p: { name: string }) => p.name === 'Kỳ lương T10/2026');
     expect(pubPeriod).toBeTruthy();
@@ -137,6 +189,22 @@ describe('Phát hành phiếu lương, hiển thị Cổng Nhân viên & Gửi E
 
     const slipsAfterPaid = t.db.payslips.filter((p) => p.period_id === pubPeriod.id && p.status !== 'REVISED');
     expect(slipsAfterPaid.every((p) => p.status === 'PAID')).toBe(true);
+
+    // Sau khi PAID: kể cả nhân sự chưa bấm xác nhận (NV0001) cũng bị khóa điều chỉnh & khóa gửi thắc mắc 100%
+    const nv1ActiveSlip = slipsAfterPaid.find((p) => p.employee_code === 'NV0001')!;
+    const blockedPaidAdj = await t.app.inject({
+      method: 'POST', url: `/api/admin/payroll/payslips/${nv1ActiveSlip.id}/revisions`, headers: fin,
+      payload: { delta_vnd: 30000, reason: 'Thử điều chỉnh sau khi đã thanh toán' },
+    });
+    expect(blockedPaidAdj.statusCode).toBe(409);
+
+    const nv1Login = await t.login('0901000001', DEMO_PIN, 'employee');
+    const nv1Headers = { cookie: nv1Login.cookie, 'x-umbm-client': 'web' };
+    const blockedPaidDispute = await t.app.inject({
+      method: 'POST', url: `/api/me/payslips/${nv1ActiveSlip.id}/dispute`, headers: nv1Headers,
+      payload: { reason: 'Thử thắc mắc sau khi kỳ lương đã chi trả' },
+    });
+    expect(blockedPaidDispute.statusCode).toBe(409);
 
     const resendRes = await t.app.inject({
       method: 'POST', url: `/api/admin/payroll/periods/${pubPeriod.id}/notify-payslips`, headers: fin,
