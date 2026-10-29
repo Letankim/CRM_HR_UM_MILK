@@ -1,7 +1,7 @@
 'use client';
 
-import { Alert, Button, Empty, Flex, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd';
-import { CloseOutlined, EyeOutlined, FileExcelOutlined, SafetyCertificateOutlined, SearchOutlined, WarningOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Flex, Input, Modal, Select, Space, Table, Tag } from 'antd';
+import { CloseOutlined, EyeOutlined, FileExcelOutlined, SafetyCertificateOutlined, SearchOutlined, TeamOutlined, WarningOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
@@ -90,20 +90,13 @@ export function PayrollMissingShiftsModal({
         </Space>
       }
       footer={
-        <Flex justify="space-between" align="center" wrap gap={8}>
-          <Space wrap size={8}>
-            {selectedEmployee && onShowAll && allMissingShifts.length > baseList.length && (
-              <Button onClick={onShowAll}>Xem tất cả nhân sự thiếu ca trong kỳ ({allMissingShifts.length} ca)</Button>
-            )}
-            {selectedEmployee && onOpenPayslip && (
-              <Button icon={<EyeOutlined />} onClick={() => { onClose(); onOpenPayslip(selectedEmployee); }}>Mở Phiếu lương &amp; Nhật ký công đầy đủ</Button>
-            )}
-          </Space>
-          <Space wrap size={8}>
-            <Link href="/admin/schedules?section=workflows"><Button icon={<SafetyCertificateOutlined />}>Mở trang Đơn từ &amp; Điều chỉnh công</Button></Link>
-            <Button icon={<FileExcelOutlined style={{ color: '#15803D' }} />} onClick={handleExport} disabled={filtered.length === 0}>Xuất danh sách ca thiếu (Excel)</Button>
-            <Button type="primary" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
-          </Space>
+        <Flex justify="flex-end" align="center" wrap gap={8}>
+          <Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
+          {selectedEmployee && onOpenPayslip && (
+            <Button type="primary" icon={<EyeOutlined />} onClick={() => { onClose(); onOpenPayslip(selectedEmployee); }}>
+              Xem Phiếu lương &amp; Nhật ký công
+            </Button>
+          )}
         </Flex>
       }
     >
@@ -111,24 +104,34 @@ export function PayrollMissingShiftsModal({
         <Alert
           type="warning" showIcon
           message="Hướng dẫn đối soát dành cho Kế toán"
-          description="Dưới đây là danh sách cụ thể từng ngày, từng ca làm việc đang bị thiếu giờ Vào/Ra hoặc vắng mặt chưa hoàn tất. Kế toán có thể xuất file Excel hoặc báo trực tiếp mã ca / ngày ca bên dưới cho Quản lý cửa hàng và HR để duyệt phiếu bổ sung công (hoặc xóa ca trên lịch nếu phân ca nhầm)."
+          description="Dưới đây là danh sách cụ thể từng ngày, từng ca làm việc đang bị thiếu giờ Vào/Ra hoặc chưa hoàn tất trong kỳ lương. Kế toán có thể xuất file Excel hoặc báo trực tiếp ngày ca / khung ca bên dưới cho Quản lý cửa hàng và HR để duyệt phiếu bổ sung công (hoặc xóa ca trên lịch nếu phân ca nhầm)."
         />
-        <Flex justify="space-between" align="center" wrap gap={8}>
-          <Space wrap size={8}>
-            <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm mã NV, tên, chi nhánh, ngày (VD: 27/10)..." value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 290 }} />
-            <Select
-              value={issueFilter} onChange={setIssueFilter} style={{ width: 250 }}
-              options={[
-                { value: 'ALL', label: `Tất cả tình trạng thiếu (${baseList.length})` },
-                { value: 'ABSENT', label: 'Vắng mặt (Chưa chấm Vào & Ra)' },
-                { value: 'MISSING_PUNCH', label: 'Quên chấm công Ra ca / Vào ca' },
-                { value: 'HAS_PENDING_ADJ', label: 'Đã có phiếu bù công chờ duyệt' },
-                { value: 'NO_ADJ', label: 'Chưa gửi phiếu bù công nào' },
-              ]}
-            />
-          </Space>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>Hiển thị <strong>{filtered.length}</strong> ca cần HR / Cửa hàng xử lý</Typography.Text>
-        </Flex>
+        <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '10px 12px' }}>
+          <Flex justify="space-between" align="center" wrap gap={8}>
+            <Space wrap size={8}>
+              <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm mã NV, tên, chi nhánh, ngày (VD: 27/10)..." value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 270 }} />
+              <Select
+                value={issueFilter} onChange={setIssueFilter} style={{ width: 240 }}
+                options={[
+                  { value: 'ALL', label: `Tất cả tình trạng thiếu (${baseList.length})` },
+                  { value: 'ABSENT', label: 'Vắng mặt / Chưa chấm Vào & Ra' },
+                  { value: 'MISSING_PUNCH', label: 'Quên chấm công Ra ca / Vào ca' },
+                  { value: 'HAS_PENDING_ADJ', label: 'Đã có phiếu bù công chờ duyệt' },
+                  { value: 'NO_ADJ', label: 'Chưa gửi phiếu bù công nào' },
+                ]}
+              />
+              {selectedEmployee && onShowAll && allMissingShifts.length > baseList.length && (
+                <Button icon={<TeamOutlined />} onClick={onShowAll}>
+                  Xem toàn bộ kỳ ({allMissingShifts.length} ca)
+                </Button>
+              )}
+            </Space>
+            <Space wrap size={8}>
+              <Link href="/admin/schedules?section=workflows"><Button icon={<SafetyCertificateOutlined />}>Đơn từ &amp; Điều chỉnh công</Button></Link>
+              <Button icon={<FileExcelOutlined style={{ color: '#15803D' }} />} onClick={handleExport} disabled={filtered.length === 0}>Xuất Excel ({filtered.length})</Button>
+            </Space>
+          </Flex>
+        </div>
         <Table<MissingShiftDetailItem>
           size="small" rowKey={(r, i) => `${r.assignmentId}-${r.date}-${r.shiftCode}-${i}`} pagination={pagination} dataSource={filtered} scroll={{ x: 1020 }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có ca thiếu chấm công Vào/Ra nào — Dữ liệu công đã khớp hợp lệ" /> }}

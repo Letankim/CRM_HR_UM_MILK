@@ -110,11 +110,7 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
       <Row gutter={[12, 12]}>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Nhân sự trong bảng công" value={totalCount} suffix="NV" /></Card></Col>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Tổng giờ công tính lương" value={totalApprovedHours} suffix="giờ" prefix={<ClockCircleOutlined />} /></Card></Col>
-        <Col xs={12} md={6}>
-          <Card size="small" hoverable={totalMissingPunches > 0} onClick={totalMissingPunches > 0 ? openAllMissing : undefined}>
-            <Statistic title="Ca thiếu Vào/Ra hoặc Vắng" value={totalMissingPunches} suffix={totalMissingPunches > 0 ? 'ca (Xem chi tiết)' : 'ca'} formatter={(v) => <span style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }}>{v}</span>} prefix={<WarningOutlined style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }} />} />
-          </Card>
-        </Col>
+        <Col xs={12} md={6}><Card size="small"><Statistic title="Ca thiếu Vào/Ra hoặc Vắng" value={totalMissingPunches} suffix="ca" formatter={(v) => <span style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }}>{v}</span>} prefix={<WarningOutlined style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }} />} /></Card></Col>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Phiếu điều chỉnh chờ duyệt" value={totalPendingAdjs} formatter={(v) => <span style={{ color: totalPendingAdjs > 0 ? '#D97706' : '#16A34A' }}>{v}</span>} prefix={<SafetyCertificateOutlined style={{ color: totalPendingAdjs > 0 ? '#D97706' : '#16A34A' }} />} /></Card></Col>
       </Row>
 
