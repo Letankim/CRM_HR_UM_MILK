@@ -9,6 +9,7 @@ import { nowIso } from '../lib/time.js';
 import { computeEmployeePayroll } from './payroll-calculator.js';
 import { collectWorkEntries } from './payroll-work-collector.js';
 import { profilesOf } from './salary-profile.service.js';
+import { sweepExpiredShiftsAndMarkAbsent } from './shift-absent-scanner.js';
 
 export { collectWorkEntries } from './payroll-work-collector.js';
 
@@ -24,37 +25,39 @@ function computePeriodDirtySig(ctx: AppContext, period: PayPeriod): string {
   const inRange = <T extends { work_date: string; version: number; updated_at: string }>(rows: readonly T[]) =>
     sumVer(rows.filter((r) => r.work_date >= period.from_date && r.work_date <= period.to_date));
   return [
-    'v2', period.version, period.from_date, period.to_date,
+    'v3', period.version, period.from_date, period.to_date,
     sumVer(ctx.db.employees.all(true)),
     sumVer(ctx.db.payRates.all(true)),
     inRange(ctx.db.shiftAssignments.all(true)),
     inRange(ctx.db.attendanceEvents.all(true)),
     inRange(ctx.db.attendanceAdjustments.all(true)),
+    inRange(ctx.db.emergencyLeaves.all(true)),
     sumVer(ctx.db.leaveRequests.all(true).filter((l) => l.leave_date >= period.from_date && l.leave_date <= period.to_date)),
     sumVer(ctx.db.shiftSwaps.all(true)),
     sumVer(ctx.db.payrollItems.all(true).filter((i) => i.period_id === period.id)),
   ].join('|');
 }
 
-export async function recalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, actorId: string): Promise<PayPeriod> {
+export async function recalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, actorId: string, force = false): Promise<PayPeriod> {
   let inFlightMap = periodInFlightByDb.get(ctx.db);
   if (!inFlightMap) { inFlightMap = new Map(); periodInFlightByDb.set(ctx.db, inFlightMap); }
   const existingTask = inFlightMap.get(period.id);
-  if (existingTask) return existingTask;
+  if (existingTask && !force) return existingTask;
 
-  const task = doRecalculatePeriodSnapshots(ctx, period, actorId).finally(() => {
+  const task = doRecalculatePeriodSnapshots(ctx, period, actorId, force).finally(() => {
     inFlightMap?.delete(period.id);
   });
   inFlightMap.set(period.id, task);
   return task;
 }
 
-async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, actorId: string): Promise<PayPeriod> {
+async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, actorId: string, force = false): Promise<PayPeriod> {
+  await sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId);
   let sigMap = periodSigByDb.get(ctx.db);
   if (!sigMap) { sigMap = new Map(); periodSigByDb.set(ctx.db, sigMap); }
   const existingSnaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === period.id);
   const currentSig = computePeriodDirtySig(ctx, period);
-  if (existingSnaps.length > 0 && sigMap.get(period.id) === currentSig) {
+  if (!force && existingSnaps.length > 0 && sigMap.get(period.id) === currentSig) {
     return ctx.db.payPeriods.get(period.id) ?? period;
   }
 

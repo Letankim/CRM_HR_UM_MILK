@@ -91,7 +91,7 @@ export function ScheduleFormModal({
         : api.post('/admin/schedules', values),
     onSuccess: () => {
       message.success(editing ? 'Đã cập nhật phân công ca làm việc' : 'Đã xếp lịch ca làm việc thành công');
-      ['schedules', 'attendance-sessions', 'attendance-all', 'my-attendance', 'nv-attendance', 'nv-schedules'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      ['schedules', 'attendance-sessions', 'attendance-sessions-count', 'attendance-all', 'my-attendance', 'nv-attendance', 'nv-schedules', 'payroll-periods', 'payroll-snapshots', 'payroll-reconcile'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
       onClose();
     },
     onError: (err) => {
@@ -110,7 +110,7 @@ export function ScheduleFormModal({
     mutationFn: () => api.delete(`/admin/schedules/${editing!.id}`, { version: editing!.version }),
     onSuccess: () => {
       message.success('Đã xóa phân công ca làm việc');
-      qc.invalidateQueries({ queryKey: ['schedules'] });
+      ['schedules', 'attendance-sessions', 'attendance-sessions-count', 'my-attendance', 'payroll-periods', 'payroll-snapshots', 'payroll-reconcile'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
       onClose();
     },
     onError: (err) => message.error(err instanceof ApiClientError ? err.message : 'Xóa thất bại'),

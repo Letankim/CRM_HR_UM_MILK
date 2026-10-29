@@ -87,6 +87,39 @@ describe('Kỳ lương 5 bước, Snapshot, Phiếu lương & Điều chỉnh (A
     expect(overlap.statusCode).toBe(400);
   });
 
+  it('Đối soát ca thiếu Vào/Ra chi tiết và tự động cập nhật ngay khi HR xóa ca làm việc', async () => {
+    const hr = await t.loginHeaders('hr');
+    const nv1 = empByCode('NV0001');
+    const createdShift = await t.app.inject({
+      method: 'POST',
+      url: '/api/admin/schedules',
+      headers: hr,
+      payload: { employee_id: nv1.id, branch_id: nv1.branch_id, work_date: '2026-10-12', shift_code: 'CA_CHIEU', status: 'ABSENT', day_type: 'WORK', scheduled_hours: 5 },
+    });
+    expect(createdShift.statusCode).toBe(201);
+    const shiftId = createdShift.json().data.id;
+
+    const snapsBefore = (await t.app.inject({ method: 'GET', url: `/api/admin/payroll/periods/${periodId}/snapshots`, headers: fin })).json().data.snapshots;
+    const nv1Before = snapsBefore.find((s: { employeeCode: string }) => s.employeeCode === 'NV0001');
+    expect(nv1Before.missingCheckoutCount).toBe(2);
+    expect(nv1Before.missingShifts).toHaveLength(2);
+    expect(nv1Before.missingShifts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ date: '2026-10-12', shiftCode: 'CA_CHIEU', issueType: 'ABSENT' }),
+        expect.objectContaining({ date: '2026-10-24', shiftCode: 'CA_SANG', issueType: 'MISSING_CHECKOUT', pendingAdjustmentCode: 'ADJ-0001' }),
+      ]),
+    );
+
+    const delRes = await t.app.inject({ method: 'DELETE', url: `/api/admin/schedules/${shiftId}`, headers: hr, payload: { version: 1 } });
+    expect(delRes.statusCode).toBe(200);
+
+    const snapsAfter = (await t.app.inject({ method: 'GET', url: `/api/admin/payroll/periods/${periodId}/snapshots`, headers: fin })).json().data.snapshots;
+    const nv1After = snapsAfter.find((s: { employeeCode: string }) => s.employeeCode === 'NV0001');
+    expect(nv1After.missingCheckoutCount).toBe(1);
+    expect(nv1After.missingShifts).toHaveLength(1);
+    expect(nv1After.missingShifts[0]).toMatchObject({ date: '2026-10-24', shiftCode: 'CA_SANG', issueType: 'MISSING_CHECKOUT' });
+  });
+
   it('Máy trạng thái chặn nhảy bước và khóa khoản mục sau khi phê duyệt', async () => {
     const jump = await t.app.inject({ method: 'POST', url: `/api/admin/payroll/periods/${periodId}/transition`, headers: fin, payload: { version: period.version, target_status: 'PUBLISHED' } });
     expect(jump.statusCode).toBe(400);

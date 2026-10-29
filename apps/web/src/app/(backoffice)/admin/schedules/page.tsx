@@ -112,7 +112,7 @@ function SchedulesView() {
 
   const deleteSingle = useMutation({
     mutationFn: (r: ScheduleAssignmentItem) => api.delete(`/admin/schedules/${r.id}`, { version: r.version }),
-    onSuccess: () => { message.success('Đã xóa phân công ca làm việc'); qc.invalidateQueries({ queryKey: ['schedules'] }); },
+    onSuccess: () => { message.success('Đã xóa phân công ca làm việc'); ['schedules', 'attendance-sessions', 'attendance-sessions-count', 'payroll-periods', 'payroll-snapshots', 'payroll-reconcile'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })); },
   });
   const approveSingle = useMutation({
     mutationFn: (r: ScheduleAssignmentItem) => api.put(`/admin/schedules/${r.id}`, { version: r.version, status: 'PUBLISHED' }),

@@ -25,7 +25,9 @@ export function useScheduleBulkActions({ canEdit }: { canEdit: boolean }) {
     onSuccess: (res, vars) => {
       message.success(vars.action === 'DELETE' ? `Đã xóa ${res.processedCount} ca làm việc` : `Đã phát hành chính thức ${res.processedCount} ca làm việc`);
       vars.clear?.();
-      qc.invalidateQueries({ queryKey: ['schedules'] });
+      ['schedules', 'attendance-sessions', 'attendance-sessions-count', 'payroll-periods', 'payroll-snapshots', 'payroll-reconcile'].forEach((k) =>
+        qc.invalidateQueries({ queryKey: [k] }),
+      );
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại'),
   });

@@ -25,9 +25,9 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
   const { message } = App.useApp();
   const [payVoucherNote, setPayVoucherNote] = useState('');
   const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['payroll-periods'] });
-    qc.invalidateQueries({ queryKey: ['payroll-snapshots'] });
-    qc.invalidateQueries({ queryKey: ['payroll-items'] });
+    ['payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items'].forEach((k) =>
+      qc.invalidateQueries({ queryKey: [k] }),
+    );
   };
   const onError = (e: unknown) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại, vui lòng thử lại');
 

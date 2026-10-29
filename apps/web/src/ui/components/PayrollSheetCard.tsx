@@ -9,8 +9,9 @@ import { api } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { SelectableTable } from './BulkActionBar';
+import { PayrollMissingShiftsModal } from './PayrollMissingShiftsModal';
 import { RowActionButtons } from './RowActionButtons';
-import { allowancesOf, bonusesOf, deductionsOf, fmtVnd, type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
+import { allowancesOf, bonusesOf, deductionsOf, fmtVnd, type MissingShiftDetailItem, type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
 
 const sum = (rows: PayrollSnapshotItem[], f: (r: PayrollSnapshotItem) => number) => rows.reduce((s, r) => s + f(r), 0);
 
@@ -55,6 +56,8 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
   const [rateFilter, setRateFilter] = useState('ALL');
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(12);
+  const [missingModalOpen, setMissingModalOpen] = useState(false);
+  const [inspectEmp, setInspectEmp] = useState<PayrollSnapshotItem | null>(null);
 
   useEffect(() => { setPage(1); }, [period.id, branchFilter, rateFilter, debouncedQ]);
 
@@ -83,12 +86,19 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
   const rows = snapshotsQ.data?.data ?? [];
   const totalCount = snapshotsQ.data?.meta.pagination.total ?? rows.length;
   const summary = (snapshotsQ.data?.meta.filters?.summary ?? {}) as Record<string, number>;
+  const totalMissing = Number(summary.totalMissingPunches ?? 0);
+  const allMissingShifts = useMemo(
+    () => (Array.isArray((summary as Record<string, unknown>).allMissingShifts) ? ((summary as Record<string, unknown>).allMissingShifts as MissingShiftDetailItem[]) : rows.flatMap((r) => r.missingShifts ?? [])),
+    [summary, rows],
+  );
+  const openEmpMissing = (r: PayrollSnapshotItem) => { setInspectEmp(r); setMissingModalOpen(true); };
 
   return (
     <Card
       size="small"
       styles={{ body: { padding: 16 } }}
       title={<Typography.Text strong>Bảng lương chi tiết từng nhân sự ({totalCount})</Typography.Text>}
+      extra={totalMissing > 0 ? <Button size="small" danger icon={<EyeOutlined />} onClick={() => { setInspectEmp(null); setMissingModalOpen(true); }}>Có {totalMissing} ca thiếu Vào/Ra · Xem chi tiết</Button> : null}
     >
       <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '12px 16px', marginBottom: 14 }}>
         <Flex justify="space-between" align="center" wrap gap={12}>
@@ -150,6 +160,13 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
                 {(r.lateCount ?? 0) > 0 && (
                   <div style={{ fontSize: 11, color: '#D97706' }}>Đi trễ: {r.lateCount} lần ({r.lateMinutesTotal ?? 0}p)</div>
                 )}
+                {((r.missingCheckoutCount ?? 0) > 0 || (r.pendingAdjCount ?? 0) > 0) && (
+                  <div style={{ marginTop: 3 }}>
+                    <Tag color="red" icon={<WarningOutlined />} style={{ margin: 0, cursor: 'pointer', fontSize: 11 }} onClick={() => openEmpMissing(r)}>
+                      Thiếu Vào/Ra: {r.missingCheckoutCount ?? 0} ca · Xem chi tiết
+                    </Tag>
+                  </div>
+                )}
               </div>
             ),
           },
@@ -181,6 +198,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
           ) : null
         }
       />
+      <PayrollMissingShiftsModal open={missingModalOpen} period={period} selectedEmployee={inspectEmp} allMissingShifts={allMissingShifts} onClose={() => setMissingModalOpen(false)} onShowAll={() => setInspectEmp(null)} onOpenPayslip={onOpenPayslip} />
     </Card>
   );
 }

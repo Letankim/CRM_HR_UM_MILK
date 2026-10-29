@@ -9,7 +9,7 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll, findLockedPayrollPeriodForDate } from '../services/salary-profile.service.js';
-import { getVnNowDateAndHm, resolveShiftActiveRequests } from '../services/shift-absent-scanner.js';
+import { clearShiftAttendanceOnWorkflowOverride, getVnNowDateAndHm, resolveShiftActiveRequests } from '../services/shift-absent-scanner.js';
 import { queueScheduleShiftEmail } from '../services/action-email-dispatcher.js';
 import { emitScheduleRealtime, findBranchShiftTemplate, healBranchConsistency, resolveEmployeeBranchId } from './account-employee-sync.js';
 import { describePunctuality, parseHm } from './attendance-helpers.js';
@@ -185,6 +185,7 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
     assertDateNotLockedByPayroll(ctx.db, before.work_date, 'xóa ca làm việc');
     await ctx.db.shiftAssignments.softDelete(id, body.version ?? before.version, request.auth!.user.id);
+    await clearShiftAttendanceOnWorkflowOverride(ctx.db, before, request.auth!.user.id, 'Đã xóa phân công ca làm việc khỏi lịch');
     await ctx.audit.record(auditContext(request), { action: 'schedule.delete', entity: 'SHIFT_ASSIGNMENTS', entityId: id, before: { work_date: before.work_date, shift_code: before.shift_code } });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: 'SHIFT_DELETED', actorId: request.auth!.user.id });
     return sendSuccess(request, 'Đã xóa phân công ca làm việc', { id });
@@ -192,7 +193,7 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.post('/api/admin/schedules/bulk-action', { preHandler: requirePermission('schedule.publish', 'schedule.propose') }, async (request) => {
     const body = zBulkScheduleBody.parse(request.body), actorId = request.auth!.user.id, pubAt = nowIso();
-    const processedIds: string[] = [], empIds = new Set<string>(), patches: { id: string; expectedVersion: number; patch: Partial<ShiftAssignment> }[] = [];
+    const processedIds: string[] = [], deletedRows: ShiftAssignment[] = [], empIds = new Set<string>(), patches: { id: string; expectedVersion: number; patch: Partial<ShiftAssignment> }[] = [];
     let lastBranchId = '';
     for (const item of body.items) {
       const a = ctx.db.shiftAssignments.get(item.id);
@@ -201,7 +202,8 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
       assertBranchAccess(request, lastBranchId);
       assertDateNotLockedByPayroll(ctx.db, a.work_date, body.action === 'DELETE' ? 'xóa ca làm việc' : 'duyệt ca làm việc');
       patches.push({ id: a.id, expectedVersion: a.version, patch: body.action === 'DELETE' ? { is_deleted: true } : { status: 'PUBLISHED', published_at: pubAt } });
-      if (body.action === 'PUBLISH' && a.status !== 'PUBLISHED') {
+      if (body.action === 'DELETE') deletedRows.push(a);
+      else if (a.status !== 'PUBLISHED') {
         const tpl = findBranchShiftTemplate(ctx, a.shift_code, lastBranchId);
         queueScheduleShiftEmail(ctx, { empId: a.employee_id, shiftLabel: tpl?.name ?? a.shift_code, workDate: a.work_date, startAt: a.start_at, endAt: a.end_at, branchId: lastBranchId, code: `SHF-${a.id.slice(0, 6)}` });
       }
@@ -209,6 +211,7 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
       empIds.add(a.employee_id);
     }
     await ctx.db.shiftAssignments.batchUpdate(patches, actorId);
+    for (const delRow of deletedRows) await clearShiftAttendanceOnWorkflowOverride(ctx.db, delRow, actorId, 'Đã xóa phân công ca làm việc khỏi lịch');
     await ctx.audit.record(auditContext(request), { action: body.action === 'DELETE' ? 'schedule.delete' : 'schedule.publish', entity: 'SHIFT_ASSIGNMENTS', entityId: `bulk-${processedIds.length}`, after: { action: body.action, processedIds } });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: lastBranchId, employeeIds: Array.from(empIds), kind: body.action === 'PUBLISH' ? 'SHIFT_APPROVED' : 'SHIFT_DELETED', message: body.action === 'PUBLISH' ? `Đã phát hành chính thức ${processedIds.length} ca làm việc` : '', actorId });
     return sendSuccess(request, body.action === 'DELETE' ? `Đã xóa ${processedIds.length} ca làm việc` : `Đã phát hành chính thức ${processedIds.length} ca làm việc`, { processedCount: processedIds.length, processedIds });

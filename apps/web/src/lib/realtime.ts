@@ -106,13 +106,18 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
           'notifications', 'schedules', 'my-attendance', 'leave-requests', 'shift-swaps', 'emergency-leaves',
           'attendance-adjustments', 'attendance-sessions', 'attendance-sessions-count', 'nv-schedules', 'nv-swaps',
           'dashboard-schedules', 'dashboard-leaves', 'dashboard-leaves-full', 'dashboard-swaps', 'dashboard-emergencies', 'dashboard-attendance-adjustments',
+          'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile',
         ].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
       }, 250);
     };
 
     const onAttendance = (payload?: { actorId?: string; branchId?: string; kind?: string; message?: string }) => {
       if (isOutOfBranchOrDup('att', payload)) return;
-      ['notifications', 'my-attendance', 'attendance-all', 'nv-attendance', 'attendance-sessions', 'attendance-sessions-count', 'attendance-adjustments', 'dashboard-attendance-adjustments', 'schedules', 'dashboard-shifts-full'].forEach((k) =>
+      [
+        'notifications', 'my-attendance', 'attendance-all', 'nv-attendance', 'attendance-sessions', 'attendance-sessions-count',
+        'attendance-adjustments', 'dashboard-attendance-adjustments', 'schedules', 'dashboard-shifts-full',
+        'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile',
+      ].forEach((k) =>
         qc.invalidateQueries({ queryKey: [k] }),
       );
     };

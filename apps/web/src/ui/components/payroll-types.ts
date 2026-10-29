@@ -62,10 +62,12 @@ export interface SalarySegment {
 }
 
 export interface ShiftPayrollLog {
+  assignmentId?: string;
   date: string;
   shiftCode: string;
   shiftLabel: string;
   shiftTime: string;
+  branchName?: string;
   status: 'ATTENDANCE_FULL' | 'ATTENDANCE_CHECKIN' | 'ADJUSTMENT_APPROVED' | 'SCHEDULE_PUBLISHED' | 'LEAVE_OFF' | 'SWAPPED_OUT' | 'EMERGENCY_LEAVE' | 'ABSENT';
   statusLabel: string;
   hours: number;
@@ -74,7 +76,29 @@ export interface ShiftPayrollLog {
   lateMinutes: number;
   checkInHm: string;
   checkOutHm: string;
+  pendingAdjustmentCode?: string;
+  pendingAdjustmentStatus?: string;
   note: string;
+}
+
+export interface MissingShiftDetailItem {
+  assignmentId: string;
+  employeeId: string;
+  employeeCode: string;
+  fullName: string;
+  branchName: string;
+  date: string;
+  shiftCode: string;
+  shiftLabel: string;
+  shiftTime: string;
+  hours: number;
+  checkInHm: string;
+  checkOutHm: string;
+  issueType: 'ABSENT' | 'MISSING_CHECKOUT' | 'MISSING_CHECKIN' | 'PENDING_ADJUSTMENT';
+  issueLabel: string;
+  pendingAdjustmentCode: string | null;
+  pendingAdjustmentStatus: string | null;
+  actionGuide: string;
 }
 
 export interface PayrollSnapshotItem {
@@ -120,6 +144,7 @@ export interface PayrollSnapshotItem {
   pendingAdjCount?: number;
   approvedAdjCount?: number;
   hasAnomaly?: boolean;
+  missingShifts?: MissingShiftDetailItem[];
   shiftLogs?: ShiftPayrollLog[];
   workSourceLabel: string;
   segments: SalarySegment[];

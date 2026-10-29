@@ -13,8 +13,9 @@ import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
 import { SelectableTable } from './BulkActionBar';
+import { PayrollMissingShiftsModal } from './PayrollMissingShiftsModal';
 import { RowActionButtons } from './RowActionButtons';
-import { type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
+import { type MissingShiftDetailItem, type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
 
 interface Props {
   period: PayPeriodRow;
@@ -32,6 +33,8 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
   const [anomalyFilter, setAnomalyFilter] = useState<'ALL' | 'ANOMALY' | 'CLEAN'>('ALL');
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(12);
+  const [missingModalOpen, setMissingModalOpen] = useState(false);
+  const [inspectEmp, setInspectEmp] = useState<PayrollSnapshotItem | null>(null);
 
   useEffect(() => { setPage(1); }, [period.id, branchFilter, anomalyFilter, debouncedQ]);
 
@@ -59,10 +62,16 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
 
   const rows = snapshotsQ.data?.data ?? [];
   const totalCount = snapshotsQ.data?.meta.pagination.total ?? rows.length;
-  const summary = (snapshotsQ.data?.meta.filters?.summary ?? {}) as Record<string, number>;
-  const totalPendingAdjs = summary.totalPendingAdjs ?? 0;
-  const totalMissingPunches = summary.totalMissingPunches ?? 0;
-  const totalApprovedHours = summary.totalApprovedHours ?? period.total_approved_hours ?? 0;
+  const summary = (snapshotsQ.data?.meta.filters?.summary ?? {}) as Record<string, unknown>;
+  const totalPendingAdjs = Number(summary.totalPendingAdjs ?? 0);
+  const totalMissingPunches = Number(summary.totalMissingPunches ?? 0);
+  const totalApprovedHours = Number(summary.totalApprovedHours ?? period.total_approved_hours ?? 0);
+  const allMissingShifts = useMemo(
+    () => (Array.isArray(summary.allMissingShifts) ? (summary.allMissingShifts as MissingShiftDetailItem[]) : rows.flatMap((r) => r.missingShifts ?? [])),
+    [summary.allMissingShifts, rows],
+  );
+  const openEmployeeMissing = (r: PayrollSnapshotItem) => { setInspectEmp(r); setMissingModalOpen(true); };
+  const openAllMissing = () => { setInspectEmp(null); setMissingModalOpen(true); };
 
   const handleExport = async () => {
     const sp = new URLSearchParams({ page: '1', per_page: '500' });
@@ -101,7 +110,11 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
       <Row gutter={[12, 12]}>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Nhân sự trong bảng công" value={totalCount} suffix="NV" /></Card></Col>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Tổng giờ công tính lương" value={totalApprovedHours} suffix="giờ" prefix={<ClockCircleOutlined />} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="Ca thiếu Vào/Ra hoặc Vắng" value={totalMissingPunches} formatter={(v) => <span style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }}>{v}</span>} prefix={<WarningOutlined style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }} />} /></Card></Col>
+        <Col xs={12} md={6}>
+          <Card size="small" hoverable={totalMissingPunches > 0} onClick={totalMissingPunches > 0 ? openAllMissing : undefined}>
+            <Statistic title="Ca thiếu Vào/Ra hoặc Vắng" value={totalMissingPunches} suffix={totalMissingPunches > 0 ? 'ca (Xem chi tiết)' : 'ca'} formatter={(v) => <span style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }}>{v}</span>} prefix={<WarningOutlined style={{ color: totalMissingPunches > 0 ? '#DC2626' : '#16A34A' }} />} />
+          </Card>
+        </Col>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Phiếu điều chỉnh chờ duyệt" value={totalPendingAdjs} formatter={(v) => <span style={{ color: totalPendingAdjs > 0 ? '#D97706' : '#16A34A' }}>{v}</span>} prefix={<SafetyCertificateOutlined style={{ color: totalPendingAdjs > 0 ? '#D97706' : '#16A34A' }} />} /></Card></Col>
       </Row>
 
@@ -109,9 +122,14 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
         <Alert
           type="warning" showIcon
           message="Phát hiện dữ liệu chấm công cần đối soát trước khi khóa sổ lương"
+          action={
+            <Button size="small" type="primary" danger icon={<EyeOutlined />} onClick={openAllMissing}>
+              Xem chi tiết ca thiếu ({allMissingShifts.length || totalMissingPunches} ca)
+            </Button>
+          }
           description={
             <span>
-              Hệ thống ghi nhận <strong>{totalMissingPunches} ca thiếu lượt Vào/Ra ca hoặc vắng</strong> và <strong>{totalPendingAdjs} phiếu điều chỉnh công đang chờ duyệt</strong>. Kế toán không tự sửa sự kiện gốc; vui lòng phối hợp Cửa hàng / HR xử lý tại mục{' '}
+              Hệ thống ghi nhận <strong>{totalMissingPunches} ca thiếu lượt Vào/Ra ca hoặc vắng</strong> và <strong>{totalPendingAdjs} phiếu điều chỉnh công đang chờ duyệt</strong>. Nhấn <strong>Xem chi tiết ca thiếu</strong> để biết cụ thể nhân sự nào đang thiếu ca ngày nào, khung giờ nào để báo Cửa hàng / HR xử lý tại mục{' '}
               <Link href="/admin/schedules?section=workflows"><strong>Đơn từ &amp; Điều chỉnh công</strong></Link>.
             </span>
           }
@@ -159,11 +177,12 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
             { title: 'Giờ tính lương', dataIndex: 'approvedPayrollHours', width: 115, align: 'right', render: (v: number, r) => <strong className="num" style={{ color: '#2563EB' }}>{v ?? r.approvedHours} giờ</strong> },
             { title: 'Đi trễ', dataIndex: 'lateCount', width: 85, align: 'center', render: (v: number) => v > 0 ? <Tag color="volcano">{v} lần</Tag> : <Tag color="green">0</Tag> },
             {
-              title: 'Đối soát Giờ công & Bù công', width: 240,
+              title: 'Đối soát Giờ công & Bù công', width: 270,
               render: (_, r) => r.hasAnomaly ? (
                 <Space size={4} wrap>
-                  {(r.missingCheckoutCount ?? 0) > 0 && <Tag color="red" icon={<WarningOutlined />}>Thiếu Vào/Ra: {r.missingCheckoutCount} ca</Tag>}
-                  {(r.pendingAdjCount ?? 0) > 0 && <Badge status="processing" text={<Tag color="gold">{r.pendingAdjCount} đơn bù công chờ duyệt</Tag>} />}
+                  {(r.missingCheckoutCount ?? 0) > 0 && <Tag color="red" icon={<WarningOutlined />} style={{ cursor: 'pointer', margin: 0 }} onClick={() => openEmployeeMissing(r)}>Thiếu Vào/Ra: {r.missingCheckoutCount} ca</Tag>}
+                  {(r.pendingAdjCount ?? 0) > 0 && <Badge status="processing" text={<Tag color="gold" style={{ cursor: 'pointer', margin: 0 }} onClick={() => openEmployeeMissing(r)}>{r.pendingAdjCount} đơn bù công chờ duyệt</Tag>} />}
+                  <Button size="small" type="link" danger icon={<EyeOutlined />} style={{ padding: '0 4px', height: 22 }} onClick={() => openEmployeeMissing(r)}>Xem chi tiết</Button>
                 </Space>
               ) : (
                 <Space size={4}>
@@ -180,6 +199,7 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
           ]}
         />
       </Card>
+      <PayrollMissingShiftsModal open={missingModalOpen} period={period} selectedEmployee={inspectEmp} allMissingShifts={allMissingShifts} onClose={() => setMissingModalOpen(false)} onShowAll={() => setInspectEmp(null)} onOpenPayslip={onOpenPayslip} />
     </Space>
   );
 }
