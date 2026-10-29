@@ -31,7 +31,7 @@ export interface SalarySegment {
 export interface ShiftPayrollLog {
   assignmentId?: string; date: string; shiftCode: string; shiftLabel: string; shiftTime: string; branchName?: string;
   status: 'ATTENDANCE_FULL' | 'ATTENDANCE_CHECKIN' | 'ADJUSTMENT_APPROVED' | 'SCHEDULE_PUBLISHED' | 'LEAVE_OFF' | 'SWAPPED_OUT' | 'EMERGENCY_LEAVE' | 'ABSENT';
-  statusLabel: string; hours: number; otHours: number; isSwapIn: boolean; lateMinutes: number;
+  statusLabel: string; hours: number; otHours: number; isSwapIn: boolean; swapAllowanceVnd?: number; lateMinutes: number;
   checkInHm: string; checkOutHm: string; pendingAdjustmentCode?: string; pendingAdjustmentStatus?: string; note: string;
 }
 
@@ -97,6 +97,7 @@ export interface PayrollSnapshotItem {
   otRateVnd: number;
   otPayVnd: number;
   shiftSwapCount: number;
+  paidSwapCount?: number;
   shiftSwapAllowanceVnd: number;
   mealAllowanceVnd: number;
   transportAllowanceVnd: number;

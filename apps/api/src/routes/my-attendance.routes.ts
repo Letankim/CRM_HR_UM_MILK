@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { DEFAULT_SHIFT_LABELS, REQUEST_STATUS_LABELS, ROLE_LABELS, SHIFT_SWAP_STATUS_LABELS, type Employee, type User } from '@umbm/shared';
+import { REQUEST_STATUS_LABELS, ROLE_LABELS, type Employee, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
@@ -14,6 +14,7 @@ import { emitScheduleRealtime, healBranchConsistency, resolveShiftTimeDetails } 
 import { mapAttendanceEvent, migrateLegacyBase64Photos } from './attendance-helpers.js';
 import { findLinkedEmployeeForUser } from './employee-mapper.js';
 import { mapShiftAssignment } from './schedules.routes.js';
+import { mapShiftSwapRecord } from './shift-swap-helpers.js';
 
 const zCreateMyShiftBody = z.object({ work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng ngày YYYY-MM-DD'), shift_code: z.string().trim().default('CA_SANG'), note: z.string().trim().max(300).optional().default('Đăng ký ca làm việc cá nhân') });
 const SHIFT_DEFAULT_HOURS: Record<string, { start: string; end: string; hours: number }> = {
@@ -110,19 +111,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     const swaps = ctx.db.shiftSwaps
       .filter((s) => s.requester_id === emp.id || s.requester_id === emp.employee_code || s.peer_id === emp.id || s.peer_id === emp.employee_code)
       .reverse()
-      .map((s) => {
-        const reqEmp = ctx.db.employees.get(s.requester_id) ?? ctx.db.employees.find((e) => e.employee_code === s.requester_id);
-        const peerEmp = ctx.db.employees.get(s.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === s.peer_id);
-        const sBranch = ctx.db.branches.get(s.branch_id) ?? (reqEmp ? ctx.db.branches.get(reqEmp.branch_id) : undefined) ?? branch;
-        return {
-          ...s, ...resolveShiftTimeDetails(ctx, s.from_shift_code, s.from_assignment_id, sBranch?.id ?? s.branch_id, s.requester_id, s.from_work_date),
-          branchName: sBranch?.name ?? 'Chi nhánh',
-          requesterCode: reqEmp?.employee_code ?? s.requester_id, peerCode: peerEmp?.employee_code ?? s.peer_id,
-          requesterName: reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id,
-          peerName: peerEmp ? `${peerEmp.full_name} (${peerEmp.employee_code})` : s.peer_id,
-          statusLabel: SHIFT_SWAP_STATUS_LABELS[s.status],
-        };
-      });
+      .map((s) => mapShiftSwapRecord(ctx, s, branch));
 
     const peerBusyByEmp = new Map<string, Record<string, string>>();
     const putBusy = (key: string, date: string, label: string) => {

@@ -32,7 +32,10 @@ export function payslipLines(s: PayrollSnapshotItem): PayslipLine[] {
   }));
   if (s.otPayVnd > 0) lines.push({ label: 'Tăng ca (OT)', detail: `${s.otHours} giờ x ${fmtVnd(s.otRateVnd)}`, amount: s.otPayVnd });
   for (const a of s.allowanceLines) {
-    lines.push({ label: a.label, detail: a.code === 'ALLOWANCE_SWAP' ? `${s.shiftSwapCount} ca nhận đổi` : 'Theo hồ sơ lương / khoản mục đã duyệt', amount: a.amount });
+    const swapDetail = s.paidSwapCount !== undefined && s.paidSwapCount !== s.shiftSwapCount
+      ? `${s.paidSwapCount}/${s.shiftSwapCount} ca nhận đổi có phụ cấp`
+      : `${s.paidSwapCount ?? s.shiftSwapCount} ca nhận đổi có phụ cấp`;
+    lines.push({ label: a.label, detail: a.code === 'ALLOWANCE_SWAP' ? swapDetail : 'Theo hồ sơ lương / khoản mục đã duyệt', amount: a.amount });
   }
   if (s.kpiBonusVnd > 0) lines.push({ label: 'Thưởng KPI / Doanh số', detail: 'Khoản thưởng đã duyệt trong kỳ', amount: s.kpiBonusVnd });
   if (s.positiveAdjustmentsVnd > 0) lines.push({ label: 'Điều chỉnh cộng', detail: 'Khoản bổ sung đã duyệt', amount: s.positiveAdjustmentsVnd });

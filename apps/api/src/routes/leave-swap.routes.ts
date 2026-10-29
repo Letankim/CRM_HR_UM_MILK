@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { DEFAULT_SHIFT_LABELS, REQUEST_STATUS_LABELS, SHIFT_SWAP_STATUS_LABELS, SYSTEM_CONFIG, zListQueryBase } from '@umbm/shared';
+import { REQUEST_STATUS_LABELS, SYSTEM_CONFIG, zListQueryBase } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
@@ -10,15 +10,16 @@ import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requireP
 import { SocketEvents } from '../realtime/realtime.js';
 import { queueEmergencyHandledEmail, queueEmergencyLeaveEmail, queueLeaveCreatedEmail, queueLeaveDecisionEmail, queueSwapEventEmail } from '../services/action-email-dispatcher.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
+import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { assertNoDuplicateShiftWorkflow, clearShiftAttendanceOnWorkflowOverride } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
+import { mapShiftSwapRecord, registerShiftSwapAllowanceRoute, resolveSwapAllowance, zDecideSwapBody } from './shift-swap-helpers.js';
 
 const zCreateLeaveBody = z.object({ employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'), leave_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày nghỉ phải theo định dạng YYYY-MM-DD'), kind: z.enum(['PROBATION_OFF', 'WEEKLY_OFF', 'UNPAID_LEAVE']).default('WEEKLY_OFF'), shift_code: z.string().default('CA_SANG'), reason: z.string().trim().min(2, 'Vui lòng nhập lý do xin nghỉ').max(300), status: z.enum(['DRAFT', 'PENDING']).default('PENDING') });
 const zDecideLeaveBody = z.object({ version: z.coerce.number().int().min(1), decision: z.enum(['APPROVED', 'REJECTED']), decision_reason: z.string().trim().max(300).optional().default('') });
 const zCreateSwapBody = z.object({ requester_id: z.string().trim().min(1), peer_id: z.string().trim().min(1), from_assignment_id: z.string().trim().min(1), to_assignment_id: z.string().trim().optional().default(''), reason: z.string().trim().min(2).max(300) });
 const zPeerRespondBody = z.object({ version: z.coerce.number().int().min(1), accept: z.boolean(), peer_note: z.string().trim().max(200).optional().default('') });
-const zDecideSwapBody = z.object({ version: z.coerce.number().int().min(1), decision: z.enum(['APPROVED', 'REJECTED']), decision_reason: z.string().trim().max(300).optional().default('') });
 const zCreateEmergencyBody = z.object({ employee_id: z.string().trim().min(1), assignment_id: z.string().trim().optional().default(''), work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), shift_code: z.string().default('CA_SANG'), reason: z.string().trim().min(2).max(300) });
 const zHandleEmergencyBody = z.object({ version: z.coerce.number().int().min(1), action: z.enum(['ASSIGN_REPLACEMENT', 'ESCALATE', 'RESOLVE']), replacement_id: z.string().trim().optional().default(''), resolution_note: z.string().trim().max(300).optional().default('') });
 const zWorkflowQuery = zListQueryBase.extend({ branch_id: z.string().trim().optional(), status: z.string().trim().optional() });
@@ -90,12 +91,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.get('/api/admin/shift-swaps', { preHandler: requirePermission('schedule.read', 'swap.approve', 'self.swap') }, async (request) => {
     const query = zWorkflowQuery.parse(request.query ?? {}), scoped = filterByBranch(request, ctx.db.shiftSwaps.all(), (s) => resolveEmployeeBranchId(ctx, s.requester_id, s.branch_id));
-    const mapped = scoped.map((s) => {
-      const reqEmp = ctx.db.employees.get(s.requester_id) ?? ctx.db.employees.find((e) => e.employee_code === s.requester_id);
-      const peerEmp = ctx.db.employees.get(s.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === s.peer_id);
-      const branch = (reqEmp ? ctx.db.branches.get(reqEmp.branch_id) : undefined) ?? ctx.db.branches.get(s.branch_id);
-      return { ...s, ...resolveShiftTimeDetails(ctx, s.from_shift_code, s.from_assignment_id, branch?.id ?? s.branch_id, s.requester_id, s.from_work_date), branch_id: branch?.id ?? s.branch_id, branchName: branch?.name ?? 'Chi nhánh', requesterCode: reqEmp?.employee_code ?? s.requester_id, peerCode: peerEmp?.employee_code ?? s.peer_id, requesterName: reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id, peerName: peerEmp ? `${peerEmp.full_name} (${peerEmp.employee_code})` : s.peer_id, statusLabel: SHIFT_SWAP_STATUS_LABELS[s.status] };
-    }).filter((s) => (!query.branch_id || query.branch_id === 'ALL' || s.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || s.status === query.status));
+    const mapped = scoped.map((s) => mapShiftSwapRecord(ctx, s)).filter((s) => (!query.branch_id || query.branch_id === 'ALL' || s.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || s.status === query.status));
     return sendPaginated(request, 'Lấy danh sách yêu cầu đổi ca 3 bước thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'from_work_date', 'status'], q: query.q, searchExtractor: (i) => [i.swap_code, i.requesterName, i.peerName, i.reason], filters: { branch_id: query.branch_id, status: query.status } }));
   });
 
@@ -148,11 +144,11 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       if (peerEmp && ctx.db.shiftAssignments.find((a) => (a.employee_id === peerEmp.id || a.employee_id === peerEmp.employee_code) && a.work_date === before.from_work_date && a.day_type !== 'OFF' && a.status !== 'ON_LEAVE' && a.status !== 'ABSENT')) throw Errors.badRequest(`Đồng nghiệp nhận ca đã có lịch làm việc trong ngày ${before.from_work_date}, không thể duyệt đổi ca trùng ngày`);
       if (peerEmp && ctx.db.leaveRequests.find((l) => (l.employee_id === peerEmp.id || l.employee_id === peerEmp.employee_code) && l.leave_date === before.from_work_date && l.status === 'APPROVED')) throw Errors.badRequest(`Đồng nghiệp nhận ca đã được duyệt nghỉ OFF trong ngày ${before.from_work_date}, không thể duyệt đổi ca`);
     }
-    const actorId = request.auth!.user.id;
+    const actorId = request.auth!.user.id, allowancePatch = resolveSwapAllowance(body);
     const updated = await ctx.reconciliation.executeSaga({
       sagaKey: `swap-decide-${id}-v${body.version}`, operation: 'APPROVE_SHIFT_SWAP', actorId, initialContext: { swap: before },
       steps: [
-        { name: 'UPDATE_SWAP_STATUS', run: async (s) => { s.swap = await ctx.db.shiftSwaps.update(id, body.version, { status: body.decision, decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), allowance_eligible: body.decision === 'APPROVED' }, actorId); } },
+        { name: 'UPDATE_SWAP_STATUS', run: async (s) => { s.swap = await ctx.db.shiftSwaps.update(id, body.version, { status: body.decision, decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), ...allowancePatch }, actorId); } },
         { name: 'APPLY_TO_OFFICIAL_SCHEDULE_ON_APPROVE', run: async () => {
           if (body.decision !== 'APPROVED') return;
           const assign = ctx.db.shiftAssignments.get(before.from_assignment_id);
@@ -164,12 +160,15 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       ],
       resultSelector: (s) => s.swap,
     });
+    if (body.decision === 'APPROVED') await recalculateOpenPeriods(ctx, actorId);
     queueSwapEventEmail(ctx, updated, 'DECIDED', actorId);
     await ensureSyncedNotifications(ctx);
-    await ctx.audit.record(auditContext(request), { action: 'swap.decide', entity: 'SHIFT_SWAPS', entityId: id, before: { status: before.status }, after: { status: updated.status, decision_reason: updated.decision_reason } });
+    await ctx.audit.record(auditContext(request), { action: 'swap.decide', entity: 'SHIFT_SWAPS', entityId: id, before: { status: before.status, allowance_eligible: before.allowance_eligible, allowance_amount_vnd: before.allowance_amount_vnd }, after: { status: updated.status, decision_reason: updated.decision_reason, allowance_eligible: updated.allowance_eligible, allowance_amount_vnd: updated.allowance_amount_vnd } });
     emitScheduleRealtime(ctx, SocketEvents.SWAP_UPDATED, { branchId: before.branch_id, employeeIds: [before.requester_id, before.peer_id], kind: 'SWAP_DECIDED', message: `Yêu cầu đổi ca ${before.swap_code} đã ${body.decision === 'APPROVED' ? 'được duyệt chuyển lịch chính thức' : 'bị từ chối'}`, actorId });
-    return sendSuccess(request, body.decision === 'APPROVED' ? 'Đã duyệt đổi ca (Bước 3/3): Lịch chính thức đã được cập nhật sang người nhận ca' : 'Đã từ chối yêu cầu đổi ca', updated);
+    const allowanceMsg = updated.allowance_eligible && updated.allowance_amount_vnd > 0 ? ` (Phụ cấp nhận đổi ca: +${updated.allowance_amount_vnd.toLocaleString('vi-VN')} đ)` : ' (Không cộng phụ cấp đổi ca)';
+    return sendSuccess(request, body.decision === 'APPROVED' ? `Đã duyệt đổi ca (Bước 3/3): Lịch chính thức đã được cập nhật sang người nhận ca${allowanceMsg}` : 'Đã từ chối yêu cầu đổi ca', mapShiftSwapRecord(ctx, updated));
   });
+  registerShiftSwapAllowanceRoute(app, ctx);
   app.get('/api/admin/emergency-leaves', { preHandler: requirePermission('schedule.read', 'emergency.handle', 'self.leave') }, async (request) => {
     const query = zWorkflowQuery.parse(request.query ?? {}), scoped = filterByBranch(request, ctx.db.emergencyLeaves.all(), (e) => resolveEmployeeBranchId(ctx, e.employee_id, e.branch_id));
     const mapped = scoped.map((e) => {

@@ -165,7 +165,7 @@ export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { s
                       { title: 'Ngày', dataIndex: 'date', width: 105, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
                       { title: 'Ca làm việc', width: 165, render: (_, r) => <div><strong>{r.shiftLabel}</strong><div style={{ fontSize: 11, color: '#64748B' }}>{r.shiftTime}</div></div> },
                       { title: 'Vào – Ra thực tế', width: 130, render: (_, r) => <span className="num">{r.checkInHm || '—'} – {r.checkOutHm || '—'}</span> },
-                      { title: 'Trạng thái đối soát', width: 210, render: (_, r) => <Space size={4} wrap><Tag color={LOG_STATUS_COLORS[r.status] || 'default'} style={{ margin: 0 }}>{r.statusLabel}</Tag>{r.isSwapIn && <Tag color="purple" style={{ margin: 0 }}>+30.000đ đổi ca</Tag>}</Space> },
+                      { title: 'Trạng thái đối soát', width: 225, render: (_, r) => <Space size={4} wrap><Tag color={LOG_STATUS_COLORS[r.status] || 'default'} style={{ margin: 0 }}>{r.statusLabel}</Tag>{r.isSwapIn && <Tag color={(r.swapAllowanceVnd ?? 0) > 0 ? 'purple' : 'default'} style={{ margin: 0 }}>{(r.swapAllowanceVnd ?? 0) > 0 ? `+${fmtVnd(r.swapAllowanceVnd!)} đổi ca` : 'Nhận đổi ca (0 đ PC)'}</Tag>}</Space> },
                       { title: 'Giờ tính lương', width: 120, align: 'right', render: (_, r) => <span className="num"><strong>{r.hours} giờ</strong>{r.otHours > 0 ? <div style={{ fontSize: 11, color: '#2563EB' }}>+{r.otHours}h OT</div> : null}</span> },
                       { title: 'Ghi chú', dataIndex: 'note', ellipsis: true, render: (v: string) => v || '—' },
                     ]}

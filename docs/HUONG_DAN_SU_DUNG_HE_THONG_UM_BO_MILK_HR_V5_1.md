@@ -548,12 +548,13 @@ Màn hình này tập trung **5 Tab điều hành tác nghiệp hàng ngày** c�
   - Nếu duyệt đơn nghỉ này thì ca hôm đó tại cửa hàng còn lại bao nhiêu người trực, có vi phạm **Định biên nhân sự tối thiểu** của ca hay không.
 - Quản lý / Nhân sự bấm **`Phê duyệt đơn nghỉ phép`** hoặc **`Từ chối đơn nghỉ phép`** (hỗ trợ duyệt hàng loạt khi tích chọn nhiều đơn).
 
-### 13.4. Tab 4: `Đơn xin đổi ca` (Quy trình 3 Bước & Tự động Cộng Phụ cấp `30.000đ`)
+### 13.4. Tab 4: `Đơn xin đổi ca` (Quy trình 3 Bước & Tùy chọn Tick Phụ cấp Đổi ca Mặc định `30.000đ`)
 
 - Chỉ những yêu cầu đổi ca mà **đồng nghiệp nhận ca thay đã bấm đồng ý** mới chuyển lên bước chờ Quản lý / Nhân sự phê duyệt chính thức.
-- Khi Quản lý cửa hàng hoặc Nhân sự bấm **`Phê duyệt đổi ca chính thức`**:
-  1. Hệ thống tự động hoán đổi/chuyển người trực trên Lịch phân ca chính thức.
-  2. Hệ thống tự động ghi nhận khoản **Phụ cấp nhận đổi ca (`30.000đ/ca`)** cho nhân sự nhận ca thay khi hoàn thành ca trực đó trong kỳ lương.
+- Khi Quản lý cửa hàng hoặc Nhân sự bấm **`Phê duyệt đổi ca & Phụ cấp`**:
+  1. Hệ thống mở hộp thoại xác nhận có sẵn nút tick **`Cộng phụ cấp nhận đổi ca cho nhân sự nhận ca thay`** (mặc định **đã tick chọn** với số tiền **`30.000 VNĐ`**, cho phép Nhân sự / Quản lý thay đổi sang số tiền khác nếu cần).
+  2. Nếu **bỏ tick** ô phụ cấp đổi ca, đơn đổi ca đó vẫn được chuyển lịch chính thức sang người nhận thay nhưng **không cộng tiền phụ cấp đổi ca (`0 đ`)** — bảng lương chỉ tính giờ công làm việc thực tế của ca đó.
+  3. Trước khi kỳ lương chốt khóa, Nhân sự / Quản lý cũng có thể chọn **`Điều chỉnh phụ cấp đổi ca`** trên đơn đã duyệt để cập nhật lại mức phụ cấp và tự động đồng bộ sang bảng lương.
 
 ### 13.5. Tab 5: `Báo nghỉ đột xuất` (Xử lý Ca Khẩn cấp `<12h`)
 
@@ -854,7 +855,7 @@ Hệ thống phân tách rõ **2 loại báo nghỉ** tùy theo thời điểm g
 2. Kiểm tra kỹ ngày trực và khung giờ ca mà đồng nghiệp nhờ thay:
    - Nếu sắp xếp đi làm được: Nhấn **`Đồng ý nhận ca thay`**. Đơn sẽ tự động chuyển lên Quản lý cửa hàng / Nhân sự phê duyệt bước cuối.
    - Nếu bận không nhận được: Nhấn **`Từ chối nhận ca thay`** để đồng nghiệp chủ động tìm người khác.
-3. Ngay khi Quản lý phê duyệt chính thức: Ca làm việc đó chuyển sang tên bạn trên lịch và bạn được hệ thống cộng **Phụ cấp nhận đổi ca `30.000đ`** khi hoàn thành ca trực đó!
+3. Ngay khi Quản lý / Nhân sự phê duyệt chính thức: Ca làm việc đó chuyển sang tên bạn trên lịch; nếu đơn đổi ca được Nhân sự tick duyệt phụ cấp (mặc định **`30.000đ`** hoặc theo mức điều chỉnh), hệ thống sẽ tự động cộng khoản **Phụ cấp nhận đổi ca** vào bảng lương kỳ đó khi bạn hoàn thành ca trực (nếu không tick phụ cấp thì chỉ tính giờ công ca trực, không cộng phụ cấp đổi ca).
 
 ---
 

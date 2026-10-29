@@ -16,6 +16,7 @@ export interface WorkEntry {
   hours: number;
   otHours: number;
   isSwap: boolean;
+  swapAllowanceVnd?: number;
 }
 
 export interface SalarySegment {
@@ -55,6 +56,8 @@ export function computeEmployeePayroll(input: PayrollComputationInput) {
   let otPay = 0;
   let meal = 0;
   let swapCount = 0;
+  let paidSwapCount = 0;
+  let swapAuto = 0;
   let missingProfileShifts = 0;
   let lastProfile: PayRate | undefined;
 
@@ -100,7 +103,12 @@ export function computeEmployeePayroll(input: PayrollComputationInput) {
     otHours += e.otHours;
     otPay += e.otHours * hourlyEq * profile.ot_multiplier;
     if (e.hours > 0) meal += profile.meal_allowance_per_shift_vnd;
-    if (e.isSwap) swapCount += 1;
+    if (e.isSwap) {
+      swapCount += 1;
+      const entrySwapVnd = e.swapAllowanceVnd !== undefined ? Math.max(0, Math.round(e.swapAllowanceVnd)) : input.swapAllowanceVnd;
+      swapAuto += entrySwapVnd;
+      if (entrySwapVnd > 0) paidSwapCount += 1;
+    }
   }
 
   const segList = [...segments.values()].map((s) => ({ ...s, amountVnd: Math.round(s.amountVnd), quantity: Math.round(s.quantity * 100) / 100 }));
@@ -115,7 +123,6 @@ export function computeEmployeePayroll(input: PayrollComputationInput) {
   const responsibility = hasWork ? fixedProfile!.responsibility_allowance_vnd + fixedProfile!.other_allowance_vnd : 0;
   const attendanceAuto = hasWork && input.absentCount === 0 ? fixedProfile!.attendance_bonus_vnd : 0;
 
-  const swapAuto = swapCount * input.swapAllowanceVnd;
   const swapPay = swapAuto + sumItems(items, 'ALLOWANCE_SWAP');
   const mealVnd = Math.round(meal) + sumItems(items, 'ALLOWANCE_MEAL');
   const attendanceBonus = attendanceAuto + sumItems(items, 'BONUS_ATTENDANCE');
@@ -150,6 +157,7 @@ export function computeEmployeePayroll(input: PayrollComputationInput) {
     otRateVnd: fixedProfile ? Math.round(otHours > 0 ? otPay / otHours : 0) : 0,
     otPay: otPayRounded,
     swapCount,
+    paidSwapCount,
     swapPay,
     mealVnd,
     transport,

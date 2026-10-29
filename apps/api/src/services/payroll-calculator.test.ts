@@ -71,4 +71,26 @@ describe('Bộ tính lương theo Hồ sơ lương cá nhân (FIN-05)', () => {
     expect(noProfile.missingProfileShifts).toBe(1);
     expect(noProfile.primaryProfile).toBeUndefined();
   });
+
+  it('Phụ cấp đổi ca tùy chỉnh theo quyết định của Nhân sự: mặc định 30.000đ, đổi số tiền khác, hoặc bỏ tick = 0đ', () => {
+    const p = rate({ amount_vnd: 30000, attendance_bonus_vnd: 0, meal_allowance_per_shift_vnd: 0 });
+    // 1 ca đổi bỏ tick phụ cấp (0đ) -> vẫn tính đủ 5 giờ lương cơ bản (150.000đ), nhưng phụ cấp đổi ca = 0đ
+    const unchecked = run(emp({ stage: 'OFFICIAL' }), [p], [work('2026-10-12', 5, { isSwap: true, swapAllowanceVnd: 0 })]);
+    expect(unchecked.baseSalary).toBe(150000);
+    expect(unchecked.swapCount).toBe(1);
+    expect(unchecked.paidSwapCount).toBe(0);
+    expect(unchecked.swapPay).toBe(0);
+    expect(unchecked.net).toBe(150000);
+
+    // 1 ca đổi tùy chỉnh phụ cấp 50.000đ + 1 ca đổi bỏ tick 0đ -> tổng phụ cấp đổi ca đúng 50.000đ
+    const mixed = run(emp({ stage: 'OFFICIAL' }), [p], [
+      work('2026-10-12', 5, { isSwap: true, swapAllowanceVnd: 50000 }),
+      work('2026-10-14', 5, { isSwap: true, swapAllowanceVnd: 0 }),
+    ]);
+    expect(mixed.baseSalary).toBe(300000);
+    expect(mixed.swapCount).toBe(2);
+    expect(mixed.paidSwapCount).toBe(1);
+    expect(mixed.swapPay).toBe(50000);
+    expect(mixed.net).toBe(350000);
+  });
 });

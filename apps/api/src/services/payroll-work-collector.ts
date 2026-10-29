@@ -1,4 +1,4 @@
-import { DEFAULT_SHIFT_LABELS, PAYROLL_WORK_SOURCE_LABELS, type Employee } from '@umbm/shared';
+import { DEFAULT_SHIFT_LABELS, PAYROLL_WORK_SOURCE_LABELS, SYSTEM_CONFIG, type Employee } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { dayjs } from '../lib/time.js';
 import { parseHm } from '../routes/attendance-helpers.js';
@@ -19,6 +19,7 @@ export interface ShiftPayrollLog {
   hours: number;
   otHours: number;
   isSwapIn: boolean;
+  swapAllowanceVnd?: number;
   lateMinutes: number;
   checkInHm: string;
   checkOutHm: string;
@@ -71,25 +72,13 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
     return false;
   };
 
-  const approvedLeaves = ctx.db.leaveRequests.filter(
-    (l) => isEmp(l.employee_id) && l.leave_date >= from && l.leave_date <= to && l.status === 'APPROVED',
-  );
+  const approvedLeaves = ctx.db.leaveRequests.filter((l) => isEmp(l.employee_id) && l.leave_date >= from && l.leave_date <= to && l.status === 'APPROVED');
   const approvedLeaveDates = new Set(approvedLeaves.map((l) => l.leave_date));
-
-  const swapsGivenOut = ctx.db.shiftSwaps.filter(
-    (s) => isEmp(s.requester_id) && !isEmp(s.peer_id) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && !isDeletedRef(s.from_assignment_id, s.from_work_date, s.from_shift_code),
-  );
-  const swapsReceived = ctx.db.shiftSwaps.filter(
-    (s) => isEmp(s.peer_id) && !isEmp(s.requester_id) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && !isDeletedRef(s.from_assignment_id, s.from_work_date, s.from_shift_code),
-  );
+  const swapsGivenOut = ctx.db.shiftSwaps.filter((s) => isEmp(s.requester_id) && !isEmp(s.peer_id) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && !isDeletedRef(s.from_assignment_id, s.from_work_date, s.from_shift_code));
+  const swapsReceived = ctx.db.shiftSwaps.filter((s) => isEmp(s.peer_id) && !isEmp(s.requester_id) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && !isDeletedRef(s.from_assignment_id, s.from_work_date, s.from_shift_code));
   const receivedSwapAssignIds = new Set(swapsReceived.map((s) => s.from_assignment_id).filter(Boolean));
-
-  const myEmergencyLeaves = ctx.db.emergencyLeaves.filter(
-    (el) => isEmp(el.employee_id) && el.work_date >= from && el.work_date <= to && !isDeletedRef(el.assignment_id, el.work_date, el.shift_code),
-  );
-  const replacedEmergencies = ctx.db.emergencyLeaves.filter(
-    (el) => isEmp(el.replacement_id) && !isEmp(el.employee_id) && el.work_date >= from && el.work_date <= to && (el.status === 'REPLACEMENT_FOUND' || el.status === 'RESOLVED'),
-  );
+  const myEmergencyLeaves = ctx.db.emergencyLeaves.filter((el) => isEmp(el.employee_id) && el.work_date >= from && el.work_date <= to && !isDeletedRef(el.assignment_id, el.work_date, el.shift_code));
+  const replacedEmergencies = ctx.db.emergencyLeaves.filter((el) => isEmp(el.replacement_id) && !isEmp(el.employee_id) && el.work_date >= from && el.work_date <= to && (el.status === 'REPLACEMENT_FOUND' || el.status === 'RESOLVED'));
 
   const empEvents = ctx.db.attendanceEvents.filter((e) => isEmp(e.employee_id) && e.work_date >= from && e.work_date <= to && !isDeletedRef(e.assignment_id, e.work_date, e.shift_code));
   const empAdjsAll = ctx.db.attendanceAdjustments.filter((a) => isEmp(a.employee_id) && a.work_date >= from && a.work_date <= to && !isDeletedRef(a.assignment_id, a.work_date, a.shift_code));
@@ -149,7 +138,10 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
 
     const swapIn = swapsReceived.find((s) => s.from_assignment_id === a.id || (s.from_work_date === a.work_date && s.from_shift_code === a.shift_code));
     if (swapIn) usedSwapInIds.add(swapIn.id);
-    const isSwap = Boolean(a.swapped_from_employee_id || a.replacement_for_employee_id || swapIn || replacedEmergencies.some((el) => el.work_date === a.work_date && el.shift_code === a.shift_code));
+    const isEmgRep = Boolean(a.replacement_for_employee_id || replacedEmergencies.some((el) => el.work_date === a.work_date && el.shift_code === a.shift_code));
+    const matchedSwap = swapIn ?? (a.swapped_from_employee_id ? ctx.db.shiftSwaps.find((s) => s.status === 'APPROVED' && (s.from_assignment_id === a.id || (s.from_work_date === a.work_date && s.from_shift_code === a.shift_code && isEmp(s.peer_id)))) : undefined);
+    const isSwap = Boolean(matchedSwap || a.swapped_from_employee_id || isEmgRep);
+    const swapAllowanceVnd = !isSwap ? 0 : matchedSwap ? (matchedSwap.allowance_eligible ? Math.max(0, Math.round(Number(matchedSwap.allowance_amount_vnd ?? 0))) : 0) : SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd;
 
     const lateMins = checkIn ? (checkIn.late_minutes || Math.max(0, parseHm(checkInHm) - parseHm(a.start_at || '07:00'))) : 0;
     if (lateMins > 0) { lateCount += 1; lateMinutesTotal += lateMins; }
@@ -181,8 +173,8 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
     }
 
     const hours = a.day_type === 'OT' ? 0 : baseHours, otHours = a.day_type === 'OT' ? baseHours : extraOt;
-    entries.push({ assignmentId: a.id, date: a.work_date, hours, otHours, isSwap });
-    shiftLogs.push({ assignmentId: a.id, date: a.work_date, shiftCode: a.shift_code, shiftLabel, shiftTime, branchName, status, statusLabel, hours, otHours, isSwapIn: isSwap, lateMinutes: lateMins, checkInHm, checkOutHm, pendingAdjustmentCode: pendAdj?.adjustment_code, pendingAdjustmentStatus: pendAdj?.status, note: a.note });
+    entries.push({ assignmentId: a.id, date: a.work_date, hours, otHours, isSwap, swapAllowanceVnd });
+    shiftLogs.push({ assignmentId: a.id, date: a.work_date, shiftCode: a.shift_code, shiftLabel, shiftTime, branchName, status, statusLabel, hours, otHours, isSwapIn: isSwap, swapAllowanceVnd: isSwap ? swapAllowanceVnd : 0, lateMinutes: lateMins, checkInHm, checkOutHm, pendingAdjustmentCode: pendAdj?.adjustment_code, pendingAdjustmentStatus: pendAdj?.status, note: a.note });
   }
 
   for (const adj of approvedAdjs.filter((ad) => !usedAdjIds.has(ad.id))) {
@@ -193,8 +185,9 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
   }
 
   for (const sw of swapsReceived.filter((s) => !usedSwapInIds.has(s.id))) {
-    entries.push({ assignmentId: sw.from_assignment_id || sw.id, date: sw.from_work_date, hours: 5, otHours: 0, isSwap: true });
-    shiftLogs.push({ date: sw.from_work_date, shiftCode: sw.from_shift_code, shiftLabel: cleanShiftLabel(sw.from_shift_code), shiftTime: '07:00 – 12:00', status: 'SCHEDULE_PUBLISHED', statusLabel: `Nhận đổi ca (${sw.swap_code})`, hours: 5, otHours: 0, isSwapIn: true, lateMinutes: 0, checkInHm: '', checkOutHm: '', note: sw.reason });
+    const swAllowance = sw.allowance_eligible ? Math.max(0, Math.round(Number(sw.allowance_amount_vnd ?? 0))) : 0;
+    entries.push({ assignmentId: sw.from_assignment_id || sw.id, date: sw.from_work_date, hours: 5, otHours: 0, isSwap: true, swapAllowanceVnd: swAllowance });
+    shiftLogs.push({ date: sw.from_work_date, shiftCode: sw.from_shift_code, shiftLabel: cleanShiftLabel(sw.from_shift_code), shiftTime: '07:00 – 12:00', status: 'SCHEDULE_PUBLISHED', statusLabel: `Nhận đổi ca (${sw.swap_code})`, hours: 5, otHours: 0, isSwapIn: true, swapAllowanceVnd: swAllowance, lateMinutes: 0, checkInHm: '', checkOutHm: '', note: sw.reason });
   }
 
   for (const l of approvedLeaves.filter((x) => !usedLeaveDates.has(x.leave_date))) {

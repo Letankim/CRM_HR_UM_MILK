@@ -74,7 +74,7 @@ export const PAYROLL_ITEM_TYPE_LABELS: Record<PayrollItemType, string> = {
   BONUS_SALES: 'Thưởng doanh số',
   ALLOWANCE_MEAL: 'Phụ cấp ăn ca',
   ALLOWANCE_RESPONSIBILITY: 'Phụ cấp trách nhiệm',
-  ALLOWANCE_SWAP: 'Phụ cấp nhận đổi ca (30.000đ)',
+  ALLOWANCE_SWAP: 'Phụ cấp nhận đổi ca',
   ADJUSTMENT_ADD: 'Bổ sung lương cộng (+)',
   DEDUCTION_APPROVED: 'Khấu trừ đã phê duyệt (-)',
   ADVANCE_DEDUCTION: 'Khấu trừ tạm ứng (-)',

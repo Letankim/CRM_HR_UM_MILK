@@ -45,6 +45,7 @@ export function exportSwapsExcel(rows: RowRec[]) {
       { header: 'Mã đơn', key: 'swap_code' }, { header: 'Ngày ca', key: 'from_work_date' },
       { header: 'Khung ca', render: (r) => String(r.shiftLabel || r.from_shift_code || '') },
       { header: 'Người xin đổi', key: 'requesterName' }, { header: 'Người nhận thay', key: 'peerName' },
+      { header: 'Phụ cấp đổi ca (VNĐ)', render: (r) => (r.status === 'APPROVED' && Boolean(r.allowance_eligible ?? r.allowanceEligible) ? Number(r.allowance_amount_vnd ?? r.allowanceAmountVnd ?? 0) : 0), isCurrency: true },
       { header: 'Lý do đổi ca', key: 'reason' }, { header: 'Trạng thái', render: (r) => String(r.statusLabel || r.status || '') },
     ],
     rows,
@@ -86,6 +87,7 @@ export interface WorkflowBulkRunnerOptions {
   canApproveSwap?: boolean;
   canHandleEmg?: boolean;
   loading?: boolean;
+  onOpenApproveSwaps?: (rows: RowRec[]) => void;
   runBatch: (items: RowRec[], buildCall: (r: RowRec) => { url: string; body: unknown } | null, successMsg: string, confirmKind?: WorkflowConfirmKind) => void;
 }
 
@@ -141,7 +143,7 @@ export function buildSwapsBulkActions(opts: WorkflowBulkRunnerOptions): BulkActi
       {
         key: 'approve', label: 'Duyệt đổi ca đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'PEER_ACCEPTED',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/shift-swaps/${r.id}/decide`, body: { version: r.version, decision: 'APPROVED', decision_reason: 'Duyệt đổi ca hàng loạt' } }), 'Đã phê duyệt đổi ca cho các đơn hợp lệ', 'swap'),
+        onClick: (rows: RowRec[]) => opts.onOpenApproveSwaps ? opts.onOpenApproveSwaps(rows) : opts.runBatch(rows, (r) => ({ url: `/admin/shift-swaps/${r.id}/decide`, body: { version: r.version, decision: 'APPROVED', decision_reason: 'Duyệt đổi ca hàng loạt', allowance_eligible: true } }), 'Đã phê duyệt đổi ca cho các đơn hợp lệ', 'swap'),
       },
       {
         key: 'reject', label: 'Từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: opts.loading,

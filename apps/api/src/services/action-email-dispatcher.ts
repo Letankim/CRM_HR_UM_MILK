@@ -64,13 +64,13 @@ export function queueSwapEventEmail(ctx: AppContext, swap: ShiftSwap, stage: 'CR
     return flushMail(ctx, queued);
   }
 
-  const approved = swap.status === 'APPROVED';
+  const approved = swap.status === 'APPROVED', swapAllowanceText = swap.allowance_eligible && swap.allowance_amount_vnd > 0 ? `+${swap.allowance_amount_vnd.toLocaleString('vi-VN')} đ (cộng cho người nhận ca thay)` : 'Không cộng phụ cấp đổi ca (0 đ)';
   for (const c of [reqContact, peerContact]) {
     if (!c?.personalEmail || c.userId === (actorId || swap.decided_by)) continue;
     ctx.email.enqueue({
       to: c.personalEmail, template: 'LEAVE_SWAP_DECISION', recipientName: c.name, referenceCode: `${swap.swap_code}-${swap.status}`,
       summary: `Yêu cầu đổi ca ${swap.swap_code} ngày ${swap.from_work_date} đã ${approved ? 'được Quản lý phê duyệt (Bước 3/3 — Đã cập nhật lịch chính thức)' : 'bị từ chối'}.`,
-      metadata: [{ label: 'Mã đơn đổi ca', value: swap.swap_code }, { label: 'Ngày ca hoán đổi', value: `${swap.from_work_date} (${shiftLabel(swap.from_shift_code)})` }, { label: 'Kết quả duyệt cuối', value: approved ? 'Đã phê duyệt & chuyển lịch chính thức' : 'Từ chối' }, { label: 'Ghi chú Quản lý', value: swap.decision_reason || 'Đảm bảo định biên ca trực' }],
+      metadata: [{ label: 'Mã đơn đổi ca', value: swap.swap_code }, { label: 'Ngày ca hoán đổi', value: `${swap.from_work_date} (${shiftLabel(swap.from_shift_code)})` }, { label: 'Kết quả duyệt cuối', value: approved ? 'Đã phê duyệt & chuyển lịch chính thức' : 'Từ chối' }, ...(approved ? [{ label: 'Phụ cấp nhận đổi ca', value: swapAllowanceText }] : []), { label: 'Ghi chú Quản lý', value: swap.decision_reason || 'Đảm bảo định biên ca trực' }],
       actionLabel: 'Kiểm tra lịch làm việc mới', actionUrl: `${webOrigin(ctx)}${resolveRolePortalPath(c.role, 'schedule')}`,
     }, { dedupeKey: `swap_decide:${swap.id}:v${swap.version}:${c.personalEmail}` });
     queued += 1;

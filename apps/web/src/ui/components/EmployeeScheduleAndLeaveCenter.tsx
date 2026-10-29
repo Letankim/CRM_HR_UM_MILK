@@ -19,6 +19,7 @@ import { RowActionButtons } from './RowActionButtons';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
 import { ScheduleViewsPanel } from './ScheduleViewsPanel';
+import { renderSwapAllowanceTag } from './ShiftSwapApproveModal';
 import { buildPortalShiftsBulkActions, exportEmergencyExcel, exportLeavesExcel, exportSwapsExcel } from './workflow-bulk-helpers';
 import { confirmWorkflowShiftOverride, renderWorkflowShiftStateTag } from './workflow-shift-warning';
 
@@ -182,7 +183,7 @@ export function EmployeeScheduleAndLeaveCenter({
                     { title: 'Khung ca & Giờ ca', width: 255, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
                     { title: 'Người xin đổi', width: 195, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.requesterName || '')}</span>{(r.requester_id === empId || r.requesterCode === empCode) && <Tag color="blue" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
                     { title: 'Người nhận ca', width: 185, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.peerName || '')}</span>{(r.peer_id === empId || r.peerCode === empCode) && <Tag color="cyan" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
-                    { title: 'Tiến trình & Trạng thái', dataIndex: 'status', width: 220, render: (v: string) => <Space size={4} wrap><StatusTag value={v} /><Tag color={v === 'APPROVED' ? 'green' : v === 'PEER_ACCEPTED' ? 'blue' : v === 'REJECTED' ? 'red' : 'gold'} style={{ margin: 0 }}>{v === 'APPROVED' ? 'Bước 3/3: Đã cập nhật lịch' : v === 'PEER_ACCEPTED' ? 'Bước 2/3: Chờ CH/HR duyệt' : v === 'REJECTED' ? 'Đã từ chối' : 'Bước 1/3: Chờ NV B xác nhận'}</Tag></Space> },
+                    { title: 'Tiến trình & Trạng thái', dataIndex: 'status', width: 255, render: (v: string, r) => <Space size={4} wrap><StatusTag value={v} /><Tag color={v === 'APPROVED' ? 'green' : v === 'PEER_ACCEPTED' ? 'blue' : v === 'REJECTED' ? 'red' : 'gold'} style={{ margin: 0 }}>{v === 'APPROVED' ? 'Bước 3/3: Đã cập nhật lịch' : v === 'PEER_ACCEPTED' ? 'Bước 2/3: Chờ CH/HR duyệt' : v === 'REJECTED' ? 'Đã từ chối' : 'Bước 1/3: Chờ NV B xác nhận'}</Tag>{renderSwapAllowanceTag(r, true)}</Space> },
                     {
                       title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
                       render: (_, r) => {

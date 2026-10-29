@@ -22,6 +22,7 @@ interface SnapshotAdjustmentsDetail {
   source?: keyof typeof PAYROLL_WORK_SOURCE_LABELS;
   workedDays?: number;
   missingProfileShifts?: number;
+  paidSwapCount?: number;
   checkedInShiftsCount?: number;
   adjustedShiftsCount?: number;
   scheduledOnlyShiftsCount?: number;
@@ -169,7 +170,7 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
     workSourceLabel: (liveWork?.source ?? detail.source) ? PAYROLL_WORK_SOURCE_LABELS[(liveWork?.source ?? detail.source)!] : '',
     segments: detail.segments ?? [], items: detail.items ?? [], allowanceLines,
     baseSalaryVnd: s.base_salary_vnd, otHours: s.ot_hours, otRateVnd: s.ot_rate_vnd, otPayVnd: s.ot_pay_vnd,
-    shiftSwapCount: s.shift_swap_count, shiftSwapAllowanceVnd: s.shift_swap_allowance_vnd,
+    shiftSwapCount: s.shift_swap_count, paidSwapCount: detail.paidSwapCount ?? (s.shift_swap_allowance_vnd > 0 ? s.shift_swap_count : 0), shiftSwapAllowanceVnd: s.shift_swap_allowance_vnd,
     mealAllowanceVnd: s.meal_allowance_vnd, transportAllowanceVnd: s.transport_allowance_vnd,
     attendanceBonusVnd: s.attendance_bonus_vnd, kpiBonusVnd: s.kpi_bonus_vnd, otherAllowancesVnd: s.other_allowances_vnd,
     positiveAdjustmentsVnd: s.positive_adjustments_vnd, approvedDeductionsVnd: s.approved_deductions_vnd,

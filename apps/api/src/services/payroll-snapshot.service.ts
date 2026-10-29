@@ -107,7 +107,7 @@ async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, 
     ].filter((l) => l.amount > 0);
 
     const adjustmentsJson = JSON.stringify({
-      source, workedDays: r.workedDays, missingProfileShifts: r.missingProfileShifts,
+      source, workedDays: r.workedDays, missingProfileShifts: r.missingProfileShifts, paidSwapCount: r.paidSwapCount,
       checkedInShiftsCount: workSummary.checkedInShiftsCount, adjustedShiftsCount: workSummary.adjustedShiftsCount,
       scheduledOnlyShiftsCount: workSummary.scheduledOnlyShiftsCount, leaveOffCount: workSummary.leaveOffCount,
       emergencyLeaveCount: workSummary.emergencyLeaveCount, swappedOutCount: workSummary.swappedOutCount,
@@ -117,7 +117,7 @@ async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, 
     });
 
     const dataHash = createHash('sha256')
-      .update(`${period.id}:${emp.id}:${emp.stage}:${emp.branch_id}:${r.primaryProfile?.id ?? ''}:${r.primaryProfile?.rate_type ?? ''}:${r.primaryProfile?.amount_vnd ?? 0}:${r.primaryProfile?.probation_percent ?? 0}:${r.gross}:${r.net}:${r.approvedHours}:${r.otHours}:${r.swapCount}:${workSummary.lateCount}:${workSummary.leaveOffCount}:${emp.bank_name}:${emp.bank_account_number}:${adjustmentsJson}`)
+      .update(`${period.id}:${emp.id}:${emp.stage}:${emp.branch_id}:${r.primaryProfile?.id ?? ''}:${r.primaryProfile?.rate_type ?? ''}:${r.primaryProfile?.amount_vnd ?? 0}:${r.primaryProfile?.probation_percent ?? 0}:${r.gross}:${r.net}:${r.approvedHours}:${r.otHours}:${r.swapCount}:${r.paidSwapCount}:${r.swapPay}:${workSummary.lateCount}:${workSummary.leaveOffCount}:${emp.bank_name}:${emp.bank_account_number}:${adjustmentsJson}`)
       .digest('hex').slice(0, 16);
 
     const payload = {

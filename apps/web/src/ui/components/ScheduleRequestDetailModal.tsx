@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import { Alert, Button, Descriptions, Modal, Space, Tag } from 'antd';
-import { ClockCircleOutlined, CloseOutlined, FileAddOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DollarOutlined, FileAddOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { StatusTag } from '../StatusTag';
 import { hasPendingAdjustmentRecord, isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
+import { renderSwapAllowanceTag } from './ShiftSwapApproveModal';
 import { renderDetailShiftStateAlert, renderWorkflowShiftStateTag } from './workflow-shift-warning';
 
 export type ScheduleDetailKind = 'shift' | 'leave' | 'emergency' | 'swap' | 'adjustment';
@@ -30,11 +31,11 @@ const TITLES: Record<ScheduleDetailKind, string> = {
 };
 
 export function ScheduleRequestDetailModal({
-  target,
-  onClose,
+  target, onClose, onApproveSwap, onEditSwapAllowance,
 }: {
-  target: ScheduleDetailTarget | null;
-  onClose: () => void;
+  target: ScheduleDetailTarget | null; onClose: () => void;
+  onApproveSwap?: (record: Record<string, unknown>) => void;
+  onEditSwapAllowance?: (record: Record<string, unknown>) => void;
 }) {
   const [quickAdjOpen, setQuickAdjOpen] = useState(false);
   if (!target) return null;
@@ -44,35 +45,23 @@ export function ScheduleRequestDetailModal({
 
   return (
     <Modal
-      width="min(860px, 94vw)"
-      open
-      title={TITLES[kind]}
-      onCancel={onClose}
+      width="min(860px, 94vw)" open title={TITLES[kind]} onCancel={onClose}
       footer={
         <Space wrap size={8}>
-          {isAbsentShift && (
-            <Button type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>
-              Tạo phiếu bổ sung công từ ca này
-            </Button>
+          {kind === 'swap' && r.status === 'PEER_ACCEPTED' && onApproveSwap && (
+            <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => { onApproveSwap(r); onClose(); }}>Phê duyệt đổi ca (Bước 3/3)</Button>
           )}
+          {kind === 'swap' && r.status === 'APPROVED' && onEditSwapAllowance && (
+            <Button icon={<DollarOutlined />} onClick={() => { onEditSwapAllowance(r); onClose(); }}>Điều chỉnh phụ cấp đổi ca</Button>
+          )}
+          {isAbsentShift && <Button type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công từ ca này</Button>}
           <Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
         </Space>
       }
     >
       {renderDetailShiftStateAlert(kind, r)}
-      {hasPendingAdj && (
-        <Alert
-          type="warning" showIcon style={{ marginBottom: 10 }}
-          message={`Ca làm việc này đã gửi Phiếu bổ sung công (${String(r.pendingAdjustmentCode || 'Chờ duyệt')}) và đang chờ Cửa hàng / HR phê duyệt. Không được phép gửi trùng yêu cầu.`}
-        />
-      )}
-      {isAbsentShift && (
-        <Alert
-          type="error" showIcon style={{ marginBottom: 10 }}
-          message="Ca làm việc này đang ở trạng thái Vắng mặt (Cần bổ sung công). Bấm nút 'Tạo phiếu bổ sung công từ ca này' để gửi phiếu giải trình bù công."
-          action={<Button size="small" type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công</Button>}
-        />
-      )}
+      {hasPendingAdj && <Alert type="warning" showIcon style={{ marginBottom: 10 }} message={`Ca làm việc này đã gửi Phiếu bổ sung công (${String(r.pendingAdjustmentCode || 'Chờ duyệt')}) và đang chờ Cửa hàng / HR phê duyệt. Không được phép gửi trùng yêu cầu.`} />}
+      {isAbsentShift && <Alert type="error" showIcon style={{ marginBottom: 10 }} message="Ca làm việc này đang ở trạng thái Vắng mặt (Cần bổ sung công). Bấm nút 'Tạo phiếu bổ sung công từ ca này' để gửi phiếu giải trình bù công." action={<Button size="small" type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công</Button>} />}
       <Descriptions bordered size="small" column={1} style={{ marginTop: 8 }} styles={{ label: { width: 220, fontWeight: 600, background: '#F8FAFC' } }}>
         {kind === 'swap' && (
           <>
@@ -89,6 +78,7 @@ export function ScheduleRequestDetailModal({
             <Descriptions.Item label="Chi nhánh làm việc">{String(r.branchName || '—')}</Descriptions.Item>
             <Descriptions.Item label="Người xin đổi ca">{String(r.requesterName || r.requester_id || '—')}</Descriptions.Item>
             <Descriptions.Item label="Đồng nghiệp nhận ca">{String(r.peerName || r.peer_id || '—')}</Descriptions.Item>
+            <Descriptions.Item label="Phụ cấp nhận đổi ca">{renderSwapAllowanceTag(r)}</Descriptions.Item>
             <Descriptions.Item label="Kiểm tra chồng ca & Định biên">
               <Space size={6} wrap>
                 <Tag color={r.has_conflict ? 'red' : 'green'} style={{ margin: 0 }}>{r.has_conflict ? 'Phát hiện chồng ca' : 'Không chồng ca'}</Tag>
