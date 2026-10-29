@@ -8,6 +8,7 @@ import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { dispatchAnnouncement, isScheduledAnnouncementDue, sweepDueScheduledAnnouncements } from '../services/announcement-scheduler.service.js';
 import { enrichMediaAsset, resolveAnnouncementMediaAttachments } from '../services/comms-media-helper.js';
+import { extractGoogleDriveFileId, loadMktMediaFile, persistMktMediaUpload } from '../services/mkt-media-storage.service.js';
 import { buildConfiguredAudienceGroups, doesUserMatchAudience, jobPositionsAndAudiencesRoutes } from './job-positions-and-audiences.routes.js';
 
 const COMMS_PERMS = ['comms.manage', 'notification.send', 'employee.manage', 'system.config', 'payroll.manage', 'schedule.propose'] as const;
@@ -30,12 +31,17 @@ const zAnnouncementBody = z.object({
 const zMediaBody = z.object({
   version: z.coerce.number().int().min(1).optional(), code: z.string().trim().optional().default(''),
   file_name: z.string().trim().min(2, 'Tên tệp media tối thiểu 2 ký tự'), mime_type: z.string().trim().default('image/png'),
-  size_bytes: z.coerce.number().int().min(0).default(102400),
+  size_bytes: z.coerce.number().int().min(0).default(102400), file_base64: z.string().optional().default(''),
   drive_file_id: z.string().trim().optional().default(''), drive_url: z.string().trim().optional().default(''),
   category: z.enum(['BANNER', 'SOP_DOC', 'EVENT_PHOTO', 'POLICY_PDF']).default('BANNER'), is_internal_only: z.boolean().default(true),
 });
 
 export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
+  app.get('/api/mkt/media/files/:id', async (req, reply) => {
+    const { id } = req.params as { id: string }, loaded = await loadMktMediaFile(ctx, id);
+    if (!loaded) throw Errors.notFound('Tệp Media nội bộ', id);
+    return reply.header('Content-Type', loaded.mimeType).header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(loaded.fileName)}`).header('Cache-Control', 'public, max-age=86400').send(loaded.buffer);
+  });
   const canModify = (u: { id: string; role: string; username: string; display_name?: string }, rec: { created_by: string; approved_by?: string; owner_id?: string; uploaded_by?: string }) =>
     u.role === 'ADMIN' || rec.created_by === u.id || rec.owner_id === u.id || rec.uploaded_by === u.id || Boolean(rec.approved_by && (rec.approved_by === u.username || rec.approved_by === u.display_name));
 
@@ -171,15 +177,21 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.post('/api/mkt/media', { preHandler: requirePermission(...COMMS_PERMS) }, async (req, reply) => {
     const body = zMediaBody.parse(req.body), code = body.code || `MED-${String(ctx.db.mediaAssets.all(true).length + 1).padStart(3, '0')}`;
-    const created = await ctx.db.mediaAssets.insert({ file_name: body.file_name, mime_type: body.mime_type, size_bytes: body.size_bytes, drive_file_id: body.drive_file_id || body.drive_url || 'drive://internal', category: body.category, is_internal_only: body.is_internal_only, code, uploaded_by: req.auth!.user.id }, req.auth!.user.id);
-    return reply.code(201), sendSuccess(req, 'Đã lưu tệp vào Kho Media nội bộ an toàn', created);
+    const up = body.file_base64 ? await persistMktMediaUpload(ctx, { base64: body.file_base64, fileName: body.file_name, mimeType: body.mime_type }) : null;
+    const rawRef = (body.drive_file_id || body.drive_url).trim();
+    const driveRef = up ? up.fileId : (rawRef && !rawRef.startsWith('/api/mkt/media/files/') ? (extractGoogleDriveFileId(rawRef) || rawRef) : 'drive://internal');
+    const created = await ctx.db.mediaAssets.insert({ file_name: body.file_name, mime_type: up?.mimeType ?? body.mime_type, size_bytes: up?.sizeBytes ?? body.size_bytes, drive_file_id: driveRef, category: body.category, is_internal_only: body.is_internal_only, code, uploaded_by: req.auth!.user.id }, req.auth!.user.id);
+    return reply.code(201), sendSuccess(req, 'Đã lưu tệp vào Kho Media nội bộ an toàn', enrichMediaAsset(ctx, created, req.auth!.user, canModify));
   });
   app.put('/api/mkt/media/:id', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
     const { id } = req.params as { id: string }, body = zMediaBody.parse(req.body), before = ctx.db.mediaAssets.get(id);
     if (!before) throw Errors.notFound('Tệp Media', id);
     if (!canModify(req.auth!.user, before)) throw Errors.forbidden('Bạn chỉ được phép chỉnh sửa tệp Media do chính mình tải lên (ngoại trừ Quản trị viên)');
-    const updated = await ctx.db.mediaAssets.update(id, body.version ?? before.version, { file_name: body.file_name, mime_type: body.mime_type, size_bytes: body.size_bytes, drive_file_id: body.drive_file_id || body.drive_url || before.drive_file_id, category: body.category, is_internal_only: body.is_internal_only }, req.auth!.user.id);
-    return sendSuccess(req, 'Đã cập nhật thông tin tệp Media', updated);
+    const up = body.file_base64 ? await persistMktMediaUpload(ctx, { base64: body.file_base64, fileName: body.file_name, mimeType: body.mime_type }) : null;
+    const rawRef = (body.drive_file_id || body.drive_url).trim();
+    const driveRef = up ? up.fileId : (rawRef && !rawRef.startsWith('/api/mkt/media/files/') ? (extractGoogleDriveFileId(rawRef) || rawRef) : before.drive_file_id);
+    const updated = await ctx.db.mediaAssets.update(id, body.version ?? before.version, { file_name: body.file_name, mime_type: up?.mimeType ?? body.mime_type, size_bytes: up?.sizeBytes ?? body.size_bytes, drive_file_id: driveRef, category: body.category, is_internal_only: body.is_internal_only }, req.auth!.user.id);
+    return sendSuccess(req, 'Đã cập nhật thông tin tệp Media', enrichMediaAsset(ctx, updated, req.auth!.user, canModify));
   });
   app.delete('/api/mkt/media/:id', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
     const { id } = req.params as { id: string }, before = ctx.db.mediaAssets.get(id);

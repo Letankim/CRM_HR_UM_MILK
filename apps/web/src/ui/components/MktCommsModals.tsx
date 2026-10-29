@@ -1,11 +1,12 @@
 'use client';
 
-import { Col, Form, Input, InputNumber, Modal, Row, Select, Switch } from 'antd';
+import { Col, Form, Input, Modal, Row, Select, Switch } from 'antd';
 import type { FormInstance } from 'antd';
 import { CloseOutlined, PlusOutlined, SaveOutlined, SendOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
-import { MEDIA_CATEGORY_OPTIONS, normalizeClientMediaItem } from './MediaAttachmentCards';
+import { normalizeClientMediaItem } from './MediaAttachmentCards';
 import { RichHtmlEditor } from './RichHtmlEditor';
+export { MktMediaModal } from './MktMediaModal';
 
 export function MktAnnouncementModal({
   open, editing, form, campaigns, audienceGroups, mediaAssets, loading, onClose, onSubmit,
@@ -151,35 +152,6 @@ export function MktCampaignModal({
         <Row gutter={12}>
           <Col xs={24} md={8}><Form.Item name="scheduled_at" label="Ngày khởi chạy"><DateStringPicker /></Form.Item></Col>
           <Col xs={24} md={16}><Form.Item name="note" label="Mục tiêu & Ghi chú chiến dịch"><Input placeholder="Gom nhóm các bản tin truyền thông theo đợt..." /></Form.Item></Col>
-        </Row>
-      </Form>
-    </Modal>
-  );
-}
-
-export function MktMediaModal({
-  open, editing, form, loading, onClose, onSubmit,
-}: {
-  open: boolean; editing: Record<string, unknown> | null; form: FormInstance; loading?: boolean; onClose: () => void; onSubmit: (values: Record<string, unknown>) => void;
-}) {
-  return (
-    <Modal
-      open={open} forceRender width={680}
-      title={editing ? `Cập nhật Tệp Media — ${editing.file_name}` : 'Thêm Ảnh / Tài liệu vào Kho Media Phê duyệt'}
-      okText={editing ? 'Lưu cập nhật' : 'Lưu vào Kho Media'} cancelText="Hủy bỏ"
-      okButtonProps={{ icon: editing ? <SaveOutlined /> : <PlusOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }}
-      onCancel={onClose} onOk={() => form.submit()}
-    >
-      <Form form={form} layout="vertical" initialValues={{ category: 'BANNER', mime_type: 'image/png', size_bytes: 245000, is_internal_only: true }} onFinish={onSubmit}>
-        <Row gutter={12}>
-          <Col xs={24} md={10}><Form.Item name="file_name" label="Tên tệp / Tài liệu truyền thông" rules={[{ required: true, message: 'Vui lòng nhập tên tệp' }]}><Input placeholder="VD: banner-sop-pha-che-v5.png" /></Form.Item></Col>
-          <Col xs={12} md={7}><Form.Item name="category" label="Phân loại nội dung"><Select options={MEDIA_CATEGORY_OPTIONS} /></Form.Item></Col>
-          <Col xs={12} md={7}><Form.Item name="mime_type" label="Định dạng tệp"><Select options={[{ value: 'image/png', label: 'Hình ảnh PNG' }, { value: 'image/jpeg', label: 'Hình ảnh JPEG' }, { value: 'image/webp', label: 'Hình ảnh WebP' }, { value: 'application/pdf', label: 'Tài liệu PDF' }]} /></Form.Item></Col>
-        </Row>
-        <Form.Item name="drive_url" label="Đường dẫn tệp tài liệu / Hình ảnh nội bộ (URL ảnh hoặc Google Drive)" rules={[{ required: true, message: 'Vui lòng nhập đường dẫn tệp' }]}><Input placeholder="https://..." /></Form.Item>
-        <Row gutter={12}>
-          <Col xs={24} md={10}><Form.Item name="size_bytes" label="Dung lượng tệp"><InputNumber style={{ width: '100%' }} min={1024} step={10240} suffix="Bytes" /></Form.Item></Col>
-          <Col xs={24} md={14}><Form.Item name="is_internal_only" label="Phạm vi bảo mật tài liệu" valuePropName="checked"><Switch checkedChildren="Chỉ lưu hành nội bộ" unCheckedChildren="Công khai có kiểm soát" /></Form.Item></Col>
         </Row>
       </Form>
     </Modal>

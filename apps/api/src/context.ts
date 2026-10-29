@@ -12,6 +12,7 @@ export interface GoogleStatus {
   mode: 'google' | 'memory';
   check: () => Promise<{ ok: boolean; detail: string }>;
   uploadAttendancePhoto?: (params: { fileName: string; mimeType: string; data: Buffer; monthFolder: string }) => Promise<{ fileId: string }>;
+  uploadMktMedia?: (params: { fileName: string; mimeType: string; data: Buffer; monthFolder: string }) => Promise<{ fileId: string }>;
   downloadDriveFile?: (fileId: string) => Promise<Buffer | null>;
 }
 

@@ -40,6 +40,7 @@ interface FancyboxImageProps {
   gallerySlides?: FancyboxSlideItem[];
   slideIndex?: number;
   height?: number | string;
+  objectFit?: 'cover' | 'contain';
 }
 
 export function FancyboxImage({
@@ -49,6 +50,7 @@ export function FancyboxImage({
   gallerySlides,
   slideIndex = 0,
   height = 155,
+  objectFit = 'cover',
 }: FancyboxImageProps) {
   const [hovered, setHovered] = useState(false);
 
@@ -90,7 +92,7 @@ export function FancyboxImage({
         style={{
           width: '100%',
           height: '100%',
-          objectFit: 'cover',
+          objectFit,
           display: 'block',
           transition: 'transform 0.2s ease',
           transform: hovered ? 'scale(1.03)' : 'scale(1)',

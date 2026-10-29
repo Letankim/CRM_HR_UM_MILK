@@ -31,7 +31,7 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
   const isDev = ctx.env.NODE_ENV === 'development';
   const app = Fastify({
     trustProxy: true,
-    bodyLimit: 2 * 1024 * 1024,
+    bodyLimit: 15 * 1024 * 1024,
     genReqId: () => `req_${randomBytes(8).toString('hex')}`,
     logger:
       opts.logger === false

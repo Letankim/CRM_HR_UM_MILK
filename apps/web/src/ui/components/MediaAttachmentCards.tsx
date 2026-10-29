@@ -1,20 +1,22 @@
 'use client';
 
-import { Button, Card, Descriptions, Flex, Image, Space, Tag, Typography } from 'antd';
+import { Button, Card, Descriptions, Flex, Space, Tag, Typography } from 'antd';
 import {
-  EditOutlined, ExportOutlined, EyeOutlined, FileImageOutlined,
+  CloudServerOutlined, EditOutlined, ExportOutlined, EyeOutlined, FileImageOutlined,
   FilePdfOutlined, FileTextOutlined, LockOutlined, PaperClipOutlined,
 } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useMemo, useState } from 'react';
 import { BaseDetailDrawer } from './BaseDetailDrawer';
+import { FancyboxImage, type FancyboxSlideItem } from './FancyboxPreview';
 
 export interface MediaAssetItem {
-  id: string; code?: string; file_name: string; mime_type: string; mimeLabel?: string;
+  id: string; code?: string; version?: number; file_name: string; mime_type: string; mimeLabel?: string;
   size_bytes?: number; sizeFormatted?: string; category?: string; categoryLabel?: string;
-  drive_file_id?: string; drive_url?: string; openUrl?: string; previewUrl?: string;
-  isImage?: boolean; is_internal_only?: boolean; securityLabel?: string; creatorName?: string; created_at?: string;
+  drive_file_id?: string; drive_url?: string; externalSourceUrl?: string; openUrl?: string; previewUrl?: string;
+  storageSourceLabel?: string; isImage?: boolean; is_internal_only?: boolean;
+  securityLabel?: string; creatorName?: string; created_at?: string;
 }
 
 export const MEDIA_CATEGORY_LABELS: Record<string, string> = {
@@ -25,7 +27,8 @@ export const MEDIA_CATEGORY_OPTIONS = Object.entries(MEDIA_CATEGORY_LABELS).map(
 
 export const MEDIA_MIME_LABELS: Record<string, string> = {
   'image/png': 'Hình ảnh PNG', 'image/jpeg': 'Hình ảnh JPEG', 'image/jpg': 'Hình ảnh JPEG',
-  'image/webp': 'Hình ảnh WebP', 'image/gif': 'Hình ảnh GIF', 'application/pdf': 'Tài liệu PDF', 'video/mp4': 'Video MP4',
+  'image/webp': 'Hình ảnh WebP', 'image/gif': 'Hình ảnh GIF', 'image/svg+xml': 'Hình ảnh Vector SVG',
+  'application/pdf': 'Tài liệu PDF', 'video/mp4': 'Video MP4',
 };
 
 export function formatMediaBytes(bytes?: unknown): string {
@@ -37,21 +40,31 @@ export function formatMediaBytes(bytes?: unknown): string {
 }
 
 export function normalizeClientMediaItem(raw: Record<string, unknown>): MediaAssetItem {
+  const id = String(raw.id || '').trim();
+  const ver = Number(raw.version || 1);
+  const verSuffix = ver > 1 ? `?v=${ver}` : '';
   const mime = String(raw.mime_type || 'image/png');
-  const rawUrl = String(raw.openUrl || raw.drive_url || raw.drive_file_id || '').trim();
-  const isInternal = !rawUrl || rawUrl.startsWith('drive://');
-  const driveMatch = rawUrl.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i) ?? rawUrl.match(/drive\.google\.com\/(?:open|uc|thumbnail)\?[^#]*id=([a-zA-Z0-9_-]+)/i);
-  const isImg = Boolean(raw.isImage ?? (mime.toLowerCase().startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(rawUrl)));
-  const openUrl = isInternal ? '' : (rawUrl.startsWith('http') || rawUrl.startsWith('/') || rawUrl.startsWith('data:') ? rawUrl : '');
-  const previewUrl = String(raw.previewUrl || (driveMatch?.[1] && isImg ? `https://drive.google.com/thumbnail?id=${driveMatch[1]}&sz=w1200` : (isImg ? openUrl : '')));
+  const rawDriveField = String(raw.drive_file_id || '').trim();
+  const rawUrl = String(raw.openUrl || raw.drive_url || rawDriveField || '').trim();
+  const isInternal = !rawDriveField && (!rawUrl || rawUrl.startsWith('drive://')) || rawDriveField.startsWith('drive://');
+  const isImg = Boolean(raw.isImage ?? (mime.toLowerCase().startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(rawUrl) || rawUrl.startsWith('data:image/')));
+  const proxyUrl = id ? `/api/mkt/media/files/${encodeURIComponent(id)}${verSuffix}` : '';
+  const openUrl = rawUrl.startsWith('data:')
+    ? rawUrl
+    : id
+      ? ((!isInternal || isImg) ? proxyUrl : '')
+      : (rawUrl.startsWith('/api/mkt/media/files/') ? rawUrl : '');
+  const previewUrl = isImg ? openUrl : '';
   const cat = String(raw.category || 'BANNER'), internalOnly = raw.is_internal_only !== false;
+  const externalSourceUrl = String(raw.externalSourceUrl || (/^https?:\/\//i.test(rawDriveField) ? rawDriveField : ''));
+  const storageSourceLabel = String(raw.storageSourceLabel || (isInternal ? 'Kho Media mẫu nội bộ' : 'Google Drive Hệ thống (05_MKT_MEDIA)'));
 
   return {
-    id: String(raw.id || ''), code: String(raw.code || 'MED'), file_name: String(raw.file_name || 'Tệp đính kèm nội bộ'),
+    id, code: String(raw.code || 'MED'), version: ver, file_name: String(raw.file_name || 'Tệp đính kèm nội bộ'),
     mime_type: mime, mimeLabel: String(raw.mimeLabel || MEDIA_MIME_LABELS[mime] || 'Tệp tài liệu'),
     size_bytes: Number(raw.size_bytes || 0), sizeFormatted: String(raw.sizeFormatted || formatMediaBytes(raw.size_bytes)),
     category: cat, categoryLabel: String(raw.categoryLabel || MEDIA_CATEGORY_LABELS[cat] || 'Tài liệu nội bộ'),
-    drive_url: isInternal ? '' : rawUrl, openUrl, previewUrl, isImage: isImg, is_internal_only: internalOnly,
+    drive_url: openUrl, externalSourceUrl, openUrl, previewUrl, storageSourceLabel, isImage: isImg, is_internal_only: internalOnly,
     securityLabel: String(raw.securityLabel || (internalOnly ? 'Chỉ lưu hành nội bộ' : 'Công khai có kiểm soát')),
     creatorName: String(raw.creatorName || 'Truyền thông MKT'), created_at: raw.created_at ? String(raw.created_at) : undefined,
   };
@@ -91,7 +104,13 @@ function renderMediaIcon(m: MediaAssetItem, fontSize = 18) {
 
 export function MediaAttachmentSection({ items }: { items: MediaAssetItem[] }) {
   const [viewing, setViewing] = useState<MediaAssetItem | null>(null);
-  const [brokenIds, setBrokenIds] = useState<Record<string, boolean>>({});
+  const gallerySlides: FancyboxSlideItem[] = useMemo(
+    () => items.filter((m) => Boolean(m.isImage && m.previewUrl)).map((m) => ({
+      src: m.previewUrl!,
+      caption: `${m.code ? `[${m.code}] ` : ''}${m.file_name} (${m.categoryLabel} · ${m.sizeFormatted})`,
+    })),
+    [items],
+  );
   if (items.length === 0) return null;
 
   return (
@@ -99,7 +118,7 @@ export function MediaAttachmentSection({ items }: { items: MediaAssetItem[] }) {
       <Card size="small" title={<span><PaperClipOutlined /> Tệp &amp; Media đính kèm ({items.length})</span>}>
         <Space direction="vertical" size={10} style={{ width: '100%' }}>
           {items.map((m) => {
-            const canPreviewImg = Boolean(m.isImage && m.previewUrl && !brokenIds[m.id]);
+            const slideIdx = m.previewUrl ? Math.max(0, gallerySlides.findIndex((s) => s.src === m.previewUrl)) : 0;
             return (
               <div key={m.id} style={{ border: '1px solid #E5E7EB', borderRadius: 4, padding: '10px 12px', background: '#F8FAFC' }}>
                 <Flex justify="space-between" align="flex-start" wrap gap={10}>
@@ -120,12 +139,20 @@ export function MediaAttachmentSection({ items }: { items: MediaAssetItem[] }) {
                   </Space>
                   <Space size={6} wrap>
                     <Button size="small" icon={<EyeOutlined />} onClick={() => setViewing(m)}>Thông tin tệp</Button>
-                    {m.openUrl && <Button size="small" type="primary" ghost icon={<ExportOutlined />} href={m.openUrl} target="_blank" rel="noopener noreferrer">Mở tệp gốc</Button>}
+                    {m.openUrl && <Button size="small" type="primary" ghost icon={<ExportOutlined />} href={m.openUrl} target="_blank" rel="noopener noreferrer">Mở / Tải tệp</Button>}
                   </Space>
                 </Flex>
-                {canPreviewImg && (
-                  <div style={{ marginTop: 10, padding: 8, background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 4 }}>
-                    <Image src={m.previewUrl} alt={m.file_name} style={{ maxHeight: 240, maxWidth: '100%', objectFit: 'contain', borderRadius: 2 }} onError={() => setBrokenIds((p) => ({ ...p, [m.id]: true }))} />
+                {m.isImage && m.previewUrl && (
+                  <div style={{ marginTop: 10, borderRadius: 4, overflow: 'hidden', border: '1px solid #E5E7EB' }}>
+                    <FancyboxImage
+                      src={m.previewUrl}
+                      alt={m.file_name}
+                      caption={`${m.code ? `[${m.code}] ` : ''}${m.file_name} (${m.categoryLabel} · ${m.sizeFormatted})`}
+                      gallerySlides={gallerySlides}
+                      slideIndex={slideIdx}
+                      height={220}
+                      objectFit="contain"
+                    />
                   </div>
                 )}
               </div>
@@ -143,16 +170,15 @@ export function MediaAssetDetailDrawer({
 }: {
   item: MediaAssetItem | Record<string, unknown> | null; onClose: () => void; onEdit?: (raw: Record<string, unknown>) => void;
 }) {
-  const [imgBroken, setImgBroken] = useState(false);
   const m = item ? normalizeClientMediaItem(item as Record<string, unknown>) : null;
 
   return (
     <BaseDetailDrawer
-      open={Boolean(m)} onClose={() => { setImgBroken(false); onClose(); }}
+      open={Boolean(m)} onClose={onClose}
       title={m ? `Chi tiết Tệp Media: ${m.file_name}` : 'Chi tiết Tệp Media'}
       extra={
         <>
-          {m?.openUrl && <Button size="small" icon={<ExportOutlined />} href={m.openUrl} target="_blank" rel="noopener noreferrer">Mở liên kết gốc</Button>}
+          {m?.openUrl && <Button size="small" icon={<ExportOutlined />} href={m.openUrl} target="_blank" rel="noopener noreferrer">Mở / Tải tệp</Button>}
           {item && onEdit && <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { const r = item as Record<string, unknown>; onClose(); onEdit(r); }}>Cập nhật tệp</Button>}
         </>
       }
@@ -166,15 +192,16 @@ export function MediaAssetDetailDrawer({
             <Descriptions.Item label="Định dạng & Dung lượng"><Space size={6}><Tag color="cyan">{m.mimeLabel}</Tag><span className="num" style={{ fontWeight: 600 }}>{m.sizeFormatted}</span></Space></Descriptions.Item>
             <Descriptions.Item label="Phạm vi bảo mật"><Tag color={m.is_internal_only ? 'green' : 'orange'} icon={<LockOutlined />}>{m.securityLabel}</Tag></Descriptions.Item>
             <Descriptions.Item label="Người tải lên & Thời gian">{m.creatorName}{m.created_at ? ` · ${dayjs(m.created_at).format('HH:mm DD/MM/YYYY')}` : ''}</Descriptions.Item>
-            <Descriptions.Item label="Đường dẫn lưu trữ">
-              {m.openUrl ? <Typography.Link href={m.openUrl} target="_blank" rel="noopener noreferrer">{m.openUrl}</Typography.Link> : <span style={{ color: '#64748B' }}>Lưu trữ trong Kho Media nội bộ</span>}
+            <Descriptions.Item label="Nguồn lưu trữ & Truy cập">
+              <Space size={8} wrap>
+                <Tag color="geekblue" icon={<CloudServerOutlined />} style={{ margin: 0 }}>{m.storageSourceLabel}</Tag>
+                {m.openUrl && <Typography.Link href={m.openUrl} target="_blank" rel="noopener noreferrer">Xem / Tải tệp qua Cổng bảo mật Hệ thống</Typography.Link>}
+              </Space>
             </Descriptions.Item>
           </Descriptions>
-          {m.isImage && m.previewUrl && !imgBroken && (
-            <Card size="small" title="Bản xem trước hình ảnh">
-              <div style={{ textAlign: 'center', padding: 8 }}>
-                <Image src={m.previewUrl} alt={m.file_name} style={{ maxHeight: 420, maxWidth: '100%', objectFit: 'contain' }} onError={() => setImgBroken(true)} />
-              </div>
+          {m.isImage && m.previewUrl && (
+            <Card size="small" title="Bản xem trước hình ảnh (Bấm để phóng to)">
+              <FancyboxImage src={m.previewUrl} alt={m.file_name} caption={`${m.code ? `[${m.code}] ` : ''}${m.file_name}`} height={340} objectFit="contain" />
             </Card>
           )}
         </Space>

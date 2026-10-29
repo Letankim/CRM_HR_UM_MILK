@@ -94,10 +94,27 @@ async function main() {
       },
       async uploadAttendancePhoto(params) {
         if (!env.DRIVE_ROOT_FOLDER_ID) throw new Error('Thiếu cấu hình DRIVE_ROOT_FOLDER_ID');
-        let folderId = driveFolderCache.get(params.monthFolder);
+        const cacheKey = `att:${params.monthFolder}`;
+        let folderId = driveFolderCache.get(cacheKey);
         if (!folderId) {
           folderId = await ensureFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, [DRIVE_FOLDERS.ATTENDANCE_PHOTOS, params.monthFolder]);
-          driveFolderCache.set(params.monthFolder, folderId);
+          driveFolderCache.set(cacheKey, folderId);
+        }
+        const uploaded = await uploadFile(clients.drive, {
+          name: params.fileName,
+          mimeType: params.mimeType,
+          parentId: folderId,
+          data: params.data,
+        });
+        return { fileId: uploaded.id };
+      },
+      async uploadMktMedia(params) {
+        if (!env.DRIVE_ROOT_FOLDER_ID) throw new Error('Thiếu cấu hình DRIVE_ROOT_FOLDER_ID');
+        const cacheKey = `mkt:${params.monthFolder}`;
+        let folderId = driveFolderCache.get(cacheKey);
+        if (!folderId) {
+          folderId = await ensureFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, [DRIVE_FOLDERS.MKT_MEDIA, params.monthFolder]);
+          driveFolderCache.set(cacheKey, folderId);
         }
         const uploaded = await uploadFile(clients.drive, {
           name: params.fileName,
@@ -111,7 +128,12 @@ async function main() {
         try {
           return await downloadFile(clients.drive, fileId);
         } catch {
-          return null;
+          try {
+            const exp = await clients.drive.files.export({ fileId, mimeType: 'application/pdf' }, { responseType: 'arraybuffer' });
+            return Buffer.from(exp.data as ArrayBuffer);
+          } catch {
+            return null;
+          }
         }
       },
     };

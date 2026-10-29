@@ -72,7 +72,9 @@ export async function exportSpreadsheetXlsx(drive: drive_v3.Drive, fileId: strin
 }
 
 export async function downloadFile(drive: drive_v3.Drive, fileId: string): Promise<Buffer> {
-  const res = await withRetry(() => drive.files.get({ fileId, alt: 'media' }, { responseType: 'arraybuffer' }));
+  const res = await withRetry(() =>
+    drive.files.get({ fileId, alt: 'media', supportsAllDrives: true }, { responseType: 'arraybuffer' }),
+  );
   return Buffer.from(res.data as ArrayBuffer);
 }
 
