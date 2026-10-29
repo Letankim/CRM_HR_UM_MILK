@@ -199,19 +199,17 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     assertDateNotLockedByPayroll(ctx.db, before.work_date, 'xử lý báo nghỉ đột xuất');
     const actorId = request.auth!.user.id, isEscalate = body.action === 'ESCALATE', nextStatus = body.action === 'ASSIGN_REPLACEMENT' ? 'REPLACEMENT_FOUND' : isEscalate ? 'ESCALATED' : 'RESOLVED';
     const updated = await ctx.db.emergencyLeaves.update(id, body.version, { status: nextStatus, escalated: isEscalate || before.escalated, replacement_id: body.replacement_id || before.replacement_id, shift_coverage_status: body.replacement_id ? 'COVERED' : isEscalate ? 'SHORT_STAFFED_ESCALATED' : 'RESOLVED', escalated_at: isEscalate ? nowIso() : before.escalated_at, escalated_to_role: isEscalate ? 'HR' : before.escalated_to_role, handled_by: actorId, handled_at: nowIso(), resolution_note: body.resolution_note }, actorId);
-    if (!isEscalate) {
-      const emp = ctx.db.employees.get(before.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === before.employee_id);
-      const isTargetEmp = (eid: string) => eid === before.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
-      const targetShift = (before.assignment_id ? ctx.db.shiftAssignments.get(before.assignment_id) : undefined) ?? ctx.db.shiftAssignments.find((a) => isTargetEmp(a.employee_id) && a.work_date === before.work_date && a.shift_code === before.shift_code) ?? ctx.db.shiftAssignments.find((a) => isTargetEmp(a.employee_id) && a.work_date === before.work_date);
-      if (targetShift) {
-        await clearShiftAttendanceOnWorkflowOverride(ctx.db, targetShift, actorId, 'Tự động hủy công do xử lý báo nghỉ đột xuất');
-        if (body.replacement_id) await ctx.db.shiftAssignments.update(targetShift.id, targetShift.version, { employee_id: body.replacement_id, replacement_for_employee_id: before.employee_id, status: 'PUBLISHED', note: `Thay ca nghỉ đột xuất ${before.emergency_code}` }, actorId);
-        else await ctx.db.shiftAssignments.softDelete(targetShift.id, targetShift.version, actorId);
-      }
+    const emp = ctx.db.employees.get(before.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === before.employee_id);
+    const isTargetEmp = (eid: string) => eid === before.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
+    const targetShift = (before.assignment_id ? ctx.db.shiftAssignments.get(before.assignment_id) : undefined) ?? ctx.db.shiftAssignments.find((a) => isTargetEmp(a.employee_id) && a.work_date === before.work_date && a.shift_code === before.shift_code) ?? ctx.db.shiftAssignments.find((a) => isTargetEmp(a.employee_id) && a.work_date === before.work_date);
+    if (targetShift) {
+      await clearShiftAttendanceOnWorkflowOverride(ctx.db, targetShift, actorId, 'Tự động hủy công do xử lý báo nghỉ đột xuất');
+      if (body.replacement_id) await ctx.db.shiftAssignments.update(targetShift.id, targetShift.version, { employee_id: body.replacement_id, replacement_for_employee_id: before.employee_id, status: 'PUBLISHED', note: `Thay ca nghỉ đột xuất ${before.emergency_code}` }, actorId);
+      else await ctx.db.shiftAssignments.softDelete(targetShift.id, targetShift.version, actorId);
     }
     await ctx.audit.record(auditContext(request), { action: 'emergency.handle', entity: 'EMERGENCY_LEAVES', entityId: id, before: { status: before.status }, after: { status: updated.status, escalated: updated.escalated } });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: before.branch_id, employeeIds: [before.employee_id, body.replacement_id], kind: 'EMERGENCY_HANDLED', message: `Ca nghỉ khẩn cấp ${before.emergency_code} ngày ${before.work_date} đã được xử lý`, actorId });
     queueEmergencyHandledEmail(ctx, updated, request.auth?.user.email);
-    return sendSuccess(request, isEscalate ? 'Đã chuyển cảnh báo thiếu ca lên cấp trên (Escalated) để điều phối vận hành' : 'Đã cập nhật phương án xử lý ca nghỉ đột xuất và đồng bộ lịch ca', updated);
+    return sendSuccess(request, isEscalate ? (request.auth?.user.role === 'STORE' ? 'Đã chuyển cảnh báo thiếu nhân sự ca lên bộ phận Nhân sự (HR) để điều phối' : 'Đã ghi nhận trạng thái thiếu nhân sự ca cần điều phối vận hành') : 'Đã cập nhật phương án xử lý ca nghỉ đột xuất và đồng bộ lịch ca', updated);
   });
 }

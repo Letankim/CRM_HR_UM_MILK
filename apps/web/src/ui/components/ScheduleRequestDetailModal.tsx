@@ -159,11 +159,11 @@ export function ScheduleRequestDetailModal({
             <Descriptions.Item label="Nhân sự thay ca">{String(r.replacementName || (r.status === 'RESOLVED' ? 'Đã bố trí nhân sự chi nhánh thay thế' : 'Chưa tìm được người thay'))}</Descriptions.Item>
             <Descriptions.Item label="Tình trạng phủ ca">
               <Tag color={r.shift_coverage_status === 'COVERED' || r.status === 'RESOLVED' ? 'green' : r.status === 'ESCALATED' ? 'volcano' : 'orange'} style={{ margin: 0 }}>
-                {r.shift_coverage_status === 'COVERED' || r.status === 'RESOLVED' ? 'Đã phủ đủ ca (Đã có người thay)' : r.status === 'ESCALATED' ? 'Thiếu ca — Đã báo HR điều phối' : 'Chưa phủ ca — Đang tìm người thay'}
+                {r.shift_coverage_status === 'COVERED' || r.status === 'RESOLVED' ? 'Đã phủ đủ ca (Đã có người thay)' : r.status === 'ESCALATED' ? 'Đang thiếu nhân sự ca — Chờ điều phối người thay' : 'Chưa phủ ca — Đang tìm người thay'}
               </Tag>
             </Descriptions.Item>
             <Descriptions.Item label="Thời điểm báo cáo"><span className="num">{fmtTs(r.reported_at || r.created_at)}</span></Descriptions.Item>
-            <Descriptions.Item label="Phương án điều phối">{String(r.resolution_note || r.shift_coverage_status || 'Đang điều phối người thay ca')}</Descriptions.Item>
+            <Descriptions.Item label="Phương án điều phối">{String(r.resolution_note || 'Đang điều phối người thay ca')}</Descriptions.Item>
           </>
         )}
 

@@ -98,9 +98,9 @@ export function buildAdjustmentsBulkActions(opts: WorkflowBulkRunnerOptions): Bu
     }] : []),
     ...(opts.canApproveAdj ? [
       {
-        key: 'hr-approve', label: 'HR duyệt đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: opts.loading,
+        key: 'hr-approve', label: 'Phê duyệt đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'PENDING' || r.status === 'STORE_CONFIRMED',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/attendance/adjustments/${r.id}/decide`, body: { version: r.version, action: 'HR_APPROVE', decision_reason: 'HR phê duyệt bổ sung công hàng loạt' } }), 'Đã phê duyệt các phiếu bổ sung công hợp lệ'),
+        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/attendance/adjustments/${r.id}/decide`, body: { version: r.version, action: 'HR_APPROVE', decision_reason: 'Phê duyệt bổ sung công hàng loạt' } }), 'Đã phê duyệt các phiếu bổ sung công hợp lệ'),
       },
       {
         key: 'hr-reject', label: 'Từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: opts.loading,
@@ -154,17 +154,18 @@ export function buildSwapsBulkActions(opts: WorkflowBulkRunnerOptions): BulkActi
 }
 
 export function buildEmergencyBulkActions(opts: WorkflowBulkRunnerOptions): BulkActionItem<RowRec>[] {
+  const isStoreOnly = Boolean(opts.canConfirmAtt && !opts.canApproveAdj);
   return [
     ...(opts.canHandleEmg ? [
       {
         key: 'resolve', label: 'Đã có người thay đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: opts.loading,
-        eligibleFilter: (r: RowRec) => r.status === 'REPORTED',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/emergency-leaves/${r.id}/handle`, body: { version: r.version, action: 'RESOLVE', resolution_note: 'Cửa hàng đã bố trí nhân sự thay ca' } }), 'Đã cập nhật trạng thái có người thay ca cho các báo cáo hợp lệ', 'emergency'),
+        eligibleFilter: (r: RowRec) => r.status === 'REPORTED' || r.status === 'ESCALATED',
+        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/emergency-leaves/${r.id}/handle`, body: { version: r.version, action: 'RESOLVE', resolution_note: isStoreOnly ? 'Cửa hàng đã bố trí nhân sự thay ca' : 'Đã điều phối nhân sự thay ca' } }), 'Đã cập nhật trạng thái có người thay ca cho các báo cáo hợp lệ', 'emergency'),
       },
       {
-        key: 'escalate', label: 'Báo thiếu ca đã chọn', danger: true, icon: <AlertOutlined />, loading: opts.loading,
+        key: 'escalate', label: isStoreOnly ? 'Báo thiếu ca lên HR đã chọn' : 'Xác nhận thiếu ca đã chọn', danger: true, icon: <AlertOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'REPORTED',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/emergency-leaves/${r.id}/handle`, body: { version: r.version, action: 'ESCALATE', resolution_note: 'Chuyển cảnh báo thiếu ca lên HR' } }), 'Đã chuyển cảnh báo thiếu ca cho các báo cáo hợp lệ'),
+        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/emergency-leaves/${r.id}/handle`, body: { version: r.version, action: 'ESCALATE', resolution_note: isStoreOnly ? 'Cửa hàng không có người thay, chuyển cảnh báo lên HR' : 'Xác nhận ca đang thiếu nhân sự cần điều phối' } }), isStoreOnly ? 'Đã chuyển cảnh báo thiếu ca lên HR cho các báo cáo hợp lệ' : 'Đã ghi nhận cảnh báo thiếu nhân sự ca cho các báo cáo hợp lệ', 'emergency'),
       },
     ] : []),
     { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportEmergencyExcel(rows) },
