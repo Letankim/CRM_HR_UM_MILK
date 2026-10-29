@@ -117,19 +117,19 @@ export class AuthService {
     return user;
   }
 
-  /** Giải mã phạm vi chi nhánh thực tế (bao gồm cả ID và Mã chi nhánh; khóa chặt theo chi nhánh với vai trò STORE / Nhân viên). */
+  /** Giải mã phạm vi chi nhánh thực tế (vai trò Quản trị/HR/Kế toán/MKT luôn toàn hệ thống ALL; khóa chặt chi nhánh với STORE / Nhân viên). */
   resolveEffectiveBranchScope(user: User): BranchScope {
     const isBranchRole = user.role === 'STORE' || user.role === 'THU_VIEC' || user.role === 'CHINH_THUC';
+    if (!isBranchRole) return 'ALL';
     const emp = this.db.employees.find(
       (e) => e.user_id === user.id || Boolean(user.employee_id && (e.id === user.employee_id || e.employee_code === user.employee_id)),
     );
     let rawTokens = user.branch_scope && user.branch_scope.trim() !== 'ALL'
       ? user.branch_scope.split(',').map((s) => s.trim()).filter(Boolean)
       : [];
-    if (isBranchRole && emp?.branch_id && (rawTokens.length === 0 || (emp.updated_at ?? '') > (user.updated_at ?? ''))) {
+    if (emp?.branch_id && (rawTokens.length === 0 || (emp.updated_at ?? '') > (user.updated_at ?? ''))) {
       rawTokens = [emp.branch_id];
     }
-    if (!isBranchRole && rawTokens.length === 0) return 'ALL';
     const expanded = new Set<string>();
     for (const t of rawTokens) {
       expanded.add(t);
@@ -139,7 +139,7 @@ export class AuthService {
         expanded.add(b.code);
       }
     }
-    return expanded.size > 0 ? Array.from(expanded) : (isBranchRole ? ['NONE'] : 'ALL');
+    return expanded.size > 0 ? Array.from(expanded) : ['NONE'];
   }
 
   getUserById(userId: string): User | undefined {

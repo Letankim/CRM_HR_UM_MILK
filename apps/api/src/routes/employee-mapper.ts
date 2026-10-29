@@ -77,27 +77,41 @@ export function assertUniquePersonalIdentifiers(ctx: AppContext, input: UniquePe
   }
 }
 
-const normPhone = (raw?: string) => { const d = (raw || '').replace(/\D/g, ''); return d.length === 9 ? `0${d}` : d.startsWith('84') && d.length === 11 ? `0${d.slice(2)}` : d; };
+const normPhone = (raw?: string) => {
+  const d = (raw || '').replace(/\D/g, '');
+  const p = d.length === 9 ? `0${d}` : d.startsWith('84') && d.length === 11 ? `0${d.slice(2)}` : d;
+  return p === '0901000099' ? '' : p;
+};
 
-/** Tìm tài khoản người dùng đang liên kết với hồ sơ nhân sự (ưu tiên user_id -> employee_id -> SĐT -> Email) */
+/** Tìm tài khoản người dùng đang liên kết với hồ sơ nhân sự (ưu tiên user_id -> employee_id -> SĐT/Email không xung đột) */
 export function findLinkedUserForEmployee(e: Employee, ctx: AppContext): User | undefined {
   if (e.user_id) { const byId = ctx.db.users.get(e.user_id); if (byId) return byId; }
   const codeUpper = e.employee_code.trim().toUpperCase();
   const byEmpCode = ctx.db.users.find((u) => u.employee_id.trim().toUpperCase() === codeUpper || u.employee_id === e.id || u.username.trim().toUpperCase() === codeUpper);
   if (byEmpCode) return byEmpCode;
+  const isFreeForEmp = (u: User) => {
+    const uCode = (u.employee_id || '').trim().toUpperCase();
+    if (uCode && uCode !== codeUpper && u.employee_id !== e.id && ctx.db.employees.find((x) => x.id === u.employee_id || x.employee_code.trim().toUpperCase() === uCode)) return false;
+    return !ctx.db.employees.find((x) => x.id !== e.id && x.user_id === u.id);
+  };
   const phone = normPhone(e.phone), email = e.email.trim().toLowerCase();
-  if (phone) { const byPhone = ctx.db.users.find((u) => Boolean(u.phone && normPhone(u.phone) === phone)); if (byPhone) return byPhone; }
-  if (email) { const byEmail = ctx.db.users.find((u) => Boolean(u.email && u.email.trim().toLowerCase() === email)); if (byEmail) return byEmail; }
+  if (phone) { const byPhone = ctx.db.users.find((u) => Boolean(u.phone && normPhone(u.phone) === phone) && isFreeForEmp(u)); if (byPhone) return byPhone; }
+  if (email && !email.endsWith('@umbomilk.vn')) { const byEmail = ctx.db.users.find((u) => Boolean(u.email && u.email.trim().toLowerCase() === email) && isFreeForEmp(u)); if (byEmail) return byEmail; }
   return undefined;
 }
 
-/** Tìm toàn bộ hồ sơ nhân sự khớp với tài khoản (bao phủ cả trường hợp hồ sơ HR và hồ sơ tự sinh trùng SĐT/Email) */
+/** Tìm toàn bộ hồ sơ nhân sự khớp với tài khoản (chống gán nhầm hồ sơ đã thuộc tài khoản khác khi dùng chung email thử nghiệm) */
 export function findAllLinkedEmployeesForUser(u: User, ctx: AppContext): Employee[] {
   const codeUpper = (u.employee_id || '').trim().toUpperCase(), unameUpper = u.username.trim().toUpperCase();
+  const explicit = ctx.db.employees.filter((e) => {
+    const ec = e.employee_code.trim().toUpperCase();
+    return e.user_id === u.id || (Boolean(codeUpper) && (ec === codeUpper || e.id === u.employee_id)) || ec === unameUpper;
+  });
+  if (explicit.length > 0) return explicit;
   const phone = normPhone(u.phone), email = u.email.trim().toLowerCase();
   return ctx.db.employees.filter((e) => {
-    const ec = e.employee_code.trim().toUpperCase();
-    return e.user_id === u.id || (Boolean(codeUpper) && (ec === codeUpper || e.id === u.employee_id)) || ec === unameUpper || (Boolean(phone) && normPhone(e.phone) === phone) || (Boolean(email) && e.email.trim().toLowerCase() === email);
+    if (e.user_id && e.user_id !== u.id && ctx.db.users.get(e.user_id)) return false;
+    return (Boolean(phone) && normPhone(e.phone) === phone) || (Boolean(email && !email.endsWith('@umbomilk.vn')) && e.email.trim().toLowerCase() === email);
   });
 }
 
@@ -150,60 +164,25 @@ export function resolveShiftLabel(ctx: AppContext, shiftCode: string, branchId?:
 }
 
 export function mapEmployeeRecord(e: Employee, ctx: AppContext) {
-  const branch = ctx.db.branches.get(e.branch_id);
-  const linkedUser = findLinkedUserForEmployee(e, ctx);
+  const branch = ctx.db.branches.get(e.branch_id), linkedUser = findLinkedUserForEmployee(e, ctx);
   const posLabel = resolveStaffGroupLabel(ctx, e.staff_group, e.position_title);
   return {
-    id: e.id,
-    employeeCode: e.employee_code,
-    fullName: e.full_name,
-    phone: e.phone,
-    email: e.email || linkedUser?.email || '',
-    dateOfBirth: e.date_of_birth || '',
-    gender: e.gender || '',
-    citizenId: e.citizen_id || '',
-    citizenIssueDate: e.citizen_issue_date || '',
-    permanentAddress: e.permanent_address || '',
-    currentAddress: e.current_address || '',
-    emergencyContactName: e.emergency_contact_name || '',
-    emergencyContactPhone: e.emergency_contact_phone || '',
-    taxCode: e.tax_code || '',
-    resignedAt: e.resigned_at || '',
-    resignReason: e.resign_reason || '',
-    branchId: e.branch_id,
-    branchName: branch?.name ?? 'Chưa phân chi nhánh',
-    staffGroup: e.staff_group,
-    staffGroupLabel: posLabel,
-    stage: e.stage,
-    stageLabel: EMPLOYEE_STAGE_LABELS[e.stage],
-    status: e.status,
-    statusLabel: EMPLOYEE_STATUS_LABELS[e.status],
-    positionTitle: e.position_title || posLabel,
-    employmentType: e.employment_type,
-    employmentTypeLabel: EMPLOYMENT_TYPE_LABELS[e.employment_type],
-    defaultShiftCode: e.default_shift_code,
-    defaultShiftLabel: resolveShiftLabel(ctx, e.default_shift_code, e.branch_id),
-    probationStart: e.probation_start || null,
-    probationEnd: e.probation_end || null,
-    officialFrom: e.official_from || null,
-    probationCycleDays: e.probation_cycle_days,
-    probationWorkDays: e.probation_work_days,
-    probationOffDays: e.probation_off_days,
-    ...salarySummary(e, ctx),
-    ...buildEmployeeDossierSummary(e, ctx),
-    bankName: e.bank_name,
-    bankAccountNumber: e.bank_account_number,
-    bankAccountHolder: e.bank_account_holder,
-    userId: linkedUser?.id ?? null,
-    username: linkedUser?.username ?? null,
-    userDisplayName: linkedUser?.display_name ?? null,
-    userRole: linkedUser?.role ?? null,
-    userRoleLabel: linkedUser ? ROLE_LABELS[linkedUser.role] : null,
-    accountStatus: linkedUser?.status ?? null,
-    accountStatusLabel: linkedUser ? ACCOUNT_STATUS_LABELS[linkedUser.status] : 'Chưa liên kết tài khoản',
-    note: e.note || '',
-    version: e.version,
-    created_at: e.created_at,
-    updated_at: e.updated_at,
+    id: e.id, employeeCode: e.employee_code, fullName: e.full_name, phone: e.phone, email: e.email || linkedUser?.email || '',
+    dateOfBirth: e.date_of_birth || '', gender: e.gender || '', citizenId: e.citizen_id || '', citizenIssueDate: e.citizen_issue_date || '',
+    permanentAddress: e.permanent_address || '', currentAddress: e.current_address || '',
+    emergencyContactName: e.emergency_contact_name || '', emergencyContactPhone: e.emergency_contact_phone || '',
+    taxCode: e.tax_code || '', resignedAt: e.resigned_at || '', resignReason: e.resign_reason || '',
+    branchId: e.branch_id, branchName: branch?.name ?? 'Chưa phân chi nhánh', staffGroup: e.staff_group, staffGroupLabel: posLabel,
+    stage: e.stage, stageLabel: EMPLOYEE_STAGE_LABELS[e.stage], status: e.status, statusLabel: EMPLOYEE_STATUS_LABELS[e.status],
+    positionTitle: e.position_title || posLabel, employmentType: e.employment_type, employmentTypeLabel: EMPLOYMENT_TYPE_LABELS[e.employment_type],
+    defaultShiftCode: e.default_shift_code, defaultShiftLabel: resolveShiftLabel(ctx, e.default_shift_code, e.branch_id),
+    probationStart: e.probation_start || null, probationEnd: e.probation_end || null, officialFrom: e.official_from || null,
+    probationCycleDays: e.probation_cycle_days, probationWorkDays: e.probation_work_days, probationOffDays: e.probation_off_days,
+    ...salarySummary(e, ctx), ...buildEmployeeDossierSummary(e, ctx),
+    bankName: e.bank_name, bankAccountNumber: e.bank_account_number, bankAccountHolder: e.bank_account_holder,
+    userId: linkedUser?.id ?? null, username: linkedUser?.username ?? null, userDisplayName: linkedUser?.display_name ?? null,
+    userRole: linkedUser?.role ?? null, userRoleLabel: linkedUser ? ROLE_LABELS[linkedUser.role] : null,
+    accountStatus: linkedUser?.status ?? null, accountStatusLabel: linkedUser ? ACCOUNT_STATUS_LABELS[linkedUser.status] : 'Chưa liên kết tài khoản',
+    note: e.note || '', version: e.version, created_at: e.created_at, updated_at: e.updated_at,
   };
 }

@@ -76,7 +76,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     const isOutOfBranchOrDup = (() => {
       let lastSig = '';
       let lastAt = 0;
-      return (eventKey: string, payload?: { actorId?: string; branchId?: string; kind?: string; code?: string; title?: string; message?: string }) => {
+      return (eventKey: string, payload?: { actorId?: string; branchId?: string; entityId?: string; kind?: string; code?: string; title?: string; message?: string }) => {
         const meUser = qc.getQueryData<{ user?: { id?: string; role?: string; branchScope?: 'ALL' | string[] } }>(['me'])?.user;
         const outOfBranch = Boolean(
           meUser?.role === 'STORE' &&
@@ -84,7 +84,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
           payload.branchId !== 'ALL' &&
           (!Array.isArray(meUser.branchScope) || !meUser.branchScope.includes(payload.branchId)),
         );
-        const sig = `${eventKey}:${payload?.kind || ''}:${payload?.code || ''}:${payload?.title || ''}:${payload?.message || ''}`;
+        const sig = `${eventKey}:${payload?.kind || ''}:${payload?.entityId || ''}:${payload?.code || ''}:${payload?.title || ''}:${payload?.message || ''}`;
         const now = Date.now();
         const isDup = outOfBranch || (sig === lastSig && now - lastAt < 800);
         if (!outOfBranch) {

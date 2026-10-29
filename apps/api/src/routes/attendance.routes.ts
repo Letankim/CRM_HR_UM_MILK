@@ -9,7 +9,8 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
-import { queueAttendanceAdjustmentDecisionEmail } from '../services/action-email-dispatcher.js';
+import { queueAttendanceAdjustmentCreatedEmail, queueAttendanceAdjustmentDecidedEmails } from '../services/action-email-dispatcher.js';
+import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { applyApprovedAdjustmentToShift, assertNoDuplicateAdjustment, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { buildPaginatedAttendanceSessions, calculateHaversineMeters, describePunctuality, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto } from './attendance-helpers.js';
@@ -154,33 +155,26 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.delete('/api/admin/attendance/events/:id', { preHandler: requirePermission('system.config') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const body = z.object({ version: z.coerce.number().int().min(1).optional() }).parse(request.body ?? {});
-    const before = ctx.db.attendanceEvents.get(id);
+    const { id } = request.params as { id: string }, body = z.object({ version: z.coerce.number().int().min(1).optional() }).parse(request.body ?? {}), before = ctx.db.attendanceEvents.get(id);
     if (!before) throw Errors.notFound('Sự kiện điểm danh', id);
-    assertBranchAccess(request, before.branch_id);
-    assertDateNotLockedByPayroll(ctx.db, before.work_date, 'xóa điểm danh');
+    assertBranchAccess(request, before.branch_id); assertDateNotLockedByPayroll(ctx.db, before.work_date, 'xóa điểm danh');
     await ctx.db.attendanceEvents.softDelete(id, body.version ?? before.version, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'attendance.event.delete', entity: 'ATTENDANCE_EVENTS', entityId: id, before: { type: before.type, work_date: before.work_date } });
     return sendSuccess(request, 'Đã xóa bản ghi điểm danh', { id });
   });
-
   const handleGetAdjustments = async (request: Parameters<typeof sendPaginated>[0]) => {
     const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), status: z.string().trim().optional() }).parse(request.query ?? {});
     const scoped = filterByBranch(request, ctx.db.attendanceAdjustments.all(), (a) => resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id));
     const mapped = scoped.map((a) => {
-      const emp = ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === a.employee_id);
-      const branch = (emp ? ctx.db.branches.get(emp.branch_id) : undefined) ?? ctx.db.branches.get(a.branch_id);
+      const emp = ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === a.employee_id), branch = (emp ? ctx.db.branches.get(emp.branch_id) : undefined) ?? ctx.db.branches.get(a.branch_id);
       return { ...a, ...resolveShiftTimeDetails(ctx, a.shift_code, a.assignment_id), branch_id: branch?.id ?? a.branch_id, employeeCode: emp?.employee_code ?? a.employee_id, employeeName: emp ? `${emp.full_name} (${emp.employee_code})` : a.employee_id, branchName: branch?.name ?? 'Chi nhánh' };
     }).filter((a) => (!query.branch_id || query.branch_id === 'ALL' || a.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || a.status === query.status));
     return sendPaginated(request, 'Lấy danh sách phiếu bổ sung và điều chỉnh công thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'work_date', 'status'], q: query.q, searchExtractor: (i) => [i.adjustment_code, i.employeeCode, i.employeeName, i.reason, i.work_date], filters: { branch_id: query.branch_id, status: query.status } }));
   };
   app.get('/api/admin/attendance/adjustments', { preHandler: requirePermission('attendance.read', 'adjustment.approve', 'attendance.confirm', 'self.adjustment') }, handleGetAdjustments);
   app.get('/api/admin/attendance-adjustments', { preHandler: requirePermission('attendance.read', 'adjustment.approve', 'attendance.confirm', 'self.adjustment') }, handleGetAdjustments);
-
   app.post('/api/admin/attendance/adjustments', { preHandler: requireAuth() }, async (request, reply) => {
-    const body = zCreateAdjustmentBody.parse(request.body);
-    const emp = ctx.db.employees.get(body.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === body.employee_id);
+    const body = zCreateAdjustmentBody.parse(request.body), emp = ctx.db.employees.get(body.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === body.employee_id);
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy nhân sự', body.employee_id);
     const caller = request.auth!.user, perms = request.auth!.permissions;
     const isSelfEmp = emp.user_id === caller.id || Boolean(caller.employee_id && (emp.id === caller.employee_id || emp.employee_code === caller.employee_id));
@@ -197,9 +191,11 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       adjustment_code: `ADJ-${String(ctx.db.attendanceAdjustments.all(true).length + 1).padStart(4, '0')}`, event_id: body.event_id, assignment_id: matchedShift?.id ?? body.assignment_id, employee_id: emp.id, branch_id: effectiveBranchId,
       work_date: matchedShift?.work_date ?? body.work_date, shift_code: matchedShift?.shift_code ?? body.shift_code, kind: body.kind, requested_time: shiftEnd, requested_check_in_at: shiftStart, requested_check_out_at: shiftEnd, requested_hours: shiftHours,
       reason: body.reason, evidence_file_id: '', exception_source: 'EMPLOYEE', status: 'PENDING', store_confirmed_by: '', store_confirmed_at: '', store_note: '', hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
-    }, request.auth!.user.id);
+    }, caller.id);
+    queueAttendanceAdjustmentCreatedEmail(ctx, created, caller.id);
+    await ensureSyncedNotifications(ctx);
     await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.create', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: created.id, after: { adjustment_code: created.adjustment_code, assignment_id: created.assignment_id, requested_hours: created.requested_hours } });
-    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: effectiveBranchId, employeeIds: [emp.id], kind: 'ADJUSTMENT_CREATED', message: `${emp.full_name} (${emp.employee_code}) vừa gửi phiếu bổ sung công ${created.adjustment_code} ngày ${created.work_date} chờ duyệt`, actorId: request.auth!.user.id });
+    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: effectiveBranchId, employeeIds: [emp.id], kind: 'ADJUSTMENT_CREATED', message: `${emp.full_name} (${emp.employee_code}) vừa gửi phiếu bổ sung công ${created.adjustment_code} ngày ${created.work_date} chờ duyệt`, actorId: caller.id });
     return reply.code(201), sendSuccess(request, 'Đã tạo phiếu bổ sung / điều chỉnh công', created);
   });
 
@@ -212,7 +208,8 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const patch = body.action === 'STORE_CONFIRM' ? { status: 'STORE_CONFIRMED' as const, store_confirmed_by: actorId, store_confirmed_at: nowIso(), store_note: body.decision_reason } : body.action === 'HR_APPROVE' ? { status: 'APPROVED' as const, hr_decision: 'APPROVED', decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), applied_to_record: true } : { status: 'REJECTED' as const, hr_decision: 'REJECTED', decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), applied_to_record: false };
     const updated = await ctx.db.attendanceAdjustments.update(id, body.version, patch, actorId);
     if (body.action === 'HR_APPROVE') await applyApprovedAdjustmentToShift(ctx.db, id, actorId);
-    queueAttendanceAdjustmentDecisionEmail(ctx, updated, request.auth?.user.email);
+    queueAttendanceAdjustmentDecidedEmails(ctx, updated, body.action, actorId);
+    await ensureSyncedNotifications(ctx);
     await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.decide', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: id, before: { status: before.status }, after: { status: updated.status, hr_decision: updated.hr_decision } });
     emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: body.action === 'STORE_CONFIRM' ? 'ADJUSTMENT_STORE_CONFIRMED' : 'ADJUSTMENT_DECIDED', message: `Phiếu bổ sung công ${updated.adjustment_code} ngày ${updated.work_date} đã ${body.action === 'STORE_CONFIRM' ? 'được Cửa hàng xác nhận' : body.action === 'HR_APPROVE' ? 'được HR phê duyệt' : 'bị từ chối'}`, actorId });
     return sendSuccess(request, body.action === 'STORE_CONFIRM' ? 'Cửa hàng đã xác nhận phiếu bổ sung công để chuyển HR duyệt' : body.action === 'HR_APPROVE' ? 'Đã phê duyệt phiếu bổ sung công và cập nhật trạng thái hoàn thành ca làm việc' : 'Đã từ chối phiếu bổ sung công', updated);

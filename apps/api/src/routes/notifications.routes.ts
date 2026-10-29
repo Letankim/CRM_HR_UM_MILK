@@ -8,7 +8,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
-import { resolveRealAccountEmail, resolveRolePortalPath } from '../services/account-email-dispatcher.js';
+import { resolveRolePortalPath, resolveUserPersonalRealEmail, webOrigin } from '../services/account-email-dispatcher.js';
 import { ensureSyncedNotifications, isNotificationCreatedByOrSelfAction } from '../services/notification-sync.service.js';
 import { resolveEmployeeBranchId } from './account-employee-sync.js';
 import { doesUserMatchAudience } from './job-positions-and-audiences.routes.js';
@@ -17,7 +17,7 @@ function resolveNotificationLinkForRole(n: NotificationRow, role: Role): string 
   const isEmp = isEmployeeRole(role), raw = (n.link || '').replace('/nv/cong-cua-toi', '/nv/cong');
   if (n.entity_type === 'ANNOUNCEMENTS') return resolveRolePortalPath(role, 'comms');
   if (n.entity_type === 'ATT_ADJ_USER') return resolveRolePortalPath(role, 'attendance');
-  if (n.entity_type === 'LEAVE_USER') return resolveRolePortalPath(role, 'leave');
+  if (n.entity_type === 'LEAVE_USER' || n.entity_type === 'EMG_USER') return resolveRolePortalPath(role, 'leave');
   if (n.entity_type === 'SWAP_USER') return resolveRolePortalPath(role, 'swap');
   if (n.entity_type === 'SHIFT_PUB_USER') return resolveRolePortalPath(role, 'schedule');
   if (n.entity_type === 'PAYSLIP_USER') return resolveRolePortalPath(role, 'payslip');
@@ -82,12 +82,12 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
     const seenVisibleKeys = new Set<string>();
     const isGlobalBackofficeRole = ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(user.role);
     const resolveNotifMeta = (n: NotificationRow): { branchId: string; isBoOrHr: boolean } => {
-      const rawId = (n.entity_id || '').replace(/_(STORE_CONFIRMED|APPROVED|REJECTED|PENDING_PEER|PEER_ACCEPTED)$/, '');
+      const rawId = (n.entity_id || '').replace(/_(STORE_CONFIRMED|APPROVED|REJECTED|PENDING_PEER|PEER_ACCEPTED|ESCALATED)$/, '');
       const checkEmp = (eid?: string, fb = '', creatorId = '') => {
         const emp = eid ? (ctx.db.employees.get(eid) ?? ctx.db.employees.find((e) => e.employee_code === eid)) : undefined;
         const creatorRole = creatorId ? ctx.db.users.get(creatorId)?.role : undefined;
         const empUserRole = emp?.user_id ? ctx.db.users.get(emp.user_id)?.role : undefined;
-        const isBoOrHr = emp?.staff_group === 'BACKOFFICE' || ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(empUserRole || '') || ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(creatorRole || '');
+        const isBoOrHr = emp?.staff_group === 'BACKOFFICE' || ['ADMIN', 'HR', 'FINANCE', 'MKT', 'STORE'].includes(empUserRole || '') || ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(creatorRole || '');
         return { branchId: (eid ? resolveEmployeeBranchId(ctx, eid, fb || n.branch_id) : fb || n.branch_id) || 'ALL', isBoOrHr };
       };
       if (n.entity_type === 'ATT_ADJ_HR') { const adj = ctx.db.attendanceAdjustments.get(rawId); return checkEmp(adj?.employee_id, adj?.branch_id, adj?.created_by); }
@@ -115,7 +115,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
         } else {
           const { branchId: notifBranch, isBoOrHr } = resolveNotifMeta(n);
           const isWorkflowRoleNotif = ['ATT_ADJ_HR', 'LEAVE_ROLE', 'SHIFT_DRAFT_ROLE', 'SWAP_STORE', 'EMG_STORE'].includes(n.entity_type);
-          if (user.role === 'STORE' && ((n.entity_type === 'ATT_ADJ_HR' && n.entity_id.endsWith('_STORE_CONFIRMED')) || (isWorkflowRoleNotif && isBoOrHr))) return false;
+          if (user.role === 'STORE' && ((n.entity_type === 'ATT_ADJ_HR' && n.entity_id.endsWith('_STORE_CONFIRMED')) || (n.entity_type === 'EMG_STORE' && n.entity_id.endsWith('_ESCALATED')) || (isWorkflowRoleNotif && isBoOrHr))) return false;
           const inBranch = isGlobalBackofficeRole
             || (branchScope === 'ALL' && !isWorkflowRoleNotif)
             || (!isWorkflowRoleNotif && (!notifBranch || notifBranch === 'ALL'))
@@ -177,8 +177,15 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
     if (body.target_scope === 'USER') pickedUsers.forEach((uid) => ctx.realtime()?.toUser(uid, SocketEvents.NOTIFICATION, payload));
     else if (body.target_scope === 'ROLE') pickedRoles.forEach((r) => ctx.realtime()?.toRole(r, SocketEvents.NOTIFICATION, payload));
     else ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, payload);
-    const mailUsers = ctx.db.users.filter((u) => u.status === 'ACTIVE' && (body.target_scope === 'ALL' || (body.target_scope === 'USER' && pickedUsers.includes(u.id)) || (body.target_scope === 'ROLE' && pickedRoles.includes(u.role))));
-    mailUsers.forEach((u) => ctx.email.enqueue({ to: resolveRealAccountEmail(ctx, u), template: 'INTERNAL_ANNOUNCEMENT', recipientName: u.display_name || u.username, referenceCode: `NTF-${created.id.slice(0, 6)}`, summary: created.body, metadata: [{ label: 'Tiêu đề', value: created.title }, { label: 'Phân loại', value: NOTIFICATION_CATEGORY_LABELS[created.category] ?? created.category }, { label: 'Mức độ', value: NOTIFICATION_SEVERITY_LABELS[created.severity] ?? created.severity }], actionLabel: 'Xem thông báo trên hệ thống', actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${resolveNotificationLinkForRole(created, u.role as Role)}` }));
+    const mailUsers = ctx.db.users.filter((u) => u.status === 'ACTIVE' && u.id !== actorId && (body.target_scope === 'ALL' || (body.target_scope === 'USER' && pickedUsers.includes(u.id)) || (body.target_scope === 'ROLE' && pickedRoles.includes(u.role))));
+    const seenEmails = new Set<string>(), origin = webOrigin(ctx);
+    mailUsers.forEach((u) => {
+      const to = resolveUserPersonalRealEmail(ctx, u);
+      if (!to || seenEmails.has(to)) return;
+      seenEmails.add(to);
+      ctx.email.enqueue({ to, template: 'INTERNAL_ANNOUNCEMENT', recipientName: u.display_name || u.username, referenceCode: `NTF-${created.id.slice(0, 6)}`, summary: created.body, metadata: [{ label: 'Tiêu đề', value: created.title }, { label: 'Phân loại', value: NOTIFICATION_CATEGORY_LABELS[created.category] ?? created.category }, { label: 'Mức độ', value: NOTIFICATION_SEVERITY_LABELS[created.severity] ?? created.severity }], actionLabel: 'Xem thông báo trên hệ thống', actionUrl: `${origin}${resolveNotificationLinkForRole(created, u.role as Role)}` });
+    });
+    if (seenEmails.size > 0) void ctx.email.processQueueBatch(Math.min(6, seenEmails.size));
     return reply.code(201), sendSuccess(request, 'Đã gửi thông báo thành công', created);
   });
   const handleMarkRead = async (request: FastifyRequest) => {

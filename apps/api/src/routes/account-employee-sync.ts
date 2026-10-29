@@ -92,7 +92,7 @@ async function runHeal(ctx: AppContext, actorId: string): Promise<void> {
         if ((linkedUser.updated_at ?? '') >= (emp.updated_at ?? '')) {
           effectiveBranchId = userBranchId;
           empPatches.push({ id: emp.id, expectedVersion: emp.version, patch: { branch_id: userBranchId } });
-        } else if (isBranchRole || linkedUser.branch_scope !== 'ALL') {
+        } else if (isBranchRole) {
           userPatches.push({ id: linkedUser.id, expectedVersion: linkedUser.version, patch: { branch_scope: emp.branch_id } });
         }
       } else if (!userBranchId && isBranchRole && emp.branch_id) {
@@ -166,7 +166,7 @@ export async function syncAccountFromEmployee(ctx: AppContext, params: SyncAccou
   if (fullName && fullName !== targetUser.display_name) userPatch.display_name = fullName;
   if (phone && phone !== targetUser.phone) userPatch.phone = phone;
   if (email !== undefined && email !== targetUser.email) userPatch.email = email;
-  if (branchId && (isBranchScopedRole || targetUser.branch_scope !== 'ALL')) userPatch.branch_scope = branchId;
+  if (branchId && isBranchScopedRole) userPatch.branch_scope = branchId;
   if (stage === 'OFFICIAL' && targetUser.role === 'THU_VIEC') userPatch.role = 'CHINH_THUC';
   else if (stage === 'PROBATION' && targetUser.role === 'CHINH_THUC') userPatch.role = 'THU_VIEC';
   await ctx.db.users.update(targetUser.id, targetUser.version, userPatch, actorId);
@@ -176,17 +176,14 @@ export async function syncAccountFromEmployee(ctx: AppContext, params: SyncAccou
 const pendingRealtimeBatches = new Map<string, { count: number; branchId: string; userIds: Set<string>; firstMsg: string; actorId: string; timer: ReturnType<typeof setTimeout> }>();
 const BULK_KIND_LABELS: Record<string, (n: number) => string> = {
   ADJUSTMENT_DECIDED: (n) => `Đã xử lý hàng loạt ${n} phiếu bổ sung công`, ADJUSTMENT_STORE_CONFIRMED: (n) => `Cửa hàng đã xác nhận ${n} phiếu bổ sung công chờ HR duyệt`,
-  ADJUSTMENT_CREATED: (n) => `Có ${n} phiếu bổ sung công mới vừa gửi chờ duyệt`,
-  LEAVE_DECIDED: (n) => `Đã xử lý hàng loạt ${n} đơn xin nghỉ phép (OFF)`, LEAVE_CREATED: (n) => `Có ${n} đơn xin nghỉ phép (OFF) mới chờ duyệt`,
-  SWAP_DECIDED: (n) => `Đã xử lý hàng loạt ${n} yêu cầu đổi ca`, SWAP_PEER: (n) => `Đã cập nhật hàng loạt ${n} yêu cầu đổi ca`,
-  EMERGENCY_HANDLED: (n) => `Đã xử lý hàng loạt ${n} báo cáo nghỉ đột xuất`, SHIFT_APPROVED: (n) => `Đã duyệt và phát hành chính thức ${n} ca làm việc`,
+  ADJUSTMENT_CREATED: (n) => `Có ${n} phiếu bổ sung công mới vừa gửi chờ duyệt`, LEAVE_DECIDED: (n) => `Đã xử lý hàng loạt ${n} đơn xin nghỉ phép (OFF)`,
+  LEAVE_CREATED: (n) => `Có ${n} đơn xin nghỉ phép (OFF) mới chờ duyệt`, SWAP_DECIDED: (n) => `Đã xử lý hàng loạt ${n} yêu cầu đổi ca`,
+  SWAP_PEER: (n) => `Đã cập nhật hàng loạt ${n} yêu cầu đổi ca`, EMERGENCY_HANDLED: (n) => `Đã xử lý hàng loạt ${n} báo cáo nghỉ đột xuất`, SHIFT_APPROVED: (n) => `Đã duyệt và phát hành chính thức ${n} ca làm việc`,
 };
-const WORKFLOW_CREATE_KINDS = new Set(['ADJUSTMENT_CREATED', 'LEAVE_CREATED', 'SHIFT_REGISTERED', 'SWAP_CREATED', 'SWAP_PEER', 'EMERGENCY_REPORTED']);
+const MGR_CREATE_KINDS = new Set(['ADJUSTMENT_CREATED', 'LEAVE_CREATED', 'SHIFT_REGISTERED', 'EMERGENCY_REPORTED']);
 
-/** Phát tín hiệu Socket.IO đồng bộ Lịch làm việc, Ca làm & Đơn từ (Đồng bộ thông báo trước khi phát sự kiện) */
 export function emitScheduleRealtime(ctx: AppContext, event: string, opts: { branchId?: string; employeeIds?: (string | undefined)[]; kind?: string; message?: string; actorId?: string }): void {
-  const firstEmpId = (opts.employeeIds ?? []).find(Boolean) ?? '';
-  const resolvedBranchId = resolveEmployeeBranchId(ctx, firstEmpId, opts.branchId ?? '') || opts.branchId || '';
+  const firstEmpId = (opts.employeeIds ?? []).find(Boolean) ?? '', resolvedBranchId = resolveEmployeeBranchId(ctx, firstEmpId, opts.branchId ?? '') || opts.branchId || '';
   const kind = opts.kind ?? 'SCHEDULE_SYNC', batchKey = `${event}:${kind}:${resolvedBranchId || 'ALL'}`;
   const existing = pendingRealtimeBatches.get(batchKey), userIds = existing?.userIds ?? new Set<string>();
   let isTargetBoOrHr = false;
@@ -195,7 +192,7 @@ export function emitScheduleRealtime(ctx: AppContext, event: string, opts: { bra
     const emp = ctx.db.employees.get(rawId) ?? ctx.db.employees.find((e) => e.employee_code === rawId);
     const u = emp ? findLinkedUserForEmployee(emp, ctx) : undefined;
     if (u) userIds.add(u.id);
-    if (emp?.staff_group === 'BACKOFFICE' || ['HR', 'ADMIN', 'FINANCE', 'MKT'].includes(u?.role ?? '')) isTargetBoOrHr = true;
+    if (emp?.staff_group === 'BACKOFFICE' || ['HR', 'ADMIN', 'FINANCE', 'MKT', 'STORE'].includes(u?.role ?? '')) isTargetBoOrHr = true;
   }
   if (existing) clearTimeout(existing.timer);
   const count = (existing?.count ?? 0) + 1, firstMsg = existing?.firstMsg || opts.message || '';
@@ -207,14 +204,16 @@ export function emitScheduleRealtime(ctx: AppContext, event: string, opts: { bra
     if (!rt) return;
     const message = count > 1 ? (BULK_KIND_LABELS[kind]?.(count) ?? firstMsg) : firstMsg;
     const actorRole = actorId ? ctx.db.users.get(actorId)?.role : undefined;
-    const skipStore = isTargetBoOrHr || actorRole === 'HR' || actorRole === 'ADMIN' || actorRole === 'FINANCE' || kind === 'SWAP_CREATED';
-    const alertRoles: Role[] = kind === 'ADJUSTMENT_STORE_CONFIRMED' ? ['HR'] : WORKFLOW_CREATE_KINDS.has(kind) ? (skipStore ? ['HR'] : ['HR', 'STORE']) : [];
-    if (message && (alertRoles.length > 0 || userIds.size > 0)) {
-      rt.toTargets({ branchId, roles: alertRoles, userIds: Array.from(userIds), excludeUserId: actorId }, event, { kind, branchId, message, actorId });
+    const skipStore = isTargetBoOrHr || actorRole === 'HR' || actorRole === 'ADMIN' || actorRole === 'FINANCE';
+    const alertRoles: Role[] = (kind === 'ADJUSTMENT_STORE_CONFIRMED' || kind === 'EMERGENCY_ESCALATED') ? ['HR'] : (MGR_CREATE_KINDS.has(kind) || kind === 'SWAP_PEER') ? (skipStore ? ['HR'] : ['HR', 'STORE']) : [];
+    const alertUserIds = (MGR_CREATE_KINDS.has(kind) || kind === 'EMERGENCY_ESCALATED') ? [] : Array.from(userIds);
+    if (message && (alertRoles.length > 0 || alertUserIds.length > 0)) {
+      rt.toTargets({ branchId, roles: alertRoles, userIds: alertUserIds, excludeUserId: actorId }, event, { kind, branchId, message, actorId });
+      rt.toTargets({ branchId, roles: alertRoles, userIds: alertUserIds, excludeUserId: actorId }, 'notification:new', { kind, branchId, title: message, actorId });
     }
     const silentRoles = (['ADMIN', 'HR', 'STORE', 'FINANCE'] as Role[]).filter((r) => !message || !alertRoles.includes(r));
     rt.toTargets({ branchId, roles: silentRoles, userIds: message ? [] : Array.from(userIds) }, event, { kind, branchId, message: '', actorId });
-  }, 350);
+  }, 120);
   if (typeof timer.unref === 'function') timer.unref();
   pendingRealtimeBatches.set(batchKey, { count, branchId, userIds, firstMsg, actorId, timer });
 }

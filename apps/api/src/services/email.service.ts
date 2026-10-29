@@ -28,7 +28,7 @@ export class EmailService {
   private readonly history: SentEmailRecord[] = [];
   private readonly dedupeMap = new Map<string, { exp: number; record: SentEmailRecord }>();
   private readonly batchItems = new Map<string, SendEmailInput[]>();
-  private db?: Database; private processing = false; private timer: ReturnType<typeof setTimeout> | null = null;
+  private db?: Database; private activeRun: Promise<void> | null = null; private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly senderOption?: (payload: { to: string; subject: string; html: string }) => Promise<void>) {}
   attachDatabase(db: Database): void { this.db = db; }
@@ -99,24 +99,31 @@ export class EmailService {
     const baseTitle = (input.subject ?? `${SYSTEM_CONFIG.emailSubjectPrefix} ${EMAIL_TEMPLATE_LABELS[input.template]}`).replace(/\s*\([^)]*\)\s*$/, '').trim();
     const queuedMatch = this.history.find((r) => r.status === 'QUEUED' && r.to === cleanTo && r.template === input.template && r.subject.startsWith(baseTitle));
     if (queuedMatch) {
-      const list = this.batchItems.get(queuedMatch.id) ?? [];
-      if (!list.some((x) => x.referenceCode === input.referenceCode)) list.push({ ...input, to: cleanTo });
+      const list = this.batchItems.get(queuedMatch.id) ?? [], nextItem = { ...input, to: cleanTo };
+      const existIdx = list.findIndex((x) => x.referenceCode === input.referenceCode);
+      if (existIdx >= 0) list[existIdx] = nextItem; else list.push(nextItem);
       this.batchItems.set(queuedMatch.id, list);
-      const count = list.length, codes = list.map((x) => x.referenceCode);
-      const refSummary = count <= 3 ? codes.join(', ') : `${codes[0]} .. ${codes[count - 1]} (${count} mã)`;
-      const sameRecip = list.every((x) => x.recipientName === list[0]?.recipientName);
-      const mergedInput: SendEmailInput = {
-        ...input, to: cleanTo, referenceCode: refSummary,
-        recipientName: sameRecip ? (list[0]?.recipientName || 'Nhân sự Ụm Bò Milk') : `Tổng hợp ${count} bản ghi nhân sự`,
-        subject: `${baseTitle} (Tổng hợp ${count} bản ghi: ${codes[0]} .. ${codes[count - 1]})`,
-        summary: `Thông báo tổng hợp: Hệ thống vừa xử lý hàng loạt ${count} bản ghi (${EMAIL_TEMPLATE_LABELS[input.template]}). Chi tiết từng bản ghi được gộp trong bảng dưới đây:`,
-        metadata: [
-          { label: 'Tổng số bản ghi xử lý', value: `${count} bản ghi (${codes.slice(0, 6).join(', ')}${count > 6 ? `, ... +${count - 6} mã` : ''})` },
-          ...list.slice(0, 15).map((it, idx) => ({ label: `#${idx + 1} · ${it.referenceCode}`, value: `${it.recipientName ? `${it.recipientName}: ` : ''}${(it.metadata ?? []).map((m) => m.value).filter(Boolean).slice(0, 3).join(' · ') || it.summary}` })),
-        ],
-      };
-      queuedMatch.referenceCode = refSummary; queuedMatch.subject = mergedInput.subject!;
-      queuedMatch.recipientName = mergedInput.recipientName; queuedMatch.html = renderEnterpriseEmailHtml(mergedInput);
+      if (list.length === 1) {
+        const fresh = this.buildRecord(nextItem, 'QUEUED');
+        queuedMatch.referenceCode = fresh.referenceCode; queuedMatch.subject = fresh.subject;
+        queuedMatch.recipientName = fresh.recipientName; queuedMatch.html = fresh.html;
+      } else {
+        const count = list.length, codes = list.map((x) => x.referenceCode);
+        const refSummary = count <= 3 ? codes.join(', ') : `${codes[0]} .. ${codes[count - 1]} (${count} mã)`;
+        const sameRecip = list.every((x) => x.recipientName === list[0]?.recipientName);
+        const mergedInput: SendEmailInput = {
+          ...input, to: cleanTo, referenceCode: refSummary,
+          recipientName: sameRecip ? (list[0]?.recipientName || 'Nhân sự Ụm Bò Milk') : `Tổng hợp ${count} bản ghi nhân sự`,
+          subject: `${baseTitle} (Tổng hợp ${count} bản ghi: ${codes[0]} .. ${codes[count - 1]})`,
+          summary: `Thông báo tổng hợp: Hệ thống vừa xử lý hàng loạt ${count} bản ghi (${EMAIL_TEMPLATE_LABELS[input.template]}). Chi tiết từng bản ghi được gộp trong bảng dưới đây:`,
+          metadata: [
+            { label: 'Tổng số bản ghi xử lý', value: `${count} bản ghi (${codes.slice(0, 6).join(', ')}${count > 6 ? `, ... +${count - 6} mã` : ''})` },
+            ...list.slice(0, 15).map((it, idx) => ({ label: `#${idx + 1} · ${it.referenceCode}`, value: `${it.recipientName ? `${it.recipientName}: ` : ''}${(it.metadata ?? []).map((m) => m.value).filter(Boolean).slice(0, 3).join(' · ') || it.summary}` })),
+          ],
+        };
+        queuedMatch.referenceCode = refSummary; queuedMatch.subject = mergedInput.subject!;
+        queuedMatch.recipientName = mergedInput.recipientName; queuedMatch.html = renderEnterpriseEmailHtml(mergedInput);
+      }
       this.dedupeMap.set(key, { exp: now + DEDUPE_TTL_MS, record: queuedMatch });
       this.scheduleNextBatch(1200, true);
       return queuedMatch;
@@ -132,12 +139,8 @@ export class EmailService {
   }
 
   private scheduleNextBatch(delayMs = BATCH_INTERVAL_MS, resetTimer = false): void {
-    if (this.processing) return;
-    if (this.timer) {
-      if (!resetTimer) return;
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
+    if (this.activeRun) return;
+    if (this.timer) { if (!resetTimer) return; clearTimeout(this.timer); this.timer = null; }
     this.timer = setTimeout(() => { this.timer = null; void this.processQueueBatch(BATCH_SIZE); }, delayMs);
     if (typeof this.timer.unref === 'function') this.timer.unref();
   }
@@ -146,8 +149,7 @@ export class EmailService {
     record.attempts += 1; record.sentAt = nowIso();
     if (!this.senderOption || isSyntheticDemoEmail(record.to)) {
       record.status = 'QUEUED_MEMORY'; record.error = undefined;
-      await this.syncToDeliveryLog(record);
-      return;
+      await this.syncToDeliveryLog(record); return;
     }
     try {
       await this.senderOption({ to: record.to, subject: record.subject, html: record.html });
@@ -157,8 +159,7 @@ export class EmailService {
       if (msg.includes('insufficient authentication scopes') || msg.includes('Insufficient Permission')) {
         record.status = 'QUEUED_MEMORY'; record.error = undefined;
       } else {
-        record.status = record.attempts < MAX_ATTEMPTS ? 'QUEUED' : 'FAILED';
-        record.error = msg;
+        record.status = record.attempts < MAX_ATTEMPTS ? 'QUEUED' : 'FAILED'; record.error = msg;
       }
     }
     await this.syncToDeliveryLog(record);
@@ -166,17 +167,18 @@ export class EmailService {
 
   async processQueueBatch(maxBatch = BATCH_SIZE): Promise<{ processed: number; remaining: number }> {
     this.hydrateFromDatabase();
-    if (this.processing) return { processed: 0, remaining: this.history.filter((r) => r.status === 'QUEUED').length };
-    this.processing = true;
+    if (this.activeRun) await this.activeRun;
     let processed = 0;
-    try {
+    const job = (async () => {
       const pending = [...this.history].reverse().filter((r) => r.status === 'QUEUED').slice(0, maxBatch);
       for (let i = 0; i < pending.length; i++) {
         await this.deliverSingle(pending[i]!);
         processed += 1;
-        if (i < pending.length - 1) await sleep(INTER_EMAIL_DELAY_MS);
+        if (this.senderOption && i < pending.length - 1) await sleep(INTER_EMAIL_DELAY_MS);
       }
-    } finally { this.processing = false; }
+    })();
+    this.activeRun = job;
+    try { await job; } finally { if (this.activeRun === job) this.activeRun = null; }
     const remaining = this.history.filter((r) => r.status === 'QUEUED').length;
     if (remaining > 0) this.scheduleNextBatch(BATCH_INTERVAL_MS);
     return { processed, remaining };
@@ -206,7 +208,7 @@ export class EmailService {
     const queuedCount = this.history.filter((r) => r.status === 'QUEUED').length;
     const sentCount = this.history.filter((r) => r.status === 'SENT' || r.status === 'QUEUED_MEMORY').length;
     const failedCount = this.history.filter((r) => r.status === 'FAILED').length;
-    return { queuedCount, sentCount, failedCount, totalCount: this.history.length, batchSize: BATCH_SIZE, intervalSeconds: BATCH_INTERVAL_MS / 1000, processing: this.processing };
+    return { queuedCount, sentCount, failedCount, totalCount: this.history.length, batchSize: BATCH_SIZE, intervalSeconds: BATCH_INTERVAL_MS / 1000, processing: Boolean(this.activeRun) };
   }
 
   previewTemplate(template: EmailTemplateCode, baseUrl = 'http://localhost:3100') {

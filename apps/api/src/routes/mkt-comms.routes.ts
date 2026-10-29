@@ -7,7 +7,7 @@ import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
-import { resolveRealAccountEmail, resolveRolePortalPath } from '../services/account-email-dispatcher.js';
+import { resolveRolePortalPath, resolveUserPersonalRealEmail, webOrigin } from '../services/account-email-dispatcher.js';
 import { buildConfiguredAudienceGroups, doesUserMatchAudience, getMatchingUsersForAudience, jobPositionsAndAudiencesRoutes } from './job-positions-and-audiences.routes.js';
 
 const COMMS_PERMS = ['comms.manage', 'notification.send', 'employee.manage', 'system.config', 'payroll.manage', 'schedule.propose'] as const;
@@ -73,14 +73,18 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
     if (obsoleteLogs.length > 0) await ctx.db.deliveryLogs.batchUpdate(obsoleteLogs.map((l) => ({ id: l.id, expectedVersion: l.version, patch: { is_deleted: true } })), actorId);
     const existingLogUserIds = new Set(ctx.db.deliveryLogs.filter((l) => l.announcement_id === anc.id).map((l) => l.recipient_user_id));
     const prioLabel = anc.priority === 'URGENT' ? 'Khẩn cấp' : anc.priority === 'HIGH' ? 'Quan trọng' : 'Thông thường', now = nowIso();
-    const pendingLogInserts: Promise<unknown>[] = [];
+    const pendingLogInserts: Promise<unknown>[] = [], seenAncEmails = new Set<string>(), origin = webOrigin(ctx);
     for (const u of matchedUsers) {
       if (!existingLogUserIds.has(u.id)) {
         pendingLogInserts.push(ctx.db.deliveryLogs.insert({ announcement_id: anc.id, recipient_user_id: u.id, channel: 'IN_APP_SOCKET', status: 'SENT', attempts: 1, last_error: '', branch_id: u.branch_scope === 'ALL' ? 'ALL' : u.branch_scope.split(',')[0] || 'ALL', sent_at: now, delivered_at: now, read_at: '', ack_at: '' }, actorId));
       }
+      const personalEmail = resolveUserPersonalRealEmail(ctx, u);
+      if (!personalEmail || seenAncEmails.has(personalEmail)) continue;
+      seenAncEmails.add(personalEmail);
       const ctaPath = (!anc.cta_link || anc.cta_link === '/nv/ban-tin' || (u.role === 'MKT' && anc.cta_link.startsWith('/nv')) || (isEmployeeRole(u.role as Role) && anc.cta_link.startsWith('/admin'))) ? resolveRolePortalPath(u.role as Role, 'comms') : anc.cta_link;
-      ctx.email.enqueue({ to: resolveRealAccountEmail(ctx, u), template: 'INTERNAL_ANNOUNCEMENT', recipientName: u.display_name || u.username, referenceCode: anc.code, summary: anc.summary || anc.title, metadata: [{ label: 'Mã bản tin', value: anc.code }, { label: 'Tiêu đề', value: anc.title }, { label: 'Mức độ ưu tiên', value: prioLabel }], actionLabel: anc.cta_label || 'Xem chi tiết bản tin', actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}${ctaPath}` });
+      ctx.email.enqueue({ to: personalEmail, template: 'INTERNAL_ANNOUNCEMENT', recipientName: u.display_name || u.username, referenceCode: anc.code, summary: anc.summary || anc.title, metadata: [{ label: 'Mã bản tin', value: anc.code }, { label: 'Tiêu đề', value: anc.title }, { label: 'Mức độ ưu tiên', value: prioLabel }], actionLabel: anc.cta_label || 'Xem chi tiết bản tin', actionUrl: `${origin}${ctaPath}` });
     }
+    if (seenAncEmails.size > 0) void ctx.email.processQueueBatch(Math.min(6, seenAncEmails.size));
     if (pendingLogInserts.length > 0) await Promise.all(pendingLogInserts);
     const payload = { kind: 'ANNOUNCEMENT', id: anc.id, notificationId: notif.id, code: anc.code, title: anc.title, summary: anc.summary, priority: anc.priority, sent_at: anc.sent_at };
     if (isGlobal) ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, payload);
@@ -188,10 +192,8 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   app.post('/api/mkt/media', { preHandler: requirePermission(...COMMS_PERMS) }, async (req, reply) => {
     const body = zMediaBody.parse(req.body), code = body.code || `MED-${String(ctx.db.mediaAssets.all(true).length + 1).padStart(3, '0')}`;
     const created = await ctx.db.mediaAssets.insert({ file_name: body.file_name, mime_type: body.mime_type, size_bytes: body.size_bytes, drive_file_id: body.drive_file_id || body.drive_url || 'drive://internal', category: body.category, is_internal_only: body.is_internal_only, code, uploaded_by: req.auth!.user.id }, req.auth!.user.id);
-    reply.code(201);
-    return sendSuccess(req, 'Đã lưu tệp vào Kho Media nội bộ an toàn', created);
+    return reply.code(201), sendSuccess(req, 'Đã lưu tệp vào Kho Media nội bộ an toàn', created);
   });
-
   app.put('/api/mkt/media/:id', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
     const { id } = req.params as { id: string }, body = zMediaBody.parse(req.body), before = ctx.db.mediaAssets.get(id);
     if (!before) throw Errors.notFound('Tệp Media', id);
@@ -199,7 +201,6 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
     const updated = await ctx.db.mediaAssets.update(id, body.version ?? before.version, { file_name: body.file_name, mime_type: body.mime_type, size_bytes: body.size_bytes, drive_file_id: body.drive_file_id || body.drive_url || before.drive_file_id, category: body.category, is_internal_only: body.is_internal_only }, req.auth!.user.id);
     return sendSuccess(req, 'Đã cập nhật thông tin tệp Media', updated);
   });
-
   app.delete('/api/mkt/media/:id', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
     const { id } = req.params as { id: string }, before = ctx.db.mediaAssets.get(id);
     if (!before) throw Errors.notFound('Tệp Media', id);

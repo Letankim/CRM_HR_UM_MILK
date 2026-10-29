@@ -4,18 +4,17 @@ import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 import { getMatchingUsersForAudience } from '../routes/job-positions-and-audiences.routes.js';
 import { singleFlight, tolerantWrite } from './background-write.js';
 
-const syncInFlight = new WeakMap<object, Promise<void>>();
-const lastSyncSig = new WeakMap<object, string>();
-const SYNC_ACTOR = 'system-sync';
-
+const syncInFlight = new WeakMap<object, Promise<void>>(), lastSyncSig = new WeakMap<object, string>(), SYNC_ACTOR = 'system-sync';
 function computeSyncSig(ctx: AppContext): string {
   const sumV = (rows: { version: number }[]) => rows.reduce((acc, r) => acc + r.version, rows.length * 97);
   return [ctx.db.announcements, ctx.db.users, ctx.db.shiftAssignments, ctx.db.leaveRequests, ctx.db.shiftSwaps, ctx.db.attendanceAdjustments, ctx.db.emergencyLeaves, ctx.db.payPeriods, ctx.db.payslips].map((s) => sumV(s.all())).join(':');
 }
-
+function activePlusRecent<T extends { id: string }>(rows: T[], isActive: (r: T) => boolean, recentLimit = 50): T[] {
+  const active = rows.filter(isActive), seen = new Set(active.map((r) => r.id));
+  return [...active, ...rows.slice(-recentLimit).filter((r) => !seen.has(r.id))];
+}
 export function ensureSyncedNotifications(ctx: AppContext): Promise<void> {
-  if (lastSyncSig.get(ctx.db) === computeSyncSig(ctx)) return Promise.resolve();
-  return singleFlight(syncInFlight, ctx.db, () => runSyncNotifications(ctx));
+  return lastSyncSig.get(ctx.db) === computeSyncSig(ctx) ? Promise.resolve() : singleFlight(syncInFlight, ctx.db, () => runSyncNotifications(ctx));
 }
 
 async function deduplicateAdjustmentsAndNotifications(ctx: AppContext): Promise<void> {
@@ -44,23 +43,23 @@ async function deduplicateAdjustmentsAndNotifications(ctx: AppContext): Promise<
   for (const n of [...ctx.db.notifications.all()].reverse()) {
     const rawAdjId = (n.entity_id || '').replace(/_(STORE_CONFIRMED|APPROVED|REJECTED)$/, '');
     const adj = n.entity_type.startsWith('ATT_ADJ_') && !n.entity_id.startsWith('BULK_') ? ctx.db.attendanceAdjustments.get(rawAdjId) : undefined;
+    const rawEmgId = (n.entity_id || '').replace(/_ESCALATED$/, '');
+    const emg = n.entity_type === 'EMG_STORE' ? ctx.db.emergencyLeaves.get(rawEmgId) : undefined;
     const isResolvedPending =
       (n.entity_type === 'ATT_ADJ_HR' && (!adj || (adj.status !== 'PENDING' && adj.status !== 'STORE_CONFIRMED') || (adj.status === 'STORE_CONFIRMED' && !n.entity_id.endsWith('_STORE_CONFIRMED')))) ||
       (n.entity_type === 'LEAVE_ROLE' && ctx.db.leaveRequests.get(n.entity_id)?.status !== 'PENDING') ||
       (n.entity_type === 'SHIFT_DRAFT_ROLE' && ctx.db.shiftAssignments.get(n.entity_id)?.status !== 'DRAFT') ||
-      (n.entity_type === 'SWAP_STORE' && !['PENDING_PEER', 'PEER_ACCEPTED'].includes(ctx.db.shiftSwaps.get((n.entity_id || '').replace(/_(PENDING_PEER|PEER_ACCEPTED)$/, ''))?.status ?? '')) ||
-      (n.entity_type === 'EMG_STORE' && ['RESOLVED', 'REPLACEMENT_FOUND'].includes(ctx.db.emergencyLeaves.get(n.entity_id)?.status ?? '')) ||
+      (n.entity_type === 'SWAP_STORE' && ctx.db.shiftSwaps.get((n.entity_id || '').replace(/_(PENDING_PEER|PEER_ACCEPTED)$/, ''))?.status !== 'PEER_ACCEPTED') ||
+      (n.entity_type === 'EMG_STORE' && (!emg || ['RESOLVED', 'REPLACEMENT_FOUND'].includes(emg.status) || (emg.status === 'ESCALATED' && !n.entity_id.endsWith('_ESCALATED')))) ||
       (n.entity_type === 'USERS_PENDING' && ctx.db.users.get(n.entity_id)?.status !== 'PENDING_ACTIVATION');
     const isMergedIntoBulk = n.entity_type === 'ATT_ADJ_USER' && !n.entity_id.startsWith('BULK_') && adj?.decided_at && (adjBatchCounts.get(`${adj.decided_at.slice(0, 16)}_${adj.status}`) ?? 0) > 1;
     const isSelfPendingLeave = n.entity_type === 'LEAVE_USER' && n.title.includes('Đã tiếp nhận');
-    const entKey = n.entity_type && n.entity_id ? `ent:${n.entity_type}:${n.entity_id}` : '';
-    const txtKey = `txt:${n.category}:${n.recipient_role}:${n.recipient_user_id}:${n.title}`;
-    if (isResolvedPending || isMergedIntoBulk || isSelfPendingLeave || (entKey && seenNotifKeys.has(entKey)) || seenNotifKeys.has(txtKey)) {
+    const dedupKey = n.entity_type && n.entity_id ? `ent:${n.entity_type}:${n.entity_id}` : `txt:${n.category}:${n.recipient_role}:${n.recipient_user_id}:${n.title}:${n.body}`;
+    if (isResolvedPending || isMergedIntoBulk || isSelfPendingLeave || seenNotifKeys.has(dedupKey)) {
       notifDeletes.push({ id: n.id, expectedVersion: n.version, patch: { is_deleted: true } });
       continue;
     }
-    if (entKey) seenNotifKeys.add(entKey);
-    seenNotifKeys.add(txtKey);
+    seenNotifKeys.add(dedupKey);
   }
   if (notifDeletes.length > 0) await tolerantWrite(() => ctx.db.notifications.batchUpdate(notifDeletes, SYNC_ACTOR));
 }
@@ -73,19 +72,18 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
   for (const n of ctx.db.notifications.all(true)) {
     if (!n.is_deleted) {
       if (n.entity_type && n.entity_id) seenKeys.add(`${n.entity_type}:${n.entity_id}`);
-      seenKeys.add(`title:${n.recipient_role}:${n.recipient_user_id}:${n.title}`);
+      else seenKeys.add(`txt:${n.recipient_role}:${n.recipient_user_id}:${n.title}:${n.body}`);
     }
   }
-  const hasKey = (type: string, id: string, role = '', uid = '', title = '') => seenKeys.has(`${type}:${id}`) || (Boolean(title) && seenKeys.has(`title:${role}:${uid}:${title}`));
+  const hasKey = (type: string, id: string) => seenKeys.has(`${type}:${id}`);
   const findEmp = (empId: string) => { const t = (empId || '').trim(); return t ? (ctx.db.employees.get(t) ?? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === t.toUpperCase())) : undefined; };
   const findUserByEmp = (empId: string) => { const emp = findEmp(empId); return (emp ? findLinkedUserForEmployee(emp, ctx) : undefined) ?? users.find((u) => Boolean(empId && u.employee_id.trim().toUpperCase() === empId.trim().toUpperCase())); };
-  const isBoOrHr = (emp?: { staff_group?: string }, empUser?: { role?: string }, creatorId?: string) => emp?.staff_group === 'BACKOFFICE' || ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(empUser?.role ?? '') || ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(ctx.db.users.get(creatorId || '')?.role ?? '');
+  const isBoOrHr = (emp?: { staff_group?: string }, empUser?: { role?: string }, creatorId?: string) => emp?.staff_group === 'BACKOFFICE' || ['ADMIN', 'HR', 'FINANCE', 'MKT', 'STORE'].includes(empUser?.role ?? '') || ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(ctx.db.users.get(creatorId || '')?.role ?? '');
   const shiftLabel = (code: string) => (DEFAULT_SHIFT_LABELS as Record<string, string>)[code] ?? code;
   const pendingInserts: Promise<unknown>[] = [];
   const ins = (data: Omit<Parameters<typeof ctx.db.notifications.insert>[0], 'read_at'>, actorId = SYNC_ACTOR) => {
-    if (hasKey(data.entity_type, data.entity_id, data.recipient_role, data.recipient_user_id, data.title)) return Promise.resolve();
+    if (hasKey(data.entity_type, data.entity_id)) return Promise.resolve();
     seenKeys.add(`${data.entity_type}:${data.entity_id}`);
-    seenKeys.add(`title:${data.recipient_role}:${data.recipient_user_id}:${data.title}`);
     pendingInserts.push(tolerantWrite(() => ctx.db.notifications.insert({ ...data, read_at: '' }, actorId || SYNC_ACTOR)));
     return Promise.resolve();
   };
@@ -104,30 +102,30 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
       await ins({ recipient_user_id: '', recipient_role: 'ADMIN', branch_id: 'ALL', category: 'SYSTEM', title: `Tài khoản mới chờ kích hoạt: ${u.display_name || u.username}`, body: `Tài khoản @${u.username} (${ROLE_LABELS[u.role as Role] ?? u.role}) đang chờ Quản trị viên phê duyệt kích hoạt.`, link: '/admin/accounts?status=PENDING_ACTIVATION', severity: 'WARNING', entity_type: 'USERS_PENDING', entity_id: u.id });
     }
   }
-  for (const a of ctx.db.shiftAssignments.all().slice(-40)) {
+  for (const a of activePlusRecent(ctx.db.shiftAssignments.all(), (x) => x.status === 'DRAFT', 50)) {
     const emp = findEmp(a.employee_id), empUser = findUserByEmp(a.employee_id), empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : a.employee_id, brId = emp?.branch_id || a.branch_id || 'ALL';
     if (a.status === 'DRAFT' && !hasKey('SHIFT_DRAFT_ROLE', a.id)) {
-      await ins({ recipient_user_id: '', recipient_role: isBoOrHr(emp, empUser, a.created_by) ? 'HR' : 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Đăng ký ca làm việc chờ duyệt: ${empLabel}`, body: `${shiftLabel(a.shift_code)} (${a.start_at}–${a.end_at}) ngày ${a.work_date} đang chờ Quản lý cửa hàng / HR duyệt phân ca.`, link: '/admin/schedules', severity: 'WARNING', entity_type: 'SHIFT_DRAFT_ROLE', entity_id: a.id }, empUser?.id || a.created_by);
+      await ins({ recipient_user_id: '', recipient_role: isBoOrHr(emp, empUser, a.created_by) ? 'HR' : 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Đăng ký ca chờ duyệt (${a.work_date} · ${shiftLabel(a.shift_code)}): ${empLabel}`, body: `${shiftLabel(a.shift_code)} (${a.start_at}–${a.end_at}) ngày ${a.work_date} đang chờ Quản lý cửa hàng / HR duyệt phân ca.`, link: '/admin/schedules', severity: 'WARNING', entity_type: 'SHIFT_DRAFT_ROLE', entity_id: a.id }, a.created_by);
     }
     if (empUser && a.status === 'PUBLISHED' && a.source === 'EMPLOYEE_REGISTER' && !hasKey('SHIFT_PUB_USER', `${a.id}_PUBLISHED`)) {
       await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: brId, category: 'WORKFLOW', title: `Ca đăng ký ngày ${a.work_date} đã được duyệt phân ca chính thức`, body: `${shiftLabel(a.shift_code)} (${a.start_at}–${a.end_at}) ngày ${a.work_date} đã được phê duyệt. Bạn đã có thể chấm công Vào/Ra ca.`, link: '/nv/lich', severity: 'INFO', entity_type: 'SHIFT_PUB_USER', entity_id: `${a.id}_PUBLISHED` }, a.updated_by);
     }
   }
-  for (const l of ctx.db.leaveRequests.all().slice(-40)) {
+  for (const l of activePlusRecent(ctx.db.leaveRequests.all(), (x) => x.status === 'PENDING', 50)) {
     const code = l.request_code || l.id, emp = findEmp(l.employee_id), empUser = findUserByEmp(l.employee_id), empKey = `${l.id}_${l.status}`, brId = emp?.branch_id || l.branch_id || 'ALL';
     const empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : l.employee_id;
     if (l.status === 'PENDING' && !hasKey('LEAVE_ROLE', l.id)) {
-      await ins({ recipient_user_id: '', recipient_role: isBoOrHr(emp, empUser, l.created_by) ? 'HR' : 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Đơn xin nghỉ phép (OFF) chờ duyệt: ${code} — ${empLabel}`, body: `Nhân sự ${empLabel} xin nghỉ ngày ${l.leave_date} — Lý do: ${l.reason || 'Nghỉ phép cá nhân'}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'LEAVE_ROLE', entity_id: l.id }, empUser?.id || l.created_by);
+      await ins({ recipient_user_id: '', recipient_role: isBoOrHr(emp, empUser, l.created_by) ? 'HR' : 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Đơn xin nghỉ phép (OFF) chờ duyệt: ${code} — ${empLabel}`, body: `Nhân sự ${empLabel} xin nghỉ ngày ${l.leave_date} — Lý do: ${l.reason || 'Nghỉ phép cá nhân'}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'LEAVE_ROLE', entity_id: l.id }, l.created_by);
     }
     if (empUser && (l.status === 'APPROVED' || l.status === 'REJECTED') && empUser.id !== l.decided_by && !hasKey('LEAVE_USER', empKey)) {
       await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: brId, category: 'WORKFLOW', title: l.status === 'APPROVED' ? `Đơn xin nghỉ OFF (${l.leave_date}) đã được phê duyệt` : `Đơn xin nghỉ OFF (${l.leave_date}) bị từ chối`, body: `Mã đơn: ${code} · Ngày nghỉ: ${l.leave_date} · Lý do: ${l.decision_reason || l.reason || 'Cá nhân'}.`, link: '/nv/nghi-phep', severity: l.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'LEAVE_USER', entity_id: empKey }, l.decided_by);
     }
   }
-  for (const s of ctx.db.shiftSwaps.all().slice(-40)) {
+  for (const s of activePlusRecent(ctx.db.shiftSwaps.all(), (x) => x.status === 'PENDING_PEER' || x.status === 'PEER_ACCEPTED', 50)) {
     const reqEmp = findEmp(s.requester_id), reqUser = findUserByEmp(s.requester_id), peerUser = findUserByEmp(s.peer_id), swapKey = `${s.id}_${s.status}`, brId = reqEmp?.branch_id || s.branch_id || 'ALL';
     const reqLabel = reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id;
-    if ((s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED') && !hasKey('SWAP_STORE', `${s.id}_${s.status}`)) {
-      await ins({ recipient_user_id: '', recipient_role: isBoOrHr(reqEmp, reqUser, s.created_by) ? 'HR' : 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Yêu cầu đổi ca (${s.swap_code || s.id}): ${reqLabel}`, body: `Đổi ca ngày ${s.from_work_date} (${shiftLabel(s.from_shift_code)}) đang ở trạng thái ${s.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã xác nhận — Chờ Quản lý / HR duyệt' : 'Chờ đồng nghiệp xác nhận'}.`, link: '/admin/schedules?section=workflows', severity: s.status === 'PEER_ACCEPTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_STORE', entity_id: `${s.id}_${s.status}` }, s.status === 'PEER_ACCEPTED' ? (peerUser?.id || s.updated_by) : (reqUser?.id || s.created_by));
+    if (s.status === 'PEER_ACCEPTED' && !hasKey('SWAP_STORE', `${s.id}_PEER_ACCEPTED`)) {
+      await ins({ recipient_user_id: '', recipient_role: isBoOrHr(reqEmp, reqUser, s.created_by) ? 'HR' : 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Yêu cầu đổi ca chờ duyệt (${s.swap_code || s.id}): ${reqLabel}`, body: `Đồng nghiệp đã đồng ý nhận thay ${shiftLabel(s.from_shift_code)} ngày ${s.from_work_date} — Chờ Quản lý / HR phê duyệt Bước 3/3.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'SWAP_STORE', entity_id: `${s.id}_PEER_ACCEPTED` }, peerUser?.id || s.updated_by);
     }
     const targetIds = s.status === 'PENDING_PEER' ? [peerUser?.id] : (s.status === 'PEER_ACCEPTED' || s.status === 'PEER_DECLINED') ? [reqUser?.id] : [reqUser?.id, peerUser?.id].filter((id) => id !== s.decided_by);
     const cleanTargetIds = targetIds.filter(Boolean).join(',');
@@ -135,14 +133,14 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
       await ins({ recipient_user_id: cleanTargetIds, recipient_role: '', branch_id: brId, category: 'WORKFLOW', title: `Cập nhật yêu cầu đổi ca (${s.swap_code || s.id})`, body: `Đổi ca ngày ${s.from_work_date} (${shiftLabel(s.from_shift_code)}): ${s.status === 'APPROVED' ? 'Đã được Quản lý phê duyệt & cập nhật lịch chính thức' : s.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã xác nhận — Chờ Quản lý duyệt' : s.status === 'REJECTED' || s.status === 'PEER_DECLINED' ? 'Đã bị từ chối' : `${reqLabel} nhờ bạn nhận ca thay`}.`, link: '/nv/doi-ca', severity: s.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_USER', entity_id: swapKey }, s.status === 'PENDING_PEER' ? (reqUser?.id || s.created_by) : (s.decided_by || peerUser?.id || s.updated_by));
     }
   }
+  const adjList = activePlusRecent(ctx.db.attendanceAdjustments.all(), (x) => x.status === 'PENDING' || x.status === 'STORE_CONFIRMED', 60);
   const adjDecisionBatches = new Map<string, typeof adjList>();
-  const adjList = ctx.db.attendanceAdjustments.all().slice(-50);
   for (const adj of adjList) {
     const emp = findEmp(adj.employee_id), empUser = findUserByEmp(adj.employee_id), empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : adj.employee_id, brId = emp?.branch_id || adj.branch_id || 'ALL';
     const hrEntityId = adj.status === 'STORE_CONFIRMED' ? `${adj.id}_STORE_CONFIRMED` : adj.id;
     const adjTargetRole = adj.status === 'STORE_CONFIRMED' || isBoOrHr(emp, empUser, adj.created_by) ? 'HR' : 'HR,STORE';
     if ((adj.status === 'PENDING' || adj.status === 'STORE_CONFIRMED') && !hasKey('ATT_ADJ_HR', hrEntityId)) {
-      await ins({ recipient_user_id: '', recipient_role: adjTargetRole, branch_id: brId, category: 'ATTENDANCE', title: adj.status === 'STORE_CONFIRMED' ? `CH đã xác nhận phiếu bù công chờ HR duyệt: ${adj.adjustment_code} (${empLabel})` : `Phiếu bổ sung / lỗi chấm công chờ chốt: ${adj.adjustment_code} (${empLabel})`, body: `Nhân sự ${empLabel} · Ngày công ${adj.work_date} (${adj.requested_hours}h) — Lý do: ${adj.reason}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'ATT_ADJ_HR', entity_id: hrEntityId }, adj.status === 'STORE_CONFIRMED' ? (adj.store_confirmed_by || adj.updated_by) : (empUser?.id || adj.created_by));
+      await ins({ recipient_user_id: '', recipient_role: adjTargetRole, branch_id: brId, category: 'ATTENDANCE', title: adj.status === 'STORE_CONFIRMED' ? `CH đã xác nhận phiếu bù công chờ HR duyệt: ${adj.adjustment_code} (${empLabel})` : `Phiếu bổ sung công mới chờ duyệt: ${adj.adjustment_code} (${empLabel})`, body: `Nhân sự ${empLabel} · Ngày công ${adj.work_date} (${adj.requested_hours}h) — Lý do: ${adj.reason}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'ATT_ADJ_HR', entity_id: hrEntityId }, adj.status === 'STORE_CONFIRMED' ? (adj.store_confirmed_by || adj.updated_by) : adj.created_by);
     }
     if (adj.status === 'STORE_CONFIRMED' && empUser && empUser.id !== adj.store_confirmed_by && !hasKey('ATT_ADJ_USER', `${adj.id}_STORE_CONFIRMED`)) {
       await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: brId, category: 'ATTENDANCE', title: `Phiếu bổ sung công (${adj.adjustment_code}) đã được Cửa hàng xác nhận`, body: `Ngày công ${adj.work_date} (${adj.requested_hours}h) — ${adj.store_note || adj.reason}.`, link: '/nv/cong', severity: 'INFO', entity_type: 'ATT_ADJ_USER', entity_id: `${adj.id}_STORE_CONFIRMED` }, adj.store_confirmed_by);
@@ -165,9 +163,17 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
       }
     }
   }
-  for (const emg of ctx.db.emergencyLeaves.all().slice(-30)) {
-    const emp = findEmp(emg.employee_id), empUser = findUserByEmp(emg.employee_id), empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : emg.employee_id;
-    if (!hasKey('EMG_STORE', emg.id)) await ins({ recipient_user_id: '', recipient_role: isBoOrHr(emp, empUser, emg.created_by) ? 'HR' : 'HR,STORE', branch_id: emp?.branch_id || emg.branch_id || 'ALL', category: 'WORKFLOW', title: `Cảnh báo nghỉ đột xuất & thiếu người: ${emg.emergency_code} (${empLabel})`, body: `${empLabel} báo nghỉ ${shiftLabel(emg.shift_code)} ngày ${emg.work_date} — Lý do: ${emg.reason}. Cần tìm người thay hoặc báo HR.`, link: '/admin/schedules?section=workflows', severity: 'CRITICAL', entity_type: 'EMG_STORE', entity_id: emg.id }, empUser?.id || emg.created_by);
+  for (const emg of activePlusRecent(ctx.db.emergencyLeaves.all(), (x) => x.status === 'REPORTED' || x.status === 'ESCALATED', 40)) {
+    const emp = findEmp(emg.employee_id), empUser = findUserByEmp(emg.employee_id), repUser = emg.replacement_id ? findUserByEmp(emg.replacement_id) : undefined;
+    const empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : emg.employee_id, brId = emp?.branch_id || emg.branch_id || 'ALL';
+    if (emg.status === 'REPORTED' && !hasKey('EMG_STORE', emg.id)) {
+      await ins({ recipient_user_id: '', recipient_role: isBoOrHr(emp, empUser, emg.created_by) ? 'HR' : 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Cảnh báo nghỉ đột xuất & thiếu người: ${emg.emergency_code} (${empLabel})`, body: `${empLabel} báo nghỉ ${shiftLabel(emg.shift_code)} ngày ${emg.work_date} — Lý do: ${emg.reason}. Cần tìm người thay hoặc báo HR.`, link: '/admin/schedules?section=workflows', severity: 'CRITICAL', entity_type: 'EMG_STORE', entity_id: emg.id }, emg.created_by);
+    } else if (emg.status === 'ESCALATED' && !hasKey('EMG_STORE', `${emg.id}_ESCALATED`)) {
+      await ins({ recipient_user_id: '', recipient_role: 'HR', branch_id: brId, category: 'WORKFLOW', title: `CH chuyển cảnh báo thiếu nhân sự khẩn cấp lên HR: ${emg.emergency_code} (${empLabel})`, body: `Cửa hàng báo thiếu nhân sự ${shiftLabel(emg.shift_code)} ngày ${emg.work_date} — ${emg.resolution_note || emg.reason}. Cần HR điều phối chi viện.`, link: '/admin/schedules?section=workflows', severity: 'CRITICAL', entity_type: 'EMG_STORE', entity_id: `${emg.id}_ESCALATED` }, emg.handled_by || emg.updated_by);
+    } else if ((emg.status === 'RESOLVED' || emg.status === 'REPLACEMENT_FOUND') && !hasKey('EMG_USER', `${emg.id}_${emg.status}`)) {
+      const uids = [empUser?.id, repUser?.id].filter((id): id is string => Boolean(id && id !== emg.handled_by));
+      if (uids.length > 0) await ins({ recipient_user_id: Array.from(new Set(uids)).join(','), recipient_role: '', branch_id: brId, category: 'WORKFLOW', title: `Đã xử lý điều phối ca nghỉ khẩn cấp (${emg.emergency_code})`, body: `Ngày ${emg.work_date} (${shiftLabel(emg.shift_code)}) — ${emg.resolution_note || 'Đã cập nhật phương án trực ca'}.`, link: '/nv/nghi-phep', severity: 'INFO', entity_type: 'EMG_USER', entity_id: `${emg.id}_${emg.status}` }, emg.handled_by);
+    }
   }
   const paidPeriodIds = new Set(ctx.db.payPeriods.filter((p) => p.status === 'PAID').map((p) => p.id));
   for (const ps of ctx.db.payslips.filter((x) => x.status !== 'REVISED').slice(-150)) {
@@ -186,31 +192,23 @@ export function isNotificationCreatedByOrSelfAction(ctx: AppContext, n: Notifica
   const meUser = ctx.db.users.get(userId);
   const myEmp = ctx.db.employees.find((e) => e.user_id === userId || Boolean(meUser?.employee_id && (e.id === meUser.employee_id || e.employee_code === meUser.employee_id)));
   const isMyEmp = (eid?: string) => Boolean(eid && myEmp && (eid === myEmp.id || eid === myEmp.employee_code));
-  const rawId = (n.entity_id || '').replace(/_(PUBLISHED|APPROVED|REJECTED|PENDING|STORE_CONFIRMED|PENDING_PEER|PEER_ACCEPTED|PEER_DECLINED)$/, '');
+  const rawId = (n.entity_id || '').replace(/_(PUBLISHED|APPROVED|REJECTED|PENDING|STORE_CONFIRMED|PENDING_PEER|PEER_ACCEPTED|PEER_DECLINED|ESCALATED|RESOLVED|REPLACEMENT_FOUND)$/, '');
   const recipientUserIds = (n.recipient_user_id || '').split(',').map((s) => s.trim()).filter(Boolean);
   if (n.entity_type === 'MANUAL' && n.created_by === userId && !recipientUserIds.includes(userId)) return true;
   if (n.entity_id.startsWith('BULK_')) return n.created_by === userId || !recipientUserIds.includes(userId);
   if (n.entity_type === 'USERS_PENDING') return n.entity_id === userId;
-  if (n.entity_type === 'ATT_ADJ_HR') {
-    const adj = ctx.db.attendanceAdjustments.get(rawId);
-    return !adj || (n.entity_id.endsWith('_STORE_CONFIRMED') ? (adj.store_confirmed_by === userId || isMyEmp(adj.employee_id)) : (adj.created_by === userId || isMyEmp(adj.employee_id)));
-  }
-  if (n.entity_type === 'ATT_ADJ_USER') {
-    const adj = ctx.db.attendanceAdjustments.get(rawId);
-    return !adj || adj.decided_by === userId || (n.entity_id.endsWith('_STORE_CONFIRMED') && adj.store_confirmed_by === userId);
-  }
-  if (n.entity_type === 'SHIFT_DRAFT_ROLE' || n.entity_type === 'SCHED_STORE') { const a = ctx.db.shiftAssignments.get(rawId); return !a || a.created_by === userId || isMyEmp(a.employee_id); }
+  if (n.entity_type === 'ATT_ADJ_HR') { const adj = ctx.db.attendanceAdjustments.get(rawId); return !adj || (n.entity_id.endsWith('_STORE_CONFIRMED') ? adj.store_confirmed_by === userId : adj.created_by === userId); }
+  if (n.entity_type === 'ATT_ADJ_USER') { const adj = ctx.db.attendanceAdjustments.get(rawId); return !adj || adj.decided_by === userId || (n.entity_id.endsWith('_STORE_CONFIRMED') && adj.store_confirmed_by === userId); }
+  if (n.entity_type === 'SHIFT_DRAFT_ROLE' || n.entity_type === 'SCHED_STORE') { const a = ctx.db.shiftAssignments.get(rawId); return !a || a.created_by === userId; }
   if (n.entity_type === 'SHIFT_PUB_USER') { const a = ctx.db.shiftAssignments.get(rawId); return !a || a.updated_by === userId; }
-  if (n.entity_type === 'LEAVE_ROLE') { const l = ctx.db.leaveRequests.get(rawId); return !l || l.created_by === userId || isMyEmp(l.employee_id); }
+  if (n.entity_type === 'LEAVE_ROLE') { const l = ctx.db.leaveRequests.get(rawId); return !l || l.created_by === userId; }
   if (n.entity_type === 'LEAVE_USER') { const l = ctx.db.leaveRequests.get(rawId); return n.title.includes('Đã tiếp nhận') || !l || l.decided_by === userId; }
-  if (n.entity_type === 'SWAP_STORE') {
-    const s = ctx.db.shiftSwaps.get(rawId);
-    return !s || (n.entity_id.endsWith('_PEER_ACCEPTED') ? isMyEmp(s.peer_id) : (s.created_by === userId || isMyEmp(s.requester_id)));
-  }
+  if (n.entity_type === 'SWAP_STORE') { const s = ctx.db.shiftSwaps.get(rawId); return !s || (n.entity_id.endsWith('_PEER_ACCEPTED') ? s.updated_by === userId : s.created_by === userId); }
   if (n.entity_type === 'SWAP_USER') {
     const s = ctx.db.shiftSwaps.get(rawId);
-    return !s || (n.entity_id.endsWith('_PENDING_PEER') && (s.created_by === userId || isMyEmp(s.requester_id))) || ((n.entity_id.endsWith('_PEER_ACCEPTED') || n.entity_id.endsWith('_PEER_DECLINED')) && isMyEmp(s.peer_id)) || ((n.entity_id.endsWith('_APPROVED') || n.entity_id.endsWith('_REJECTED')) && s.decided_by === userId);
+    return !s || (n.entity_id.endsWith('_PENDING_PEER') && (s.created_by === userId || isMyEmp(s.requester_id))) || ((n.entity_id.endsWith('_PEER_ACCEPTED') || n.entity_id.endsWith('_PEER_DECLINED')) && (s.updated_by === userId || isMyEmp(s.peer_id))) || ((n.entity_id.endsWith('_APPROVED') || n.entity_id.endsWith('_REJECTED')) && s.decided_by === userId);
   }
-  if (n.entity_type === 'EMG_STORE') { const emg = ctx.db.emergencyLeaves.get(rawId); return !emg || emg.created_by === userId || isMyEmp(emg.employee_id); }
+  if (n.entity_type === 'EMG_STORE') { const emg = ctx.db.emergencyLeaves.get(rawId); return !emg || (n.entity_id.endsWith('_ESCALATED') ? emg.handled_by === userId : emg.created_by === userId); }
+  if (n.entity_type === 'EMG_USER') { const emg = ctx.db.emergencyLeaves.get(rawId); return !emg || emg.handled_by === userId; }
   return false;
 }

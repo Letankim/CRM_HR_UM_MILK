@@ -30,6 +30,7 @@ const zChangePasswordBody = z.object({
 
 export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
   const cookieBase = { httpOnly: true, secure: ctx.env.COOKIE_SECURE, sameSite: 'lax' as const, path: '/' };
+  const toResolvedPublicUser = (u: Parameters<typeof toPublicUser>[0]) => ({ ...toPublicUser(u), branchScope: ctx.auth.resolveEffectiveBranchScope(u) });
 
   async function issueSession(reply: FastifyReply, claims: TokenClaims): Promise<string> {
     const [access, refresh] = await Promise.all([ctx.tokens.signAccess(claims), ctx.tokens.signRefresh(claims)]);
@@ -56,7 +57,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
         { ...auditContext(request), actorUserId: user.id, actorRole: user.role },
         { action: 'auth.login', entity: 'USERS', entityId: user.id, after: { app: appKind } },
       );
-      return sendSuccess(request, 'Đăng nhập hệ thống thành công', { user: toPublicUser(user), socketToken });
+      return sendSuccess(request, 'Đăng nhập hệ thống thành công', { user: toResolvedPublicUser(user), socketToken });
     },
   );
 
@@ -73,7 +74,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
         app: claims.app,
       });
       return sendSuccess(request, 'Làm mới phiên đăng nhập thành công', {
-        user: toPublicUser(user),
+        user: toResolvedPublicUser(user),
         socketToken,
       });
     } catch {
@@ -191,7 +192,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
       after: { display_name: updatedUser.display_name, phone: updatedUser.phone, email: updatedUser.email },
     });
 
-    return sendSuccess(request, 'Đã cập nhật thông tin cá nhân thành công', { user: toPublicUser(updatedUser) });
+    return sendSuccess(request, 'Đã cập nhật thông tin cá nhân thành công', { user: toResolvedPublicUser(updatedUser) });
   });
 
   app.put('/api/auth/password', { preHandler: requireAuth() }, async (request) => {

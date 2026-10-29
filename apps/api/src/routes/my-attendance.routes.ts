@@ -7,6 +7,8 @@ import { sendSuccess } from '../lib/response.js';
 import { dayjs } from '../lib/time.js';
 import { auditContext, requireAuth } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { queueShiftRegisteredEmail } from '../services/action-email-dispatcher.js';
+import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { mapAttendanceEvent, migrateLegacyBase64Photos } from './attendance-helpers.js';
@@ -38,7 +40,7 @@ export async function ensurePersonalProfile(ctx: AppContext, user: User): Promis
   const nextCode = `NV${String(ctx.db.employees.all(true).length + 1).padStart(4, '0')}`;
   const isProb = user.role === 'THU_VIEC';
   const createdEmp = await ctx.db.employees.insert({
-    employee_code: nextCode, candidate_id: '', user_id: user.id, full_name: user.display_name, phone: user.phone || '0901000099', email: user.email || '',
+    employee_code: nextCode, candidate_id: '', user_id: user.id, full_name: user.display_name, phone: user.phone || '', email: user.email || '',
     date_of_birth: '1998-01-01', gender: 'Khác', citizen_id: '', citizen_issue_date: '', permanent_address: 'TP. Hồ Chí Minh', current_address: 'TP. Hồ Chí Minh',
     emergency_contact_name: '', emergency_contact_phone: '', branch_id: scopedBranchId, staff_group: 'BACKOFFICE', position_title: ROLE_LABELS[user.role] || 'Nhân sự',
     stage: isProb ? 'PROBATION' : 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: 'CA_SANG', probation_start: '2026-01-01', probation_end: '2026-01-12',
@@ -191,28 +193,21 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: '', note: body.note,
     }, user.id);
 
+    queueShiftRegisteredEmail(ctx, created, user.id);
+    await ensureSyncedNotifications(ctx);
     await ctx.audit.record(auditContext(request), { action: 'schedule.create', entity: 'SHIFT_ASSIGNMENTS', entityId: created.id, after: { employee_id: emp.employee_code, work_date: created.work_date, shift_code: created.shift_code, status: created.status } });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'SHIFT_REGISTERED', message: `${emp.full_name} vừa gửi đăng ký ca ngày ${created.work_date} chờ duyệt`, actorId: user.id });
-    reply.code(201);
-    return sendSuccess(request, 'Đã gửi đăng ký ca làm việc. Ca đăng ký đang ở trạng thái Chờ duyệt — cần Quản lý cửa hàng hoặc HR duyệt phân ca trước khi chấm công.', mapShiftAssignment(created, ctx));
+    return reply.code(201), sendSuccess(request, 'Đã gửi đăng ký ca làm việc. Ca đăng ký đang ở trạng thái Chờ duyệt — cần Quản lý cửa hàng hoặc HR duyệt phân ca trước khi chấm công.', mapShiftAssignment(created, ctx));
   });
 
   app.delete('/api/my-attendance/shifts/:id', { preHandler: requireAuth() }, async (request) => {
-    const { id } = request.params as { id: string };
-    const user = request.auth!.user;
-    const emp = await ensurePersonalProfile(ctx, user);
-    const shift = ctx.db.shiftAssignments.get(id);
-    if (!shift || (shift.employee_id !== emp.id && shift.employee_id !== emp.employee_code)) {
-      throw Errors.forbidden('Bạn chỉ được phép hủy ca làm việc của chính mình');
-    }
+    const { id } = request.params as { id: string }, user = request.auth!.user, emp = await ensurePersonalProfile(ctx, user), shift = ctx.db.shiftAssignments.get(id);
+    if (!shift || (shift.employee_id !== emp.id && shift.employee_id !== emp.employee_code)) throw Errors.forbidden('Bạn chỉ được phép hủy ca làm việc của chính mình');
     assertDateNotLockedByPayroll(ctx.db, shift.work_date, 'hủy ca làm việc');
-    if (ctx.db.attendanceEvents.find((e) => e.assignment_id === shift.id)) {
-      throw Errors.badRequest('Ca làm việc này đã có dữ liệu điểm danh thực tế, không thể hủy ca');
-    }
-    if (shift.status !== 'DRAFT') {
-      throw Errors.badRequest('Ca làm việc này đã được Quản lý cửa hàng / HR duyệt phân ca chính thức. Nếu cần thay đổi, vui lòng gửi Đơn xin nghỉ OFF, Báo nghỉ khẩn cấp hoặc Yêu cầu đổi ca.');
-    }
+    if (ctx.db.attendanceEvents.find((e) => e.assignment_id === shift.id)) throw Errors.badRequest('Ca làm việc này đã có dữ liệu điểm danh thực tế, không thể hủy ca');
+    if (shift.status !== 'DRAFT') throw Errors.badRequest('Ca làm việc này đã được Quản lý cửa hàng / HR duyệt phân ca chính thức. Nếu cần thay đổi, vui lòng gửi Đơn xin nghỉ OFF, Báo nghỉ khẩn cấp hoặc Yêu cầu đổi ca.');
     await ctx.db.shiftAssignments.softDelete(shift.id, shift.version, user.id);
+    await ensureSyncedNotifications(ctx);
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: shift.branch_id || emp.branch_id, employeeIds: [emp.id], kind: 'SHIFT_CANCELLED', actorId: user.id });
     return sendSuccess(request, 'Đã hủy đăng ký ca làm việc đang chờ duyệt', { id });
   });
