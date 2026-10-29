@@ -20,6 +20,8 @@ export interface ListQueryOptions<T> {
   filterPredicates?: Partial<Record<string, (item: T, filterValue: string) => boolean>>;
 }
 
+const ISO_DT_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/;
+
 function compareValues(a: unknown, b: unknown, order: SortOrder): number {
   const dir = order === 'asc' ? 1 : -1;
   if (a === b) return 0;
@@ -28,6 +30,13 @@ function compareValues(a: unknown, b: unknown, order: SortOrder): number {
 
   if (typeof a === 'number' && typeof b === 'number') {
     return (a - b) * dir;
+  }
+  if (typeof a === 'string' && typeof b === 'string' && ISO_DT_RE.test(a) && ISO_DT_RE.test(b)) {
+    const ta = Date.parse(a);
+    const tb = Date.parse(b);
+    if (!Number.isNaN(ta) && !Number.isNaN(tb)) {
+      return ta === tb ? 0 : (ta - tb) * dir;
+    }
   }
   return String(a).localeCompare(String(b), 'vi', { numeric: true }) * dir;
 }
@@ -80,12 +89,8 @@ export function paginateAndSort<T extends object>(
     }
   }
 
-  // 3. Sắp xếp (ưu tiên thứ tự dòng mới nhất ở đầu danh sách khi cùng thời gian hoặc lệch múi giờ seed)
-  const isCreationSort = sortBy === 'created_at' || sortBy === 'createdAt';
+  // 3. Sắp xếp (so sánh giá trị/mốc thời gian thực tế trước, cùng thời điểm thì dòng mới hơn ở đầu khi desc)
   filtered.sort((a, b) => {
-    if (isCreationSort) {
-      return sortOrder === 'asc' ? a.idx - b.idx : b.idx - a.idx;
-    }
     const cmp = compareValues(
       (a.item as Record<string, unknown>)[sortBy],
       (b.item as Record<string, unknown>)[sortBy],

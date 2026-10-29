@@ -7,6 +7,7 @@ import {
   ShopOutlined, SoundOutlined, UserOutlined, UserSwitchOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { ROLE_LABELS, ROLE_SHORT_LABELS, type PublicUser } from '@umbm/shared';
@@ -33,7 +34,7 @@ export function TopHeaderBar({
 
   const notifsQ = useQuery({
     queryKey: ['notifications', 'header-bell'],
-    queryFn: () => api.list<{ id: string; code: string; title: string; body: string; categoryLabel: string; targetLabel: string; readStatus: string; link?: string }>('/notifications?per_page=12'),
+    queryFn: () => api.list<{ id: string; code: string; title: string; body: string; categoryLabel: string; targetLabel: string; readStatus: string; created_at?: string; link?: string }>('/notifications?per_page=12&sort_by=created_at&sort_order=desc'),
   });
 
   const notifItems = notifsQ.data?.data ?? [];
@@ -80,7 +81,7 @@ export function TopHeaderBar({
               size="small"
               dataSource={notifItems.map((n) => ({
                 key: `ntf-${n.id}`, notifId: n.id, unread: n.readStatus === 'UNREAD',
-                title: n.title, desc: `${n.targetLabel} · ${n.body}`, tag: n.code, href: n.link || '/admin/notifications',
+                title: n.title, desc: `${n.targetLabel} · ${n.body}`, tag: n.code, timeLabel: n.created_at ? dayjs(n.created_at).format('HH:mm DD/MM') : '', href: n.link || '/admin/notifications',
               }))}
               renderItem={(item) => (
                 <List.Item
@@ -97,7 +98,7 @@ export function TopHeaderBar({
                       <Tag color={item.unread ? 'geekblue' : 'default'} style={{ margin: '0 6px 2px 0', fontSize: 10, paddingInline: 5, lineHeight: '16px', verticalAlign: 'text-top' }}>{item.tag}</Tag>
                       <span>{item.title}</span>
                     </div>
-                    <div style={{ fontSize: 11.5, color: '#64748B', lineHeight: 1.4, marginTop: 3, wordBreak: 'break-word' }}>{item.desc}</div>
+                    <div style={{ fontSize: 11.5, color: '#64748B', lineHeight: 1.4, marginTop: 3, wordBreak: 'break-word' }}>{item.timeLabel ? `${item.timeLabel} · ` : ''}{item.desc}</div>
                   </div>
                 </List.Item>
               )}

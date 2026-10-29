@@ -14,7 +14,7 @@ export interface BaseRecord {
 }
 
 type SystemKeys = keyof BaseRecord;
-export type InsertInput<T extends BaseRecord> = Omit<T, SystemKeys> & { id?: string };
+export type InsertInput<T extends BaseRecord> = Omit<T, SystemKeys> & { id?: string; created_at?: string; updated_at?: string };
 export type UpdatePatch<T extends BaseRecord> = Partial<Omit<T, SystemKeys>> & { is_deleted?: boolean };
 
 export interface InvalidRow {

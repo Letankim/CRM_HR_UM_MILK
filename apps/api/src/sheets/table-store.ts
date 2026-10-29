@@ -103,8 +103,8 @@ export class TableStore<T extends BaseRecord> {
   }
 
   async insert(input: InsertInput<T>, actorId: string): Promise<T> {
-    const now = nowIso();
-    const record = this.validate({ ...input, id: input.id ?? newId(), created_at: now, created_by: actorId, updated_at: now, updated_by: actorId, version: 1, is_deleted: false });
+    const now = nowIso(), createdAt = input.created_at || now, updatedAt = input.updated_at || createdAt;
+    const record = this.validate({ ...input, id: input.id ?? newId(), created_at: createdAt, created_by: actorId, updated_at: updatedAt, updated_by: actorId, version: 1, is_deleted: false });
     if (this.entries.has(record.id) || this.pendingEntries.has(record.id)) {
       throw Errors.badRequest(`id ${record.id} đã tồn tại`);
     }

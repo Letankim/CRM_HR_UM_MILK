@@ -51,8 +51,10 @@ export async function healOpenPayslipDisputesToTickets(ctx: AppContext): Promise
     const reqUser = emp ? findLinkedUserForEmployee(emp, ctx) : undefined;
     const reqUserId = reqUser?.id || slip.updated_by || 'system';
     const nextNo = ctx.db.supportTickets.all(true).length + 1;
-    const msg: TicketMessage = { id: newId(), sender_user_id: reqUserId, sender_name: emp?.full_name || reqUser?.display_name || slip.full_name || 'Nhân sự', sender_role: reqUser ? ROLE_LABELS[reqUser.role] : 'Nhân viên', content: slip.dispute_reason, created_at: slip.updated_at || nowIso() };
+    const disputeTime = slip.updated_at || slip.created_at || nowIso();
+    const msg: TicketMessage = { id: newId(), sender_user_id: reqUserId, sender_name: emp?.full_name || reqUser?.display_name || slip.full_name || 'Nhân sự', sender_role: reqUser ? ROLE_LABELS[reqUser.role] : 'Nhân viên', content: slip.dispute_reason, created_at: disputeTime };
     await tolerantWrite(() => ctx.db.supportTickets.insert({
+      created_at: disputeTime, updated_at: disputeTime,
       ticket_code: `TCK-${String(nextNo).padStart(4, '0')}`, requester_user_id: reqUserId, requester_employee_id: emp?.id || slip.employee_id,
       branch_id: emp?.branch_id || slip.branch_id || 'ALL', category: 'PAYSLIP_INQUIRY', priority: 'HIGH', target_department: 'FINANCE', assignee_user_id: '',
       subject: `Thắc mắc phiếu lương ${slip.payslip_code} (${slip.period_name})`, description: slip.dispute_reason,

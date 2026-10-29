@@ -3,6 +3,7 @@ import type { AppContext } from '../context.js';
 import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 import { getMatchingUsersForAudience } from '../routes/job-positions-and-audiences.routes.js';
 import { singleFlight, tolerantWrite } from './background-write.js';
+import { resolveNotificationEventTime } from './notification-time.js';
 import { healOpenPayslipDisputesToTickets, isStaleTicketNotification, syncSupportTicketBellNotifications } from './ticket-notification.service.js';
 
 const syncInFlight = new WeakMap<object, Promise<void>>(), lastSyncSig = new WeakMap<object, string>(), SYNC_ACTOR = 'system-sync';
@@ -33,10 +34,7 @@ async function deduplicateAdjustmentsAndNotifications(ctx: AppContext): Promise<
 
   const adjBatchCounts = new Map<string, number>();
   for (const adj of ctx.db.attendanceAdjustments.all()) {
-    if ((adj.status === 'APPROVED' || adj.status === 'REJECTED') && adj.decided_at) {
-      const bk = `${adj.decided_at.slice(0, 16)}_${adj.status}`;
-      adjBatchCounts.set(bk, (adjBatchCounts.get(bk) ?? 0) + 1);
-    }
+    if ((adj.status === 'APPROVED' || adj.status === 'REJECTED') && adj.decided_at) adjBatchCounts.set(`${adj.decided_at.slice(0, 16)}_${adj.status}`, (adjBatchCounts.get(`${adj.decided_at.slice(0, 16)}_${adj.status}`) ?? 0) + 1);
   }
 
   const seenNotifKeys = new Set<string>();
@@ -87,7 +85,8 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
   const ins = (data: Omit<Parameters<typeof ctx.db.notifications.insert>[0], 'read_at'>, actorId = SYNC_ACTOR) => {
     if (hasKey(data.entity_type, data.entity_id)) return Promise.resolve();
     seenKeys.add(`${data.entity_type}:${data.entity_id}`);
-    pendingInserts.push(tolerantWrite(() => ctx.db.notifications.insert({ ...data, read_at: '' }, actorId || SYNC_ACTOR)));
+    const eventAt = data.created_at || resolveNotificationEventTime(ctx, { entity_type: data.entity_type, entity_id: data.entity_id, created_at: '' });
+    pendingInserts.push(tolerantWrite(() => ctx.db.notifications.insert({ ...data, ...(eventAt ? { created_at: eventAt } : {}), read_at: '' }, actorId || SYNC_ACTOR)));
     return Promise.resolve();
   };
 

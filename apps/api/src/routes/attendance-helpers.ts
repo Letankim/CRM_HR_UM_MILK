@@ -166,7 +166,10 @@ export function buildPaginatedAttendanceSessions(
   query: { page?: number; per_page?: number; q?: string; branch_id?: string; shift_code?: string; status?: string; from_date?: string; to_date?: string },
 ) {
   const empByCode = new Map(ctx.db.employees.all().map((e) => [e.employee_code, e]));
-  const sorted = [...scopedEvents].sort((a, b) => b.server_time.localeCompare(a.server_time));
+  const sorted = [...scopedEvents].sort((a, b) => {
+    const ta = Date.parse(a.server_time), tb = Date.parse(b.server_time);
+    return (!Number.isNaN(ta) && !Number.isNaN(tb) && ta !== tb) ? tb - ta : b.server_time.localeCompare(a.server_time);
+  });
   const groups = new Map<string, { inEv: AttendanceEvent | null; outEv: AttendanceEvent | null }>();
   for (const ev of sorted) {
     if (query.from_date && ev.work_date < query.from_date) continue;

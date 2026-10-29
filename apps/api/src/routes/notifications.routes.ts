@@ -10,6 +10,7 @@ import { requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { resolveRolePortalPath, resolveUserPersonalRealEmail, webOrigin } from '../services/account-email-dispatcher.js';
 import { ensureSyncedNotifications, isNotificationCreatedByOrSelfAction } from '../services/notification-sync.service.js';
+import { resolveNotificationEventTime } from '../services/notification-time.js';
 import { resolveEmployeeBranchId } from './account-employee-sync.js';
 import { doesUserMatchAudience } from './job-positions-and-audiences.routes.js';
 
@@ -100,9 +101,12 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
       if (n.entity_type === 'EMG_STORE') { const e = ctx.db.emergencyLeaves.get(rawId); return checkEmp(e?.employee_id, e?.branch_id, e?.created_by); }
       return { branchId: n.branch_id || 'ALL', isBoOrHr: false };
     };
-    const visible = [...ctx.db.notifications.all()].reverse().filter((n) => {
-      if (isNotificationCreatedByOrSelfAction(ctx, n, user.id)) return false;
-      if (n.entity_type === 'MANUAL' && n.created_by === user.id && !splitCsv(n.recipient_user_id).includes(user.id)) return false;
+    const allRows = ctx.db.notifications.all();
+    const dedupNewest: { row: NotificationRow; sheetIdx: number; eventTime: string; eventMs: number }[] = [];
+    for (let sheetIdx = allRows.length - 1; sheetIdx >= 0; sheetIdx--) {
+      const n = allRows[sheetIdx]!;
+      if (isNotificationCreatedByOrSelfAction(ctx, n, user.id)) continue;
+      if (n.entity_type === 'MANUAL' && n.created_by === user.id && !splitCsv(n.recipient_user_id).includes(user.id)) continue;
 
       let matched = false;
       if (n.entity_type === 'ANNOUNCEMENTS' && n.entity_id) {
@@ -110,7 +114,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
         if (anc) matched = user.role === 'ADMIN' || doesUserMatchAudience(ctx, user, anc.audience_scope || 'ALL', anc.audience_json);
       } else {
         const userIds = splitCsv(n.recipient_user_id), roles = splitCsv(n.recipient_role);
-        if (userIds.includes('NONE')) return false;
+        if (userIds.includes('NONE')) continue;
         if (userIds.length > 0 && !userIds.includes('ALL')) {
           matched = userIds.includes(user.id);
         } else if (user.role === 'ADMIN') {
@@ -118,26 +122,23 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
         } else {
           const { branchId: notifBranch, isBoOrHr } = resolveNotifMeta(n);
           const isWorkflowRoleNotif = ['ATT_ADJ_HR', 'LEAVE_ROLE', 'SHIFT_DRAFT_ROLE', 'SWAP_STORE', 'EMG_STORE'].includes(n.entity_type);
-          if (user.role === 'STORE' && ((n.entity_type === 'ATT_ADJ_HR' && n.entity_id.endsWith('_STORE_CONFIRMED')) || (n.entity_type === 'EMG_STORE' && n.entity_id.endsWith('_ESCALATED')) || (isWorkflowRoleNotif && isBoOrHr))) return false;
-          const inBranch = isGlobalBackofficeRole
-            || (branchScope === 'ALL' && !isWorkflowRoleNotif)
-            || (!isWorkflowRoleNotif && (!notifBranch || notifBranch === 'ALL'))
-            || (Array.isArray(branchScope) && Boolean(notifBranch && notifBranch !== 'ALL') && branchScope.includes(notifBranch));
-          if (!inBranch) return false;
-          if (roles.length > 0 && !roles.includes('ALL')) matched = roles.includes(user.role);
-          else matched = userIds.includes('ALL') || roles.includes('ALL');
+          if (user.role === 'STORE' && ((n.entity_type === 'ATT_ADJ_HR' && n.entity_id.endsWith('_STORE_CONFIRMED')) || (n.entity_type === 'EMG_STORE' && n.entity_id.endsWith('_ESCALATED')) || (isWorkflowRoleNotif && isBoOrHr))) continue;
+          const inBranch = isGlobalBackofficeRole || (branchScope === 'ALL' && !isWorkflowRoleNotif) || (!isWorkflowRoleNotif && (!notifBranch || notifBranch === 'ALL')) || (Array.isArray(branchScope) && Boolean(notifBranch && notifBranch !== 'ALL') && branchScope.includes(notifBranch));
+          if (!inBranch) continue;
+          matched = (roles.length > 0 && !roles.includes('ALL')) ? roles.includes(user.role) : (userIds.includes('ALL') || roles.includes('ALL'));
         }
       }
-      if (!matched) return false;
+      if (!matched) continue;
 
       const dedupKey = n.entity_type && n.entity_id ? `ent:${n.entity_type}:${n.entity_id}` : `txt:${n.category}:${n.title}:${n.body}`;
-      if (seenVisibleKeys.has(dedupKey)) return false;
+      if (seenVisibleKeys.has(dedupKey)) continue;
       seenVisibleKeys.add(dedupKey);
-      return true;
-    });
+      const eventTime = resolveNotificationEventTime(ctx, n), parsedMs = Date.parse(eventTime);
+      dedupNewest.push({ row: n, sheetIdx, eventTime, eventMs: Number.isNaN(parsedMs) ? 0 : parsedMs });
+    }
 
-    const totalVisible = visible.length;
-    const enriched = visible.map((n, idx) => {
+    const chronological = dedupNewest.sort((a, b) => (a.eventMs - b.eventMs) || (a.sheetIdx - b.sheetIdx));
+    const enriched = chronological.map(({ row: n, eventTime }, idx) => {
       const anc = n.entity_type === 'ANNOUNCEMENTS' ? ancsMap.get(n.entity_id) : undefined;
       const userIds = splitCsv(n.recipient_user_id).filter((x) => x !== 'ALL' && x !== 'NONE');
       const roles = splitCsv(n.recipient_role).filter((x) => x !== 'ALL');
@@ -150,7 +151,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
       const targetLabel = isAncGroup ? `Nhóm nhận (${userIds.length}): ${userNames.join(', ') || 'Theo nhóm cấu hình'}` : isPersonal ? `Cá nhân (${userNames.length}): ${userNames.join(', ')}` : isBroadcast ? 'Toàn hệ thống (Tất cả vai trò)' : `Nhóm nhân sự: ${roleLabels.join(', ')}`;
       const userReadAt = getUserReadAt(n.read_at, user.id), readStatus = userReadAt ? 'READ' : 'UNREAD';
       return {
-        ...n, link: resolveNotificationLinkForRole(n, user.role), body: n.body.replace(/^Mã:\s*[A-Z0-9_]+\s*\([^)]+\)\s*·\s*/i, ''), read_at: userReadAt, code: anc?.code || `NTF-${String(totalVisible - idx).padStart(4, '0')}`,
+        ...n, created_at: eventTime, link: resolveNotificationLinkForRole(n, user.role), body: n.body.replace(/^Mã:\s*[A-Z0-9_]+\s*\([^)]+\)\s*·\s*/i, ''), read_at: userReadAt, code: anc?.code || `NTF-${String(idx + 1).padStart(4, '0')}`,
         categoryLabel: NOTIFICATION_CATEGORY_LABELS[n.category] ?? n.category, severityLabel: NOTIFICATION_SEVERITY_LABELS[n.severity] ?? n.severity,
         scopeType, targetLabel, readStatus, readStatusLabel: userReadAt ? 'Đã đọc' : 'Chưa đọc', detailHtml: anc?.body || `<p>${n.body.replace(/^Mã:\s*[A-Z0-9_]+\s*\([^)]+\)\s*·\s*/i, '')}</p>`,
       };

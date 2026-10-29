@@ -54,10 +54,11 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
   }).toString();
 
   const listQ = useQuery({ queryKey: ['notifications', 'list', queryParams], queryFn: () => api.list<NotificationItem>(`/notifications?${queryParams}`) });
-  const allStatsQ = useQuery({ queryKey: ['notifications', 'stats'], queryFn: () => api.list<NotificationItem>('/notifications?per_page=100') });
+  const allStatsQ = useQuery({ queryKey: ['notifications', 'stats'], queryFn: () => api.list<NotificationItem>('/notifications?per_page=100&sort_by=created_at&sort_order=desc') });
   const usersQ = useQuery({ queryKey: ['notifications', 'recipients'], queryFn: () => api.get<{ id: string; username: string; displayName: string; roleLabel: string }[]>('/notifications/recipients'), enabled: canSend });
 
   const refreshAll = () => qc.invalidateQueries({ queryKey: ['notifications'] });
+  const handleManualRefresh = () => { void api.list('/notifications?refresh=1&per_page=12').finally(() => { void refreshAll(); }); };
   const readMut = useMutation({ mutationFn: (id: string) => api.post(`/notifications/${id}/read`, {}), onSuccess: refreshAll });
   const markAllMut = useMutation({ mutationFn: (ids?: string[]) => api.post('/notifications/mark-all-read', { ids }), onSuccess: () => { message.success('Đã đánh dấu đã đọc các thông báo'); refreshAll(); } });
   const delMut = useMutation({ mutationFn: (id: string) => api.delete(`/notifications/${id}`), onSuccess: () => { message.success('Đã xóa thông báo thành công'); refreshAll(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa thông báo thất bại') });
@@ -140,7 +141,7 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
           { key: 'read', value: readStatus, width: 170, options: NOTIFICATION_READ_OPTIONS, onChange: (v) => { setReadStatus(v); setPage(1); } },
           { key: 'sort', value: sortOrder, width: 165, options: [{ value: 'desc', label: 'Mới nhất trước' }, { value: 'asc', label: 'Cũ nhất trước' }], onChange: (v) => { setSortOrder(v as 'desc' | 'asc'); setPage(1); } },
         ]}
-        onRefresh={refreshAll}
+        onRefresh={handleManualRefresh}
         refreshing={listQ.isFetching}
         onExportExcel={() => handleExport(listQ.data?.data ?? [])}
         primaryActionLabel={canSend ? 'Phát thông báo mới' : undefined}
