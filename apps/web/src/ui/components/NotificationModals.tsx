@@ -1,13 +1,11 @@
 'use client';
 
-import { Button, Col, Descriptions, Drawer, Form, Input, Modal, Row, Select, Space, Tag } from 'antd';
+import { Button, Col, Descriptions, Form, Input, Modal, Row, Select, Space, Tag } from 'antd';
 import type { FormInstance } from 'antd';
-import {
-  CloseOutlined, ExpandAltOutlined, LinkOutlined, SendOutlined, ShrinkOutlined,
-} from '@ant-design/icons';
+import { CloseOutlined, LinkOutlined, SendOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { useState } from 'react';
 import { ROLE_OPTIONS } from '@umbm/shared';
+import { BaseDetailDrawer } from './BaseDetailDrawer';
 
 export interface NotificationItem {
   id: string; version: number; code: string; category: string; categoryLabel: string;
@@ -53,20 +51,19 @@ export function NotificationDetailDrawer({
 }: {
   record: NotificationItem | null; onClose: () => void; onNavigate?: (link: string) => void;
 }) {
-  const [wide, setWide] = useState(false);
   const sevColor = record?.severity === 'CRITICAL' ? 'red' : record?.severity === 'WARNING' ? 'gold' : 'blue';
   const scopeColor = record?.scopeType === 'PERSONAL' ? 'purple' : record?.scopeType === 'ROLE' ? 'cyan' : 'geekblue';
 
   return (
-    <Drawer
-      open={Boolean(record)} width={wide ? '95vw' : '70vw'} onClose={onClose} destroyOnHidden
+    <BaseDetailDrawer
+      open={Boolean(record)} onClose={onClose}
       title={record ? `Chi tiết Thông báo — ${record.code}` : 'Chi tiết Thông báo'}
       extra={
-        <Space wrap>
-          {record?.link && onNavigate && <Button size="small" type="primary" icon={<LinkOutlined />} onClick={() => { const l = record.link; onClose(); onNavigate(l); }}>Đi tới màn hình liên quan</Button>}
-          <Button size="small" icon={wide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setWide((v) => !v)}>{wide ? 'Thu gọn' : 'Mở rộng'}</Button>
-          <Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
-        </Space>
+        record?.link && onNavigate ? (
+          <Button size="small" type="primary" icon={<LinkOutlined />} onClick={() => { const l = record.link; onClose(); onNavigate(l); }}>
+            Đi tới màn hình liên quan
+          </Button>
+        ) : null
       }
     >
       {record && (
@@ -97,7 +94,7 @@ export function NotificationDetailDrawer({
           />
         </Space>
       )}
-    </Drawer>
+    </BaseDetailDrawer>
   );
 }
 

@@ -18,7 +18,7 @@ import { DEFAULT_QUESTIONS, parseQuestions, TestAssignmentFormModal, TestDetailD
 export function TestBankManagerPane({ tests, assignments, attempts = [], employees, canManage = true }: { tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts?: Record<string, unknown>[]; employees: { value: string; label: string }[]; canManage?: boolean }) {
   const qc = useQueryClient(), { message, modal } = App.useApp(), { options: jobPositionOptions } = useJobPositions();
   const [subTab, setSubTab] = useState<'bank' | 'assignments' | 'history'>('bank'), [modalTab, setModalTab] = useState<'config' | 'questions'>('config');
-  const [bankModal, setBankModal] = useState(false), [asgModal, setAsgModal] = useState(false), [drawerWide, setDrawerWide] = useState(false), [refreshing, setRefreshing] = useState(false);
+  const [bankModal, setBankModal] = useState(false), [asgModal, setAsgModal] = useState(false), [refreshing, setRefreshing] = useState(false);
   const [editingTest, setEditingTest] = useState<Record<string, unknown> | null>(null), [viewingTest, setViewingTest] = useState<Record<string, unknown> | null>(null);
   const [viewingAssignment, setViewingAssignment] = useState<Record<string, unknown> | null>(null), [editingAssignment, setEditingAssignment] = useState<Record<string, unknown> | null>(null);
   const [reviewingAttempt, setReviewingAttempt] = useState<Record<string, unknown> | null>(null);
@@ -201,7 +201,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
       </Modal>
 
       <TestAssignmentFormModal open={asgModal} editing={editingAssignment} form={asgForm} loading={assignMut.isPending} tests={tests} employees={employees} onClose={() => { setAsgModal(false); setEditingAssignment(null); }} onSubmit={(v) => assignMut.mutate(v)} />
-      <TestDetailDrawer viewingTest={viewingTest} viewingAssignment={viewingAssignment} attempts={attempts} drawerWide={drawerWide} canManage={canManage} onToggleWide={() => setDrawerWide((v) => !v)} onCloseTest={() => setViewingTest(null)} onCloseAssignment={() => setViewingAssignment(null)} onEditTest={(t) => void openEditBank(t, 'questions')} onEditAssignment={(a) => openEditAssignment(a)} onViewAttempt={(att) => setReviewingAttempt(att)} onDeleteAttempt={confirmDeleteAttempt} />
+      <TestDetailDrawer viewingTest={viewingTest} viewingAssignment={viewingAssignment} attempts={attempts} canManage={canManage} onCloseTest={() => setViewingTest(null)} onCloseAssignment={() => setViewingAssignment(null)} onEditTest={(t) => void openEditBank(t, 'questions')} onEditAssignment={(a) => openEditAssignment(a)} onViewAttempt={(att) => setReviewingAttempt(att)} onDeleteAttempt={confirmDeleteAttempt} />
       <AttemptReviewModal attempt={reviewingAttempt} onClose={() => setReviewingAttempt(null)} />
     </>
   );

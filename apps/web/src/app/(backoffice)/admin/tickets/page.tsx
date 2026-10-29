@@ -144,7 +144,7 @@ export default function AdminTicketsPage() {
         ]}
         columns={[
           {
-            title: 'Tiêu đề phiếu hỗ trợ', key: 'subject', width: 245, ellipsis: true,
+            title: 'Tiêu đề phiếu hỗ trợ', key: 'subject', width: 230, ellipsis: true,
             render: (_, r) => (
               <div style={{ cursor: 'pointer', minWidth: 0 }} onClick={() => setDetailId(r.id)} title={r.subject}>
                 <div style={{ ...oneLineStyle, fontWeight: 600, fontSize: 13, color: BRAND.primary }}>{r.subject}</div>
@@ -172,10 +172,10 @@ export default function AdminTicketsPage() {
               </div>
             ),
           },
-          { title: 'Ưu tiên', key: 'prio', width: 96, render: (_, r) => <StatusTag value={r.priority} label={r.priorityLabel} /> },
-          { title: 'Trạng thái', key: 'st', width: 140, render: (_, r) => <StatusTag value={r.status} label={r.statusLabel} /> },
+          { title: 'Ưu tiên', key: 'prio', width: 118, render: (_, r) => <StatusTag value={r.priority} label={r.priorityLabel} /> },
+          { title: 'Trạng thái', key: 'st', width: 192, render: (_, r) => <StatusTag value={r.status} label={r.statusLabel} /> },
           {
-            title: 'Cập nhật', key: 'time', width: 118,
+            title: 'Cập nhật', key: 'time', width: 138,
             render: (_, r) => <span className="num" style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap' }}>{dayjs(r.updated_at || r.created_at).format('HH:mm DD/MM/YYYY')}</span>,
           },
           {

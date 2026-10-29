@@ -28,6 +28,10 @@ export function StatusTag({ value, label }: { value: string; label?: string }) {
         fontWeight: 500,
         fontSize: 12,
         paddingInline: 8,
+        maxWidth: '100%',
+        whiteSpace: 'normal',
+        height: 'auto',
+        lineHeight: 1.35,
       }}
     >
       {label ?? visual.label}

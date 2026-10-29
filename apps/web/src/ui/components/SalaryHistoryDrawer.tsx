@@ -1,13 +1,14 @@
 'use client';
 
-import { App, Button, Descriptions, Drawer, Modal, Space, Table, Tabs, Tag, Typography } from 'antd';
-import { CalendarOutlined, CloseOutlined, DeleteOutlined, DollarOutlined, EditOutlined, ExpandAltOutlined, GiftOutlined, LockOutlined, PlusOutlined, ShrinkOutlined } from '@ant-design/icons';
+import { App, Button, Descriptions, Modal, Space, Table, Tabs, Tag, Typography } from 'antd';
+import { CalendarOutlined, CloseOutlined, DeleteOutlined, DollarOutlined, EditOutlined, GiftOutlined, LockOutlined, PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { StatusTag } from '@/ui/StatusTag';
 import { useClientPagination } from '../hooks/useClientPagination';
+import { BaseDetailDrawer, DETAIL_DRAWER_CONFIG } from './BaseDetailDrawer';
 import { fmtVnd, type SalaryProfile } from './payroll-types';
 import { RowActionButtons } from './RowActionButtons';
 
@@ -31,7 +32,7 @@ export function SalaryProfileDetailModal({
       title={profile ? `Chi tiết Mức lương — ${profile.employeeName} (${profile.employeeCode})` : 'Chi tiết mức lương'}
       open={!!profile}
       onCancel={onClose}
-      width="70vw"
+      width={DETAIL_DRAWER_CONFIG.defaultWidth}
       destroyOnHidden
       footer={
         <Space>
@@ -122,7 +123,6 @@ export function SalaryHistoryDrawer({
 }) {
   const { message, modal } = App.useApp();
   const qc = useQueryClient();
-  const [expanded, setExpanded] = useState(false);
   const [viewing, setViewing] = useState<SalaryProfile | null>(null);
   const histPag = useClientPagination(10, 'mức lương');
 
@@ -145,20 +145,10 @@ export function SalaryHistoryDrawer({
 
   return (
     <>
-      <Drawer
+      <BaseDetailDrawer
         title={employee ? `Lịch sử lương — ${employee.label}` : 'Lịch sử lương'}
         open={!!employee}
         onClose={onClose}
-        width={expanded ? '95vw' : '70vw'}
-        destroyOnHidden
-        extra={
-          <Space size={8}>
-            <Button size="small" icon={expanded ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setExpanded((v) => !v)}>
-              {expanded ? 'Thu gọn' : 'Mở rộng'}
-            </Button>
-            <Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
-          </Space>
-        }
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
           Mỗi lần điều chỉnh lương tạo một mức mới có ngày hiệu lực; mức cũ được đóng lại và giữ nguyên để truy vết. Mức lương đã dùng để chốt kỳ lương sẽ bị khóa sửa / xóa.
@@ -192,7 +182,7 @@ export function SalaryHistoryDrawer({
             },
           ]}
         />
-      </Drawer>
+      </BaseDetailDrawer>
 
       <SalaryProfileDetailModal profile={viewing} canManage={canManage} onEdit={onEdit} onClose={() => setViewing(null)} />
     </>

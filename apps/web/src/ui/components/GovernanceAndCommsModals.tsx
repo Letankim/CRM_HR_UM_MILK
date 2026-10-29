@@ -1,13 +1,13 @@
 'use client';
 
-import { Button, Col, Descriptions, Drawer, Form, Input, Modal, Row, Select, Space, Switch, Table, Tag } from 'antd';
+import { Button, Col, Descriptions, Form, Input, Modal, Row, Select, Space, Switch, Table, Tag } from 'antd';
 import type { FormInstance } from 'antd';
-import { CheckCircleOutlined, CloseOutlined, EditOutlined, ExpandAltOutlined, SaveOutlined, SendOutlined, ShrinkOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, CloseOutlined, EditOutlined, SaveOutlined, SendOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { useState } from 'react';
 import { TABLE_DISPLAY_LABELS } from '@umbm/shared';
 import { StatusTag } from '../StatusTag';
 import { useClientPagination } from '../hooks/useClientPagination';
+import { BaseDetailDrawer } from './BaseDetailDrawer';
 import { DateStringPicker } from './DateTimePickers';
 import { RichHtmlEditor } from './RichHtmlEditor';
 
@@ -99,7 +99,6 @@ const MODULE_GROUP_LABELS: Record<string, string> = {
 };
 
 export function BackupDetailDrawer({ record, onClose }: { record: Record<string, unknown> | null; onClose: () => void }) {
-  const [wide, setWide] = useState(false);
   const bkpTablesPag = useClientPagination(12, 'bảng dữ liệu được sao lưu');
   const parsed = (() => { try { return JSON.parse(String(record?.rows_json || '{}')) as Record<string, unknown>; } catch { return {}; } })();
   const isVerifyOnly = parsed.status === 'VERIFIED' && typeof parsed.issuesFound === 'number';
@@ -112,10 +111,9 @@ export function BackupDetailDrawer({ record, onClose }: { record: Record<string,
   const actorLabel = String(record?.actorName || (!record?.created_by || record?.created_by === 'embedded-cron' ? 'Tự động theo lịch hệ thống' : 'Quản trị hệ thống'));
 
   return (
-    <Drawer
-      open={Boolean(record)} width={wide ? '95vw' : '70vw'} onClose={onClose} destroyOnHidden
+    <BaseDetailDrawer
+      open={Boolean(record)} onClose={onClose}
       title={record ? `Chi tiết Bản Sao lưu & Khôi phục: ${String(record.backup_code)}` : 'Chi tiết bản sao lưu'}
-      extra={<Space wrap><Button size="small" icon={wide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setWide((v) => !v)}>{wide ? 'Thu gọn' : 'Mở rộng'}</Button><Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button></Space>}
     >
       {record && (
         <Space direction="vertical" size={14} style={{ width: '100%' }}>
@@ -148,7 +146,7 @@ export function BackupDetailDrawer({ record, onClose }: { record: Record<string,
           )}
         </Space>
       )}
-    </Drawer>
+    </BaseDetailDrawer>
   );
 }
 
@@ -158,23 +156,20 @@ export function GovernanceDetailDrawer({
   record: Record<string, unknown> | null; kind: 'policy' | 'announcement'; onClose: () => void;
   onEdit?: (r: Record<string, unknown>) => void; onBroadcast?: (r: Record<string, unknown>) => void;
 }) {
-  const [wide, setWide] = useState(false);
   const html = record ? String(kind === 'policy' ? record.content_html || record.note || `<p>${record.description ?? ''}</p>` : record.body || `<p>${record.summary ?? ''}</p>`) : '';
   const isSent = record && String(record.status) === 'SENT';
   const priorityLabel = record?.priority === 'URGENT' ? 'Khẩn cấp' : record?.priority === 'HIGH' ? 'Quan trọng' : 'Thông thường';
   const priorityColor = record?.priority === 'URGENT' || record?.priority === 'HIGH' ? 'red' : 'blue';
 
   return (
-    <Drawer
-      open={Boolean(record)} width={wide ? '95vw' : '70vw'} onClose={onClose} destroyOnHidden
+    <BaseDetailDrawer
+      open={Boolean(record)} onClose={onClose}
       title={record ? (kind === 'policy' ? `Chi tiết Chính sách & Quy định: ${record.key}` : `Chi tiết Bản tin Nội bộ: ${record.title}`) : 'Chi tiết'}
       extra={
-        <Space wrap>
+        <>
           {record && kind === 'policy' && onBroadcast && <Button size="small" icon={<SendOutlined />} onClick={() => onBroadcast(record)}>Phổ biến toàn công ty</Button>}
           {record && onEdit && <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { const r = record; onClose(); onEdit(r); }}>Chỉnh sửa</Button>}
-          <Button size="small" icon={wide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setWide((v) => !v)}>{wide ? 'Thu gọn' : 'Mở rộng'}</Button>
-          <Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
-        </Space>
+        </>
       }
     >
       {record && (
@@ -209,6 +204,6 @@ export function GovernanceDetailDrawer({
           <div style={{ padding: '14px 18px', border: '1px solid #E5E7EB', borderRadius: 4, background: '#FFFFFF', lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: html }} />
         </Space>
       )}
-    </Drawer>
+    </BaseDetailDrawer>
   );
 }

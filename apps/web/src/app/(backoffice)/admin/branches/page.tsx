@@ -1,12 +1,13 @@
 'use client';
 
-import { App, Button, Card, Descriptions, Drawer, Segmented, Space, Tabs, Tag } from 'antd';
-import { ClockCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EnvironmentOutlined, ExpandAltOutlined, IdcardOutlined, ShopOutlined, ShrinkOutlined } from '@ant-design/icons';
+import { App, Button, Card, Descriptions, Segmented, Space, Tabs, Tag } from 'antd';
+import { ClockCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EnvironmentOutlined, IdcardOutlined, ShopOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Suspense, useState } from 'react';
 import { BRANCH_STATUS_OPTIONS, type BranchStatus } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
+import { BaseDetailDrawer } from '@/ui/components/BaseDetailDrawer';
 import { buildBranchColumns, exportBranchesExcel } from '@/ui/components/branch-table-columns';
 import { BranchFormModal, type BranchRowItem } from '@/ui/components/BranchFormModal';
 import { DataTableCard } from '@/ui/components/DataTableCard';
@@ -30,7 +31,6 @@ function BranchesView() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BranchRowItem | null>(null);
   const [viewing, setViewing] = useState<BranchRowItem | null>(null);
-  const [drawerExpanded, setDrawerExpanded] = useState(false);
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
   const buildUrl = (force = false) => {
@@ -140,24 +140,16 @@ function BranchesView() {
 
       <BranchFormModal open={modalOpen} editing={editing} existingCodes={existingCodes} onClose={() => setModalOpen(false)} />
 
-      <Drawer
+      <BaseDetailDrawer
         title={viewing ? `Chi tiết Chi nhánh: ${viewing.name} (${viewing.code})` : 'Chi tiết Chi nhánh'}
         open={!!viewing}
         onClose={() => setViewing(null)}
-        width={drawerExpanded ? '95vw' : '70vw'}
-        destroyOnHidden
         extra={
-          <Space size={8}>
-            {viewing && canConfig && (
-              <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { const cur = viewing; setViewing(null); setEditing(cur); setModalOpen(true); }}>
-                Sửa Chi nhánh &amp; GPS
-              </Button>
-            )}
-            <Button size="small" icon={drawerExpanded ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setDrawerExpanded((v) => !v)}>
-              {drawerExpanded ? 'Thu gọn' : 'Mở rộng'}
+          viewing && canConfig ? (
+            <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { const cur = viewing; setViewing(null); setEditing(cur); setModalOpen(true); }}>
+              Sửa Chi nhánh &amp; GPS
             </Button>
-            <Button size="small" icon={<CloseOutlined />} onClick={() => setViewing(null)}>Đóng</Button>
-          </Space>
+          ) : null
         }
       >
         {viewing && (
@@ -202,7 +194,7 @@ function BranchesView() {
             ]}
           />
         )}
-      </Drawer>
+      </BaseDetailDrawer>
     </>
   );
 }

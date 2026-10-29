@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { Button, Descriptions, Drawer, Space, Tabs, Tag } from 'antd';
-import { CloseOutlined, DiffOutlined, ExpandAltOutlined, FolderOpenOutlined, InfoCircleOutlined, RollbackOutlined, ShrinkOutlined } from '@ant-design/icons';
+import { Button, Descriptions, Tabs, Tag } from 'antd';
+import { DiffOutlined, FolderOpenOutlined, InfoCircleOutlined, RollbackOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { BaseDetailDrawer } from './BaseDetailDrawer';
 
 export interface AuditLogItem {
   id: string;
@@ -33,32 +33,22 @@ interface Props {
 }
 
 export function AuditLogDetailDrawer({ selected, onClose, onArchiveOrRestore }: Props) {
-  const [expanded, setExpanded] = useState(false);
-
   return (
-    <Drawer
+    <BaseDetailDrawer
       title={selected ? `Chi tiết Kiểm toán: ${selected.actionLabel}` : 'Chi tiết Kiểm toán'}
       open={!!selected}
       onClose={onClose}
-      width={expanded ? '95vw' : '70vw'}
-      destroyOnHidden
       extra={
-        <Space size={8}>
-          {selected && onArchiveOrRestore && (
-            <Button
-              size="small"
-              type={selected.isArchived ? 'primary' : 'default'}
-              icon={selected.isArchived ? <RollbackOutlined /> : <FolderOpenOutlined />}
-              onClick={() => onArchiveOrRestore(selected)}
-            >
-              {selected.isArchived ? 'Khôi phục về hiện hành' : 'Lưu trữ & Làm trống'}
-            </Button>
-          )}
-          <Button size="small" icon={expanded ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setExpanded((v) => !v)}>
-            {expanded ? 'Thu gọn' : 'Mở rộng'}
+        selected && onArchiveOrRestore ? (
+          <Button
+            size="small"
+            type={selected.isArchived ? 'primary' : 'default'}
+            icon={selected.isArchived ? <RollbackOutlined /> : <FolderOpenOutlined />}
+            onClick={() => onArchiveOrRestore(selected)}
+          >
+            {selected.isArchived ? 'Khôi phục về hiện hành' : 'Lưu trữ & Làm trống'}
           </Button>
-          <Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
-        </Space>
+        ) : null
       }
     >
       {selected && (
@@ -99,6 +89,6 @@ export function AuditLogDetailDrawer({ selected, onClose, onArchiveOrRestore }: 
           ]}
         />
       )}
-    </Drawer>
+    </BaseDetailDrawer>
   );
 }

@@ -1,9 +1,9 @@
 'use client';
 
-import { Alert, Button, Descriptions, Drawer, Space, Tabs, Tag } from 'antd';
-import { CalendarOutlined, CloseOutlined, ContactsOutlined, DollarOutlined, EditOutlined, ExpandAltOutlined, IdcardOutlined, RiseOutlined, ShrinkOutlined, UserOutlined, UserSwitchOutlined } from '@ant-design/icons';
-import { useState } from 'react';
+import { Alert, Button, Descriptions, Space, Tabs, Tag } from 'antd';
+import { CalendarOutlined, ContactsOutlined, DollarOutlined, EditOutlined, IdcardOutlined, RiseOutlined, UserOutlined, UserSwitchOutlined } from '@ant-design/icons';
 import { StatusTag } from '../StatusTag';
+import { BaseDetailDrawer } from './BaseDetailDrawer';
 import { EmployeeDossierHistoryTab } from './EmployeeDossierHistoryTab';
 import { fmtEmployeeSalary, type EmployeeRowItem } from './employee-table-columns';
 import { fmtVnd } from './payroll-types';
@@ -16,17 +16,13 @@ export function EmployeeDetailDrawer({
   employee: EmployeeRowItem | null; canManage?: boolean; canPromote: boolean; canSeeSalary?: boolean;
   promoting: boolean; onEdit?: (row: EmployeeRowItem) => void; onPromoteOfficial: (row: EmployeeRowItem) => void; onClose: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-
   return (
-    <Drawer
+    <BaseDetailDrawer
       title={employee ? `Hồ sơ nhân sự: ${employee.fullName} (${employee.employeeCode})` : 'Chi tiết nhân sự'}
       open={!!employee}
       onClose={onClose}
-      width={expanded ? '95vw' : '70vw'}
-      destroyOnHidden
       extra={
-        <Space size={8}>
+        <>
           {employee && canManage && onEdit && (
             <Button size="small" icon={<EditOutlined />} onClick={() => { onClose(); onEdit(employee); }}>
               Sửa hồ sơ &amp; Liên kết TK
@@ -37,11 +33,7 @@ export function EmployeeDetailDrawer({
               Chuyển Chính thức
             </Button>
           )}
-          <Button size="small" icon={expanded ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setExpanded((v) => !v)}>
-            {expanded ? 'Thu gọn' : 'Mở rộng'}
-          </Button>
-          <Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
-        </Space>
+        </>
       }
     >
       {employee && (
@@ -189,6 +181,6 @@ export function EmployeeDetailDrawer({
           ]}
         />
       )}
-    </Drawer>
+    </BaseDetailDrawer>
   );
 }

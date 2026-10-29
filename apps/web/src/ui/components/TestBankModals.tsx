@@ -1,9 +1,10 @@
 'use client';
 
-import { Button, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, Switch, Table, Tabs, Tag, Typography, type FormInstance } from 'antd';
-import { CloseOutlined, EditOutlined, ExpandAltOutlined, HistoryOutlined, PlusOutlined, SaveOutlined, SettingOutlined, ShrinkOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { Button, Col, Descriptions, Form, Input, InputNumber, Modal, Row, Select, Space, Switch, Table, Tabs, Tag, Typography, type FormInstance } from 'antd';
+import { CloseOutlined, EditOutlined, HistoryOutlined, PlusOutlined, SaveOutlined, SettingOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { StatusTag } from '../StatusTag';
+import { BaseDetailDrawer } from './BaseDetailDrawer';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
 import { AttemptHistoryTable } from './ExamTestCenter';
 
@@ -84,15 +85,13 @@ export function TestAssignmentFormModal({
 }
 
 export function TestDetailDrawer({
-  viewingTest, viewingAssignment, attempts = [], drawerWide, canManage,
-  onToggleWide, onCloseTest, onCloseAssignment, onEditTest, onEditAssignment, onViewAttempt, onDeleteAttempt,
+  viewingTest, viewingAssignment, attempts = [], canManage,
+  onCloseTest, onCloseAssignment, onEditTest, onEditAssignment, onViewAttempt, onDeleteAttempt,
 }: {
   viewingTest: Record<string, unknown> | null;
   viewingAssignment: Record<string, unknown> | null;
   attempts?: Record<string, unknown>[];
-  drawerWide: boolean;
   canManage?: boolean;
-  onToggleWide: () => void;
   onCloseTest: () => void;
   onCloseAssignment: () => void;
   onEditTest: (record: Record<string, unknown>) => void;
@@ -106,22 +105,16 @@ export function TestDetailDrawer({
 
   return (
     <>
-      <Drawer
+      <BaseDetailDrawer
         open={Boolean(viewingTest)}
         title={viewingTest ? `Chi tiết Bộ đề: ${viewingTest.code} — ${viewingTest.title}` : 'Chi tiết bộ đề'}
-        width={drawerWide ? '95vw' : '70vw'}
         onClose={onCloseTest}
-        destroyOnHidden
         extra={
-          <Space>
-            {canManage && viewingTest && (
-              <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { const t = viewingTest; onCloseTest(); onEditTest(t); }}>
-                Chỉnh sửa bộ đề &amp; câu hỏi
-              </Button>
-            )}
-            <Button size="small" icon={drawerWide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={onToggleWide}>{drawerWide ? 'Thu gọn' : 'Mở rộng'}</Button>
-            <Button size="small" icon={<CloseOutlined />} onClick={onCloseTest}>Đóng</Button>
-          </Space>
+          canManage && viewingTest ? (
+            <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { const t = viewingTest; onCloseTest(); onEditTest(t); }}>
+              Chỉnh sửa bộ đề &amp; câu hỏi
+            </Button>
+          ) : null
         }
       >
         {viewingTest && (
@@ -145,24 +138,18 @@ export function TestDetailDrawer({
             ]}
           />
         )}
-      </Drawer>
+      </BaseDetailDrawer>
 
-      <Drawer
+      <BaseDetailDrawer
         open={Boolean(viewingAssignment)}
         title={viewingAssignment ? `Chi tiết Đợt giao bài & Lịch sử làm bài — ${viewingAssignment.assignment_code}` : 'Chi tiết đợt giao bài'}
-        width={drawerWide ? '95vw' : '70vw'}
         onClose={onCloseAssignment}
-        destroyOnHidden
         extra={
-          <Space wrap>
-            {canManage && viewingAssignment && (
-              <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { const a = viewingAssignment; onCloseAssignment(); onEditAssignment(a); }}>
-                Chỉnh sửa hạn nộp &amp; số lần thi
-              </Button>
-            )}
-            <Button size="small" icon={drawerWide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={onToggleWide}>{drawerWide ? 'Thu gọn' : 'Mở rộng'}</Button>
-            <Button size="small" icon={<CloseOutlined />} onClick={onCloseAssignment}>Đóng</Button>
-          </Space>
+          canManage && viewingAssignment ? (
+            <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { const a = viewingAssignment; onCloseAssignment(); onEditAssignment(a); }}>
+              Chỉnh sửa hạn nộp &amp; số lần thi
+            </Button>
+          ) : null
         }
       >
         {viewingAssignment && (
@@ -191,7 +178,7 @@ export function TestDetailDrawer({
             </div>
           </Space>
         )}
-      </Drawer>
+      </BaseDetailDrawer>
     </>
   );
 }

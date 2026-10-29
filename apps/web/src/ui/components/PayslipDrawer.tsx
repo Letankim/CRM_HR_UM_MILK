@@ -1,7 +1,7 @@
 'use client';
 
-import { Alert, App, Button, Descriptions, Drawer, Form, Input, InputNumber, Modal, Space, Table, Tabs, Tag, Typography } from 'antd';
-import { CalendarOutlined, CloseOutlined, EditOutlined, ExpandAltOutlined, FileExcelOutlined, FileTextOutlined, HistoryOutlined, IdcardOutlined, SaveOutlined, ShrinkOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Descriptions, Form, Input, InputNumber, Modal, Space, Table, Tabs, Tag, Typography } from 'antd';
+import { CalendarOutlined, CloseOutlined, EditOutlined, FileExcelOutlined, FileTextOutlined, HistoryOutlined, IdcardOutlined, SaveOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
@@ -9,6 +9,7 @@ import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
 import { useClientPagination } from '../hooks/useClientPagination';
+import { BaseDetailDrawer } from './BaseDetailDrawer';
 import { allowancesOf, deductionsOf, fmtVnd, MONEY_INPUT_PROPS, type PayrollSnapshotItem, type ShiftPayrollLog } from './payroll-types';
 
 interface Line { label: string; detail: string; amount: number }
@@ -43,7 +44,6 @@ export function payslipLines(s: PayrollSnapshotItem): Line[] {
 
 export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: PayrollSnapshotItem | null; onClose: () => void }) {
   const [s, setS] = useState<PayrollSnapshotItem | null>(propSnap);
-  const [expanded, setExpanded] = useState(false);
   const [revModal, setRevModal] = useState(false);
   const [revForm] = Form.useForm();
   const logPag = useClientPagination(10, 'ca');
@@ -88,11 +88,11 @@ export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: Payro
 
   const lines = s ? payslipLines(s) : [];
   return (
-    <Drawer
+    <BaseDetailDrawer
       title={s ? `Phiếu lương chi tiết — ${s.fullName} (${s.employeeCode})` : 'Phiếu lương'}
-      open={!!s} onClose={onClose} width={expanded ? '95vw' : '70vw'} destroyOnHidden
+      open={!!s} onClose={onClose}
       extra={
-        <Space size={8}>
+        <>
           {s && canManage && (
             <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { revForm.resetFields(); setRevModal(true); }}>
               Tạo bản điều chỉnh
@@ -115,9 +115,7 @@ export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: Payro
               Xuất phiếu lương Excel
             </Button>
           )}
-          <Button size="small" icon={expanded ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setExpanded((v) => !v)}>{expanded ? 'Thu gọn' : 'Mở rộng'}</Button>
-          <Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
-        </Space>
+        </>
       }
     >
       {s && (
@@ -215,6 +213,6 @@ export function PayslipDrawer({ snapshot: propSnap, onClose }: { snapshot: Payro
           </Modal>
         </>
       )}
-    </Drawer>
+    </BaseDetailDrawer>
   );
 }

@@ -93,7 +93,7 @@ export default function EmployeeSupportTicketsPage() {
           emptyText="Bạn chưa có phiếu hỗ trợ hoặc thắc mắc nào. Bấm Tạo phiếu hỗ trợ để gửi tới Kế toán, Nhân sự hoặc Quản lý Cửa hàng."
           columns={[
             {
-              title: 'Tiêu đề phiếu hỗ trợ', key: 'subject', width: 280, ellipsis: true,
+              title: 'Tiêu đề phiếu hỗ trợ', key: 'subject', width: 260, ellipsis: true,
               render: (_, r) => (
                 <div style={{ cursor: 'pointer', minWidth: 0 }} onClick={() => setDetailId(r.id)} title={r.subject}>
                   <div style={{ ...oneLineStyle, fontWeight: 600, fontSize: 13, color: BRAND.primary }}>{r.subject}</div>
@@ -102,7 +102,7 @@ export default function EmployeeSupportTicketsPage() {
               ),
             },
             {
-              title: 'Bộ phận xử lý', key: 'dept', width: 175, ellipsis: true,
+              title: 'Bộ phận xử lý', key: 'dept', width: 170, ellipsis: true,
               render: (_, r) => (
                 <div style={{ minWidth: 0 }} title={`${r.departmentLabel} — ${r.assigneeName}`}>
                   <div style={{ ...oneLineStyle, fontWeight: 600, fontSize: 13 }}>{shortDept(r.departmentLabel)}</div>
@@ -112,10 +112,10 @@ export default function EmployeeSupportTicketsPage() {
                 </div>
               ),
             },
-            { title: 'Ưu tiên', key: 'prio', width: 100, render: (_, r) => <StatusTag value={r.priority} label={r.priorityLabel} /> },
-            { title: 'Trạng thái', key: 'st', width: 145, render: (_, r) => <StatusTag value={r.status} label={r.statusLabel} /> },
+            { title: 'Ưu tiên', key: 'prio', width: 118, render: (_, r) => <StatusTag value={r.priority} label={r.priorityLabel} /> },
+            { title: 'Trạng thái', key: 'st', width: 192, render: (_, r) => <StatusTag value={r.status} label={r.statusLabel} /> },
             {
-              title: 'Cập nhật', key: 'time', width: 120,
+              title: 'Cập nhật', key: 'time', width: 138,
               render: (_, r) => <span className="num" style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap' }}>{dayjs(r.updated_at || r.created_at).format('HH:mm DD/MM/YYYY')}</span>,
             },
             {

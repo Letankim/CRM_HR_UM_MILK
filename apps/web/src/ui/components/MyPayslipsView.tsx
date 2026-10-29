@@ -1,15 +1,16 @@
 'use client';
 
-import { Alert, App, Button, Card, Col, Descriptions, Drawer, Empty, Form, Grid, Input, List, Modal, Row, Select, Space, Spin, Tag } from 'antd';
+import { Alert, App, Button, Card, Col, Descriptions, Empty, Form, Grid, Input, List, Modal, Row, Select, Space, Spin, Tag } from 'antd';
 import {
   CheckCircleOutlined, CloseOutlined, CustomerServiceOutlined, ExclamationCircleOutlined,
-  ExpandAltOutlined, FileTextOutlined, ReloadOutlined, SendOutlined, ShrinkOutlined,
+  FileTextOutlined, ReloadOutlined, SendOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useState } from 'react';
 import { TICKET_DEPARTMENT_OPTIONS, type TicketDepartment } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
+import { BaseDetailDrawer } from '@/ui/components/BaseDetailDrawer';
 import { fmtVnd, type PayrollSnapshotItem } from '@/ui/components/payroll-types';
 import { payslipLines } from '@/ui/components/PayslipDrawer';
 import { TicketDetailDrawer } from '@/ui/components/TicketDetailDrawer';
@@ -40,7 +41,6 @@ export interface MyPayslip {
 
 export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
   const [disputeModal, setDisputeModal] = useState(false);
   const [ticketDrawerId, setTicketDrawerId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -141,12 +141,12 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
         {content}
       </Card>
 
-      <Drawer
-        placement={isDesktop ? 'right' : 'bottom'} width={isDesktop ? (expanded ? '95vw' : '70vw') : undefined} height={isDesktop ? undefined : '85%'}
-        open={!!open} onClose={() => setOpenId(null)} title={open ? `Phiếu lương — ${open.periodName}` : ''} destroyOnHidden
+      <BaseDetailDrawer
+        mobileBottom
+        open={!!open} onClose={() => setOpenId(null)} title={open ? `Phiếu lương — ${open.periodName}` : ''}
         extra={
           open && (
-            <Space size={6} wrap>
+            <>
               {open.linkedTicket && (
                 <Button size="small" icon={<CustomerServiceOutlined />} onClick={() => setTicketDrawerId(open.linkedTicket!.id)}>
                   Xem phiếu hỗ trợ ({open.linkedTicket.ticketCode})
@@ -158,8 +158,7 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
               <Button size="small" danger icon={<ExclamationCircleOutlined />} onClick={() => { form.resetFields(); form.setFieldsValue({ target_department: open.linkedTicket?.department || 'FINANCE', assignee_user_id: '' }); setDisputeModal(true); }}>
                 Gửi thắc mắc
               </Button>
-              {isDesktop && <Button size="small" icon={expanded ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setExpanded((v) => !v)}>{expanded ? 'Thu gọn' : 'Mở rộng'}</Button>}
-            </Space>
+            </>
           )
         }
       >
@@ -188,7 +187,7 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderTop: `1px solid ${BRAND.border}` }}><strong>THỰC LĨNH</strong><strong className="num" style={{ color: '#15803D', fontSize: 16 }}>{fmtVnd(open.netVnd)}</strong></div>
           </>
         )}
-      </Drawer>
+      </BaseDetailDrawer>
 
       <Modal width={640} title="Gửi Phiếu Hỗ Trợ / Thắc Mắc Phiếu Lương" open={disputeModal} onCancel={() => setDisputeModal(false)} onOk={() => form.submit()} okText="Tạo phiếu & Gửi thắc mắc" cancelText="Hủy bỏ" okButtonProps={{ icon: <SendOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} confirmLoading={disputeMut.isPending} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={(v) => open && disputeMut.mutate({ id: open.id, reason: String(v.reason || ''), target_department: (v.target_department || 'FINANCE') as TicketDepartment, assignee_user_id: String(v.assignee_user_id || '') })}>

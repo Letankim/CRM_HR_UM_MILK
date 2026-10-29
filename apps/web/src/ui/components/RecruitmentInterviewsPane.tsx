@@ -1,7 +1,7 @@
 'use client';
 
-import { App, Button, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
-import { CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, ExpandAltOutlined, SaveOutlined, ShrinkOutlined, VideoCameraOutlined } from '@ant-design/icons';
+import { App, Button, Col, Descriptions, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
+import { CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, SaveOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
@@ -9,6 +9,7 @@ import { api, ApiClientError } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
+import { BaseDetailDrawer } from './BaseDetailDrawer';
 import { SelectableTable } from './BulkActionBar';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
 import { FilterToolbar } from './FilterToolbar';
@@ -39,7 +40,6 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
   const [perPage, setPerPage] = useState(10);
 
   const [viewingIv, setViewingIv] = useState<Record<string, unknown> | null>(null);
-  const [drawerWide, setDrawerWide] = useState(false);
   const [evalTarget, setEvalTarget] = useState<Record<string, unknown> | null>(null);
   const [reschedTarget, setReschedTarget] = useState<Record<string, unknown> | null>(null);
   const [evalForm] = Form.useForm();
@@ -161,7 +161,7 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
         ]}
       />
 
-      <Drawer open={Boolean(viewingIv)} title={viewingIv ? `Chi tiết Phỏng vấn: ${viewingIv.candidateName}` : 'Chi tiết phỏng vấn'} width={drawerWide ? '95vw' : '70vw'} onClose={() => setViewingIv(null)} destroyOnHidden extra={<Space>{Boolean(viewingIv?.meet_link) && <Button size="small" type="primary" icon={<VideoCameraOutlined />} href={String(viewingIv?.meet_link)} target="_blank">Mở Google Meet</Button>}{canManageRec && viewingIv && <Button size="small" icon={<ClockCircleOutlined />} onClick={() => { const iv = viewingIv; setViewingIv(null); openReschedModal(iv); }}>Chỉnh sửa lịch</Button>}{canManageRec && viewingIv && <Button size="small" icon={<EditOutlined />} onClick={() => { const iv = viewingIv; setViewingIv(null); openEvalModal(iv); }}>Chấm điểm HR</Button>}<Button size="small" icon={drawerWide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setDrawerWide((v) => !v)}>{drawerWide ? 'Thu gọn' : 'Mở rộng'}</Button><Button size="small" icon={<CloseOutlined />} onClick={() => setViewingIv(null)}>Đóng</Button></Space>}>
+      <BaseDetailDrawer open={Boolean(viewingIv)} title={viewingIv ? `Chi tiết Phỏng vấn: ${viewingIv.candidateName}` : 'Chi tiết phỏng vấn'} onClose={() => setViewingIv(null)} extra={<>{Boolean(viewingIv?.meet_link) && <Button size="small" type="primary" icon={<VideoCameraOutlined />} href={String(viewingIv?.meet_link)} target="_blank">Mở Google Meet</Button>}{canManageRec && viewingIv && <Button size="small" icon={<ClockCircleOutlined />} onClick={() => { const iv = viewingIv; setViewingIv(null); openReschedModal(iv); }}>Chỉnh sửa lịch</Button>}{canManageRec && viewingIv && <Button size="small" icon={<EditOutlined />} onClick={() => { const iv = viewingIv; setViewingIv(null); openEvalModal(iv); }}>Chấm điểm HR</Button>}</>}>
         {viewingIv && (
           <Descriptions size="small" bordered column={2}>
             <Descriptions.Item label="Ứng viên">{String(viewingIv.candidateName)} {viewingIv.candidateCode ? <Tag color="geekblue">{String(viewingIv.candidateCode)}</Tag> : null}</Descriptions.Item>
@@ -178,7 +178,7 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
             <Descriptions.Item label="Nhận xét của HR" span={2}>{String(viewingIv.comment || 'Chưa có nhận xét đánh giá')}</Descriptions.Item>
           </Descriptions>
         )}
-      </Drawer>
+      </BaseDetailDrawer>
 
       <Modal width={620} open={Boolean(evalTarget)} forceRender destroyOnHidden title={evalTarget ? `Chấm điểm & Quyết định Phỏng vấn: ${evalTarget.candidateName}` : 'Đánh giá phỏng vấn'} okText="Lưu kết quả phỏng vấn" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined />, loading: putMut.isPending }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={() => setEvalTarget(null)} onOk={() => evalForm.submit()}>
         <Form form={evalForm} layout="vertical" onFinish={(v) => putMut.mutate({ url: `/admin/interviews/${evalTarget!.id}/evaluate`, body: { ...v, version: evalTarget!.version } })}>

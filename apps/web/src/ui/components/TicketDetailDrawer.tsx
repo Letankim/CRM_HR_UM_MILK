@@ -1,9 +1,8 @@
 'use client';
 
-import { Alert, App, Button, Card, Descriptions, Drawer, Flex, Input, Select, Space, Spin, Tag, Typography } from 'antd';
+import { Alert, App, Button, Card, Descriptions, Flex, Input, Select, Space, Spin, Tag, Typography } from 'antd';
 import {
-  CheckCircleOutlined, CloseOutlined, ExpandAltOutlined,
-  RetweetOutlined, SendOutlined, ShrinkOutlined, UserOutlined,
+  CheckCircleOutlined, RetweetOutlined, SendOutlined, UserOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -13,6 +12,7 @@ import { api, ApiClientError } from '@/lib/api';
 import { useMe } from '@/lib/auth';
 import { StatusTag } from '../StatusTag';
 import { BRAND } from '../theme';
+import { BaseDetailDrawer } from './BaseDetailDrawer';
 import type { SupportTicketItem, TicketAssigneeOption } from './ticket-types';
 
 export interface TicketDetailDrawerProps {
@@ -25,7 +25,6 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
   const qc = useQueryClient();
   const { message } = App.useApp();
   const { data: me } = useMe();
-  const [expanded, setExpanded] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [nextDept, setNextDept] = useState<TicketDepartment>('HR');
   const [nextAssignee, setNextAssignee] = useState<string>('');
@@ -78,28 +77,18 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
   const isRequester = Boolean(t && me?.user.id === t.requester_user_id);
   const canResolve = isBackoffice && !isRequester && t?.status !== 'CLOSED';
   const routingDirty = Boolean(t && (nextDept !== t.target_department || nextAssignee !== (t.assignee_user_id || '')));
-  const drawerWidth = expanded ? '90vw' : '70vw';
 
   return (
-    <Drawer
-      width={drawerWidth}
-      styles={{ wrapper: { width: drawerWidth, maxWidth: '100vw' } }}
+    <BaseDetailDrawer
       open={Boolean(ticketId)}
       onClose={onClose}
-      destroyOnHidden
       title={t ? `Chi tiết Phiếu hỗ trợ — ${t.ticket_code}` : 'Chi tiết Phiếu hỗ trợ'}
       extra={
-        <Space size={8}>
-          {t && t.status !== 'CLOSED' && (
-            <Button size="small" icon={<CheckCircleOutlined />} loading={updateMut.isPending} onClick={() => updateMut.mutate({ status: 'CLOSED' })}>
-              Đóng phiếu
-            </Button>
-          )}
-          <Button size="small" icon={expanded ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setExpanded((v) => !v)}>
-            {expanded ? 'Thu nhỏ (70%)' : 'Phóng to (90%)'}
+        t && t.status !== 'CLOSED' ? (
+          <Button size="small" icon={<CheckCircleOutlined />} loading={updateMut.isPending} onClick={() => updateMut.mutate({ status: 'CLOSED' })}>
+            Đóng phiếu
           </Button>
-          <Button size="small" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
-        </Space>
+        ) : null
       }
     >
       {detailQ.isLoading || !t ? (
@@ -191,6 +180,6 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
           )}
         </div>
       )}
-    </Drawer>
+    </BaseDetailDrawer>
   );
 }

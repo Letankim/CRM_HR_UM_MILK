@@ -1,7 +1,7 @@
 'use client';
 
-import { App, Button, Card, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
-import { CalendarOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, ExpandAltOutlined, MailOutlined, MessageOutlined, PhoneOutlined, PlusOutlined, SaveOutlined, ShrinkOutlined } from '@ant-design/icons';
+import { App, Button, Card, Col, Descriptions, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
+import { CalendarOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, MailOutlined, MessageOutlined, PhoneOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
@@ -9,6 +9,7 @@ import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { StatusTag } from '../StatusTag';
+import { BaseDetailDrawer } from './BaseDetailDrawer';
 import { SelectableTable } from './BulkActionBar';
 import { FilterToolbar } from './FilterToolbar';
 import { GuardButton, usePermissionGuard } from './GuardButton';
@@ -49,7 +50,6 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
   const [candModal, setCandModal] = useState(false);
   const [editingCand, setEditingCand] = useState<Record<string, unknown> | null>(null);
   const [viewingCand, setViewingCand] = useState<Record<string, unknown> | null>(null);
-  const [drawerWide, setDrawerWide] = useState(false);
   const [candForm] = Form.useForm();
   const watchedCandBranchId = Form.useWatch('applied_branch_id', candForm);
   const { options: shiftPrefOptions } = useShiftTemplates(watchedCandBranchId);
@@ -188,7 +188,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
         </Form>
       </Modal>
 
-      <Drawer open={Boolean(viewingCand)} title={viewingCand ? `Hồ sơ Ứng viên: ${viewingCand.full_name} (${viewingCand.candidate_code})` : 'Chi tiết ứng viên'} width={drawerWide ? '95vw' : '70vw'} onClose={() => setViewingCand(null)} destroyOnHidden extra={<Space><GuardButton size="small" type="primary" icon={<CalendarOutlined />} perms={['interview.manage']} onClick={() => { const id = String(viewingCand!.id); setViewingCand(null); onScheduleInterview(id); }}>{viewingCand && (scheduledCandidateIds?.has(String(viewingCand.id)) || scheduledCandidateIds?.has(String(viewingCand.candidate_code)) || viewingCand.status === 'INTERVIEW_SCHEDULED') ? 'Chỉnh sửa lịch phỏng vấn' : 'Đặt lịch phỏng vấn'}</GuardButton><GuardButton size="small" icon={<EditOutlined />} perms={['candidate.manage']} onClick={() => { const c = viewingCand!; setViewingCand(null); openEditCand(c); }}>Chỉnh sửa</GuardButton><Button size="small" icon={drawerWide ? <ShrinkOutlined /> : <ExpandAltOutlined />} onClick={() => setDrawerWide((v) => !v)}>{drawerWide ? 'Thu gọn' : 'Mở rộng'}</Button><Button size="small" icon={<CloseOutlined />} onClick={() => setViewingCand(null)}>Đóng</Button></Space>}>
+      <BaseDetailDrawer open={Boolean(viewingCand)} title={viewingCand ? `Hồ sơ Ứng viên: ${viewingCand.full_name} (${viewingCand.candidate_code})` : 'Chi tiết ứng viên'} onClose={() => setViewingCand(null)} extra={<><GuardButton size="small" type="primary" icon={<CalendarOutlined />} perms={['interview.manage']} onClick={() => { const id = String(viewingCand!.id); setViewingCand(null); onScheduleInterview(id); }}>{viewingCand && (scheduledCandidateIds?.has(String(viewingCand.id)) || scheduledCandidateIds?.has(String(viewingCand.candidate_code)) || viewingCand.status === 'INTERVIEW_SCHEDULED') ? 'Chỉnh sửa lịch phỏng vấn' : 'Đặt lịch phỏng vấn'}</GuardButton><GuardButton size="small" icon={<EditOutlined />} perms={['candidate.manage']} onClick={() => { const c = viewingCand!; setViewingCand(null); openEditCand(c); }}>Chỉnh sửa</GuardButton></>}>
         {viewingCand && (
           <Space direction="vertical" size={14} style={{ width: '100%' }}>
             <Card size="small" title="Kênh liên hệ tích hợp">
@@ -213,7 +213,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
             </Descriptions>
           </Space>
         )}
-      </Drawer>
+      </BaseDetailDrawer>
     </Space>
   );
 }
