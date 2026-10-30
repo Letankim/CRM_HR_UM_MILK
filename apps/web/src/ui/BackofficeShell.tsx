@@ -118,7 +118,6 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
     <AhrBrandLockup
       collapsed={isCompactSider}
       subtitle={SYSTEM_CONFIG.brandSubtitle}
-      workspace={SYSTEM_CONFIG.brandName}
       onClick={() => router.push('/dashboard')}
     />
   );

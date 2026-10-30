@@ -98,17 +98,13 @@ export function AhrWordmarkSvg({ height = 17 }: { height?: number }) {
 export function AhrBrandLockup({
   collapsed = false,
   subtitle = SYSTEM_CONFIG.brandSubtitle,
-  workspace = SYSTEM_CONFIG.brandName,
   onClick,
 }: {
   collapsed?: boolean;
   subtitle?: string;
-  workspace?: string;
   onClick?: () => void;
 }) {
-  const tooltipTitle = collapsed
-    ? `${SYSTEM_CONFIG.productName} — ${subtitle}${workspace ? ` (${workspace})` : ''}`
-    : undefined;
+  const tooltipTitle = collapsed ? `${SYSTEM_CONFIG.productName} — ${subtitle}` : undefined;
 
   return (
     <div
@@ -120,7 +116,7 @@ export function AhrBrandLockup({
         alignItems: 'center',
         justifyContent: collapsed ? 'center' : 'flex-start',
         gap: 10,
-        padding: collapsed ? 0 : '0 14px',
+        padding: collapsed ? 0 : '0 16px',
         borderBottom: `1px solid ${BRAND.border}`,
         cursor: onClick ? 'pointer' : 'default',
       }}
@@ -132,27 +128,7 @@ export function AhrBrandLockup({
       </Tooltip>
       {!collapsed && (
         <div style={{ minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <AhrWordmarkSvg height={16} />
-            {workspace && (
-              <span
-                style={{
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  color: '#475569',
-                  background: '#F1F5F9',
-                  border: `1px solid ${BRAND.border}`,
-                  borderRadius: 2,
-                  padding: '1px 5px',
-                  lineHeight: '14px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {workspace}
-              </span>
-            )}
-          </div>
+          <AhrWordmarkSvg height={17} />
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.5, color: '#64748B', marginTop: 3 }}>
             {subtitle}
           </div>

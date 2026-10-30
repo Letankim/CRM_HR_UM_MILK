@@ -91,8 +91,8 @@ export function LoginForm({ app }: Props) {
               <AhrBrandMark size={40} tiled />
               <div style={{ lineHeight: 1.15 }}>
                 <AhrWordmarkSvg height={20} />
-                <div style={{ fontSize: 10.5, fontWeight: 600, color: '#64748B', letterSpacing: 0.4, marginTop: 3 }}>
-                  {SYSTEM_CONFIG.brandName}
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: '#64748B', letterSpacing: 0.5, marginTop: 3 }}>
+                  {SYSTEM_CONFIG.brandSubtitle}
                 </div>
               </div>
             </div>

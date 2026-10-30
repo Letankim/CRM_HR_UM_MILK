@@ -103,7 +103,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
       <Layout style={{ minHeight: '100dvh' }}>
         <Layout.Sider className="umbm-fixed-sider" width={260} collapsedWidth={68} collapsed={collapsed} style={{ borderRight: `1px solid ${BRAND.border}`, position: 'fixed', top: 0, left: 0, bottom: 0, height: '100dvh', maxHeight: '100dvh', overflow: 'hidden', zIndex: 100 }}>
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '100dvh', overflow: 'hidden' }}>
-            <AhrBrandLockup collapsed={collapsed} subtitle="CỔNG NHÂN VIÊN" workspace={SYSTEM_CONFIG.brandName} onClick={() => router.push('/nv')} />
+            <AhrBrandLockup collapsed={collapsed} subtitle="CỔNG NHÂN VIÊN" onClick={() => router.push('/nv')} />
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', padding: collapsed ? '8px 0' : '6px 4px' }}>
               <Menu className="umbm-sider-menu" mode="inline" inlineIndent={10} inlineCollapsed={collapsed} defaultOpenKeys={DESKTOP_GROUPS.map((g) => g.key)} items={desktopMenuItems} selectedKeys={[activeDesktopItem.item.key]} style={{ borderInlineEnd: 'none' }} />
             </div>
