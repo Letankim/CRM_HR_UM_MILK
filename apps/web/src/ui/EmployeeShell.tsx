@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, Avatar, Breadcrumb, Button, Dropdown, Flex, Grid, Layout, Menu, Popover, Space, Spin, Tag, Typography } from 'antd';
+import { Alert, Avatar, Breadcrumb, Button, Dropdown, Flex, Grid, Layout, Menu, Popover, Spin, Tag, Typography } from 'antd';
 import type { ItemType } from 'antd/es/menu/interface';
 import {
   AppstoreOutlined, BellOutlined, BookOutlined, CalendarOutlined, CustomerServiceOutlined, DownOutlined, EnvironmentOutlined,
@@ -114,12 +114,12 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
         <Layout style={{ minWidth: 0, flex: 1, marginLeft: collapsed ? 68 : 260, transition: 'margin-left 0.2s ease' }}>
           <Layout.Header style={{ borderBottom: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10, paddingInline: 16 }}>
             <Flex align="center" gap={12}>
-              <Button size="small" className="umbm-header-pill" icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setCollapsed((c) => !c)} style={{ width: 32, height: 32, borderRadius: 6, borderColor: BRAND.headerControlBorder }} />
+              <Button size="small" className="umbm-header-pill" icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setCollapsed((c) => !c)} style={{ width: 32, height: 32, borderRadius: 6, borderColor: BRAND.headerControlBorder, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} />
               <Breadcrumb items={[{ title: 'Cổng Nhân viên' }, { title: activeDesktopItem.group }, { title: <Typography.Text strong style={{ color: '#0F172A', fontSize: 13 }}>{activeDesktopItem.item.label}</Typography.Text> }]} />
             </Flex>
-            <Space size={10}>
+            <Flex align="center" gap={10} style={{ lineHeight: 1 }}>
               <HeaderNotificationBell userId={u.id} portal="employee" soundEnabled={soundEnabled} setSoundEnabled={setSoundEnabled} playTestSound={playTestSound} />
-              {isInternal && <Button size="small" className="umbm-header-pill" icon={<UserSwitchOutlined />} onClick={() => router.push('/dashboard')} style={{ height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder, paddingInline: 10 }}>Về Quản trị</Button>}
+              {isInternal && <Button size="small" className="umbm-header-pill" icon={<UserSwitchOutlined />} onClick={() => router.push('/dashboard')} style={{ height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder, paddingInline: 10, display: 'inline-flex', alignItems: 'center' }}>Về Quản trị</Button>}
               <Dropdown
                 trigger={['click']}
                 menu={{
@@ -142,7 +142,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
                   <DownOutlined style={{ fontSize: 10, color: '#64748B' }} />
                 </div>
               </Dropdown>
-            </Space>
+            </Flex>
           </Layout.Header>
           <Layout.Content style={{ padding: 20, width: '100%', maxWidth: '100%', overflowX: 'clip' }}>
             {activeMaint && <Alert type="warning" banner showIcon style={{ marginBottom: 14 }} message={activeMaint.message || 'Hệ thống đang bảo trì nâng cấp định kỳ.'} />}

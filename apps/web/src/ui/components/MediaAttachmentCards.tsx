@@ -133,7 +133,7 @@ export function useResolvedMediaAttachments(record: Record<string, unknown> | nu
   const qc = useQueryClient();
   return useMemo(() => {
     if (!record) return [];
-    if (Array.isArray(record.mediaAttachments) && record.mediaAttachments.length > 0) return (record.mediaAttachments as Record<string, unknown>[]).map(normalizeClientMediaItem);
+    if (Array.isArray(record.mediaAttachments)) return (record.mediaAttachments as Record<string, unknown>[]).map(normalizeClientMediaItem);
     const ids = parseRawMediaIds(record.media_ids);
     if (ids.length === 0) return [];
     const mktCache = qc.getQueryData<{ mediaAssets?: Record<string, unknown>[] }>(['mkt-comms']);

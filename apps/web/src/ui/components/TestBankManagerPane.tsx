@@ -8,6 +8,7 @@ import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
 import { useClientPagination } from '../hooks/useClientPagination';
+import { useEmployeeSearchSelect } from '../hooks/useEmployeeSearchSelect';
 import { StatusTag } from '../StatusTag';
 import { SelectableTable } from './BulkActionBar';
 import { AttemptHistoryTable, AttemptReviewModal } from './ExamTestCenter';
@@ -25,6 +26,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
   const [historySearch, setHistorySearch] = useState(''), [historyEmpId, setHistoryEmpId] = useState('ALL'), [historyTestId, setHistoryTestId] = useState('ALL'), [historyResult, setHistoryResult] = useState('ALL');
   const [questions, setQuestions] = useState<QuestionRow[]>(DEFAULT_QUESTIONS);
   const [bankForm] = Form.useForm(), [asgForm] = Form.useForm();
+  const empSelect = useEmployeeSearchSelect({ initialOptions: employees, enabled: subTab === 'history' || asgModal });
   const bankPag = useClientPagination(10, 'bộ đề'), asgPag = useClientPagination(10, 'đợt giao');
   const refresh = () => ['tests-bank', 'nv-tests'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const handleManualRefresh = async () => { setRefreshing(true); try { await api.get('/admin/tests/bank?refresh=1'); refresh(); message.success('Đã đồng bộ dữ liệu bộ đề, đợt giao bài & lịch sử thi mới nhất'); } finally { setRefreshing(false); } };
@@ -154,7 +156,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
     <Card size="small" title={`Lịch sử các phiên làm bài kiểm tra (${filteredAttempts.length}/${attempts.length})`} extra={<Space><Button size="small" icon={<CloseOutlined />} onClick={() => { setHistorySearch(''); setHistoryEmpId('ALL'); setHistoryTestId('ALL'); setHistoryResult('ALL'); }}>Xóa bộ lọc</Button><Button size="small" type="primary" ghost icon={<ReloadOutlined />} loading={refreshing} onClick={() => void handleManualRefresh()}>Làm mới</Button></Space>}>
       <Space wrap size={8} style={{ width: '100%', marginBottom: 12 }}>
         <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm tên nhân sự, mã đề, tên đề..." value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} style={{ width: 240 }} />
-        <Select showSearch optionFilterProp="label" value={historyEmpId} onChange={setHistoryEmpId} style={{ width: 230 }} options={[{ value: 'ALL', label: 'Tất cả nhân sự làm bài' }, ...employees]} />
+        <Select showSearch value={historyEmpId} onChange={setHistoryEmpId} style={{ width: 230 }} options={[{ value: 'ALL', label: 'Tất cả nhân sự làm bài' }, ...empSelect.options]} loading={empSelect.loading} onSearch={empSelect.onSearch} filterOption={empSelect.filterOption} onDropdownVisibleChange={empSelect.onDropdownVisibleChange} />
         <Select showSearch optionFilterProp="label" value={historyTestId} onChange={setHistoryTestId} style={{ width: 260 }} options={[{ value: 'ALL', label: 'Tất cả kỳ thi / bộ đề' }, ...tests.map((t) => ({ value: String(t.id), label: `${t.code} — ${t.title}` }))]} />
         <Select value={historyResult} onChange={setHistoryResult} style={{ width: 165 }} options={[{ value: 'ALL', label: 'Tất cả kết quả' }, { value: 'PASSED', label: 'Đạt yêu cầu' }, { value: 'FAILED', label: 'Chưa đạt' }]} />
       </Space>
@@ -200,7 +202,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
         </Form>
       </Modal>
 
-      <TestAssignmentFormModal open={asgModal} editing={editingAssignment} form={asgForm} loading={assignMut.isPending} tests={tests} employees={employees} onClose={() => { setAsgModal(false); setEditingAssignment(null); }} onSubmit={(v) => assignMut.mutate(v)} />
+      <TestAssignmentFormModal open={asgModal} editing={editingAssignment} form={asgForm} loading={assignMut.isPending} tests={tests} employees={empSelect.options} onClose={() => { setAsgModal(false); setEditingAssignment(null); }} onSubmit={(v) => assignMut.mutate(v)} />
       <TestDetailDrawer viewingTest={viewingTest} viewingAssignment={viewingAssignment} attempts={attempts} canManage={canManage} onCloseTest={() => setViewingTest(null)} onCloseAssignment={() => setViewingAssignment(null)} onEditTest={(t) => void openEditBank(t, 'questions')} onEditAssignment={(a) => openEditAssignment(a)} onViewAttempt={(att) => setReviewingAttempt(att)} onDeleteAttempt={confirmDeleteAttempt} />
       <AttemptReviewModal attempt={reviewingAttempt} onClose={() => setReviewingAttempt(null)} />
     </>

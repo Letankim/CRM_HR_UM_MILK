@@ -9,6 +9,7 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
+import { getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
 import { queueAttendanceAdjustmentCreatedEmail, queueAttendanceAdjustmentDecidedEmails } from '../services/action-email-dispatcher.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { applyApprovedAdjustmentToShift, assertNoDuplicateAdjustment, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
@@ -38,15 +39,12 @@ const zDecideAdjustmentBody = z.object({ version: z.coerce.number().int().min(1)
 
 export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/attendance/photos/:fileId', async (request, reply) => {
-    const { fileId } = request.params as { fileId: string };
-    const buf = await loadAttendancePhotoBuffer(ctx, fileId);
+    const { fileId } = request.params as { fileId: string }, buf = await loadAttendancePhotoBuffer(ctx, fileId);
     if (!buf) throw Errors.notFound('Ảnh điểm danh trên Google Drive', fileId);
     return reply.header('Content-Type', 'image/jpeg').header('Cache-Control', 'public, max-age=31536000, immutable').send(buf);
   });
-
   app.get('/api/admin/attendance', { preHandler: requirePermission('attendance.read', 'self.attendance') }, async (request) => {
-    void migrateLegacyBase64Photos(ctx);
-    await healBranchConsistency(ctx);
+    void migrateLegacyBase64Photos(ctx); await healBranchConsistency(ctx);
     const rawEvents = [...filterByBranch(request, ctx.db.attendanceEvents.all(), (e) => resolveEmployeeBranchId(ctx, e.employee_id, e.branch_id))].reverse().slice(0, 200);
     const events = rawEvents.map((e) => mapAttendanceEvent(e, ctx));
     const adjustments = [...filterByBranch(request, ctx.db.attendanceAdjustments.all(), (a) => resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id))].reverse().map((a) => {
@@ -56,12 +54,10 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     });
     return sendSuccess(request, 'Lấy dữ liệu sự kiện chấm công gốc và phiếu bổ sung công thành công', { events, adjustments });
   });
-
   app.get('/api/admin/attendance/sessions', { preHandler: requirePermission('attendance.read', 'schedule.read', 'self.attendance') }, async (request) => {
     const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), shift_code: z.string().trim().optional(), status: z.string().trim().optional(), from_date: z.string().trim().optional(), to_date: z.string().trim().optional(), refresh: z.string().trim().optional() }).parse(request.query ?? {});
     if (query.refresh === '1') await ctx.db.attendanceEvents.refreshIfIdle();
-    void migrateLegacyBase64Photos(ctx);
-    await healBranchConsistency(ctx);
+    void migrateLegacyBase64Photos(ctx); await healBranchConsistency(ctx);
     const scoped = filterByBranch(request, ctx.db.attendanceEvents.all(), (e) => resolveEmployeeBranchId(ctx, e.employee_id, e.branch_id));
     return sendPaginated(request, 'Lấy danh sách điểm danh Vào/Ra ca theo phiên làm việc thành công', buildPaginatedAttendanceSessions(ctx, scoped, query));
   });
@@ -97,19 +93,23 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       if (!myEmp || (assign.employee_id !== myEmp.id && assign.employee_id !== myEmp.employee_code)) throw Errors.forbidden('Ca làm việc này không thuộc lịch đăng ký / phân công của bạn, không được phép điểm danh');
       const myBranch = findBranch(myEmp.branch_id);
       if (!myBranch || myBranch.id !== branch.id) throw Errors.forbidden(`Bạn thuộc chi nhánh "${myBranch?.name ?? myEmp.branch_id}", chỉ được phép Vào/Ra ca tại đúng chi nhánh trực thuộc của mình`);
-      const { todayStr, nowHm } = getVnNowDateAndHm();
+      const { todayStr, nowHm } = getVnNowDateAndHm(), win = getShiftCheckoutWindow(assign.work_date, assign.start_at || '07:00', assign.end_at || '12:00', todayStr, nowHm);
       const existingEvents = ctx.db.attendanceEvents.filter((e) => e.assignment_id === assign.id);
       const hasIn = existingEvents.some((e) => e.type === 'CHECK_IN'), hasOut = existingEvents.some((e) => e.type === 'CHECK_OUT');
-      if (checkType === 'CHECK_IN' && !hasIn && (assign.work_date < todayStr || (assign.work_date === todayStr && nowHm > (assign.end_at || '12:00')))) {
+      if (checkType === 'CHECK_IN' && !hasIn && win.isPastEnd) {
         await ctx.db.shiftAssignments.update(assign.id, assign.version, { status: 'ABSENT', note: 'Quá giờ kết thúc ca chưa điểm danh — Tự động chuyển Vắng mặt' }, user.id);
         throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'}) đã qua giờ kết thúc ca (hiện tại ${nowHm}) mà chưa vào ca nên hệ thống đã khóa điểm danh và chuyển sang Vắng mặt. Vui lòng làm Phiếu bổ sung công để bù ca.`);
       }
-      if (assign.work_date !== todayStr) throw Errors.fieldValidation('assignment_id', 'OUT_OF_RANGE', `Chỉ được phép điểm danh đúng ngày đăng ký ca (${dayjs(assign.work_date).format('DD/MM/YYYY')}). Hôm nay là ngày ${dayjs(todayStr).format('DD/MM/YYYY')}.`, assign.work_date);
+      if (checkType === 'CHECK_OUT' && hasIn && !hasOut && win.isCheckoutLocked) {
+        throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'}) đã quá thời hạn 1 giờ cho phép điểm danh Ra ca sau khi hết ca (hạn chót ${win.graceDeadlineHm}, hiện tại ${nowHm}). Vui lòng gửi Phiếu bổ sung công để xác nhận giờ ra ca.`);
+      }
+      if (assign.work_date !== todayStr && !(checkType === 'CHECK_OUT' && hasIn && !hasOut && win.isWithinCheckoutGrace)) {
+        throw Errors.fieldValidation('assignment_id', 'OUT_OF_RANGE', `Chỉ được phép điểm danh đúng ngày đăng ký ca (${dayjs(assign.work_date).format('DD/MM/YYYY')}). Hôm nay là ngày ${dayjs(todayStr).format('DD/MM/YYYY')}.`, assign.work_date);
+      }
       if (checkType === 'CHECK_IN' && hasIn) throw Errors.badRequest('Ca làm việc này đã được điểm danh vào ca rồi');
       if (checkType === 'CHECK_OUT' && !hasIn) throw Errors.badRequest('Vui lòng điểm danh vào ca trước khi điểm danh ra ca');
       if (checkType === 'CHECK_OUT' && hasOut) throw Errors.badRequest('Ca làm việc này đã được điểm danh ra ca rồi');
     }
-
     const distanceM = calculateHaversineMeters(body.lat, body.lng, branch.lat, branch.lng);
     const withinRadius = distanceM <= branch.radius_m;
     if (!withinRadius) {
@@ -117,9 +117,10 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       throw Errors.fieldValidation('lat', 'OUT_OF_RANGE', `Vị trí hiện tại cách ${branch.name} ${distLabel}, vượt quá bán kính cho phép (${branch.radius_m}m). Bạn bắt buộc phải có mặt đúng tại ${branch.name} để Vào/Ra ca (hoặc gửi Phiếu bổ sung công nếu thiết bị lỗi GPS).`, `${body.lat},${body.lng}`);
     }
     const accuracyOk = body.accuracy_m <= branch.max_accuracy_m, result = !accuracyOk ? 'LOW_ACCURACY' : 'VALID';
-    const serverNow = nowIso(), actualMins = parseHm(dayjs(serverNow).format('HH:mm'));
-    const schedTime = checkType === 'CHECK_IN' ? assign.start_at : assign.end_at, schedMins = parseHm(schedTime);
-    const lateMinutes = checkType === 'CHECK_IN' ? Math.max(0, actualMins - schedMins) : 0, earlyLeaveMinutes = checkType === 'CHECK_OUT' ? Math.max(0, schedMins - actualMins) : 0;
+    const serverNow = nowIso(), serverDt = dayjs(serverNow), schedTime = checkType === 'CHECK_IN' ? assign.start_at : assign.end_at;
+    const checkWin = getShiftCheckoutWindow(assign.work_date, assign.start_at || '07:00', assign.end_at || '12:00', serverDt.format('YYYY-MM-DD'), serverDt.format('HH:mm'));
+    const lateMinutes = checkType === 'CHECK_IN' ? (body.enforce_shift_state ? checkWin.lateCheckInMinutes : Math.max(0, parseHm(serverDt.format('HH:mm')) - parseHm(schedTime))) : 0;
+    const earlyLeaveMinutes = checkType === 'CHECK_OUT' ? checkWin.earlyLeaveMinutes : 0;
     const punc = describePunctuality(checkType, lateMinutes, earlyLeaveMinutes);
     const uploadedPhoto = await persistAttendancePhoto(ctx, { base64: body.photo_base64, employeeCode: empRecord.employee_code, checkType, workDate: assign.work_date });
 

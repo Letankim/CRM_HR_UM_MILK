@@ -194,7 +194,7 @@ function SchedulesView() {
           {viewMode === 'ATTENDANCE' ? (
             <AttendanceEventsTable externalFilters={{ q, branchId, shiftCode, status }} />
           ) : viewMode !== 'TABLE' ? (
-            <ScheduleViewsPanel mode={viewMode} assignments={items} canEdit={canEdit} loading={query.isLoading || query.isFetching || manualRefreshing} weekStart={weekStart} onWeekStartChange={setWeekStart} calMonth={calMonth} onMonthChange={setCalMonth} onAddAtCell={(dateStr, sCode) => { setEditingRow(null); setPresetDate(dateStr); setPresetShift(sCode); setModalOpen(true); }} onEditItem={openEdit} />
+            <ScheduleViewsPanel mode={viewMode} selectedBranchId={branchId} assignments={items} canEdit={canEdit} loading={query.isLoading || query.isFetching || manualRefreshing} weekStart={weekStart} onWeekStartChange={setWeekStart} calMonth={calMonth} onMonthChange={setCalMonth} onAddAtCell={(dateStr, sCode) => { setEditingRow(null); setPresetDate(dateStr); setPresetShift(sCode); setModalOpen(true); }} onEditItem={openEdit} />
           ) : (
             <DataTableCard<ScheduleAssignmentItem>
               columns={buildScheduleColumns({
@@ -205,7 +205,7 @@ function SchedulesView() {
               codeExtractor={(r) => r.employeeCode} onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }} bulkActions={bulkActions}
             />
           )}
-          <ScheduleFormModal open={modalOpen} editing={editingRow} presetDate={presetDate} presetShiftCode={presetShift} employees={employeeOptions} canEdit={canEdit} onClose={() => { setModalOpen(false); setEditingRow(null); }} />
+          <ScheduleFormModal open={modalOpen} editing={editingRow} presetDate={presetDate} presetShiftCode={presetShift} employees={employeeOptions} existingAssignments={items} canEdit={canEdit} onClose={() => { setModalOpen(false); setEditingRow(null); }} />
         </>
       ) : (
         <ScheduleWorkflowsTabs employees={employeeOptions} assignments={items} />

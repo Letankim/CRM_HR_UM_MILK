@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ROLE_LABELS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
+import { useEmployeeSearchSelect } from '../hooks/useEmployeeSearchSelect';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
 import { RecruitmentCandidatesPane } from './RecruitmentCandidatesPane';
 import { RecruitmentInterviewsPane } from './RecruitmentInterviewsPane';
@@ -63,6 +64,7 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
 
   const canViewRec = can('candidate.manage', 'interview.manage');
   const canViewTests = can('test.manage', 'employee.read', 'system.config');
+  const empSelect = useEmployeeSearchSelect({ initialOptions: employees, enabled: canViewRec || canViewTests });
   const candQ = useQuery({ queryKey: ['candidates'], queryFn: () => api.list<Record<string, unknown>>('/admin/candidates?per_page=100'), enabled: canViewRec });
   const ivQ = useQuery({ queryKey: ['interviews'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/interviews'), enabled: canViewRec });
   const testsQ = useQuery({ queryKey: ['tests-bank'], queryFn: () => api.get<{ tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts: Record<string, unknown>[] }>('/admin/tests/bank'), enabled: canViewTests });
@@ -82,9 +84,9 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
     if (map.size === 0) {
       for (const d of DEFAULT_INTERVIEWERS) map.set(d.value, d.label);
     }
-    for (const e of employees) if (!map.has(e.value)) map.set(e.value, e.label);
+    for (const e of empSelect.options) if (!map.has(e.value)) map.set(e.value, e.label);
     return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
-  }, [me?.user, recipientsQ.data, employees]);
+  }, [me?.user, recipientsQ.data, empSelect.options]);
 
   const scheduledCandidateIds = useMemo(() => {
     const s = new Set<string>();
@@ -150,7 +152,7 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
     />
   );
 
-  const testsPane = <TestBankManagerPane tests={testsQ.data?.tests ?? []} assignments={testsQ.data?.assignments ?? []} attempts={testsQ.data?.attempts ?? []} employees={employees} canManage={can('test.manage')} />;
+  const testsPane = <TestBankManagerPane tests={testsQ.data?.tests ?? []} assignments={testsQ.data?.assignments ?? []} attempts={testsQ.data?.attempts ?? []} employees={empSelect.options} canManage={can('test.manage')} />;
 
   return (
     <Card size="small">

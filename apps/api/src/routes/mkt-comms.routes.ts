@@ -8,6 +8,7 @@ import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { dispatchAnnouncement, isScheduledAnnouncementDue, sweepDueScheduledAnnouncements } from '../services/announcement-scheduler.service.js';
 import { enrichMediaAsset, resolveAnnouncementMediaAttachments } from '../services/comms-media-helper.js';
+import { deleteAnnouncementNotifications, deleteCampaignWithCascade, deleteMediaWithCascade, parseCascadeDeleteFlag } from '../services/mkt-cascade-delete.js';
 import { probeMktMediaSource } from '../services/mkt-media-probe.service.js';
 import { extractGoogleDriveFileId, loadMktMediaFile, persistMktMediaUpload } from '../services/mkt-media-storage.service.js';
 import { buildConfiguredAudienceGroups, doesUserMatchAudience, jobPositionsAndAudiencesRoutes } from './job-positions-and-audiences.routes.js';
@@ -93,11 +94,10 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
       const anc = ctx.db.announcements.get(l.announcement_id), recUser = ctx.db.users.get(l.recipient_user_id);
       return { ...l, announcementCode: anc?.code || 'ANC', announcementTitle: anc?.title || 'Bản tin nội bộ', recipientName: recUser?.display_name || l.recipient_user_id, readReceiptStatus: l.read_at || l.ack_at ? 'READ_CONFIRMED' : 'NO_RECEIPT', readReceiptLabel: l.read_at || l.ack_at ? 'Đã xác nhận đọc' : 'Chưa xác nhận đọc' };
     });
-    const policies = ctx.db.policies.all().reverse().map((p) => ({ ...p, description: p.title || p.key, content_html: p.note || '', creatorName: ctx.db.users.get(p.created_by)?.display_name || p.approved_by || 'Hệ thống' }));
+    const policies = ctx.db.policies.all().reverse().map((p) => ({ ...p, value: p.value_json || '', description: p.title || p.key, content_html: p.note || '', creatorName: ctx.db.users.get(p.created_by)?.display_name || p.approved_by || 'Hệ thống' }));
     const dashboard = { runningCount: allAncs.filter((a) => a.status === 'SENT').length, draftCount: allAncs.filter((a) => a.status === 'DRAFT').length, scheduledCount: allAncs.filter((a) => a.status === 'SCHEDULED').length, failedCount: allAncs.filter((a) => a.status === 'FAILED').length + allLogs.filter((l) => l.status === 'FAILED').length, campaignCount: allCampaigns.length, activeCampaignsCount: allCampaigns.filter((c) => c.status === 'ACTIVE').length, acknowledgedCount: allLogs.filter((l) => Boolean(l.read_at || l.ack_at)).length, mediaCount: allMedia.length };
     return { dashboard, audienceGroups: buildAudienceGroups(branchScope), campaigns, announcements, mediaAssets, deliveryLogs, policies };
   };
-
   app.get('/api/announcements', { preHandler: requireAuth() }, async (req) => {
     await sweepDueScheduledAnnouncements(ctx);
     return sendSuccess(req, 'Lấy danh sách bản tin truyền thông nội bộ thành công', buildCommsPayload(true, req.auth?.user, req.auth?.branchScope));
@@ -110,15 +110,12 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
     await sweepDueScheduledAnnouncements(ctx);
     return sendSuccess(req, 'Lấy dữ liệu chiến dịch & bản tin truyền thông nội bộ thành công', buildCommsPayload(false, req.auth?.user, req.auth?.branchScope));
   });
-
   app.post('/api/mkt/campaigns', { preHandler: requirePermission(...COMMS_PERMS) }, async (req, reply) => {
     const body = zCampaignBody.parse(req.body), code = body.code || body.campaign_code || `CMP-${Date.now().toString().slice(-4)}`;
     const created = await ctx.db.campaigns.insert({ code, name: body.name, status: body.status, start_at: body.start_at, end_at: body.end_at, description: body.description || body.note, owner_id: req.auth!.user.id, total_announcements: 0, note: body.note }, req.auth!.user.id);
     await ctx.audit.record(auditContext(req), { action: 'mkt.campaign.create', entity: 'CAMPAIGNS', entityId: created.id, after: { code: created.code, name: created.name } });
-    reply.code(201);
-    return sendSuccess(req, 'Đã tạo chiến dịch truyền thông nội bộ mới thành công', created);
+    return reply.code(201), sendSuccess(req, 'Đã tạo chiến dịch truyền thông nội bộ mới thành công', created);
   });
-
   app.put('/api/mkt/campaigns/:id', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
     const { id } = req.params as { id: string }, body = zCampaignBody.parse(req.body), before = ctx.db.campaigns.get(id);
     if (!before) throw Errors.notFound('Chiến dịch truyền thông', id);
@@ -126,13 +123,12 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
     const updated = await ctx.db.campaigns.update(id, body.version ?? before.version, { code: body.code || body.campaign_code || before.code, name: body.name, status: body.status, start_at: body.start_at, end_at: body.end_at, description: body.description || body.note }, req.auth!.user.id);
     return sendSuccess(req, 'Đã cập nhật chiến dịch truyền thông thành công', updated);
   });
-
   app.delete('/api/mkt/campaigns/:id', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
-    const { id } = req.params as { id: string }, before = ctx.db.campaigns.get(id);
+    const { id } = req.params as { id: string }, before = ctx.db.campaigns.get(id), deleteRelated = parseCascadeDeleteFlag(req);
     if (!before) throw Errors.notFound('Chiến dịch truyền thông', id);
     if (!canModify(req.auth!.user, before)) throw Errors.forbidden('Bạn chỉ được phép xóa chiến dịch do chính mình tạo ra (ngoại trừ Quản trị viên)');
-    await ctx.db.campaigns.softDelete(id, before.version, req.auth!.user.id);
-    return sendSuccess(req, 'Đã xóa chiến dịch truyền thông', { id });
+    const res = await deleteCampaignWithCascade(ctx, before, deleteRelated, req.auth!.user.id);
+    return sendSuccess(req, deleteRelated && res.deletedAnnouncementsCount > 0 ? `Đã xóa chiến dịch truyền thông và ${res.deletedAnnouncementsCount} bản tin thuộc chiến dịch` : 'Đã xóa chiến dịch truyền thông', res);
   });
   app.post('/api/mkt/announcements', { preHandler: requirePermission(...COMMS_PERMS) }, async (req, reply) => {
     const body = zAnnouncementBody.parse(req.body), actorId = req.auth!.user.id;
@@ -167,16 +163,15 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!before) throw Errors.notFound('Bản tin nội bộ', id);
     if (!canModify(req.auth!.user, before)) throw Errors.forbidden('Bạn chỉ được phép xóa bản tin do chính mình tạo ra (ngoại trừ Quản trị viên)');
     await ctx.db.announcements.softDelete(id, before.version, req.auth!.user.id);
+    await deleteAnnouncementNotifications(ctx, id, req.auth!.user.id);
     return sendSuccess(req, 'Đã xóa bản tin nội bộ', { id });
   });
-
   app.post('/api/announcements/:id/ack', { preHandler: requireAuth() }, async (req) => {
     const { id } = req.params as { id: string }, uid = req.auth!.user.id, now = nowIso(), existing = ctx.db.deliveryLogs.find((l) => l.announcement_id === id && l.recipient_user_id === uid);
     if (existing) await ctx.db.deliveryLogs.update(existing.id, existing.version, { read_at: existing.read_at || now, ack_at: now, status: 'SENT' }, uid);
     else await ctx.db.deliveryLogs.insert({ announcement_id: id, recipient_user_id: uid, channel: 'IN_APP_PORTAL', status: 'SENT', attempts: 1, last_error: '', branch_id: 'ALL', sent_at: now, delivered_at: now, read_at: now, ack_at: now }, uid);
     return sendSuccess(req, 'Đã ghi nhận xác nhận đọc bản tin thành công', { id, ack_at: now });
   });
-
   app.post('/api/mkt/media/probe', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
     const { url } = z.object({ url: z.string().trim().min(4, 'Vui lòng nhập đường dẫn tệp cần kiểm tra') }).parse(req.body);
     const info = await probeMktMediaSource(ctx, url);
@@ -203,11 +198,11 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(req, 'Đã cập nhật thông tin tệp Media', enrichMediaAsset(ctx, updated, req.auth!.user, canModify));
   });
   app.delete('/api/mkt/media/:id', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {
-    const { id } = req.params as { id: string }, before = ctx.db.mediaAssets.get(id);
+    const { id } = req.params as { id: string }, before = ctx.db.mediaAssets.get(id), deleteRelated = parseCascadeDeleteFlag(req);
     if (!before) throw Errors.notFound('Tệp Media', id);
     if (!canModify(req.auth!.user, before)) throw Errors.forbidden('Bạn chỉ được phép xóa tệp Media do chính mình tải lên (ngoại trừ Quản trị viên)');
-    await ctx.db.mediaAssets.softDelete(id, before.version, req.auth!.user.id);
-    return sendSuccess(req, 'Đã xóa tệp Media khỏi kho lưu trữ', { id });
+    const res = await deleteMediaWithCascade(ctx, before, deleteRelated, req.auth!.user.id);
+    return sendSuccess(req, deleteRelated && res.deletedAnnouncementsCount > 0 ? `Đã xóa tệp Media và ${res.deletedAnnouncementsCount} bản tin đang sử dụng tệp này` : 'Đã xóa tệp Media khỏi kho lưu trữ', res);
   });
 
   app.post('/api/mkt/delivery-logs/:id/retry', { preHandler: requirePermission(...COMMS_PERMS) }, async (req) => {

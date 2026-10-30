@@ -187,7 +187,7 @@ export function resolveAnnouncementMediaAttachments(
 ): EnrichedMediaAsset[] {
   const ids = parseMediaIds(rawMediaIds);
   if (ids.length === 0) return [];
-  const allIncludingArchived = ctx.db.mediaAssets.all(true);
+  const activeAssets = ctx.db.mediaAssets.all();
   const seen = new Set<string>();
   const resolved: EnrichedMediaAsset[] = [];
 
@@ -195,7 +195,7 @@ export function resolveAnnouncementMediaAttachments(
     if (seen.has(rawId)) continue;
     seen.add(rawId);
     const found = ctx.db.mediaAssets.get(rawId)
-      ?? allIncludingArchived.find((m) => m.id === rawId || m.code === rawId || m.file_name === rawId);
+      ?? activeAssets.find((m) => m.id === rawId || m.code === rawId || m.file_name === rawId);
     if (found) resolved.push(enrichMediaAsset(ctx, found, u));
   }
   return resolved;

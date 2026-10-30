@@ -42,7 +42,7 @@ function mapStaffingRule(r: StaffingRule, ctx: AppContext) {
   const branch = r.branch_id && r.branch_id !== 'ALL' ? (ctx.db.branches.get(r.branch_id) ?? ctx.db.branches.find((b) => b.code === r.branch_id)) : undefined;
   const shift = r.shift_template_id && r.shift_template_id !== 'ALL' ? (ctx.db.shiftTemplates.get(r.shift_template_id) ?? ctx.db.shiftTemplates.find((s) => s.code === r.shift_template_id)) : undefined;
   return {
-    ...r, branchId: branch?.id ?? 'ALL', branchCode: branch?.code ?? 'ALL',
+    ...r, branchId: branch?.id ?? 'ALL', branchCode: branch?.code ?? 'ALL', shiftCode: shift?.code ?? (!r.shift_template_id || r.shift_template_id === 'ALL' ? 'ALL' : r.shift_template_id),
     branchName: branch ? `${branch.code} — ${branch.name}` : 'Tất cả chi nhánh (Mặc định)',
     shiftName: shift ? `${shift.name} (${shift.start_time} – ${shift.end_time})` : (r.shift_template_id === 'ALL' ? 'Mọi khung ca làm việc' : r.shift_template_id),
     shiftTimeRange: shift ? `${shift.start_time} – ${shift.end_time}` : '',
@@ -163,7 +163,7 @@ export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendSuccess(request, `Đã xóa mẫu ca ${before.name}`, { id });
   });
 
-  app.get('/api/admin/staffing-rules', { preHandler: requirePermission('schedule.read', 'system.config', 'employee.read') }, async (request) => {
+  app.get('/api/admin/staffing-rules', { preHandler: requirePermission('schedule.read', 'schedule.propose', 'schedule.publish', 'system.config', 'employee.read', 'self.schedule') }, async (request) => {
     const scope = request.auth!.branchScope;
     const rawRules = ctx.db.staffingRules.all().filter((r) => scope === 'ALL' || r.branch_id === 'ALL' || scope.includes(r.branch_id));
     return sendSuccess(request, 'Lấy danh sách định biên nhân sự theo ca thành công', rawRules.map((r) => mapStaffingRule(r, ctx)));

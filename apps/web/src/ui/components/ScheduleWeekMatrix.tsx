@@ -5,6 +5,7 @@ import { CalendarOutlined, LeftOutlined, PlusOutlined, RightOutlined } from '@an
 import dayjs, { type Dayjs } from 'dayjs';
 import { useEffect, useMemo, useRef } from 'react';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
+import { computePerBranchStaffingBadges, useStaffingRules } from '../hooks/useStaffingRules';
 import { BRAND } from '../theme';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
 
@@ -27,12 +28,14 @@ interface ScheduleCellHandlers {
 
 export interface ScheduleWeekMatrixProps extends ScheduleCellHandlers {
   todayDate?: string;
+  selectedBranchId?: string;
   weekStart: Dayjs;
   onWeekStartChange: (updater: (prev: Dayjs) => Dayjs) => void;
 }
 
 /** Chế độ xem Lưới Lịch Tuần (Ca × Ngày), bấm vào ô để thêm hoặc sửa phân ca. */
-export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, hideStaffingBadge = false, onAddAtCell, onEditItem, weekStart, onWeekStartChange }: ScheduleWeekMatrixProps) {
+export function ScheduleWeekMatrix({ todayDate, selectedBranchId = 'ALL', assignments, canEdit, hideStaffingBadge = false, onAddAtCell, onEditItem, weekStart, onWeekStartChange }: ScheduleWeekMatrixProps) {
+  const { rules, branchCodeById } = useStaffingRules(!hideStaffingBadge);
   const effectiveToday = todayDate || dayjs().format('YYYY-MM-DD');
   const currentWeekMonday = getMonday(dayjs(effectiveToday));
   const isCurrentWeek = weekStart.format('YYYY-MM-DD') === currentWeekMonday.format('YYYY-MM-DD');
@@ -147,11 +150,9 @@ export function ScheduleWeekMatrix({ todayDate, assignments, canEdit, hideStaffi
                       style={{ padding: 8, border: `1px solid ${isToday ? '#BFDBFE' : BRAND.border}`, verticalAlign: 'top', background: isToday ? '#F8FAFC' : '#FFFFFF', minHeight: 88 }}
                     >
                       <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                        {!hideStaffingBadge && cellItems.length > 0 && (
-                          <Tag color={cellItems.length < 2 ? 'volcano' : cellItems.length === 2 ? 'green' : 'purple'} style={{ margin: 0, borderRadius: 2, fontSize: 11, fontWeight: 600 }}>
-                            {cellItems.length < 2 ? `Thiếu ${2 - cellItems.length} (${cellItems.length}/2)` : cellItems.length === 2 ? `Đủ (${cellItems.length}/2)` : `Dư +${cellItems.length - 2} (${cellItems.length}/2)`}
-                          </Tag>
-                        )}
+                        {!hideStaffingBadge && computePerBranchStaffingBadges({ cellItems, rules, branchCodeById, selectedBranchId, shiftCode: shift.code }).map((b) => (
+                          <Tooltip key={b.key} title={b.tooltip}><Tag color={b.color} style={{ margin: 0, borderRadius: 2, fontSize: 11, fontWeight: 600 }}>{b.label}</Tag></Tooltip>
+                        ))}
                         {cellItems.map((item) => (
                           <Tooltip key={item.id} title={`${item.employeeName} (${item.employeeStageLabel}) · ${item.statusLabel}${item.note ? ` · ${item.note}` : ''}`}>
                             <div

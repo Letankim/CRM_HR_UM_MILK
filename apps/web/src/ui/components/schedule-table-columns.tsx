@@ -101,21 +101,24 @@ export function buildScheduleColumns({ canEdit, onApprove, onEdit, onDelete }: B
       align: 'right',
       render: (_, r) => {
         const isAbsent = canEdit && !r.isLockedByPayroll && isAbsentShiftRecord(r as unknown as Record<string, unknown>);
+        const isDraft = r.status === 'DRAFT';
         return (
           <RowActionButtons
-            detailTooltip="Xem chi tiết ca làm việc"
+            detailTooltip={isDraft ? 'Xem & chỉnh sửa phân ca chờ duyệt' : 'Xem chi tiết ca làm việc'}
             onViewDetail={() => onEdit(r)}
             menuItems={
               r.isLockedByPayroll || !canEdit
                 ? []
                 : [
-                    ...(r.status === 'DRAFT' && onApprove
+                    ...(isDraft && onApprove
                       ? [{ key: 'approve', icon: <CheckOutlined style={{ color: '#16A34A' }} />, label: 'Duyệt & Phát hành ca', onClick: () => onApprove(r) }]
                       : []),
                     ...(isAbsent
                       ? [{ key: 'adj', icon: <FileAddOutlined style={{ color: '#DC2626' }} />, label: 'Tạo phiếu bổ sung công', onClick: () => onEdit(r) }]
                       : []),
-                    { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa phân ca', onClick: () => onEdit(r) },
+                    ...(isDraft
+                      ? [{ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa phân ca', onClick: () => onEdit(r) }]
+                      : []),
                     { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa phân ca', onClick: () => onDelete(r) },
                   ]
             }

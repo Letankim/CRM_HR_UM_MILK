@@ -142,11 +142,10 @@ export function mapAttendanceEvent(e: AttendanceEvent, ctx: AppContext) {
   const startAt = assign?.start_at || tpl?.start_time || (e.type === 'CHECK_IN' ? e.scheduled_time : '07:00') || '07:00';
   const endAt = assign?.end_at || tpl?.end_time || (e.type === 'CHECK_OUT' ? e.scheduled_time : '12:00') || '12:00';
   const shiftLabel = resolveShiftLabel(ctx, e.shift_code, branch?.id ?? e.branch_id).replace(/\s*\([^)]*\)\s*/g, '').trim();
-  const checkTimeHm = dayjs(e.server_time).format('HH:mm');
-  const checkTimeFormatted = dayjs(e.server_time).format('HH:mm · DD/MM/YYYY');
-  const actualMins = parseHm(checkTimeHm);
-  const lateMins = e.late_minutes || (e.type === 'CHECK_IN' ? Math.max(0, actualMins - parseHm(startAt)) : 0);
-  const earlyMins = e.early_leave_minutes || (e.type === 'CHECK_OUT' ? Math.max(0, parseHm(endAt) - actualMins) : 0);
+  const checkTimeHm = dayjs(e.server_time).format('HH:mm'), checkTimeFormatted = dayjs(e.server_time).format('HH:mm · DD/MM/YYYY');
+  const actualMins = parseHm(checkTimeHm), serverDate = dayjs(e.server_time).format('YYYY-MM-DD');
+  const lateMins = e.late_minutes || (e.type === 'CHECK_IN' ? Math.max(0, serverDate > e.work_date ? actualMins + 1440 - parseHm(startAt) : actualMins - parseHm(startAt)) : 0);
+  const earlyMins = e.early_leave_minutes || (e.type === 'CHECK_OUT' && serverDate <= e.work_date ? Math.max(0, parseHm(endAt) - actualMins) : 0);
   const punc = describePunctuality(e.type, lateMins, earlyMins);
   const kindLabel = e.type === 'CHECK_IN' ? 'Vào ca' : 'Ra ca';
   const employeeName = emp ? `${emp.full_name} (${emp.employee_code})` : e.employee_id;

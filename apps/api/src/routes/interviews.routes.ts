@@ -194,7 +194,8 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     }
 
     const normalizedDecision = body.decision === 'PASSED' || body.decision === 'PASS' ? 'PASS' : body.decision === 'HOLD' ? 'HOLD' : 'FAIL';
-    const computedScore = body.score ?? Math.round(((body.appearance_score + body.attitude_score + body.skill_score) / 3) * 10) / 10;
+    const rawBody = (request.body ?? {}) as Record<string, unknown>, avgScore = Math.round(((body.appearance_score + body.attitude_score + body.skill_score) / 3) * 10) / 10;
+    const computedScore = (rawBody.appearance_score !== undefined || rawBody.attitude_score !== undefined || rawBody.skill_score !== undefined) ? avgScore : (body.score ?? avgScore);
     const updated = await ctx.db.interviews.update(id, body.version, { status: 'COMPLETED', score: computedScore, appearance_score: body.appearance_score, attitude_score: body.attitude_score, skill_score: body.skill_score, decision: normalizedDecision, comment: body.comment || body.result_note || '', decided_at: nowIso() }, actorId);
     if (cand && normalizedDecision !== 'HOLD') {
       await ctx.db.candidates.update(cand.id, cand.version, { status: normalizedDecision === 'PASS' ? 'HIRED' : 'REJECTED' }, actorId);

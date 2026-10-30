@@ -10,6 +10,7 @@ import { SocketEvents } from '../realtime/realtime.js';
 import { queueShiftRegisteredEmail } from '../services/action-email-dispatcher.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
+import { assertNoDuplicateOrOverlappingEmployeeShift, evaluateBranchShiftCapacity, getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { mapAttendanceEvent, migrateLegacyBase64Photos } from './attendance-helpers.js';
 import { findLinkedEmployeeForUser } from './employee-mapper.js';
@@ -75,24 +76,27 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
         const rawIn = myRawEvents.find((e) => e.id === inEv.id);
         if (rawIn) { outEv = mapAttendanceEvent({ ...rawIn, id: `${inEv.id}_auto_out`, type: 'CHECK_OUT', scheduled_time: a.end_at || '12:00', server_time: `${a.work_date}T${a.end_at || '12:00'}:00+07:00`, late_minutes: 0, early_leave_minutes: 0, note: 'Đã hoàn thành ca (Xác nhận bổ sung giờ ra ca)' }, ctx); events.push(outEv); }
       }
-      const isToday = a.work_date === todayStr, isExpired = a.work_date < todayStr || (isToday && nowHm > (a.end_at || '12:00'));
-      const isExpiredToday = isToday && !inEv && nowHm > (a.end_at || '12:00');
-      const isAbsentShift = a.status === 'ABSENT' || (!inEv && a.status === 'PUBLISHED' && isExpired);
+      const win = getShiftCheckoutWindow(a.work_date, a.start_at || '07:00', a.end_at || '12:00', todayStr, nowHm);
+      const isToday = a.work_date === todayStr, isExpiredToday = isToday && !inEv && win.isPastEnd;
+      const isAbsentShift = a.status === 'ABSENT' || (!inEv && a.status === 'PUBLISHED' && win.isPastEnd);
       const isPendingApproval = a.status === 'DRAFT', isDone = a.status === 'COMPLETED' || Boolean(inEv && outEv) || base.hasApprovedAdjustment;
-      const isForgotCheckout = Boolean(inEv && !outEv && !isDone && isExpired);
+      const isForgotCheckout = Boolean(inEv && !outEv && !isDone && win.isCheckoutLocked);
+      const isWithinCheckoutGrace = Boolean(inEv && !outEv && !isDone && win.isWithinCheckoutGrace);
+      const canCheckOutNow = Boolean(inEv && !outEv && !isDone && !win.isCheckoutLocked && (isToday || win.isWithinCheckoutGrace));
       const effectiveStatus = isDone && (base.status === 'PUBLISHED' || base.status === 'ABSENT') ? 'COMPLETED' : base.status;
       const effectiveStatusLabel = effectiveStatus === 'COMPLETED' ? 'Đã hoàn thành' : base.statusLabel;
+      const inTimeHm = inEv ? String(inEv.checkTimeFormatted || '').slice(0, 5) : '';
       const attendanceStatusLabel = isDone ? 'Đã hoàn thành ca'
         : isAbsentShift ? (base.pendingAdjustmentCode ? `Đã gửi bù công (${base.pendingAdjustmentCode} · Chờ duyệt)` : 'Vắng mặt (Quá giờ ca — Cần bổ sung công)')
         : isPendingApproval ? 'Chờ CH / HR duyệt phân ca'
-        : inEv ? (base.pendingAdjustmentCode ? `Đã gửi bù công (${base.pendingAdjustmentCode} · Chờ duyệt)` : isForgotCheckout ? `Quên Ra ca (Vào ${String(inEv.checkTimeFormatted || '').slice(0, 5)} — Cần bổ sung công)` : `Đã vào ca (${String(inEv.checkTimeFormatted || '').slice(0, 5)})`)
+        : inEv ? (base.pendingAdjustmentCode ? `Đã gửi bù công (${base.pendingAdjustmentCode} · Chờ duyệt)` : isForgotCheckout ? `Quên Ra ca (Vào ${inTimeHm} — Cần bổ sung công)` : isWithinCheckoutGrace ? `Đã vào ca (${inTimeHm} · Còn hạn Ra ca đến ${win.graceDeadlineHm})` : `Đã vào ca (${inTimeHm})`)
         : base.pendingSwapCode ? `Chờ duyệt đổi ca (${base.pendingSwapCode})`
         : (base.pendingLeaveCode || base.pendingEmergencyCode) ? `Chờ duyệt nghỉ (${base.pendingLeaveCode || base.pendingEmergencyCode})` : 'Chưa điểm danh';
       const attendanceStatusColor = isDone ? 'green' : isAbsentShift ? (base.pendingAdjustmentCode ? 'orange' : 'red') : isPendingApproval ? 'gold' : inEv ? (base.pendingAdjustmentCode ? 'orange' : isForgotCheckout || inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : base.pendingSwapCode ? 'purple' : (base.pendingLeaveCode || base.pendingEmergencyCode) ? 'gold' : 'default';
-      return { ...base, status: effectiveStatus, statusLabel: effectiveStatusLabel, isToday, isExpiredToday, isAbsentShift: !isDone && isAbsentShift, isForgotCheckout, checkInEvent: inEv, checkOutEvent: outEv, attendanceStatusLabel, attendanceStatusColor };
+      return { ...base, status: effectiveStatus, statusLabel: effectiveStatusLabel, isToday, isExpiredToday, isAbsentShift: !isDone && isAbsentShift, isForgotCheckout, isWithinCheckoutGrace, canCheckOutNow, checkoutGraceDeadlineHm: win.graceDeadlineHm, checkInEvent: inEv, checkOutEvent: outEv, attendanceStatusLabel, attendanceStatusColor };
     }).sort((a, b) => {
-      const rank = (s: { workDate: string; isToday: boolean; status: string; isAbsentShift: boolean; isExpiredToday: boolean; checkInEvent: unknown; checkOutEvent: unknown }) =>
-        s.isToday ? (s.status === 'PUBLISHED' && !s.isAbsentShift && !s.isExpiredToday && !(s.checkInEvent && s.checkOutEvent) ? (s.checkInEvent ? 0 : 1) : s.status === 'PUBLISHED' ? 2 : 3) : s.workDate > todayStr ? 4 : 5;
+      const rank = (s: { workDate: string; isToday: boolean; status: string; isAbsentShift: boolean; isExpiredToday: boolean; canCheckOutNow: boolean; checkInEvent: unknown; checkOutEvent: unknown }) =>
+        s.canCheckOutNow ? 0 : s.isToday ? (s.status === 'PUBLISHED' && !s.isAbsentShift && !s.isExpiredToday && !s.checkInEvent ? 1 : s.status === 'PUBLISHED' ? 2 : 3) : s.workDate > todayStr ? 4 : 5;
       const ra = rank(a), rb = rank(b);
       if (ra !== rb) return ra - rb;
       return a.workDate >= todayStr ? a.workDate.localeCompare(b.workDate) || a.startAt.localeCompare(b.startAt) : b.workDate.localeCompare(a.workDate);
@@ -157,24 +161,27 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     });
   });
 
-  app.post('/api/my-attendance/shifts', { preHandler: requireAuth() }, async (request, reply) => {
-    const user = request.auth!.user;
-    const body = zCreateMyShiftBody.parse(request.body);
-    const emp = await ensurePersonalProfile(ctx, user);
-    const { todayStr, nowHm } = getVnDateAndHm();
+  app.get('/api/my-attendance/shift-availability', { preHandler: requireAuth() }, async (request) => {
+    const q = z.object({ work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng ngày YYYY-MM-DD'), shift_code: z.string().trim().min(1) }).parse(request.query ?? {});
+    const emp = await ensurePersonalProfile(ctx, request.auth!.user);
+    const tpl = ctx.db.shiftTemplates.find((s) => s.code === q.shift_code), fallback = SHIFT_DEFAULT_HOURS[q.shift_code] ?? SHIFT_DEFAULT_HOURS.CA_SANG!;
+    const cap = evaluateBranchShiftCapacity(ctx, { branchId: emp.branch_id, workDate: q.work_date, shiftCode: q.shift_code, startAt: tpl?.start_time ?? fallback.start, endAt: tpl?.end_time ?? fallback.end, emp });
+    return sendSuccess(request, cap.message, cap);
+  });
 
+  app.post('/api/my-attendance/shifts', { preHandler: requireAuth() }, async (request, reply) => {
+    const user = request.auth!.user, body = zCreateMyShiftBody.parse(request.body), emp = await ensurePersonalProfile(ctx, user);
+    const { todayStr, nowHm } = getVnDateAndHm();
     if (body.work_date < todayStr) throw Errors.fieldValidation('work_date', 'OUT_OF_RANGE', `Không được phép đăng ký ca làm việc cho ngày trong quá khứ (${dayjs(body.work_date).format('DD/MM/YYYY')}). Hôm nay là ${dayjs(todayStr).format('DD/MM/YYYY')}.`, body.work_date);
     assertDateNotLockedByPayroll(ctx.db, body.work_date, 'đăng ký ca làm việc');
     const leaveOnDate = ctx.db.leaveRequests.find((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.leave_date === body.work_date && (l.status === 'APPROVED' || l.status === 'PENDING'));
     if (leaveOnDate) throw Errors.fieldValidation('work_date', 'DUPLICATE_VALUE', `Bạn đã đăng ký nghỉ OFF trong ngày ${dayjs(body.work_date).format('DD/MM/YYYY')}, không thể đăng ký ca làm việc trùng ngày nghỉ.`, body.work_date);
-
     const tpl = ctx.db.shiftTemplates.find((s) => s.code === body.shift_code), fallback = SHIFT_DEFAULT_HOURS[body.shift_code] ?? SHIFT_DEFAULT_HOURS.CA_SANG!;
     const startAt = tpl?.start_time ?? fallback.start, endAt = tpl?.end_time ?? fallback.end;
     if (body.work_date === todayStr && nowHm >= endAt) throw Errors.fieldValidation('shift_code', 'OUT_OF_RANGE', `Khung ca này (${startAt} – ${endAt}) trong ngày hôm nay (${dayjs(todayStr).format('DD/MM/YYYY')}) đã trôi qua (hiện tại là ${nowHm}). Không được phép đăng ký ca đã kết thúc, vui lòng chọn ca chưa kết thúc hoặc đăng ký cho ngày tiếp theo.`, body.shift_code);
-
-    const dup = ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.shift_code === body.shift_code);
-    if (dup) throw Errors.fieldValidation('shift_code', 'DUPLICATE_VALUE', `Bạn đã đăng ký ca này trong ngày ${dayjs(body.work_date).format('DD/MM/YYYY')} rồi`, body.shift_code);
-
+    assertNoDuplicateOrOverlappingEmployeeShift(ctx, { emp, workDate: body.work_date, shiftCode: body.shift_code, startAt, endAt });
+    const cap = evaluateBranchShiftCapacity(ctx, { branchId: emp.branch_id, workDate: body.work_date, shiftCode: body.shift_code, startAt, endAt });
+    if (cap.isFullOrExceeded) throw Errors.fieldValidation('shift_code', 'OUT_OF_RANGE', cap.message, body.shift_code);
     const created = await ctx.db.shiftAssignments.insert({
       schedule_week_id: `WK-${body.work_date.slice(0, 7)}`, employee_id: emp.id, branch_id: emp.branch_id, work_date: body.work_date,
       shift_template_id: tpl?.id ?? '', start_at: startAt, end_at: endAt, status: 'DRAFT', source: 'EMPLOYEE_REGISTER',

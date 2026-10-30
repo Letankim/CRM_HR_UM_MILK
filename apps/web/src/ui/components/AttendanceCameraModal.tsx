@@ -43,7 +43,8 @@ export function evaluateShiftPunctuality(kind: 'CHECK_IN' | 'CHECK_OUT', nowHm: 
     const diff = cur - parseHm(startAt);
     return diff > 0 ? { status: 'LATE' as const, color: 'volcano', label: `Vào trễ ${formatDurationVi(diff)} (Quy định: ${startAt})` } : { status: 'ON_TIME' as const, color: 'green', label: `Vào đúng giờ (Quy định: ${startAt})` };
   }
-  const diff = parseHm(endAt) - cur;
+  let diff = parseHm(endAt) - cur;
+  if (diff > 720) diff -= 1440;
   return diff > 0 ? { status: 'EARLY_LEAVE' as const, color: 'orange', label: `Ra sớm ${formatDurationVi(diff)} (Quy định: ${endAt})` } : { status: 'ON_TIME' as const, color: 'green', label: `Ra đúng giờ (Quy định: ${endAt})` };
 }
 

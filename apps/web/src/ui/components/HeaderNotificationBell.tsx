@@ -137,10 +137,10 @@ export function HeaderNotificationBell({
         style={{
           height: 34, minWidth: 34, width: unreadCount > 0 ? 'auto' : 34,
           paddingInline: unreadCount > 0 ? 9 : 0, borderRadius: 6, borderColor: BRAND.headerControlBorder,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, lineHeight: 1, verticalAlign: 'middle',
         }}
       >
-        {!notifsQ.isLoading && <BellOutlined style={{ fontSize: 15, color: '#0F172A' }} />}
+        {!notifsQ.isLoading && <BellOutlined style={{ fontSize: 15, color: '#0F172A', display: 'inline-flex', alignItems: 'center' }} />}
         {unreadCount > 0 && (
           <span
             className="num"

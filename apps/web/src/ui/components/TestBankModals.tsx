@@ -4,6 +4,7 @@ import { Button, Col, Descriptions, Form, Input, InputNumber, Modal, Row, Select
 import { CloseOutlined, EditOutlined, HistoryOutlined, PlusOutlined, SaveOutlined, SettingOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { StatusTag } from '../StatusTag';
+import { useEmployeeSearchSelect } from '../hooks/useEmployeeSearchSelect';
 import { BaseDetailDrawer } from './BaseDetailDrawer';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
 import { AttemptHistoryTable } from './ExamTestCenter';
@@ -36,6 +37,11 @@ export function TestAssignmentFormModal({
   tests: Record<string, unknown>[]; employees: { value: string; label: string }[];
   onClose: () => void; onSubmit: (values: Record<string, unknown>) => void;
 }) {
+  const empSelect = useEmployeeSearchSelect({ initialOptions: employees, enabled: open });
+  const empOptions = editing?.employee_id && !empSelect.options.some((e) => e.value === String(editing.employee_id))
+    ? [{ value: String(editing.employee_id), label: String(editing.employeeName || editing.employee_id) }, ...empSelect.options]
+    : empSelect.options;
+
   return (
     <Modal
       width={660}
@@ -59,11 +65,11 @@ export function TestAssignmentFormModal({
         </Form.Item>
         {editing ? (
           <Form.Item name="employee_id" label="Nhân sự nhận đề" rules={[{ required: true, message: 'Vui lòng chọn nhân sự' }]}>
-            <Select showSearch optionFilterProp="label" placeholder="Chọn nhân sự nhận đề" options={employees} />
+            <Select showSearch placeholder="Tìm theo mã NV, họ tên, chi nhánh..." options={empOptions} loading={empSelect.loading} onSearch={empSelect.onSearch} filterOption={empSelect.filterOption} onDropdownVisibleChange={empSelect.onDropdownVisibleChange} />
           </Form.Item>
         ) : (
           <Form.Item name="employee_ids" label="Nhân sự nhận đề" rules={[{ required: true, message: 'Chọn ít nhất 1 nhân sự' }]}>
-            <Select mode="multiple" allowClear showSearch optionFilterProp="label" placeholder="Chọn một hoặc nhiều nhân sự" options={employees} />
+            <Select mode="multiple" allowClear showSearch placeholder="Tìm và chọn một hoặc nhiều nhân sự..." options={empOptions} loading={empSelect.loading} onSearch={empSelect.onSearch} filterOption={empSelect.filterOption} onDropdownVisibleChange={empSelect.onDropdownVisibleChange} />
           </Form.Item>
         )}
         <Row gutter={12}>

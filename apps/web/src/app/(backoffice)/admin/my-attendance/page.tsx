@@ -40,17 +40,11 @@ function cleanShiftName(raw: unknown): string {
 }
 
 export default function MyAttendancePage() {
-  const qc = useQueryClient();
-  const { message } = App.useApp();
-  const [selectedShiftId, setSelectedShiftId] = useState<string>('');
-  const [cameraKind, setCameraKind] = useState<'CHECK_IN' | 'CHECK_OUT' | null>(null);
-  const [detailEvent, setDetailEvent] = useState<AttendanceEventRow | null>(null);
-  const [detailReq, setDetailReq] = useState<ScheduleDetailTarget | null>(null);
-  const [addShiftOpen, setAddShiftOpen] = useState(false);
-  const [adjOpen, setAdjOpen] = useState(false);
-  const [presetAdjShiftId, setPresetAdjShiftId] = useState<string | undefined>();
-  const myEventsPag = useClientPagination(10, 'ca');
-  const myAdjPag = useClientPagination(10, 'phiếu');
+  const qc = useQueryClient(), { message } = App.useApp();
+  const [selectedShiftId, setSelectedShiftId] = useState(''), [cameraKind, setCameraKind] = useState<'CHECK_IN' | 'CHECK_OUT' | null>(null);
+  const [detailEvent, setDetailEvent] = useState<AttendanceEventRow | null>(null), [detailReq, setDetailReq] = useState<ScheduleDetailTarget | null>(null);
+  const [addShiftOpen, setAddShiftOpen] = useState(false), [adjOpen, setAdjOpen] = useState(false), [presetAdjShiftId, setPresetAdjShiftId] = useState<string | undefined>();
+  const myEventsPag = useClientPagination(10, 'ca'), myAdjPag = useClientPagination(10, 'phiếu');
 
   const myQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<MyAttendanceResponse>('/my-attendance') });
   const refreshAll = () => ['my-attendance', 'attendance-all', 'schedules', 'nv-attendance', 'nv-schedules', 'nv-swaps'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
@@ -61,19 +55,16 @@ export default function MyAttendancePage() {
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Điểm danh thất bại'),
   });
 
-  const todayDate = myQ.data?.todayDate || dayjs().format('YYYY-MM-DD');
-  const nowHm = myQ.data?.nowTimeHm || dayjs().format('HH:mm');
-  const profile = myQ.data?.profile;
-  const shifts = myQ.data?.shifts ?? [];
-  const events = myQ.data?.events ?? [];
-  const leaves = myQ.data?.leaves ?? [];
-  const adjustments = myQ.data?.adjustments ?? [];
-  const activeShift = shifts.find((s) => String(s.id) === selectedShiftId) ?? shifts.find((s) => s.workDate === todayDate && s.status === 'PUBLISHED' && !s.isAbsentShift && !s.isExpiredToday && !(s.checkInEvent && s.checkOutEvent)) ?? shifts.find((s) => s.workDate === todayDate && s.status === 'PUBLISHED') ?? shifts.find((s) => s.workDate === todayDate) ?? shifts[0] ?? null;
+  const todayDate = myQ.data?.todayDate || dayjs().format('YYYY-MM-DD'), nowHm = myQ.data?.nowTimeHm || dayjs().format('HH:mm');
+  const profile = myQ.data?.profile, shifts = myQ.data?.shifts ?? [], events = myQ.data?.events ?? [], leaves = myQ.data?.leaves ?? [], adjustments = myQ.data?.adjustments ?? [];
+  const activeShift = shifts.find((s) => String(s.id) === selectedShiftId) ?? shifts.find((s) => Boolean(s.canCheckOutNow)) ?? shifts.find((s) => s.workDate === todayDate && s.status === 'PUBLISHED' && !s.isAbsentShift && !s.isExpiredToday && !(s.checkInEvent && s.checkOutEvent)) ?? shifts.find((s) => s.workDate === todayDate && s.status === 'PUBLISHED') ?? shifts.find((s) => s.workDate === todayDate) ?? shifts[0] ?? null;
   const isSelectedToday = Boolean(activeShift && activeShift.workDate === todayDate);
   const checkInEvent = activeShift?.checkInEvent ?? null;
   const checkOutEvent = activeShift?.checkOutEvent ?? null;
   const isSelectedDone = Boolean(activeShift && (activeShift.status === 'COMPLETED' || (checkInEvent && checkOutEvent)));
   const isSelectedExpired = Boolean(activeShift && (activeShift.status === 'ABSENT' || activeShift.isAbsentShift || (!checkInEvent && activeShift.status === 'PUBLISHED' && (activeShift.workDate < todayDate || (isSelectedToday && (activeShift.isExpiredToday || nowHm > (activeShift.endAt || '12:00')))))));
+  const isSelectedForgotOut = Boolean(activeShift && !isSelectedDone && checkInEvent && !checkOutEvent && Boolean(activeShift.isForgotCheckout));
+  const canSelectedCheckOut = Boolean(activeShift && !isSelectedDone && checkInEvent && !checkOutEvent && !isSelectedForgotOut && (Boolean(activeShift.canCheckOutNow) || isSelectedToday));
   const isSelectedApproved = Boolean(activeShift && activeShift.status !== 'DRAFT');
 
   return (
@@ -106,7 +97,7 @@ export default function MyAttendancePage() {
                 options={shifts.map((s) => {
                   const isT = s.workDate === todayDate;
                   const exp = s.status === 'ABSENT' || Boolean(s.isAbsentShift) || (!s.checkInEvent && s.status === 'PUBLISHED' && (s.workDate < todayDate || (isT && (s.isExpiredToday || nowHm > (s.endAt || '12:00')))));
-                  const state = s.status === 'DRAFT' ? 'Chờ CH / HR duyệt phân ca' : (s.status === 'COMPLETED' || (s.checkInEvent && s.checkOutEvent)) ? 'Đã hoàn thành ca' : exp ? 'Vắng mặt (Quá giờ ca — Cần bù công)' : s.checkInEvent ? 'Đã vào ca (Chờ Ra ca)' : isT ? 'Hôm nay · Chưa vào ca' : 'Đã duyệt · Chưa tới ngày';
+                  const state = s.status === 'DRAFT' ? 'Chờ CH / HR duyệt phân ca' : (s.status === 'COMPLETED' || (s.checkInEvent && s.checkOutEvent)) ? 'Đã hoàn thành ca' : exp ? 'Vắng mặt (Quá giờ ca — Cần bù công)' : (s.checkInEvent && !s.checkOutEvent && Boolean(s.isForgotCheckout)) ? 'Quên Ra ca (Quá 1h — Cần bù công)' : (s.checkInEvent && !s.checkOutEvent && Boolean(s.isWithinCheckoutGrace)) ? `Đã vào ca (Còn hạn Ra ca đến ${String(s.checkoutGraceDeadlineHm || '')})` : s.checkInEvent ? 'Đã vào ca (Chờ Ra ca)' : isT ? 'Hôm nay · Chưa vào ca' : 'Đã duyệt · Chưa tới ngày';
                   return { value: String(s.id), label: `${isT ? '[HÔM NAY] ' : ''}${dayjs(s.workDate).format('DD/MM/YYYY')} · ${cleanShiftName(s.shiftLabel)} (${s.startAt || '07:00'} – ${s.endAt || '12:00'}) · ${state}` };
                 })}
               />
@@ -126,10 +117,15 @@ export default function MyAttendancePage() {
                 <Alert type="warning" showIcon message="Ca đăng ký này đang chờ Quản lý cửa hàng hoặc HR phê duyệt. Chỉ được phép chấm công Vào/Ra ca sau khi đã chuyển sang Đã phân ca chính thức." />
               ) : isSelectedDone ? (
                 <Alert type="success" showIcon message="Bạn đã hoàn thành đầy đủ ca làm việc này." />
-              ) : isSelectedExpired ? (
+              ) : (isSelectedExpired || isSelectedForgotOut) ? (
                 <Space direction="vertical" size={8} style={{ width: '100%' }}>
                   {(activeShift as unknown as Record<string, unknown>)?.pendingAdjustmentCode ? (
                     <Alert type="warning" showIcon message={`Ca làm việc này đã gửi Phiếu bổ sung công (${String((activeShift as unknown as Record<string, unknown>).pendingAdjustmentCode)}) và đang chờ Cửa hàng / HR phê duyệt.`} />
+                  ) : isSelectedForgotOut ? (
+                    <>
+                      <Alert type="error" showIcon message={`Ca làm việc (${activeShift?.startAt} – ${activeShift?.endAt}) đã quá thời hạn 60 phút sau giờ kết thúc ca mà chưa Ra ca. Vui lòng gửi Phiếu bổ sung công.`} />
+                      <Button type="primary" danger block icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(String(activeShift?.id)); setAdjOpen(true); }}>Làm phiếu bổ sung công (Quên Ra ca)</Button>
+                    </>
                   ) : (
                     <>
                       <Alert type="error" showIcon message={`Ca làm việc (${activeShift?.startAt} – ${activeShift?.endAt}) đã qua giờ kết thúc ca mà chưa điểm danh nên đã khóa Vào ca và chuyển sang Vắng mặt.`} />
@@ -137,12 +133,15 @@ export default function MyAttendancePage() {
                     </>
                   )}
                 </Space>
+              ) : canSelectedCheckOut ? (
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  {Boolean(activeShift?.isWithinCheckoutGrace) && <Alert type="info" showIcon message={`Ca đã qua giờ kết thúc (${activeShift?.endAt}) nhưng vẫn trong 60 phút cho phép — Bạn có thể Ra ca đến ${String(activeShift?.checkoutGraceDeadlineHm || '')}.`} />}
+                  <Button type="primary" size="large" block icon={<CameraOutlined />} onClick={() => setCameraKind('CHECK_OUT')}>Ra ca của bạn (Chụp ảnh Camera &amp; GPS)</Button>
+                </Space>
               ) : !isSelectedToday ? (
                 <Alert type="warning" showIcon message={`Chỉ được điểm danh đúng ngày đăng ký ca (${dayjs(activeShift?.workDate).format('DD/MM/YYYY')}).`} />
               ) : !checkInEvent ? (
                 <Button type="primary" size="large" block icon={<CameraOutlined />} onClick={() => setCameraKind('CHECK_IN')}>Vào ca của bạn (Chụp ảnh Camera &amp; GPS)</Button>
-              ) : !checkOutEvent ? (
-                <Button type="primary" size="large" block icon={<CameraOutlined />} onClick={() => setCameraKind('CHECK_OUT')}>Ra ca của bạn (Chụp ảnh Camera &amp; GPS)</Button>
               ) : (
                 <Alert type="success" showIcon message="Bạn đã hoàn thành đầy đủ Vào ca & Ra ca cho ca làm việc này." />
               )}

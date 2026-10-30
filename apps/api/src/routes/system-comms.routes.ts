@@ -63,7 +63,7 @@ export async function systemCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   };
 
   const mapPolicy = (p: ReturnType<typeof ctx.db.policies.all>[number], u?: { id: string; role: string; username: string; display_name?: string }) => ({
-    ...p, description: p.title || p.key, content_html: p.note || '',
+    ...p, value: p.value_json || '', description: p.title || p.key, content_html: p.note || '',
     creatorName: ctx.db.users.get(p.created_by)?.display_name || p.approved_by || 'Hệ thống',
     isMine: Boolean(u && (p.created_by === u.id || p.approved_by === u.username || p.approved_by === u.display_name)),
     canEdit: Boolean(u && canModifyRecord(u, p)),

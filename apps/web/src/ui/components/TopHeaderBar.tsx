@@ -1,6 +1,6 @@
 'use client';
 
-import { Avatar, Breadcrumb, Button, Dropdown, Flex, Layout, Space, Spin, Tag, Typography } from 'antd';
+import { Avatar, Breadcrumb, Button, Dropdown, Flex, Layout, Spin, Tag, Typography } from 'antd';
 import {
   DownOutlined,
   KeyOutlined,
@@ -80,7 +80,7 @@ export function TopHeaderBar({
           className="umbm-header-pill"
           icon={isMobile ? <MenuOutlined /> : collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           onClick={onToggleNav}
-          style={{ width: 32, height: 32, borderRadius: 6, borderColor: BRAND.headerControlBorder, flexShrink: 0 }}
+          style={{ width: 32, height: 32, borderRadius: 6, borderColor: BRAND.headerControlBorder, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
           aria-label="Đóng mở thanh điều hướng"
         />
         {isMobile ? (
@@ -98,14 +98,14 @@ export function TopHeaderBar({
         )}
       </Flex>
 
-      <Space size={10}>
+      <Flex align="center" gap={10} style={{ lineHeight: 1 }}>
         {!isMobile && can('integration.read') && (
           <Button
             size="small"
             className="umbm-header-pill"
             icon={<SafetyCertificateOutlined style={{ color: BRAND.primary }} />}
             onClick={() => router.push('/admin/integrations')}
-            style={{ height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder, paddingInline: 10 }}
+            style={{ height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder, paddingInline: 10, display: 'inline-flex', alignItems: 'center' }}
           >
             Trợ lý đối soát
           </Button>
@@ -125,7 +125,7 @@ export function TopHeaderBar({
             className="umbm-header-pill"
             icon={<ShopOutlined />}
             onClick={() => router.push('/nv')}
-            style={{ height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder, paddingInline: 10 }}
+            style={{ height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder, paddingInline: 10, display: 'inline-flex', alignItems: 'center' }}
           >
             Cổng NV
           </Button>
@@ -192,7 +192,7 @@ export function TopHeaderBar({
             )}
           </div>
         </Dropdown>
-      </Space>
+      </Flex>
 
       <UserProfileModal open={profileTab !== null} initialTab={profileTab ?? 'info'} onClose={() => setProfileTab(null)} />
     </Layout.Header>

@@ -121,12 +121,16 @@ export default function EmployeeHome() {
                   <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>Đã hoàn thành ca</Tag>
                 ) : (s.status === 'ABSENT' || Boolean(s.isAbsentShift)) ? (
                   <Space size={6}><Tag color="red" style={{ margin: 0 }}>Vắng mặt (Quá giờ ca)</Tag><Link href="/nv/cong"><Button size="small" danger>Bổ sung công</Button></Link></Space>
+                ) : Boolean(s.isForgotCheckout) ? (
+                  <Space size={6}><Tag color="volcano" style={{ margin: 0 }}>Quên Ra ca (&gt;1h)</Tag><Link href="/nv/cong"><Button size="small" danger>Bổ sung công</Button></Link></Space>
+                ) : (Boolean(s.canCheckOutNow) || (isTodayShift && inEv && !outEv)) ? (
+                  <Space size={6}><Tag color={s.isWithinCheckoutGrace ? 'processing' : 'green'} style={{ margin: 0 }}>{s.isWithinCheckoutGrace ? `Còn hạn Ra ca đến ${String(s.checkoutGraceDeadlineHm || '')}` : 'Đã vào ca'}</Tag><Link href="/nv/diem-danh"><Button size="small" type="primary" icon={<CheckCircleOutlined />}>Ra ca</Button></Link></Space>
                 ) : !isTodayShift ? (
                   <Tag color="gold" style={{ margin: 0 }}>Ca ngày {dayjs(String(s.workDate)).format('DD/MM')}</Tag>
                 ) : !inEv ? (
                   <Link href="/nv/diem-danh"><Button size="small" type="primary" icon={<CheckCircleOutlined />}>Vào ca</Button></Link>
                 ) : (
-                  <Space size={6}><Tag color="green" style={{ margin: 0 }}>Đã vào ca</Tag><Link href="/nv/diem-danh"><Button size="small" type="primary" icon={<CheckCircleOutlined />}>Ra ca</Button></Link></Space>
+                  <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã hoàn thành ca</Tag>
                 )}
               </div>
             );

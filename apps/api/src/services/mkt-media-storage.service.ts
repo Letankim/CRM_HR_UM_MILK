@@ -5,18 +5,9 @@ import type { MediaAsset } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { dayjs } from '../lib/time.js';
 
-const ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
-const SAFE_KEY_RE = /^[a-zA-Z0-9_-]{6,64}$/;
-const MAX_MEDIA_RAM_CACHE = 40;
-
-export interface CachedMktMediaMeta {
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-}
-
-const mktMediaRamCache = new Map<string, Buffer>();
-const mktMediaMetaRamCache = new Map<string, CachedMktMediaMeta>();
+const ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/i, SAFE_KEY_RE = /^[a-zA-Z0-9_-]{6,64}$/, MAX_MEDIA_RAM_CACHE = 40;
+export interface CachedMktMediaMeta { fileName: string; mimeType: string; sizeBytes: number; }
+const mktMediaRamCache = new Map<string, Buffer>(), mktMediaMetaRamCache = new Map<string, CachedMktMediaMeta>();
 
 const CATEGORY_VI: Record<string, string> = {
   BANNER: 'Banner truyền thông', SOP_DOC: 'Tài liệu quy trình (SOP)',
@@ -63,10 +54,7 @@ export function toMktCacheKey(raw: string): string {
 function putMediaRamCache(key: string, buf: Buffer): void {
   if (!key) return;
   mktMediaRamCache.delete(key);
-  if (mktMediaRamCache.size >= MAX_MEDIA_RAM_CACHE) {
-    const oldest = mktMediaRamCache.keys().next().value;
-    if (oldest) mktMediaRamCache.delete(oldest);
-  }
+  if (mktMediaRamCache.size >= MAX_MEDIA_RAM_CACHE) { const oldest = mktMediaRamCache.keys().next().value; if (oldest) mktMediaRamCache.delete(oldest); }
   mktMediaRamCache.set(key, buf);
 }
 
@@ -189,8 +177,12 @@ function buildFallbackMktBannerSvg(asset?: Partial<MediaAsset>): Buffer {
 }
 
 export async function loadMktMediaFile(ctx: AppContext, idOrFileId: string): Promise<{ buffer: Buffer; mimeType: string; fileName: string } | null> {
-  const asset = ctx.db.mediaAssets.get(idOrFileId) ?? ctx.db.mediaAssets.all(true).find((m) => m.id === idOrFileId || m.code === idOrFileId || m.drive_file_id === idOrFileId);
-  if (!asset && ULID_RE.test(idOrFileId)) return null;
+  const activeAssets = ctx.db.mediaAssets.all();
+  const asset = ctx.db.mediaAssets.get(idOrFileId) ?? activeAssets.find((m) => m.id === idOrFileId || m.code === idOrFileId || m.drive_file_id === idOrFileId);
+  if (!asset) {
+    const deletedMatch = ctx.db.mediaAssets.all(true).find((m) => m.is_deleted && (m.id === idOrFileId || m.code === idOrFileId || m.drive_file_id === idOrFileId));
+    if (deletedMatch || ULID_RE.test(idOrFileId)) return null;
+  }
   const rawSource = String(asset ? asset.drive_file_id : idOrFileId).trim();
   const driveId = extractGoogleDriveFileId(rawSource), cacheKey = toMktCacheKey(driveId ?? rawSource);
   const cachedMeta = cacheKey ? readMediaMetaCache(ctx, cacheKey) : null;

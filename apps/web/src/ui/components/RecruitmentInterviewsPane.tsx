@@ -76,12 +76,18 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa thất bại'),
   });
 
+  const calcAvgScore = (a: unknown, b: unknown, c: unknown) =>
+    Math.round((((Number(a ?? 0) || 0) + (Number(b ?? 0) || 0) + (Number(c ?? 0) || 0)) / 3) * 10) / 10;
+
   const openEvalModal = (r: Record<string, unknown>) => {
     setEvalTarget(r);
+    const hasPrev = Boolean(r.decision && r.decision !== 'PENDING');
+    const app = hasPrev ? Number(r.appearance_score ?? 0) : 90;
+    const att = hasPrev ? Number(r.attitude_score ?? 0) : 90;
+    const skl = hasPrev ? Number(r.skill_score ?? 0) : 85;
     evalForm.setFieldsValue({
-      appearance_score: Number(r.appearance_score || 90), attitude_score: Number(r.attitude_score || 90),
-      skill_score: Number(r.skill_score || 85), score: Number(r.score || 88),
-      decision: r.decision && r.decision !== 'PENDING' ? r.decision : 'PASS',
+      appearance_score: app, attitude_score: att, skill_score: skl, score: calcAvgScore(app, att, skl),
+      decision: hasPrev ? r.decision : 'PASS',
       comment: String(r.comment || 'Thái độ tích cực, phù hợp khung ca đăng ký tại cửa hàng'),
     });
   };
@@ -105,6 +111,7 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
   }, [externalEditTarget]);
 
   const rows = ivQ.data?.data ?? [];
+  const liveViewingIv = viewingIv ? (rows.find((x) => x.id === viewingIv.id) ?? viewingIv) : null;
   const exportIvs = (list: Record<string, unknown>[]) => exportToExcel({ fileName: 'Lich_phong_van.xls', sheetTitle: 'Danh sách Lịch Phỏng vấn & Kết quả HR', rows: list, columns: [{ header: 'Mã UV', key: 'candidateCode' }, { header: 'Ứng viên', key: 'candidateName' }, { header: 'Chi nhánh', key: 'branchName' }, { header: 'Người phỏng vấn', key: 'interviewerLabel' }, { header: 'Thời gian', key: 'scheduled_at' }, { header: 'Thời lượng (phút)', key: 'duration_minutes' }, { header: 'Google Meet', key: 'meet_link' }, { header: 'Điểm', key: 'score' }, { header: 'Quyết định HR', key: 'decision' }, { header: 'Nhận xét', key: 'comment' }] });
 
   return (
@@ -161,32 +168,32 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
         ]}
       />
 
-      <BaseDetailDrawer open={Boolean(viewingIv)} title={viewingIv ? `Chi tiết Phỏng vấn: ${viewingIv.candidateName}` : 'Chi tiết phỏng vấn'} onClose={() => setViewingIv(null)} extra={<>{Boolean(viewingIv?.meet_link) && <Button size="small" type="primary" icon={<VideoCameraOutlined />} href={String(viewingIv?.meet_link)} target="_blank">Mở Google Meet</Button>}{canManageRec && viewingIv && <Button size="small" icon={<ClockCircleOutlined />} onClick={() => { const iv = viewingIv; setViewingIv(null); openReschedModal(iv); }}>Chỉnh sửa lịch</Button>}{canManageRec && viewingIv && <Button size="small" icon={<EditOutlined />} onClick={() => { const iv = viewingIv; setViewingIv(null); openEvalModal(iv); }}>Chấm điểm HR</Button>}</>}>
-        {viewingIv && (
+      <BaseDetailDrawer open={Boolean(liveViewingIv)} title={liveViewingIv ? `Chi tiết Phỏng vấn: ${liveViewingIv.candidateName}` : 'Chi tiết phỏng vấn'} onClose={() => setViewingIv(null)} extra={<>{Boolean(liveViewingIv?.meet_link) && <Button size="small" type="primary" icon={<VideoCameraOutlined />} href={String(liveViewingIv?.meet_link)} target="_blank">Mở Google Meet</Button>}{canManageRec && liveViewingIv && <Button size="small" icon={<ClockCircleOutlined />} onClick={() => { const iv = liveViewingIv; setViewingIv(null); openReschedModal(iv); }}>Chỉnh sửa lịch</Button>}{canManageRec && liveViewingIv && <Button size="small" icon={<EditOutlined />} onClick={() => { const iv = liveViewingIv; setViewingIv(null); openEvalModal(iv); }}>Chấm điểm HR</Button>}</>}>
+        {liveViewingIv && (
           <Descriptions size="small" bordered column={2}>
-            <Descriptions.Item label="Ứng viên">{String(viewingIv.candidateName)} {viewingIv.candidateCode ? <Tag color="geekblue">{String(viewingIv.candidateCode)}</Tag> : null}</Descriptions.Item>
-            <Descriptions.Item label="Số điện thoại">{String(viewingIv.candidatePhone || '—')}</Descriptions.Item>
-            <Descriptions.Item label="Vị trí ứng tuyển">{String(viewingIv.positionLabel || '—')}</Descriptions.Item>
-            <Descriptions.Item label="Chi nhánh">{String(viewingIv.branchName || '—')}</Descriptions.Item>
-            <Descriptions.Item label="Thời gian phỏng vấn">{String(viewingIv.scheduled_at || '').slice(0, 16).replace('T', ' ')} ({String(viewingIv.duration_minutes ?? 30)} phút)</Descriptions.Item>
-            <Descriptions.Item label="Phòng họp trực tuyến">{viewingIv.meet_link ? <Button size="small" type="link" icon={<VideoCameraOutlined />} href={String(viewingIv.meet_link)} target="_blank" style={{ padding: 0, height: 'auto' }}>{String(viewingIv.meet_link)}</Button> : '—'}</Descriptions.Item>
-            <Descriptions.Item label="Hội đồng phỏng vấn" span={2}>{String(viewingIv.interviewerLabel || viewingIv.interviewer_id || '—')}</Descriptions.Item>
-            <Descriptions.Item label="Trạng thái xác nhận">{viewingIv.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />}>Cần đổi lịch</Tag> : viewingIv.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã xác nhận</Tag> : <Tag>Chờ xác nhận</Tag>}</Descriptions.Item>
-            <Descriptions.Item label="Quyết định HR"><Space size={6}><StatusTag value={String(viewingIv.decision)} />{viewingIv.decision !== 'PENDING' && <Tag color="blue">{String(viewingIv.score)} điểm</Tag>}</Space></Descriptions.Item>
-            {Boolean(viewingIv.reschedule_reason) && <Descriptions.Item label="Lý do xin đổi lịch" span={2}>{String(viewingIv.reschedule_reason)}</Descriptions.Item>}
-            <Descriptions.Item label="Điểm thành phần" span={2}>Tác phong: <b>{String(viewingIv.appearance_score ?? 0)}</b> · Thái độ: <b>{String(viewingIv.attitude_score ?? 0)}</b> · Kỹ năng: <b>{String(viewingIv.skill_score ?? 0)}</b></Descriptions.Item>
-            <Descriptions.Item label="Nhận xét của HR" span={2}>{String(viewingIv.comment || 'Chưa có nhận xét đánh giá')}</Descriptions.Item>
+            <Descriptions.Item label="Ứng viên">{String(liveViewingIv.candidateName)} {liveViewingIv.candidateCode ? <Tag color="geekblue">{String(liveViewingIv.candidateCode)}</Tag> : null}</Descriptions.Item>
+            <Descriptions.Item label="Số điện thoại">{String(liveViewingIv.candidatePhone || '—')}</Descriptions.Item>
+            <Descriptions.Item label="Vị trí ứng tuyển">{String(liveViewingIv.positionLabel || '—')}</Descriptions.Item>
+            <Descriptions.Item label="Chi nhánh">{String(liveViewingIv.branchName || '—')}</Descriptions.Item>
+            <Descriptions.Item label="Thời gian phỏng vấn">{String(liveViewingIv.scheduled_at || '').slice(0, 16).replace('T', ' ')} ({String(liveViewingIv.duration_minutes ?? 30)} phút)</Descriptions.Item>
+            <Descriptions.Item label="Phòng họp trực tuyến">{liveViewingIv.meet_link ? <Button size="small" type="link" icon={<VideoCameraOutlined />} href={String(liveViewingIv.meet_link)} target="_blank" style={{ padding: 0, height: 'auto' }}>{String(liveViewingIv.meet_link)}</Button> : '—'}</Descriptions.Item>
+            <Descriptions.Item label="Hội đồng phỏng vấn" span={2}>{String(liveViewingIv.interviewerLabel || liveViewingIv.interviewer_id || '—')}</Descriptions.Item>
+            <Descriptions.Item label="Trạng thái xác nhận">{liveViewingIv.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />}>Cần đổi lịch</Tag> : liveViewingIv.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã xác nhận</Tag> : <Tag>Chờ xác nhận</Tag>}</Descriptions.Item>
+            <Descriptions.Item label="Quyết định HR"><Space size={6}><StatusTag value={String(liveViewingIv.decision)} />{liveViewingIv.decision !== 'PENDING' && <Tag color="blue">{String(liveViewingIv.score)} điểm</Tag>}</Space></Descriptions.Item>
+            {Boolean(liveViewingIv.reschedule_reason) && <Descriptions.Item label="Lý do xin đổi lịch" span={2}>{String(liveViewingIv.reschedule_reason)}</Descriptions.Item>}
+            <Descriptions.Item label="Điểm thành phần" span={2}>Tác phong: <b>{String(liveViewingIv.appearance_score ?? 0)}</b> · Thái độ: <b>{String(liveViewingIv.attitude_score ?? 0)}</b> · Kỹ năng: <b>{String(liveViewingIv.skill_score ?? 0)}</b></Descriptions.Item>
+            <Descriptions.Item label="Nhận xét của HR" span={2}>{String(liveViewingIv.comment || 'Chưa có nhận xét đánh giá')}</Descriptions.Item>
           </Descriptions>
         )}
       </BaseDetailDrawer>
 
       <Modal width={620} open={Boolean(evalTarget)} forceRender destroyOnHidden title={evalTarget ? `Chấm điểm & Quyết định Phỏng vấn: ${evalTarget.candidateName}` : 'Đánh giá phỏng vấn'} okText="Lưu kết quả phỏng vấn" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined />, loading: putMut.isPending }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={() => setEvalTarget(null)} onOk={() => evalForm.submit()}>
-        <Form form={evalForm} layout="vertical" onFinish={(v) => putMut.mutate({ url: `/admin/interviews/${evalTarget!.id}/evaluate`, body: { ...v, version: evalTarget!.version } })}>
+        <Form form={evalForm} layout="vertical" onValuesChange={(changed, all) => { if ('appearance_score' in changed || 'attitude_score' in changed || 'skill_score' in changed) evalForm.setFieldValue('score', calcAvgScore(all.appearance_score, all.attitude_score, all.skill_score)); }} onFinish={(v) => { const score = calcAvgScore(v.appearance_score, v.attitude_score, v.skill_score); putMut.mutate({ url: `/admin/interviews/${evalTarget!.id}/evaluate`, body: { ...v, score, version: evalTarget!.version } }); }}>
           <Row gutter={12}>
             <Col span={8}><Form.Item name="appearance_score" label="Điểm tác phong (0-100)" rules={[{ required: true }]}><InputNumber min={0} max={100} style={{ width: '100%' }} /></Form.Item></Col>
             <Col span={8}><Form.Item name="attitude_score" label="Điểm thái độ (0-100)" rules={[{ required: true }]}><InputNumber min={0} max={100} style={{ width: '100%' }} /></Form.Item></Col>
             <Col span={8}><Form.Item name="skill_score" label="Điểm kỹ năng (0-100)" rules={[{ required: true }]}><InputNumber min={0} max={100} style={{ width: '100%' }} /></Form.Item></Col>
-            <Col span={12}><Form.Item name="score" label="Điểm tổng kết (0-100)"><InputNumber min={0} max={100} style={{ width: '100%' }} /></Form.Item></Col>
+            <Col span={12}><Form.Item name="score" label="Điểm tổng kết TB (Tự động)"><InputNumber min={0} max={100} disabled style={{ width: '100%' }} /></Form.Item></Col>
             <Col span={12}><Form.Item name="decision" label="Quyết định của HR" rules={[{ required: true }]}><Select options={[{ value: 'PASS', label: 'Đạt phỏng vấn — Mời thử việc' }, { value: 'HOLD', label: 'Cân nhắc thêm' }, { value: 'FAIL', label: 'Không đạt / Chưa phù hợp' }]} /></Form.Item></Col>
             <Col span={24}><Form.Item name="comment" label="Nhận xét chi tiết của HR" rules={[{ required: true, message: 'Vui lòng nhập nhận xét đánh giá phỏng vấn' }]}><Input.TextArea rows={3} placeholder="Ghi nhận thái độ, khả năng đáp ứng ca làm việc, kỹ năng giao tiếp..." /></Form.Item></Col>
           </Row>

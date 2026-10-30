@@ -32,6 +32,7 @@ import { zSalaryProfileFields } from './salary-profile.schemas.js';
 export { mapEmployeeRecord } from './employee-mapper.js';
 
 const zEmployeeListQuery = zListQueryBase.extend({
+  per_page: z.coerce.number().int().min(1).max(500).default(12),
   stage: z.enum([...EMPLOYEE_STAGES, 'ALL'] as const).optional(),
   staff_group: z.string().trim().max(64).optional(),
   status: z.enum([...EMPLOYEE_STATUSES, 'ALL'] as const).optional(),
@@ -90,12 +91,8 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
       return { ...row, ...(canSeeSalary ? {} : { salaryOfficialAmountVnd: 0, salaryEffectiveAmountVnd: 0, salaryProbationPercent: null, salaryProfile: null, bankName: '', bankAccountNumber: '', bankAccountHolder: '', taxCode: '' }), ...(canSeePersonal ? {} : { citizenId: '' }) };
     });
     const result = paginateAndSort(mapped, {
-      page: query.page,
-      perPage: query.per_page,
-      sortBy: query.sort_by,
-      sortOrder: query.sort_order,
-      defaultSortBy: 'created_at',
-      defaultSortOrder: 'desc',
+      page: query.page, perPage: query.per_page, maxPerPage: 500, sortBy: query.sort_by, sortOrder: query.sort_order,
+      defaultSortBy: 'created_at', defaultSortOrder: 'desc',
       allowedSortFields: ['created_at', 'updated_at', 'employeeCode', 'fullName', 'stage', 'status', 'salaryOfficialAmountVnd'],
       q: query.q,
       searchExtractor: (item) => [item.employeeCode, item.fullName, item.phone, item.email, item.citizenId, item.branchName, item.staffGroupLabel, item.stageLabel],

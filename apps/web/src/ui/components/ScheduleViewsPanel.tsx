@@ -10,6 +10,7 @@ import { getMonday, ScheduleWeekMatrix } from './ScheduleWeekMatrix';
 export interface ScheduleViewsPanelProps {
   mode: 'WEEK_MATRIX' | 'CALENDAR';
   todayDate?: string;
+  selectedBranchId?: string;
   assignments: ScheduleAssignmentItem[];
   canEdit: boolean;
   loading?: boolean;
@@ -25,6 +26,7 @@ export interface ScheduleViewsPanelProps {
 export function ScheduleViewsPanel({
   mode,
   todayDate,
+  selectedBranchId,
   assignments,
   canEdit,
   loading = false,
@@ -60,6 +62,7 @@ export function ScheduleViewsPanel({
       ) : (
         <ScheduleWeekMatrix
           todayDate={effectiveToday}
+          selectedBranchId={selectedBranchId}
           assignments={assignments}
           canEdit={canEdit}
           hideStaffingBadge={hideStaffingBadge}
