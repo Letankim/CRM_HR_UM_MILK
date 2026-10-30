@@ -22,6 +22,7 @@ interface ScheduleCellHandlers {
   assignments: ScheduleAssignmentItem[];
   canEdit: boolean;
   hideStaffingBadge?: boolean;
+  isPartialFilter?: boolean;
   onAddAtCell: (dateStr: string, shiftCode?: string) => void;
   onEditItem: (item: ScheduleAssignmentItem) => void;
 }
@@ -34,7 +35,7 @@ export interface ScheduleWeekMatrixProps extends ScheduleCellHandlers {
 }
 
 /** Chế độ xem Lưới Lịch Tuần (Ca × Ngày), bấm vào ô để thêm hoặc sửa phân ca. */
-export function ScheduleWeekMatrix({ todayDate, selectedBranchId = 'ALL', assignments, canEdit, hideStaffingBadge = false, onAddAtCell, onEditItem, weekStart, onWeekStartChange }: ScheduleWeekMatrixProps) {
+export function ScheduleWeekMatrix({ todayDate, selectedBranchId = 'ALL', assignments, canEdit, hideStaffingBadge = false, isPartialFilter = false, onAddAtCell, onEditItem, weekStart, onWeekStartChange }: ScheduleWeekMatrixProps) {
   const { rules, branchCodeById } = useStaffingRules(!hideStaffingBadge);
   const effectiveToday = todayDate || dayjs().format('YYYY-MM-DD');
   const currentWeekMonday = getMonday(dayjs(effectiveToday));
@@ -150,7 +151,7 @@ export function ScheduleWeekMatrix({ todayDate, selectedBranchId = 'ALL', assign
                       style={{ padding: 8, border: `1px solid ${isToday ? '#BFDBFE' : BRAND.border}`, verticalAlign: 'top', background: isToday ? '#F8FAFC' : '#FFFFFF', minHeight: 88 }}
                     >
                       <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                        {!hideStaffingBadge && computePerBranchStaffingBadges({ cellItems, rules, branchCodeById, selectedBranchId, shiftCode: shift.code }).map((b) => (
+                        {!hideStaffingBadge && computePerBranchStaffingBadges({ cellItems, rules, branchCodeById, selectedBranchId, shiftCode: shift.code, suppressShortage: isPartialFilter }).map((b) => (
                           <Tooltip key={b.key} title={b.tooltip}><Tag color={b.color} style={{ margin: 0, borderRadius: 2, fontSize: 11, fontWeight: 600 }}>{b.label}</Tag></Tooltip>
                         ))}
                         {cellItems.map((item) => (

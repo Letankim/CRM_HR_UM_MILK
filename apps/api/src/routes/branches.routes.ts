@@ -39,12 +39,13 @@ function mapShift(s: ShiftTemplate, ctx: AppContext) {
 }
 
 function mapStaffingRule(r: StaffingRule, ctx: AppContext) {
-  const branch = r.branch_id && r.branch_id !== 'ALL' ? (ctx.db.branches.get(r.branch_id) ?? ctx.db.branches.find((b) => b.code === r.branch_id)) : undefined;
-  const shift = r.shift_template_id && r.shift_template_id !== 'ALL' ? (ctx.db.shiftTemplates.get(r.shift_template_id) ?? ctx.db.shiftTemplates.find((s) => s.code === r.shift_template_id)) : undefined;
+  const rb = (r.branch_id || '').trim(), rs = (r.shift_template_id || '').trim();
+  const branch = rb && rb !== 'ALL' ? (ctx.db.branches.get(rb) ?? ctx.db.branches.find((b) => b.code.toUpperCase() === rb.toUpperCase())) : undefined;
+  const shift = rs && rs !== 'ALL' ? ctx.db.shiftTemplates.all(true).find((s) => s.id === rs || s.code.toUpperCase() === rs.toUpperCase()) : undefined;
   return {
-    ...r, branchId: branch?.id ?? 'ALL', branchCode: branch?.code ?? 'ALL', shiftCode: shift?.code ?? (!r.shift_template_id || r.shift_template_id === 'ALL' ? 'ALL' : r.shift_template_id),
+    ...r, branchId: branch?.id ?? 'ALL', branchCode: branch?.code ?? 'ALL', shiftCode: shift?.code ?? (!rs || rs === 'ALL' ? 'ALL' : rs),
     branchName: branch ? `${branch.code} — ${branch.name}` : 'Tất cả chi nhánh (Mặc định)',
-    shiftName: shift ? `${shift.name} (${shift.start_time} – ${shift.end_time})` : (r.shift_template_id === 'ALL' ? 'Mọi khung ca làm việc' : r.shift_template_id),
+    shiftName: shift ? `${shift.name} (${shift.start_time} – ${shift.end_time})` : (!rs || rs === 'ALL' ? 'Mọi khung ca làm việc' : rs),
     shiftTimeRange: shift ? `${shift.start_time} – ${shift.end_time}` : '',
   };
 }
@@ -52,22 +53,12 @@ function mapStaffingRule(r: StaffingRule, ctx: AppContext) {
 export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/branches', { preHandler: requireAuth() }, async (request) => {
     const query = zBranchListQuery.parse(request.query);
-    if (query.refresh === '1' || query.refresh === 'true') {
-      await Promise.all([ctx.db.branches.refreshIfIdle(), ctx.db.shiftTemplates.refreshIfIdle()]);
-    }
-    const scoped = filterByBranch(request, ctx.db.branches.all(), (b) => b.id);
-    const mapped = scoped.map((b) => mapBranch(b, ctx));
+    if (query.refresh === '1' || query.refresh === 'true') await Promise.all([ctx.db.branches.refreshIfIdle(), ctx.db.shiftTemplates.refreshIfIdle(), ctx.db.staffingRules.refreshIfIdle()]);
+    const mapped = filterByBranch(request, ctx.db.branches.all(), (b) => b.id).map((b) => mapBranch(b, ctx));
     const result = paginateAndSort(mapped, {
-      page: query.page,
-      perPage: query.per_page,
-      sortBy: query.sort_by,
-      sortOrder: query.sort_order,
-      defaultSortBy: 'code',
-      defaultSortOrder: 'asc',
+      page: query.page, perPage: query.per_page, sortBy: query.sort_by, sortOrder: query.sort_order, defaultSortBy: 'code', defaultSortOrder: 'asc',
       allowedSortFields: ['code', 'name', 'radiusM', 'employeeCount', 'created_at', 'updated_at'],
-      q: query.q,
-      searchExtractor: (item) => [item.code, item.name, item.address, item.phoneContact],
-      filters: { status: query.status },
+      q: query.q, searchExtractor: (item) => [item.code, item.name, item.address, item.phoneContact], filters: { status: query.status },
     });
     return sendPaginated(request, 'Lấy danh sách chi nhánh thành công', result);
   });
@@ -164,9 +155,11 @@ export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.get('/api/admin/staffing-rules', { preHandler: requirePermission('schedule.read', 'schedule.propose', 'schedule.publish', 'system.config', 'employee.read', 'self.schedule') }, async (request) => {
+    const q = request.query as { refresh?: string } | undefined;
+    if (q?.refresh === '1' || q?.refresh === 'true') await Promise.all([ctx.db.staffingRules.refreshIfIdle(), ctx.db.shiftTemplates.refreshIfIdle(), ctx.db.branches.refreshIfIdle()]);
     const scope = request.auth!.branchScope;
-    const rawRules = ctx.db.staffingRules.all().filter((r) => scope === 'ALL' || r.branch_id === 'ALL' || scope.includes(r.branch_id));
-    return sendSuccess(request, 'Lấy danh sách định biên nhân sự theo ca thành công', rawRules.map((r) => mapStaffingRule(r, ctx)));
+    const mapped = ctx.db.staffingRules.all().map((r) => mapStaffingRule(r, ctx)).filter((r) => scope === 'ALL' || r.branchId === 'ALL' || scope.includes(r.branchId) || scope.includes(r.branchCode));
+    return sendSuccess(request, 'Lấy danh sách định biên nhân sự theo ca thành công', mapped);
   });
 
   app.post('/api/admin/staffing-rules', { preHandler: requirePermission('system.config', 'schedule.publish') }, async (request, reply) => {

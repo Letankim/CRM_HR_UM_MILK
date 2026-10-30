@@ -9,7 +9,7 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll, findLockedPayrollPeriodForDate } from '../services/salary-profile.service.js';
-import { assertNoDuplicateOrOverlappingEmployeeShift, getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
+import { assertApprovedShiftNoteOnlyPatch, assertNoDuplicateOrOverlappingEmployeeShift, getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
 import { clearShiftAttendanceOnWorkflowOverride, resolveShiftActiveRequests } from '../services/shift-absent-scanner.js';
 import { queueScheduleShiftEmail } from '../services/action-email-dispatcher.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
@@ -78,28 +78,18 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/schedules', { preHandler: requirePermission('schedule.read', 'schedule.propose', 'schedule.publish', 'employee.read', 'self.schedule') }, async (request) => {
     const query = zScheduleQuery.parse(request.query);
     if (query.branch_id && query.branch_id !== 'ALL') assertBranchAccess(request, query.branch_id);
-    if (query.refresh === '1' || query.refresh === 'true') {
-      await Promise.all([ctx.db.shiftAssignments.refreshIfIdle(), ctx.db.employees.refreshIfIdle(), ctx.db.shiftTemplates.refreshIfIdle(), ctx.db.attendanceEvents.refreshIfIdle()]);
-    }
+    if (query.refresh === '1' || query.refresh === 'true') await Promise.all([ctx.db.shiftAssignments.refreshIfIdle(), ctx.db.employees.refreshIfIdle(), ctx.db.shiftTemplates.refreshIfIdle(), ctx.db.staffingRules.refreshIfIdle(), ctx.db.attendanceEvents.refreshIfIdle()]);
     await healBranchConsistency(ctx);
-
     let scoped = filterByBranch(request, ctx.db.shiftAssignments.all(), (a) => resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id));
-    if (isEmployeeRole(request.auth!.user.role)) {
-      scoped = scoped.filter((a) => a.status !== 'DRAFT');
-    }
+    if (isEmployeeRole(request.auth!.user.role)) scoped = scoped.filter((a) => a.status !== 'DRAFT');
     if (query.from_date) scoped = scoped.filter((a) => a.work_date >= query.from_date!);
     if (query.to_date) scoped = scoped.filter((a) => a.work_date <= query.to_date!);
-
     const evMap = new Map<string, { inHm?: string; inLateMins?: number; hasOut?: boolean }>();
     for (const ev of ctx.db.attendanceEvents.all()) {
       for (const k of [ev.assignment_id, `emp:${ev.employee_id}:${ev.work_date}:${ev.shift_code}`].filter(Boolean)) {
         const cur = evMap.get(k) ?? {};
         if (ev.type === 'CHECK_OUT') cur.hasOut = true;
-        else if (!cur.inHm) {
-          const hm = dayjs(ev.server_time).format('HH:mm');
-          cur.inHm = hm;
-          cur.inLateMins = ev.late_minutes || Math.max(0, parseHm(hm) - parseHm(ev.scheduled_time || '07:00'));
-        }
+        else if (!cur.inHm) { const hm = dayjs(ev.server_time).format('HH:mm'); cur.inHm = hm; cur.inLateMins = ev.late_minutes || Math.max(0, parseHm(hm) - parseHm(ev.scheduled_time || '07:00')); }
         evMap.set(k, cur);
       }
     }
@@ -149,11 +139,17 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
     const { id } = request.params as { id: string }, body = zUpdateScheduleBody.parse(request.body), before = ctx.db.shiftAssignments.get(id);
     if (!before) throw Errors.notFound('Không tìm thấy bản ghi phân ca');
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
-    if (before.status !== 'DRAFT') throw Errors.badRequest('Ca làm việc này đã được phê duyệt nên không thể chỉnh sửa phân ca. Nếu cần thay đổi, bạn chỉ có thể xóa phân ca này.');
     assertDateNotLockedByPayroll(ctx.db, before.work_date, 'chỉnh sửa ca làm việc');
+    const origEmp = ctx.db.employees.get(before.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === before.employee_id);
+    if (before.status !== 'DRAFT') {
+      assertApprovedShiftNoteOnlyPatch(before, body, origEmp?.id, origEmp?.employee_code);
+      const updated = await ctx.db.shiftAssignments.update(id, body.version, { note: body.note ?? before.note }, request.auth!.user.id);
+      await ctx.audit.record(auditContext(request), { action: 'schedule.update_note', entity: 'SHIFT_ASSIGNMENTS', entityId: id, before: { note: before.note }, after: { note: updated.note } });
+      emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: updated.branch_id, employeeIds: [updated.employee_id], kind: 'SHIFT_UPDATED', actorId: request.auth!.user.id });
+      return sendSuccess(request, 'Đã cập nhật ghi chú phân ca thành công', mapShiftAssignment(updated, ctx));
+    }
     if (body.work_date && body.work_date !== before.work_date) assertDateNotLockedByPayroll(ctx.db, body.work_date, 'chuyển ca làm việc sang ngày');
     const { version, employee_id: requestedEmpId, ...patch } = body;
-    const origEmp = ctx.db.employees.get(before.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === before.employee_id);
     if (requestedEmpId && requestedEmpId !== before.employee_id && (!origEmp || (requestedEmpId !== origEmp.id && requestedEmpId !== origEmp.employee_code))) {
       throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Khi chỉnh sửa phân ca, không được phép thay đổi nhân sự đã phân công', requestedEmpId);
     }

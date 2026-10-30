@@ -125,17 +125,15 @@ describe('Audit 10 Business Fixes (MKT, HR, Schedules, Staffing, Attendance 1h G
     expect(approveRes.statusCode).toBe(200);
     const approvedS1 = approveRes.json().data;
 
-    // 5A: Editing an already-approved (PUBLISHED) shift is forbidden; only DELETE is allowed
-    const editApprovedRes = await app.inject({
-      method: 'PUT', url: `/api/admin/schedules/${approvedS1.id}`, headers: hrHeaders,
-      payload: { version: approvedS1.version, note: 'Sửa ca đã duyệt' },
-    });
-    expect(editApprovedRes.statusCode).toBe(400);
+    // 5A: Approved (PUBLISHED) shift allows editing ONLY note, forbids changing shift/date/hours/status
+    const editNoteOk = await app.inject({ method: 'PUT', url: `/api/admin/schedules/${approvedS1.id}`, headers: hrHeaders, payload: { version: approvedS1.version, note: 'Cập nhật ghi chú ca đã duyệt' } });
+    expect(editNoteOk.statusCode).toBe(200);
+    expect(editNoteOk.json().data.note).toBe('Cập nhật ghi chú ca đã duyệt');
 
-    const delApprovedRes = await app.inject({
-      method: 'DELETE', url: `/api/admin/schedules/${approvedS1.id}`, headers: hrHeaders,
-      payload: { version: approvedS1.version },
-    });
+    const editCoreForbidden = await app.inject({ method: 'PUT', url: `/api/admin/schedules/${approvedS1.id}`, headers: hrHeaders, payload: { version: editNoteOk.json().data.version, shift_code: 'CA_TOI', note: 'Đổi ca trái phép' } });
+    expect(editCoreForbidden.statusCode).toBe(400);
+
+    const delApprovedRes = await app.inject({ method: 'DELETE', url: `/api/admin/schedules/${approvedS1.id}`, headers: hrHeaders, payload: { version: editNoteOk.json().data.version } });
     expect(delApprovedRes.statusCode).toBe(200);
   });
 

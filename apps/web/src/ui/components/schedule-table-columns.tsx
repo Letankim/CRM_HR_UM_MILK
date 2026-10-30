@@ -104,7 +104,7 @@ export function buildScheduleColumns({ canEdit, onApprove, onEdit, onDelete }: B
         const isDraft = r.status === 'DRAFT';
         return (
           <RowActionButtons
-            detailTooltip={isDraft ? 'Xem & chỉnh sửa phân ca chờ duyệt' : 'Xem chi tiết ca làm việc'}
+            detailTooltip={isDraft ? 'Xem & chỉnh sửa phân ca chờ duyệt' : canEdit && !r.isLockedByPayroll ? 'Xem chi tiết & chỉnh sửa ghi chú' : 'Xem chi tiết ca làm việc'}
             onViewDetail={() => onEdit(r)}
             menuItems={
               r.isLockedByPayroll || !canEdit
@@ -116,9 +116,7 @@ export function buildScheduleColumns({ canEdit, onApprove, onEdit, onDelete }: B
                     ...(isAbsent
                       ? [{ key: 'adj', icon: <FileAddOutlined style={{ color: '#DC2626' }} />, label: 'Tạo phiếu bổ sung công', onClick: () => onEdit(r) }]
                       : []),
-                    ...(isDraft
-                      ? [{ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa phân ca', onClick: () => onEdit(r) }]
-                      : []),
+                    { key: 'edit', icon: <EditOutlined />, label: isDraft ? 'Chỉnh sửa phân ca' : 'Chỉnh sửa ghi chú', onClick: () => onEdit(r) },
                     { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa phân ca', onClick: () => onDelete(r) },
                   ]
             }

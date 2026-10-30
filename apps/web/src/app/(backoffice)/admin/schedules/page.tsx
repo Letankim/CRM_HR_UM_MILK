@@ -13,7 +13,7 @@ import { ATTENDANCE_SESSION_STATUS_OPTIONS, AttendanceEventsTable, exportAttenda
 import { DataTableCard } from '@/ui/components/DataTableCard';
 import { FilterToolbar } from '@/ui/components/FilterToolbar';
 import { ScheduleFormModal, type ScheduleAssignmentItem } from '@/ui/components/ScheduleFormModal';
-import { ScheduleViewsPanel } from '@/ui/components/ScheduleViewsPanel';
+import { ScheduleSurplusAlertBanner, ScheduleViewsPanel } from '@/ui/components/ScheduleViewsPanel';
 import { getMonday } from '@/ui/components/ScheduleWeekMatrix';
 import { ScheduleWorkflowsTabs } from '@/ui/components/ScheduleWorkflowsTabs';
 import { buildScheduleColumns, exportScheduleExcel } from '@/ui/components/schedule-table-columns';
@@ -60,12 +60,8 @@ function SchedulesView() {
   });
 
   const dateRangeParams = useMemo(() => {
-    if (viewMode === 'WEEK_MATRIX') {
-      return { from: weekStart.format('YYYY-MM-DD'), to: weekStart.add(6, 'day').format('YYYY-MM-DD'), limit: 300 };
-    }
-    if (viewMode === 'CALENDAR') {
-      return { from: calMonth.startOf('month').subtract(7, 'day').format('YYYY-MM-DD'), to: calMonth.endOf('month').add(7, 'day').format('YYYY-MM-DD'), limit: 1000 };
-    }
+    if (viewMode === 'WEEK_MATRIX') return { from: weekStart.format('YYYY-MM-DD'), to: weekStart.add(6, 'day').format('YYYY-MM-DD'), limit: 1000 };
+    if (viewMode === 'CALENDAR') return { from: calMonth.startOf('month').subtract(7, 'day').format('YYYY-MM-DD'), to: calMonth.endOf('month').add(7, 'day').format('YYYY-MM-DD'), limit: 1000 };
     return { from: '', to: '', limit: perPage };
   }, [viewMode, weekStart, calMonth, perPage]);
 
@@ -89,6 +85,9 @@ function SchedulesView() {
     queryFn: () => api.list<ScheduleAssignmentItem>(buildUrl(false)),
     enabled: viewMode !== 'ATTENDANCE',
   });
+  const needFullScope = viewMode !== 'ATTENDANCE' && (viewMode === 'TABLE' || Boolean(q.trim()) || status !== 'ALL');
+  const scopeFrom = dateRangeParams.from || weekStart.format('YYYY-MM-DD'), scopeTo = dateRangeParams.to || weekStart.add(6, 'day').format('YYYY-MM-DD');
+  const staffingScopeQ = useQuery({ queryKey: ['schedules', 'STAFFING_SCOPE', branchId, scopeFrom, scopeTo], queryFn: () => api.list<ScheduleAssignmentItem>(`/admin/schedules?page=1&per_page=1000&from_date=${scopeFrom}&to_date=${scopeTo}${branchId !== 'ALL' ? `&branch_id=${branchId}` : ''}`), enabled: needFullScope, staleTime: 15_000 });
 
   const handleManualRefresh = async () => {
     setManualRefreshing(true);
@@ -100,7 +99,7 @@ function SchedulesView() {
         const fresh = await api.list<ScheduleAssignmentItem>(buildUrl(true));
         qc.setQueryData(['schedules', viewMode, branchId, shiftCode, status, q, page, dateRangeParams.from, dateRangeParams.to, dateRangeParams.limit], fresh);
       }
-      await Promise.all([qc.invalidateQueries({ queryKey: ['attendance-sessions'] }), qc.invalidateQueries({ queryKey: ['attendance-sessions-count'] })]);
+      await Promise.all([qc.invalidateQueries({ queryKey: ['attendance-sessions'] }), qc.invalidateQueries({ queryKey: ['attendance-sessions-count'] }), qc.invalidateQueries({ queryKey: ['staffing-rules'] }), qc.invalidateQueries({ queryKey: ['shift-templates'] })]);
       message.success('Đã cập nhật lịch làm việc và dữ liệu điểm danh mới nhất');
     } catch (e) {
       message.error(e instanceof ApiClientError ? e.message : 'Làm mới thất bại');
@@ -127,7 +126,7 @@ function SchedulesView() {
 
   const { bulkActions } = useScheduleBulkActions({ canEdit });
   const employeeOptions = useMemo(() => (employeesQuery.data?.data ?? []).map((e) => ({ value: e.id, label: `${e.employeeCode} — ${e.fullName} (${e.branchName})`, branchId: e.branchId })), [employeesQuery.data]);
-  const items = query.data?.data ?? [];
+  const items = query.data?.data ?? [], scopeAssignments = needFullScope ? (staffingScopeQ.data?.data ?? items) : items;
   const draftItems = useMemo(() => items.filter((i) => i.status === 'DRAFT'), [items]);
   const totalDraftCount = Number(query.data?.meta.filters?.draft_count ?? draftItems.length);
   const attTotalSessions = attCountQ.data?.meta.pagination.total ?? 0;
@@ -191,10 +190,11 @@ function SchedulesView() {
             />
           )}
 
+          <ScheduleSurplusAlertBanner assignments={scopeAssignments} selectedBranchId={branchId} enabled={viewMode !== 'ATTENDANCE'} />
           {viewMode === 'ATTENDANCE' ? (
             <AttendanceEventsTable externalFilters={{ q, branchId, shiftCode, status }} />
           ) : viewMode !== 'TABLE' ? (
-            <ScheduleViewsPanel mode={viewMode} selectedBranchId={branchId} assignments={items} canEdit={canEdit} loading={query.isLoading || query.isFetching || manualRefreshing} weekStart={weekStart} onWeekStartChange={setWeekStart} calMonth={calMonth} onMonthChange={setCalMonth} onAddAtCell={(dateStr, sCode) => { setEditingRow(null); setPresetDate(dateStr); setPresetShift(sCode); setModalOpen(true); }} onEditItem={openEdit} />
+            <ScheduleViewsPanel mode={viewMode} selectedBranchId={branchId} assignments={items} canEdit={canEdit} loading={query.isLoading || query.isFetching || manualRefreshing} isPartialFilter={Boolean(q.trim() || status !== 'ALL')} weekStart={weekStart} onWeekStartChange={setWeekStart} calMonth={calMonth} onMonthChange={setCalMonth} onAddAtCell={(dateStr, sCode) => { setEditingRow(null); setPresetDate(dateStr); setPresetShift(sCode); setModalOpen(true); }} onEditItem={openEdit} />
           ) : (
             <DataTableCard<ScheduleAssignmentItem>
               columns={buildScheduleColumns({
@@ -205,7 +205,7 @@ function SchedulesView() {
               codeExtractor={(r) => r.employeeCode} onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }} bulkActions={bulkActions}
             />
           )}
-          <ScheduleFormModal open={modalOpen} editing={editingRow} presetDate={presetDate} presetShiftCode={presetShift} employees={employeeOptions} existingAssignments={items} canEdit={canEdit} onClose={() => { setModalOpen(false); setEditingRow(null); }} />
+          <ScheduleFormModal open={modalOpen} editing={editingRow} presetDate={presetDate} presetShiftCode={presetShift} employees={employeeOptions} existingAssignments={scopeAssignments} canEdit={canEdit} onClose={() => { setModalOpen(false); setEditingRow(null); }} />
         </>
       ) : (
         <ScheduleWorkflowsTabs employees={employeeOptions} assignments={items} />

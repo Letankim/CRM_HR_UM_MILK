@@ -1,25 +1,30 @@
 'use client';
 
-import { Badge, Button, Calendar, Card, Space, Tag } from 'antd';
+import { Badge, Button, Calendar, Card, Space, Tag, Tooltip } from 'antd';
 import { CalendarOutlined, LeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
+import { computePerBranchStaffingBadges, useStaffingRules } from '../hooks/useStaffingRules';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
 
 interface ScheduleCellHandlers {
   assignments: ScheduleAssignmentItem[];
   canEdit: boolean;
+  hideStaffingBadge?: boolean;
+  isPartialFilter?: boolean;
   onAddAtCell: (dateStr: string, shiftCode?: string) => void;
   onEditItem: (item: ScheduleAssignmentItem) => void;
 }
 
 export interface ScheduleMonthCalendarProps extends ScheduleCellHandlers {
   todayDate?: string;
+  selectedBranchId?: string;
   calMonth: Dayjs;
   onMonthChange: (value: Dayjs) => void;
 }
 
 /** Chế độ xem Lịch Tháng có đánh dấu phân ca & trạng thái nhân sự. */
-export function ScheduleMonthCalendar({ todayDate, assignments, canEdit, onAddAtCell, onEditItem, calMonth, onMonthChange }: ScheduleMonthCalendarProps) {
+export function ScheduleMonthCalendar({ todayDate, selectedBranchId = 'ALL', assignments, canEdit, hideStaffingBadge = false, isPartialFilter = false, onAddAtCell, onEditItem, calMonth, onMonthChange }: ScheduleMonthCalendarProps) {
+  const { rules, branchCodeById } = useStaffingRules(!hideStaffingBadge);
   const effectiveToday = dayjs(todayDate || dayjs().format('YYYY-MM-DD'));
   const isCurrentMonth = calMonth.format('YYYY-MM') === effectiveToday.format('YYYY-MM');
 
@@ -58,6 +63,15 @@ export function ScheduleMonthCalendar({ todayDate, assignments, canEdit, onAddAt
               if (info.type !== 'date') return info.originNode;
               const dateStr = current.format('YYYY-MM-DD');
               const dayItems = assignments.filter((a) => a.workDate === dateStr);
+              const shiftMap = new Map<string, { label: string; items: ScheduleAssignmentItem[] }>();
+              for (const it of dayItems) {
+                const cur = shiftMap.get(it.shiftCode) ?? { label: (it.shiftLabel || it.shiftCode).replace(/^Ca\s+/i, '').replace(/\s*\([^)]*\)\s*/g, '').trim(), items: [] };
+                cur.items.push(it);
+                shiftMap.set(it.shiftCode, cur);
+              }
+              const dayBadges = hideStaffingBadge ? [] : Array.from(shiftMap.entries()).flatMap(([sCode, grp]) =>
+                computePerBranchStaffingBadges({ cellItems: grp.items, rules, branchCodeById, selectedBranchId, shiftCode: sCode, shiftShortLabel: grp.label, suppressShortage: isPartialFilter }).filter((b) => b.kind !== 'OK'),
+              );
               return (
                 <div style={{ padding: '2px 0' }}>
                   {canEdit && (
@@ -77,6 +91,13 @@ export function ScheduleMonthCalendar({ todayDate, assignments, canEdit, onAddAt
                     </div>
                   )}
                   <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    {dayBadges.map((b) => (
+                      <Tooltip key={b.key} title={b.tooltip}>
+                        <Tag color={b.color} style={{ margin: 0, borderRadius: 2, fontSize: 10, fontWeight: 600, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {b.label}
+                        </Tag>
+                      </Tooltip>
+                    ))}
                     {dayItems.map((item) => {
                       const isDraft = item.status === 'DRAFT';
                       const isAbsent = item.status === 'ABSENT';

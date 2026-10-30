@@ -9,6 +9,7 @@ import { SHIFT_ASSIGNMENT_STATUS_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useEmployeeSearchSelect } from '../hooks/useEmployeeSearchSelect';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
+import { evaluateBranchShiftSurplusPreview, useStaffingRules } from '../hooks/useStaffingRules';
 import { DateStringPicker } from './DateTimePickers';
 import { GuardButton, usePermissionGuard } from './GuardButton';
 import { hasPendingAdjustmentRecord, isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
@@ -59,9 +60,11 @@ export function ScheduleFormModal({
   const canEditFields = canModifyShift && !isApprovedNonDraft;
 
   const empSelect = useEmployeeSearchSelect({ initialOptions: employees, enabled: open && !editing });
+  const { rules: staffingRules, branchCodeById, branchNameById } = useStaffingRules(open);
   const watchedEmpId = Form.useWatch('employee_id', form);
   const watchedDate = Form.useWatch('work_date', form);
   const watchedShiftCode = Form.useWatch('shift_code', form);
+  const watchedDayType = Form.useWatch('day_type', form);
   const watchedStatus = Form.useWatch('status', form);
   const hasPendingAdj = Boolean(editing && hasPendingAdjustmentRecord(editing as unknown as Record<string, unknown>));
   const isEditingAbsent = canCreateAdj && !isLocked && !hasPendingAdj && Boolean(editing && (watchedStatus === 'ABSENT' || isAbsentShiftRecord(editing as unknown as Record<string, unknown>)));
@@ -72,8 +75,13 @@ export function ScheduleFormModal({
     [baseEmployees, watchedEmpId, editing?.branchId],
   );
   const { options: shiftOptions, hoursMap } = useShiftTemplates(selectedEmpBranchId);
-
   const curShiftMeta = useMemo(() => shiftOptions.find((s) => s.value === watchedShiftCode), [shiftOptions, watchedShiftCode]);
+
+  const surplusPreview = useMemo(() => evaluateBranchShiftSurplusPreview({
+    assignments: existingAssignments, rules: staffingRules, branchCodeById, branchId: selectedEmpBranchId,
+    branchName: branchNameById.get(selectedEmpBranchId) || editing?.branchName, workDate: watchedDate, shiftCode: watchedShiftCode,
+    editingId: editing?.id, isOff: watchedDayType === 'OFF' || watchedStatus === 'ON_LEAVE',
+  }), [existingAssignments, staffingRules, branchCodeById, branchNameById, selectedEmpBranchId, editing?.branchName, editing?.id, watchedDate, watchedShiftCode, watchedDayType, watchedStatus]);
 
   const employeeSelectOptions = useMemo(() => {
     if (editing) {
@@ -112,30 +120,20 @@ export function ScheduleFormModal({
   useEffect(() => {
     if (!open) return;
     if (editing) {
-      form.setFieldsValue({
-        employee_id: editing.employeeId, work_date: editing.workDate, shift_code: editing.shiftCode,
-        status: editing.status, day_type: editing.dayType, scheduled_hours: editing.scheduledHours, note: editing.note,
-      });
+      form.setFieldsValue({ employee_id: editing.employeeId, work_date: editing.workDate, shift_code: editing.shiftCode, status: editing.status, day_type: editing.dayType, scheduled_hours: editing.scheduledHours, note: editing.note });
     } else {
       form.resetFields();
-      const targetDate = presetDate || dayjs().format('YYYY-MM-DD');
-      const targetShift = presetShiftCode || 'CA_SANG';
+      const targetDate = presetDate || dayjs().format('YYYY-MM-DD'), targetShift = presetShiftCode || 'CA_SANG';
       const firstFreeEmp = baseEmployees.find((e) => !existingAssignments.some((a) => a.employeeId === e.value && a.workDate === targetDate && a.shiftCode === targetShift));
-      form.setFieldsValue({
-        employee_id: firstFreeEmp?.value ?? baseEmployees[0]?.value, work_date: targetDate,
-        shift_code: targetShift, status: 'PUBLISHED', day_type: 'WORK', scheduled_hours: hoursMap[targetShift] ?? 5,
-      });
+      form.setFieldsValue({ employee_id: firstFreeEmp?.value ?? baseEmployees[0]?.value, work_date: targetDate, shift_code: targetShift, status: 'PUBLISHED', day_type: 'WORK', scheduled_hours: hoursMap[targetShift] ?? 5 });
     }
   }, [open, editing, presetDate, presetShiftCode]);
 
   const invalidateAll = () => ['schedules', 'attendance-sessions', 'attendance-sessions-count', 'attendance-all', 'my-attendance', 'nv-attendance', 'nv-schedules', 'payroll-periods', 'payroll-snapshots', 'payroll-reconcile'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
 
   const saveMutation = useMutation({
-    mutationFn: (values: ScheduleFormValues) =>
-      editing
-        ? api.put(`/admin/schedules/${editing.id}`, { ...values, employee_id: editing.employeeId, version: editing.version })
-        : api.post('/admin/schedules', values),
-    onSuccess: () => { message.success(editing ? 'Đã cập nhật phân công ca làm việc' : 'Đã xếp lịch ca làm việc thành công'); invalidateAll(); onClose(); },
+    mutationFn: (values: ScheduleFormValues) => editing ? api.put(`/admin/schedules/${editing.id}`, isApprovedNonDraft ? { version: editing.version, note: values.note ?? '' } : { ...values, employee_id: editing.employeeId, version: editing.version }) : api.post('/admin/schedules', values),
+    onSuccess: () => { message.success(isApprovedNonDraft ? 'Đã cập nhật ghi chú phân ca thành công' : editing ? 'Đã cập nhật phân công ca làm việc' : 'Đã xếp lịch ca làm việc thành công'); invalidateAll(); onClose(); },
     onError: (err) => {
       if (err instanceof ApiClientError) {
         if (err.details.length > 0) form.setFields(err.details.map((d) => ({ name: d.field as keyof ScheduleFormValues, errors: [d.message] })));
@@ -152,7 +150,7 @@ export function ScheduleFormModal({
 
   return (
     <Modal
-      title={editing ? `${canEditFields ? 'Chỉnh sửa Phân Ca Chờ Duyệt' : 'Chi tiết Phân Ca'} — ${editing.employeeName} (${editing.workDate})` : 'Phân Công Ca Làm Việc Mới'}
+      title={editing ? `${canEditFields ? 'Chỉnh sửa Phân Ca Chờ Duyệt' : canModifyShift ? 'Chi tiết & Ghi chú Phân Ca' : 'Chi tiết Phân Ca'} — ${editing.employeeName} (${editing.workDate})` : 'Phân Công Ca Làm Việc Mới'}
       open={open} onCancel={onClose} width="min(840px, 94vw)" style={{ maxWidth: 'calc(100vw - 24px)' }} forceRender
       footer={
         canModifyShift ? (
@@ -165,16 +163,9 @@ export function ScheduleFormModal({
             <Space wrap size={8}>
               <Button icon={<CloseOutlined />} onClick={onClose}>{canEditFields ? 'Hủy bỏ' : 'Đóng'}</Button>
               {isEditingAbsent && <Button danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công</Button>}
-              {canEditFields && editing?.status === 'DRAFT' && (
-                <GuardButton type="primary" icon={<CheckOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={canEditFields} loading={saveMutation.isPending} onClick={async () => { const vals = await form.validateFields(); saveMutation.mutate({ ...vals, status: 'PUBLISHED' }); }}>
-                  Duyệt &amp; Phát hành ca
-                </GuardButton>
-              )}
-              {canEditFields && (
-                <GuardButton type={editing?.status === 'DRAFT' ? 'default' : 'primary'} icon={editing ? <SaveOutlined /> : <CheckOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={canEditFields} loading={saveMutation.isPending} onClick={async () => saveMutation.mutate(await form.validateFields())}>
-                  {editing ? 'Lưu cập nhật' : 'Xác nhận phân ca'}
-                </GuardButton>
-              )}
+              {isApprovedNonDraft && <GuardButton type="primary" icon={<SaveOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={canModifyShift} loading={saveMutation.isPending} onClick={() => saveMutation.mutate(form.getFieldsValue())}>Lưu ghi chú</GuardButton>}
+              {canEditFields && editing?.status === 'DRAFT' && <GuardButton type="primary" icon={<CheckOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={canEditFields} loading={saveMutation.isPending} onClick={async () => { const vals = await form.validateFields(); saveMutation.mutate({ ...vals, status: 'PUBLISHED' }); }}>Duyệt &amp; Phát hành ca</GuardButton>}
+              {canEditFields && <GuardButton type={editing?.status === 'DRAFT' ? 'default' : 'primary'} icon={editing ? <SaveOutlined /> : <CheckOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={canEditFields} loading={saveMutation.isPending} onClick={async () => saveMutation.mutate(await form.validateFields())}>{editing ? 'Lưu cập nhật' : 'Xác nhận phân ca'}</GuardButton>}
             </Space>
           </Flex>
         ) : (
@@ -186,31 +177,26 @@ export function ScheduleFormModal({
       }
     >
       {isLocked && <Alert type="info" showIcon style={{ marginTop: 8, marginBottom: 8 }} message={`Ca làm việc này thuộc kỳ lương đã chốt (${editing?.lockedByPeriodCode || 'Đã phê duyệt'}), đã khóa chỉnh sửa và xóa để bảo toàn dữ liệu bảng lương.`} />}
-      {!isLocked && isApprovedNonDraft && (
-        <Alert type="info" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca làm việc này đã được phê duyệt nên không thể chỉnh sửa phân ca. Nếu cần thay đổi, bạn chỉ có thể xóa phân ca này rồi tạo phân ca mới." />
-      )}
-      {!isLocked && editing?.status === 'DRAFT' && (
-        <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca đăng ký đang chờ Quản lý cửa hàng hoặc HR phê duyệt. Nhân sự phân công đã được khóa cố định; bấm 'Duyệt & Phát hành ca' để phát hành chính thức." />
-      )}
+      {!isLocked && isApprovedNonDraft && <Alert type="info" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca làm việc này đã được phê duyệt nên các thông tin nhân sự, ngày và khung ca đã được khóa. Bạn vẫn có thể chỉnh sửa Ghi chú phân ca bên dưới hoặc xóa phân ca này." />}
+      {!isLocked && editing?.status === 'DRAFT' && <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca đăng ký đang chờ Quản lý cửa hàng hoặc HR phê duyệt. Nhân sự phân công đã được khóa cố định; bấm 'Duyệt & Phát hành ca' để phát hành chính thức." />}
+      {surplusPreview && <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message={surplusPreview.isNew ? `Cảnh báo dư định biên tại ${surplusPreview.branchLabel}: Khung ca này hiện đã có ${surplusPreview.currentCount}/${surplusPreview.maxStaff} nhân sự (định biên ${surplusPreview.minStaff}–${surplusPreview.maxStaff}). Nếu phân thêm sẽ Dư +${surplusPreview.surplusDiff} nhân sự (${surplusPreview.projectedCount}/${surplusPreview.maxStaff}).` : `Cảnh báo dư định biên tại ${surplusPreview.branchLabel}: Khung ca này đang có ${surplusPreview.projectedCount}/${surplusPreview.maxStaff} nhân sự — Dư +${surplusPreview.surplusDiff} nhân sự so với định biên tối đa (${surplusPreview.minStaff}–${surplusPreview.maxStaff}).`} />}
       {hasPendingAdj && <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message={`Ca làm việc này đã gửi Phiếu bổ sung công (${editing?.pendingAdjustmentCode || 'Chờ duyệt'}) và đang chờ Cửa hàng / HR phê duyệt.`} />}
-      {isEditingAbsent && (
-        <Alert type="error" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca làm việc này đang ở trạng thái Vắng mặt (Cần bổ sung công). Bạn có thể tạo phiếu bổ sung công trực tiếp từ chi tiết ca này." action={<Button size="small" type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công</Button>} />
-      )}
-      <Form<ScheduleFormValues> form={form} layout="vertical" disabled={!canEditFields} style={{ marginTop: 12 }} onValuesChange={(changed) => { if (changed.shift_code && hoursMap[changed.shift_code]) form.setFieldValue('scheduled_hours', hoursMap[changed.shift_code]); }}>
+      {isEditingAbsent && <Alert type="error" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca làm việc này đang ở trạng thái Vắng mặt (Cần bổ sung công). Bạn có thể tạo phiếu bổ sung công trực tiếp từ chi tiết ca này." action={<Button size="small" type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công</Button>} />}
+      <Form<ScheduleFormValues> form={form} layout="vertical" disabled={!canModifyShift} style={{ marginTop: 12 }} onValuesChange={(changed) => { if (changed.shift_code && hoursMap[changed.shift_code]) form.setFieldValue('scheduled_hours', hoursMap[changed.shift_code]); }}>
         <Form.Item name="employee_id" label="Nhân sự phân công" rules={[{ required: true, message: 'Vui lòng chọn nhân sự' }]}>
           <Select showSearch disabled={Boolean(editing) || !canEditFields} options={employeeSelectOptions} loading={!editing && empSelect.loading} onSearch={editing ? undefined : empSelect.onSearch} filterOption={editing ? undefined : empSelect.filterOption} onDropdownVisibleChange={editing ? undefined : empSelect.onDropdownVisibleChange} placeholder="Tìm và chọn nhân sự phân công..." />
         </Form.Item>
         <Row gutter={12}>
-          <Col span={12}><Form.Item name="work_date" label="Ngày làm việc" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col>
-          <Col span={12}><Form.Item name="shift_code" label="Khung ca làm việc (theo chi nhánh)" rules={[{ required: true }]}><Select options={availableShiftOptions} /></Form.Item></Col>
+          <Col span={12}><Form.Item name="work_date" label="Ngày làm việc" rules={[{ required: true }]}><DateStringPicker disabled={!canEditFields} /></Form.Item></Col>
+          <Col span={12}><Form.Item name="shift_code" label="Khung ca làm việc (theo chi nhánh)" rules={[{ required: true }]}><Select disabled={!canEditFields} options={availableShiftOptions} /></Form.Item></Col>
         </Row>
         <Row gutter={12}>
-          <Col span={8}><Form.Item name="day_type" label="Loại ngày công"><Select options={[{ value: 'WORK', label: 'Ca làm việc chuẩn' }, { value: 'OT', label: 'Ca tăng ca (OT)' }, { value: 'OFF', label: 'Ngày nghỉ phép (OFF)' }]} /></Form.Item></Col>
-          <Col span={8}><Form.Item name="scheduled_hours" label="Số giờ công"><InputNumber min={0} max={24} step={0.5} style={{ width: '100%' }} /></Form.Item></Col>
-          <Col span={8}><Form.Item name="status" label="Trạng thái lịch"><Select options={SHIFT_ASSIGNMENT_STATUS_OPTIONS} /></Form.Item></Col>
+          <Col span={8}><Form.Item name="day_type" label="Loại ngày công"><Select disabled={!canEditFields} options={[{ value: 'WORK', label: 'Ca làm việc chuẩn' }, { value: 'OT', label: 'Ca tăng ca (OT)' }, { value: 'OFF', label: 'Ngày nghỉ phép (OFF)' }]} /></Form.Item></Col>
+          <Col span={8}><Form.Item name="scheduled_hours" label="Số giờ công"><InputNumber disabled={!canEditFields} min={0} max={24} step={0.5} style={{ width: '100%' }} /></Form.Item></Col>
+          <Col span={8}><Form.Item name="status" label="Trạng thái lịch"><Select disabled={!canEditFields} options={SHIFT_ASSIGNMENT_STATUS_OPTIONS} /></Form.Item></Col>
         </Row>
         <Form.Item name="note" label="Ghi chú phân ca / Đánh dấu đặc biệt">
-          <Input placeholder="Ví dụ: Trực mở quầy, kèm nhân viên mới..." />
+          <Input disabled={!canModifyShift} placeholder="Ví dụ: Trực mở quầy, kèm nhân viên mới..." />
         </Form.Item>
       </Form>
       <QuickAbsentAdjustmentModal shift={editing as unknown as Record<string, unknown>} open={quickAdjOpen} onClose={() => setQuickAdjOpen(false)} onSuccess={onClose} />

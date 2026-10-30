@@ -1,4 +1,4 @@
-import { DEFAULT_SHIFT_LABELS, type Employee, type StaffingRule } from '@umbm/shared';
+import { DEFAULT_SHIFT_LABELS, type Employee, type ShiftAssignment, type StaffingRule } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs } from '../lib/time.js';
@@ -7,6 +7,26 @@ import { parseHm } from '../routes/attendance-helpers.js';
 import { getVnNowDateAndHm } from './shift-absent-scanner.js';
 
 export const CHECKOUT_GRACE_MINUTES = 60;
+
+export function assertApprovedShiftNoteOnlyPatch(
+  before: ShiftAssignment,
+  body: { employee_id?: string; work_date?: string; shift_code?: string; status?: string; day_type?: string; scheduled_hours?: number },
+  origEmpId?: string,
+  origEmpCode?: string,
+): void {
+  if (before.status === 'DRAFT') return;
+  const allowedEmpIds = new Set([before.employee_id, origEmpId, origEmpCode].filter(Boolean) as string[]);
+  const changedCore =
+    (body.employee_id !== undefined && !allowedEmpIds.has(body.employee_id)) ||
+    (body.work_date !== undefined && body.work_date !== before.work_date) ||
+    (body.shift_code !== undefined && body.shift_code !== before.shift_code) ||
+    (body.day_type !== undefined && body.day_type !== before.day_type) ||
+    (body.scheduled_hours !== undefined && Number(body.scheduled_hours) !== Number(before.scheduled_hours)) ||
+    (body.status !== undefined && body.status !== before.status);
+  if (changedCore) {
+    throw Errors.badRequest('Ca làm việc này đã được phê duyệt nên chỉ được phép chỉnh sửa Ghi chú phân ca hoặc xóa phân ca; không thể thay đổi nhân sự, ngày, khung ca, giờ công hay trạng thái.');
+  }
+}
 
 export interface ShiftCheckoutWindow {
   isPastEnd: boolean;
@@ -113,29 +133,30 @@ export function resolveApplicableStaffingRule(
   shiftCode: string,
 ): StaffingRule | null {
   if (!branchId || branchId === 'ALL') return null;
-  const branch = ctx.db.branches.get(branchId) ?? ctx.db.branches.find((b) => b.code === branchId);
-  const branchKeys = new Set([branchId, branch?.id, branch?.code].filter(Boolean) as string[]);
+  const branch = ctx.db.branches.get(branchId) ?? ctx.db.branches.find((b) => b.code.toUpperCase() === branchId.trim().toUpperCase());
+  const branchKeys = new Set([branchId, branch?.id, branch?.code, branch?.code.toUpperCase()].filter(Boolean) as string[]);
+  const allTemplates = ctx.db.shiftTemplates.all(true);
+  const shiftUpper = shiftCode.trim().toUpperCase();
   let bestRule: StaffingRule | null = null;
   let bestScore = 0;
 
   for (const r of ctx.db.staffingRules.all()) {
-    const isGlobalBranch = !r.branch_id || r.branch_id === 'ALL';
-    const isExactBranch = !isGlobalBranch && branchKeys.has(r.branch_id);
+    const rb = (r.branch_id || '').trim();
+    const isGlobalBranch = !rb || rb === 'ALL';
+    const isExactBranch = !isGlobalBranch && (branchKeys.has(rb) || branchKeys.has(rb.toUpperCase()));
     if (!isExactBranch && !isGlobalBranch) continue;
 
-    const isGlobalShift = !r.shift_template_id || r.shift_template_id === 'ALL';
-    let isExactShift = !isGlobalShift && r.shift_template_id === shiftCode;
+    const rs = (r.shift_template_id || '').trim();
+    const isGlobalShift = !rs || rs === 'ALL';
+    let isExactShift = !isGlobalShift && rs.toUpperCase() === shiftUpper;
     if (!isGlobalShift && !isExactShift) {
-      const tpl = ctx.db.shiftTemplates.get(r.shift_template_id) ?? ctx.db.shiftTemplates.find((s) => s.code === r.shift_template_id);
-      isExactShift = tpl?.code === shiftCode;
+      const tpl = allTemplates.find((s) => s.id === rs || s.code.toUpperCase() === rs.toUpperCase());
+      isExactShift = tpl?.code.toUpperCase() === shiftUpper;
     }
     if (!isExactShift && !isGlobalShift) continue;
 
     const score = (isExactBranch ? 2 : 0) + (isExactShift ? 1 : 0) + 1;
-    if (score > bestScore) {
-      bestScore = score;
-      bestRule = r;
-    }
+    if (score > bestScore) { bestScore = score; bestRule = r; }
   }
   return bestRule;
 }
