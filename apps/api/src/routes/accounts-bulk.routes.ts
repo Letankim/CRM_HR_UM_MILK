@@ -135,9 +135,9 @@ export async function accountBulkRoutes(app: FastifyInstance, ctx: AppContext) {
         before: { display_name: before.display_name, role: before.role, extra_permissions: beforeExtraPerms, branch_scope: before.branch_scope, phone: before.phone, employee_id: before.employee_id },
         after: { display_name: updated.display_name, role: updated.role, extra_permissions: nextExtraPerms, branch_scope: updated.branch_scope, phone: updated.phone, employee_id: updated.employee_id, ...(body.reason ? { reason: body.reason } : {}) },
       });
-      queueAccountUpdatedEmail(ctx, updated, body.reason || (body.secret ? 'Đặt lại mật khẩu/PIN và cập nhật thông tin' : 'Cập nhật thông tin và phân quyền'), request.auth?.user.email);
-
-      return sendSuccess(request, 'Cập nhật thông tin tài khoản và phân quyền thành công', { user: toPublicUser(updated), version: updated.version });
+      const mailInfo = queueAccountUpdatedEmail(ctx, updated, body.reason || (body.secret ? 'Đặt lại mật khẩu/PIN và cập nhật thông tin' : 'Cập nhật thông tin và phân quyền'), request.auth?.user.email, body.secret);
+      const msg = body.secret && mailInfo.emailQueued ? `Đã cập nhật tài khoản và đưa email mật khẩu mới vào hàng đợi gửi tới ${mailInfo.queuedToEmail}` : 'Cập nhật thông tin tài khoản và phân quyền thành công';
+      return sendSuccess(request, msg, { user: toPublicUser(updated), version: updated.version, ...mailInfo });
     },
   );
 

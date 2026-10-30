@@ -205,12 +205,11 @@ export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
       action: 'account.create', entity: 'USERS', entityId: created.id,
       after: { username: created.username, role: created.role, extra_permissions: extraPerms, branch_scope: effectiveBranchScope, status: created.status, email: created.email },
     });
-    queueAccountCreatedEmail(ctx, created, request.auth?.user.email);
+    const mailInfo = queueAccountCreatedEmail(ctx, created, request.auth?.user.email, body.secret);
     ctx.realtime()?.toRole('ADMIN', 'account:pending', { id: created.id, username: created.username });
     reply.code(201);
-    return sendSuccess(request, 'Tạo tài khoản mới thành công, đang chờ Quản trị viên kích hoạt', {
-      user: toPublicUser(created), version: created.version,
-    });
+    const msg = mailInfo.emailQueued ? `Tạo tài khoản mới thành công (Chờ kích hoạt) — Đã đưa email cấp tài khoản và mật khẩu vào hàng đợi gửi tới ${mailInfo.queuedToEmail}` : 'Tạo tài khoản mới thành công, đang chờ Quản trị viên kích hoạt';
+    return sendSuccess(request, msg, { user: toPublicUser(created), version: created.version, ...mailInfo });
   });
 
   await accountActionRoutes(app, ctx);

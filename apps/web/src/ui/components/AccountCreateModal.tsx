@@ -85,14 +85,17 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
   const saveMutation = useMutation({
     mutationFn: (values: AccountFormValues) =>
       editing
-        ? api.put(`/admin/accounts/${editing.id}`, {
+        ? api.put<{ emailQueued?: boolean; queuedToEmail?: string | null }>(`/admin/accounts/${editing.id}`, {
             ...values, employee_id: values.employee_id ?? '', version: editing.version,
             secret: values.secret || undefined, extra_permissions: values.extra_permissions ?? [],
           })
-        : api.post('/admin/accounts', { ...values, extra_permissions: values.extra_permissions ?? [] }),
-    onSuccess: () => {
-      message.success(editing ? 'Đã cập nhật tài khoản, phân quyền và đồng bộ hồ sơ thành công' : 'Đã tạo tài khoản mới (Trạng thái: Chờ Quản trị viên kích hoạt)');
-      ['accounts', 'account-audit-history', 'employees', 'branches', 'schedules', 'me'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+        : api.post<{ emailQueued?: boolean; queuedToEmail?: string | null }>('/admin/accounts', { ...values, extra_permissions: values.extra_permissions ?? [] }),
+    onSuccess: (res, vars) => {
+      const queuedMsg = res?.emailQueued && res?.queuedToEmail
+        ? (editing ? (vars.secret ? ` — Đã đưa email mật khẩu mới vào hàng đợi gửi tới ${res.queuedToEmail}` : '') : ` — Đã đưa email cấp tài khoản & mật khẩu vào hàng đợi gửi tới ${res.queuedToEmail}`)
+        : '';
+      message.success((editing ? 'Đã cập nhật tài khoản, phân quyền và đồng bộ hồ sơ thành công' : 'Đã tạo tài khoản mới (Trạng thái: Chờ Quản trị viên kích hoạt)') + queuedMsg);
+      ['accounts', 'account-audit-history', 'employees', 'branches', 'schedules', 'me', 'integrations'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
       onClose();
     },
     onError: (err) => {
@@ -145,7 +148,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
                   </Row>
                   <Row gutter={12}>
                     <Col span={8}><Form.Item name="phone_number" label="Số điện thoại"><Input placeholder="Ví dụ: 0901000001" /></Form.Item></Col>
-                    <Col span={8}><Form.Item name="email" label="Email"><Input placeholder="Ví dụ: nv.an@umbomilk.vn" /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="email" label="Email (Nhận TK & mật khẩu)"><Input placeholder="Ví dụ: nguyenvanan@gmail.com" /></Form.Item></Col>
                     <Col span={8}>
                       <Form.Item name="role" label="Vai trò chính" rules={[{ required: true }]}>
                         <Select
@@ -195,6 +198,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
                         if (found) {
                           if (!form.getFieldValue('display_name')) form.setFieldValue('display_name', found.fullName);
                           if (!form.getFieldValue('phone_number')) form.setFieldValue('phone_number', found.phone);
+                          if (!form.getFieldValue('email') && found.email) form.setFieldValue('email', found.email);
                           if (found.branchId) form.setFieldValue('branch_scope', found.branchId);
                           if (!editing && !form.getFieldValue('username')) form.setFieldValue('username', `nv.${found.employeeCode.toLowerCase()}`);
                         }

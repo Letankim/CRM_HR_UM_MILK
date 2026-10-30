@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Alert, App, Button, Card, Col, Flex, Row, Select, Space, Tabs, Tag, Typography } from 'antd';
-import { CalendarOutlined, CameraOutlined, ClockCircleOutlined, DownloadOutlined, EnvironmentOutlined, FileAddOutlined, FileTextOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { CalendarOutlined, CameraOutlined, ClockCircleOutlined, DownloadOutlined, EnvironmentOutlined, EyeOutlined, FileAddOutlined, FileTextOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
@@ -17,6 +17,7 @@ import { EmployeeScheduleAndLeaveCenter } from '@/ui/components/EmployeeSchedule
 import { MyPayslipsView } from '@/ui/components/MyPayslipsView';
 import { RowActionButtons } from '@/ui/components/RowActionButtons';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from '@/ui/components/ScheduleRequestDetailModal';
+import { ShiftAttendanceDetailModal } from '@/ui/components/ShiftAttendanceDetailModal';
 import { exportAdjustmentsExcel } from '@/ui/components/workflow-bulk-helpers';
 import { useClientPagination } from '@/ui/hooks/useClientPagination';
 
@@ -43,6 +44,7 @@ export default function MyAttendancePage() {
   const qc = useQueryClient(), { message } = App.useApp();
   const [selectedShiftId, setSelectedShiftId] = useState(''), [cameraKind, setCameraKind] = useState<'CHECK_IN' | 'CHECK_OUT' | null>(null);
   const [detailEvent, setDetailEvent] = useState<AttendanceEventRow | null>(null), [detailReq, setDetailReq] = useState<ScheduleDetailTarget | null>(null);
+  const [attShiftId, setAttShiftId] = useState<string | null>(null);
   const [addShiftOpen, setAddShiftOpen] = useState(false), [adjOpen, setAdjOpen] = useState(false), [presetAdjShiftId, setPresetAdjShiftId] = useState<string | undefined>();
   const myEventsPag = useClientPagination(10, 'ca'), myAdjPag = useClientPagination(10, 'phiếu');
 
@@ -116,7 +118,7 @@ export default function MyAttendancePage() {
               {!isSelectedApproved ? (
                 <Alert type="warning" showIcon message="Ca đăng ký này đang chờ Quản lý cửa hàng hoặc HR phê duyệt. Chỉ được phép chấm công Vào/Ra ca sau khi đã chuyển sang Đã phân ca chính thức." />
               ) : isSelectedDone ? (
-                <Alert type="success" showIcon message="Bạn đã hoàn thành đầy đủ ca làm việc này." />
+                <Alert type="success" showIcon message="Bạn đã hoàn thành đầy đủ ca làm việc này." action={activeShift ? <Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setAttShiftId(String(activeShift.id))}>Xem chi tiết điểm danh</Button> : undefined} />
               ) : (isSelectedExpired || isSelectedForgotOut) ? (
                 <Space direction="vertical" size={8} style={{ width: '100%' }}>
                   {(activeShift as unknown as Record<string, unknown>)?.pendingAdjustmentCode ? (
@@ -208,6 +210,7 @@ export default function MyAttendancePage() {
       <MyShiftRegisterModal open={addShiftOpen} todayDate={todayDate} onClose={() => setAddShiftOpen(false)} onCreated={(createdId) => { if (createdId) setSelectedShiftId(createdId); refreshAll(); }} />
       <AttendanceCameraModal open={Boolean(cameraKind)} kind={cameraKind ?? 'CHECK_IN'} shift={activeShift} loading={checkMut.isPending} onClose={() => setCameraKind(null)} onConfirm={(payload) => checkMut.mutate(payload)} />
       <AttendanceEventDetailModal event={detailEvent} onClose={() => setDetailEvent(null)} />
+      <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
       <ScheduleRequestDetailModal target={detailReq} onClose={() => setDetailReq(null)} />
       <AttendanceAdjustmentModal open={adjOpen} employeeId={profile?.employeeId || ''} shifts={shifts as unknown as Record<string, unknown>[]} initialShiftId={presetAdjShiftId} onClose={() => setAdjOpen(false)} onSuccess={refreshAll} />
     </Space>

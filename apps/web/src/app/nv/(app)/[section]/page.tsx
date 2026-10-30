@@ -22,6 +22,7 @@ import { AttendanceAdjustmentModal } from '@/ui/components/EmployeePortalModals'
 import { EmployeeScheduleAndLeaveCenter } from '@/ui/components/EmployeeScheduleAndLeaveCenter';
 import { RowActionButtons } from '@/ui/components/RowActionButtons';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from '@/ui/components/ScheduleRequestDetailModal';
+import { ShiftAttendanceDetailModal } from '@/ui/components/ShiftAttendanceDetailModal';
 import { EmployeeTestCenterView } from '@/ui/components/ExamTestCenter';
 import { GovernanceDetailDrawer, POLICY_CATEGORY_LABELS } from '@/ui/components/GovernanceAndCommsModals';
 import { NotificationsCenterView } from '@/ui/components/NotificationsCenterView';
@@ -33,11 +34,9 @@ const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace
 interface MyAttendanceData {
   todayDate: string; profile: { employeeId: string; employeeCode: string; fullName: string; stage?: string };
   shifts: Record<string, unknown>[]; events: AttendanceEventRow[]; leaves: Record<string, unknown>[];
-  emergencyLeaves?: Record<string, unknown>[]; swaps?: Record<string, unknown>[];
+  emergencyLeaves?: Record<string, unknown>[]; swaps?: Record<string, unknown>[]; adjustments: Record<string, unknown>[];
   branchPeers?: { id: string; employeeCode: string; fullName: string; positionTitle?: string; branchName?: string }[];
-  adjustments: Record<string, unknown>[];
 }
-
 const SECTIONS: Record<string, string> = {
   lich: 'Lịch làm việc & Đăng ký ca của bạn', 'nghi-phep': 'Đăng ký Nghỉ phép OFF & Báo nghỉ khẩn cấp',
   'doi-ca': 'Yêu cầu Đổi ca nội bộ (Quy trình 3 bước)', 'diem-danh': 'Điểm danh GPS & Camera trực tiếp của bạn',
@@ -58,10 +57,10 @@ export default function EmployeeSection() {
   if (!title) notFound();
 
   const [adjOpen, setAdjOpen] = useState(false), [presetAdjShiftId, setPresetAdjShiftId] = useState<string | undefined>();
-  const [congPeriod, setCongPeriod] = useState<'ALL' | 'TODAY' | 'WEEK' | 'MONTH'>('ALL');
-  const [profileTab, setProfileTab] = useState<'info' | 'password' | null>(null);
+  const [congPeriod, setCongPeriod] = useState<'ALL' | 'TODAY' | 'WEEK' | 'MONTH'>('ALL'), [profileTab, setProfileTab] = useState<'info' | 'password' | null>(null);
   const [cameraModalKind, setCameraModalKind] = useState<'CHECK_IN' | 'CHECK_OUT' | null>(null), [selectedShiftId, setSelectedShiftId] = useState<string>('');
   const [detailEvent, setDetailEvent] = useState<AttendanceEventRow | null>(null), [detailReq, setDetailReq] = useState<ScheduleDetailTarget | null>(null);
+  const [attShiftId, setAttShiftId] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<{ kind: 'policy' | 'announcement'; record: Record<string, unknown> } | null>(null);
   const attPag = useClientPagination(10, 'ca'), adjPag = useClientPagination(10, 'phiếu');
 
@@ -131,7 +130,7 @@ export default function EmployeeSection() {
                         </Space>
                       </div>
                     )}
-                    {!isSelectedApproved ? <Alert type="warning" showIcon message="Ca đăng ký này đang chờ Quản lý cửa hàng hoặc HR duyệt phân ca. Chỉ được phép chấm công Vào/Ra ca sau khi ca đã chuyển sang Đã phân ca chính thức." /> : isSelectedDone ? <Alert type="success" showIcon message="Đã hoàn thành đầy đủ ca làm việc này." /> : (isSelectedAbsent || isSelectedForgotOut) ? (
+                    {!isSelectedApproved ? <Alert type="warning" showIcon message="Ca đăng ký này đang chờ Quản lý cửa hàng hoặc HR duyệt phân ca. Chỉ được phép chấm công Vào/Ra ca sau khi ca đã chuyển sang Đã phân ca chính thức." /> : isSelectedDone ? <Alert type="success" showIcon message="Đã hoàn thành đầy đủ ca làm việc này." action={activeShift ? <Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setAttShiftId(String(activeShift.id))}>Chi tiết điểm danh</Button> : undefined} /> : (isSelectedAbsent || isSelectedForgotOut) ? (
                       <Space direction="vertical" size={8} style={{ width: '100%' }}>
                         {activeShift?.pendingAdjustmentCode ? <Alert type="warning" showIcon message={`Ca làm việc này đã gửi Phiếu bổ sung công (${String(activeShift.pendingAdjustmentCode)}) và đang chờ Cửa hàng / HR phê duyệt.`} /> : isSelectedForgotOut ? <><Alert type="error" showIcon message={`Ca làm việc ngày ${dayjs(String(activeShift?.workDate)).format('DD/MM/YYYY')} đã quá thời hạn 60 phút sau giờ kết thúc ca mà chưa Ra ca. Vui lòng gửi Phiếu bổ sung công để bù giờ Ra ca.`} /><Button type="primary" danger block icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(String(activeShift?.id)); setAdjOpen(true); }}>Làm phiếu bổ sung công (Quên chấm công Ra ca)</Button></> : <><Alert type="error" showIcon message={`Ca làm việc (${String(activeShift?.startAt || '07:00')} – ${String(activeShift?.endAt || '12:00')}) đã qua giờ kết thúc ca mà chưa điểm danh nên đã khóa Vào ca và chuyển sang Vắng mặt.`} /><Button type="primary" danger block icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(String(activeShift?.id)); setAdjOpen(true); }}>Làm phiếu bổ sung công bù ca vắng mặt này</Button></>}
                       </Space>
@@ -211,6 +210,7 @@ export default function EmployeeSection() {
 
       <AttendanceCameraModal open={Boolean(cameraModalKind)} kind={cameraModalKind ?? 'CHECK_IN'} shift={activeShift} loading={postMut.isPending} onClose={() => setCameraModalKind(null)} onConfirm={(payload) => postMut.mutate({ url: '/attendance/check', body: payload })} />
       <AttendanceEventDetailModal event={detailEvent} onClose={() => setDetailEvent(null)} />
+      <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
       <ScheduleRequestDetailModal target={detailReq} onClose={() => setDetailReq(null)} />
       <AttendanceAdjustmentModal open={adjOpen} employeeId={empId} shifts={publishedShifts} initialShiftId={presetAdjShiftId} onClose={() => setAdjOpen(false)} onSuccess={() => qc.invalidateQueries({ queryKey: ['my-attendance'] })} />
       <GovernanceDetailDrawer record={viewingDoc?.record ?? null} kind={viewingDoc?.kind ?? 'announcement'} mediaPool={commsQ.data?.mediaAssets} onClose={() => setViewingDoc(null)} />

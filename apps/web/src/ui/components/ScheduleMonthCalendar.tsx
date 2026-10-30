@@ -1,10 +1,11 @@
 'use client';
 
 import { Badge, Button, Calendar, Card, Space, Tag, Tooltip } from 'antd';
-import { CalendarOutlined, LeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
+import { CalendarOutlined, EyeOutlined, LeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import { computePerBranchStaffingBadges, useStaffingRules } from '../hooks/useStaffingRules';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
+import { canViewShiftAttendanceDetail } from './ShiftAttendanceDetailModal';
 
 interface ScheduleCellHandlers {
   assignments: ScheduleAssignmentItem[];
@@ -13,6 +14,7 @@ interface ScheduleCellHandlers {
   isPartialFilter?: boolean;
   onAddAtCell: (dateStr: string, shiftCode?: string) => void;
   onEditItem: (item: ScheduleAssignmentItem) => void;
+  onViewAttendance?: (item: ScheduleAssignmentItem) => void;
 }
 
 export interface ScheduleMonthCalendarProps extends ScheduleCellHandlers {
@@ -23,7 +25,7 @@ export interface ScheduleMonthCalendarProps extends ScheduleCellHandlers {
 }
 
 /** Chế độ xem Lịch Tháng có đánh dấu phân ca & trạng thái nhân sự. */
-export function ScheduleMonthCalendar({ todayDate, selectedBranchId = 'ALL', assignments, canEdit, hideStaffingBadge = false, isPartialFilter = false, onAddAtCell, onEditItem, calMonth, onMonthChange }: ScheduleMonthCalendarProps) {
+export function ScheduleMonthCalendar({ todayDate, selectedBranchId = 'ALL', assignments, canEdit, hideStaffingBadge = false, isPartialFilter = false, onAddAtCell, onEditItem, onViewAttendance, calMonth, onMonthChange }: ScheduleMonthCalendarProps) {
   const { rules, branchCodeById } = useStaffingRules(!hideStaffingBadge);
   const effectiveToday = dayjs(todayDate || dayjs().format('YYYY-MM-DD'));
   const isCurrentMonth = calMonth.format('YYYY-MM') === effectiveToday.format('YYYY-MM');
@@ -125,9 +127,14 @@ export function ScheduleMonthCalendar({ todayDate, selectedBranchId = 'ALL', ass
                           <span style={{ fontWeight: 600, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {item.shiftLabel.replace('Ca ', '')}: {item.employeeName}
                           </span>
-                          <span className="num" style={{ fontSize: 10, color: '#475569', marginLeft: 4 }}>
-                            {item.scheduledHours}h
-                          </span>
+                          <Space size={4} style={{ marginLeft: 4, flexShrink: 0 }}>
+                            <span className="num" style={{ fontSize: 10, color: '#475569' }}>{item.scheduledHours}h</span>
+                            {onViewAttendance && canViewShiftAttendanceDetail(item) && (
+                              <Tooltip title="Xem chi tiết điểm danh">
+                                <EyeOutlined onClick={(e) => { e.stopPropagation(); onViewAttendance(item); }} style={{ color: '#16A34A', fontSize: 12 }} />
+                              </Tooltip>
+                            )}
+                          </Space>
                         </div>
                       );
                     })}

@@ -1,7 +1,7 @@
 'use client';
 
 import { Alert, App, Button, Col, Flex, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space } from 'antd';
-import { CheckOutlined, CloseOutlined, DeleteOutlined, FileAddOutlined, SaveOutlined } from '@ant-design/icons';
+import { CheckOutlined, CloseOutlined, DeleteOutlined, EyeOutlined, FileAddOutlined, SaveOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
@@ -13,6 +13,7 @@ import { evaluateBranchShiftSurplusPreview, useStaffingRules } from '../hooks/us
 import { DateStringPicker } from './DateTimePickers';
 import { GuardButton, usePermissionGuard } from './GuardButton';
 import { hasPendingAdjustmentRecord, isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
+import { canViewShiftAttendanceDetail } from './ShiftAttendanceDetailModal';
 
 export interface ScheduleAssignmentItem {
   id: string; employeeId: string; employeeCode: string; employeeName: string;
@@ -35,6 +36,7 @@ export interface ScheduleFormModalProps {
   employees: { value: string; label: string; branchId?: string }[];
   existingAssignments?: ScheduleAssignmentItem[];
   canEdit?: boolean; onClose: () => void;
+  onViewAttendance?: (item: ScheduleAssignmentItem) => void;
 }
 
 function isTimeOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
@@ -46,7 +48,7 @@ function isTimeOverlap(aStart: string, aEnd: string, bStart: string, bEnd: strin
 }
 
 export function ScheduleFormModal({
-  open, editing, presetDate, presetShiftCode, employees, existingAssignments = [], canEdit = true, onClose,
+  open, editing, presetDate, presetShiftCode, employees, existingAssignments = [], canEdit = true, onClose, onViewAttendance,
 }: ScheduleFormModalProps) {
   const [form] = Form.useForm<ScheduleFormValues>();
   const [quickAdjOpen, setQuickAdjOpen] = useState(false);
@@ -162,6 +164,7 @@ export function ScheduleFormModal({
             )}
             <Space wrap size={8}>
               <Button icon={<CloseOutlined />} onClick={onClose}>{canEditFields ? 'Hủy bỏ' : 'Đóng'}</Button>
+              {editing && onViewAttendance && canViewShiftAttendanceDetail(editing) && <Button type="primary" ghost icon={<EyeOutlined />} onClick={() => onViewAttendance(editing)}>Xem chi tiết điểm danh</Button>}
               {isEditingAbsent && <Button danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công</Button>}
               {isApprovedNonDraft && <GuardButton type="primary" icon={<SaveOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={canModifyShift} loading={saveMutation.isPending} onClick={() => saveMutation.mutate(form.getFieldsValue())}>Lưu ghi chú</GuardButton>}
               {canEditFields && editing?.status === 'DRAFT' && <GuardButton type="primary" icon={<CheckOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={canEditFields} loading={saveMutation.isPending} onClick={async () => { const vals = await form.validateFields(); saveMutation.mutate({ ...vals, status: 'PUBLISHED' }); }}>Duyệt &amp; Phát hành ca</GuardButton>}
@@ -170,12 +173,14 @@ export function ScheduleFormModal({
           </Flex>
         ) : (
           <Space wrap size={8}>
+            {editing && onViewAttendance && canViewShiftAttendanceDetail(editing) && <Button type="primary" ghost icon={<EyeOutlined />} onClick={() => onViewAttendance(editing)}>Xem chi tiết điểm danh</Button>}
             {isEditingAbsent && <Button type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công</Button>}
             <Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
           </Space>
         )
       }
     >
+      {editing && onViewAttendance && editing.status === 'COMPLETED' && <Alert type="success" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca làm việc này đã hoàn thành." action={<Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => onViewAttendance(editing)}>Xem chi tiết điểm danh</Button>} />}
       {isLocked && <Alert type="info" showIcon style={{ marginTop: 8, marginBottom: 8 }} message={`Ca làm việc này thuộc kỳ lương đã chốt (${editing?.lockedByPeriodCode || 'Đã phê duyệt'}), đã khóa chỉnh sửa và xóa để bảo toàn dữ liệu bảng lương.`} />}
       {!isLocked && isApprovedNonDraft && <Alert type="info" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca làm việc này đã được phê duyệt nên các thông tin nhân sự, ngày và khung ca đã được khóa. Bạn vẫn có thể chỉnh sửa Ghi chú phân ca bên dưới hoặc xóa phân ca này." />}
       {!isLocked && editing?.status === 'DRAFT' && <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca đăng ký đang chờ Quản lý cửa hàng hoặc HR phê duyệt. Nhân sự phân công đã được khóa cố định; bấm 'Duyệt & Phát hành ca' để phát hành chính thức." />}

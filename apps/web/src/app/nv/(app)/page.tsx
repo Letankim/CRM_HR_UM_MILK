@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Avatar, Badge, Button, Card, Col, Dropdown, Grid, Progress, Row, Space, Tag, Typography } from 'antd';
 import {
   BookOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined,
-  DownOutlined, EnvironmentOutlined, FieldTimeOutlined, FileTextOutlined, KeyOutlined,
+  DownOutlined, EnvironmentOutlined, EyeOutlined, FieldTimeOutlined, FileTextOutlined, KeyOutlined,
   LogoutOutlined, NotificationOutlined, ReloadOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -17,6 +17,7 @@ import { useLogout, useMe } from '@/lib/auth';
 import { StatusTag } from '@/ui/StatusTag';
 import { BRAND } from '@/ui/theme';
 import { AhrBrandMark, AhrWordmarkSvg } from '@/ui/components/AhrBrandLogo';
+import { ShiftAttendanceDetailModal } from '@/ui/components/ShiftAttendanceDetailModal';
 import { UserProfileModal } from '@/ui/components/UserProfileModal';
 
 interface MyAttendanceData {
@@ -34,7 +35,7 @@ export default function EmployeeHome() {
   const logout = useLogout('employee');
   const screens = Grid.useBreakpoint();
   const isDesktop = Boolean(screens.md);
-  const [profileTab, setProfileTab] = useState<'info' | 'password' | null>(null);
+  const [profileTab, setProfileTab] = useState<'info' | 'password' | null>(null), [attShiftId, setAttShiftId] = useState<string | null>(null);
 
   const myQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<MyAttendanceData>('/my-attendance'), enabled: !!data });
   const swapsQ = useQuery({ queryKey: ['nv-swaps'], queryFn: () => api.list<Record<string, unknown>>('/admin/shift-swaps?per_page=50'), enabled: !!data });
@@ -118,7 +119,7 @@ export default function EmployeeHome() {
                 {s.status === 'DRAFT' ? (
                   <Tag color="gold" style={{ margin: 0 }}>Chờ CH / HR duyệt ca</Tag>
                 ) : (s.status === 'COMPLETED' || (inEv && outEv)) ? (
-                  <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>Đã hoàn thành ca</Tag>
+                  <Space size={6}><Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>Đã hoàn thành ca</Tag><Button size="small" icon={<EyeOutlined />} onClick={() => setAttShiftId(String(s.id))}>Chi tiết điểm danh</Button></Space>
                 ) : (s.status === 'ABSENT' || Boolean(s.isAbsentShift)) ? (
                   <Space size={6}><Tag color="red" style={{ margin: 0 }}>Vắng mặt (Quá giờ ca)</Tag><Link href="/nv/cong"><Button size="small" danger>Bổ sung công</Button></Link></Space>
                 ) : Boolean(s.isForgotCheckout) ? (
@@ -130,13 +131,14 @@ export default function EmployeeHome() {
                 ) : !inEv ? (
                   <Link href="/nv/diem-danh"><Button size="small" type="primary" icon={<CheckCircleOutlined />}>Vào ca</Button></Link>
                 ) : (
-                  <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã hoàn thành ca</Tag>
+                  <Space size={6}><Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã hoàn thành ca</Tag><Button size="small" icon={<EyeOutlined />} onClick={() => setAttShiftId(String(s.id))}>Chi tiết điểm danh</Button></Space>
                 )}
               </div>
             );
           })}
         </Space>
       )}
+      <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
     </Card>
   );
 

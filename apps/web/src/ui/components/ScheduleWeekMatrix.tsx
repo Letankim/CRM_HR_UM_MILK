@@ -1,13 +1,14 @@
 'use client';
 
 import { Button, Card, Flex, Space, Tag, Tooltip, Typography } from 'antd';
-import { CalendarOutlined, LeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
+import { CalendarOutlined, EyeOutlined, LeftOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useEffect, useMemo, useRef } from 'react';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { computePerBranchStaffingBadges, useStaffingRules } from '../hooks/useStaffingRules';
 import { BRAND } from '../theme';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
+import { canViewShiftAttendanceDetail } from './ShiftAttendanceDetailModal';
 
 const SHIFT_COLORS = ['#2563EB', '#0D9488', '#7C3AED', '#EA580C', '#D97706', '#0284C7'];
 const WEEKDAY_NAMES = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật'];
@@ -25,6 +26,7 @@ interface ScheduleCellHandlers {
   isPartialFilter?: boolean;
   onAddAtCell: (dateStr: string, shiftCode?: string) => void;
   onEditItem: (item: ScheduleAssignmentItem) => void;
+  onViewAttendance?: (item: ScheduleAssignmentItem) => void;
 }
 
 export interface ScheduleWeekMatrixProps extends ScheduleCellHandlers {
@@ -35,7 +37,7 @@ export interface ScheduleWeekMatrixProps extends ScheduleCellHandlers {
 }
 
 /** Chế độ xem Lưới Lịch Tuần (Ca × Ngày), bấm vào ô để thêm hoặc sửa phân ca. */
-export function ScheduleWeekMatrix({ todayDate, selectedBranchId = 'ALL', assignments, canEdit, hideStaffingBadge = false, isPartialFilter = false, onAddAtCell, onEditItem, weekStart, onWeekStartChange }: ScheduleWeekMatrixProps) {
+export function ScheduleWeekMatrix({ todayDate, selectedBranchId = 'ALL', assignments, canEdit, hideStaffingBadge = false, isPartialFilter = false, onAddAtCell, onEditItem, onViewAttendance, weekStart, onWeekStartChange }: ScheduleWeekMatrixProps) {
   const { rules, branchCodeById } = useStaffingRules(!hideStaffingBadge);
   const effectiveToday = todayDate || dayjs().format('YYYY-MM-DD');
   const currentWeekMonday = getMonday(dayjs(effectiveToday));
@@ -81,26 +83,16 @@ export function ScheduleWeekMatrix({ todayDate, selectedBranchId = 'ALL', assign
       title={
         <Flex justify="space-between" align="center" wrap gap={10}>
           <Space size={8} wrap>
-            <Typography.Text strong>
-              Lưới Lịch Tuần ({weekStart.format('DD/MM/YYYY')} – {weekStart.add(6, 'day').format('DD/MM/YYYY')})
-            </Typography.Text>
+            <Typography.Text strong>Lưới Lịch Tuần ({weekStart.format('DD/MM/YYYY')} – {weekStart.add(6, 'day').format('DD/MM/YYYY')})</Typography.Text>
             {isCurrentWeek && <Tag color="blue" style={{ borderRadius: 2, margin: 0 }}>Tuần hiện tại</Tag>}
-            {canEdit ? (
-              <Tag color="blue" style={{ borderRadius: 2, margin: 0 }}>Bấm vào ô để thêm hoặc sửa trực tiếp</Tag>
-            ) : (
-              <Tag style={{ borderRadius: 2, margin: 0 }}>Chế độ xem lịch (Chỉ đọc)</Tag>
-            )}
+            {canEdit ? <Tag color="blue" style={{ borderRadius: 2, margin: 0 }}>Bấm vào ô để thêm hoặc sửa trực tiếp</Tag> : <Tag style={{ borderRadius: 2, margin: 0 }}>Chế độ xem lịch (Chỉ đọc)</Tag>}
           </Space>
           <Space size={6} wrap>
-            <Button size="small" icon={<LeftOutlined />} onClick={() => onWeekStartChange((w) => w.subtract(7, 'day'))}>
-              Tuần trước
-            </Button>
+            <Button size="small" icon={<LeftOutlined />} onClick={() => onWeekStartChange((w) => w.subtract(7, 'day'))}>Tuần trước</Button>
             <Button size="small" type={isCurrentWeek ? 'primary' : 'default'} ghost={isCurrentWeek} icon={<CalendarOutlined />} onClick={() => onWeekStartChange(() => currentWeekMonday)}>
               Tuần hiện tại ({currentWeekMonday.format('DD/MM')} – {currentWeekMonday.add(6, 'day').format('DD/MM')})
             </Button>
-            <Button size="small" icon={<RightOutlined />} onClick={() => onWeekStartChange((w) => w.add(7, 'day'))}>
-              Tuần sau
-            </Button>
+            <Button size="small" icon={<RightOutlined />} onClick={() => onWeekStartChange((w) => w.add(7, 'day'))}>Tuần sau</Button>
           </Space>
         </Flex>
       }
@@ -186,21 +178,21 @@ export function ScheduleWeekMatrix({ todayDate, selectedBranchId = 'ALL', assign
                                   </Tag>
                                 </div>
                               ) : null}
+                              {onViewAttendance && canViewShiftAttendanceDetail(item) && (
+                                <div style={{ marginTop: 4 }}>
+                                  <Button
+                                    size="small" type="link" icon={<EyeOutlined />}
+                                    onClick={(e) => { e.stopPropagation(); onViewAttendance(item); }}
+                                    style={{ padding: 0, height: 18, fontSize: 11, fontWeight: 600 }}
+                                  >
+                                    Chi tiết điểm danh
+                                  </Button>
+                                </div>
+                              )}
                             </div>
                           </Tooltip>
                         ))}
-                        {canEdit && (
-                          <Button
-                            type="dashed"
-                            size="small"
-                            block
-                            icon={<PlusOutlined />}
-                            onClick={() => onAddAtCell(dateStr, shift.code)}
-                            style={{ fontSize: 11 }}
-                          >
-                            Phân ca
-                          </Button>
-                        )}
+                        {canEdit && <Button type="dashed" size="small" block icon={<PlusOutlined />} onClick={() => onAddAtCell(dateStr, shift.code)} style={{ fontSize: 11 }}>Phân ca</Button>}
                       </Space>
                     </td>
                   );

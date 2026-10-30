@@ -15,6 +15,7 @@ import { ensureSyncedNotifications } from '../services/notification-sync.service
 import { applyApprovedAdjustmentToShift, assertNoDuplicateAdjustment, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { buildPaginatedAttendanceSessions, calculateHaversineMeters, describePunctuality, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto } from './attendance-helpers.js';
+import { registerShiftAttendanceDetailRoute } from './attendance-shift-detail.js';
 export { calculateHaversineMeters } from './attendance-helpers.js';
 
 const zCheckInOutBody = z.object({
@@ -38,6 +39,7 @@ const zCreateAdjustmentBody = z.object({
 const zDecideAdjustmentBody = z.object({ version: z.coerce.number().int().min(1), action: z.enum(['STORE_CONFIRM', 'HR_APPROVE', 'HR_REJECT']), decision_reason: z.string().trim().max(300).optional().default('') });
 
 export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
+  registerShiftAttendanceDetailRoute(app, ctx);
   app.get('/api/attendance/photos/:fileId', async (request, reply) => {
     const { fileId } = request.params as { fileId: string }, buf = await loadAttendancePhotoBuffer(ctx, fileId);
     if (!buf) throw Errors.notFound('Ảnh điểm danh trên Google Drive', fileId);

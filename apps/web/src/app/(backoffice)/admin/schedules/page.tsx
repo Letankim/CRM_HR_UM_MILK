@@ -16,6 +16,7 @@ import { ScheduleFormModal, type ScheduleAssignmentItem } from '@/ui/components/
 import { ScheduleSurplusAlertBanner, ScheduleViewsPanel } from '@/ui/components/ScheduleViewsPanel';
 import { getMonday } from '@/ui/components/ScheduleWeekMatrix';
 import { ScheduleWorkflowsTabs } from '@/ui/components/ScheduleWorkflowsTabs';
+import { ShiftAttendanceDetailModal } from '@/ui/components/ShiftAttendanceDetailModal';
 import { buildScheduleColumns, exportScheduleExcel } from '@/ui/components/schedule-table-columns';
 import { useScheduleBulkActions } from '@/ui/hooks/useScheduleBulkActions';
 import { useShiftTemplates } from '@/ui/hooks/useShiftTemplates';
@@ -40,24 +41,15 @@ function SchedulesView() {
   const [calMonth, setCalMonth] = useState<Dayjs>(() => dayjs());
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<ScheduleAssignmentItem | null>(null);
-  const [presetDate, setPresetDate] = useState<string | undefined>();
-  const [presetShift, setPresetShift] = useState<string | undefined>();
+  const [attShiftId, setAttShiftId] = useState<string | null>(null);
+  const [presetDate, setPresetDate] = useState<string | undefined>(), [presetShift, setPresetShift] = useState<string | undefined>();
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
-  const branchesQuery = useQuery({
-    queryKey: ['branches', 'select'],
-    queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'),
-  });
-  const employeesQuery = useQuery({
-    queryKey: ['employees', 'select-all'],
-    queryFn: () => api.list<{ id: string; employeeCode: string; fullName: string; branchId: string; branchName: string }>('/admin/employees?per_page=100'),
-  });
+  const branchesQuery = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
+  const employeesQuery = useQuery({ queryKey: ['employees', 'select-all'], queryFn: () => api.list<{ id: string; employeeCode: string; fullName: string; branchId: string; branchName: string }>('/admin/employees?per_page=100') });
   const { options: shiftFilterOptions } = useShiftTemplates(branchId);
 
-  const attCountQ = useQuery({
-    queryKey: ['attendance-sessions-count', branchId],
-    queryFn: () => api.list<AttendanceEventRow>(`/admin/attendance/sessions?page=1&per_page=1${branchId !== 'ALL' ? `&branch_id=${branchId}` : ''}`),
-  });
+  const attCountQ = useQuery({ queryKey: ['attendance-sessions-count', branchId], queryFn: () => api.list<AttendanceEventRow>(`/admin/attendance/sessions?page=1&per_page=1${branchId !== 'ALL' ? `&branch_id=${branchId}` : ''}`) });
 
   const dateRangeParams = useMemo(() => {
     if (viewMode === 'WEEK_MATRIX') return { from: weekStart.format('YYYY-MM-DD'), to: weekStart.add(6, 'day').format('YYYY-MM-DD'), limit: 1000 };
@@ -194,18 +186,19 @@ function SchedulesView() {
           {viewMode === 'ATTENDANCE' ? (
             <AttendanceEventsTable externalFilters={{ q, branchId, shiftCode, status }} />
           ) : viewMode !== 'TABLE' ? (
-            <ScheduleViewsPanel mode={viewMode} selectedBranchId={branchId} assignments={items} canEdit={canEdit} loading={query.isLoading || query.isFetching || manualRefreshing} isPartialFilter={Boolean(q.trim() || status !== 'ALL')} weekStart={weekStart} onWeekStartChange={setWeekStart} calMonth={calMonth} onMonthChange={setCalMonth} onAddAtCell={(dateStr, sCode) => { setEditingRow(null); setPresetDate(dateStr); setPresetShift(sCode); setModalOpen(true); }} onEditItem={openEdit} />
+            <ScheduleViewsPanel mode={viewMode} selectedBranchId={branchId} assignments={items} canEdit={canEdit} loading={query.isLoading || query.isFetching || manualRefreshing} isPartialFilter={Boolean(q.trim() || status !== 'ALL')} weekStart={weekStart} onWeekStartChange={setWeekStart} calMonth={calMonth} onMonthChange={setCalMonth} onAddAtCell={(dateStr, sCode) => { setEditingRow(null); setPresetDate(dateStr); setPresetShift(sCode); setModalOpen(true); }} onEditItem={openEdit} onViewAttendance={(r) => setAttShiftId(r.id)} />
           ) : (
             <DataTableCard<ScheduleAssignmentItem>
               columns={buildScheduleColumns({
-                canEdit, onApprove: (r) => approveSingle.mutate(r), onEdit: openEdit,
+                canEdit, onApprove: (r) => approveSingle.mutate(r), onViewAttendance: (r) => setAttShiftId(r.id), onEdit: openEdit,
                 onDelete: (r) => modal.confirm({ title: `Xác nhận xóa phân công ca của ${r.employeeName}?`, content: `Ca ${r.shiftLabel} ngày ${r.workDate} sẽ bị xóa khỏi lịch làm việc.`, okText: 'Xác nhận xóa', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelText: 'Hủy bỏ', cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => deleteSingle.mutateAsync(r) }),
               })}
               dataSource={items} meta={query.data?.meta} loading={query.isLoading || query.isFetching || manualRefreshing}
               codeExtractor={(r) => r.employeeCode} onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }} bulkActions={bulkActions}
             />
           )}
-          <ScheduleFormModal open={modalOpen} editing={editingRow} presetDate={presetDate} presetShiftCode={presetShift} employees={employeeOptions} existingAssignments={scopeAssignments} canEdit={canEdit} onClose={() => { setModalOpen(false); setEditingRow(null); }} />
+          <ScheduleFormModal open={modalOpen} editing={editingRow} presetDate={presetDate} presetShiftCode={presetShift} employees={employeeOptions} existingAssignments={scopeAssignments} canEdit={canEdit} onClose={() => { setModalOpen(false); setEditingRow(null); }} onViewAttendance={(r) => setAttShiftId(r.id)} />
+          <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
         </>
       ) : (
         <ScheduleWorkflowsTabs employees={employeeOptions} assignments={items} />

@@ -208,7 +208,8 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
       action: 'employee.create', entity: 'EMPLOYEES', entityId: created.id,
       after: { employee_code: created.employee_code, stage: created.stage, user_id: created.user_id, salary_rate_type: body.salary?.rate_type ?? null },
     });
-    queueEmployeeOnboardedEmail(ctx, created, request.auth?.user.email);
+    const onboardSecret = created.user_id ? (body.link_user_id ? (body.initial_pin && body.initial_pin.length >= 6 ? body.initial_pin : undefined) : (body.create_account ? (body.initial_pin || DEMO_PIN) : undefined)) : undefined;
+    queueEmployeeOnboardedEmail(ctx, created, request.auth?.user.email, onboardSecret);
     reply.code(201);
     return sendSuccess(request, 'Đã tạo hồ sơ nhân sự mới và đề xuất tài khoản ở trạng thái Chờ Quản trị viên kích hoạt', mapEmployeeRecord(created, ctx));
   });

@@ -2,12 +2,13 @@
 
 import { Flex, Space, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { CheckOutlined, DeleteOutlined, EditOutlined, FileAddOutlined } from '@ant-design/icons';
+import { CheckOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileAddOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { exportToExcel } from '@/lib/export-excel';
 import { isAbsentShiftRecord } from '@/ui/components/QuickAbsentAdjustmentModal';
 import { RowActionButtons } from '@/ui/components/RowActionButtons';
 import type { ScheduleAssignmentItem } from '@/ui/components/ScheduleFormModal';
+import { canViewShiftAttendanceDetail } from '@/ui/components/ShiftAttendanceDetailModal';
 import { StatusTag } from '@/ui/StatusTag';
 
 /** Xuất bảng phân công lịch làm việc ra file Excel chuẩn doanh nghiệp. */
@@ -34,12 +35,13 @@ export function exportScheduleExcel(rows: ScheduleAssignmentItem[]) {
 interface BuildScheduleColumnsOptions {
   canEdit: boolean;
   onApprove?: (row: ScheduleAssignmentItem) => void;
+  onViewAttendance?: (row: ScheduleAssignmentItem) => void;
   onEdit: (row: ScheduleAssignmentItem) => void;
   onDelete: (row: ScheduleAssignmentItem) => void;
 }
 
 /** Cột bảng chi tiết phân công ca làm việc (chế độ xem `Bảng Chi Tiết`). */
-export function buildScheduleColumns({ canEdit, onApprove, onEdit, onDelete }: BuildScheduleColumnsOptions): ColumnsType<ScheduleAssignmentItem> {
+export function buildScheduleColumns({ canEdit, onApprove, onViewAttendance, onEdit, onDelete }: BuildScheduleColumnsOptions): ColumnsType<ScheduleAssignmentItem> {
   return [
     {
       title: 'Ngày & Khung ca',
@@ -102,14 +104,18 @@ export function buildScheduleColumns({ canEdit, onApprove, onEdit, onDelete }: B
       render: (_, r) => {
         const isAbsent = canEdit && !r.isLockedByPayroll && isAbsentShiftRecord(r as unknown as Record<string, unknown>);
         const isDraft = r.status === 'DRAFT';
+        const viewAttItem = onViewAttendance && canViewShiftAttendanceDetail(r)
+          ? [{ key: 'view-att', icon: <EyeOutlined style={{ color: '#16A34A' }} />, label: 'Xem chi tiết điểm danh', onClick: () => onViewAttendance(r) }]
+          : [];
         return (
           <RowActionButtons
             detailTooltip={isDraft ? 'Xem & chỉnh sửa phân ca chờ duyệt' : canEdit && !r.isLockedByPayroll ? 'Xem chi tiết & chỉnh sửa ghi chú' : 'Xem chi tiết ca làm việc'}
             onViewDetail={() => onEdit(r)}
             menuItems={
               r.isLockedByPayroll || !canEdit
-                ? []
+                ? viewAttItem
                 : [
+                    ...viewAttItem,
                     ...(isDraft && onApprove
                       ? [{ key: 'approve', icon: <CheckOutlined style={{ color: '#16A34A' }} />, label: 'Duyệt & Phát hành ca', onClick: () => onApprove(r) }]
                       : []),

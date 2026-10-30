@@ -8,7 +8,7 @@ import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { dayjs } from '../lib/time.js';
 import { assertBranchAccess, auditContext, requirePermission } from '../plugins/auth-context.js';
-import { queuePromotionOfficialEmail } from '../services/action-email-dispatcher.js';
+import { queueAccountCreatedEmail, queueAccountUpdatedEmail, queuePromotionOfficialEmail } from '../services/action-email-dispatcher.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { currentProfile, isProfileLocked, profilesOf, today } from '../services/salary-profile.service.js';
 import { assertAmountInRange, createSalaryProfile } from '../services/salary-profile.writer.js';
@@ -81,16 +81,14 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
 
     if (create_account && !prevLinkedUser) {
       const targetUname = (username || `nv.${before.employee_code.toLowerCase()}`).toLowerCase();
-      const createdUser = await ctx.db.users.insert(
-        {
-          username: targetUname, phone, display_name: rest.full_name || before.full_name, password_hash: pinHash ?? (await hashSecret(DEMO_PIN)),
-          role: (rest.stage ?? before.stage) === 'OFFICIAL' ? 'CHINH_THUC' : 'THU_VIEC', permissions_json: '[]', branch_scope: rest.branch_id || before.branch_id,
-          employee_id: before.employee_code, status: 'PENDING_ACTIVATION', session_version: 1, failed_login_count: 0, locked_until: '',
-          last_login_at: '', activated_by: '', activated_at: '', revoked_at: '', email: rest.email ?? before.email ?? '', revoked_by: '', revoke_reason: '',
-        },
-        actorId,
-      );
+      const createdUser = await ctx.db.users.insert({
+        username: targetUname, phone, display_name: rest.full_name || before.full_name, password_hash: pinHash ?? (await hashSecret(DEMO_PIN)),
+        role: (rest.stage ?? before.stage) === 'OFFICIAL' ? 'CHINH_THUC' : 'THU_VIEC', permissions_json: '[]', branch_scope: rest.branch_id || before.branch_id,
+        employee_id: before.employee_code, status: 'PENDING_ACTIVATION', session_version: 1, failed_login_count: 0, locked_until: '',
+        last_login_at: '', activated_by: '', activated_at: '', revoked_at: '', email: rest.email ?? before.email ?? '', revoked_by: '', revoke_reason: '',
+      }, actorId);
       nextUserId = createdUser.id;
+      queueAccountCreatedEmail(ctx, createdUser, request.auth?.user.email, initial_pin || DEMO_PIN);
     } else {
       const targetUser = link_user_id === '' ? undefined : link_user_id ? ctx.db.users.get(link_user_id) : prevLinkedUser;
       if (link_user_id && !targetUser) throw Errors.fieldValidation('link_user_id', 'INVALID_VALUE', 'Tài khoản người dùng được chọn không tồn tại', link_user_id);
@@ -99,6 +97,7 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
         fullName: rest.full_name || before.full_name, phone, email: rest.email,
         branchId: rest.branch_id || before.branch_id, stage: rest.stage ?? before.stage, pinPatch, actorId,
       });
+      if (initial_pin && initial_pin.length >= 6 && nextUserId) { const u = ctx.db.users.get(nextUserId); if (u) queueAccountUpdatedEmail(ctx, u, 'Cập nhật mật khẩu / mã PIN từ hồ sơ nhân sự', request.auth?.user.email, initial_pin); }
     }
 
     const updated = await ctx.db.employees.update(id, version, { ...rest, phone, user_id: nextUserId }, actorId);

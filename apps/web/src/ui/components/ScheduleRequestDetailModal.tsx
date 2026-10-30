@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import { Alert, Button, Descriptions, Modal, Space, Tag } from 'antd';
-import { CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DollarOutlined, FileAddOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DollarOutlined, EyeOutlined, FileAddOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { StatusTag } from '../StatusTag';
 import { hasPendingAdjustmentRecord, isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
+import { canViewShiftAttendanceDetail, ShiftAttendanceDetailModal } from './ShiftAttendanceDetailModal';
 import { renderSwapAllowanceTag } from './ShiftSwapApproveModal';
 import { renderDetailShiftStateAlert, renderWorkflowShiftStateTag } from './workflow-shift-warning';
 
@@ -38,16 +39,19 @@ export function ScheduleRequestDetailModal({
   onEditSwapAllowance?: (record: Record<string, unknown>) => void;
 }) {
   const [quickAdjOpen, setQuickAdjOpen] = useState(false);
+  const [attShiftId, setAttShiftId] = useState<string | null>(null);
   if (!target) return null;
   const { kind, record: r } = target;
   const isAbsentShift = kind === 'shift' && isAbsentShiftRecord(r);
   const hasPendingAdj = kind === 'shift' && hasPendingAdjustmentRecord(r);
+  const canViewAtt = kind === 'shift' && Boolean(r.id) && canViewShiftAttendanceDetail(r as { status?: string; attendanceStatusLabel?: string; checkInEvent?: unknown; checkOutEvent?: unknown });
 
   return (
     <Modal
       width="min(860px, 94vw)" open title={TITLES[kind]} onCancel={onClose}
       footer={
         <Space wrap size={8}>
+          {canViewAtt && <Button type="primary" ghost icon={<EyeOutlined />} onClick={() => setAttShiftId(String(r.id))}>Xem chi tiết điểm danh</Button>}
           {kind === 'swap' && r.status === 'PEER_ACCEPTED' && onApproveSwap && (
             <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => { onApproveSwap(r); onClose(); }}>Phê duyệt đổi ca (Bước 3/3)</Button>
           )}
@@ -201,6 +205,7 @@ export function ScheduleRequestDetailModal({
         )}
       </Descriptions>
       <QuickAbsentAdjustmentModal shift={isAbsentShift ? r : null} open={quickAdjOpen} onClose={() => setQuickAdjOpen(false)} onSuccess={onClose} />
+      <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
     </Modal>
   );
 }

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Alert, App, Button, Flex, Segmented, Space, Tabs, Tag } from 'antd';
 import {
   AppstoreOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined,
-  DeleteOutlined, DownloadOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined, SwapOutlined, TableOutlined,
+  DeleteOutlined, DownloadOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined, SwapOutlined, TableOutlined,
 } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -19,6 +19,7 @@ import { RowActionButtons } from './RowActionButtons';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
 import { ScheduleViewsPanel } from './ScheduleViewsPanel';
+import { canViewShiftAttendanceDetail, ShiftAttendanceDetailModal } from './ShiftAttendanceDetailModal';
 import { renderSwapAllowanceTag } from './ShiftSwapApproveModal';
 import { buildPortalShiftsBulkActions, exportEmergencyExcel, exportLeavesExcel, exportSwapsExcel } from './workflow-bulk-helpers';
 import { confirmWorkflowShiftOverride, renderWorkflowShiftStateTag } from './workflow-shift-warning';
@@ -43,7 +44,7 @@ export function EmployeeScheduleAndLeaveCenter({
   const [viewMode, setViewMode] = useState<ScheduleViewMode>('WEEK_MATRIX');
   useEffect(() => { setActiveTab(initialTab); }, [initialTab]);
   const [addShiftOpen, setAddShiftOpen] = useState(false), [leaveOpen, setLeaveOpen] = useState(false), [swapOpen, setSwapOpen] = useState(false);
-  const [detailTarget, setDetailTarget] = useState<ScheduleDetailTarget | null>(null);
+  const [detailTarget, setDetailTarget] = useState<ScheduleDetailTarget | null>(null), [attShiftId, setAttShiftId] = useState<string | null>(null);
   const shiftsPag = useClientPagination(10, 'ca'), leavesPag = useClientPagination(10, 'đơn'), emgPag = useClientPagination(10, 'báo cáo'), swapsPag = useClientPagination(10, 'yêu cầu');
 
   const peerRespondMut = useMutation({
@@ -113,6 +114,7 @@ export function EmployeeScheduleAndLeaveCenter({
                           <RowActionButtons
                             detailTooltip="Xem chi tiết ca làm việc" onViewDetail={() => setDetailTarget({ kind: 'shift', record: { ...r, employeeId: empId } })} loading={cancelShiftMut.isPending}
                             menuItems={[
+                              ...(canViewShiftAttendanceDetail(r as { status?: string; attendanceStatusLabel?: string; checkInEvent?: unknown; checkOutEvent?: unknown }) ? [{ key: 'view-att', icon: <EyeOutlined style={{ color: '#16A34A' }} />, label: 'Xem chi tiết điểm danh', onClick: () => setAttShiftId(String(r.id)) }] : []),
                               ...(isAbsentShiftRecord(r) ? [{ key: 'adj', icon: <FileAddOutlined style={{ color: '#DC2626' }} />, label: 'Tạo phiếu bổ sung công', onClick: () => setDetailTarget({ kind: 'shift', record: { ...r, employeeId: empId } }) }] : []),
                               ...(r.status === 'DRAFT' && !r.checkInEvent ? [{ key: 'cancel', icon: <DeleteOutlined />, danger: true, label: 'Hủy đăng ký ca chờ duyệt', onClick: () => cancelShiftMut.mutate([String(r.id)]) }] : []),
                             ]}
@@ -208,6 +210,7 @@ export function EmployeeScheduleAndLeaveCenter({
       />
 
       <ScheduleRequestDetailModal target={detailTarget} onClose={() => setDetailTarget(null)} />
+      <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
       <MyShiftRegisterModal open={addShiftOpen} todayDate={todayDate} onClose={() => setAddShiftOpen(false)} onCreated={onRefresh} />
       <LeaveRequestModal open={leaveOpen} employeeId={empId} onClose={() => setLeaveOpen(false)} onSuccess={onRefresh} />
       <ShiftSwapRequestModal open={swapOpen} employeeId={empId} shifts={shifts} peers={branchPeers} onClose={() => setSwapOpen(false)} onSuccess={onRefresh} />
