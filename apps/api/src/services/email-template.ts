@@ -89,8 +89,9 @@ export function renderEnterpriseEmailHtml(input: SendEmailInput): string {
             <td style="background-color: #0F172A; padding: 16px 24px; border-bottom: 2px solid #2563EB;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                 <tr>
-                  <td style="color: #FFFFFF; font-size: 14px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;">
-                    ${escapeHtml(SYSTEM_CONFIG.brandName)} &middot; ${escapeHtml(SYSTEM_CONFIG.brandSubtitle)}
+                  <td style="color: #FFFFFF; font-size: 14px; font-weight: 700; letter-spacing: 0.4px;">
+                    <span style="display: inline-block; padding: 2px 7px; margin-right: 6px; background-color: #2563EB; color: #FFFFFF; font-size: 12px; font-weight: 800; border-radius: 2px;">${escapeHtml(SYSTEM_CONFIG.productName)}</span>
+                    <span style="text-transform: uppercase;">${escapeHtml(SYSTEM_CONFIG.brandName)} &middot; ${escapeHtml(SYSTEM_CONFIG.brandSubtitle)}</span>
                   </td>
                   <td align="right" style="color: #94A3B8; font-size: 12px; font-family: Consolas, 'Courier New', monospace;">
                     MÃ THÔNG BÁO: ${escapeHtml(input.referenceCode)}

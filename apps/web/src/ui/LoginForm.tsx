@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { SYSTEM_CONFIG, type PublicUser } from '@umbm/shared';
 import { api, ApiClientError, hasSessionFlag, markSessionActive } from '@/lib/api';
 import { resolveLandingRoute, useMe, type AppKind } from '@/lib/auth';
+import { AhrBrandMark, AhrWordmarkSvg, AutoStackBadge } from './components/AhrBrandLogo';
 import { BRAND } from './theme';
 
 interface Props {
@@ -84,28 +85,36 @@ export function LoginForm({ app }: Props) {
           padding: '32px 28px 24px',
         }}
       >
-        <div style={{ marginBottom: 24 }}>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 6,
-              background: BRAND.primary,
-              color: '#fff',
-              display: 'grid',
-              placeItems: 'center',
-              fontWeight: 700,
-              fontSize: 14,
-              marginBottom: 16,
-            }}
-          >
-            {SYSTEM_CONFIG.brandShortCode}
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+              <AhrBrandMark size={40} tiled />
+              <div style={{ lineHeight: 1.15 }}>
+                <AhrWordmarkSvg height={20} />
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: '#64748B', letterSpacing: 0.4, marginTop: 3 }}>
+                  {SYSTEM_CONFIG.brandName}
+                </div>
+              </div>
+            </div>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: BRAND.primary,
+                background: BRAND.primaryBg,
+                border: `1px solid ${BRAND.primaryBorder}`,
+                borderRadius: 4,
+                padding: '2px 8px',
+              }}
+            >
+              {isEmployee ? 'Cổng Nhân viên' : 'Cổng Quản trị'}
+            </span>
           </div>
-          <Typography.Title level={4} style={{ margin: 0, fontWeight: 600 }}>
-            {isEmployee ? `${SYSTEM_CONFIG.brandName} — Nhân viên` : `${SYSTEM_CONFIG.brandName} — Quản trị`}
+          <Typography.Title level={4} style={{ margin: '0 0 2px', fontWeight: 700, fontSize: 18 }}>
+            {isEmployee ? 'Đăng nhập Cổng Nhân viên' : 'Đăng nhập Hệ thống Quản trị'}
           </Typography.Title>
-          <Typography.Text type="secondary">
-            {isEmployee ? 'Đăng nhập bằng số điện thoại và mật khẩu' : 'Đăng nhập bằng tài khoản quản trị hoặc số điện thoại'}
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+            {isEmployee ? 'Đăng nhập bằng số điện thoại và mật khẩu cá nhân' : 'Đăng nhập bằng tài khoản quản trị hoặc số điện thoại'}
           </Typography.Text>
         </div>
 
@@ -156,6 +165,25 @@ export function LoginForm({ app }: Props) {
           <Link href={isEmployee ? '/login' : '/nv/login'} style={{ fontWeight: 600 }}>
             <SwapOutlined /> {isEmployee ? 'Cổng Quản trị' : 'Cổng Nhân viên'}
           </Link>
+        </div>
+
+        <div
+          style={{
+            marginTop: 14,
+            paddingTop: 10,
+            borderTop: `1px dashed ${BRAND.border}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: 11.5,
+            color: '#64748B',
+          }}
+        >
+          <span>Nền tảng <strong>{SYSTEM_CONFIG.productName}</strong> {SYSTEM_CONFIG.version}</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span>bởi</span>
+            <AutoStackBadge height={13} showWordmark />
+          </span>
         </div>
       </div>
     </div>

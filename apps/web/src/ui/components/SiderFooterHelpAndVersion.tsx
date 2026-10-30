@@ -4,6 +4,7 @@ import { ExportOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { Tag, Tooltip } from 'antd';
 import { useState } from 'react';
 import { BRAND } from '../theme';
+import { AutoStackBadge } from './AhrBrandLogo';
 
 export const USER_GUIDE_HTML_URL = '/huong-dan-su-dung.html';
 
@@ -101,8 +102,12 @@ export function SiderFooterHelpAndVersion({
           paddingInline: collapsed ? 0 : 4,
         }}
       >
-        {!collapsed && <span style={{ fontSize: 12, color: '#64748B' }}>Phiên bản hệ thống</span>}
-        <Tooltip placement="right" title={collapsed ? `Phiên bản hệ thống ${versionLabel}` : undefined}>
+        {!collapsed && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#64748B' }}>
+            <AutoStackBadge height={13} showWordmark />
+          </span>
+        )}
+        <Tooltip placement="right" title={collapsed ? `AHr ${versionLabel} · Vận hành bởi Auto stack` : 'Phiên bản nền tảng AHr'}>
           <Tag color="blue" style={{ margin: 0, borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
             {collapsed ? versionLabel.replace(/\.0$/, '') : versionLabel}
           </Tag>

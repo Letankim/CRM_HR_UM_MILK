@@ -16,6 +16,7 @@ import { api } from '@/lib/api';
 import { useLogout, useMe } from '@/lib/auth';
 import { StatusTag } from '@/ui/StatusTag';
 import { BRAND } from '@/ui/theme';
+import { AhrBrandMark, AhrWordmarkSvg } from '@/ui/components/AhrBrandLogo';
 import { UserProfileModal } from '@/ui/components/UserProfileModal';
 
 interface MyAttendanceData {
@@ -173,9 +174,15 @@ export default function EmployeeHome() {
   return (
     <div style={{ padding: '10px 6px', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-        <div style={{ minWidth: 0 }}>
-          <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>{dayjs().format('DD/MM/YYYY')} · Cổng Nhân viên {SYSTEM_CONFIG.brandName}</Typography.Text>
-          <Typography.Title level={5} style={{ margin: 0, fontWeight: 700 }}>{u.displayName}</Typography.Title>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <AhrBrandMark size={32} tiled />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 1 }}>
+              <AhrWordmarkSvg height={13} />
+              <Typography.Text type="secondary" style={{ fontSize: 11.5 }}>· {dayjs().format('DD/MM/YYYY')}</Typography.Text>
+            </div>
+            <Typography.Title level={5} style={{ margin: 0, fontWeight: 700, fontSize: 15, lineHeight: 1.25 }}>{u.displayName}</Typography.Title>
+          </div>
         </div>
         <Dropdown trigger={['click']} placement="bottomRight" menu={{ items: [{ key: 'role', icon: <UserSwitchOutlined />, label: `${u.displayName} (${ROLE_LABELS[u.role]})`, disabled: true }, { type: 'divider' }, { key: 'profile', icon: <UserOutlined />, label: 'Hồ sơ cá nhân & Cập nhật thông tin', onClick: () => setProfileTab('info') }, { key: 'password', icon: <KeyOutlined />, label: 'Đổi mật khẩu / Mã PIN bảo mật', onClick: () => setProfileTab('password') }, ...(isInternal ? [{ key: 'admin', icon: <UserSwitchOutlined />, label: 'Về trang Quản trị', onClick: () => router.push('/admin/my-attendance') }] : []), { type: 'divider' }, { key: 'logout', icon: <LogoutOutlined />, danger: true, label: 'Đăng xuất hệ thống', onClick: logout }] }}>
           <div className="umbm-header-pill" style={{ height: 34, display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px 0 6px', border: `1px solid ${BRAND.headerControlBorder}`, borderRadius: 8, cursor: 'pointer', background: '#F8FAFC', flexShrink: 0 }}>

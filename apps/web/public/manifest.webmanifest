@@ -1,0 +1,17 @@
+{
+  "name": "AHr — Hệ thống Quản trị Nhân sự",
+  "short_name": "AHr",
+  "description": "AHr — Nền tảng Quản trị Nhân sự doanh nghiệp, phát triển và vận hành bởi Auto stack",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#FFFFFF",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

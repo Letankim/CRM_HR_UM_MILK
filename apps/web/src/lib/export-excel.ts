@@ -84,12 +84,12 @@ export function exportToExcel<TRow>({
   <table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;">
     <tr>
       <td colspan="${colSpan}" style="background-color:#0F172A;color:#FFFFFF;font-size:15px;font-weight:800;padding:10px;">
-        ${escapeHtml(SYSTEM_CONFIG.brandName)} — ${escapeHtml(sheetTitle.toUpperCase())}
+        ${escapeHtml(SYSTEM_CONFIG.productName)} · ${escapeHtml(SYSTEM_CONFIG.brandName)} — ${escapeHtml(sheetTitle.toUpperCase())}
       </td>
     </tr>
     <tr>
       <td colspan="${colSpan}" style="background-color:#F8FAFC;color:#475569;font-size:11px;padding:6px 10px;border:1px solid #E2E8F0;">
-        ${escapeHtml(subtitle ?? `Tổng số bản ghi: ${rows.length}`)} | Thời điểm xuất báo cáo: ${escapeHtml(exportedAt)}
+        ${escapeHtml(subtitle ?? `Tổng số bản ghi: ${rows.length}`)} | Thời điểm xuất báo cáo: ${escapeHtml(exportedAt)} | Nền tảng ${escapeHtml(SYSTEM_CONFIG.productName)} (${escapeHtml(SYSTEM_CONFIG.vendorName)})
       </td>
     </tr>
     <tr>${headerCells}</tr>

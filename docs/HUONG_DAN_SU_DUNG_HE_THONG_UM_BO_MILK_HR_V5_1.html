@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
-  <title>Hướng Dẫn Sử Dụng Hệ Thống — Ụm Bò Milk HR v5.1.0 | Vận hành bởi AUTO STACK</title>
+  <title>AHr — Cẩm Nang Hướng Dẫn Sử Dụng Hệ Thống v5.1.0 | Vận hành bởi Auto stack</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='12' y1='7' x2='34' y2='57' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0%25' stop-color='%2300A8FF'/%3E%3Cstop offset='100%25' stop-color='%230062E6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='0.75' y='0.75' width='62.5' height='62.5' rx='13.25' fill='%23FFFFFF' stroke='%23CBD5E1' stroke-width='1.5'/%3E%3Cpath d='M13 55.5H7.2C4.2 55.5 3.1 53.1 4.6 50.5L26.2 13.4C28.6 9.3 32.5 8.2 37.8 8.2H43C39.2 9.4 36.8 16 34.7 19.6L13 55.5Z' fill='url(%23g)'/%3E%3Cpath d='M21.8 47.5L28 36.8L34.2 47.5H21.8Z' fill='url(%23g)'/%3E%3Cpath d='M39.2 19.5H45.4V33.8H51.6V19.5H57.8C58.46 19.5 59 20.04 59 20.7V54.3C59 54.96 58.46 55.5 57.8 55.5H51.6V40.6H45.4V55.5H39.2C38.54 55.5 38 54.96 38 54.3V20.7C38 20.04 38.54 19.5 39.2 19.5Z' fill='%230F172A'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -107,15 +108,11 @@
       text-decoration: none;
     }
     .brand-logo {
-      width: 34px;
-      height: 34px;
-      border-radius: 6px;
-      background: #0F172A;
-      border: 1px solid var(--ant-primary);
-      color: #FFFFFF;
-      font-weight: 800;
-      font-size: 12px;
-      letter-spacing: 0.4px;
+      width: 35px;
+      height: 35px;
+      border-radius: 7px;
+      background: #FFFFFF;
+      border: 1px solid var(--ant-control-border);
       display: grid;
       place-items: center;
       flex-shrink: 0;
@@ -739,17 +736,14 @@
       gap: 12px;
     }
     .autostack-mark {
-      height: 32px;
+      height: 34px;
       padding: 0 10px;
-      background: #0F172A;
-      color: #FFFFFF;
-      border-radius: var(--ant-radius);
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11.5px;
-      font-weight: 700;
-      letter-spacing: 0.6px;
+      background: #FFFFFF;
+      border: 1px solid var(--ant-control-border);
+      border-radius: 6px;
       display: inline-flex;
       align-items: center;
+      gap: 6px;
     }
     .autostack-title { font-size: 13.5px; font-weight: 700; color: var(--ant-text); }
     .autostack-desc { font-size: 12px; color: var(--ant-text-tertiary); }
@@ -841,10 +835,29 @@
     <aside class="ant-sider" id="appSider">
       <div class="sider-brand">
         <a href="#top-overview" class="sider-brand-left">
-          <div class="brand-logo">UB</div>
+          <div class="brand-logo">
+            <svg width="26" height="26" viewBox="0 0 64 64" fill="none" aria-label="AHr">
+              <defs>
+                <linearGradient id="doc-ahr-g" x1="12" y1="7" x2="34" y2="57" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#00A8FF"></stop>
+                  <stop offset="100%" stop-color="#0062E6"></stop>
+                </linearGradient>
+              </defs>
+              <path d="M13 55.5H7.2C4.2 55.5 3.1 53.1 4.6 50.5L26.2 13.4C28.6 9.3 32.5 8.2 37.8 8.2H43C39.2 9.4 36.8 16 34.7 19.6L13 55.5Z" fill="url(#doc-ahr-g)"></path>
+              <path d="M21.8 47.5L28 36.8L34.2 47.5H21.8Z" fill="url(#doc-ahr-g)"></path>
+              <path d="M39.2 19.5H45.4V33.8H51.6V19.5H57.8C58.46 19.5 59 20.04 59 20.7V54.3C59 54.96 58.46 55.5 57.8 55.5H51.6V40.6H45.4V55.5H39.2C38.54 55.5 38 54.96 38 54.3V20.7C38 20.04 38.54 19.5 39.2 19.5Z" fill="#0F172A"></path>
+            </svg>
+          </div>
           <div class="brand-text">
-            <div class="brand-name">ỤM BÒ MILK</div>
-            <div class="brand-sub">Cẩm nang Hướng dẫn v5.1</div>
+            <div class="brand-name" style="display:flex;align-items:center;gap:6px;">
+              <svg width="46" height="16" viewBox="71 15 103 36" fill="none" aria-label="AHr">
+                <path d="M73 49L86.4 17H93.6L107 49H99.2L96.2 41.6H86.2L88.4 36.2H94L90 26L80.8 49H73Z" fill="#0F172A"></path>
+                <path d="M112 17H119.6V29.8H134.4V17H142V49H134.4V36H119.6V49H112V17Z" fill="#0078F0"></path>
+                <path d="M148.5 24.5H155.7V27.7C157.5 25.2 160.5 24.1 164.7 24.1H172L169.3 30.5H162.7C158.3 30.5 155.9 32.5 155.9 36.7V49H148.5V24.5Z" fill="#0078F0"></path>
+              </svg>
+              <span style="font-size:10.5px;font-weight:700;color:#475569;background:#F1F5F9;border:1px solid #E5E7EB;border-radius:2px;padding:1px 5px;">ỤM BÒ MILK</span>
+            </div>
+            <div class="brand-sub" style="margin-top:2px;">Cẩm nang Hướng dẫn v5.1</div>
           </div>
         </a>
         <button type="button" class="drawer-close-btn" id="drawerCloseBtn" aria-label="Đóng danh mục">
@@ -1523,14 +1536,27 @@
         <!-- CORPORATE FOOTER — VẬN HÀNH BỞI AUTO STACK -->
         <footer class="autostack-footer">
           <div class="autostack-left">
-            <span class="autostack-mark">AUTO STACK</span>
+            <span class="autostack-mark">
+              <svg width="24" height="17" viewBox="0 0 96 68" fill="none" aria-label="Auto stack">
+                <defs>
+                  <linearGradient id="doc-as-g" x1="14" y1="5" x2="38" y2="60" gradientUnits="userSpaceOnUse">
+                    <stop offset="0%" stop-color="#00B2FF"></stop>
+                    <stop offset="100%" stop-color="#0066EE"></stop>
+                  </linearGradient>
+                </defs>
+                <path d="M17.8 60H10.5C6.6 60 5 56.9 7 53.5L31.5 11.5C34.3 6.7 39.2 5 45.8 5H53C48.2 6.4 44.8 13.7 42.3 18L17.8 60Z" fill="url(#doc-as-g)"></path>
+                <path d="M30 48.5L38.75 33.5L47.5 48.5H30Z" fill="url(#doc-as-g)"></path>
+                <path d="M58 17.5H87L81.5 26.8H58.2C55.4 26.8 53.4 28.4 53.4 30.8C53.4 33.2 55.4 34.8 58.4 34.8H74.8C83.8 34.8 89.5 40.1 89.5 47.4C89.5 54.8 83.6 60 74.4 60H45.8L40.6 51.2H73.8C76.8 51.2 78.8 49.6 78.8 47.2C78.8 44.8 76.8 43.2 73.8 43.2H57.6C48.6 43.2 43 38 43 30.8C43 23.2 48.9 17.5 58 17.5Z" fill="#0F172A"></path>
+              </svg>
+              <span style="font-size:12.5px;font-weight:800;letter-spacing:0.2px;"><span style="color:#0F172A;">Auto</span> <span style="color:#0078F0;">stack</span></span>
+            </span>
             <div>
-              <div class="autostack-title">Vận hành bởi AUTO STACK</div>
+              <div class="autostack-title">Nền tảng AHr · Phát triển &amp; Vận hành bởi Auto stack</div>
               <div class="autostack-desc">Giải pháp Kiến trúc Phần mềm Quản trị &amp; Chuyển đổi Số Doanh nghiệp</div>
             </div>
           </div>
           <div class="autostack-right">
-            <div><strong>ỤM BÒ MILK — HỆ THỐNG QUẢN TRỊ NHÂN SỰ (v5.1.0)</strong></div>
+            <div><strong>AHr · ỤM BÒ MILK — HỆ THỐNG QUẢN TRỊ NHÂN SỰ (v5.1.0)</strong></div>
             <div>Tài liệu Hướng dẫn Sử dụng Chính thức · Bao phủ 16 Phân hệ Quản trị &amp; 11 Chức năng Cổng Nhân viên</div>
           </div>
         </footer>

@@ -24,17 +24,19 @@ function readEnvNumber(keys: string[], fallback: number): number {
 }
 
 export const SYSTEM_CONFIG = {
-  /** Tên thương hiệu hiển thị trên Sidebar, Header và Báo cáo */
+  /** Định danh nền tảng phần mềm nhân sự (AHr — sản phẩm thuộc Auto stack) */
+  productName: readEnv(['NEXT_PUBLIC_APP_PRODUCT_NAME', 'APP_PRODUCT_NAME'], 'AHr'),
+  /** Tên thương hiệu / doanh nghiệp vận hành hiển thị trên Báo cáo & Email */
   brandName: readEnv(['NEXT_PUBLIC_APP_BRAND_NAME', 'APP_BRAND_NAME'], 'ỤM BÒ MILK'),
   /** Tên đầy đủ của hệ thống */
   systemTitle: readEnv(
     ['NEXT_PUBLIC_APP_SYSTEM_TITLE', 'APP_SYSTEM_TITLE'],
-    'Ụm Bò Milk — Hệ thống Quản trị Nhân sự',
+    'AHr — Hệ thống Quản trị Nhân sự',
   ),
   /** Phụ đề dưới logo Sidebar */
   brandSubtitle: readEnv(['NEXT_PUBLIC_APP_BRAND_SUBTITLE', 'APP_BRAND_SUBTITLE'], 'HỆ THỐNG NHÂN SỰ'),
   /** Ký hiệu viết tắt trên biểu tượng Logo (2-3 ký tự) */
-  brandShortCode: readEnv(['NEXT_PUBLIC_APP_SHORT_CODE', 'APP_SHORT_CODE'], 'UB'),
+  brandShortCode: readEnv(['NEXT_PUBLIC_APP_SHORT_CODE', 'APP_SHORT_CODE'], 'AHr'),
   /** Tiền tố tiêu đề Email doanh nghiệp (có thể đổi trong .env: APP_EMAIL_SUBJECT_PREFIX) */
   emailSubjectPrefix: readEnv(
     ['NEXT_PUBLIC_APP_EMAIL_SUBJECT_PREFIX', 'APP_EMAIL_SUBJECT_PREFIX'],

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="ahr-blue" x1="12" y1="7" x2="34" y2="57" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00A8FF" />
+      <stop offset="100%" stop-color="#0062E6" />
+    </linearGradient>
+  </defs>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="13.25" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5" />
+  <path
+    d="M13 55.5H7.2C4.2 55.5 3.1 53.1 4.6 50.5L26.2 13.4C28.6 9.3 32.5 8.2 37.8 8.2H43C39.2 9.4 36.8 16 34.7 19.6L13 55.5Z"
+    fill="url(#ahr-blue)"
+  />
+  <path d="M21.8 47.5L28 36.8L34.2 47.5H21.8Z" fill="url(#ahr-blue)" />
+  <path
+    d="M39.2 19.5H45.4V33.8H51.6V19.5H57.8C58.46 19.5 59 20.04 59 20.7V54.3C59 54.96 58.46 55.5 57.8 55.5H51.6V40.6H45.4V55.5H39.2C38.54 55.5 38 54.96 38 54.3V20.7C38 20.04 38.54 19.5 39.2 19.5Z"
+    fill="#0F172A"
+  />
+</svg>

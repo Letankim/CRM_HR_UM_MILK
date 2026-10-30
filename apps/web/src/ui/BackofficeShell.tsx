@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, Drawer, Grid, Layout, Menu, Spin, Tooltip } from 'antd';
+import { Alert, Drawer, Grid, Layout, Menu, Spin } from 'antd';
 import type { ItemType } from 'antd/es/menu/interface';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -10,6 +10,7 @@ import { isEmployeeRole, SYSTEM_CONFIG, type Permission } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { canAccessPath, isUnauthorized, loginPath, resolveLandingRoute, useLogout, useMe } from '@/lib/auth';
 import { useRealtime } from '@/lib/realtime';
+import { AhrBrandLockup } from './components/AhrBrandLogo';
 import { SiderFooterHelpAndVersion } from './components/SiderFooterHelpAndVersion';
 import { TopHeaderBar } from './components/TopHeaderBar';
 import { BACKOFFICE_NAV } from './nav-config';
@@ -114,22 +115,12 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
   const versionLabel = SYSTEM_CONFIG.version.startsWith('v') ? SYSTEM_CONFIG.version : `v${SYSTEM_CONFIG.version}`;
 
   const brand = (
-    <div style={{ flexShrink: 0, height: 56, display: 'flex', alignItems: 'center', justifyContent: isCompactSider ? 'center' : 'flex-start', gap: 10, padding: isCompactSider ? 0 : '0 16px', borderBottom: `1px solid ${BRAND.border}` }}>
-      <Tooltip placement="right" title={isCompactSider ? `${SYSTEM_CONFIG.brandName} — ${SYSTEM_CONFIG.brandSubtitle}` : undefined}>
-        <div
-          style={{ width: 34, height: 34, borderRadius: 6, background: '#0F172A', border: `1px solid ${BRAND.primary}`, color: '#FFFFFF', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 12, letterSpacing: 0.4, flexShrink: 0, cursor: 'pointer' }}
-          onClick={() => router.push('/dashboard')}
-        >
-          {SYSTEM_CONFIG.brandShortCode}
-        </div>
-      </Tooltip>
-      {!isCompactSider && (
-        <div style={{ lineHeight: 1.15, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-          <div style={{ fontWeight: 800, fontSize: 14, letterSpacing: 0.3, color: '#0F172A' }}>{SYSTEM_CONFIG.brandName}</div>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.6, color: '#64748B' }}>{SYSTEM_CONFIG.brandSubtitle}</div>
-        </div>
-      )}
-    </div>
+    <AhrBrandLockup
+      collapsed={isCompactSider}
+      subtitle={SYSTEM_CONFIG.brandSubtitle}
+      workspace={SYSTEM_CONFIG.brandName}
+      onClick={() => router.push('/dashboard')}
+    />
   );
 
   const menu = (

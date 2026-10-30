@@ -12,8 +12,15 @@ const font = Be_Vietnam_Pro({
 });
 
 export const metadata: Metadata = {
-  title: { default: 'Ụm Bò Milk HR', template: '%s | Ụm Bò Milk HR' },
-  description: 'Hệ thống quản trị nhân sự Ụm Bò Milk',
+  title: { default: 'AHr — Hệ thống Quản trị Nhân sự', template: '%s | AHr' },
+  applicationName: 'AHr',
+  description: 'AHr — Nền tảng Quản trị Nhân sự doanh nghiệp, phát triển và vận hành bởi Auto stack',
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: [{ url: '/favicon.svg', type: 'image/svg+xml' }],
+    shortcut: ['/favicon.svg'],
+    apple: [{ url: '/favicon.svg' }],
+  },
   robots: { index: false, follow: false },
 };
 

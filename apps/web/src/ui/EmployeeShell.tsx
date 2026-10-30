@@ -17,6 +17,7 @@ import { api } from '@/lib/api';
 import { isUnauthorized, loginPath, useLogout, useMe } from '@/lib/auth';
 import { useNotificationSound } from '@/lib/notification-sound';
 import { useRealtime } from '@/lib/realtime';
+import { AhrBrandLockup } from './components/AhrBrandLogo';
 import { HeaderNotificationBell } from './components/HeaderNotificationBell';
 import { SiderFooterHelpAndVersion, USER_GUIDE_HTML_URL } from './components/SiderFooterHelpAndVersion';
 import { UserProfileModal } from './components/UserProfileModal';
@@ -102,10 +103,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
       <Layout style={{ minHeight: '100dvh' }}>
         <Layout.Sider className="umbm-fixed-sider" width={260} collapsedWidth={68} collapsed={collapsed} style={{ borderRight: `1px solid ${BRAND.border}`, position: 'fixed', top: 0, left: 0, bottom: 0, height: '100dvh', maxHeight: '100dvh', overflow: 'hidden', zIndex: 100 }}>
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '100dvh', overflow: 'hidden' }}>
-            <div style={{ flexShrink: 0, height: 56, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 10, padding: collapsed ? 0 : '0 16px', borderBottom: `1px solid ${BRAND.border}` }}>
-              <div style={{ width: 34, height: 34, borderRadius: 6, background: '#0F172A', border: `1px solid ${BRAND.primary}`, color: '#FFFFFF', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 12, cursor: 'pointer' }} onClick={() => router.push('/nv')}>{SYSTEM_CONFIG.brandShortCode}</div>
-              {!collapsed && <div style={{ lineHeight: 1.15, overflow: 'hidden', whiteSpace: 'nowrap' }}><div style={{ fontWeight: 800, fontSize: 14, color: '#0F172A' }}>{SYSTEM_CONFIG.brandName}</div><div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.5, color: '#64748B' }}>CỔNG NHÂN VIÊN</div></div>}
-            </div>
+            <AhrBrandLockup collapsed={collapsed} subtitle="CỔNG NHÂN VIÊN" workspace={SYSTEM_CONFIG.brandName} onClick={() => router.push('/nv')} />
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', padding: collapsed ? '8px 0' : '6px 4px' }}>
               <Menu className="umbm-sider-menu" mode="inline" inlineIndent={10} inlineCollapsed={collapsed} defaultOpenKeys={DESKTOP_GROUPS.map((g) => g.key)} items={desktopMenuItems} selectedKeys={[activeDesktopItem.item.key]} style={{ borderInlineEnd: 'none' }} />
             </div>
