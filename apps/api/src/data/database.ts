@@ -1,14 +1,13 @@
 import * as S from '@umbm/shared';
 import { Errors } from '../lib/errors.js';
 import type { SheetsGateway } from '../sheets/gateway.js';
-import { TableStore } from '../sheets/table-store.js';
+import { TableStore, type BaseRecord } from '../sheets/table-store.js';
 import type { WriteQueue } from '../sheets/write-queue.js';
 import { zAuditRow, zBackupLogRow, zDeadLetterRow, zOperationJournalRow, type AuditRow, type BackupLogRow, type DeadLetterRow, type OperationJournalRow } from './system-schemas.js';
 
 export interface SpreadsheetIds {
   CORE: string; HR: string; SCHEDULE: string; ATTENDANCE: string; PAYROLL: string; COMMS: string; SYSTEM: string;
 }
-
 interface Logger { info: (obj: object, msg?: string) => void; warn: (obj: object, msg?: string) => void; error: (obj: object, msg?: string) => void }
 
 export class Database {
@@ -85,7 +84,6 @@ export class Database {
 
     this.attendanceEvents = new TableStore(gateway, queue, { spreadsheetKey: 'ATTENDANCE', spreadsheetId: ids.ATTENDANCE, tab: 'ATTENDANCE_EVENTS', headers: att.ATTENDANCE_EVENTS, schema: S.zAttendanceEvent });
     this.attendanceAdjustments = new TableStore(gateway, queue, { spreadsheetKey: 'ATTENDANCE', spreadsheetId: ids.ATTENDANCE, tab: 'ATTENDANCE_ADJUSTMENTS', headers: att.ATTENDANCE_ADJUSTMENTS, schema: S.zAttendanceAdjustment });
-
     this.payRates = new TableStore(gateway, queue, { spreadsheetKey: 'PAYROLL', spreadsheetId: ids.PAYROLL, tab: 'PAY_RATES', headers: payroll.PAY_RATES, schema: S.zPayRate });
     this.payPeriods = new TableStore(gateway, queue, { spreadsheetKey: 'PAYROLL', spreadsheetId: ids.PAYROLL, tab: 'PAY_PERIODS', headers: payroll.PAY_PERIODS, schema: S.zPayPeriod });
     this.payrollItems = new TableStore(gateway, queue, { spreadsheetKey: 'PAYROLL', spreadsheetId: ids.PAYROLL, tab: 'PAYROLL_ITEMS', headers: payroll.PAYROLL_ITEMS, schema: S.zPayrollItem });
@@ -107,14 +105,14 @@ export class Database {
   }
 
   /** Các bảng dữ liệu phát sinh theo tháng (mỗi tháng tách sang 1 file Google Spreadsheet độc lập). */
-  monthlyStores(): { base: string; defaultSpreadsheetId: string; headers: readonly string[]; store: TableStore<S.ShiftAssignment> | TableStore<S.LeaveRequest> | TableStore<S.ShiftSwap> | TableStore<S.AttendanceEvent> | TableStore<S.AttendanceAdjustment> }[] {
+  monthlyStores() {
     const sched = S.SPREADSHEETS.SCHEDULE.tabs, att = S.SPREADSHEETS.ATTENDANCE.tabs;
     return [
-      { base: 'SHIFT_ASSIGNMENTS', defaultSpreadsheetId: this.ids.SCHEDULE, headers: sched.SHIFT_ASSIGNMENTS, store: this.shiftAssignments },
-      { base: 'LEAVE_REQUESTS', defaultSpreadsheetId: this.ids.SCHEDULE, headers: sched.LEAVE_REQUESTS, store: this.leaveRequests },
-      { base: 'SHIFT_SWAPS', defaultSpreadsheetId: this.ids.SCHEDULE, headers: sched.SHIFT_SWAPS, store: this.shiftSwaps },
-      { base: 'ATTENDANCE_EVENTS', defaultSpreadsheetId: this.ids.ATTENDANCE, headers: att.ATTENDANCE_EVENTS, store: this.attendanceEvents },
-      { base: 'ATTENDANCE_ADJUSTMENTS', defaultSpreadsheetId: this.ids.ATTENDANCE, headers: att.ATTENDANCE_ADJUSTMENTS, store: this.attendanceAdjustments },
+      { base: 'SHIFT_ASSIGNMENTS', defaultSpreadsheetId: this.ids.SCHEDULE, headers: sched.SHIFT_ASSIGNMENTS, schema: S.zShiftAssignment, store: this.shiftAssignments },
+      { base: 'LEAVE_REQUESTS', defaultSpreadsheetId: this.ids.SCHEDULE, headers: sched.LEAVE_REQUESTS, schema: S.zLeaveRequest, store: this.leaveRequests },
+      { base: 'SHIFT_SWAPS', defaultSpreadsheetId: this.ids.SCHEDULE, headers: sched.SHIFT_SWAPS, schema: S.zShiftSwap, store: this.shiftSwaps },
+      { base: 'ATTENDANCE_EVENTS', defaultSpreadsheetId: this.ids.ATTENDANCE, headers: att.ATTENDANCE_EVENTS, schema: S.zAttendanceEvent, store: this.attendanceEvents },
+      { base: 'ATTENDANCE_ADJUSTMENTS', defaultSpreadsheetId: this.ids.ATTENDANCE, headers: att.ATTENDANCE_ADJUSTMENTS, schema: S.zAttendanceAdjustment, store: this.attendanceAdjustments },
     ];
   }
 
@@ -157,21 +155,28 @@ export class Database {
       this.partitionMonth = S.PARTITION_MONTH_REGEX.test(month) ? month : '';
       const reg = S.parsePartitionRegistry(this.systemSettings.find((s) => s.key === S.OPERATION_SETTING_KEYS.DATA_PARTITIONS_REGISTRY)?.value);
       const entry = this.partitionMonth ? reg.find((e) => e.monthKey === this.partitionMonth) : undefined;
-      await Promise.all(this.monthlyStores().map((m) => {
-        if (!this.partitionMonth) return m.store.load();
-        const target = entry?.mode === 'MONTHLY_FILE' ? { spreadsheetId: entry.spreadsheetId, tab: m.base } : { spreadsheetId: m.defaultSpreadsheetId, tab: S.partitionTabName(m.base, this.partitionMonth) };
-        return m.store.switchTarget(target);
-      }));
+      let bootPartitionError: string | null = null;
+      if (this.partitionMonth) {
+        try {
+          const descs = this.monthlyStores();
+          const prepared = await Promise.all(descs.map((m) => {
+            const target = entry?.mode === 'MONTHLY_FILE' ? { spreadsheetId: entry.spreadsheetId, tab: m.base } : { spreadsheetId: m.defaultSpreadsheetId, tab: S.partitionTabName(m.base, this.partitionMonth) };
+            return (m.store as unknown as TableStore<BaseRecord>).prepareTarget(target);
+          }));
+          descs.forEach((m, i) => (m.store as unknown as TableStore<BaseRecord>).commitPreparedTarget(prepared[i]!));
+        } catch (err) {
+          bootPartitionError = `Không thể nạp tệp dữ liệu tháng ${this.partitionMonth} (${(err as Error).message}), hệ thống tạm quay về tệp gốc`;
+          this.partitionMonth = '';
+          await Promise.all(this.monthlyStores().map((m) => m.store.load()));
+        }
+      } else {
+        await Promise.all(this.monthlyStores().map((m) => m.store.load()));
+      }
       await this.audit();
-      this.lastRefreshError = null;
+      this.lastRefreshError = bootPartitionError;
       this.ready = true;
     })();
-    try {
-      await this.readyPromise;
-    } catch (err) {
-      this.readyPromise = null;
-      throw err;
-    }
+    try { await this.readyPromise; } catch (err) { this.readyPromise = null; throw err; }
   }
 
   setBootError(msg: string | null): void { this.lastRefreshError = msg; }

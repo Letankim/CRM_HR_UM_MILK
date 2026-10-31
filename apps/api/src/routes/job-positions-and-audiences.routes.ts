@@ -23,20 +23,12 @@ const DEFAULT_POSITIONS: JobPositionConfigItem[] = [
 export function getJobPositions(ctx: AppContext) {
   const row = ctx.db.systemSettings.find((s) => s.key === 'JOB_POSITIONS_CONFIG');
   let custom: JobPositionConfigItem[] = [];
-  if (row?.value) {
-    try { custom = JSON.parse(row.value); } catch { custom = []; }
-  }
+  if (row?.value) { try { custom = JSON.parse(row.value); } catch { custom = []; } }
   const map = new Map<string, JobPositionConfigItem>();
   for (const d of DEFAULT_POSITIONS) map.set(d.code, { ...d });
-  for (const c of custom) {
-    if (c.deleted) map.delete(c.code);
-    else map.set(c.code, { ...(map.get(c.code) ?? {}), ...c });
-  }
+  for (const c of custom) { if (c.deleted) map.delete(c.code); else map.set(c.code, { ...(map.get(c.code) ?? {}), ...c }); }
   const activeEmps = ctx.db.employees.filter((e) => e.status === 'ACTIVE');
-  return Array.from(map.values()).map((p) => ({
-    ...p,
-    employeeCount: activeEmps.filter((e) => e.staff_group === p.code).length,
-  }));
+  return Array.from(map.values()).map((p) => ({ ...p, employeeCount: activeEmps.filter((e) => e.staff_group === p.code).length }));
 }
 
 async function saveJobPositionsConfig(ctx: AppContext, list: JobPositionConfigItem[], actorId: string) {

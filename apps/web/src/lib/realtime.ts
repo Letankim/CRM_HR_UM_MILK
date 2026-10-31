@@ -10,6 +10,12 @@ import { isInSelfActionWindow } from './notification-sound';
 
 let socket: Socket | null = null;
 let currentToken: string | null = null;
+let localSwitchTarget: { monthKey: string; at: number } | null = null;
+
+/** Đánh dấu tab hiện tại vừa chủ động chuyển kỳ dữ liệu để tránh hiện trùng 2 thông báo trên cùng 1 tab. */
+export function markLocalPartitionSwitch(monthKey: string): void {
+  localSwitchTarget = { monthKey, at: Date.now() };
+}
 
 /**
  * Hỗ trợ kết nối trực tiếp tới Render (`NEXT_PUBLIC_WS_URL`) khi Frontend đặt trên Vercel
@@ -52,7 +58,7 @@ function getSocket(socketToken?: string | null): Socket {
 export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string | null, userId?: string) {
   const router = useRouter();
   const qc = useQueryClient();
-  const { message } = App.useApp();
+  const { message, notification } = App.useApp();
 
   useEffect(() => {
     const wsUrl = resolveWsOrigin();
@@ -149,9 +155,34 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       if (isOutOfBranchOrDup('tck', payload)) return;
       queueInvalidate([['tickets'], ['ticket-detail'], ['notifications'], ['payroll-snapshots'], ['me', 'payslips']]);
     };
+    let lastPartitionSig = '';
+    const onPartitionChanged = (payload?: { activeMonth?: string; activeLabel?: string; switchedAt?: string; message?: string }) => {
+      const sig = `${payload?.activeMonth ?? ''}:${payload?.switchedAt ?? ''}`;
+      if (sig && sig === lastPartitionSig) return;
+      lastPartitionSig = sig;
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      pendingKeys.clear();
+      const isInitiatingTab = Boolean(
+        localSwitchTarget &&
+        localSwitchTarget.monthKey === (payload?.activeMonth ?? '') &&
+        Date.now() - localSwitchTarget.at < 10_000,
+      );
+      if (isInitiatingTab) localSwitchTarget = null;
+      void qc.invalidateQueries();
+      if (!isInitiatingTab) {
+        const label = payload?.activeLabel || 'kỳ dữ liệu mới';
+        notification.info({
+          message: `Đã chuyển sang ${label}`,
+          description: payload?.message || `Hệ thống vừa chuyển sang dữ liệu ${label} — Đã tự động tải lại dữ liệu mới nhất.`,
+          placement: 'topRight',
+          duration: 5,
+        });
+      }
+    };
 
     s.on('auth:forceLogout', onForceLogout);
     s.on('system:maintenance', onMaintenance);
+    s.on('system:partitionChanged', onPartitionChanged);
     s.on('notification:new', onNotification);
     s.on('attendance:event', onAttendance);
     s.on('schedule:published', onSchedule);
@@ -164,6 +195,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       if (flushTimer) clearTimeout(flushTimer);
       s.off('auth:forceLogout', onForceLogout);
       s.off('system:maintenance', onMaintenance);
+      s.off('system:partitionChanged', onPartitionChanged);
       s.off('notification:new', onNotification);
       s.off('attendance:event', onAttendance);
       s.off('schedule:published', onSchedule);
@@ -172,5 +204,5 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       s.off('payroll:updated', onPayrollUpdated);
       s.off('ticket:updated', onTicketUpdated);
     };
-  }, [app, enabled, message, qc, router, socketToken, userId]);
+  }, [app, enabled, message, notification, qc, router, socketToken, userId]);
 }

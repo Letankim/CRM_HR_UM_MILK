@@ -11,7 +11,7 @@ import { queueShiftRegisteredEmail } from '../services/action-email-dispatcher.j
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
-import { assertMaxShiftsPerDay, employeeShiftsOnDate, findProbationLock, matchEmp, resolveProbationCycle } from '../services/schedule-rules.js';
+import { assertMaxShiftsPerDay, employeeShiftsOnDate, findProbationLock, matchEmp, probationLockCode, resolveProbationCycle } from '../services/schedule-rules.js';
 import { assertNoDuplicateOrOverlappingEmployeeShift, evaluateBranchShiftCapacity } from '../services/schedule-staffing-helper.js';
 import { getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, findBranchShiftTemplate } from './account-employee-sync.js';
@@ -66,7 +66,7 @@ export function registerMyShiftRegisterRoute(app: FastifyInstance, ctx: AppConte
       : undefined;
     const pullNote = lastLater ? ` — sẽ dời ca cuối ngày ${vi(lastLater.work_date)} (${lastLater.start_at} – ${lastLater.end_at}) lên ca này khi HR duyệt để giữ đủ ${cycle.workRequired} ca` : '';
     const created = await ctx.db.shiftAssignments.insert({
-      schedule_week_id: `PB-${emp.employee_code}-${cycle.start}`, employee_id: emp.id, branch_id: emp.branch_id, work_date: body.work_date,
+      schedule_week_id: probationLockCode(emp.employee_code, cycle.start, ctx.db.partitionMonth), employee_id: emp.id, branch_id: emp.branch_id, work_date: body.work_date,
       shift_template_id: tpl.id, start_at: tpl.start_time, end_at: tpl.end_time, status: 'DRAFT', source: 'PROBATION_EXTRA',
       employee_stage: emp.stage, day_type: 'WORK', shift_code: body.shift_code, scheduled_hours: tpl.standard_hours || 5,
       swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: '', note: `${body.note}${pullNote}`.slice(0, 300), linked_assignment_id: lastLater?.id ?? '',

@@ -7,6 +7,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import { useEffect, useState } from 'react';
 import { PARTITION_MODE_LABELS, PARTITION_TABLE_LABELS, type MonthlyPartitionMode } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
+import { markLocalPartitionSwitch } from '@/lib/realtime';
 
 export const PARTITION_BASE_LABELS: Record<string, string> = PARTITION_TABLE_LABELS;
 export { PARTITION_MODE_LABELS, type MonthlyPartitionMode };
@@ -70,9 +71,10 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
 
   const mut = useMutation({
     mutationFn: (body: { month_key: string; carry_forward: boolean }) => api.post<RolloverResult>('/admin/data-partitions/rollover', body),
+    onMutate: (body) => markLocalPartitionSwitch(body.month_key),
     onSuccess: async (data) => {
       setResult(data);
-      message.success(`Đã tạo tệp Google Sheets ${data.label || monthKeyLabel(data.monthKey)} và chuyển vận hành thành công`);
+      message.success(`Đã tạo tệp Google Sheets ${data.label || monthKeyLabel(data.monthKey)} và đồng bộ trực tuyến tới toàn bộ hệ thống`);
       await qc.invalidateQueries();
     },
     onError: (e: unknown) => {

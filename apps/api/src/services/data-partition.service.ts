@@ -1,12 +1,15 @@
-import { DRIVE_FOLDERS, OPERATION_SETTING_KEYS, PARTITION_MONTH_REGEX, SPREADSHEETS, parsePartitionRegistry, partitionTabName, type MonthlyPartitionMode, type MonthlyPartitionRegistryEntry } from '@umbm/shared';
+import {
+  DRIVE_FOLDERS, OPERATION_SETTING_KEYS, PARTITION_MONTH_REGEX, SPREADSHEETS,
+  parsePartitionRegistry, partitionTabName, type MonthlyPartitionMode, type MonthlyPartitionRegistryEntry, type ShiftAssignment,
+} from '@umbm/shared';
 import type { Database } from '../data/database.js';
 import { Errors } from '../lib/errors.js';
 import { nowIso } from '../lib/time.js';
-import type { BaseRecord, TableStore } from '../sheets/table-store.js';
+import {
+  carryScheduleLocksToMonth, isMissingSpreadsheetError, runPartitionExclusive,
+  stageCarryRowsToTarget, type AnyStore, type MonthlyStoreDesc,
+} from './data-partition-helpers.js';
 import { saveOperationSettings } from './operations-settings.service.js';
-
-type AnyStore = TableStore<BaseRecord & Record<string, unknown>>;
-type MonthlyStoreDesc = ReturnType<Database['monthlyStores']>[number];
 
 export interface PartitionListItem {
   monthKey: string; label: string; isActive: boolean; mode: MonthlyPartitionMode;
@@ -41,17 +44,11 @@ async function upsertPartitionRegistry(db: Database, entry: MonthlyPartitionRegi
   if (existing) {
     await db.systemSettings.update(existing.id, existing.version, { value }, actorId);
   } else {
-    await db.systemSettings.insert(
-      {
-        key: OPERATION_SETTING_KEYS.DATA_PARTITIONS_REGISTRY,
-        value,
-        label: 'Sổ đăng ký các file Google Sheets theo tháng',
-        category: 'DATA',
-        value_type: 'JSON',
-        note: 'Danh sách file Google Spreadsheet độc lập theo từng tháng lưu trên Google Drive',
-      },
-      actorId,
-    );
+    await db.systemSettings.insert({
+      key: OPERATION_SETTING_KEYS.DATA_PARTITIONS_REGISTRY, value,
+      label: 'Sổ đăng ký các file Google Sheets theo tháng', category: 'DATA', value_type: 'JSON',
+      note: 'Danh sách file Google Spreadsheet độc lập theo từng tháng lưu trên Google Drive',
+    }, actorId);
   }
 }
 
@@ -118,25 +115,9 @@ async function persistActiveMonth(db: Database, monthKey: string, actorId: strin
   }
 }
 
-async function ensureMonthlyTarget(db: Database, monthKey: string, actorId: string, forceMonthlyFile = false) {
-  if (!monthKey) {
-    return { mode: 'ROOT_FILE' as const, entry: null, targetFor: (m: MonthlyStoreDesc) => ({ spreadsheetId: m.defaultSpreadsheetId, tab: m.base }) };
-  }
-  const registry = readPartitionRegistry(db);
-  const existing = registry.find((r) => r.monthKey === monthKey);
-  if (existing && existing.mode === 'MONTHLY_FILE') {
-    return { mode: 'MONTHLY_FILE' as const, entry: existing, targetFor: (m: MonthlyStoreDesc) => ({ spreadsheetId: existing.spreadsheetId, tab: m.base }) };
-  }
-  if (!forceMonthlyFile) {
-    const legacy = await discoverLegacyTabMonths(db, new Set(registry.map((r) => r.monthKey)));
-    if ((existing && existing.mode === 'LEGACY_TAB') || legacy.has(monthKey)) {
-      return { mode: 'LEGACY_TAB' as const, entry: existing ?? null, targetFor: (m: MonthlyStoreDesc) => ({ spreadsheetId: m.defaultSpreadsheetId, tab: partitionTabName(m.base, monthKey) }) };
-    }
-  }
+async function createAndRegisterMonthlyFile(db: Database, monthKey: string, actorId: string) {
   const created = await db.gateway.createMonthlySpreadsheet({
-    monthKey,
-    title: monthlyFileName(monthKey),
-    folderSegments: monthlyFolderSegments(monthKey),
+    monthKey, title: monthlyFileName(monthKey), folderSegments: monthlyFolderSegments(monthKey),
     tabs: db.monthlyStores().map((m) => ({ name: m.base, headers: m.headers })),
   });
   const entry: MonthlyPartitionRegistryEntry = {
@@ -148,59 +129,81 @@ async function ensureMonthlyTarget(db: Database, monthKey: string, actorId: stri
   return { mode: 'MONTHLY_FILE' as const, entry, targetFor: (m: MonthlyStoreDesc) => ({ spreadsheetId: entry.spreadsheetId, tab: m.base }) };
 }
 
-/** Chuyển toàn bộ 5 bảng vận hành sang file Google Spreadsheet tháng chỉ định (hoặc quay về file gốc). */
+async function ensureMonthlyTarget(db: Database, monthKey: string, actorId: string, forceMonthlyFile = false) {
+  if (!monthKey) {
+    return { mode: 'ROOT_FILE' as const, entry: null, targetFor: (m: MonthlyStoreDesc) => ({ spreadsheetId: m.defaultSpreadsheetId, tab: m.base }) };
+  }
+  const registry = readPartitionRegistry(db);
+  const existing = registry.find((r) => r.monthKey === monthKey);
+  if (existing && existing.mode === 'MONTHLY_FILE') {
+    try {
+      await db.gateway.listTabs(existing.spreadsheetId);
+      return { mode: 'MONTHLY_FILE' as const, entry: existing, targetFor: (m: MonthlyStoreDesc) => ({ spreadsheetId: existing.spreadsheetId, tab: m.base }) };
+    } catch (err) {
+      if (!isMissingSpreadsheetError(err)) throw err;
+    }
+  }
+  if (!forceMonthlyFile && !(existing && existing.mode === 'MONTHLY_FILE')) {
+    const legacy = await discoverLegacyTabMonths(db, new Set(registry.map((r) => r.monthKey)));
+    if ((existing && existing.mode === 'LEGACY_TAB') || legacy.has(monthKey)) {
+      return { mode: 'LEGACY_TAB' as const, entry: existing ?? null, targetFor: (m: MonthlyStoreDesc) => ({ spreadsheetId: m.defaultSpreadsheetId, tab: partitionTabName(m.base, monthKey) }) };
+    }
+  }
+  return createAndRegisterMonthlyFile(db, monthKey, actorId);
+}
+
+/** Chuyển nguyên tử cả 5 bảng vận hành sang file Google Spreadsheet tháng chỉ định (hoặc quay về file gốc). */
 export async function switchPartition(db: Database, monthKey: string, actorId: string): Promise<void> {
   if (monthKey && !PARTITION_MONTH_REGEX.test(monthKey)) {
     throw Errors.fieldValidation('month_key', 'INVALID_FORMAT', 'Mã tháng phải theo định dạng YYYY_MM (ví dụ 2026_11)', monthKey);
   }
-  const target = await ensureMonthlyTarget(db, monthKey, actorId, false);
-  for (const m of db.monthlyStores()) await m.store.switchTarget(target.targetFor(m));
-  db.partitionMonth = monthKey;
-  await persistActiveMonth(db, monthKey, actorId);
+  return runPartitionExclusive(db, async () => {
+    const target = await ensureMonthlyTarget(db, monthKey, actorId, false);
+    const descs = db.monthlyStores();
+    const prepared = await Promise.all(descs.map((m) => (m.store as unknown as AnyStore).prepareTarget(target.targetFor(m))));
+    descs.forEach((m, idx) => (m.store as unknown as AnyStore).commitPreparedTarget(prepared[idx]!));
+    db.partitionMonth = monthKey;
+    await persistActiveMonth(db, monthKey, actorId);
+  });
 }
 
-/** Tạo 1 File Google Spreadsheet độc lập cho tháng mới trong folder Drive và chuyển tiếp dữ liệu từ đầu tháng trở đi. */
+/** Tạo 1 File Google Spreadsheet độc lập cho tháng mới trên Drive, ghi xác nhận sang tệp mới trước rồi hoán đổi nguyên tử. */
 export async function rolloverToMonth(db: Database, monthKey: string, actorId: string, carryForward = true) {
   if (!PARTITION_MONTH_REGEX.test(monthKey)) {
     throw Errors.fieldValidation('month_key', 'INVALID_FORMAT', 'Mã tháng phải theo định dạng YYYY_MM (ví dụ 2026_11)', monthKey);
   }
-  if (monthKey === db.partitionMonth) throw Errors.badRequest(`Hệ thống đang dùng ${monthKeyLabel(monthKey)}`);
-  const target = await ensureMonthlyTarget(db, monthKey, actorId, true);
-  const monthStart = `${monthKey.slice(0, 4)}-${monthKey.slice(5, 7)}-01`;
-  const carried: Record<string, number> = {};
-  const pendingLeftBehind: Record<string, number> = {};
+  return runPartitionExclusive(db, async () => {
+    if (monthKey === db.partitionMonth) throw Errors.badRequest(`Hệ thống đang dùng ${monthKeyLabel(monthKey)}`);
+    const oldMonth = db.partitionMonth;
+    const target = await ensureMonthlyTarget(db, monthKey, actorId, true);
+    const monthStart = `${monthKey.slice(0, 4)}-${monthKey.slice(5, 7)}-01`;
+    const carried: Record<string, number> = {};
+    const pendingLeftBehind: Record<string, number> = {};
 
-  const snapshots = db.monthlyStores().map((m) => {
-    const store = m.store as unknown as AnyStore, field = DATE_FIELD[m.base]!;
-    const rows = store.all();
-    const toCarry = carryForward ? rows.filter((r) => String(r[field] ?? '') >= monthStart) : [];
-    pendingLeftBehind[m.base] = rows.filter((r) => String(r[field] ?? '') < monthStart && PENDING_STATUSES.has(String(r.status ?? ''))).length;
-    return { desc: m, base: m.base, store, toCarry };
-  });
+    const snapshots = db.monthlyStores().map((m) => {
+      const store = m.store as unknown as AnyStore, field = DATE_FIELD[m.base]!;
+      const rows = store.all();
+      const toCarry = carryForward ? rows.filter((r) => String(r[field] ?? '') >= monthStart) : [];
+      pendingLeftBehind[m.base] = rows.filter((r) => String(r[field] ?? '') < monthStart && PENDING_STATUSES.has(String(r.status ?? ''))).length;
+      return { desc: m, base: m.base, store, toCarry };
+    });
 
-  for (const s of snapshots) {
-    if (s.toCarry.length > 0) await s.store.batchUpdate(s.toCarry.map((r) => ({ id: r.id, expectedVersion: r.version, patch: { is_deleted: true } })), actorId);
-  }
-  for (const s of snapshots) {
-    await s.store.switchTarget(target.targetFor(s.desc));
-    const existingById = new Map(s.store.all(true).map((r) => [r.id, r]));
-    let count = 0;
-    const ops: Promise<unknown>[] = [];
-    for (const r of s.toCarry) {
-      const found = existingById.get(r.id);
-      if (!found) {
-        const { version: _v, is_deleted: _d, created_by: _cb, updated_by: _ub, ...rest } = r;
-        ops.push(s.store.insert(rest as never, actorId));
-        count++;
-      } else if (found.is_deleted) {
-        ops.push(s.store.restore(found.id, found.version, actorId));
-        count++;
+    for (const s of snapshots) {
+      carried[s.base] = await stageCarryRowsToTarget(db, s.desc, target.targetFor(s.desc), s.toCarry, actorId);
+    }
+    const shiftSnap = snapshots.find((s) => s.base === 'SHIFT_ASSIGNMENTS');
+    if (shiftSnap && shiftSnap.toCarry.length > 0) {
+      await carryScheduleLocksToMonth(db, oldMonth, monthKey, shiftSnap.toCarry as unknown as ShiftAssignment[], actorId);
+    }
+    const prepared = await Promise.all(snapshots.map((s) => s.store.prepareTarget(target.targetFor(s.desc))));
+    for (const s of snapshots) {
+      if (s.toCarry.length > 0) {
+        await s.store.batchUpdate(s.toCarry.map((r) => ({ id: r.id, expectedVersion: r.version, patch: { is_deleted: true } })), actorId);
       }
     }
-    await Promise.all(ops);
-    carried[s.base] = count;
-  }
-  db.partitionMonth = monthKey;
-  await persistActiveMonth(db, monthKey, actorId);
-  return { monthKey, label: monthKeyLabel(monthKey), file: target.entry, carried, pendingLeftBehind };
+    snapshots.forEach((s, idx) => s.store.commitPreparedTarget(prepared[idx]!));
+    db.partitionMonth = monthKey;
+    await persistActiveMonth(db, monthKey, actorId);
+    return { monthKey, label: monthKeyLabel(monthKey), file: target.entry, carried, pendingLeftBehind };
+  });
 }

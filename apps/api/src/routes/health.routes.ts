@@ -58,6 +58,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext) {
           ctx.db.branches.refreshIfIdle(),
           ctx.db.deadLetters.refreshIfIdle(),
           ctx.db.operationJournal.refreshIfIdle(),
+          ...ctx.db.monthlyStores().map((m) => m.store.refreshIfIdle()),
         ]);
       }
       const google = await ctx.google.check();
@@ -110,7 +111,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext) {
   /** Thực thi đối soát và tự động sửa các bất biến an toàn. */
   app.post('/api/admin/integrations/reconcile', { preHandler: requirePermission('integration.read') }, async (request) => {
     const actorId = request.auth!.user.id;
-    await Promise.all([ctx.db.users.refreshIfIdle(), ctx.db.employees.refreshIfIdle(), ctx.db.branches.refreshIfIdle(), ctx.db.payRates.refreshIfIdle(), ctx.db.deadLetters.refreshIfIdle(), ctx.db.operationJournal.refreshIfIdle()]);
+    await Promise.all([ctx.db.users.refreshIfIdle(), ctx.db.employees.refreshIfIdle(), ctx.db.branches.refreshIfIdle(), ctx.db.payRates.refreshIfIdle(), ctx.db.deadLetters.refreshIfIdle(), ctx.db.operationJournal.refreshIfIdle(), ...ctx.db.monthlyStores().map((m) => m.store.refreshIfIdle())]);
     const report = await ctx.reconciliation.scanAndRepair({ autoFix: true, actorId });
     await ctx.audit.record(auditContext(request), { action: 'system.reconcile', entity: 'SYSTEM', entityId: 'reconcile', after: report.summary });
     const actorUser = request.auth!.user;

@@ -146,7 +146,7 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
     const createdIds: string[] = [], allIssues: PlanIssue[] = [], empIds = new Set<string>();
     for (const b of unlockedBranches) {
       const bPlan = planOfficialWeek(ctx, { weekStart, branchId: b.id });
-      const res = await applyPlan(ctx, bPlan, { code: weekLockCode(b.id, weekStart), branchId: b.id, weekStart, weekEnd, kind: 'WEEKLY', note: body.note }, actorId);
+      const res = await applyPlan(ctx, bPlan, { code: weekLockCode(b.id, weekStart, ctx.db.partitionMonth), branchId: b.id, weekStart, weekEnd, kind: 'WEEKLY', note: body.note }, actorId);
       createdCount += res.createdCount;
       approvedOffCount += res.approvedOffCount;
       createdIds.push(...res.createdIds);
@@ -155,7 +155,7 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
     }
     const allSystemBranches = ctx.db.branches.filter((b) => b.status === 'ACTIVE');
     if (body.branch_id === 'ALL' && allSystemBranches.length > 0 && allSystemBranches.every((b) => Boolean(findWeekLock(ctx, b.id, weekStart)))) {
-      const now = nowIso(), allCode = weekLockCode('ALL', weekStart), exAll = ctx.db.scheduleWeeks.find((w) => w.code === allCode);
+      const now = nowIso(), allCode = weekLockCode('ALL', weekStart, ctx.db.partitionMonth), exAll = ctx.db.scheduleWeeks.find((w) => w.code === allCode);
       const rec = { branch_id: 'ALL', week_start: weekStart, week_end: weekEnd, status: 'PUBLISHED' as const, published_by: actorId, published_at: now, code: allCode, schedule_kind: 'WEEKLY' as const, store_confirmed_by: '', store_confirmed_at: '', locked_at: now, note: body.note || `Đã chốt toàn hệ thống (${createdCount} ca)` };
       if (exAll) await ctx.db.scheduleWeeks.update(exAll.id, exAll.version, rec, actorId);
       else await ctx.db.scheduleWeeks.insert(rec, actorId);
@@ -163,7 +163,7 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
 
     await recalculateOpenPeriods(ctx, actorId);
     await ensureSyncedNotifications(ctx);
-    await ctx.audit.record(auditContext(request), { action: 'schedule.week.lock', entity: 'SCHEDULE_WEEKS', entityId: weekLockCode(body.branch_id, weekStart), after: { createdCount, approvedOffCount, issues: allIssues.length } });
+    await ctx.audit.record(auditContext(request), { action: 'schedule.week.lock', entity: 'SCHEDULE_WEEKS', entityId: weekLockCode(body.branch_id, weekStart, ctx.db.partitionMonth), after: { createdCount, approvedOffCount, issues: allIssues.length } });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: body.branch_id, employeeIds: Array.from(empIds), kind: 'SHIFT_APPROVED', message: `HR đã chốt lịch tuần ${weekStart} và tự động sắp ${createdCount} ca`, actorId });
     const warn = allIssues.length > 0 ? ` — Có ${allIssues.length} trường hợp không xếp được, vui lòng xem danh sách cảnh báo` : '';
     return sendSuccess(request, `Đã chốt lịch tuần, duyệt ${approvedOffCount} đơn OFF và tự động sắp ${createdCount} ca theo ca mặc định${warn}`, { weekStart, createdCount, approvedOffCount, createdIds, issues: allIssues });
@@ -205,7 +205,7 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
         createdCount: 0, approvedOffCount: 0, cycleStart: plan.cycle.start, cycleEnd: plan.cycle.end, issues: [], alreadyLocked: true,
       });
     }
-    const code = probationLockCode(emp.employee_code, plan.cycle.start);
+    const code = probationLockCode(emp.employee_code, plan.cycle.start, ctx.db.partitionMonth);
     const result = await applyPlan(ctx, plan, { code, branchId: emp.branch_id, weekStart: plan.cycle.start, weekEnd: plan.cycle.end, kind: 'PROBATION_12_DAYS', note: '' }, actorId);
     await recalculateOpenPeriods(ctx, actorId);
     await ensureSyncedNotifications(ctx);

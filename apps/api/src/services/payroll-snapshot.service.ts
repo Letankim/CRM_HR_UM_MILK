@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import {
+  OPERATION_SETTING_KEYS,
   PAYROLL_ITEM_TYPE_LABELS,
   SYSTEM_CONFIG,
+  parsePartitionRegistry,
   type PayPeriod,
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
@@ -26,7 +28,7 @@ function computePeriodDirtySig(ctx: AppContext, period: PayPeriod): string {
   const inRange = <T extends { work_date: string; version: number; updated_at: string }>(rows: readonly T[]) =>
     sumVer(rows.filter((r) => r.work_date >= period.from_date && r.work_date <= period.to_date));
   return [
-    'v4', period.version, period.from_date, period.to_date,
+    'v5', ctx.db.partitionMonth, period.version, period.from_date, period.to_date,
     sumVer(ctx.db.employees.all(true)),
     sumVer(ctx.db.payRates.all(true)),
     inRange(ctx.db.shiftAssignments.all(true)),
@@ -59,11 +61,31 @@ export async function recalculateOpenPeriods(ctx: AppContext, actorId: string): 
   ctx.realtime()?.toTargets({ roles: ['ADMIN', 'FINANCE', 'HR'] }, SocketEvents.PAYROLL_UPDATED, { actorId });
 }
 
+function shouldPreserveOtherPartitionSnapshot(ctx: AppContext, period: PayPeriod, existingSnaps: readonly { total_shifts_count: number; approved_hours: number }[]): boolean {
+  if (existingSnaps.length === 0) return false;
+  if (ctx.db.shiftAssignments.find((a) => a.work_date >= period.from_date && a.work_date <= period.to_date)) return false;
+  const pMonth = ctx.db.partitionMonth;
+  if (pMonth) {
+    const ym = `${pMonth.slice(0, 4)}-${pMonth.slice(5, 7)}`;
+    if (!(period.from_date <= `${ym}-31` && period.to_date >= `${ym}-01`)) return true;
+  }
+  if (!existingSnaps.some((s) => s.total_shifts_count > 0 || s.approved_hours > 0)) return false;
+  const reg = parsePartitionRegistry(ctx.db.systemSettings.find((s) => s.key === OPERATION_SETTING_KEYS.DATA_PARTITIONS_REGISTRY)?.value);
+  return reg.some((r) => {
+    if (r.monthKey === pMonth) return false;
+    const ym = `${r.monthKey.slice(0, 4)}-${r.monthKey.slice(5, 7)}`;
+    return period.from_date <= `${ym}-31` && period.to_date >= `${ym}-01`;
+  });
+}
+
 async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, actorId: string, force = false): Promise<PayPeriod> {
   await Promise.all([sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId), ensureLegacySalaryProfiles(ctx.db, actorId)]);
   let sigMap = periodSigByDb.get(ctx.db);
   if (!sigMap) { sigMap = new Map(); periodSigByDb.set(ctx.db, sigMap); }
   const existingSnaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === period.id);
+  if (shouldPreserveOtherPartitionSnapshot(ctx, period, existingSnaps)) {
+    return ctx.db.payPeriods.get(period.id) ?? period;
+  }
   const currentSig = computePeriodDirtySig(ctx, period);
   if (!force && existingSnaps.length > 0 && sigMap.get(period.id) === currentSig) {
     return ctx.db.payPeriods.get(period.id) ?? period;

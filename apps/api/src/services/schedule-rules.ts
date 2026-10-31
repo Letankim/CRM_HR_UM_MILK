@@ -46,18 +46,34 @@ export function resolveProbationCycle(emp: Employee, fallbackStart?: string): Pr
   return { start, end: dates[dates.length - 1]!, dates, workRequired: emp.probation_work_days || 7, offLimit: emp.probation_off_days || 5 };
 }
 
-export const weekLockCode = (branchId: string, weekStart: string) => `WK-${branchId || 'ALL'}-${weekStart}`;
-export const probationLockCode = (empCode: string, cycleStart: string) => `PB-${empCode}-${cycleStart}`;
+export const weekLockCode = (branchId: string, weekStart: string, partitionMonth = '') =>
+  partitionMonth ? `WK@${partitionMonth}-${branchId || 'ALL'}-${weekStart}` : `WK-${branchId || 'ALL'}-${weekStart}`;
 
-/** Tuần (theo chi nhánh hoặc toàn hệ thống) đã được HR chốt lịch & tự động sắp ca hay chưa. */
+export const probationLockCode = (empCode: string, cycleStart: string, partitionMonth = '') =>
+  partitionMonth ? `PB@${partitionMonth}-${empCode}-${cycleStart}` : `PB-${empCode}-${cycleStart}`;
+
+/** Tuần (theo chi nhánh hoặc toàn hệ thống) trên đúng tệp dữ liệu tháng đang hoạt động đã được HR chốt lịch hay chưa. */
 export function findWeekLock(ctx: AppContext, branchId: string, weekStart: string) {
-  const codes = new Set([weekLockCode(branchId, weekStart), weekLockCode('ALL', weekStart)]);
-  return ctx.db.scheduleWeeks.find((w) => codes.has(w.code) && w.status === 'PUBLISHED');
+  const pMonth = ctx.db.partitionMonth;
+  const scopedCodes = new Set([weekLockCode(branchId, weekStart, pMonth), weekLockCode('ALL', weekStart, pMonth)]);
+  const direct = ctx.db.scheduleWeeks.find((w) => scopedCodes.has(w.code) && w.status === 'PUBLISHED');
+  if (direct || !pMonth) return direct;
+  const legacyCodes = new Set([weekLockCode(branchId, weekStart, ''), weekLockCode('ALL', weekStart, '')]);
+  const legacy = ctx.db.scheduleWeeks.find((w) => legacyCodes.has(w.code) && w.status === 'PUBLISHED');
+  if (!legacy) return undefined;
+  const hasShiftsFromLegacyLock = Boolean(ctx.db.shiftAssignments.find((a) => legacyCodes.has(a.schedule_week_id)));
+  return hasShiftsFromLegacyLock ? legacy : undefined;
 }
 
 export function findProbationLock(ctx: AppContext, emp: Employee, cycleStart: string) {
-  const code = probationLockCode(emp.employee_code, cycleStart);
-  return ctx.db.scheduleWeeks.find((w) => w.code === code && w.status === 'PUBLISHED');
+  const pMonth = ctx.db.partitionMonth;
+  const scopedCode = probationLockCode(emp.employee_code, cycleStart, pMonth);
+  const direct = ctx.db.scheduleWeeks.find((w) => w.code === scopedCode && w.status === 'PUBLISHED');
+  if (direct || !pMonth) return direct;
+  const legacyCode = probationLockCode(emp.employee_code, cycleStart, '');
+  const legacy = ctx.db.scheduleWeeks.find((w) => w.code === legacyCode && w.status === 'PUBLISHED');
+  if (!legacy) return undefined;
+  return ctx.db.shiftAssignments.find((a) => a.schedule_week_id === legacyCode) ? legacy : undefined;
 }
 
 export function assertApprovedShiftNoteOnlyPatch(

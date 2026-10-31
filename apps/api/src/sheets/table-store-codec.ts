@@ -1,7 +1,9 @@
 import type { ZodType, ZodTypeDef } from 'zod';
 import { MAX_CELL_CHARS } from '@umbm/shared';
 import { Errors } from '../lib/errors.js';
+import { nowIso } from '../lib/time.js';
 import { serializeCell } from './a1.js';
+import type { SheetsGateway } from './gateway.js';
 
 export interface BaseRecord {
   id: string;
@@ -25,6 +27,20 @@ export interface InvalidRow {
   issues: string[];
 }
 
+export interface TableEntry<T> {
+  row: number;
+  data: T;
+}
+
+export interface PreparedTableTarget<T> {
+  spreadsheetId: string;
+  tab: string;
+  entries: Map<string, TableEntry<T>>;
+  invalid: InvalidRow[];
+  loadedAt: string;
+  lastLoadedMs: number;
+}
+
 export interface TableStoreOptions<T extends BaseRecord> {
   spreadsheetKey: string;
   spreadsheetId: string;
@@ -33,6 +49,37 @@ export interface TableStoreOptions<T extends BaseRecord> {
   schema: ZodType<T, ZodTypeDef, unknown>;
   appendOnly?: boolean;
   cacheRows?: boolean;
+}
+
+/** Phân tích toàn bộ các dòng đọc từ Google Sheets (bỏ qua dòng 1 tiêu đề và các dòng rỗng). */
+export function parseSheetRows<T extends BaseRecord>(
+  headers: readonly string[],
+  schema: ZodType<T, ZodTypeDef, unknown>,
+  rows: string[][],
+): { entries: Map<string, TableEntry<T>>; invalid: InvalidRow[] } {
+  const entries = new Map<string, TableEntry<T>>();
+  const invalid: InvalidRow[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const raw = rows[i] ?? [];
+    if (raw.every((c) => c === '')) continue;
+    const obj = rowToObject(headers, raw);
+    const parsed = schema.safeParse(obj);
+    const rowNumber = i + 1;
+    if (!parsed.success) {
+      invalid.push({
+        row: rowNumber,
+        id: String(obj.id ?? ''),
+        issues: parsed.error.issues.map((x) => `${x.path.join('.')}: ${x.message}`),
+      });
+      continue;
+    }
+    if (entries.has(parsed.data.id)) {
+      invalid.push({ row: rowNumber, id: parsed.data.id, issues: ['Trùng id'] });
+      continue;
+    }
+    entries.set(parsed.data.id, { row: rowNumber, data: parsed.data });
+  }
+  return { entries, invalid };
 }
 
 /** Chuyển một dòng ô Google Sheets thành object theo thứ tự header. */
@@ -99,4 +146,31 @@ export function validateRecord<T>(
     );
   }
   return parsed.data;
+}
+
+/** Đọc, kiểm tra header và phân tích dữ liệu của một tab đích trên Google Sheets. */
+export async function loadAndParseTarget<T extends BaseRecord>(
+  gateway: SheetsGateway,
+  opts: TableStoreOptions<T>,
+  target: { spreadsheetId: string; tab: string },
+  ensureFirst = false,
+): Promise<PreparedTableTarget<T>> {
+  const { spreadsheetId: sid, tab } = target;
+  const targetName = `${opts.spreadsheetKey}.${tab}`;
+  if (ensureFirst) await gateway.ensureTab(sid, tab, opts.headers);
+  if (opts.cacheRows === false) {
+    const header = await gateway.readRow(sid, tab, 1, opts.headers.length).catch(async () => {
+      await gateway.ensureTab(sid, tab, opts.headers);
+      return gateway.readRow(sid, tab, 1, opts.headers.length);
+    });
+    if (checkHeader(targetName, opts.headers, header)) await gateway.updateRow(sid, tab, 1, [...opts.headers]);
+    return { spreadsheetId: sid, tab, entries: new Map(), invalid: [], loadedAt: nowIso(), lastLoadedMs: Date.now() };
+  }
+  const rows = await gateway.readTab(sid, tab).catch(async () => {
+    await gateway.ensureTab(sid, tab, opts.headers);
+    return gateway.readTab(sid, tab);
+  });
+  if (checkHeader(targetName, opts.headers, rows[0] ?? [])) await gateway.updateRow(sid, tab, 1, [...opts.headers]);
+  const { entries, invalid } = parseSheetRows(opts.headers, opts.schema, rows);
+  return { spreadsheetId: sid, tab, entries, invalid, loadedAt: nowIso(), lastLoadedMs: Date.now() };
 }

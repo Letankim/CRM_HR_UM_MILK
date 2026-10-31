@@ -1,8 +1,8 @@
 'use client';
 
-import { Alert, App, Button, Card, Flex, Popconfirm, Select, Skeleton, Space, Table, Tag, Typography } from 'antd';
+import { Alert, App, Button, Card, Flex, Select, Skeleton, Space, Table, Tag, Typography } from 'antd';
 import {
-  CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DatabaseOutlined,
+  CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, DatabaseOutlined,
   EnvironmentOutlined, ExportOutlined, FileExcelOutlined, FileTextOutlined, FolderOpenOutlined,
   PlusOutlined, ReloadOutlined, SwapOutlined,
 } from '@ant-design/icons';
@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
+import { markLocalPartitionSwitch } from '@/lib/realtime';
 import { buildClickableRowProps } from './BulkActionBar';
 import {
   DataPartitionRolloverModal, monthKeyLabel, PARTITION_BASE_LABELS,
@@ -34,24 +35,37 @@ export function DataPartitionCard() {
   const qc = useQueryClient();
   const can = useCan();
   const canEdit = can('system.config'), canRead = can('system.config', 'integration.read');
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const showDetail = useQuickDetail();
   const [rolloverOpen, setRolloverOpen] = useState(false);
   const [switchingKey, setSwitchingKey] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const q = useQuery({ queryKey: ['data-partitions'], queryFn: () => api.get<PartitionListing>('/admin/data-partitions'), enabled: canRead, retry: false });
 
   const switchMut = useMutation({
     mutationFn: (monthKey: string) => api.put<PartitionListing>('/admin/data-partitions/active', { month_key: monthKey }),
-    onMutate: (monthKey) => setSwitchingKey(monthKey),
+    onMutate: (monthKey) => { setSwitchingKey(monthKey); markLocalPartitionSwitch(monthKey); },
     onSuccess: async (data, monthKey) => {
       qc.setQueryData(['data-partitions'], data);
-      message.success(`Đã chuyển hệ thống sang sử dụng ${data.activeLabel || monthKeyLabel(monthKey)}`);
+      message.success(`Đã chuyển sang ${data.activeLabel || monthKeyLabel(monthKey)} và đồng bộ trực tuyến tới toàn bộ hệ thống`);
       await qc.invalidateQueries();
     },
     onError: (e: unknown) => message.error(e instanceof ApiClientError ? e.message : 'Không thể chuyển tệp dữ liệu tháng, vui lòng thử lại'),
     onSettled: () => setSwitchingKey(null),
   });
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const fresh = await api.get<PartitionListing>('/admin/data-partitions?refresh=1');
+      qc.setQueryData(['data-partitions'], fresh);
+      await qc.invalidateQueries();
+      message.success('Đã đồng bộ dữ liệu mới nhất trực tiếp từ Google Sheets');
+    } catch (e) {
+      message.error(e instanceof ApiClientError ? e.message : 'Không thể làm mới dữ liệu tháng');
+    } finally { setRefreshing(false); }
+  };
 
   const d = q.data;
   const countByBase = useMemo(() => new Map((d?.counts ?? []).map((c) => [c.base, Number(c.rows || 0)])), [d?.counts]);
@@ -60,21 +74,12 @@ export function DataPartitionCard() {
 
   if (!canRead) return null;
 
-  const confirmSwitch = (targetKey: string, targetLabel: string) => {
-    modal.confirm({
-      title: `Chuyển hệ thống sang ${targetLabel}?`,
-      content: 'Toàn bộ thao tác đọc/ghi Lịch phân ca, Nghỉ OFF, Đổi ca và Chấm công sẽ áp dụng trên tệp Google Sheets này. Quản trị viên có thể chuyển lại tháng khác bất kỳ lúc nào.',
-      okText: 'Xác nhận chuyển', cancelText: 'Hủy bỏ', okButtonProps: { icon: <SwapOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> },
-      onOk: () => switchMut.mutateAsync(targetKey),
-    });
-  };
-
   return (
     <Card
       size="small" title={<span><DatabaseOutlined /> Quản lý dữ liệu theo tháng (Google Sheets)</span>}
       extra={
         <Space size={8} wrap>
-          <Button size="small" icon={<ReloadOutlined />} loading={q.isFetching && !q.isLoading} onClick={() => q.refetch()}>Làm mới</Button>
+          <Button size="small" icon={<ReloadOutlined />} loading={refreshing || (q.isFetching && !q.isLoading)} onClick={handleRefresh}>Làm mới</Button>
           {canEdit && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setRolloverOpen(true)}>Tạo tệp tháng mới</Button>}
         </Space>
       }
@@ -110,13 +115,9 @@ export function DataPartitionCard() {
                 <>
                   <Typography.Text style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>Chuyển nhanh:</Typography.Text>
                   <Select
-                    style={{ minWidth: 230 }} value={d.activeMonth} loading={switchMut.isPending}
+                    style={{ minWidth: 230 }} value={d.activeMonth} loading={switchMut.isPending} disabled={switchMut.isPending}
                     options={d.items.map((it) => ({ value: it.monthKey, label: `${it.label || monthKeyLabel(it.monthKey)}${it.isActive ? ' (Đang dùng)' : ''}` }))}
-                    onChange={(nextKey) => {
-                      if (nextKey === d.activeMonth) return;
-                      const found = d.items.find((x) => x.monthKey === nextKey);
-                      confirmSwitch(nextKey, found?.label || monthKeyLabel(nextKey));
-                    }}
+                    onChange={(nextKey) => { if (nextKey !== d.activeMonth && !switchMut.isPending) switchMut.mutate(nextKey); }}
                   />
                 </>
               )}
@@ -185,18 +186,17 @@ export function DataPartitionCard() {
                   title: 'Thao tác', width: 210, align: 'right',
                   render: (_, r) => (
                     <Space size={6}>
-                      {canOpenExternalLink(r) && <Button size="small" icon={<ExportOutlined />} href={r.webViewLink} target="_blank" rel="noreferrer">Mở Sheet</Button>}
+                      {canOpenExternalLink(r) && <Button size="small" icon={<ExportOutlined />} href={r.webViewLink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>Mở Sheet</Button>}
                       {r.isActive ? (
                         <Button size="small" disabled icon={<CheckCircleOutlined />}>Đang dùng</Button>
                       ) : canEdit ? (
-                        <Popconfirm
-                          title={`Chuyển hệ thống sang ${r.label || monthKeyLabel(r.monthKey)}?`}
-                          description={<div style={{ maxWidth: 300 }}>Hệ thống sẽ đọc và ghi lịch ca, nghỉ OFF, đổi ca và chấm công trên tệp này. Có thể chuyển lại bất kỳ lúc nào.</div>}
-                          okText="Chuyển sang dùng" cancelText="Hủy bỏ" okButtonProps={{ icon: <SwapOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
-                          onConfirm={() => switchMut.mutateAsync(r.monthKey).catch(() => undefined)}
+                        <Button
+                          size="small" type="primary" ghost icon={<SwapOutlined />}
+                          loading={switchingKey === r.monthKey} disabled={switchMut.isPending && switchingKey !== r.monthKey}
+                          onClick={(e) => { e.stopPropagation(); switchMut.mutate(r.monthKey); }}
                         >
-                          <Button size="small" type="primary" ghost icon={<SwapOutlined />} loading={switchingKey === r.monthKey}>Chuyển sang dùng</Button>
-                        </Popconfirm>
+                          Chuyển sang dùng
+                        </Button>
                       ) : (
                         <Typography.Text type="secondary" style={{ fontSize: 12 }}>Chỉ xem</Typography.Text>
                       )}
