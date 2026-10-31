@@ -1,6 +1,9 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEFAULT_OPERATION_SETTINGS, evaluateOffWindow, normalizeOperationSettings } from '@umbm/shared';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_OPERATION_SETTINGS, DRIVE_FOLDERS, OPERATION_SETTING_KEYS, evaluateOffWindow, normalizeOperationSettings, parsePartitionRegistry } from '@umbm/shared';
+import { Database } from '../data/database.js';
 import { dayjs } from '../lib/time.js';
+import { createGoogleMonthlySpreadsheet } from '../sheets/monthly-spreadsheet.js';
+import { WriteQueue } from '../sheets/write-queue.js';
 import { buildTestApp, type TestAppContext } from '../test-utils/build-test-app.js';
 
 let t: TestAppContext;
@@ -109,8 +112,8 @@ describe('Ops V5.2 — Mã PIN 6 số, đăng nhập 2 bước & bắt buộc đ
   });
 });
 
-describe('Ops V5.2 — Phân vùng dữ liệu theo tháng', () => {
-  it('tạo sheet tháng mới, chuyển tiếp ca từ đầu tháng và quay lại sheet gốc để rà soát', async () => {
+describe('Ops V5.2 — Phân vùng dữ liệu theo tháng (Tạo 1 File Google Spreadsheet độc lập mỗi tháng)', () => {
+  it('tạo hẳn 1 File Google Spreadsheet mới chứa đủ 5 bảng sạch, lưu sổ đăng ký vào SYSTEM_SETTINGS, giữ qua khởi động lại và chuyển qua lại file gốc', async () => {
     const admin = await t.loginHeaders('admin');
     const hr = await t.loginHeaders('hr');
     const emp = t.db.employees.find((e) => e.employee_code === 'NV0002')!;
@@ -124,19 +127,91 @@ describe('Ops V5.2 — Phân vùng dữ liệu theo tháng', () => {
     const roll = await t.app.inject({ method: 'POST', url: '/api/admin/data-partitions/rollover', headers: admin, payload: { month_key: '2099_01' } });
     expect(roll.statusCode).toBe(201);
     expect(roll.json().data.carried.SHIFT_ASSIGNMENTS).toBe(1);
+    expect(roll.json().data.file.fileName).toBe('UMBM_MONTHLY_2099_01');
+    expect(roll.json().data.file.spreadsheetId).toBe('mem-monthly-2099_01');
+    expect(roll.json().data.file.folderPath).toBe(`${DRIVE_FOLDERS.MONTHLY_DATABASES}/2099-01`);
+
     expect(t.db.partitionMonth).toBe('2099_01');
-    expect(t.db.shiftAssignments.tab).toBe('SHIFT_ASSIGNMENTS_2099_01');
+    expect(t.db.shiftAssignments.spreadsheetId).toBe('mem-monthly-2099_01');
+    expect(t.db.attendanceEvents.spreadsheetId).toBe('mem-monthly-2099_01');
+    expect(t.db.shiftAssignments.tab).toBe('SHIFT_ASSIGNMENTS');
+    expect(t.db.attendanceEvents.tab).toBe('ATTENDANCE_EVENTS');
     expect(t.db.shiftAssignments.get(futureId)).toBeTruthy();
     expect(t.db.shiftAssignments.all().length).toBe(1);
-    expect(await t.db.gateway.listTabs(t.db.ids.ATTENDANCE)).toContain('ATTENDANCE_EVENTS_2099_01');
+
+    const monthlyTabs = await t.db.gateway.listTabs('mem-monthly-2099_01');
+    expect(monthlyTabs).toEqual(expect.arrayContaining(['SHIFT_ASSIGNMENTS', 'LEAVE_REQUESTS', 'SHIFT_SWAPS', 'ATTENDANCE_EVENTS', 'ATTENDANCE_ADJUSTMENTS']));
+    expect(await t.db.gateway.listTabs(t.db.ids.SCHEDULE)).not.toContain('SHIFT_ASSIGNMENTS_2099_01');
+    expect(await t.db.gateway.listTabs(t.db.ids.ATTENDANCE)).not.toContain('ATTENDANCE_EVENTS_2099_01');
+
+    const regRow = t.db.systemSettings.find((s) => s.key === OPERATION_SETTING_KEYS.DATA_PARTITIONS_REGISTRY);
+    const parsedReg = parsePartitionRegistry(regRow?.value);
+    expect(parsedReg.find((r) => r.monthKey === '2099_01')?.spreadsheetId).toBe('mem-monthly-2099_01');
+
+    // Mô phỏng Render khởi động lại: Database mới tự đọc SYSTEM_SETTINGS và gắn đúng file tháng 2099_01 mà không cần sửa .env
+    const rebootedDb = new Database(t.db.gateway, new WriteQueue(), t.db.ids);
+    await rebootedDb.loadAll();
+    expect(rebootedDb.partitionMonth).toBe('2099_01');
+    expect(rebootedDb.shiftAssignments.spreadsheetId).toBe('mem-monthly-2099_01');
+    expect(rebootedDb.attendanceEvents.spreadsheetId).toBe('mem-monthly-2099_01');
+    expect(rebootedDb.shiftAssignments.get(futureId)).toBeTruthy();
 
     const list = await t.app.inject({ method: 'GET', url: '/api/admin/data-partitions', headers: admin });
-    expect(list.json().data.items.some((i: { monthKey: string; isActive: boolean }) => i.monthKey === '2099_01' && i.isActive)).toBe(true);
+    const foundItem = list.json().data.items.find((i: { monthKey: string }) => i.monthKey === '2099_01');
+    expect(foundItem).toMatchObject({ monthKey: '2099_01', isActive: true, mode: 'MONTHLY_FILE', fileName: 'UMBM_MONTHLY_2099_01' });
 
     const back = await t.app.inject({ method: 'PUT', url: '/api/admin/data-partitions/active', headers: admin, payload: { month_key: '' } });
     expect(back.statusCode).toBe(200);
+    expect(t.db.shiftAssignments.spreadsheetId).toBe(t.db.ids.SCHEDULE);
+    expect(t.db.attendanceEvents.spreadsheetId).toBe(t.db.ids.ATTENDANCE);
     expect(t.db.shiftAssignments.tab).toBe('SHIFT_ASSIGNMENTS');
     expect(t.db.shiftAssignments.get(futureId)).toBeUndefined();
     expect(t.db.shiftAssignments.all().length).toBe(oldCount - 1);
+
+    const forwardAgain = await t.app.inject({ method: 'PUT', url: '/api/admin/data-partitions/active', headers: admin, payload: { month_key: '2099_01' } });
+    expect(forwardAgain.statusCode).toBe(200);
+    expect(t.db.shiftAssignments.spreadsheetId).toBe('mem-monthly-2099_01');
+    expect(t.db.shiftAssignments.get(futureId)).toBeTruthy();
+    await t.app.inject({ method: 'PUT', url: '/api/admin/data-partitions/active', headers: admin, payload: { month_key: '' } });
+  });
+
+  it('createGoogleMonthlySpreadsheet tạo đúng 1 file trên Google Drive folder tháng, ghi header, đóng băng dòng 1 và chống tạo trùng khi gọi lại', async () => {
+    const createSpreadsheet = vi.fn().mockResolvedValue({
+      data: {
+        spreadsheetId: 'gdrive-sheet-2026-11',
+        spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/gdrive-sheet-2026-11/edit',
+        sheets: [{ properties: { title: 'SHIFT_ASSIGNMENTS', sheetId: 101 } }, { properties: { title: 'ATTENDANCE_EVENTS', sheetId: 102 } }],
+      },
+    });
+    const valuesBatchUpdate = vi.fn().mockResolvedValue({ data: {} });
+    const sheetsBatchUpdate = vi.fn().mockResolvedValue({ data: {} });
+    const mockSheets = { spreadsheets: { create: createSpreadsheet, batchUpdate: sheetsBatchUpdate, values: { batchUpdate: valuesBatchUpdate } } } as never;
+
+    let fileExistsInFolder = false;
+    const filesList = vi.fn().mockImplementation(async ({ q }: { q: string }) => {
+      if (q.includes("mimeType='application/vnd.google-apps.folder'")) return { data: { files: [{ id: 'folder-id-1' }] } };
+      return { data: { files: fileExistsInFolder ? [{ id: 'gdrive-sheet-2026-11', name: 'UMBM_MONTHLY_2026_11', webViewLink: 'https://docs.google.com/spreadsheets/d/gdrive-sheet-2026-11/edit' }] : [] } };
+    });
+    const filesGet = vi.fn().mockResolvedValue({ data: { parents: ['root-parent'] } });
+    const filesUpdate = vi.fn().mockImplementation(async () => {
+      fileExistsInFolder = true;
+      return { data: { id: 'gdrive-sheet-2026-11', webViewLink: 'https://docs.google.com/spreadsheets/d/gdrive-sheet-2026-11/edit' } };
+    });
+    const mockDrive = { files: { list: filesList, create: vi.fn(), get: filesGet, update: filesUpdate } } as never;
+
+    const params = {
+      monthKey: '2026_11', title: 'UMBM_MONTHLY_2026_11', folderSegments: ['07_MONTHLY_DATABASES', '2026-11'],
+      tabs: [{ name: 'SHIFT_ASSIGNMENTS', headers: ['id', 'work_date'] }, { name: 'ATTENDANCE_EVENTS', headers: ['id', 'server_time'] }],
+    };
+    const first = await createGoogleMonthlySpreadsheet(mockSheets, { drive: mockDrive, rootFolderId: 'drive-root' }, params);
+    expect(first).toMatchObject({ spreadsheetId: 'gdrive-sheet-2026-11', fileName: 'UMBM_MONTHLY_2026_11', folderId: 'folder-id-1', folderPath: '07_MONTHLY_DATABASES/2026-11' });
+    expect(createSpreadsheet).toHaveBeenCalledTimes(1);
+    expect(filesUpdate).toHaveBeenCalledWith(expect.objectContaining({ fileId: 'gdrive-sheet-2026-11', addParents: 'folder-id-1', removeParents: 'root-parent' }));
+    expect(valuesBatchUpdate).toHaveBeenCalledTimes(1);
+    expect(sheetsBatchUpdate).toHaveBeenCalledTimes(1);
+
+    const second = await createGoogleMonthlySpreadsheet(mockSheets, { drive: mockDrive, rootFolderId: 'drive-root' }, params);
+    expect(second.spreadsheetId).toBe('gdrive-sheet-2026-11');
+    expect(createSpreadsheet).toHaveBeenCalledTimes(1);
   });
 });

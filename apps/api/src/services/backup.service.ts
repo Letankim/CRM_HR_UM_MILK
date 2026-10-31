@@ -31,12 +31,7 @@ export class BackupService {
   private readonly activeLogIds = new Set<string>();
   private healingPromise: Promise<void> | null = null;
 
-  constructor(
-    private readonly env: Env,
-    private readonly db: Database,
-    private readonly reconciliation: ReconciliationService,
-    private readonly googleClients?: GoogleClients,
-  ) {}
+  constructor(private readonly env: Env, private readonly db: Database, private readonly reconciliation: ReconciliationService, private readonly googleClients?: GoogleClients) {}
 
   private collectRowCounts(): Record<string, number> {
     const rows: Record<string, number> = {};
@@ -44,7 +39,7 @@ export class BackupService {
       for (const tabKey of Object.keys(spDef.tabs)) rows[`${spKey}.${tabKey}`] = 0;
     }
     for (const t of this.db.stats().tables) {
-      const normalized = t.table.replace(/__\d{4}_\d{2}$/, '');
+      const normalized = t.table.replace(/_\d{4}_\d{2}$/, '');
       rows[normalized] = (rows[normalized] ?? 0) + t.rows;
     }
     return rows;
@@ -67,12 +62,18 @@ export class BackupService {
       if (f.id && f.name) existingByName.set(f.name, [...(existingByName.get(f.name) ?? []), f.id]);
     }
 
-    let filesCount = 0;
+    const targets: { fileId: string; title: string }[] = [];
     for (const key of plan.keys) {
-      const fileId = ids[key];
-      if (!fileId) continue;
-      const sheetName = `${SPREADSHEETS[key].title}__${stamp}`;
-      const existingSheets = existingByName.get(sheetName) ?? [];
+      if (ids[key]) targets.push({ fileId: ids[key], title: SPREADSHEETS[key].title });
+    }
+    const activeMonthlyId = this.db.shiftAssignments.spreadsheetId;
+    if (this.db.partitionMonth && activeMonthlyId && activeMonthlyId !== ids.SCHEDULE && plan.keys.includes('ATTENDANCE')) {
+      targets.push({ fileId: activeMonthlyId, title: `UMBM_MONTHLY_${this.db.partitionMonth}` });
+    }
+
+    let filesCount = 0;
+    for (const { fileId, title } of targets) {
+      const sheetName = `${title}__${stamp}`, existingSheets = existingByName.get(sheetName) ?? [];
       if (reuseExisting && existingSheets.length > 0) {
         for (const dupId of existingSheets.slice(1)) await trashFile(drive, dupId).catch(() => undefined);
         filesCount++;
@@ -81,9 +82,8 @@ export class BackupService {
         await copyFile(drive, fileId, { name: sheetName, parentId: folderId });
         filesCount++;
       }
-
       if (plan.exportXlsx) {
-        const xlsxName = `${SPREADSHEETS[key].title}__${stamp}.xlsx`, existingXlsx = existingByName.get(xlsxName) ?? [];
+        const xlsxName = `${title}__${stamp}.xlsx`, existingXlsx = existingByName.get(xlsxName) ?? [];
         if (reuseExisting && existingXlsx.length > 0) {
           for (const dupId of existingXlsx.slice(1)) await trashFile(drive, dupId).catch(() => undefined);
           filesCount++;

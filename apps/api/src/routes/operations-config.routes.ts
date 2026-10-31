@@ -53,12 +53,12 @@ export async function operationsConfigRoutes(app: FastifyInstance, ctx: AppConte
     sendSuccess(request, 'Lấy danh sách phân vùng dữ liệu theo tháng thành công', await listPartitions(ctx.db)));
 
   app.post('/api/admin/data-partitions/rollover', { preHandler: requirePermission('system.config') }, async (request, reply) => {
-    const body = z.object({ month_key: zMonthKey.refine((v) => v !== '', 'Vui lòng chọn tháng cần tạo sheet dữ liệu mới'), carry_forward: z.boolean().optional().default(true) }).parse(request.body ?? {});
+    const body = z.object({ month_key: zMonthKey.refine((v) => v !== '', 'Vui lòng chọn tháng cần tạo file Google Sheets mới'), carry_forward: z.boolean().optional().default(true) }).parse(request.body ?? {});
     const result = await rolloverToMonth(ctx.db, body.month_key, request.auth!.user.id, body.carry_forward);
     await ctx.audit.record(auditContext(request), { action: 'system.partition.rollover', entity: 'SYSTEM_SETTINGS', entityId: body.month_key, after: result });
     reply.code(201);
     const carriedTotal = Object.values(result.carried).reduce((a, b) => a + b, 0);
-    return sendSuccess(request, `Đã tạo và chuyển sang sheet dữ liệu ${result.label} (chuyển tiếp ${carriedTotal} bản ghi từ đầu tháng trở đi)`, { ...result, ...(await listPartitions(ctx.db)) });
+    return sendSuccess(request, `Đã khởi tạo file Google Sheets ${result.label} trên Drive và chuyển tiếp ${carriedTotal} bản ghi từ đầu tháng trở đi`, { ...result, ...(await listPartitions(ctx.db)) });
   });
 
   app.put('/api/admin/data-partitions/active', { preHandler: requirePermission('system.config') }, async (request) => {
@@ -66,6 +66,6 @@ export async function operationsConfigRoutes(app: FastifyInstance, ctx: AppConte
     const before = ctx.db.partitionMonth;
     await switchPartition(ctx.db, body.month_key, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'system.partition.switch', entity: 'SYSTEM_SETTINGS', entityId: body.month_key || 'BASE', before: { month: before }, after: { month: body.month_key } });
-    return sendSuccess(request, `Đã chuyển hệ thống sang sử dụng ${monthKeyLabel(body.month_key)}`, await listPartitions(ctx.db));
+    return sendSuccess(request, `Đã chuyển hệ thống sang sử dụng file dữ liệu ${monthKeyLabel(body.month_key)}`, await listPartitions(ctx.db));
   });
 }

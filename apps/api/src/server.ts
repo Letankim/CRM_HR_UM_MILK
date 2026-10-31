@@ -32,28 +32,15 @@ async function main() {
   let mailSender: ((payload: { to: string; subject: string; html: string }) => Promise<void>) | undefined;
   const smtpSender = env.GMAIL_APP_PASSWORD.trim()
     ? (payload: { to: string; subject: string; html: string }) =>
-        sendSmtpTlsMail(
-          {
-            host: env.SMTP_HOST,
-            port: env.SMTP_PORT,
-            user: env.EMAIL_FROM_ADDRESS,
-            pass: env.GMAIL_APP_PASSWORD,
-            fromName: env.EMAIL_FROM_NAME,
-          },
-          payload,
-        )
+        sendSmtpTlsMail({ host: env.SMTP_HOST, port: env.SMTP_PORT, user: env.EMAIL_FROM_ADDRESS, pass: env.GMAIL_APP_PASSWORD, fromName: env.EMAIL_FROM_NAME }, payload)
     : undefined;
 
   if (env.DATA_BACKEND === 'google') {
-    const clients = createGoogleClients({
-      clientId: env.GOOGLE_OAUTH_CLIENT_ID,
-      clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
-      refreshToken: env.GOOGLE_OAUTH_REFRESH_TOKEN,
-    });
+    const clients = createGoogleClients({ clientId: env.GOOGLE_OAUTH_CLIENT_ID, clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET, refreshToken: env.GOOGLE_OAUTH_REFRESH_TOKEN });
     googleClients = clients;
     const missing = Object.entries(ids).filter(([, v]) => !v).map(([k]) => `SHEET_ID_${k}`);
     if (missing.length) throw new Error(`Thiếu ${missing.join(', ')}. Chạy "pnpm sheets:bootstrap" rồi điền vào .env.`);
-    gateway = new GoogleSheetsGateway(clients.sheets);
+    gateway = new GoogleSheetsGateway(clients.sheets, undefined, { drive: clients.drive, rootFolderId: env.DRIVE_ROOT_FOLDER_ID });
     if (env.EMAIL_ENABLED) {
       mailSender = async (payload) => {
         if (smtpSender) {

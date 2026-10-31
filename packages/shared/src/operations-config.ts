@@ -15,7 +15,60 @@ export const OPERATION_SETTING_KEYS = {
   MAX_SHIFTS_PER_DAY: 'SCHEDULE_MAX_SHIFTS_PER_DAY',
   CHECKOUT_MAX_LATE_HOURS: 'ATTENDANCE_CHECKOUT_MAX_LATE_HOURS',
   DATA_PARTITION_MONTH: 'DATA_PARTITION_ACTIVE_MONTH',
+  DATA_PARTITIONS_REGISTRY: 'DATA_PARTITIONS_REGISTRY',
 } as const;
+
+export type MonthlyPartitionMode = 'ROOT_FILE' | 'MONTHLY_FILE' | 'LEGACY_TAB';
+
+export interface MonthlyPartitionRegistryEntry {
+  monthKey: string;
+  fileName: string;
+  spreadsheetId: string;
+  folderId: string;
+  folderPath: string;
+  webViewLink: string;
+  mode: 'MONTHLY_FILE' | 'LEGACY_TAB';
+  createdAt: string;
+  createdBy: string;
+}
+
+export const PARTITION_MODE_LABELS: Record<MonthlyPartitionMode, string> = {
+  ROOT_FILE: 'File gốc mặc định',
+  MONTHLY_FILE: 'File Google Sheets độc lập',
+  LEGACY_TAB: 'Tab trong file gốc',
+};
+
+const MONTH_KEY_RE = /^\d{4}_(0[1-9]|1[0-2])$/;
+
+/** Đọc sổ đăng ký các file Google Spreadsheet theo tháng từ JSON trong SYSTEM_SETTINGS. */
+export function parsePartitionRegistry(raw: string | null | undefined): MonthlyPartitionRegistryEntry[] {
+  if (!raw || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const byMonth = new Map<string, MonthlyPartitionRegistryEntry>();
+    for (const item of parsed) {
+      if (!item || typeof item !== 'object') continue;
+      const monthKey = typeof item.monthKey === 'string' ? item.monthKey.trim() : '';
+      const spreadsheetId = typeof item.spreadsheetId === 'string' ? item.spreadsheetId.trim() : '';
+      if (!MONTH_KEY_RE.test(monthKey) || !spreadsheetId) continue;
+      byMonth.set(monthKey, {
+        monthKey,
+        fileName: typeof item.fileName === 'string' && item.fileName.trim() ? item.fileName.trim() : `UMBM_MONTHLY_${monthKey}`,
+        spreadsheetId,
+        folderId: typeof item.folderId === 'string' ? item.folderId.trim() : '',
+        folderPath: typeof item.folderPath === 'string' ? item.folderPath.trim() : '',
+        webViewLink: typeof item.webViewLink === 'string' ? item.webViewLink.trim() : '',
+        mode: item.mode === 'LEGACY_TAB' ? 'LEGACY_TAB' : 'MONTHLY_FILE',
+        createdAt: typeof item.createdAt === 'string' ? item.createdAt : '',
+        createdBy: typeof item.createdBy === 'string' ? item.createdBy : '',
+      });
+    }
+    return Array.from(byMonth.values()).sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+  } catch {
+    return [];
+  }
+}
 
 export interface OperationSettings {
   pinRotationDays: number;

@@ -27,15 +27,22 @@ export class TableStore<T extends BaseRecord> {
   get tab(): string { return this.opts.tab; }
   get spreadsheetId(): string { return this.opts.spreadsheetId; }
 
-  /** Chuyển bảng sang tab khác (phân vùng tháng): tự tạo tab + header, chờ hàng đợi ghi rồi nạp lại cache. */
-  async switchTab(tab: string): Promise<void> {
-    if (tab === this.opts.tab && this.loadedAt) return;
-    await this.queue.enqueue(this.opts.spreadsheetId, async () => {
-      await this.gateway.ensureTab(this.opts.spreadsheetId, tab, this.opts.headers);
-      this.opts = { ...this.opts, tab };
+  /** Chuyển bảng sang file Spreadsheet và/hoặc tab khác: xả sạch hàng đợi ghi file cũ rồi nạp cache file mới. */
+  async switchTarget(target: { spreadsheetId: string; tab: string }): Promise<void> {
+    if (target.spreadsheetId === this.opts.spreadsheetId && target.tab === this.opts.tab && this.loadedAt) return;
+    const prevId = this.opts.spreadsheetId;
+    await this.queue.enqueue(prevId, async () => { if (this.insertBuffer.length > 0) await this.flushInserts(); });
+    await this.queue.enqueue(target.spreadsheetId, async () => {
+      await this.gateway.ensureTab(target.spreadsheetId, target.tab, this.opts.headers);
+      this.opts = { ...this.opts, spreadsheetId: target.spreadsheetId, tab: target.tab };
       this.entries = new Map(); this.pendingEntries = new Map(); this.loadedAt = null; this.lastLoadedMs = 0;
     });
     await this.load();
+  }
+
+  /** Chuyển bảng sang tab khác trên cùng Spreadsheet hiện tại. */
+  async switchTab(tab: string): Promise<void> {
+    return this.switchTarget({ spreadsheetId: this.opts.spreadsheetId, tab });
   }
 
   async load(): Promise<void> {
@@ -135,11 +142,7 @@ export class TableStore<T extends BaseRecord> {
     if (this.insertBuffer.length > 0) this.scheduleFlush();
 
     try {
-      const firstRow = await this.gateway.appendRows(
-        this.opts.spreadsheetId,
-        this.opts.tab,
-        batch.map((b) => this.toRow(b.record)),
-      );
+      const firstRow = await this.gateway.appendRows(this.opts.spreadsheetId, this.opts.tab, batch.map((b) => this.toRow(b.record)));
       batch.forEach((b, i) => {
         this.pendingEntries.delete(b.record.id);
         if (this.opts.cacheRows !== false) this.entries.set(b.record.id, { row: firstRow + i, data: b.record });
@@ -147,10 +150,7 @@ export class TableStore<T extends BaseRecord> {
       });
       this.lastLoadedMs = Date.now();
     } catch (err) {
-      for (const b of batch) {
-        this.pendingEntries.delete(b.record.id);
-        b.reject(err);
-      }
+      for (const b of batch) { this.pendingEntries.delete(b.record.id); b.reject(err); }
       throw err;
     }
   }

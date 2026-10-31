@@ -185,11 +185,7 @@ export type SpreadsheetKey = keyof typeof SPREADSHEETS;
 export type TabName<K extends SpreadsheetKey> = keyof (typeof SPREADSHEETS)[K]['tabs'] & string;
 export const MONTHLY_TABS: Partial<Record<SpreadsheetKey, readonly string[]>> = { SYSTEM: ['AUDIT_LOG'] };
 
-/**
- * Các bảng phát sinh dữ liệu lớn theo tháng (ca làm việc, nghỉ OFF, đổi/nhường ca, chấm công, phiếu bổ sung công).
- * Quản trị viên có thể chuyển "phân vùng dữ liệu" sang sheet tháng mới (ví dụ SHIFT_ASSIGNMENTS_2026_11)
- * hoặc quay lại sheet tháng cũ để rà soát. Phân vùng rỗng ('') nghĩa là dùng tab gốc.
- */
+/** Các bảng phát sinh dữ liệu lớn theo tháng — mỗi tháng tách thành 1 file Google Spreadsheet độc lập trên Drive. */
 export const MONTHLY_PARTITION_TABS = {
   SCHEDULE: ['SHIFT_ASSIGNMENTS', 'LEAVE_REQUESTS', 'SHIFT_SWAPS'],
   ATTENDANCE: ['ATTENDANCE_EVENTS', 'ATTENDANCE_ADJUSTMENTS'],
@@ -216,5 +212,6 @@ export const DRIVE_FOLDERS = {
   PAYSLIPS: '04_PAYSLIPS',
   MKT_MEDIA: '05_MKT_MEDIA',
   EXPORTS: '06_EXPORTS',
+  MONTHLY_DATABASES: '07_MONTHLY_DATABASES',
   BACKUPS: '90_BACKUPS',
 } as const;

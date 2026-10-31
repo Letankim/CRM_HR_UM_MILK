@@ -9,11 +9,7 @@ export interface SpreadsheetIds {
   CORE: string; HR: string; SCHEDULE: string; ATTENDANCE: string; PAYROLL: string; COMMS: string; SYSTEM: string;
 }
 
-interface Logger {
-  info: (obj: object, msg?: string) => void;
-  warn: (obj: object, msg?: string) => void;
-  error: (obj: object, msg?: string) => void;
-}
+interface Logger { info: (obj: object, msg?: string) => void; warn: (obj: object, msg?: string) => void; error: (obj: object, msg?: string) => void }
 
 export class Database {
   readonly users: TableStore<S.User>;
@@ -110,12 +106,15 @@ export class Database {
     this.operationJournal = new TableStore(gateway, queue, { spreadsheetKey: 'SYSTEM', spreadsheetId: ids.SYSTEM, tab: 'OPERATION_JOURNAL', headers: sys.OPERATION_JOURNAL, schema: zOperationJournalRow });
   }
 
-  /** Các bảng dữ liệu phát sinh theo tháng có thể chuyển sang sheet tháng mới. */
-  monthlyStores(): { base: string; store: TableStore<S.ShiftAssignment> | TableStore<S.LeaveRequest> | TableStore<S.ShiftSwap> | TableStore<S.AttendanceEvent> | TableStore<S.AttendanceAdjustment> }[] {
+  /** Các bảng dữ liệu phát sinh theo tháng (mỗi tháng tách sang 1 file Google Spreadsheet độc lập). */
+  monthlyStores(): { base: string; defaultSpreadsheetId: string; headers: readonly string[]; store: TableStore<S.ShiftAssignment> | TableStore<S.LeaveRequest> | TableStore<S.ShiftSwap> | TableStore<S.AttendanceEvent> | TableStore<S.AttendanceAdjustment> }[] {
+    const sched = S.SPREADSHEETS.SCHEDULE.tabs, att = S.SPREADSHEETS.ATTENDANCE.tabs;
     return [
-      { base: 'SHIFT_ASSIGNMENTS', store: this.shiftAssignments }, { base: 'LEAVE_REQUESTS', store: this.leaveRequests },
-      { base: 'SHIFT_SWAPS', store: this.shiftSwaps }, { base: 'ATTENDANCE_EVENTS', store: this.attendanceEvents },
-      { base: 'ATTENDANCE_ADJUSTMENTS', store: this.attendanceAdjustments },
+      { base: 'SHIFT_ASSIGNMENTS', defaultSpreadsheetId: this.ids.SCHEDULE, headers: sched.SHIFT_ASSIGNMENTS, store: this.shiftAssignments },
+      { base: 'LEAVE_REQUESTS', defaultSpreadsheetId: this.ids.SCHEDULE, headers: sched.LEAVE_REQUESTS, store: this.leaveRequests },
+      { base: 'SHIFT_SWAPS', defaultSpreadsheetId: this.ids.SCHEDULE, headers: sched.SHIFT_SWAPS, store: this.shiftSwaps },
+      { base: 'ATTENDANCE_EVENTS', defaultSpreadsheetId: this.ids.ATTENDANCE, headers: att.ATTENDANCE_EVENTS, store: this.attendanceEvents },
+      { base: 'ATTENDANCE_ADJUSTMENTS', defaultSpreadsheetId: this.ids.ATTENDANCE, headers: att.ATTENDANCE_ADJUSTMENTS, store: this.attendanceAdjustments },
     ];
   }
 
@@ -156,7 +155,13 @@ export class Database {
       await Promise.all(this.stores.filter((s) => !monthly.has(s)).map((s) => s.load()));
       const month = this.systemSettings.find((s) => s.key === S.OPERATION_SETTING_KEYS.DATA_PARTITION_MONTH)?.value.trim() ?? '';
       this.partitionMonth = S.PARTITION_MONTH_REGEX.test(month) ? month : '';
-      await Promise.all(this.monthlyStores().map((m) => (this.partitionMonth ? m.store.switchTab(S.partitionTabName(m.base, this.partitionMonth)) : m.store.load())));
+      const reg = S.parsePartitionRegistry(this.systemSettings.find((s) => s.key === S.OPERATION_SETTING_KEYS.DATA_PARTITIONS_REGISTRY)?.value);
+      const entry = this.partitionMonth ? reg.find((e) => e.monthKey === this.partitionMonth) : undefined;
+      await Promise.all(this.monthlyStores().map((m) => {
+        if (!this.partitionMonth) return m.store.load();
+        const target = entry?.mode === 'MONTHLY_FILE' ? { spreadsheetId: entry.spreadsheetId, tab: m.base } : { spreadsheetId: m.defaultSpreadsheetId, tab: S.partitionTabName(m.base, this.partitionMonth) };
+        return m.store.switchTarget(target);
+      }));
       await this.audit();
       this.lastRefreshError = null;
       this.ready = true;
@@ -201,18 +206,9 @@ export class Database {
     this.timer.unref();
   }
 
-  stopAutoRefresh(): void {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = null;
-  }
+  stopAutoRefresh(): void { if (this.timer) clearInterval(this.timer); this.timer = null; }
 
   stats() {
-    return {
-      ready: this.ready,
-      lastRefreshError: this.lastRefreshError,
-      queue: this.queue.stats(),
-      tables: this.stores.map((s) => s.stats()),
-      unresolvedDeadLetters: this.deadLetters.filter((d) => !d.resolved_at).length,
-    };
+    return { ready: this.ready, lastRefreshError: this.lastRefreshError, queue: this.queue.stats(), tables: this.stores.map((s) => s.stats()), unresolvedDeadLetters: this.deadLetters.filter((d) => !d.resolved_at).length };
   }
 }
