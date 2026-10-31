@@ -104,7 +104,7 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
         <div style={{ padding: 32, textAlign: 'center' }}><Spin /></div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }} styles={{ label: { width: 195, fontWeight: 500, background: '#F8FAFC' } }}>
+          <Descriptions size="small" bordered column={{ xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 }} styles={{ label: { width: 195, fontWeight: 500, background: '#F8FAFC' } }}>
             <Descriptions.Item label="Tiêu đề phiếu hỗ trợ" span={2}><strong>{t.subject}</strong></Descriptions.Item>
             <Descriptions.Item label="Người gửi">{t.requesterName}{t.requesterCode ? ` (${t.requesterCode})` : ''} · {t.requesterRoleLabel}</Descriptions.Item>
             <Descriptions.Item label="Chi nhánh">{t.branchName}</Descriptions.Item>

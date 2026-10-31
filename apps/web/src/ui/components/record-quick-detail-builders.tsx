@@ -15,6 +15,13 @@ export type QuickDetailKind =
 type Rec = Record<string, unknown>;
 const s = (v: unknown, fb = '—') => (v === null || v === undefined || v === '' ? fb : String(v));
 const dt = (v: unknown) => (v ? String(v).slice(0, 19).replace('T', ' ') : '—');
+const tblLbl = (raw: unknown) => {
+  const key = String(raw ?? '').trim();
+  if (!key) return '—';
+  if (TABLE_DISPLAY_LABELS[key]) return TABLE_DISPLAY_LABELS[key];
+  const matched = Object.entries(TABLE_DISPLAY_LABELS).find(([k]) => k.endsWith(`.${key}`));
+  return matched ? matched[1] : key;
+};
 const CHANNEL_MAP: Record<string, string> = { IN_APP: 'Thông báo trên hệ thống', EMAIL: 'Thư điện tử (Email)', MULTI: 'Đa kênh (Hệ thống & Email)', ALL: 'Đa kênh (Hệ thống & Email)' };
 const SCOPE_MAP: Record<string, string> = { ALL: 'Toàn hệ thống', BRANCH: 'Theo chi nhánh', ROLE: 'Theo vai trò', STAGE: 'Theo giai đoạn nhân sự', STAFF_GROUP: 'Theo khối nhân sự', CUSTOM: 'Nhóm tùy chỉnh' };
 
@@ -44,12 +51,20 @@ export function buildQuickDetailSpec(kind: QuickDetailKind, raw: unknown): Quick
           { label: 'Thời điểm khởi tạo', value: dt(r.createdAt) },
           { label: 'Tên tệp trên Google Drive', value: s(r.fileName, 'Tệp mặc định hệ thống'), span: 2 },
           { label: 'Thư mục lưu trữ Drive', value: s(r.folderPath, 'Thư mục gốc hệ thống'), span: 2 },
-          { label: 'Các bảng dữ liệu trong tệp', value: tabs.length ? <Space size={[4, 4]} wrap>{tabs.map((t) => <Tag key={t} color="blue">{TABLE_DISPLAY_LABELS[t] ?? t}</Tag>)}</Space> : '5 bảng lịch làm việc & chấm công chuẩn', span: 2 },
+          {
+            label: 'Các bảng dữ liệu trong tệp',
+            value: tabs.length ? (
+              <Space direction="vertical" size={6}>
+                {tabs.map((t) => <Tag key={t} color="blue" style={{ margin: 0, fontSize: 13, padding: '2px 10px' }}>{tblLbl(t)}</Tag>)}
+              </Space>
+            ) : '5 bảng lịch làm việc & chấm công chuẩn',
+            span: 2,
+          },
         ],
       };
     }
     case 'sheetTableStat': {
-      const tblLabel = TABLE_DISPLAY_LABELS[String(r.table)] ?? s(r.table);
+      const tblLabel = tblLbl(r.table);
       const invalidList = Array.isArray(r.invalid) ? (r.invalid as { row: number; issues: string[] }[]) : [];
       return {
         title: `Chi tiết Đồng bộ Bảng Dữ liệu — ${tblLabel}`,
@@ -66,7 +81,7 @@ export function buildQuickDetailSpec(kind: QuickDetailKind, raw: unknown): Quick
       return {
         title: `Chi tiết Cảnh báo Đối soát — ${s(r.label)}`,
         fields: [
-          { label: 'Bảng dữ liệu kiểm tra', value: TABLE_DISPLAY_LABELS[String(r.table)] ?? s(r.table) },
+          { label: 'Bảng dữ liệu kiểm tra', value: tblLbl(r.table) },
           { label: 'Mức độ cảnh báo', value: r.severity === 'error' ? <Tag color="red">Sai lệch nghiêm trọng</Tag> : <Tag color="gold">Cảnh báo đối soát</Tag> },
           { label: 'Hạng mục phát hiện', value: s(r.label) },
           { label: 'Trạng thái tự sửa chữa', value: r.autoRepaired ? <Tag color="green">Đã tự động đồng bộ</Tag> : <Tag color="orange">Cần quản trị viên kiểm tra</Tag> },

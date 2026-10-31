@@ -94,7 +94,7 @@ export function AccountDetailDrawer({
               label: <span><SafetyCertificateOutlined /> Thông tin Tài khoản &amp; Phân quyền</span>,
               children: (
                 <>
-                  <Descriptions column={{ xs: 1, md: 2 }} bordered size="small">
+                  <Descriptions column={{ xs: 1, md: 2, lg: 2, xl: 2, xxl: 2 }} bordered size="small">
                     <Descriptions.Item label="Họ và tên hiển thị">{account.displayName}</Descriptions.Item>
                     <Descriptions.Item label="Tên đăng nhập">
                       <Tag color="blue" style={{ borderRadius: 2, fontWeight: 600 }}>
