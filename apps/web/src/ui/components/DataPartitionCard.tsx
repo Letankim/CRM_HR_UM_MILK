@@ -46,7 +46,7 @@ export function DataPartitionCard() {
       message.success(`Đã chuyển hệ thống sang sử dụng ${data.activeLabel || monthKeyLabel(monthKey)}`);
       await qc.invalidateQueries();
     },
-    onError: (e: unknown) => message.error(e instanceof ApiClientError ? e.message : 'Không thể chuyển file dữ liệu tháng, vui lòng thử lại'),
+    onError: (e: unknown) => message.error(e instanceof ApiClientError ? e.message : 'Không thể chuyển tệp dữ liệu tháng, vui lòng thử lại'),
     onSettled: () => setSwitchingKey(null),
   });
 
@@ -69,18 +69,18 @@ export function DataPartitionCard() {
   return (
     <Card
       size="small"
-      title={<span><DatabaseOutlined /> Phân vùng dữ liệu theo tháng (File Google Sheets độc lập)</span>}
+      title={<span><DatabaseOutlined /> Quản lý dữ liệu theo tháng (Google Sheets)</span>}
       extra={
         <Space size={8} wrap>
           <Button size="small" icon={<ReloadOutlined />} loading={q.isFetching && !q.isLoading} onClick={() => q.refetch()}>Làm mới</Button>
-          {canEdit && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setRolloverOpen(true)}>Tạo File Sheet tháng mới</Button>}
+          {canEdit && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setRolloverOpen(true)}>Tạo tệp tháng mới</Button>}
         </Space>
       }
     >
       {q.isLoading ? (
         <Skeleton active />
       ) : q.isError || !d ? (
-        <Alert type="error" showIcon message="Không thể tải thông tin phân vùng dữ liệu tháng" description={q.error instanceof ApiClientError ? q.error.message : undefined} />
+        <Alert type="error" showIcon message="Không thể tải thông tin dữ liệu tháng" description={q.error instanceof ApiClientError ? q.error.message : undefined} />
       ) : (
         <Space direction="vertical" size={14} style={{ width: '100%' }}>
           <Flex justify="space-between" align="center" gap={12} wrap="wrap" style={{ border: '1px solid #BFDBFE', background: '#F8FAFC', borderRadius: 4, padding: '12px 14px' }}>
@@ -90,7 +90,7 @@ export function DataPartitionCard() {
               </span>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <Flex align="center" gap={6} wrap="wrap">
-                  <Typography.Text strong style={{ color: '#0F172A' }}>File dữ liệu đang vận hành:</Typography.Text>
+                  <Typography.Text strong style={{ color: '#0F172A' }}>Dữ liệu đang vận hành:</Typography.Text>
                   <Tag color="blue" icon={<CheckCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>{d.activeLabel || monthKeyLabel(d.activeMonth)}</Tag>
                   <Tag color={activeItem?.mode === 'MONTHLY_FILE' ? 'geekblue' : 'default'} style={{ margin: 0 }}>
                     {PARTITION_MODE_LABELS[activeItem?.mode ?? (d.activeMonth ? 'MONTHLY_FILE' : 'ROOT_FILE')]}
@@ -98,8 +98,7 @@ export function DataPartitionCard() {
                   <Tag style={{ margin: 0, fontWeight: 600 }}>Tổng {totalActiveRows.toLocaleString('vi-VN')} dòng</Tag>
                 </Flex>
                 <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 4 }}>
-                  {activeItem?.fileName ? <span><FolderOpenOutlined /> Tệp: <strong>{activeItem.fileName}</strong> · </span> : null}
-                  Mỗi tháng tạo hẳn 1 tệp Google Sheets riêng trên Drive để hệ thống luôn nhanh và không chạm giới hạn ô của Google Sheets.
+                  <FolderOpenOutlined /> Tách riêng dữ liệu lịch ca, nghỉ OFF, đổi ca và chấm công theo từng tháng trên Google Drive để hệ thống luôn nhanh và gọn nhẹ; có thể chuyển lại tháng cũ bất kỳ lúc nào để tra cứu.
                 </Typography.Text>
               </div>
             </Flex>
@@ -145,15 +144,15 @@ export function DataPartitionCard() {
 
           <div>
             <Space size={6} style={{ marginBottom: 8 }}>
-              <Typography.Text strong style={{ color: '#0F172A' }}>Danh sách File Google Sheets theo tháng</Typography.Text>
-              <Tag color="geekblue" style={{ margin: 0 }}>{d.items.length} nguồn dữ liệu</Tag>
+              <Typography.Text strong style={{ color: '#0F172A' }}>Danh sách tệp dữ liệu theo tháng</Typography.Text>
+              <Tag color="geekblue" style={{ margin: 0 }}>{d.items.length} kỳ dữ liệu</Tag>
             </Space>
             <Table<PartitionItem>
               size="small" bordered rowKey={(r) => r.monthKey || 'ROOT'} pagination={false} dataSource={d.items} scroll={{ x: 820 }}
               columns={[
                 { title: 'NO', width: 52, align: 'center', render: (_v, _r, idx) => <span className="mono" style={{ color: '#64748B', fontWeight: 600 }}>{String(idx + 1).padStart(2, '0')}</span> },
                 {
-                  title: 'Tháng & Tệp Google Sheets', dataIndex: 'label', width: 245,
+                  title: 'Tháng dữ liệu', dataIndex: 'label', width: 245,
                   render: (v: string, r) => (
                     <div>
                       <Flex align="center" gap={6} wrap="wrap">
@@ -162,7 +161,9 @@ export function DataPartitionCard() {
                           {PARTITION_MODE_LABELS[r.mode ?? (r.monthKey ? 'MONTHLY_FILE' : 'ROOT_FILE')]}
                         </Tag>
                       </Flex>
-                      <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>{r.fileName || (r.monthKey ? 'Tệp tháng độc lập trên Drive' : 'Tệp gốc mặc định ban đầu')}</div>
+                      <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
+                        {r.monthKey ? `Lưu trong thư mục ${v || monthKeyLabel(r.monthKey)} trên Google Drive` : 'Tệp dữ liệu mặc định ban đầu'}
+                      </div>
                     </div>
                   ),
                 },

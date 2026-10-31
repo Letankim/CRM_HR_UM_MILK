@@ -33,9 +33,9 @@ export interface MonthlyPartitionRegistryEntry {
 }
 
 export const PARTITION_MODE_LABELS: Record<MonthlyPartitionMode, string> = {
-  ROOT_FILE: 'File gốc mặc định',
-  MONTHLY_FILE: 'File Google Sheets độc lập',
-  LEGACY_TAB: 'Tab trong file gốc',
+  ROOT_FILE: 'Tệp gốc mặc định',
+  MONTHLY_FILE: 'Tệp riêng theo tháng',
+  LEGACY_TAB: 'Phân vùng tháng cũ',
 };
 
 const MONTH_KEY_RE = /^\d{4}_(0[1-9]|1[0-2])$/;

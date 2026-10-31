@@ -172,11 +172,14 @@ async function main() {
     stopAnnouncementScheduler = startAnnouncementScheduler(ctx, app.log);
   } catch (err) {
     const revoked = isAuthRevokedError(err);
-    const msg = revoked
+    const userMsg = revoked
+      ? 'Kết nối dữ liệu Google Sheets tạm thời gián đoạn do phiên ủy quyền Google đã hết hạn. Vui lòng liên hệ Quản trị viên hệ thống để gia hạn kết nối.'
+      : 'Hệ thống đang tạm gián đoạn kết nối dữ liệu Google Sheets, vui lòng thử lại sau ít phút.';
+    const logMsg = revoked
       ? 'Kết nối Google OAuth tạm ngưng: GOOGLE_OAUTH_REFRESH_TOKEN đã hết hạn hoặc bị thu hồi (invalid_grant). Quản trị viên vui lòng chuyển OAuth Consent Screen sang In Production, chạy "pnpm google:auth" và cập nhật GOOGLE_OAUTH_REFRESH_TOKEN trên Render.'
       : `Không thể nạp dữ liệu Google Sheets khi khởi động: ${(err as Error).message}`;
-    db.setBootError(msg);
-    app.log.error({ err: revoked ? { code: 'invalid_grant' } : err }, msg);
+    db.setBootError(userMsg);
+    app.log.error({ err: revoked ? { code: 'invalid_grant' } : err }, logMsg);
   }
 
   app.log.info(`UMBM API v${version} — dữ liệu: ${google.mode}`);

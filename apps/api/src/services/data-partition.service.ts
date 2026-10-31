@@ -21,7 +21,7 @@ const DATE_FIELD: Record<string, string> = {
 const PENDING_STATUSES = new Set(['DRAFT', 'PENDING', 'STORE_CONFIRMED', 'PENDING_PEER', 'PEER_ACCEPTED']);
 
 export const monthKeyLabel = (monthKey: string) =>
-  monthKey ? `Tháng ${monthKey.slice(5, 7)}/${monthKey.slice(0, 4)}` : 'File gốc (Mặc định ban đầu)';
+  monthKey ? `Tháng ${monthKey.slice(5, 7)}/${monthKey.slice(0, 4)}` : 'Tệp gốc (Mặc định ban đầu)';
 export const monthlyFileName = (monthKey: string) => `UMBM_MONTHLY_${monthKey}`;
 export const monthlyFolderSegments = (monthKey: string) => [
   DRIVE_FOLDERS.MONTHLY_DATABASES,

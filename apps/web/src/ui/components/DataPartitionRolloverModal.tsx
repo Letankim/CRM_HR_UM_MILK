@@ -22,7 +22,7 @@ export function partitionTabLabel(tab: string): string {
 
 export function monthKeyLabel(monthKey: string): string {
   const m = /^(\d{4})_(\d{2})$/.exec(monthKey);
-  return m ? `Tháng ${m[2]}/${m[1]}` : 'File gốc (Mặc định ban đầu)';
+  return m ? `Tháng ${m[2]}/${m[1]}` : 'Tệp gốc (Mặc định ban đầu)';
 }
 
 interface RolloverFileMeta {
@@ -72,7 +72,7 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
     mutationFn: (body: { month_key: string; carry_forward: boolean }) => api.post<RolloverResult>('/admin/data-partitions/rollover', body),
     onSuccess: async (data) => {
       setResult(data);
-      message.success(`Đã tạo file Google Sheets ${data.label || monthKeyLabel(data.monthKey)} và chuyển vận hành thành công`);
+      message.success(`Đã tạo tệp Google Sheets ${data.label || monthKeyLabel(data.monthKey)} và chuyển vận hành thành công`);
       await qc.invalidateQueries();
     },
     onError: (e: unknown) => {
@@ -81,7 +81,7 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
         setFieldError(d ? d.message : null);
         message.error(e.message);
       } else {
-        message.error('Không thể khởi tạo file Google Sheets tháng mới, vui lòng thử lại');
+        message.error('Không thể khởi tạo tệp Google Sheets tháng mới, vui lòng thử lại');
       }
     },
   });
@@ -89,7 +89,7 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
   const handleClose = () => { setResult(null); setFieldError(null); mut.reset(); onClose(); };
 
   const submit = () => {
-    if (!month) { setFieldError('Vui lòng chọn tháng cần tạo file Google Sheets mới'); return; }
+    if (!month) { setFieldError('Vui lòng chọn tháng cần tạo tệp dữ liệu mới'); return; }
     setFieldError(null);
     mut.mutate({ month_key: month.format('YYYY_MM'), carry_forward: carryForward });
   };
@@ -103,7 +103,7 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
   return (
     <Modal
       open={open}
-      title={<span><CalendarOutlined /> Tạo File Google Sheets Tháng Mới &amp; Chuyển Vận Hành</span>}
+      title={<span><CalendarOutlined /> Tạo Tệp Dữ Liệu Tháng Mới &amp; Chuyển Vận Hành</span>}
       onCancel={handleClose}
       destroyOnHidden
       centered
@@ -123,7 +123,7 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
           <Space>
             <Button icon={<CloseOutlined />} onClick={handleClose} disabled={mut.isPending}>Hủy bỏ</Button>
             <Button type="primary" icon={<PlusOutlined />} loading={mut.isPending} disabled={selectedKey === activeMonth && Boolean(selectedKey)} onClick={submit}>
-              {alreadyExists ? 'Chuyển sang file tháng đã chọn' : 'Tạo File Sheet mới & Áp dụng ngay'}
+              {alreadyExists ? 'Chuyển sang tệp tháng đã chọn' : 'Tạo tệp tháng mới & Áp dụng ngay'}
             </Button>
           </Space>
         )
@@ -134,14 +134,12 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
           <Alert
             type="success"
             showIcon
-            message={`Đã kích hoạt file Google Sheets riêng cho ${result.label || monthKeyLabel(result.monthKey)}`}
-            description={result.file ? (
-              <span><FolderOpenOutlined /> Tệp <strong>{result.file.fileName}</strong> lưu trong thư mục Drive của tháng ({result.label || monthKeyLabel(result.monthKey)}).</span>
-            ) : undefined}
+            message={`Đã kích hoạt tệp Google Sheets riêng cho ${result.label || monthKeyLabel(result.monthKey)}`}
+            description={<span><FolderOpenOutlined /> Tệp dữ liệu của <strong>{result.label || monthKeyLabel(result.monthKey)}</strong> đã được lưu gọn trong thư mục tháng trên Google Drive.</span>}
           />
           <Descriptions
             size="small" bordered column={1}
-            title={<span style={{ fontSize: 13 }}>Số bản ghi đã chuyển tiếp sang file tháng mới</span>}
+            title={<span style={{ fontSize: 13 }}>Số bản ghi đã chuyển tiếp sang tệp tháng mới</span>}
             items={Object.keys(PARTITION_BASE_LABELS).map((base) => ({
               key: base, label: PARTITION_BASE_LABELS[base],
               children: <span><strong className="num">{Number(result.carried?.[base] ?? 0).toLocaleString('vi-VN')}</strong> bản ghi</span>,
@@ -150,7 +148,7 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
           {pendingTotal > 0 && (
             <Alert
               type="warning" showIcon icon={<WarningOutlined />}
-              message={`Còn ${pendingTotal} bản ghi chờ duyệt ở file tháng cũ — có thể chuyển lại bất kỳ lúc nào để xử lý`}
+              message={`Còn ${pendingTotal} bản ghi chờ duyệt ở tệp tháng cũ — có thể chuyển lại bất kỳ lúc nào để xử lý`}
               description={pendingEntries.map(([base, n]) => `${PARTITION_BASE_LABELS[base] ?? 'Bảng khác'}: ${n}`).join(' · ')}
             />
           )}
@@ -159,8 +157,8 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
         <Form layout="vertical">
           <Alert
             type="info" showIcon style={{ marginBottom: 14 }}
-            message="Tạo hẳn 1 File Google Spreadsheet độc lập theo từng tháng trên Google Drive"
-            description="Mỗi tháng là 1 tệp Google Sheets riêng biệt chứa đủ 5 bảng sạch (Lịch phân ca, Đơn nghỉ OFF, Đổi ca / Nhường ca, Chấm công Vào/Ra, Phiếu bổ sung công), tự động lưu trong thư mục tháng trên Drive mà không cần sửa biến môi trường .env."
+            message="Tự động tạo tệp dữ liệu Google Sheets riêng theo từng tháng"
+            description="Mỗi tháng là một tệp Google Sheets riêng biệt chứa đầy đủ Lịch phân ca, Đơn nghỉ OFF, Đổi ca / Nhường ca, Chấm công Vào/Ra và Phiếu bổ sung công, lưu gọn theo thư mục tháng trên Google Drive. Khuyến nghị chốt xong kỳ lương tháng cũ trước khi chuyển sang tháng mới."
           />
           <Form.Item
             label={
@@ -170,8 +168,8 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
                   selectedKey === activeMonth
                     ? <Tag color="green" style={{ margin: 0 }}>Đang sử dụng</Tag>
                     : alreadyExists
-                      ? <Tag color="blue" style={{ margin: 0 }}>Đã có sẵn file tháng</Tag>
-                      : <Tag color="gold" style={{ margin: 0 }}>Sẽ tạo file Google Sheets mới</Tag>
+                      ? <Tag color="blue" style={{ margin: 0 }}>Đã có sẵn tệp tháng</Tag>
+                      : <Tag color="gold" style={{ margin: 0 }}>Sẽ tạo tệp tháng mới</Tag>
                 )}
               </Flex>
             }
@@ -203,7 +201,7 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
               <span style={{ fontWeight: 500 }}>Chuyển tiếp dữ liệu có ngày từ đầu tháng đã chọn trở đi</span>
             </Checkbox>
             <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 4, paddingLeft: 24 }}>
-              Các ca làm việc đã xếp trước, đơn nghỉ OFF và yêu cầu đổi ca thuộc tháng mới sẽ được mang sang file mới để cửa hàng vận hành liền mạch.
+              Các ca làm việc đã xếp trước, đơn nghỉ OFF và yêu cầu đổi ca thuộc tháng mới sẽ được mang sang tệp mới để cửa hàng vận hành liền mạch.
             </Typography.Text>
           </div>
         </Form>
