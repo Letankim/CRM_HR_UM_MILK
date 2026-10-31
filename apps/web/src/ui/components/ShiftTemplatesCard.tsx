@@ -132,10 +132,8 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
         { title: 'Chi nhánh áp dụng', dataIndex: 'branchName', width: 225, render: (v: string, r) => <Tag color={r.branchId === 'ALL' ? 'default' : 'blue'}><strong>{v}</strong></Tag> },
         { title: 'Khung ca áp dụng', dataIndex: 'shiftName', width: 190, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
         {
-          title: 'Định biên Tối thiểu – Tối đa', width: 205,
-          render: (_, r) => r.min_staff === 1 && r.max_staff === 1
-            ? <span className="num"><strong>1 – 1</strong> nhân sự/ca <Tag color="green" style={{ marginLeft: 4 }}>Đúng 1 người</Tag></span>
-            : <span className="num"><strong>{String(r.min_staff)}</strong> – <strong>{String(r.max_staff)}</strong> nhân sự/ca</span>,
+          title: 'Định biên Tối thiểu – Tối đa', width: 185,
+          render: (_, r) => <span className="num"><strong>{String(r.min_staff)}</strong> – <strong>{String(r.max_staff)}</strong> nhân sự/ca</span>,
         },
         { title: 'Chế độ kiểm soát', dataIndex: 'enforcement', width: 205, render: (v: string) => <Tag color={v === 'HARD_BLOCK' ? 'red' : 'orange'}>{v === 'HARD_BLOCK' ? 'Chặn cứng khi thiếu / vượt' : 'Cảnh báo mềm khi thiếu người'}</Tag> },
         { title: 'Ghi chú', dataIndex: 'note', ellipsis: true },
@@ -147,10 +145,10 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
   return (
     <>
       <Card
-        size="small" style={{ marginTop: 16 }} title="Danh mục Mẫu Ca Làm Việc & Định Biên Nhân Sự Theo Ca (Theo Chi Nhánh)"
+        size="small" style={{ marginTop: 16 }} title="Mẫu ca & Định biên nhân sự"
         extra={
           <Space wrap>
-            <Select size="small" style={{ width: 230 }} value={branchFilter} onChange={setBranchFilter} options={[{ value: 'ALL', label: 'Lọc: Tất cả chi nhánh' }, ...branches.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))]} />
+            <Select size="small" style={{ width: 210 }} value={branchFilter} onChange={setBranchFilter} options={[{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branches.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))]} />
             {canConfig && (
               <>
                 <Popconfirm
@@ -159,9 +157,9 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
                   okText="Chuẩn hóa ngay" cancelText="Hủy bỏ" okButtonProps={{ icon: <CheckCircleOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
                   onConfirm={() => normalizeSingleMut.mutate()}
                 >
-                  <Button size="small" icon={<SyncOutlined />} loading={normalizeSingleMut.isPending}>Chuẩn hóa 1 người/ca & Ca mặc định</Button>
+                  <Button size="small" icon={<SyncOutlined />} loading={normalizeSingleMut.isPending}>Chuẩn hóa 1 người/ca</Button>
                 </Popconfirm>
-                <Button size="small" icon={<PlusOutlined />} onClick={() => { setEditingRule(null); ruleForm.resetFields(); ruleForm.setFieldsValue({ branch_id: branchFilter, shift_template_id: 'ALL', min_staff: 1, max_staff: 1, enforcement: 'HARD_BLOCK', note: 'Định biên chuẩn: 1 nhân sự / ca (không nhiều hơn, không ít hơn)' }); setRuleModalOpen(true); }}>Thêm định biên ca</Button>
+                <Button size="small" icon={<PlusOutlined />} onClick={() => { setEditingRule(null); ruleForm.resetFields(); ruleForm.setFieldsValue({ branch_id: branchFilter, shift_template_id: 'ALL', min_staff: 1, max_staff: 1, enforcement: 'HARD_BLOCK', note: 'Định biên chuẩn: 1 nhân sự / ca (không nhiều hơn, không ít hơn)' }); setRuleModalOpen(true); }}>Thêm định biên</Button>
                 <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => { setEditingShift(null); shiftForm.resetFields(); shiftForm.setFieldsValue({ branch_id: branchFilter, start_time: '07:00', end_time: '12:00', standard_hours: 5, status: 'ACTIVE' }); setShiftModalOpen(true); }}>Thêm mẫu ca</Button>
               </>
             )}
@@ -169,8 +167,8 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
         }
       >
         <Tabs items={[
-          { key: 'shifts', label: `Mẫu Ca Làm Việc Chuẩn (${filteredShifts.length})`, children: shiftPane },
-          { key: 'rules', label: `Định Biên Nhân Sự Theo Ca (${filteredRules.length})`, children: rulesPane },
+          { key: 'shifts', label: `Mẫu ca chuẩn (${filteredShifts.length})`, children: shiftPane },
+          { key: 'rules', label: `Định biên theo ca (${filteredRules.length})`, children: rulesPane },
         ]} />
       </Card>
 
