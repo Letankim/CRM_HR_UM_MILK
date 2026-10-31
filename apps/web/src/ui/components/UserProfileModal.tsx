@@ -149,7 +149,7 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
           {
             key: 'info',
             forceRender: true,
-            label: <span><IdcardOutlined /> Thông tin cá nhân &amp; Ngân hàng (Mã QR)</span>,
+            label: <span><IdcardOutlined /> Thông tin cá nhân</span>,
             children: (
               <Form form={infoForm} layout="vertical" onFinish={(v) => updateInfoMut.mutate(v as Record<string, unknown>)} style={{ marginTop: 2 }}>
                 <Row gutter={12}>
@@ -170,14 +170,15 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
                   <Col xs={24} sm={8}><Form.Item name="bank_account_holder" label="Chủ tài khoản"><Input placeholder="NGUYEN VAN A" /></Form.Item></Col>
                 </Row>
                 {p?.employeeId && (
-                  <ProfileBankQrUploader
-                    currentQrUrl={p.bankQrUrl}
-                    driveFolder={p.bankQrDriveFolder}
-                    draftQrBase64={draftQrBase64}
-                    removeQr={removeQr}
-                    onChangeDraft={setDraftQrBase64}
-                    onToggleRemove={setRemoveQr}
-                  />
+                  <Form.Item label="Mã QR ngân hàng" style={{ marginBottom: 4 }}>
+                    <ProfileBankQrUploader
+                      currentQrUrl={p.bankQrUrl}
+                      draftQrBase64={draftQrBase64}
+                      removeQr={removeQr}
+                      onChangeDraft={setDraftQrBase64}
+                      onToggleRemove={setRemoveQr}
+                    />
+                  </Form.Item>
                 )}
               </Form>
             ),

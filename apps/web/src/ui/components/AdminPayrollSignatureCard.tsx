@@ -1,7 +1,7 @@
 'use client';
 
-import { Alert, App, Button, Card, Col, Flex, Input, Row, Space, Tag, Typography } from 'antd';
-import { CheckCircleOutlined, FolderOpenOutlined, ReloadOutlined, SafetyCertificateOutlined, SaveOutlined, UploadOutlined } from '@ant-design/icons';
+import { App, Button, Card, Col, Flex, Input, Row, Space, Tag, Typography } from 'antd';
+import { CheckCircleOutlined, ReloadOutlined, SafetyCertificateOutlined, SaveOutlined, UploadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useRef, useState } from 'react';
@@ -69,16 +69,9 @@ export function AdminPayrollSignatureCard() {
   return (
     <Card
       size="small"
-      title={<span><SafetyCertificateOutlined /> Cấu hình Chữ ký số Ban Quản trị (Duyệt Bảng lương &amp; Xuất PDF)</span>}
+      title={<span><SafetyCertificateOutlined /> Chữ ký mẫu Ban Quản trị</span>}
       extra={<Button size="small" icon={<ReloadOutlined />} loading={q.isFetching} onClick={() => void q.refetch()}>Làm mới</Button>}
     >
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 12 }}
-        message="Chữ ký Ban Quản trị được sử dụng khi Quản trị viên phê duyệt bảng lương do Kế toán gửi trình và tự động in lên toàn bộ Phiếu lương PDF."
-        description={<span>Thư mục lưu trữ Google Drive: <Tag icon={<FolderOpenOutlined />} color="blue" style={{ margin: 0 }}>{q.data?.driveFolder || '09_PAYROLL_SIGNATURES/01_QUAN_TRI'}</Tag></span>}
-      />
       <Row gutter={[16, 12]} align="middle">
         <Col xs={24} md={10}>
           <div style={{ border: '1px dashed #CBD5E1', borderRadius: 4, background: '#FFFFFF', height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8 }}>
