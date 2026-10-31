@@ -7,24 +7,25 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { buildClickableRowProps } from './BulkActionBar';
+import { PlannerProbationPreviewModal } from './PlannerProbationPreviewModal';
 import { useQuickDetail } from './RecordQuickDetailModal';
-import { PlannerIssuesAlert, PlannerOffTable, PlannerShiftTable } from './SchedulePlannerShared';
-import { fmtDm, fmtTs, type PlannerProbationItem, type PlannerProbationLockResult } from './schedule-planner-types';
+import { PlannerIssuesAlert, PlannerOffTable } from './SchedulePlannerShared';
+import { fmtDm, fmtTs, type PlannerProbationItem } from './schedule-planner-types';
 import { useInvalidatePlanner } from './usePlannerOffDecision';
 
 interface Props { branchOptions: { value: string; label: string }[] }
 
 /** Chốt lịch chu kỳ thử việc 12 ngày (7 ca làm + tối đa 5 ngày OFF) và duyệt chuyển chính thức khi hoàn thành đủ 7 ca. */
 export function SchedulePlannerProbationPane({ branchOptions }: Props) {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const showDetail = useQuickDetail();
   const qc = useQueryClient();
   const can = useCan();
   const canPublish = can('schedule.publish');
   const canPromote = can('employee.promote');
   const [branchId, setBranchId] = useState('ALL');
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [promoteBusyId, setPromoteBusyId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ open: boolean; seq: number; employeeId: string | null }>({ open: false, seq: 0, employeeId: null });
   const invalidate = useInvalidatePlanner();
   const q = useQuery({ queryKey: ['schedule-planner-probation', branchId], queryFn: () => api.get<PlannerProbationItem[]>(`/admin/schedule-planner/probation?branch_id=${encodeURIComponent(branchId)}`) });
   const rows = q.data ?? [];
@@ -43,20 +44,6 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Duyệt chuyển chính thức thất bại'),
     onSettled: () => setPromoteBusyId(null),
-  });
-
-  const lockMut = useMutation({
-    mutationFn: (row: PlannerProbationItem) => api.post<PlannerProbationLockResult>('/admin/schedule-planner/probation/lock', { employee_id: row.employeeId }),
-    onMutate: (row) => setBusyId(row.employeeId),
-    onSuccess: (res, row) => {
-      const summary = `Đã chốt lịch chu kỳ ${fmtDm(res.cycleStart)} – ${fmtDm(res.cycleEnd)} của ${row.employeeName}: duyệt ${res.approvedOffCount} ngày OFF, xếp ${res.createdCount} ca.`;
-      if (res.issues.length > 0) {
-        modal.warning({ width: 680, title: 'Đã chốt lịch chu kỳ nhưng còn trường hợp chưa xếp được', content: <Space direction="vertical" size={10} style={{ width: '100%' }}><span>{summary}</span><PlannerIssuesAlert issues={res.issues} maxHeight={320} collapsible={false} /></Space>, okText: 'Đã hiểu', okButtonProps: { icon: <CheckCircleOutlined /> } });
-      } else message.success(summary);
-      invalidate();
-    },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Chốt lịch chu kỳ thử việc thất bại'),
-    onSettled: () => setBusyId(null),
   });
 
   return (
@@ -78,7 +65,7 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
         </Flex>
       </div>
       <Table<PlannerProbationItem>
-        size="small" rowKey="employeeId" loading={q.isLoading} dataSource={rows} scroll={{ x: 1340 }}
+        size="small" rowKey="employeeId" loading={q.isLoading} dataSource={rows} scroll={{ x: 1260 }}
         onRow={(r) => buildClickableRowProps(r, (item) => showDetail('plannerProbation', item))}
         pagination={rows.length > 10 ? { pageSize: 10, showTotal: (t) => `Tổng ${t} nhân viên thử việc` } : false}
         locale={{ emptyText: 'Không có nhân viên thử việc nào đang hoạt động' }}
@@ -87,7 +74,6 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
             <Space direction="vertical" size={10} style={{ width: '100%' }}>
               <PlannerIssuesAlert issues={r.issues} />
               <Card size="small" title={`Đơn nghỉ OFF trong chu kỳ (${r.offRequests.length}/${r.offLimit})`}><PlannerOffTable rows={r.offRequests} /></Card>
-              <Card size="small" title={`Ca dự kiến sắp thêm (${r.planned.length} ca)`}><PlannerShiftTable rows={r.planned} showEmployee={false} /></Card>
             </Space>
           ),
         }}
@@ -98,7 +84,6 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
           { title: 'Ca đã xếp', width: 100, render: (_, r) => <Tag color={r.existingCount >= r.workRequired ? 'green' : 'blue'} style={{ margin: 0 }}>{r.existingCount}/{r.workRequired}</Tag> },
           { title: 'Đã làm xong', width: 130, render: (_, r) => <Tag color={r.readyForOfficial ? 'success' : 'processing'} style={{ margin: 0, fontWeight: r.readyForOfficial ? 600 : 400 }}>{r.completedCount}/{r.workRequired} ca{r.readyForOfficial ? ' · Đủ ĐK' : ''}</Tag> },
           { title: 'Ngày OFF', width: 95, render: (_, r) => <Tag color={r.offRequests.length > r.offLimit ? 'red' : 'default'} style={{ margin: 0 }}>{r.offRequests.length}/{r.offLimit}</Tag> },
-          { title: 'Dự kiến sắp', width: 105, render: (_, r) => <strong>{r.planned.length} ca</strong> },
           {
             title: 'Cảnh báo', width: 110,
             render: (_, r) => r.issues.length === 0 ? <Tag color="green" style={{ margin: 0 }}>Không có</Tag> : (
@@ -123,18 +108,21 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
                     <Button size="small" type="primary" icon={<TrophyOutlined />} disabled={!canPromote} loading={promoteBusyId === r.employeeId}>Duyệt chính thức</Button>
                   </Popconfirm>
                 )}
-                <Popconfirm
-                  title="Chốt lịch chu kỳ thử việc"
-                  description={<div style={{ maxWidth: 340 }}>Duyệt toàn bộ ngày OFF đang chờ duyệt trong chu kỳ và xếp ca mặc định cho đủ {r.workRequired} ca làm việc của {r.employeeName}.</div>}
-                  okText="Xác nhận chốt" cancelText="Hủy bỏ" okButtonProps={{ icon: <CheckCircleOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
-                  disabled={!canPublish} onConfirm={() => lockMut.mutate(r)}
+                <Button
+                  size="small" type="primary" ghost icon={<ScheduleOutlined />}
+                  onClick={() => setPreview((p) => ({ open: true, seq: p.seq + 1, employeeId: r.employeeId }))}
                 >
-                  <Button size="small" type="primary" ghost icon={<ScheduleOutlined />} disabled={!canPublish} loading={busyId === r.employeeId}>Chốt lịch chu kỳ</Button>
-                </Popconfirm>
+                  Chốt lịch chu kỳ
+                </Button>
               </Flex>
             ),
           },
         ]}
+      />
+      <PlannerProbationPreviewModal
+        open={preview.open} openSeq={preview.seq} employeeId={preview.employeeId}
+        branchId={branchId} canPublish={canPublish}
+        onClose={() => setPreview((p) => ({ ...p, open: false }))}
       />
     </Space>
   );

@@ -6,7 +6,7 @@ import { CloseCircleOutlined, CloseOutlined, DownOutlined, ExclamationCircleOutl
 import { StatusTag } from '../StatusTag';
 import { buildClickableRowProps } from './BulkActionBar';
 import { useQuickDetail } from './RecordQuickDetailModal';
-import { cleanShiftLabel, fmtYmd, issueSeverity, type PlannerIssue, type PlannerOffItem, type PlannerShift } from './schedule-planner-types';
+import { fmtYmd, issueSeverity, type PlannerIssue, type PlannerOffItem } from './schedule-planner-types';
 
 export interface PlannerIssuesAlertProps {
   issues: PlannerIssue[];
@@ -100,36 +100,6 @@ export function PlannerOffTable({ rows, renderActions, loading }: { rows: Planne
         { title: 'Trạng thái', dataIndex: 'status', width: 170, render: (v: string, r) => <StatusTag value={v} label={r.statusLabel || undefined} /> },
         { title: 'Lý do', dataIndex: 'reason', ellipsis: true },
         ...(renderActions ? [{ title: 'Thao tác', width: 180, align: 'right' as const, render: (_: unknown, r: PlannerOffItem) => renderActions(r) }] : []),
-      ]}
-    />
-  );
-}
-
-/** Bảng ca dự kiến sẽ tự động sắp theo quy tắc 1 người/ca (ưu tiên ca mặc định & tự động bù ca OFF). */
-export function PlannerShiftTable({ rows, showEmployee = true }: { rows: PlannerShift[]; showEmployee?: boolean }) {
-  const showDetail = useQuickDetail();
-  return (
-    <Table<PlannerShift>
-      size="small" rowKey={(r) => `${r.employeeId}-${r.workDate}-${r.shiftCode}`} dataSource={rows}
-      onRow={(r) => buildClickableRowProps(r, (item) => showDetail('plannerShift', item))}
-      pagination={rows.length > 10 ? { pageSize: 10, showTotal: (t) => `Tổng ${t} ca dự kiến` } : false}
-      locale={{ emptyText: 'Không còn ca nào cần tự động sắp' }}
-      columns={[
-        { title: 'Ngày làm việc', dataIndex: 'workDate', width: 125, render: (v: string) => <strong className="num">{fmtYmd(v)}</strong> },
-        ...(showEmployee ? [
-          { title: 'Chi nhánh', dataIndex: 'branchName', width: 180, ellipsis: true, render: (v?: string) => v || '—' },
-          { title: 'Nhân sự', width: 225, ellipsis: true, render: (_: unknown, r: PlannerShift) => <span><strong>{r.employeeName}</strong> <span style={{ color: '#64748B' }}>({r.employeeCode})</span></span> },
-        ] : []),
-        {
-          title: 'Khung ca',
-          render: (_, r) => (
-            <Space size={6} wrap>
-              <span style={{ fontWeight: 600 }}>{cleanShiftLabel(r.shiftLabel)}</span>
-              <Tag color="blue" style={{ margin: 0 }}>{r.startAt} – {r.endAt} ({r.hours} giờ)</Tag>
-              {r.isCoverShift && <Tag color="cyan" style={{ margin: 0 }}>Bù OFF</Tag>}
-            </Space>
-          ),
-        },
       ]}
     />
   );
