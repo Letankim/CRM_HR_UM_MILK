@@ -46,8 +46,8 @@ export function AdjustmentEvidenceFields({ evidenceRequired = true }: { evidence
         </Col>
         <Col xs={24} md={14}>
           <Form.Item
-            name="evidence_photo_base64" label="Ảnh minh chứng"
-            rules={evidenceRequired ? [{ required: true, message: 'Vui lòng chụp hoặc chọn ảnh minh chứng' }] : []}
+            name="evidence_photo_base64" label="Ảnh minh chứng (Tải ảnh từ máy hoặc chụp ảnh)"
+            rules={evidenceRequired ? [{ required: true, message: 'Vui lòng tải ảnh từ máy hoặc chụp ảnh minh chứng' }] : []}
           >
             <EvidencePhotoUpload />
           </Form.Item>

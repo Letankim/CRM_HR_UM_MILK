@@ -1,39 +1,37 @@
 'use client';
 
-import { Alert, App, Button, Card, Col, Popconfirm, Row, Skeleton, Space, Table, Tag, Typography } from 'antd';
-import { CheckCircleOutlined, DatabaseOutlined, PlusOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Card, Flex, Popconfirm, Select, Skeleton, Space, Table, Tag, Typography } from 'antd';
+import {
+  CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, DatabaseOutlined,
+  EnvironmentOutlined, FileTextOutlined, PlusOutlined, ReloadOutlined, SwapOutlined,
+} from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
-import { DataPartitionRolloverModal, monthKeyLabel, PARTITION_BASE_LABELS, partitionTabLabel } from './DataPartitionRolloverModal';
+import {
+  DataPartitionRolloverModal, monthKeyLabel, PARTITION_BASE_LABELS,
+  partitionBaseKey, partitionTabLabel,
+} from './DataPartitionRolloverModal';
 
-interface PartitionItem {
-  monthKey: string;
-  label: string;
-  isActive: boolean;
-  tabs: string[];
-}
+interface PartitionItem { monthKey: string; label: string; isActive: boolean; tabs: string[] }
+interface PartitionCount { base: string; tab: string; rows: number }
+interface PartitionListing { activeMonth: string; activeLabel: string; items: PartitionItem[]; counts: PartitionCount[] }
 
-interface PartitionCount {
-  base: string;
-  tab: string;
-  rows: number;
-}
-
-interface PartitionListing {
-  activeMonth: string;
-  activeLabel: string;
-  items: PartitionItem[];
-  counts: PartitionCount[];
-}
+const BASE_ICONS: Record<string, ReactNode> = {
+  SHIFT_ASSIGNMENTS: <CalendarOutlined />,
+  LEAVE_REQUESTS: <ClockCircleOutlined />,
+  SHIFT_SWAPS: <SwapOutlined />,
+  ATTENDANCE_EVENTS: <EnvironmentOutlined />,
+  ATTENDANCE_ADJUSTMENTS: <FileTextOutlined />,
+};
 
 export function DataPartitionCard() {
   const qc = useQueryClient();
   const can = useCan();
   const canEdit = can('system.config');
   const canRead = can('system.config', 'integration.read');
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [rolloverOpen, setRolloverOpen] = useState(false);
   const [switchingKey, setSwitchingKey] = useState<string | null>(null);
 
@@ -49,24 +47,37 @@ export function DataPartitionCard() {
     onMutate: (monthKey) => setSwitchingKey(monthKey),
     onSuccess: async (data, monthKey) => {
       qc.setQueryData(['data-partitions'], data);
-      message.success(`Hệ thống đã chuyển sang dùng ${data.activeLabel || (monthKey ? monthKeyLabel(monthKey) : 'sheet gốc')}`);
+      message.success(`Đã chuyển hệ thống sang sử dụng ${data.activeLabel || monthKeyLabel(monthKey)}`);
       await qc.invalidateQueries();
     },
-    onError: (e: unknown) => message.error(e instanceof ApiClientError ? e.message : 'Không thể chuyển sheet dữ liệu, vui lòng thử lại'),
+    onError: (e: unknown) => message.error(e instanceof ApiClientError ? e.message : 'Không thể chuyển phân vùng dữ liệu, vui lòng thử lại'),
     onSettled: () => setSwitchingKey(null),
   });
 
-  if (!canRead) return null;
   const d = q.data;
+  const countByBase = useMemo(() => new Map((d?.counts ?? []).map((c) => [c.base, Number(c.rows || 0)])), [d?.counts]);
+  const totalActiveRows = useMemo(() => (d?.counts ?? []).reduce((sum, c) => sum + Number(c.rows || 0), 0), [d?.counts]);
+
+  if (!canRead) return null;
+
+  const confirmSwitch = (targetKey: string, targetLabel: string) => {
+    modal.confirm({
+      title: `Chuyển hệ thống sang ${targetLabel}?`,
+      content: 'Toàn bộ thao tác đọc/ghi Lịch phân ca, Nghỉ OFF, Đổi ca và Chấm công sẽ áp dụng trên phân vùng này. Bạn có thể chuyển lại phân vùng khác bất kỳ lúc nào.',
+      okText: 'Xác nhận chuyển',
+      cancelText: 'Hủy bỏ',
+      onOk: () => switchMut.mutateAsync(targetKey),
+    });
+  };
 
   return (
     <Card
       size="small"
       title={<span><DatabaseOutlined /> Phân vùng dữ liệu theo tháng (Google Sheets)</span>}
       extra={
-        <Space size={6}>
+        <Space size={8} wrap>
           <Button size="small" icon={<ReloadOutlined />} loading={q.isFetching && !q.isLoading} onClick={() => q.refetch()}>Làm mới</Button>
-          {canEdit && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setRolloverOpen(true)}>Tạo sheet tháng mới</Button>}
+          {canEdit && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setRolloverOpen(true)}>Tạo phân vùng tháng mới</Button>}
         </Space>
       }
     >
@@ -75,75 +86,122 @@ export function DataPartitionCard() {
       ) : q.isError || !d ? (
         <Alert type="error" showIcon message="Không thể tải thông tin phân vùng dữ liệu" description={q.error instanceof ApiClientError ? q.error.message : undefined} />
       ) : (
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message={<span>Sheet đang dùng: <Tag color="blue" style={{ marginLeft: 4 }}>{d.activeLabel || monthKeyLabel(d.activeMonth)}</Tag></span>}
-            description="Lịch phân ca, đơn nghỉ OFF, đổi ca / nhường ca, chấm công và phiếu bổ sung công được tách theo từng tháng để bảng tính luôn gọn nhẹ. Nên chốt kỳ lương tháng cũ trước khi chuyển sheet."
-          />
-          <Row gutter={[16, 16]}>
-            <Col xs={24} xl={10}>
-              <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>Số dòng dữ liệu trong sheet đang dùng</Typography.Text>
-              <Table<PartitionCount>
-                size="small"
-                rowKey="base"
-                pagination={false}
-                dataSource={d.counts}
-                columns={[
-                  { title: 'Bảng dữ liệu', dataIndex: 'base', render: (v: string) => <span style={{ fontWeight: 500 }}>{PARTITION_BASE_LABELS[v] ?? partitionTabLabel(v)}</span> },
-                  { title: 'Số dòng', dataIndex: 'rows', align: 'right', width: 120, render: (v: number) => <span className="num">{Number(v || 0).toLocaleString('vi-VN')}</span> },
-                ]}
-              />
-            </Col>
-            <Col xs={24} xl={14}>
-              <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>Các sheet dữ liệu theo tháng</Typography.Text>
-              <Table<PartitionItem>
-                size="small"
-                rowKey={(r) => r.monthKey || 'ROOT'}
-                pagination={false}
-                dataSource={d.items}
-                scroll={{ x: 560 }}
-                columns={[
-                  { title: 'Tháng dữ liệu', dataIndex: 'label', width: 150, render: (v: string, r) => <span style={{ fontWeight: 500 }}>{v || monthKeyLabel(r.monthKey)}</span> },
-                  {
-                    title: 'Bảng đã tạo',
-                    dataIndex: 'tabs',
-                    render: (tabs: string[]) => (
-                      <Space size={[4, 4]} wrap>
-                        {(tabs ?? []).map((t) => <Tag key={t} style={{ margin: 0 }}>{partitionTabLabel(t)}</Tag>)}
-                      </Space>
+        <Space direction="vertical" size={14} style={{ width: '100%' }}>
+          <Flex justify="space-between" align="center" gap={12} wrap="wrap" style={{ border: '1px solid #BFDBFE', background: '#F8FAFC', borderRadius: 4, padding: '12px 14px' }}>
+            <Flex align="flex-start" gap={12} style={{ flex: '1 1 360px', minWidth: 0 }}>
+              <span style={{ width: 34, height: 34, borderRadius: 4, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#2563EB', display: 'inline-grid', placeItems: 'center', fontSize: 16, flexShrink: 0 }}>
+                <DatabaseOutlined />
+              </span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <Flex align="center" gap={6} wrap="wrap">
+                  <Typography.Text strong style={{ color: '#0F172A' }}>Phân vùng đang vận hành:</Typography.Text>
+                  <Tag color="blue" icon={<CheckCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>{d.activeLabel || monthKeyLabel(d.activeMonth)}</Tag>
+                  <Tag style={{ margin: 0, fontWeight: 600 }}>Tổng {totalActiveRows.toLocaleString('vi-VN')} dòng</Tag>
+                </Flex>
+                <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 4 }}>
+                  Tách dữ liệu vận hành theo từng tháng để Google Sheets luôn gọn nhẹ; quản trị có thể chuyển qua lại giữa các tháng bất kỳ lúc nào để rà soát.
+                </Typography.Text>
+              </div>
+            </Flex>
+            {canEdit && (
+              <Flex align="center" gap={8} wrap="wrap">
+                <Typography.Text style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>Chuyển nhanh:</Typography.Text>
+                <Select
+                  style={{ minWidth: 230 }}
+                  value={d.activeMonth}
+                  loading={switchMut.isPending}
+                  options={d.items.map((it) => ({ value: it.monthKey, label: `${it.label || monthKeyLabel(it.monthKey)}${it.isActive ? ' (Đang dùng)' : ''}` }))}
+                  onChange={(nextKey) => {
+                    if (nextKey === d.activeMonth) return;
+                    const found = d.items.find((x) => x.monthKey === nextKey);
+                    confirmSwitch(nextKey, found?.label || monthKeyLabel(nextKey));
+                  }}
+                />
+              </Flex>
+            )}
+          </Flex>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
+            {d.counts.map((c) => (
+              <div key={c.base} style={{ border: '1px solid #E5E7EB', borderRadius: 4, background: '#FFFFFF', padding: '10px 12px' }}>
+                <Flex align="center" gap={8} style={{ marginBottom: 6 }}>
+                  <span style={{ width: 24, height: 24, borderRadius: 4, background: '#EFF6FF', color: '#2563EB', display: 'inline-grid', placeItems: 'center', fontSize: 13, flexShrink: 0 }}>
+                    {BASE_ICONS[c.base] ?? <DatabaseOutlined />}
+                  </span>
+                  <Typography.Text ellipsis style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
+                    {PARTITION_BASE_LABELS[c.base] ?? partitionTabLabel(c.tab)}
+                  </Typography.Text>
+                </Flex>
+                <Flex align="baseline" gap={6}>
+                  <span className="num" style={{ fontSize: 20, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{Number(c.rows || 0).toLocaleString('vi-VN')}</span>
+                  <span style={{ fontSize: 12, color: '#64748B' }}>dòng dữ liệu</span>
+                </Flex>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <Space size={6} style={{ marginBottom: 8 }}>
+              <Typography.Text strong style={{ color: '#0F172A' }}>Danh sách phân vùng dữ liệu khả dụng</Typography.Text>
+              <Tag color="geekblue" style={{ margin: 0 }}>{d.items.length} phân vùng</Tag>
+            </Space>
+            <Table<PartitionItem>
+              size="small" bordered rowKey={(r) => r.monthKey || 'ROOT'} pagination={false} dataSource={d.items} scroll={{ x: 740 }}
+              columns={[
+                { title: 'NO', width: 56, align: 'center', render: (_v, _r, idx) => <span className="mono" style={{ color: '#64748B', fontWeight: 600 }}>{String(idx + 1).padStart(2, '0')}</span> },
+                {
+                  title: 'Phân vùng dữ liệu', dataIndex: 'label', width: 215,
+                  render: (v: string, r) => (
+                    <div>
+                      <div style={{ fontWeight: 600, color: '#0F172A' }}>{v || monthKeyLabel(r.monthKey)}</div>
+                      <div style={{ fontSize: 11, color: '#64748B' }}>{r.monthKey ? 'Phân vùng tách riêng theo tháng' : 'Phân vùng gốc mặc định ban đầu'}</div>
+                    </div>
+                  ),
+                },
+                {
+                  title: 'Phạm vi bảng dữ liệu (5 bảng)', dataIndex: 'tabs',
+                  render: (tabs: string[], r) => (
+                    <Flex gap={4} wrap="wrap">
+                      {(tabs ?? []).map((t) => {
+                        const base = partitionBaseKey(t);
+                        const cnt = r.isActive && base ? countByBase.get(base) : undefined;
+                        return <Tag key={t} color={r.isActive ? 'blue' : 'default'} style={{ margin: 0 }}>{partitionTabLabel(t)}{cnt !== undefined ? `: ${cnt.toLocaleString('vi-VN')}` : ''}</Tag>;
+                      })}
+                    </Flex>
+                  ),
+                },
+                { title: 'Tổng dòng', width: 115, align: 'right', render: (_, r) => r.isActive ? <strong className="num">{totalActiveRows.toLocaleString('vi-VN')}</strong> : <Typography.Text type="secondary" style={{ fontSize: 12 }}>Đã lưu trữ</Typography.Text> },
+                { title: 'Trạng thái', dataIndex: 'isActive', width: 135, align: 'center', render: (v: boolean) => (v ? <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đang sử dụng</Tag> : <Tag style={{ margin: 0 }}>Lưu trữ</Tag>) },
+                {
+                  title: 'Thao tác', width: 165, align: 'right',
+                  render: (_, r) =>
+                    r.isActive ? (
+                      <Button size="small" disabled icon={<CheckCircleOutlined />}>Đang áp dụng</Button>
+                    ) : canEdit ? (
+                      <Popconfirm
+                        title={`Chuyển hệ thống sang ${r.label || monthKeyLabel(r.monthKey)}?`}
+                        description={<div style={{ maxWidth: 300 }}>Hệ thống sẽ đọc và ghi lịch ca, nghỉ OFF, đổi ca và chấm công trên phân vùng này. Có thể chuyển lại bất kỳ lúc nào.</div>}
+                        okText="Chuyển sang dùng" cancelText="Hủy bỏ"
+                        onConfirm={() => switchMut.mutateAsync(r.monthKey).catch(() => undefined)}
+                      >
+                        <Button size="small" type="primary" ghost icon={<SwapOutlined />} loading={switchingKey === r.monthKey}>Chuyển sang dùng</Button>
+                      </Popconfirm>
+                    ) : (
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>Chỉ xem</Typography.Text>
                     ),
-                  },
-                  { title: 'Trạng thái', dataIndex: 'isActive', width: 120, render: (v: boolean) => (v ? <Tag color="green" icon={<CheckCircleOutlined />}>Đang dùng</Tag> : <Tag>Lưu trữ</Tag>) },
-                  {
-                    title: 'Thao tác',
-                    width: 140,
-                    align: 'right',
-                    render: (_, r) =>
-                      canEdit && !r.isActive ? (
-                        <Popconfirm
-                          title={`Chuyển hệ thống sang ${r.label || monthKeyLabel(r.monthKey)}?`}
-                          description={
-                            <div style={{ maxWidth: 320 }}>
-                              Toàn bộ hệ thống (lịch phân ca, nghỉ OFF, đổi ca, chấm công) sẽ đọc và ghi vào sheet của tháng này. Dùng để rà soát hoặc xử lý dữ liệu các tháng trước; nhớ chuyển lại sheet tháng hiện tại sau khi hoàn tất.
-                            </div>
-                          }
-                          okText="Dùng sheet này"
-                          cancelText="Hủy bỏ"
-                          onConfirm={() => switchMut.mutateAsync(r.monthKey).catch(() => undefined)}
-                        >
-                          <Button size="small" icon={<SwapOutlined />} loading={switchingKey === r.monthKey}>Dùng sheet này</Button>
-                        </Popconfirm>
-                      ) : null,
-                  },
-                ]}
-              />
-            </Col>
-          </Row>
+                },
+              ]}
+            />
+          </div>
         </Space>
       )}
-      {canEdit && <DataPartitionRolloverModal open={rolloverOpen} onClose={() => setRolloverOpen(false)} />}
+      {canEdit && (
+        <DataPartitionRolloverModal
+          open={rolloverOpen} activeMonth={d?.activeMonth ?? ''}
+          existingMonthKeys={(d?.items ?? []).map((i) => i.monthKey).filter(Boolean)}
+          onClose={() => setRolloverOpen(false)}
+        />
+      )}
     </Card>
   );
 }
