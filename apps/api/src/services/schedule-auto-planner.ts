@@ -4,6 +4,7 @@ import { dayjs } from '../lib/time.js';
 import { findBranchShiftTemplate, resolveEmployeeBranchId } from '../routes/account-employee-sync.js';
 import { isOfficialSwapEligibleEmployee } from '../routes/employee-mapper.js';
 import { getOperationSettings } from './operations-settings.service.js';
+import { buildShiftGroupFairnessMap, compareFairShiftCandidates } from './schedule-fairness.js';
 import { employeeShiftsOnDate, isCountedWorkShift, matchEmp, resolveProbationCycle } from './schedule-rules.js';
 import { findEmployeeShiftConflictOnDate, resolveApplicableStaffingRule, toMinuteSpan } from './schedule-staffing-helper.js';
 import { listBranchStoreShiftTemplates } from './staffing-one-per-shift.service.js';
@@ -36,8 +37,6 @@ function createCapacityTracker(ctx: AppContext, ignoredAssignmentIds: Set<string
   };
 }
 
-type Tracker = ReturnType<typeof createCapacityTracker>;
-
 function collectOffBlockedAssignmentIds(ctx: AppContext, fromDate: string, toDate: string): Set<string> {
   const activeLeaves = ctx.db.leaveRequests.filter((l) => OFF_ACTIVE.has(l.status) && l.leave_date >= fromDate && l.leave_date <= toDate);
   const blocked = new Set<string>();
@@ -52,11 +51,10 @@ function collectOffBlockedAssignmentIds(ctx: AppContext, fromDate: string, toDat
 }
 
 /**
- * Lập kế hoạch tuần cho Nhân viên chính thức theo quy tắc 1 ca = đúng 1 người (hoặc theo định biên chi nhánh):
- * - Lượt 1: Xếp nhân sự khả dụng vào đúng ca mặc định (chưa có ca trong ngày, ưu tiên người ít ca nhất trong tuần).
- * - Lượt 2: Bù các ca còn trống (0/1 do người phụ trách chính nghỉ OFF) bằng nhân sự chính thức cùng chi nhánh chưa có ca trong ngày.
- * - Lượt 3: Bù các ca vẫn còn trống bằng nhân sự chính thức cùng chi nhánh còn dưới giới hạn số ca/ngày và không trùng giờ.
- * - Lượt 4: Đối soát toàn bộ khung ca trong tuần để cảnh báo chính xác ca nào vẫn thiếu (< min) hoặc thừa (> max).
+ * Lập kế hoạch tuần cho Nhân viên chính thức theo quy tắc 1 ca = đúng 1 người & xoay vòng công bằng trong nội bộ từng nhóm ca mặc định:
+ * - Nhân sự thuộc nhóm ca mặc định nào (Ca sáng / Ca chiều / Ca tối) CHỈ xoay vòng trong đúng khung ca mặc định đó (không tự điều chéo sang ca khác).
+ * - Cân bằng công bằng xuyên tuần: ưu tiên người ít ca nhất trong tuần -> ít ca tích lũy tương đối các tuần trước -> xoay vòng chỉ số tuần -> đảo trực Chủ Nhật.
+ * - Khi thành viên trong cùng nhóm ca mặc định nghỉ OFF, các thành viên còn lại của chính nhóm ca đó tự động xoay vòng bù ca (1 người/ca).
  */
 export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; branchId?: string }): PlanResult {
   const settings = getOperationSettings(ctx.db), dates = weekDates(params.weekStart);
@@ -122,35 +120,29 @@ export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; b
     const hasStaffOrRule = branchEmps.length > 0 || Boolean(ctx.db.staffingRules.find((r) => r.branch_id === branch.id || r.branch_id === branch.code));
     if (!hasStaffOrRule) continue;
 
-    for (const workDate of dates) {
-      for (const tpl of storeShifts) {
+    for (const tpl of storeShifts) {
+      const groupEmps = branchEmps.filter((e) => (e.default_shift_code || 'CA_SANG').toUpperCase() === tpl.code.toUpperCase());
+      const fairnessMap = buildShiftGroupFairnessMap(ctx, groupEmps, params.weekStart);
+
+      for (const workDate of dates) {
         while (tracker.count(branch.id, workDate, tpl.code) < tracker.capacity(branch.id, tpl.code)) {
-          const cands = branchEmps.filter((e) => (e.default_shift_code || 'CA_SANG').toUpperCase() === tpl.code.toUpperCase() && (dailySpans.get(`${e.id}|${workDate}`)?.length ?? 0) === 0 && canTakeShift(e, workDate, tpl))
-            .sort((a, b) => (weeklyCount.get(a.id) ?? 0) - (weeklyCount.get(b.id) ?? 0) || a.employee_code.localeCompare(b.employee_code));
+          const cands = groupEmps
+            .filter((e) => (dailySpans.get(`${e.id}|${workDate}`)?.length ?? 0) === 0 && canTakeShift(e, workDate, tpl))
+            .sort((a, b) => compareFairShiftCandidates(a, b, weeklyCount, fairnessMap));
           if (cands.length === 0) break;
-          assign(cands[0]!, branch.name, workDate, tpl, false);
+          const picked = cands[0]!;
+          const isCoveringOffPeer = groupEmps.some(
+            (peer) => peer.id !== picked.id && isOffOnDate(peer, workDate) && compareFairShiftCandidates(peer, picked, weeklyCount, fairnessMap) < 0,
+          );
+          assign(picked, branch.name, workDate, tpl, isCoveringOffPeer);
         }
-      }
-      for (const tpl of storeShifts) {
-        while (tracker.count(branch.id, workDate, tpl.code) < tracker.capacity(branch.id, tpl.code)) {
-          const cands = branchEmps.filter((e) => (dailySpans.get(`${e.id}|${workDate}`)?.length ?? 0) === 0 && canTakeShift(e, workDate, tpl))
-            .sort((a, b) => (weeklyCount.get(a.id) ?? 0) - (weeklyCount.get(b.id) ?? 0) || a.employee_code.localeCompare(b.employee_code));
-          if (cands.length === 0) break;
-          assign(cands[0]!, branch.name, workDate, tpl, true);
-        }
-      }
-      for (const tpl of storeShifts) {
-        while (tracker.count(branch.id, workDate, tpl.code) < tracker.capacity(branch.id, tpl.code)) {
-          const cands = branchEmps.filter((e) => canTakeShift(e, workDate, tpl))
-            .sort((a, b) => (dailySpans.get(`${a.id}|${workDate}`)?.length ?? 0) - (dailySpans.get(`${b.id}|${workDate}`)?.length ?? 0) || (weeklyCount.get(a.id) ?? 0) - (weeklyCount.get(b.id) ?? 0) || a.employee_code.localeCompare(b.employee_code));
-          if (cands.length === 0) break;
-          assign(cands[0]!, branch.name, workDate, tpl, true);
-        }
-      }
-      for (const tpl of storeShifts) {
+
         const cur = tracker.count(branch.id, workDate, tpl.code), min = tracker.minStaff(branch.id, tpl.code), cap = tracker.capacity(branch.id, tpl.code);
         if (cur < min) {
-          issues.push({ kind: 'UNDERSTAFFED', employeeId: '', employeeName: '', workDate, shiftCode: tpl.code, message: `${branch.name} · ${tpl.name} ngày ${vi(workDate)} chưa đủ người trực (${cur}/${min} nhân sự) do nhân sự nghỉ OFF hoặc thiếu định biên.` });
+          const reason = groupEmps.length === 0
+            ? `chưa có nhân sự chính thức nào đăng ký ca mặc định ${tpl.name}`
+            : `nhân sự thuộc nhóm mặc định ${tpl.name} đều nghỉ OFF hoặc đã kín lịch`;
+          issues.push({ kind: 'UNDERSTAFFED', employeeId: '', employeeName: '', workDate, shiftCode: tpl.code, message: `${branch.name} · ${tpl.name} ngày ${vi(workDate)} chưa đủ người trực (${cur}/${min} nhân sự) do ${reason}.` });
         } else if (cur > cap) {
           issues.push({ kind: 'CAPACITY_FULL', employeeId: '', employeeName: '', workDate, shiftCode: tpl.code, message: `${branch.name} · ${tpl.name} ngày ${vi(workDate)} đang vượt định biên (${cur}/${cap} nhân sự — quy định mỗi ca chỉ có ${cap} người).` });
         }
@@ -161,8 +153,7 @@ export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; b
 }
 
 /**
- * Lập kế hoạch chu kỳ thử việc 12 ngày: trừ tối đa 5 ngày OFF, ưu tiên xếp ca mặc định vào các ngày còn lại;
- * nếu ca mặc định ngày đó đã có 1/1 người trực thì tự động chuyển sang khung ca còn trống (0/1) trong ngày để đủ 7 ca bắt buộc.
+ * Lập kế hoạch chu kỳ thử việc 12 ngày: trừ tối đa 5 ngày OFF, xếp đúng ca mặc định vào các ngày còn lại để đủ 7 ca bắt buộc.
  */
 export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: string): PlanResult & { cycle: ReturnType<typeof resolveProbationCycle>; existingCount: number } {
   const settings = getOperationSettings(ctx.db), cycle = resolveProbationCycle(emp, todayStr);
@@ -178,8 +169,7 @@ export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: str
   let total = existingCount;
   const defCode = (emp.default_shift_code || 'CA_SANG').toUpperCase();
   const defTpl = findBranchShiftTemplate(ctx, defCode, emp.branch_id);
-  const storeTpls = listBranchStoreShiftTemplates(ctx, emp.branch_id);
-  const candidateTpls = [...(defTpl ? [defTpl] : []), ...storeTpls.filter((s) => s.code.toUpperCase() !== defCode)];
+  const candidateTpls = defTpl ? [defTpl] : [];
   const branchName = ctx.db.branches.get(emp.branch_id)?.name ?? emp.branch_id;
 
   for (const workDate of cycle.dates) {
@@ -188,7 +178,7 @@ export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: str
     const todayShifts = employeeShiftsOnDate(ctx, emp, workDate, [...ignoredIds]);
     if (todayShifts.length > 0 || todayShifts.length >= settings.maxShiftsPerDay) continue;
     if (candidateTpls.length === 0) {
-      dayIssues.push({ kind: 'NO_TEMPLATE', employeeId: emp.id, employeeName: empName, workDate, shiftCode: defCode, message: `Chi nhánh ${branchName} chưa cấu hình khung ca làm việc cho ${empName}.` });
+      dayIssues.push({ kind: 'NO_TEMPLATE', employeeId: emp.id, employeeName: empName, workDate, shiftCode: defCode, message: `Chi nhánh ${branchName} chưa cấu hình khung ca mặc định cho ${empName}.` });
       continue;
     }
     let picked: ShiftTemplate | null = null;
@@ -202,12 +192,12 @@ export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: str
       planned.push({
         employeeId: emp.id, employeeCode: emp.employee_code, employeeName: emp.full_name, stage: emp.stage, branchId: emp.branch_id, branchName,
         workDate, shiftCode: picked.code, shiftLabel: picked.name, startAt: picked.start_time, endAt: picked.end_time,
-        hours: picked.standard_hours || 5, templateId: picked.id, isCoverShift: picked.code.toUpperCase() !== defCode,
+        hours: picked.standard_hours || 5, templateId: picked.id, isCoverShift: false,
       });
       tracker.add(emp.branch_id, workDate, picked.code);
       total++;
     } else {
-      dayIssues.push({ kind: 'CAPACITY_FULL', employeeId: emp.id, employeeName: empName, workDate, shiftCode: defCode, message: `Toàn bộ khung ca ngày ${vi(workDate)} tại ${branchName} đã đủ 1/1 người theo định biên — chưa thể xếp ${empName}.` });
+      dayIssues.push({ kind: 'CAPACITY_FULL', employeeId: emp.id, employeeName: empName, workDate, shiftCode: defCode, message: `Khung ca mặc định ngày ${vi(workDate)} tại ${branchName} đã đủ 1/1 người theo định biên — chưa thể xếp ${empName}.` });
     }
   }
   if (total < cycle.workRequired) {

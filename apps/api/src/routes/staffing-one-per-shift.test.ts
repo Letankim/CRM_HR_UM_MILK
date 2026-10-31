@@ -103,7 +103,11 @@ describe('Quy tắc cứng 1 người / 1 ca & Cân bằng ca mặc định toà
     const bulkApprove = await t.app.inject({ method: 'POST', url: '/api/admin/schedules/bulk-action', headers: hr, payload: { action: 'PUBLISH', items: [{ id: draft.id, version: draft.version }] } });
     expect(bulkApprove.statusCode).toBe(400);
 
-    // 3. Đăng ký 4 đơn nghỉ OFF rải đều các ngày trong tuần cho cả 4 NV chính thức -> vẫn sắp đủ 21/21 ca đúng 1 người/ca, 0 lỗi
+    // 3. Bổ sung đủ cặp xoay vòng cho Ca chiều & Ca tối (mỗi khung ca 2 NV chính thức, chỉ xoay vòng trong đúng ca mặc định) rồi đăng ký 4 đơn OFF
+    for (const [idx, sc] of (['CA_CHIEU', 'CA_TOI'] as const).entries()) {
+      const addRes = await t.app.inject({ method: 'POST', url: '/api/admin/employees', headers: hr, payload: { full_name: `NV Xoay Vòng ${sc}`, phone_number: `091680020${idx}`, branch_id: cn1.id, stage: 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: sc, create_account: false } });
+      expect(addRes.statusCode).toBe(201);
+    }
     const weekStart = mondayOfWeek(day(75));
     for (let i = 0; i < 4; i++) {
       const offDay = dayjs(weekStart).add(i, 'day').format('YYYY-MM-DD');

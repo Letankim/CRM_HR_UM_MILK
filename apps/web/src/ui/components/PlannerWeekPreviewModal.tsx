@@ -5,6 +5,7 @@ import { Alert, App, Button, Checkbox, Flex, Modal, Select, Space, Spin, Tag } f
 import { CheckCircleOutlined, CloseOutlined, LockOutlined, ReloadOutlined, ScheduleOutlined, UnlockOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api, ApiClientError } from '@/lib/api';
+import { PlannerEmployeeLoadStrip } from './PlannerEmployeeLoadStrip';
 import { PlannerMatrixGrid } from './PlannerMatrixGrid';
 import { PlannerIssuesAlert } from './SchedulePlannerShared';
 import {
@@ -163,6 +164,9 @@ export function PlannerWeekPreviewModal({
           <Alert type="info" showIcon message={`Có ${lockedInAll.length} chi nhánh đã chốt lịch trước đó (${lockedInAll.map((b) => b.branchCode || b.branchName).join(', ')}) sẽ được giữ nguyên dữ liệu cũ; hệ thống chỉ tự động sinh lịch cho các chi nhánh chưa chốt.`} />
         )}
         {!isLocked && <PlannerIssuesAlert issues={data?.issues ?? []} expanded={issuesOpen} onExpandedChange={setIssuesOpen} />}
+        {data?.employeeLoads && data.employeeLoads.length > 0 && (
+          <PlannerEmployeeLoadStrip loads={data.employeeLoads} selectedBranchId={branchId} />
+        )}
 
         <Spin spinning={q.isLoading}>
           {data && <PlannerMatrixGrid weekStart={data.weekStart} selectedBranchId={branchId} branchStatuses={statuses} items={matrixItems} offRequests={data.offRequests} isLocked={isLocked} />}

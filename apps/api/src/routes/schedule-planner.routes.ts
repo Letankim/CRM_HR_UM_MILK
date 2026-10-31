@@ -15,6 +15,7 @@ import { ensureSyncedNotifications } from '../services/notification-sync.service
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { planOfficialWeek, planProbationCycle, type PlannedShift, type PlanIssue, type PlanResult } from '../services/schedule-auto-planner.js';
+import { summarizeOfficialEmployeeWeekLoads } from '../services/schedule-fairness.js';
 import { findProbationLock, findWeekLock, isCountedWorkShift, matchEmp, probationLockCode, weekLockCode } from '../services/schedule-rules.js';
 import { clearShiftAttendanceOnWorkflowOverride, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, findBranchShiftTemplate, resolveEmployeeBranchId } from './account-employee-sync.js';
@@ -118,13 +119,12 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
     const directLock = findWeekLock(ctx, q.branch_id, weekStart);
     const allLocked = Boolean(directLock) || (targetBranches.length > 0 && targetBranches.every((b) => Boolean(findWeekLock(ctx, b.id, weekStart))));
     const firstLock = directLock ?? (allLocked ? targetBranches.map((b) => findWeekLock(ctx, b.id, weekStart)).find(Boolean) : undefined);
-    const offRequests = offRaw.map((l) => mapOff(ctx, l));
-    const existingShifts = existingRaw.map((a) => mapExistingShift(ctx, a));
-    const planned = enrichPlanned(ctx, plannedRaw);
+    const offRequests = offRaw.map((l) => mapOff(ctx, l)), existingShifts = existingRaw.map((a) => mapExistingShift(ctx, a)), planned = enrichPlanned(ctx, plannedRaw);
+    const employeeLoads = summarizeOfficialEmployeeWeekLoads(ctx, { weekStart, weekEnd, branchIds: targetBranches.map((b) => b.id), existingShifts: existingRaw, plannedShifts: planned, offEmployeeIdsByDate: offRequests });
     return sendSuccess(request, 'Lấy dữ liệu chốt lịch tuần & dự kiến sắp ca thành công', {
       weekStart, weekEnd, branchId: q.branch_id, offWindow, isLocked: allLocked,
       lockedAt: firstLock?.locked_at ?? null, lockNote: firstLock?.note ?? '',
-      branchStatuses, existingShifts, offRequests, planned, issues,
+      branchStatuses, existingShifts, offRequests, planned, issues, employeeLoads,
       summary: { plannedCount: planned.length, existingCount: existingShifts.length, offCount: offRequests.length, pendingOffCount: offRequests.filter((o) => o.status === 'PENDING').length, issueCount: issues.length },
     });
   });

@@ -26,10 +26,11 @@ describe('Ops V5.2 — Chốt lịch tuần & tự động sắp ca theo ca mặ
     const underPv = (await t.app.inject({ method: 'GET', url: `/api/admin/schedule-planner/week?week_start=${weekStart}&branch_id=${branchId}`, headers: hr })).json().data;
     expect(underPv.issues.some((i: { kind: string }) => i.kind === 'UNDERSTAFFED')).toBe(true);
 
-    // Bổ sung đủ đội ngũ chính thức tại chi nhánh & cân bằng ca mặc định (CA_SANG, CA_CHIEU, CA_TOI)
+    // Bổ sung đủ đội ngũ chính thức tại chi nhánh & cân bằng ca mặc định (CA_SANG có 2 người để xoay vòng bù OFF trong nội bộ Ca sáng)
+    const e1b = (await t.app.inject({ method: 'POST', url: '/api/admin/employees', headers: hr, payload: { full_name: 'Phạm Chính Thức Sáng 2', phone_number: '0913111221', branch_id: branchId, stage: 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: 'CA_SANG', create_account: false } })).json().data;
     const e2 = (await t.app.inject({ method: 'POST', url: '/api/admin/employees', headers: hr, payload: { full_name: 'Trần Chính Thức Chiều', phone_number: '0913111222', branch_id: branchId, stage: 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: 'CA_CHIEU', create_account: false } })).json().data;
     const e3 = (await t.app.inject({ method: 'POST', url: '/api/admin/employees', headers: hr, payload: { full_name: 'Lê Chính Thức Tối', phone_number: '0913111223', branch_id: branchId, stage: 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: 'CA_TOI', create_account: false } })).json().data;
-    expect(e2.id && e3.id).toBeTruthy();
+    expect(e1b.id && e2.id && e3.id).toBeTruthy();
 
     const off = await t.app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: hr, payload: { employee_id: official.id, leave_date: offDate, reason: 'Nghỉ OFF giữa tuần' } });
     expect(off.statusCode).toBe(201);

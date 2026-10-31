@@ -26,6 +26,16 @@ export interface PlannerBranchStatus {
   branchId: string; branchCode: string; branchName: string; isLocked: boolean; lockedAt: string | null; lockNote: string;
 }
 
+/** Thống kê phân bổ số ca tuần này & tích lũy 4 tuần trước của từng nhân sự chính thức theo nhóm ca mặc định. */
+export interface PlannerEmployeeLoadItem {
+  employeeId: string; employeeCode: string; employeeName: string;
+  branchId: string; branchCode: string; branchName: string;
+  defaultShiftCode: string; defaultShiftLabel: string; groupSize: number;
+  existingShiftsCount: number; plannedShiftsCount: number;
+  totalWeekShifts: number; totalWeekHours: number;
+  offDaysCount: number; recent4WeeksShifts: number;
+}
+
 /** Phần tử hiển thị trong ô Lưới Lịch Tuần (kết hợp ca đã có và ca dự kiến tự sinh). */
 export interface PlannerMatrixCellItem {
   key: string; employeeId: string; employeeCode: string; employeeName: string; stage: string; stageLabel: string;
@@ -44,6 +54,7 @@ export interface PlannerWeekData {
   isLocked: boolean; lockedAt: string | null; lockNote: string;
   branchStatuses?: PlannerBranchStatus[];
   existingShifts?: PlannerExistingShift[];
+  employeeLoads?: PlannerEmployeeLoadItem[];
   offRequests: PlannerOffItem[]; planned: PlannerShift[]; issues: PlannerIssue[];
   summary: { plannedCount: number; existingCount?: number; offCount: number; pendingOffCount: number; issueCount: number };
 }
