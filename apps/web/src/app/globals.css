@@ -126,12 +126,67 @@ body {
 }
 
 /* Tab & Segmented active */
+.ant-space {
+  max-width: 100%;
+}
+
+.ant-space > .ant-space-item {
+  max-width: 100%;
+  min-width: 0;
+}
+
 .ant-segmented {
   background-color: #f1f5f9 !important;
   padding: 3px !important;
   border: 1px solid #e2e8f0;
   max-width: 100%;
-  overflow-x: auto;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.umbm-scroll-x {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto !important;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.umbm-scroll-x::-webkit-scrollbar {
+  height: 4px;
+}
+
+.umbm-scroll-x::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.umbm-scroll-x > .ant-segmented {
+  display: inline-flex !important;
+  width: max-content !important;
+  max-width: none !important;
+  overflow: visible !important;
+}
+
+.umbm-scroll-x .ant-segmented-group {
+  display: inline-flex !important;
+  flex-wrap: nowrap !important;
+  width: max-content !important;
+}
+
+.umbm-scroll-x .ant-segmented-item {
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+}
+
+.ant-card-body {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .ant-segmented .ant-segmented-item {

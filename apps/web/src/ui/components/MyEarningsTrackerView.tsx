@@ -67,71 +67,74 @@ export function MyEarningsTrackerView({ embedded = false, initialMode = 'MONTH' 
     else if (mode === 'MONTH') setAnchor((d) => d.add(dir, 'month'));
   };
 
-  const counts = summary?.counts;
-  const earned = summary?.earned;
-  const projected = summary?.projected;
-  const prof = summary?.salaryProfile;
+  const counts = summary?.counts, earned = summary?.earned, projected = summary?.projected, prof = summary?.salaryProfile;
+  const spanDays = summary?.range.daysInRange ?? dayjs(bounds.toDate).diff(dayjs(bounds.fromDate), 'day') + 1;
 
   return (
     <div style={{ padding: embedded || isDesktop ? 0 : '8px 6px', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
       <Card size="small" style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-          <Space size={8} wrap>
-            <Segmented
-              value={mode}
-              onChange={(v) => setMode(v as EarningsFilterMode)}
-              options={[
-                { value: 'DAY', label: 'Theo ngày' },
-                { value: 'WEEK', label: 'Theo tuần' },
-                { value: 'MONTH', label: 'Theo tháng' },
-                { value: 'RANGE', label: 'Từ ngày – Đến ngày' },
-              ]}
-            />
+          <div className="umbm-scroll-x" style={{ width: isDesktop ? 'auto' : '100%', maxWidth: '100%', flex: isDesktop ? '0 1 auto' : '1 1 100%' }}>
+            <Segmented value={mode} onChange={(v) => setMode(v as EarningsFilterMode)} options={[
+              { value: 'DAY', label: 'Theo ngày' }, { value: 'WEEK', label: 'Theo tuần' },
+              { value: 'MONTH', label: 'Theo tháng' }, { value: 'RANGE', label: 'Từ ngày – Đến ngày' },
+            ]} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6, flex: isDesktop ? '1 1 auto' : '1 1 100%' }}>
             <Tag color="blue" icon={<CalendarOutlined />} style={{ margin: 0, padding: '3px 8px', fontWeight: 600 }}>
-              {bounds.label} ({summary?.range.daysInRange ?? dayjs(bounds.toDate).diff(dayjs(bounds.fromDate), 'day') + 1} ngày)
+              {bounds.label} ({spanDays} ngày)
             </Tag>
-          </Space>
-          <Space size={8} wrap>
-            <Button size="small" icon={<ReloadOutlined />} loading={refreshing || query.isFetching} onClick={() => void handleManualRefresh()}>Làm mới</Button>
-            <Button size="small" icon={<DownloadOutlined />} disabled={!summary || filteredRows.length === 0} onClick={() => summary && exportMyEarningsExcel(summary, filteredRows)}>Xuất Excel</Button>
-          </Space>
+            <Space size={6}>
+              <Button size="small" icon={<ReloadOutlined />} loading={refreshing || query.isFetching} onClick={() => void handleManualRefresh()}>Làm mới</Button>
+              <Button size="small" icon={<DownloadOutlined />} disabled={!summary || filteredRows.length === 0} onClick={() => summary && exportMyEarningsExcel(summary, filteredRows)}>Xuất Excel</Button>
+            </Space>
+          </div>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-          <Space size={6} wrap>
-            {mode !== 'RANGE' ? (
-              <>
+          {mode !== 'RANGE' ? (
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, width: isDesktop ? 'auto' : '100%' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: isDesktop ? 'auto' : '100%' }}>
                 <Button size="small" icon={<LeftOutlined />} onClick={() => shiftAnchor(-1)}>
                   {mode === 'DAY' ? 'Hôm trước' : mode === 'WEEK' ? 'Tuần trước' : 'Tháng trước'}
                 </Button>
-                <DatePicker
-                  size="small"
-                  allowClear={false}
-                  picker={mode === 'MONTH' ? 'month' : 'date'}
-                  format={mode === 'MONTH' ? 'MM/YYYY' : 'DD/MM/YYYY'}
-                  value={anchor}
-                  onChange={(d) => d && setAnchor(d)}
-                  style={{ width: mode === 'MONTH' ? 120 : 135 }}
-                />
+                <DatePicker size="small" allowClear={false} picker={mode === 'MONTH' ? 'month' : 'date'} format={mode === 'MONTH' ? 'MM/YYYY' : 'DD/MM/YYYY'} value={anchor} onChange={(d) => d && setAnchor(d)} style={{ width: isDesktop ? (mode === 'MONTH' ? 120 : 135) : undefined, flex: isDesktop ? 'none' : 1, minWidth: 104 }} />
                 <Button size="small" onClick={() => shiftAnchor(1)}>
                   {mode === 'DAY' ? 'Hôm sau' : mode === 'WEEK' ? 'Tuần sau' : 'Tháng sau'} <RightOutlined />
                 </Button>
-                <Button size="small" type="link" onClick={() => setAnchor(dayjs())} style={{ paddingInline: 4 }}>
-                  {mode === 'DAY' ? 'Về hôm nay' : mode === 'WEEK' ? 'Về tuần này' : 'Về tháng này'}
-                </Button>
-              </>
-            ) : (
-              <>
-                <span style={{ fontSize: 12, color: BRAND.textSecondary }}>Từ ngày:</span>
-                <DatePicker size="small" allowClear={false} format="DD/MM/YYYY" value={customFrom} onChange={(d) => { if (!d) return; setCustomFrom(d); if (d.isAfter(customTo, 'day')) setCustomTo(d); }} style={{ width: 132 }} />
-                <span style={{ fontSize: 12, color: BRAND.textSecondary }}>Đến ngày:</span>
-                <DatePicker size="small" allowClear={false} format="DD/MM/YYYY" value={customTo} onChange={(d) => { if (!d) return; setCustomTo(d); if (d.isBefore(customFrom, 'day')) setCustomFrom(d); }} style={{ width: 132 }} />
-                <Button size="small" onClick={() => { setCustomFrom(dayjs().subtract(6, 'day')); setCustomTo(dayjs()); }}>7 ngày qua</Button>
-                <Button size="small" onClick={() => { const m = dayjs().startOf('month'); setCustomFrom(m); setCustomTo(m.add(14, 'day')); }}>Nửa đầu tháng</Button>
-                <Button size="small" onClick={() => { setCustomFrom(dayjs().startOf('month').add(15, 'day')); setCustomTo(dayjs().endOf('month')); }}>Nửa cuối tháng</Button>
-              </>
-            )}
-          </Space>
+              </div>
+              <Button size="small" type="link" onClick={() => setAnchor(dayjs())} style={{ paddingInline: 4, height: 24 }}>
+                {mode === 'DAY' ? 'Về hôm nay' : mode === 'WEEK' ? 'Về tuần này' : 'Về tháng này'}
+              </Button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, width: isDesktop ? 'auto' : '100%' }}>
+              <div style={isDesktop ? { display: 'flex', alignItems: 'center', gap: 6 } : { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, width: '100%' }}>
+                <div>
+                  {!isDesktop && <div style={{ fontSize: 11, color: BRAND.textSecondary, marginBottom: 2 }}>Từ ngày</div>}
+                  <Space size={4} style={{ width: '100%' }}>
+                    {isDesktop && <span style={{ fontSize: 12, color: BRAND.textSecondary }}>Từ ngày:</span>}
+                    <DatePicker size="small" allowClear={false} format="DD/MM/YYYY" value={customFrom} onChange={(d) => { if (!d) return; setCustomFrom(d); if (d.isAfter(customTo, 'day')) setCustomTo(d); }} style={{ width: isDesktop ? 132 : '100%' }} />
+                  </Space>
+                </div>
+                <div>
+                  {!isDesktop && <div style={{ fontSize: 11, color: BRAND.textSecondary, marginBottom: 2 }}>Đến ngày</div>}
+                  <Space size={4} style={{ width: '100%' }}>
+                    {isDesktop && <span style={{ fontSize: 12, color: BRAND.textSecondary }}>Đến ngày:</span>}
+                    <DatePicker size="small" allowClear={false} format="DD/MM/YYYY" value={customTo} onChange={(d) => { if (!d) return; setCustomTo(d); if (d.isBefore(customFrom, 'day')) setCustomFrom(d); }} style={{ width: isDesktop ? 132 : '100%' }} />
+                  </Space>
+                </div>
+              </div>
+              <div className="umbm-scroll-x" style={{ width: isDesktop ? 'auto' : '100%' }}>
+                <div style={{ display: 'inline-flex', gap: 6, whiteSpace: 'nowrap' }}>
+                  <Button size="small" onClick={() => { setCustomFrom(dayjs().subtract(6, 'day')); setCustomTo(dayjs()); }}>7 ngày qua</Button>
+                  <Button size="small" onClick={() => { const m = dayjs().startOf('month'); setCustomFrom(m); setCustomTo(m.add(14, 'day')); }}>Nửa đầu tháng</Button>
+                  <Button size="small" onClick={() => { setCustomFrom(dayjs().startOf('month').add(15, 'day')); setCustomTo(dayjs().endOf('month')); }}>Nửa cuối tháng</Button>
+                  <Button size="small" onClick={() => { setCustomFrom(dayjs().subtract(29, 'day')); setCustomTo(dayjs()); }}>30 ngày qua</Button>
+                </div>
+              </div>
+            </div>
+          )}
           <Select
             size="small"
             value={catFilter}
