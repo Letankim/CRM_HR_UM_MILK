@@ -1,7 +1,8 @@
 'use client';
 
 import { App, Button, Descriptions, Empty, Flex, Modal, Space, Tag, Typography } from 'antd';
-import { CloseOutlined, CopyOutlined, FileTextOutlined, MailOutlined } from '@ant-design/icons';
+import { CloseOutlined, CompressOutlined, CopyOutlined, ExpandOutlined, FileTextOutlined, MailOutlined } from '@ant-design/icons';
+import { useState } from 'react';
 import { EMAIL_TEMPLATE_LABELS, type EmailTemplateCode } from '@umbm/shared';
 
 export interface EmailLogItem {
@@ -31,6 +32,14 @@ export function renderEmailQueueStatusTag(status: EmailLogItem['status']) {
   return <Tag color="green" style={{ borderRadius: 2, margin: 0 }}>{status === 'SENT' ? 'Đã gửi Gmail' : 'Đã xử lý hàng đợi'}</Tag>;
 }
 
+/** Mở rộng khung hiển thị bảng Email lên toàn chiều ngang khung xem trước trên trình quản trị (không ảnh hưởng HTML gốc gửi qua SMTP). */
+export function expandEmailHtmlForPreview(rawHtml?: string, fullWidth = false): string | undefined {
+  if (!rawHtml) return undefined;
+  const maxWidth = fullWidth ? '100%' : '1140px';
+  const previewCss = `<style>table[width="640"]{max-width:${maxWidth} !important;width:100% !important;} body>table{padding:14px 16px !important;}</style>`;
+  return rawHtml.includes('</head>') ? rawHtml.replace('</head>', `${previewCss}</head>`) : `${previewCss}${rawHtml}`;
+}
+
 export interface EmailQueueDetailModalProps {
   email: EmailLogItem | null;
   fallbackHtml?: string;
@@ -39,7 +48,14 @@ export interface EmailQueueDetailModalProps {
 
 export function EmailQueueDetailModal({ email, fallbackHtml, onClose }: EmailQueueDetailModalProps) {
   const { message } = App.useApp();
+  const [maximized, setMaximized] = useState(false);
   const label = email ? (email.templateLabel || EMAIL_TEMPLATE_LABELS[email.template] || 'Thông báo hệ thống') : '';
+  const previewDoc = expandEmailHtmlForPreview(email?.html || fallbackHtml, maximized);
+
+  const handleClose = () => {
+    setMaximized(false);
+    onClose();
+  };
 
   const copyText = (text: string, labelMsg: string) => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -50,10 +66,11 @@ export function EmailQueueDetailModal({ email, fallbackHtml, onClose }: EmailQue
   return (
     <Modal
       open={Boolean(email)}
-      onCancel={onClose}
+      onCancel={handleClose}
       destroyOnHidden
-      width={840}
+      width={maximized ? '96vw' : 'min(1260px, 94vw)'}
       centered
+      styles={{ body: { maxHeight: 'calc(100vh - 140px)', overflowY: 'auto' } }}
       title={
         <Space size={8}>
           <MailOutlined style={{ color: '#2563EB' }} />
@@ -61,7 +78,10 @@ export function EmailQueueDetailModal({ email, fallbackHtml, onClose }: EmailQue
         </Space>
       }
       footer={
-        <Space size={8}>
+        <Space size={8} wrap>
+          <Button icon={maximized ? <CompressOutlined /> : <ExpandOutlined />} onClick={() => setMaximized((v) => !v)}>
+            {maximized ? 'Thu về kích thước chuẩn' : 'Mở rộng toàn màn hình'}
+          </Button>
           {email && (
             <Button icon={<CopyOutlined />} onClick={() => copyText(email.to, 'địa chỉ Email người nhận')}>
               Sao chép Email nhận
@@ -72,7 +92,7 @@ export function EmailQueueDetailModal({ email, fallbackHtml, onClose }: EmailQue
               Sao chép tiêu đề
             </Button>
           )}
-          <Button type="primary" icon={<CloseOutlined />} onClick={onClose}>
+          <Button type="primary" icon={<CloseOutlined />} onClick={handleClose}>
             Đóng
           </Button>
         </Space>
@@ -80,23 +100,23 @@ export function EmailQueueDetailModal({ email, fallbackHtml, onClose }: EmailQue
     >
       {email && (
         <div>
-          <Descriptions size="small" bordered column={2} style={{ marginBottom: 12 }}>
+          <Descriptions size="small" bordered column={{ xs: 1, sm: 2, lg: 3 }} style={{ marginBottom: 12 }}>
             <Descriptions.Item label="Người nhận">
               <div>
                 <Typography.Text strong>{email.recipientName || 'Nhân sự Ụm Bò Milk'}</Typography.Text>
                 <div style={{ fontSize: 12, color: '#64748B' }}>{email.to}</div>
               </div>
             </Descriptions.Item>
+            <Descriptions.Item label="Loại thông báo">
+              <Tag color="blue" style={{ borderRadius: 2, margin: 0 }}>{label}</Tag>
+            </Descriptions.Item>
             <Descriptions.Item label="Trạng thái gửi">
-              <Space size={8}>
+              <Space size={8} wrap>
                 {renderEmailQueueStatusTag(email.status)}
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   Lần thử: <span className="num">{email.attempts ?? 1}/3</span>
                 </Typography.Text>
               </Space>
-            </Descriptions.Item>
-            <Descriptions.Item label="Loại thông báo">
-              <Tag color="blue" style={{ borderRadius: 2, margin: 0 }}>{label}</Tag>
             </Descriptions.Item>
             <Descriptions.Item label="Mã tham chiếu">
               <span className="num" style={{ fontWeight: 600 }}>{email.referenceCode || '—'}</span>
@@ -107,11 +127,11 @@ export function EmailQueueDetailModal({ email, fallbackHtml, onClose }: EmailQue
             <Descriptions.Item label="Thời gian gửi thành công">
               <span className="num">{email.sentAt ? formatEmailDateTime(email.sentAt) : 'Đang chờ xử lý gửi'}</span>
             </Descriptions.Item>
-            <Descriptions.Item label="Tiêu đề thư" span={2}>
+            <Descriptions.Item label="Tiêu đề thư" span={3}>
               <Typography.Text strong>{email.subject}</Typography.Text>
             </Descriptions.Item>
             {email.error && (
-              <Descriptions.Item label="Chi tiết lỗi kết nối" span={2}>
+              <Descriptions.Item label="Chi tiết lỗi kết nối" span={3}>
                 <Typography.Text type="danger">{email.error}</Typography.Text>
               </Descriptions.Item>
             )}
@@ -124,11 +144,19 @@ export function EmailQueueDetailModal({ email, fallbackHtml, onClose }: EmailQue
             </Space>
           </Flex>
 
-          {email.html || fallbackHtml ? (
+          {previewDoc ? (
             <iframe
               title={`Chi tiết nội dung email ${email.id}`}
-              srcDoc={email.html || fallbackHtml}
-              style={{ width: '100%', height: 420, border: '1px solid #E5E7EB', borderRadius: 4, background: '#F8FAFC' }}
+              srcDoc={previewDoc}
+              style={{
+                width: '100%',
+                height: maximized ? 'calc(100vh - 300px)' : 'min(640px, calc(100vh - 320px))',
+                minHeight: 520,
+                border: '1px solid #E5E7EB',
+                borderRadius: 4,
+                background: '#F8FAFC',
+                display: 'block',
+              }}
             />
           ) : (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có dữ liệu HTML xem trước cho bản ghi này" />

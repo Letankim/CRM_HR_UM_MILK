@@ -9,7 +9,7 @@ import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
-import { EmailQueueDetailModal, formatEmailDateTime, renderEmailQueueStatusTag, type EmailLogItem } from './EmailQueueDetailModal';
+import { EmailQueueDetailModal, expandEmailHtmlForPreview, formatEmailDateTime, renderEmailQueueStatusTag, type EmailLogItem } from './EmailQueueDetailModal';
 import { RowActionButtons } from './RowActionButtons';
 
 interface ReconciliationIssue {
@@ -141,9 +141,7 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
         <Space size={8} wrap>
           <Button size="small" icon={<SyncOutlined />} loading={flushQueueMut.isPending} onClick={() => flushQueueMut.mutate()}>Quét &amp; Gửi lô hàng đợi ngay</Button>
           <Select size="small" value={selectedTemplate} style={{ width: 270 }} options={EMAIL_TEMPLATE_CODES.map((code) => ({ value: code, label: EMAIL_TEMPLATE_LABELS[code] }))} onChange={(val) => { setSelectedTemplate(val); setTemplatePreviewOpen(true); }} />
-          <Button size="small" icon={templatePreviewOpen ? <UpOutlined /> : <DownOutlined />} onClick={() => setTemplatePreviewOpen((v) => !v)}>
-            {templatePreviewOpen ? 'Đóng mẫu Email' : 'Mở mẫu Email'}
-          </Button>
+          <Button size="small" icon={templatePreviewOpen ? <UpOutlined /> : <DownOutlined />} onClick={() => setTemplatePreviewOpen((v) => !v)}>{templatePreviewOpen ? 'Đóng mẫu Email' : 'Mở mẫu Email'}</Button>
         </Space>
       }
     >
@@ -177,11 +175,10 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
                       <Input size="small" style={{ flex: 1, minWidth: 220 }} value={recipientEmail} onChange={(e) => setRecipientEmail(e.target.value)} placeholder="Email người nhận" />
                       <Button size="small" type="primary" icon={<SendOutlined />} loading={sendEmailMut.isPending} onClick={() => sendEmailMut.mutate()}>Gửi Email mẫu này</Button>
                     </Flex>
-                    <iframe title={`Xem trước email ${preview.template}`} srcDoc={preview.html} style={{ width: '100%', height: 290, border: '1px solid #E5E7EB', borderRadius: 2, background: '#FFFFFF', display: 'block' }} />
+                    <iframe title={`Xem trước email ${preview.template}`} srcDoc={expandEmailHtmlForPreview(preview.html, true)} style={{ width: '100%', height: 480, border: '1px solid #E5E7EB', borderRadius: 2, background: '#FFFFFF', display: 'block' }} />
                   </div>
                 )}
               </div>
-
               <Flex justify="space-between" align="center" style={{ marginBottom: 8 }}>
                 <Typography.Text strong style={{ fontSize: 13 }}>Lịch sử &amp; Hàng đợi Gửi Email ({recentEmails.length} thư gần nhất)</Typography.Text>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>Bấm Xem chi tiết hoặc menu (...) để xem toàn bộ nội dung thư</Typography.Text>
@@ -196,19 +193,7 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
                   { title: 'Lần thử', dataIndex: 'attempts', width: 76, align: 'center', render: (v?: number) => <span className="num">{v ?? 1}/3</span> },
                   { title: 'Trạng thái Hàng đợi', dataIndex: 'status', width: 145, render: (s: EmailLogItem['status']) => renderEmailQueueStatusTag(s) },
                   { title: 'Thời gian', dataIndex: 'sentAt', width: 145, render: (v: string, r) => <span className="num" style={{ fontSize: 11 }}>{formatEmailDateTime(v || r.queuedAt)}</span> },
-                  {
-                    title: 'Thao tác', key: 'actions', width: 96, align: 'center',
-                    render: (_: unknown, r) => (
-                      <RowActionButtons
-                        onViewDetail={() => setViewingEmail(r)}
-                        detailTooltip="Xem chi tiết nội dung Email"
-                        menuItems={[
-                          { key: 'copy-to', icon: <CopyOutlined />, label: 'Sao chép Email người nhận', onClick: () => copyToClipboard(r.to, 'địa chỉ Email người nhận') },
-                          { key: 'copy-subj', icon: <FileTextOutlined />, label: 'Sao chép tiêu đề Email', onClick: () => copyToClipboard(r.subject, 'tiêu đề Email') },
-                        ]}
-                      />
-                    ),
-                  },
+                  { title: 'Thao tác', key: 'actions', width: 96, align: 'center', render: (_: unknown, r) => <RowActionButtons onViewDetail={() => setViewingEmail(r)} detailTooltip="Xem chi tiết nội dung Email" menuItems={[{ key: 'copy-to', icon: <CopyOutlined />, label: 'Sao chép Email người nhận', onClick: () => copyToClipboard(r.to, 'địa chỉ Email người nhận') }, { key: 'copy-subj', icon: <FileTextOutlined />, label: 'Sao chép tiêu đề Email', onClick: () => copyToClipboard(r.subject, 'tiêu đề Email') }]} /> },
                 ]}
               />
             </div>
@@ -221,16 +206,9 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
 
   if (mode === 'reconcile') return reconcilePane;
   if (mode === 'email') return emailPane;
-
   return (
     <Card size="small" style={{ marginTop: 16 }}>
-      <Tabs
-        activeKey={subTab} onChange={(k) => setSubTab(k as 'reconcile' | 'email')}
-        items={[
-          { key: 'reconcile', label: <Space size={6}><SafetyCertificateOutlined /><span>Bộ máy Đối soát &amp; Đồng bộ Toàn vẹn Dữ liệu</span></Space>, children: reconcilePane },
-          { key: 'email', label: <Space size={6}><MailOutlined /><span>Mẫu Email Doanh Nghiệp &amp; Gửi thử Gmail</span></Space>, children: emailPane },
-        ]}
-      />
+      <Tabs activeKey={subTab} onChange={(k) => setSubTab(k as 'reconcile' | 'email')} items={[{ key: 'reconcile', label: <Space size={6}><SafetyCertificateOutlined /><span>Bộ máy Đối soát &amp; Đồng bộ Toàn vẹn Dữ liệu</span></Space>, children: reconcilePane }, { key: 'email', label: <Space size={6}><MailOutlined /><span>Mẫu Email Doanh Nghiệp &amp; Gửi thử Gmail</span></Space>, children: emailPane }]} />
     </Card>
   );
 }
