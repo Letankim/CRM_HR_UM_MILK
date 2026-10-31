@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Button, Card, Descriptions, Empty, Flex, Input, Select, Space, Spin, Table, Tabs, Tag, Typography } from 'antd';
-import { MailOutlined, SafetyCertificateOutlined, SendOutlined, SyncOutlined } from '@ant-design/icons';
+import { CopyOutlined, DownOutlined, FileTextOutlined, MailOutlined, SafetyCertificateOutlined, SendOutlined, SyncOutlined, UpOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { EMAIL_TEMPLATE_CODES, EMAIL_TEMPLATE_LABELS, TABLE_DISPLAY_LABELS, type EmailTemplateCode } from '@umbm/shared';
@@ -9,6 +9,8 @@ import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
+import { EmailQueueDetailModal, formatEmailDateTime, renderEmailQueueStatusTag, type EmailLogItem } from './EmailQueueDetailModal';
+import { RowActionButtons } from './RowActionButtons';
 
 interface ReconciliationIssue {
   id: string; code: string; label: string; severity: 'warning' | 'error'; table: string; recordId: string; message: string; autoRepaired: boolean;
@@ -19,12 +21,6 @@ interface ReconciliationReport {
   status: 'ok' | 'degraded' | 'down';
   summary: { tablesScanned: number; rowsScanned: number; issuesFound: number; autoRepaired: number; unresolvedIssues: number };
   issues: ReconciliationIssue[];
-}
-
-interface EmailLogItem {
-  id: string; to: string; recipientName?: string; referenceCode?: string; subject: string;
-  template: EmailTemplateCode; templateLabel?: string; attempts?: number;
-  status: 'QUEUED' | 'SENT' | 'QUEUED_MEMORY' | 'DRY_RUN' | 'FAILED'; queuedAt?: string; sentAt: string; error?: string;
 }
 
 interface EmailQueueStats {
@@ -47,7 +43,10 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplateCode>('ACCOUNT_ACTIVATED');
   const [recipientEmail, setRecipientEmail] = useState('nhanvien@umbomilk.vn');
   const [recipientName, setRecipientName] = useState('Nguyễn Văn An');
+  const [templatePreviewOpen, setTemplatePreviewOpen] = useState(true);
+  const [viewingEmail, setViewingEmail] = useState<EmailLogItem | null>(null);
   const issuesPag = useClientPagination(10, 'cảnh báo');
+  const emailsPag = useClientPagination(8, 'thư');
 
   const reconcileQuery = useQuery({
     queryKey: ['integrations', 'reconcile'],
@@ -88,6 +87,12 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Quét hàng đợi thất bại'),
   });
 
+  const copyToClipboard = (text: string, label: string) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      void navigator.clipboard.writeText(text).then(() => message.success(`Đã sao chép ${label}`));
+    }
+  };
+
   const report = reconcileQuery.data;
   const preview = emailPreviewQuery.data?.preview;
   const recentEmails = emailPreviewQuery.data?.recentEmails ?? [];
@@ -97,11 +102,7 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
     <Card
       size="small"
       title="Bộ máy Đối soát & Đồng bộ Toàn vẹn Dữ liệu"
-      extra={
-        <Button size="small" type="primary" icon={<SyncOutlined />} loading={runRepair.isPending || reconcileQuery.isFetching} onClick={() => runRepair.mutate()}>
-          Quét &amp; Tự động sửa lỗi
-        </Button>
-      }
+      extra={<Button size="small" type="primary" icon={<SyncOutlined />} loading={runRepair.isPending || reconcileQuery.isFetching} onClick={() => runRepair.mutate()}>Quét &amp; Tự động sửa lỗi</Button>}
     >
       <Spin spinning={reconcileQuery.isLoading || runRepair.isPending} tip="Đang quét đối soát dữ liệu...">
         <div style={{ minHeight: 160 }}>
@@ -113,7 +114,6 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
                 <Descriptions.Item label="Điểm lệch phát hiện"><span className="num">{report.summary.issuesFound}</span></Descriptions.Item>
                 <Descriptions.Item label="Đã tự động sửa"><span className="num" style={{ color: '#16A34A', fontWeight: 600 }}>{report.summary.autoRepaired}</span></Descriptions.Item>
               </Descriptions>
-
               {report.issues.length === 0 ? (
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="100% bản ghi đạt chuẩn liên kết dữ liệu, không trùng lặp và đồng bộ trạng thái" />
               ) : (
@@ -139,10 +139,11 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
       title="Mẫu Email Doanh Nghiệp & Hàng Đợi Chống Nghẽn (Rate-Limited Batch Queue)"
       extra={
         <Space size={8} wrap>
-          <Button size="small" icon={<SyncOutlined />} loading={flushQueueMut.isPending} onClick={() => flushQueueMut.mutate()}>
-            Quét &amp; Gửi lô hàng đợi ngay
+          <Button size="small" icon={<SyncOutlined />} loading={flushQueueMut.isPending} onClick={() => flushQueueMut.mutate()}>Quét &amp; Gửi lô hàng đợi ngay</Button>
+          <Select size="small" value={selectedTemplate} style={{ width: 270 }} options={EMAIL_TEMPLATE_CODES.map((code) => ({ value: code, label: EMAIL_TEMPLATE_LABELS[code] }))} onChange={(val) => { setSelectedTemplate(val); setTemplatePreviewOpen(true); }} />
+          <Button size="small" icon={templatePreviewOpen ? <UpOutlined /> : <DownOutlined />} onClick={() => setTemplatePreviewOpen((v) => !v)}>
+            {templatePreviewOpen ? 'Đóng mẫu Email' : 'Mở mẫu Email'}
           </Button>
-          <Select size="small" value={selectedTemplate} style={{ width: 290 }} options={EMAIL_TEMPLATE_CODES.map((code) => ({ value: code, label: EMAIL_TEMPLATE_LABELS[code] }))} onChange={(val) => setSelectedTemplate(val)} />
         </Space>
       }
     >
@@ -158,36 +159,63 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
           )}
           {preview && (
             <div>
-              <Flex gap={8} wrap="wrap" style={{ marginBottom: 10 }}>
-                <Input size="small" style={{ flex: 1, minWidth: 180 }} value={recipientName} onChange={(e) => setRecipientName(e.target.value)} placeholder="Tên người nhận" />
-                <Input size="small" style={{ flex: 1, minWidth: 220 }} value={recipientEmail} onChange={(e) => setRecipientEmail(e.target.value)} placeholder="Email người nhận" />
-                <Button size="small" type="primary" icon={<SendOutlined />} loading={sendEmailMut.isPending} onClick={() => sendEmailMut.mutate()}>
-                  Gửi Email mẫu này
-                </Button>
-              </Flex>
+              <div style={{ border: '1px solid #E5E7EB', borderRadius: 4, background: '#F8FAFC', padding: '8px 12px', marginBottom: 12 }}>
+                <Flex justify="space-between" align="center" gap={8} wrap="wrap">
+                  <Space size={8} wrap>
+                    <MailOutlined style={{ color: '#2563EB' }} />
+                    <Typography.Text strong style={{ fontSize: 13 }}>Tiêu đề mẫu: {preview.subject}</Typography.Text>
+                    <Tag color="blue" style={{ borderRadius: 2, margin: 0 }}>{preview.label}</Tag>
+                  </Space>
+                  <Button size="small" type="text" icon={templatePreviewOpen ? <UpOutlined /> : <DownOutlined />} onClick={() => setTemplatePreviewOpen((v) => !v)}>
+                    {templatePreviewOpen ? 'Thu gọn khung xem trước' : 'Mở khung xem trước & gửi thử'}
+                  </Button>
+                </Flex>
+                {templatePreviewOpen && (
+                  <div style={{ marginTop: 10 }}>
+                    <Flex gap={8} wrap="wrap" style={{ marginBottom: 10 }}>
+                      <Input size="small" style={{ flex: 1, minWidth: 180 }} value={recipientName} onChange={(e) => setRecipientName(e.target.value)} placeholder="Tên người nhận" />
+                      <Input size="small" style={{ flex: 1, minWidth: 220 }} value={recipientEmail} onChange={(e) => setRecipientEmail(e.target.value)} placeholder="Email người nhận" />
+                      <Button size="small" type="primary" icon={<SendOutlined />} loading={sendEmailMut.isPending} onClick={() => sendEmailMut.mutate()}>Gửi Email mẫu này</Button>
+                    </Flex>
+                    <iframe title={`Xem trước email ${preview.template}`} srcDoc={preview.html} style={{ width: '100%', height: 290, border: '1px solid #E5E7EB', borderRadius: 2, background: '#FFFFFF', display: 'block' }} />
+                  </div>
+                )}
+              </div>
+
               <Flex justify="space-between" align="center" style={{ marginBottom: 8 }}>
-                <Typography.Text strong style={{ fontSize: 13 }}>Tiêu đề: {preview.subject}</Typography.Text>
-                <Tag color="blue" style={{ borderRadius: 2, margin: 0 }}>{preview.label}</Tag>
+                <Typography.Text strong style={{ fontSize: 13 }}>Lịch sử &amp; Hàng đợi Gửi Email ({recentEmails.length} thư gần nhất)</Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>Bấm Xem chi tiết hoặc menu (...) để xem toàn bộ nội dung thư</Typography.Text>
               </Flex>
-              <iframe title={`Xem trước email ${preview.template}`} srcDoc={preview.html} style={{ width: '100%', height: 290, border: '1px solid #E5E7EB', borderRadius: 2, background: '#F1F5F9', marginBottom: 12 }} />
               <Table<EmailLogItem>
-                size="small"
-                rowKey="id"
-                pagination={{ pageSize: 5, size: 'small', hideOnSinglePage: true }}
-                dataSource={recentEmails}
+                size="small" rowKey="id" pagination={emailsPag} dataSource={recentEmails}
                 locale={{ emptyText: 'Chưa có thư nào trong lịch sử hàng đợi Email' }}
+                onRow={(r) => ({ style: { cursor: 'pointer' }, onClick: (e) => { if (!(e.target as HTMLElement).closest('button, a, .ant-dropdown-trigger')) setViewingEmail(r); } })}
                 columns={[
-                  { title: 'Người nhận', dataIndex: 'to', width: 210, render: (v: string, r) => <div><div style={{ fontWeight: 600, fontSize: 12 }}>{r.recipientName || 'Nhân sự'}</div><Typography.Text type="secondary" style={{ fontSize: 11 }}>{v}</Typography.Text></div> },
-                  { title: 'Loại thông báo Email', dataIndex: 'template', render: (v: EmailTemplateCode, r) => <div><div style={{ fontSize: 12, fontWeight: 500 }}>{r.templateLabel || EMAIL_TEMPLATE_LABELS[v] || v}</div><Typography.Text type="secondary" style={{ fontSize: 11 }}>Mã: {r.referenceCode || '—'}</Typography.Text></div> },
-                  { title: 'Lần thử', dataIndex: 'attempts', width: 80, align: 'center', render: (v?: number) => <span className="num">{v ?? 1}/3</span> },
-                  { title: 'Trạng thái Hàng đợi', dataIndex: 'status', width: 150, render: (s: EmailLogItem['status']) => s === 'QUEUED' ? <Tag color="gold" style={{ borderRadius: 2 }}>Đang xếp hàng đợi</Tag> : s === 'FAILED' ? <Tag color="red" style={{ borderRadius: 2 }}>Lỗi kết nối</Tag> : <Tag color="green" style={{ borderRadius: 2 }}>{s === 'SENT' ? 'Đã gửi Gmail' : 'Đã xử lý hàng đợi'}</Tag> },
-                  { title: 'Thời gian', dataIndex: 'sentAt', width: 150, render: (v: string, r) => <span className="num" style={{ fontSize: 11 }}>{(v || r.queuedAt || '').slice(0, 19).replace('T', ' ')}</span> },
+                  { title: 'Người nhận', dataIndex: 'to', width: 205, render: (v: string, r) => <div><div style={{ fontWeight: 600, fontSize: 12 }}>{r.recipientName || 'Nhân sự Ụm Bò Milk'}</div><Typography.Text type="secondary" style={{ fontSize: 11 }}>{v}</Typography.Text></div> },
+                  { title: 'Loại & Tiêu đề thông báo Email', dataIndex: 'template', render: (v: EmailTemplateCode, r) => <div><div style={{ fontSize: 12, fontWeight: 600 }}>{r.templateLabel || EMAIL_TEMPLATE_LABELS[v] || 'Thông báo hệ thống'}</div><div style={{ fontSize: 11.5, color: '#334155' }}>{r.subject}</div><Typography.Text type="secondary" style={{ fontSize: 11 }}>Mã: {r.referenceCode || '—'}</Typography.Text></div> },
+                  { title: 'Lần thử', dataIndex: 'attempts', width: 76, align: 'center', render: (v?: number) => <span className="num">{v ?? 1}/3</span> },
+                  { title: 'Trạng thái Hàng đợi', dataIndex: 'status', width: 145, render: (s: EmailLogItem['status']) => renderEmailQueueStatusTag(s) },
+                  { title: 'Thời gian', dataIndex: 'sentAt', width: 145, render: (v: string, r) => <span className="num" style={{ fontSize: 11 }}>{formatEmailDateTime(v || r.queuedAt)}</span> },
+                  {
+                    title: 'Thao tác', key: 'actions', width: 96, align: 'center',
+                    render: (_: unknown, r) => (
+                      <RowActionButtons
+                        onViewDetail={() => setViewingEmail(r)}
+                        detailTooltip="Xem chi tiết nội dung Email"
+                        menuItems={[
+                          { key: 'copy-to', icon: <CopyOutlined />, label: 'Sao chép Email người nhận', onClick: () => copyToClipboard(r.to, 'địa chỉ Email người nhận') },
+                          { key: 'copy-subj', icon: <FileTextOutlined />, label: 'Sao chép tiêu đề Email', onClick: () => copyToClipboard(r.subject, 'tiêu đề Email') },
+                        ]}
+                      />
+                    ),
+                  },
                 ]}
               />
             </div>
           )}
         </div>
       </Spin>
+      <EmailQueueDetailModal email={viewingEmail} fallbackHtml={preview?.html} onClose={() => setViewingEmail(null)} />
     </Card>
   );
 
@@ -197,8 +225,7 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
   return (
     <Card size="small" style={{ marginTop: 16 }}>
       <Tabs
-        activeKey={subTab}
-        onChange={(k) => setSubTab(k as 'reconcile' | 'email')}
+        activeKey={subTab} onChange={(k) => setSubTab(k as 'reconcile' | 'email')}
         items={[
           { key: 'reconcile', label: <Space size={6}><SafetyCertificateOutlined /><span>Bộ máy Đối soát &amp; Đồng bộ Toàn vẹn Dữ liệu</span></Space>, children: reconcilePane },
           { key: 'email', label: <Space size={6}><MailOutlined /><span>Mẫu Email Doanh Nghiệp &amp; Gửi thử Gmail</span></Space>, children: emailPane },

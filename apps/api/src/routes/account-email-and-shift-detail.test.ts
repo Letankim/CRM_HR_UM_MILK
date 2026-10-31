@@ -62,8 +62,16 @@ describe('Account Credential Email Queue & Completed Shift Attendance Detail', (
     expect(putBody.data.emailQueued).toBe(true);
     const resetMail = t.email.recent(20).find((m) => m.to === 'letankim2003@gmail.com' && m.subject.includes('Cập nhật tài khoản và mã PIN (6 số) @nv.letankim'));
     expect(resetMail).toBeTruthy();
-    expect(resetMail!.html).toContain('Mã PIN mới (6 chữ số)');
-    expect(resetMail!.html).toContain('654321');
+    // Flush email queue -> DELIVERY_LOGS masks secret in ack_at while email-templates endpoint returns full detail HTML
+    await t.app.inject({ method: 'POST', url: '/api/admin/integrations/email-queue/flush', headers });
+    expect(JSON.stringify(t.db.deliveryLogs.all())).not.toContain('163609');
+    expect(JSON.stringify(t.db.deliveryLogs.all())).not.toContain('654321');
+    const tplRes = await t.app.inject({ method: 'GET', url: '/api/admin/integrations/email-templates?template=ACCOUNT_ACTIVATED', headers });
+    expect(tplRes.statusCode).toBe(200);
+    const detailItem = (tplRes.json().data.recentEmails as { to: string; subject: string; html: string; recipientName: string }[]).find((m) => m.to === 'letankim2003@gmail.com');
+    expect(detailItem).toBeTruthy();
+    expect(detailItem!.recipientName).toBe('Lê Tấn Kim');
+    expect(detailItem!.html).toContain('Lê Tấn Kim');
   });
 
   it('2. POST /api/admin/accounts without email does not leak secret to fallback admin audit email', async () => {

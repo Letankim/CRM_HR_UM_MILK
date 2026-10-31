@@ -124,7 +124,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext) {
     const preview = ctx.email.previewTemplate(query.template, ctx.env.API_PUBLIC_ORIGIN);
     const templates = EMAIL_TEMPLATE_CODES.map((code) => ({ code, label: EMAIL_TEMPLATE_LABELS[code] }));
     return sendSuccess(request, 'Lấy mẫu thông báo email doanh nghiệp thành công', {
-      templates, preview, recentEmails: ctx.email.recent(20), queueStats: ctx.email.queueStats(),
+      templates, preview, recentEmails: ctx.email.recent(50), queueStats: ctx.email.queueStats(),
     });
   });
 
@@ -135,7 +135,7 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext) {
     const batchRes = await ctx.email.processQueueBatch(5);
     const stats = ctx.email.queueStats();
     return sendSuccess(request, `Đã quét hàng đợi Email: xử lý ${retryRes.processed + batchRes.processed} thư, còn ${stats.queuedCount} thư đang chờ`, {
-      processed: retryRes.processed + batchRes.processed, queueStats: stats, recentEmails: ctx.email.recent(20),
+      processed: retryRes.processed + batchRes.processed, queueStats: stats, recentEmails: ctx.email.recent(50),
     });
   });
 
