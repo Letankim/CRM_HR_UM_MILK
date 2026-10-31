@@ -6,6 +6,7 @@ import { CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, DollarOu
 import { ADJUSTMENT_PUNCH_TYPE_LABELS } from '@umbm/shared';
 import dayjs from 'dayjs';
 import { StatusTag } from '../StatusTag';
+import { formatAdjustmentProposal } from './AdjustmentEvidenceFields';
 import { FancyboxImage } from './FancyboxPreview';
 import { RowActionButtons } from './RowActionButtons';
 import type { ScheduleDetailKind } from './ScheduleRequestDetailModal';
@@ -48,7 +49,7 @@ export function buildAdjustmentColumns(c: WorkflowColumnCtx): ColumnsType<RowRec
         ? <div style={{ width: 64, margin: '0 auto' }}><FancyboxImage src={String(r.evidencePhotoUrl)} alt="Ảnh minh chứng" caption={`Minh chứng ${String(r.adjustment_code || '')} — ${String(r.employeeName || '')}`} height={44} /></div>
         : <Tooltip title="Phiếu không kèm ảnh minh chứng"><FileImageOutlined style={{ color: '#CBD5E1' }} /></Tooltip>,
     },
-    { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 105, render: (v: number) => <strong>{v} giờ</strong> },
+    { title: 'Giờ đề nghị', width: 118, render: (_, r) => <strong className="num">{formatAdjustmentProposal(r)}</strong> },
     { title: 'Trạng thái', dataIndex: 'status', width: 160, render: (v: string, r) => <StatusTag value={v} label={String(r.statusLabel || '') || undefined} /> },
     {
       title: 'Thao tác', width: 88, fixed: 'right', align: 'right',

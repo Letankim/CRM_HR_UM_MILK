@@ -5,6 +5,7 @@ import { ClockCircleOutlined, DownloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { StatusTag } from '../StatusTag';
 import { useClientPagination } from '../hooks/useClientPagination';
+import { formatAdjustmentProposal } from './AdjustmentEvidenceFields';
 import { SelectableTable } from './BulkActionBar';
 import { FancyboxImage } from './FancyboxPreview';
 import { RowActionButtons } from './RowActionButtons';
@@ -47,7 +48,7 @@ export function MyAdjustmentsTable({ adjustments, loading = false, onViewDetail 
             </div>
           ) : <Typography.Text type="secondary" style={{ fontSize: 12 }}>Không có</Typography.Text>,
         },
-        { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 100, render: (v: number) => <strong>{v} giờ</strong> },
+        { title: 'Giờ đề nghị', width: 115, render: (_, r) => <strong className="num">{formatAdjustmentProposal(r)}</strong> },
         { title: 'Trạng thái', dataIndex: 'status', width: 150, render: (v: string, r) => <StatusTag value={v} label={String(r.statusLabel || '') || undefined} /> },
         { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết phiếu" onViewDetail={() => onViewDetail(r)} /> },
       ]}

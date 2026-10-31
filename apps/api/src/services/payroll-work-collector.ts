@@ -79,7 +79,7 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
 
   const empEvents = ctx.db.attendanceEvents.filter((e) => isEmp(e.employee_id) && e.work_date >= from && e.work_date <= to && !isDeletedRef(e.assignment_id, e.work_date, e.shift_code));
   const empAdjsAll = ctx.db.attendanceAdjustments.filter((a) => isEmp(a.employee_id) && a.work_date >= from && a.work_date <= to && !isDeletedRef(a.assignment_id, a.work_date, a.shift_code));
-  const approvedAdjs = empAdjsAll.filter((a) => a.status === 'APPROVED');
+  const approvedAdjs = empAdjsAll.filter((a) => a.status === 'APPROVED' && a.punch_type !== 'CHECK_IN');
   const pendingAdjs = empAdjsAll.filter((a) => a.status === 'PENDING' || a.status === 'STORE_CONFIRMED');
 
   const inRange = ctx.db.shiftAssignments.filter(

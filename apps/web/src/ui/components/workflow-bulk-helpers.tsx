@@ -3,6 +3,7 @@
 import { CheckCircleOutlined, CloseCircleOutlined, DeleteOutlined, DownloadOutlined, FileAddOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { exportToExcel } from '@/lib/export-excel';
+import { formatAdjustmentProposal } from './AdjustmentEvidenceFields';
 import type { BulkActionItem } from './BulkActionBar';
 import { isAbsentShiftRecord } from './QuickAbsentAdjustmentModal';
 import type { WorkflowConfirmKind } from './workflow-shift-warning';
@@ -18,7 +19,7 @@ export function exportAdjustmentsExcel(rows: RowRec[]) {
       { header: 'Mã phiếu', key: 'adjustment_code' }, { header: 'Nhân sự', key: 'employeeName' },
       { header: 'Ngày công', key: 'work_date' }, { header: 'Khung ca', render: (r) => String(r.shiftLabel || r.shift_code || '') },
       { header: 'Loại lỗi chấm công', render: (r) => String(r.punchTypeLabel || '') },
-      { header: 'Giờ đề nghị', key: 'requested_hours', align: 'right' }, { header: 'Lý do giải trình', key: 'reason' },
+      { header: 'Giờ đề nghị', render: (r) => formatAdjustmentProposal(r) }, { header: 'Lý do giải trình', key: 'reason' },
       { header: 'Ảnh minh chứng', render: (r) => (r.evidencePhotoUrl ? 'Có' : 'Không') },
       { header: 'Trạng thái', render: (r) => String(r.statusLabel || r.status || '') },
     ],

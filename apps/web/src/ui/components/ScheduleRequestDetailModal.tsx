@@ -6,6 +6,7 @@ import { CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DollarOutlined
 import { ADJUSTMENT_PUNCH_TYPE_LABELS } from '@umbm/shared';
 import dayjs from 'dayjs';
 import { StatusTag } from '../StatusTag';
+import { formatAdjustmentProposal } from './AdjustmentEvidenceFields';
 import { FancyboxImage } from './FancyboxPreview';
 import { hasPendingAdjustmentRecord, isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
 import { renderProbationExtraTags } from './ScheduleShiftRegistrationsPane';
@@ -180,7 +181,7 @@ export function ScheduleRequestDetailModal({
                 {renderWorkflowShiftStateTag(r)}
               </Space>
             </Descriptions.Item>
-            <Descriptions.Item label="Số giờ công đề nghị"><strong>{String(r.requested_hours || 5)} giờ</strong></Descriptions.Item>
+            <Descriptions.Item label="Nội dung giờ đề nghị"><strong className="num">{formatAdjustmentProposal(r)}</strong></Descriptions.Item>
             <Descriptions.Item label="Lý do giải trình">{String(r.reason || '—')}</Descriptions.Item>
             <Descriptions.Item label="Xác nhận từ Cửa hàng">{r.store_confirmed_at ? `${fmtTs(r.store_confirmed_at)}${r.store_note ? ` — "${String(r.store_note)}"` : ''}` : 'Chưa xác nhận'}</Descriptions.Item>
             <Descriptions.Item label="Thời điểm gửi phiếu"><span className="num">{fmtTs(r.created_at)}</span></Descriptions.Item>

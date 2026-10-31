@@ -97,7 +97,7 @@ export function buildPaginatedAttendanceSessions(
     const emp = ctx.db.employees.get(base.employee_id) ?? empByCode.get(base.employee_id);
     const assign = (base.assignment_id ? ctx.db.shiftAssignments.get(base.assignment_id) : undefined)
       ?? ctx.db.shiftAssignments.find((a) => (a.employee_id === base.employee_id || Boolean(emp && (a.employee_id === emp.id || a.employee_id === emp.employee_code))) && a.work_date === base.work_date && a.shift_code === base.shift_code);
-    const outEv: AttendanceEvent | null = rawOutEv ?? (assign?.status === 'COMPLETED' && inEv ? { ...inEv, id: `${inEv.id}_auto_out`, type: 'CHECK_OUT', scheduled_time: assign.end_at || '12:00', server_time: `${inEv.work_date}T${assign.end_at || '12:00'}:00+07:00`, late_minutes: 0, early_leave_minutes: 0, note: 'Đã hoàn thành ca (Xác nhận bổ sung giờ ra ca)' } : null);
+    const outEv: AttendanceEvent | null = rawOutEv ?? (assign?.status === 'COMPLETED' && inEv ? { ...inEv, id: `${inEv.id}_auto_out`, type: 'CHECK_OUT', scheduled_time: assign.end_at || '12:00', server_time: `${inEv.work_date}T${assign.end_at || '12:00'}:00+07:00`, late_minutes: 0, early_leave_minutes: 0, photo_id: '', photo_drive_file_id: '', note: 'Đã hoàn thành ca (Xác nhận bổ sung giờ ra ca)' } : null);
     const branch = (emp ? ctx.db.branches.get(emp.branch_id) : undefined) ?? ctx.db.branches.get(base.branch_id);
     const branchId = branch?.id ?? base.branch_id;
     if (query.branch_id && query.branch_id !== 'ALL' && branchId !== query.branch_id) continue;

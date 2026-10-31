@@ -49,7 +49,7 @@ export function ScheduleWorkflowModals({
 
   const isAbsentAssign = (a: WorkflowAssignmentOption) =>
     !a.pendingAdjustmentCode &&
-    !String(a.attendanceStatusLabel || '').includes('Đã gửi bù công') &&
+    !String(a.attendanceStatusLabel || '').includes('Đã gửi') &&
     (a.status === 'ABSENT' || String(a.attendanceStatusLabel || '').includes('Vắng mặt'));
 
   const watchedAdjEmpId = Form.useWatch('employee_id', adjForm) || '';
@@ -75,6 +75,7 @@ export function ScheduleWorkflowModals({
       work_date: a.workDate,
       shift_code: a.shiftCode,
       kind: 'FORGOT_CHECK_IN',
+      punch_type: 'FULL_SHIFT',
       requested_check_in_at: a.startAt || '07:00',
       requested_check_out_at: a.endAt || '12:00',
       requested_hours: a.scheduledHours || 5,
@@ -104,8 +105,8 @@ export function ScheduleWorkflowModals({
       <Modal width="min(840px, 94vw)" open={adjModal} forceRender title="Tạo phiếu bổ sung công" okText="Tạo phiếu bổ sung" cancelText="Hủy bỏ" confirmLoading={submitting} okButtonProps={{ icon: <FileAddOutlined />, disabled: !isAdjShiftLocked || submitting }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseAdj} onOk={() => !submitting && adjForm.submit()}>
         <Form
           form={adjForm} layout="vertical"
-          initialValues={{ kind: 'FORGOT_CHECK_IN', reason: 'Bổ sung công bù ca Vắng mặt do nhân sự quên điểm danh đúng giờ' }}
-          onFinish={(v) => { if (submitting) return; onSubmitAction('/admin/attendance/adjustments', v); onCloseAdj(); }}
+          initialValues={{ kind: 'FORGOT_CHECK_IN', punch_type: 'FULL_SHIFT', reason: 'Bổ sung công bù ca Vắng mặt do nhân sự quên điểm danh đúng giờ' }}
+          onFinish={(v) => { if (submitting) return; onSubmitAction('/admin/attendance/adjustments', { ...v, punch_type: 'FULL_SHIFT' }); onCloseAdj(); }}
           onValuesChange={(changed) => {
             if (changed.employee_id) {
               const empAbsents = assignments

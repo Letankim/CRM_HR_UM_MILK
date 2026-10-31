@@ -51,6 +51,7 @@ export function AttendanceAdjustmentModal({
 
   const watchedDate = Form.useWatch('work_date', form) || dayjs().format('YYYY-MM-DD');
   const watchedAssignId = Form.useWatch('assignment_id', form) || '';
+  const watchedPunchType = Form.useWatch('punch_type', form) || 'FULL_SHIFT';
   const selectedShift = useMemo(
     () => (watchedAssignId ? absentShifts.find((s) => String(s.id) === String(watchedAssignId)) ?? null : null),
     [absentShifts, watchedAssignId],
@@ -173,6 +174,8 @@ export function AttendanceAdjustmentModal({
             const found = absentShifts.find((s) => String(s.id) === String(changed.assignment_id));
             if (found) applyShiftToForm(found);
             else form.setFieldsValue({ shift_code: undefined, requested_check_in_at: undefined, requested_check_out_at: undefined, requested_hours: undefined });
+          } else if (changed.punch_type) {
+            form.setFieldValue('kind', kindFromPunchType(changed.punch_type));
           }
         }}
       >
@@ -201,9 +204,9 @@ export function AttendanceAdjustmentModal({
         </Row>
         <AdjustmentEvidenceFields />
         <Row gutter={12}>
-          <Col xs={12} md={8}><Form.Item name="requested_check_in_at" label="Giờ vào ca" rules={[{ required: true }]}><TimeStringPicker disabled /></Form.Item></Col>
-          <Col xs={12} md={8}><Form.Item name="requested_check_out_at" label="Giờ ra ca" rules={[{ required: true }]}><TimeStringPicker disabled /></Form.Item></Col>
-          <Col xs={24} md={8}><Form.Item name="requested_hours" label="Giờ công" rules={[{ required: true }]}><InputNumber min={0.5} max={16} step={0.5} style={{ width: '100%' }} suffix="giờ" disabled /></Form.Item></Col>
+          <Col xs={12} md={watchedPunchType === 'CHECK_IN' ? 12 : 8}><Form.Item name="requested_check_in_at" label={watchedPunchType === 'CHECK_IN' ? 'Giờ Vào ca đề nghị xác nhận' : watchedPunchType === 'CHECK_OUT' ? 'Giờ Vào ca đã ghi nhận' : 'Giờ vào ca'} rules={[{ required: true }]}><TimeStringPicker disabled /></Form.Item></Col>
+          <Col xs={12} md={watchedPunchType === 'CHECK_OUT' ? 16 : 8} style={{ display: watchedPunchType === 'CHECK_IN' ? 'none' : undefined }}><Form.Item name="requested_check_out_at" label={watchedPunchType === 'CHECK_OUT' ? 'Giờ Ra ca đề nghị xác nhận' : 'Giờ ra ca'} rules={[{ required: true }]}><TimeStringPicker disabled /></Form.Item></Col>
+          <Col xs={24} md={8} style={{ display: watchedPunchType === 'FULL_SHIFT' ? undefined : 'none' }}><Form.Item name="requested_hours" label="Giờ công bù cả ca" rules={[{ required: true }]}><InputNumber min={0.5} max={16} step={0.5} style={{ width: '100%' }} suffix="giờ" disabled /></Form.Item></Col>
         </Row>
         <Form.Item name="reason" label="Lý do giải trình bổ sung công" rules={[{ required: true, message: 'Vui lòng nhập lý do giải trình' }]}>
           <Input.TextArea rows={2} placeholder="Nêu rõ lý do cần bù ca vắng mặt để Cửa hàng xác nhận và HR phê duyệt..." />

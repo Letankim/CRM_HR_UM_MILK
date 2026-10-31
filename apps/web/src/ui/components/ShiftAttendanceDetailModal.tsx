@@ -13,6 +13,7 @@ import { FancyboxImage, type FancyboxSlideItem } from './FancyboxPreview';
 
 export interface ShiftAttendanceAdjustmentInfo {
   id: string; adjustment_code: string; kind: string; status: string;
+  punch_type?: 'CHECK_IN' | 'CHECK_OUT' | 'FULL_SHIFT'; punchTypeLabel?: string;
   requested_check_in_at: string; requested_check_out_at: string; requested_hours: number;
   reason: string; decision_reason?: string; decided_at?: string;
 }
@@ -21,12 +22,20 @@ export interface ShiftAttendanceDetailData extends AttendanceEventRow {
   assignmentId: string; scheduledHours?: number; shiftStatus?: string; shiftNote?: string;
   hasRawCheckIn?: boolean; hasRawCheckOut?: boolean; isAutoOut?: boolean;
   adjustment?: ShiftAttendanceAdjustmentInfo | null;
+  adjustments?: ShiftAttendanceAdjustmentInfo[];
 }
 
 const ADJ_KIND_LABELS: Record<string, string> = {
   FORGOT_CHECK_IN: 'Quên điểm danh Vào ca', FORGOT_CHECK_OUT: 'Quên điểm danh Ra ca',
   GPS_ERROR: 'Sự cố định vị GPS', CAMERA_ERROR: 'Sự cố Camera thiết bị', OTHER: 'Giải trình bổ sung công',
 };
+
+function formatShiftAdjustmentTitle(a: ShiftAttendanceAdjustmentInfo): string {
+  const cause = ADJ_KIND_LABELS[a.kind] || 'Bổ sung công';
+  if (a.punch_type === 'CHECK_IN') return `Phiếu xác nhận Vào ca ${a.adjustment_code} (${cause}) — Giờ Vào ca đề nghị: ${a.requested_check_in_at}`;
+  if (a.punch_type === 'CHECK_OUT') return `Phiếu xác nhận Ra ca ${a.adjustment_code} (${cause}) — Giờ Ra ca đề nghị: ${a.requested_check_out_at}`;
+  return `Phiếu bổ sung công cả ca ${a.adjustment_code} (${cause}) — Khung giờ bù công: ${a.requested_check_in_at} – ${a.requested_check_out_at} (${a.requested_hours}h)`;
+}
 
 export function canViewShiftAttendanceDetail(
   item?: { status?: string; attendanceStatusLabel?: string; checkInEvent?: unknown; checkOutEvent?: unknown } | null,
@@ -39,7 +48,7 @@ export function canViewShiftAttendanceDetail(
 
 function renderShiftCheckPane(
   ev: AttendanceEventRow | null | undefined, kind: 'CHECK_IN' | 'CHECK_OUT',
-  gallerySlides: FancyboxSlideItem[], canViewMedia: boolean, isCompletedByAdjustment: boolean,
+  gallerySlides: FancyboxSlideItem[], canViewMedia: boolean, isCompletedByAdjustment: boolean, hasCheckIn = false,
 ) {
   const isCheckIn = kind === 'CHECK_IN';
   const titleLabel = isCheckIn ? 'Chi tiết Vào ca (Check-In)' : 'Chi tiết Ra ca (Check-Out)';
@@ -64,7 +73,7 @@ function renderShiftCheckPane(
                 ? `Đã xác nhận ${isCheckIn ? 'giờ Vào ca' : 'giờ Ra ca'} qua Phiếu bổ sung công`
                 : isCheckIn
                   ? 'Chưa có bản ghi điểm danh Vào ca'
-                  : 'Chưa có bản ghi điểm danh Ra ca'
+                  : (hasCheckIn ? 'Chưa điểm danh Ra ca (Đang trong ca làm việc)' : 'Chưa có bản ghi điểm danh Ra ca')
             }
           />
         </div>
@@ -129,8 +138,10 @@ export function ShiftAttendanceDetailModal({ assignmentId, onClose }: { assignme
   const data = detailQ.data ?? null;
   const inEv = data?.checkInEvent ?? null;
   const outEv = data?.checkOutEvent ?? null;
-  const adj = data?.adjustment ?? null;
-  const isApprovedAdj = adj?.status === 'APPROVED';
+  const adjList = data?.adjustments?.length ? data.adjustments : (data?.adjustment ? [data.adjustment] : []);
+  const effectiveShiftStatus = data?.shiftStatus === 'COMPLETED' ? 'COMPLETED' : (inEv && !outEv ? 'CHECKED_IN' : data?.shiftStatus);
+  const inCompletedByAdj = data?.shiftStatus === 'COMPLETED' && adjList.some((a) => a.status === 'APPROVED' && a.punch_type === 'FULL_SHIFT');
+  const outCompletedByAdj = data?.shiftStatus === 'COMPLETED' && adjList.some((a) => a.status === 'APPROVED' && a.punch_type !== 'CHECK_IN');
   const hasBranchCoords = data?.branchLat !== undefined && data?.branchLat !== null && data?.branchLng !== undefined && data?.branchLng !== null;
   const gallerySlides: FancyboxSlideItem[] = [
     ...(inEv?.photoUrl ? [{ src: inEv.photoUrl, caption: `Vào ca (Check-In) — ${data?.employeeName || ''} · ${inEv.checkTimeFormatted || inEv.checkTimeHm || ''} · Cách CH ${Number(inEv.distance_m ?? 0)}m` }] : []),
@@ -156,7 +167,7 @@ export function ShiftAttendanceDetailModal({ assignmentId, onClose }: { assignme
                   <strong>{data.employeeName}</strong><span>·</span>
                   <Tag color="blue" style={{ margin: 0 }}>{data.shiftLabel || 'Ca làm việc'} ({data.shiftTimeRange || '07:00 – 12:00'})</Tag>
                   <span className="num" style={{ color: BRAND.textSecondary }}>Ngày: {data.work_date ? dayjs(data.work_date).format('DD/MM/YYYY') : '—'}</span>
-                  {data.shiftStatus && <StatusTag value={data.shiftStatus} />}
+                  {effectiveShiftStatus && <StatusTag value={effectiveShiftStatus} />}
                 </Space>
               </Descriptions.Item>
               <Descriptions.Item label="Chi nhánh làm việc">
@@ -175,22 +186,23 @@ export function ShiftAttendanceDetailModal({ assignmentId, onClose }: { assignme
               </Descriptions.Item>
             </Descriptions>
 
-            {adj && (
+            {adjList.map((a) => (
               <Alert
-                type={isApprovedAdj ? 'success' : adj.status === 'REJECTED' ? 'error' : 'warning'}
+                key={a.id}
+                type={a.status === 'APPROVED' ? 'success' : a.status === 'REJECTED' ? 'error' : 'warning'}
                 showIcon
-                message={`Phiếu bổ sung công ${adj.adjustment_code} (${ADJ_KIND_LABELS[adj.kind] || 'Bổ sung công'}) — Khung giờ đề nghị: ${adj.requested_check_in_at} – ${adj.requested_check_out_at} (${adj.requested_hours}h)`}
-                description={`Lý do: ${adj.reason}${adj.decision_reason ? ` · Phản hồi phê duyệt: ${adj.decision_reason}` : ''}`}
+                message={formatShiftAdjustmentTitle(a)}
+                description={`Lý do: ${a.reason}${a.decision_reason ? ` · Phản hồi phê duyệt: ${a.decision_reason}` : ''}${a.status === 'APPROVED' && a.punch_type === 'CHECK_IN' && !outEv ? ' · Đã ghi nhận Vào ca — nhân sự vẫn cần điểm danh Ra ca khi kết thúc ca.' : ''}`}
               />
-            )}
+            ))}
 
-            {data.shiftStatus === 'COMPLETED' && !inEv && !outEv && !adj && (
+            {data.shiftStatus === 'COMPLETED' && !inEv && !outEv && adjList.length === 0 && (
               <Alert type="info" showIcon message="Ca làm việc này đã được xác nhận hoàn thành trên bảng phân công lịch làm việc (không có bản ghi chụp ảnh GPS trực tiếp)." />
             )}
 
             <Row gutter={[12, 12]}>
-              <Col xs={24} md={12}>{renderShiftCheckPane(inEv, 'CHECK_IN', gallerySlides, canViewMedia, Boolean(isApprovedAdj))}</Col>
-              <Col xs={24} md={12}>{renderShiftCheckPane(outEv, 'CHECK_OUT', gallerySlides, canViewMedia, Boolean(isApprovedAdj))}</Col>
+              <Col xs={24} md={12}>{renderShiftCheckPane(inEv, 'CHECK_IN', gallerySlides, canViewMedia, Boolean(inCompletedByAdj), Boolean(inEv))}</Col>
+              <Col xs={24} md={12}>{renderShiftCheckPane(outEv, 'CHECK_OUT', gallerySlides, canViewMedia, Boolean(outCompletedByAdj), Boolean(inEv))}</Col>
             </Row>
           </Space>
         )}

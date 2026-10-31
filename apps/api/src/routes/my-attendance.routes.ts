@@ -77,7 +77,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       let outEv = sEvs.find((e) => e.type === 'CHECK_OUT') ?? null;
       if (a.status === 'COMPLETED' && inEv && !outEv) {
         const rawIn = myRawEvents.find((e) => e.id === inEv.id);
-        if (rawIn) { outEv = mapAttendanceEvent({ ...rawIn, id: `${inEv.id}_auto_out`, type: 'CHECK_OUT', scheduled_time: a.end_at || '12:00', server_time: `${a.work_date}T${a.end_at || '12:00'}:00+07:00`, late_minutes: 0, early_leave_minutes: 0, note: 'Đã hoàn thành ca (Xác nhận bổ sung giờ ra ca)' }, ctx); events.push(outEv); }
+        if (rawIn) { outEv = mapAttendanceEvent({ ...rawIn, id: `${inEv.id}_auto_out`, type: 'CHECK_OUT', scheduled_time: a.end_at || '12:00', server_time: `${a.work_date}T${a.end_at || '12:00'}:00+07:00`, late_minutes: 0, early_leave_minutes: 0, photo_id: '', photo_drive_file_id: '', note: 'Đã hoàn thành ca (Xác nhận bổ sung giờ ra ca)' }, ctx); events.push(outEv); }
       }
       const win = getShiftCheckoutWindow(a.work_date, a.start_at || '07:00', a.end_at || '12:00', todayStr, nowHm);
       const isToday = a.work_date === todayStr, isExpiredToday = isToday && !inEv && win.isPastEnd;

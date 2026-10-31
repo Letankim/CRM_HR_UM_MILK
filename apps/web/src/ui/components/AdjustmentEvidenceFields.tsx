@@ -29,6 +29,14 @@ export function kindFromPunchType(punchType: AdjustmentPunchType): string {
   return punchType === 'CHECK_OUT' ? 'FORGOT_CHECK_OUT' : 'FORGOT_CHECK_IN';
 }
 
+/** Hiển thị nội dung đề nghị đúng theo loại phiếu (chỉ Vào ca, chỉ Ra ca, hoặc Bù công cả ca). */
+export function formatAdjustmentProposal(r?: Record<string, unknown> | null): string {
+  if (!r) return '—';
+  if (r.punch_type === 'CHECK_IN') return `Vào ca ${String(r.requested_check_in_at || r.startAt || r.start_at || '07:00')}`;
+  if (r.punch_type === 'CHECK_OUT') return `Ra ca ${String(r.requested_check_out_at || r.endAt || r.end_at || '12:00')}`;
+  return `${Number(r.requested_hours || r.scheduledHours || r.scheduled_hours || 5)} giờ`;
+}
+
 /** Nhóm trường "Loại phiếu" + "Ảnh minh chứng" bắt buộc khi nhân viên gửi phiếu lỗi chấm công / bổ sung công. */
 export function AdjustmentEvidenceFields({ evidenceRequired = true }: { evidenceRequired?: boolean }) {
   return (

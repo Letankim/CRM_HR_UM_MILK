@@ -21,7 +21,6 @@ export function isAbsentShiftRecord(r?: Record<string, unknown> | null): boolean
     r.status === 'ABSENT' ||
     Boolean(r.isAbsentShift) ||
     Boolean(r.isForgotCheckout) ||
-    Boolean(r.checkInEvent && !r.checkOutEvent) ||
     lbl.includes('Vắng mặt') ||
     lbl.includes('Quên Ra ca')
   );
@@ -147,14 +146,18 @@ export function QuickAbsentAdjustmentModal({
             <Descriptions.Item label="Ngày công (Cố định)">
               <strong className="num">{dayjs(workDate).format('DD/MM/YYYY')}</strong>
             </Descriptions.Item>
-            <Descriptions.Item label="Giờ công đề nghị">
-              <Tag color="blue" style={{ margin: 0, fontWeight: 600 }}>{hours} giờ</Tag>
+            <Descriptions.Item label="Nội dung đề nghị">
+              <Tag color="blue" style={{ margin: 0, fontWeight: 600 }}>
+                {inferAdjustmentPunchType(shift) === 'CHECK_OUT' ? `Xác nhận Ra ca lúc ${endAt}` : `${hours} giờ (${startAt} – ${endAt})`}
+              </Tag>
             </Descriptions.Item>
             <Descriptions.Item label="Khung ca & Giờ ca">
               <Space size={6} wrap>
                 <strong>{shiftLabel}</strong>
                 <Tag color="red" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{startAt} – {endAt}</Tag>
-                <Tag color="volcano" style={{ margin: 0 }}>Trạng thái: Vắng mặt — Cần bổ sung công</Tag>
+                <Tag color="volcano" style={{ margin: 0 }}>
+                  {inferAdjustmentPunchType(shift) === 'CHECK_OUT' ? 'Trạng thái: Quên Ra ca — Cần xác nhận giờ Ra ca' : 'Trạng thái: Vắng mặt — Cần bổ sung công'}
+                </Tag>
               </Space>
             </Descriptions.Item>
           </Descriptions>

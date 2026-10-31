@@ -158,6 +158,7 @@ export const STATUS_VISUAL_MAP: Record<string, StatusVisual> = {
   APPROVED: { color: 'success', label: 'Đã duyệt' },
   REJECTED: { color: 'error', label: 'Từ chối' },
   PUBLISHED: { color: 'processing', label: 'Đã phát hành' },
+  CHECKED_IN: { color: 'processing', label: 'Đã vào ca · Chờ Ra ca' },
   SWAPPED: { color: 'warning', label: 'Đã đổi ca' },
   COMPLETED: { color: 'success', label: 'Hoàn thành ca' },
   ABSENT: { color: 'error', label: 'Vắng mặt' },
