@@ -132,7 +132,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     const onAttendance = (payload?: { actorId?: string; branchId?: string; kind?: string; message?: string }) => {
       if (isOutOfBranchOrDup('att', payload)) return;
       queueInvalidate([
-        ['notifications'], ['my-attendance'], ['attendance-all'], ['nv-attendance'], ['attendance-sessions'], ['attendance-sessions-count'],
+        ['notifications'], ['my-attendance'], ['my-earnings'], ['attendance-all'], ['nv-attendance'], ['attendance-sessions'], ['attendance-sessions-count'],
         ['attendance-adjustments'], ['dashboard-attendance-adjustments'], ['schedules'], ['dashboard-schedules'], ['dashboard-shifts-full'],
         ['payroll-periods'], ['payroll-periods-report'], ['payroll-snapshots'], ['payroll-reconcile'],
       ]);
@@ -140,7 +140,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     const onSchedule = (payload?: { actorId?: string; branchId?: string; kind?: string; message?: string }) => {
       if (isOutOfBranchOrDup('sched', payload)) return;
       queueInvalidate([
-        ['notifications'], ['schedules'], ['my-attendance'], ['leave-requests'], ['shift-swaps'], ['shift-registrations'],
+        ['notifications'], ['schedules'], ['my-attendance'], ['my-earnings'], ['leave-requests'], ['shift-swaps'], ['shift-registrations'],
         ['schedule-planner-week'], ['schedule-planner-probation'], ['attendance-adjustments'], ['attendance-sessions'], ['attendance-sessions-count'],
         ['nv-schedules'], ['nv-swaps'], ['dashboard-schedules'], ['dashboard-leaves'], ['dashboard-swaps'], ['dashboard-attendance-adjustments'],
         ['payroll-periods'], ['payroll-periods-report'], ['payroll-snapshots'], ['payroll-reconcile'],
@@ -149,7 +149,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     const onAccountPending = () => queueInvalidate([['accounts'], ['notifications']]);
     const onPayrollUpdated = () => queueInvalidate([
       ['salary-profiles'], ['salary-history'], ['employees'], ['payroll-periods'], ['payroll-periods-report'],
-      ['payroll-snapshots'], ['payroll-reconcile'], ['payroll-items'], ['notifications'], ['tickets'], ['me', 'payslips'],
+      ['payroll-snapshots'], ['payroll-reconcile'], ['payroll-items'], ['notifications'], ['tickets'], ['me', 'payslips'], ['my-earnings'],
     ]);
     const onTicketUpdated = (payload?: { actorId?: string; branchId?: string; entityId?: string; kind?: string }) => {
       if (isOutOfBranchOrDup('tck', payload)) return;

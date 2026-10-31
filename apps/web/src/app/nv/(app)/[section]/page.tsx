@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { notFound, useParams, useRouter } from 'next/navigation';
 import { Alert, App, Button, Card, Col, Empty, Grid, List, Row, Select, Space, Spin, Tabs, Tag, Tooltip, Typography } from 'antd';
 import {
-  BookOutlined, CheckCircleOutlined, ClockCircleOutlined, DownloadOutlined,
+  BookOutlined, CheckCircleOutlined, ClockCircleOutlined, DollarOutlined, DownloadOutlined,
   EyeOutlined, FileAddOutlined, FileProtectOutlined, FileTextOutlined, KeyOutlined, NotificationOutlined, PaperClipOutlined, ReloadOutlined, RightOutlined, UserOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -72,7 +72,7 @@ export default function EmployeeSection() {
 
   const postMut = useMutation({
     mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body),
-    onSuccess: () => { message.success('Đã ghi nhận điểm danh thành công'); setCameraModalKind(null); ['my-attendance', 'nv-schedules', 'nv-swaps', 'nv-attendance', 'nv-tests', 'attendance-all'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })); },
+    onSuccess: () => { message.success('Đã ghi nhận điểm danh thành công'); setCameraModalKind(null); ['my-attendance', 'my-earnings', 'nv-schedules', 'nv-swaps', 'nv-attendance', 'nv-tests', 'attendance-all'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại'),
   });
 
@@ -91,6 +91,7 @@ export default function EmployeeSection() {
 
   const isEmpRole = session.data ? isEmployeeRole(session.data.user.role) : true;
   const moreOptionCards = [
+    { title: 'Ca đã làm & Thu nhập hiện tại', desc: 'Xem đã làm bao nhiêu ca, tiền nhận được & lọc theo ngày/tuần', icon: <DollarOutlined />, action: () => router.push('/nv/thu-nhap') },
     { title: 'Phiếu lương cá nhân', desc: 'Xem chi tiết bảng lương & xác nhận thực lĩnh', icon: <FileTextOutlined />, action: () => router.push('/nv/phieu-luong') },
     { title: 'Bài kiểm tra Nghiệp vụ', desc: 'Làm bài kiểm tra quy chuẩn pha chế SOP & nội quy', icon: <BookOutlined />, action: () => router.push('/nv/bai-kiem-tra') },
     { title: 'Bản tin truyền thông nội bộ', desc: 'Xem thông báo vận hành & chiến dịch mới', icon: <NotificationOutlined />, action: () => router.push('/nv/ban-tin') },
@@ -98,7 +99,7 @@ export default function EmployeeSection() {
     { title: isEmpRole ? 'Đổi mã PIN bảo mật (6 số)' : 'Đổi mật khẩu bảo mật', desc: isEmpRole ? 'Thay đổi mã PIN 6 chữ số của bạn' : 'Thay đổi mật khẩu đăng nhập tài khoản của bạn', icon: <KeyOutlined />, action: () => setProfileTab('password') },
   ];
 
-  const refreshSection = () => ['my-attendance', 'schedules', 'nv-swaps', 'nv-tests', 'nv-comms', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+  const refreshSection = () => ['my-attendance', 'my-earnings', 'schedules', 'nv-swaps', 'nv-tests', 'nv-comms', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const isRefreshing = myQ.isFetching || testsQ.isFetching || commsQ.isFetching;
   const isInitialLoading = myQ.isLoading || (section === 'bai-kiem-tra' && testsQ.isLoading) || (section === 'ban-tin' && commsQ.isLoading);
   const isSchedSection = section === 'lich' || section === 'nghi-phep' || section === 'doi-ca';

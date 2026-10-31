@@ -23,6 +23,7 @@ import { schedulePlannerRoutes } from './routes/schedule-planner.routes.js';
 import { shiftSwapRoutes } from './routes/shift-swap.routes.js';
 import { attendanceRoutes } from './routes/attendance.routes.js';
 import { myAttendanceRoutes } from './routes/my-attendance.routes.js';
+import { myEarningsRoutes } from './routes/my-earnings.routes.js';
 import { recruitmentTestRoutes } from './routes/recruitment-test.routes.js';
 import { systemCommsRoutes } from './routes/system-comms.routes.js';
 import { notificationRoutes } from './routes/notifications.routes.js';
@@ -134,6 +135,7 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
   await app.register(async (i) => operationsConfigRoutes(i, ctx));
   await app.register(async (i) => attendanceRoutes(i, ctx));
   await app.register(async (i) => myAttendanceRoutes(i, ctx));
+  await app.register(async (i) => myEarningsRoutes(i, ctx));
   await app.register(async (i) => recruitmentTestRoutes(i, ctx));
   await app.register(async (i) => systemCommsRoutes(i, ctx));
   await app.register(async (i) => notificationRoutes(i, ctx));

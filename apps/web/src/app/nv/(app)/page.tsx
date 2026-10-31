@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Avatar, Badge, Button, Card, Col, Dropdown, Grid, Progress, Row, Space, Tag, Typography } from 'antd';
 import {
-  BookOutlined, CalendarOutlined, ClockCircleOutlined,
+  BookOutlined, CalendarOutlined, ClockCircleOutlined, DollarOutlined,
   DownOutlined, EnvironmentOutlined, FieldTimeOutlined, FileTextOutlined, KeyOutlined,
   LogoutOutlined, NotificationOutlined, ReloadOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined,
 } from '@ant-design/icons';
@@ -17,6 +17,7 @@ import { useLogout, useMe } from '@/lib/auth';
 import { StatusTag } from '@/ui/StatusTag';
 import { BRAND } from '@/ui/theme';
 import { AhrBrandMark, AhrWordmarkSvg } from '@/ui/components/AhrBrandLogo';
+import { EmployeeEarningsQuickCard } from '@/ui/components/EmployeeEarningsQuickCard';
 import { EmployeeHomeShiftItem } from '@/ui/components/EmployeeHomeShiftItem';
 import { useCheckoutLateHours, useNowHm, type BranchPeerItem, type SelfAttendanceExtras } from '@/ui/components/self-attendance-shared';
 import { ShiftAttendanceDetailModal } from '@/ui/components/ShiftAttendanceDetailModal';
@@ -98,7 +99,7 @@ export default function EmployeeHome() {
   );
 
   const shiftsCard = (
-    <Card size="small" title={<span><CalendarOutlined /> Ca làm việc đã phát hành của bạn</span>} extra={<Space size={8}><Button size="small" icon={<ReloadOutlined />} loading={myQ.isFetching} onClick={() => { myQ.refetch(); if (!isProbation && !isInternal) swapsQ.refetch(); }}>Làm mới</Button><Link href="/nv/lich" style={{ fontSize: 12 }}>Xem tất cả</Link></Space>} style={{ marginBottom: isDesktop ? 0 : 12 }}>
+    <Card size="small" title={<span><CalendarOutlined /> Ca làm việc đã phát hành của bạn</span>} extra={<Space size={8}><Button size="small" icon={<ReloadOutlined />} loading={myQ.isFetching} onClick={() => { myQ.refetch(); qc.invalidateQueries({ queryKey: ['my-earnings'] }); if (!isProbation && !isInternal) swapsQ.refetch(); }}>Làm mới</Button><Link href="/nv/lich" style={{ fontSize: 12 }}>Xem tất cả</Link></Space>} style={{ marginBottom: isDesktop ? 0 : 12 }}>
       {displayShifts.length === 0 ? (
         <Typography.Text type="secondary">Chưa có ca làm việc nào được phân công cho bạn trong kỳ này.</Typography.Text>
       ) : (
@@ -131,15 +132,16 @@ export default function EmployeeHome() {
           <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
             {[
               { href: '/nv/diem-danh', label: 'Điểm danh GPS', icon: <EnvironmentOutlined />, primary: true },
+              { href: '/nv/thu-nhap', label: 'Ca đã làm & Thu nhập', icon: <DollarOutlined /> },
               { href: '/nv/lich', label: canRegisterShift ? 'Xem lịch & Đăng ký thêm ca' : 'Xem lịch làm việc', icon: <CalendarOutlined /> },
               { href: '/nv/nghi-phep', label: 'Đăng ký Nghỉ OFF', icon: <ClockCircleOutlined /> },
-              { href: '/nv/bai-kiem-tra', label: 'Thi TEST Nghiệp vụ', icon: <BookOutlined /> },
               { href: '/nv/cong', label: 'Công của tôi & Bù công', icon: <FieldTimeOutlined /> },
               { href: '/nv/phieu-luong', label: 'Phiếu lương cá nhân', icon: <FileTextOutlined /> },
             ].map((btn) => (
               <Col span={8} key={btn.href}><Link href={btn.href} style={{ display: 'block' }}><Button type={btn.primary ? 'primary' : 'default'} icon={btn.icon} block style={{ height: 40, justifyContent: 'flex-start', fontWeight: 600 }}>{btn.label}</Button></Link></Col>
             ))}
           </Row>
+          <div style={{ marginBottom: 12 }}><EmployeeEarningsQuickCard isDesktop /></div>
           {shiftsCard}
         </Col>
         <Col xs={24} lg={8}><Space direction="vertical" size={12} style={{ width: '100%' }}>{summaryCard}{probationCard}{tasksCard}</Space></Col>
@@ -168,13 +170,13 @@ export default function EmployeeHome() {
           </div>
         </Dropdown>
       </div>
-      {summaryCard}{probationCard}
+      {summaryCard}{probationCard}<EmployeeEarningsQuickCard />
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
         {[
           { href: '/nv/diem-danh', label: 'Điểm danh GPS', icon: <EnvironmentOutlined />, primary: true },
+          { href: '/nv/thu-nhap', label: 'Ca đã làm & Thu nhập', icon: <DollarOutlined /> },
           { href: '/nv/lich', label: canRegisterShift ? 'Lịch & Thêm ca' : 'Xem lịch & Ca', icon: <CalendarOutlined /> },
           { href: '/nv/nghi-phep', label: 'Đăng ký Nghỉ OFF', icon: <ClockCircleOutlined /> },
-          { href: '/nv/bai-kiem-tra', label: 'Thi TEST', icon: <BookOutlined /> },
           { href: '/nv/cong', label: 'Công & Bù công', icon: <FieldTimeOutlined /> },
           { href: '/nv/phieu-luong', label: 'Phiếu lương', icon: <FileTextOutlined /> },
         ].map((btn) => (

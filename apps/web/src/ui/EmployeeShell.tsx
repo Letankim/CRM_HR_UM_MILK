@@ -3,7 +3,7 @@
 import { Alert, Avatar, Breadcrumb, Button, Dropdown, Flex, Grid, Layout, Menu, Popover, Spin, Tag, Typography } from 'antd';
 import type { ItemType } from 'antd/es/menu/interface';
 import {
-  AppstoreOutlined, BellOutlined, BookOutlined, CalendarOutlined, CustomerServiceOutlined, DownOutlined, EnvironmentOutlined,
+  AppstoreOutlined, BellOutlined, BookOutlined, CalendarOutlined, CustomerServiceOutlined, DollarOutlined, DownOutlined, EnvironmentOutlined,
   FieldTimeOutlined, FileDoneOutlined, FileTextOutlined, HomeOutlined, KeyOutlined, LogoutOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, MutedOutlined, NotificationOutlined, QuestionCircleOutlined, ReloadOutlined,
   RightOutlined, SoundOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined,
@@ -33,6 +33,7 @@ const DESKTOP_GROUPS = [
     { key: '/nv', label: 'Tổng quan & Ca hôm nay', icon: <HomeOutlined /> }, { key: '/nv/diem-danh', label: 'Điểm danh GPS & Camera', icon: <EnvironmentOutlined /> },
     { key: '/nv/lich', label: 'Lịch làm việc & Đăng ký ca', icon: <CalendarOutlined /> }, { key: '/nv/nghi-phep', label: 'Đơn nghỉ OFF & Khẩn cấp', icon: <FileDoneOutlined /> },
     { key: '/nv/doi-ca', label: 'Yêu cầu Đổi ca nội bộ', icon: <SwapOutlined /> }, { key: '/nv/cong', label: 'Bảng công & Bổ sung công', icon: <FieldTimeOutlined /> },
+    { key: '/nv/thu-nhap', label: 'Ca đã làm & Thu nhập', icon: <DollarOutlined /> },
   ]},
   { key: 'grp-benefit', label: 'Phúc lợi & Đào tạo', items: [
     { key: '/nv/thong-bao', label: 'Trung tâm Thông báo', icon: <BellOutlined /> }, { key: '/nv/ho-tro', label: 'Phiếu hỗ trợ & Thắc mắc', icon: <CustomerServiceOutlined /> },
@@ -60,7 +61,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (isUnauthorized(error) || (!isLoading && !data)) { router.replace(loginPath('employee')); return; }
-    if (data?.user.role === 'MKT' && !pathname.startsWith('/nv/phieu-luong')) router.replace('/admin/integrations?section=comms');
+    if (data?.user.role === 'MKT' && !pathname.startsWith('/nv/phieu-luong') && !pathname.startsWith('/nv/thu-nhap')) router.replace('/admin/integrations?section=comms');
   }, [data, error, isLoading, pathname, router]);
   if (isLoading || !data) return <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center' }}><Spin /></div>;
 
@@ -71,7 +72,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   const desktopGroups = isProbation
     ? DESKTOP_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => i.key !== '/nv/doi-ca') }))
     : DESKTOP_GROUPS;
-  const isMoreActive = ['/nv/them', ...(isProbation ? [] : ['/nv/nghi-phep']), '/nv/cong', '/nv/ho-tro', '/nv/phieu-luong', '/nv/bai-kiem-tra', '/nv/ban-tin'].some((p) => pathname.startsWith(p));
+  const isMoreActive = ['/nv/them', ...(isProbation ? [] : ['/nv/nghi-phep']), '/nv/cong', '/nv/thu-nhap', '/nv/ho-tro', '/nv/phieu-luong', '/nv/bai-kiem-tra', '/nv/ban-tin'].some((p) => pathname.startsWith(p));
   const versionLabel = SYSTEM_CONFIG.version.startsWith('v') ? SYSTEM_CONFIG.version : `v${SYSTEM_CONFIG.version}`;
   const activeDesktopItem = (() => {
     for (const g of desktopGroups) for (const item of g.items) if (item.key === '/nv' ? pathname === '/nv' : pathname.startsWith(item.key)) return { group: g.label, item };
@@ -87,6 +88,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
         { label: 'Đơn nghỉ OFF & Nghỉ khẩn cấp', desc: 'Đăng ký nghỉ phép OFF & xem trạng thái duyệt', icon: <FileDoneOutlined />, onClick: () => router.push('/nv/nghi-phep') },
         ...(!isProbation ? [{ label: 'Yêu cầu Đổi ca nội bộ', desc: 'Tạo đề nghị đổi / nhường ca giữa nhân viên chính thức', icon: <SwapOutlined />, onClick: () => router.push('/nv/doi-ca') }] : []),
         { label: 'Bảng công & Bổ sung công', desc: 'Gửi phiếu giải trình bổ sung công', icon: <FieldTimeOutlined />, onClick: () => router.push('/nv/cong') },
+        { label: 'Ca đã làm & Thu nhập hiện tại', desc: 'Xem số ca đã làm, tiền nhận được & lọc ngày/tuần', icon: <DollarOutlined />, onClick: () => router.push('/nv/thu-nhap') },
         { label: 'Trung tâm Thông báo', desc: 'Tất cả thông báo cá nhân & vai trò', icon: <BellOutlined />, onClick: () => router.push('/nv/thong-bao') },
         { label: 'Phiếu hỗ trợ & Giải đáp thắc mắc', desc: 'Gửi ticket chọn bộ phận & người xử lý', icon: <CustomerServiceOutlined />, onClick: () => router.push('/nv/ho-tro') },
         { label: 'Phiếu lương cá nhân', desc: 'Xem chi tiết & xác nhận lương', icon: <FileTextOutlined />, onClick: () => router.push('/nv/phieu-luong') },
