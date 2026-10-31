@@ -65,6 +65,18 @@ async function main() {
       };
     }
     const driveFolderCache = new Map<string, string>();
+    const uploadToDriveFolder = async (params: { rootFolder: string; folderSegments?: string[]; fileName: string; mimeType: string; data: Buffer }) => {
+      if (!env.DRIVE_ROOT_FOLDER_ID) throw new Error('Thiếu cấu hình DRIVE_ROOT_FOLDER_ID');
+      const segments = (params.folderSegments ?? []).filter(Boolean);
+      const cacheKey = `${params.rootFolder}/${segments.join('/')}`;
+      let folderId = driveFolderCache.get(cacheKey);
+      if (!folderId) {
+        folderId = await ensureFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, [params.rootFolder, ...segments]);
+        driveFolderCache.set(cacheKey, folderId);
+      }
+      const uploaded = await uploadFile(clients.drive, { name: params.fileName, mimeType: params.mimeType, parentId: folderId, data: params.data });
+      return { fileId: uploaded.id };
+    };
     google = {
       mode: 'google',
       async check() {
@@ -72,38 +84,19 @@ async function main() {
           const { email } = await clients.verify();
           return { ok: true, detail: `Đã kết nối tài khoản Google cá nhân: ${email ?? 'không rõ'}` };
         } catch (err) {
-          return {
-            ok: false,
-            detail: isAuthRevokedError(err)
-              ? 'Refresh token đã bị thu hồi — chạy lại "pnpm google:auth"'
-              : (err as Error).message,
-          };
+          return { ok: false, detail: isAuthRevokedError(err) ? 'Refresh token đã bị thu hồi — chạy lại "pnpm google:auth"' : (err as Error).message };
         }
       },
-      async uploadAttendancePhoto(params) {
-        if (!env.DRIVE_ROOT_FOLDER_ID) throw new Error('Thiếu cấu hình DRIVE_ROOT_FOLDER_ID');
-        const rootName = params.rootFolder === 'EVIDENCE' ? DRIVE_FOLDERS.ADJUSTMENT_EVIDENCE : DRIVE_FOLDERS.ATTENDANCE_PHOTOS;
-        const segments = params.folderSegments?.length ? params.folderSegments : [params.monthFolder];
-        const cacheKey = `att:${rootName}/${segments.join('/')}`;
-        let folderId = driveFolderCache.get(cacheKey);
-        if (!folderId) {
-          folderId = await ensureFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, [rootName, ...segments]);
-          driveFolderCache.set(cacheKey, folderId);
-        }
-        const uploaded = await uploadFile(clients.drive, { name: params.fileName, mimeType: params.mimeType, parentId: folderId, data: params.data });
-        return { fileId: uploaded.id };
-      },
-      async uploadMktMedia(params) {
-        if (!env.DRIVE_ROOT_FOLDER_ID) throw new Error('Thiếu cấu hình DRIVE_ROOT_FOLDER_ID');
-        const cacheKey = `mkt:${params.monthFolder}`;
-        let folderId = driveFolderCache.get(cacheKey);
-        if (!folderId) {
-          folderId = await ensureFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, [DRIVE_FOLDERS.MKT_MEDIA, params.monthFolder]);
-          driveFolderCache.set(cacheKey, folderId);
-        }
-        const uploaded = await uploadFile(clients.drive, { name: params.fileName, mimeType: params.mimeType, parentId: folderId, data: params.data });
-        return { fileId: uploaded.id };
-      },
+      uploadDriveMedia: uploadToDriveFolder,
+      uploadAttendancePhoto: (params) => uploadToDriveFolder({
+        rootFolder: params.rootFolder === 'EVIDENCE' ? DRIVE_FOLDERS.ADJUSTMENT_EVIDENCE : DRIVE_FOLDERS.ATTENDANCE_PHOTOS,
+        folderSegments: params.folderSegments?.length ? params.folderSegments : [params.monthFolder],
+        fileName: params.fileName, mimeType: params.mimeType, data: params.data,
+      }),
+      uploadMktMedia: (params) => uploadToDriveFolder({
+        rootFolder: DRIVE_FOLDERS.MKT_MEDIA, folderSegments: [params.monthFolder],
+        fileName: params.fileName, mimeType: params.mimeType, data: params.data,
+      }),
       async getDriveFileMeta(fileId) {
         try { return await getFileMeta(clients.drive, fileId); } catch { return null; }
       },

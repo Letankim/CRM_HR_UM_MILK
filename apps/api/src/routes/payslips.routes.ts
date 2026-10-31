@@ -9,13 +9,14 @@ import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
+import { employeeDirectSignPayslip } from '../services/payslip-sign-payment.service.js';
 import { applyPayslipAdjustment, ensurePublishedPeriodPayslips, generatePayslips, mapPayslip } from '../services/payslip.service.js';
 import { emitAndEmailTicketEvent, mapSupportTicket, upsertPayslipDisputeTicket } from '../services/ticket-notification.service.js';
 import { findAllLinkedEmployeesForUser } from './employee-mapper.js';
 import { validateAssigneeForDepartment } from './tickets.routes.js';
 
-function mapPayslipWithTicket(ctx: AppContext, slip: Payslip) {
-  const base = mapPayslip(slip);
+export function mapPayslipWithTicket(ctx: AppContext, slip: Payslip) {
+  const base = mapPayslip(slip, ctx);
   const tck = ctx.db.supportTickets.filter((t) => t.related_entity_type === 'PAYSLIP' && t.related_entity_id === slip.id).slice(-1)[0];
   if (!tck) return { ...base, linkedTicket: null };
   const mt = mapSupportTicket(ctx, tck);
@@ -29,7 +30,7 @@ const zRevisionBody = z.object({
   field_changed: z.string().trim().max(60).optional().default('ADJUSTMENT'),
 });
 
-function isOwnPayslip(p: { employee_id: string; employee_code: string }, emps: Employee[], user: { id: string; username: string; employee_id: string }): boolean {
+export function isOwnPayslip(p: { employee_id: string; employee_code: string }, emps: Employee[], user: { id: string; username: string; employee_id: string }): boolean {
   const slipCode = (p.employee_code || '').trim().toUpperCase(), slipEmpId = (p.employee_id || '').trim().toUpperCase();
   for (const emp of emps) {
     const empCode = emp.employee_code.trim().toUpperCase();
@@ -120,6 +121,12 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
     const slip = ctx.db.payslips.get(id);
     if (!slip) throw Errors.notFound('Không tìm thấy phiếu lương');
     if (!isOwnPayslip(slip, emps, user)) throw Errors.forbidden('Bạn chỉ được xác nhận phiếu lương của chính mình');
+    const rawBody = (request.body ?? {}) as Record<string, unknown>;
+    if (typeof rawBody.signature_base64 === 'string' || typeof rawBody.signature_source === 'string') {
+      const signed = await employeeDirectSignPayslip(ctx, slip, { signatureBase64: String(rawBody.signature_base64 ?? ''), signatureSource: String(rawBody.signature_source ?? 'DIRECT_CANVAS') }, user);
+      await ctx.audit.record(auditContext(request), { action: 'payslip.sign', entity: 'PAYSLIPS', entityId: signed.id, after: { payslip_code: signed.payslip_code } });
+      return sendSuccess(request, 'Đã ký xác nhận trực tiếp phiếu lương thành công', mapPayslipWithTicket(ctx, signed));
+    }
     const period = ctx.db.payPeriods.get(slip.period_id);
     if (!period || (period.status !== 'PUBLISHED' && period.status !== 'PAID')) throw Errors.forbidden('Phiếu lương chưa được phát hành');
     if (slip.employee_confirmed_at) return sendSuccess(request, 'Phiếu lương này đã được bạn xác nhận đồng ý trước đó', mapPayslipWithTicket(ctx, slip));

@@ -85,7 +85,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ADMIN: [
     'account.read', 'account.manage', 'account.activate', 'system.config', 'system.maintenance',
     'system.audit.read', 'system.backup', 'integration.read', 'employee.read', 'schedule.read',
-    'attendance.read', 'attendance.media.read', 'test.read', 'notification.send',
+    'attendance.read', 'attendance.media.read', 'test.read', 'payroll.read', 'payroll.pay',
+    'report.finance', 'notification.send',
   ],
   HR: [
     'account.read', 'candidate.manage', 'interview.manage', 'employee.read', 'employee.manage', 'employee.promote',
@@ -109,7 +110,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, Permission[]> = {
  * Các permission bị cấm tuyệt đối theo từng vai trò (ngăn chặn cấu hình sai lệch trong permissions_json).
  */
 export const FORBIDDEN_ROLE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
-  ADMIN: ['candidate.manage', 'interview.manage', 'test.manage', 'payroll.manage', 'payroll.publish', 'payroll.pay', 'schedule.propose', 'schedule.publish', 'attendance.confirm', 'adjustment.approve'],
+  ADMIN: ['candidate.manage', 'interview.manage', 'test.manage', 'payroll.manage', 'payroll.publish', 'schedule.propose', 'schedule.publish', 'attendance.confirm', 'adjustment.approve'],
   HR: ['payroll.manage', 'payroll.publish', 'payroll.pay', 'system.config', 'system.maintenance', 'system.backup', 'system.audit.read', 'account.activate'],
   STORE: [' payroll.read' as Permission, 'payroll.manage', 'payroll.publish', 'payroll.pay', 'system.config', 'system.maintenance', 'system.backup', 'account.read', 'account.manage', 'account.activate'],
   FINANCE: ['candidate.manage', 'interview.manage', 'test.manage', 'employee.manage', 'employee.promote', 'schedule.propose', 'schedule.publish', 'leave.approve', 'swap.approve', 'attendance.confirm', 'adjustment.approve', 'system.config', 'account.manage', 'account.activate'],

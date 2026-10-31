@@ -17,7 +17,11 @@ export interface BaseRecord {
 
 type SystemKeys = keyof BaseRecord;
 /** Cột bổ sung có giá trị mặc định trong schema Zod — được phép bỏ trống khi thêm mới (tự điền mặc định). */
-type DefaultedInsertKeys = 'must_change_pin' | 'pin_changed_at' | 'linked_assignment_id' | 'kind' | 'requires_hr_approval' | 'punch_type';
+type DefaultedInsertKeys =
+  | 'must_change_pin' | 'pin_changed_at' | 'linked_assignment_id' | 'kind' | 'requires_hr_approval' | 'punch_type'
+  | 'bank_qr_file_id' | 'admin_signature_file_id' | 'admin_signed_by' | 'admin_signed_at'
+  | 'finance_signature_file_id' | 'finance_signed_by' | 'finance_signed_at' | 'employee_signature_file_id'
+  | 'paid_at' | 'paid_by' | 'payment_reference';
 export type InsertInput<T extends BaseRecord> = Omit<T, SystemKeys | DefaultedInsertKeys> & Partial<Pick<T, Extract<keyof T, DefaultedInsertKeys>>> & { id?: string; created_at?: string; updated_at?: string };
 export type UpdatePatch<T extends BaseRecord> = Partial<Omit<T, SystemKeys>> & { is_deleted?: boolean };
 

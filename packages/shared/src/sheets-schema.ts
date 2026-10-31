@@ -45,7 +45,7 @@ export const SPREADSHEETS = {
         'emergency_contact_name', 'emergency_contact_phone', 'position_title', 'employment_type',
         'default_shift_code', 'probation_cycle_days', 'probation_work_days', 'probation_off_days',
         'resigned_at', 'resign_reason', 'bank_name', 'bank_account_number', 'bank_account_holder',
-        'tax_code', 'base_hourly_rate_vnd', 'note',
+        'tax_code', 'base_hourly_rate_vnd', 'note', 'bank_qr_file_id',
       ),
       EMPLOYEE_STAGE_HISTORY: cols(
         'employee_id', 'from_stage', 'to_stage', 'effective_from', 'decided_by', 'note',
@@ -128,6 +128,8 @@ export const SPREADSHEETS = {
         'period_code', 'month_key', 'branch_scope', 'total_employees', 'total_approved_hours', 'total_ot_hours',
         'total_gross_vnd', 'total_deductions_vnd', 'total_net_vnd', 'unreconciled_records_count',
         'reconciled_by', 'reconciled_at', 'approved_at', 'published_by', 'paid_by', 'note',
+        'admin_signature_file_id', 'admin_signed_by', 'admin_signed_at',
+        'finance_signature_file_id', 'finance_signed_by', 'finance_signed_at',
       ),
       PAYROLL_ITEMS: cols(
         'period_id', 'employee_id', 'branch_id', 'work_date', 'item_type', 'category_code', 'title',
@@ -152,6 +154,8 @@ export const SPREADSHEETS = {
         'total_allowances_vnd', 'total_bonus_vnd', 'total_adjustments_vnd', 'total_deductions_vnd',
         'gross_vnd', 'net_vnd', 'breakdown_json', 'viewed_by_employee_at', 'employee_confirmed_at',
         'dispute_status', 'dispute_reason', 'pdf_drive_file_id',
+        'admin_signature_file_id', 'finance_signature_file_id', 'employee_signature_file_id',
+        'paid_at', 'paid_by', 'payment_reference',
       ),
       PAYSLIP_REVISIONS: cols('payslip_id', 'revision', 'reason', 'delta_vnd', 'created_reason_by', 'period_id', 'employee_id', 'field_changed', 'before_amount_vnd', 'after_amount_vnd', 'details_json', 'status', 'approved_by', 'approved_at'),
       PAYMENTS: cols('period_id', 'employee_id', 'amount_vnd', 'paid_at', 'reference', 'recorded_by', 'payment_code', 'payslip_id', 'branch_id', 'payment_method', 'bank_name', 'bank_account_number', 'bank_account_holder', 'evidence_file_id', 'status', 'note'),
@@ -185,24 +189,18 @@ export type SpreadsheetKey = keyof typeof SPREADSHEETS;
 export type TabName<K extends SpreadsheetKey> = keyof (typeof SPREADSHEETS)[K]['tabs'] & string;
 export const MONTHLY_TABS: Partial<Record<SpreadsheetKey, readonly string[]>> = { SYSTEM: ['AUDIT_LOG'] };
 
+export const SHIFT_PARTITION_NOTE = 'MONTHLY';
 /** Các bảng phát sinh dữ liệu lớn theo tháng — mỗi tháng tách thành 1 file Google Spreadsheet độc lập trên Drive. */
 export const MONTHLY_PARTITION_TABS = {
   SCHEDULE: ['SHIFT_ASSIGNMENTS', 'LEAVE_REQUESTS', 'SHIFT_SWAPS'],
   ATTENDANCE: ['ATTENDANCE_EVENTS', 'ATTENDANCE_ADJUSTMENTS'],
 } as const;
-
-/** Mã phân vùng tháng dạng YYYY_MM (ví dụ 2026_11). */
 export const PARTITION_MONTH_REGEX = /^\d{4}_(0[1-9]|1[0-2])$/;
-
-export function partitionTabName(base: string, monthKey: string): string {
-  return monthKey ? `${base}_${monthKey}` : base;
-}
-
+export const partitionTabName = (base: string, monthKey: string): string => (monthKey ? `${base}_${monthKey}` : base);
 export function monthlyTabName(base: string, date: Date = new Date()): string {
   const local = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
   return `${base}_${local.getFullYear()}_${String(local.getMonth() + 1).padStart(2, '0')}`;
 }
-
 export const MAX_CELL_CHARS = 45_000;
 export const DRIVE_FOLDERS = {
   DATABASE: '00_DATABASE',
@@ -213,5 +211,7 @@ export const DRIVE_FOLDERS = {
   MKT_MEDIA: '05_MKT_MEDIA',
   EXPORTS: '06_EXPORTS',
   MONTHLY_DATABASES: '07_MONTHLY_DATABASES',
+  EMPLOYEE_BANK_QR: '08_EMPLOYEE_BANK_QR',
+  PAYROLL_SIGNATURES: '09_PAYROLL_SIGNATURES',
   BACKUPS: '90_BACKUPS',
 } as const;

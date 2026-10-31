@@ -37,6 +37,7 @@ export class Database {
   readonly payrollSnapshots: TableStore<S.PayrollSnapshot>;
   readonly payslips: TableStore<S.Payslip>;
   readonly payslipRevisions: TableStore<S.PayslipRevision>;
+  readonly payments: TableStore<S.Payment>;
   readonly revenueInputs: TableStore<S.RevenueInput>;
   readonly notifications: TableStore<S.NotificationRow>;
   readonly campaigns: TableStore<S.Campaign>;
@@ -90,15 +91,14 @@ export class Database {
     this.payrollSnapshots = new TableStore(gateway, queue, { spreadsheetKey: 'PAYROLL', spreadsheetId: ids.PAYROLL, tab: 'PAYROLL_SNAPSHOTS', headers: payroll.PAYROLL_SNAPSHOTS, schema: S.zPayrollSnapshot });
     this.payslips = new TableStore(gateway, queue, { spreadsheetKey: 'PAYROLL', spreadsheetId: ids.PAYROLL, tab: 'PAYSLIPS', headers: payroll.PAYSLIPS, schema: S.zPayslip });
     this.payslipRevisions = new TableStore(gateway, queue, { spreadsheetKey: 'PAYROLL', spreadsheetId: ids.PAYROLL, tab: 'PAYSLIP_REVISIONS', headers: payroll.PAYSLIP_REVISIONS, schema: S.zPayslipRevision });
+    this.payments = new TableStore(gateway, queue, { spreadsheetKey: 'PAYROLL', spreadsheetId: ids.PAYROLL, tab: 'PAYMENTS', headers: payroll.PAYMENTS, schema: S.zPayment });
     this.revenueInputs = new TableStore(gateway, queue, { spreadsheetKey: 'PAYROLL', spreadsheetId: ids.PAYROLL, tab: 'REVENUE_INPUTS', headers: payroll.REVENUE_INPUTS, schema: S.zRevenueInput });
-
     this.notifications = new TableStore(gateway, queue, { spreadsheetKey: 'COMMS', spreadsheetId: ids.COMMS, tab: 'NOTIFICATIONS', headers: comms.NOTIFICATIONS, schema: S.zNotification });
     this.campaigns = new TableStore(gateway, queue, { spreadsheetKey: 'COMMS', spreadsheetId: ids.COMMS, tab: 'CAMPAIGNS', headers: comms.CAMPAIGNS, schema: S.zCampaign });
     this.announcements = new TableStore(gateway, queue, { spreadsheetKey: 'COMMS', spreadsheetId: ids.COMMS, tab: 'ANNOUNCEMENTS', headers: comms.ANNOUNCEMENTS, schema: S.zAnnouncement });
     this.deliveryLogs = new TableStore(gateway, queue, { spreadsheetKey: 'COMMS', spreadsheetId: ids.COMMS, tab: 'DELIVERY_LOGS', headers: comms.DELIVERY_LOGS, schema: S.zDeliveryLog });
     this.mediaAssets = new TableStore(gateway, queue, { spreadsheetKey: 'COMMS', spreadsheetId: ids.COMMS, tab: 'MEDIA_ASSETS', headers: comms.MEDIA_ASSETS, schema: S.zMediaAsset });
     this.supportTickets = new TableStore(gateway, queue, { spreadsheetKey: 'COMMS', spreadsheetId: ids.COMMS, tab: 'SUPPORT_TICKETS', headers: comms.SUPPORT_TICKETS, schema: S.zSupportTicket });
-
     this.deadLetters = new TableStore(gateway, queue, { spreadsheetKey: 'SYSTEM', spreadsheetId: ids.SYSTEM, tab: 'SYNC_DEAD_LETTER', headers: sys.SYNC_DEAD_LETTER, schema: zDeadLetterRow });
     this.backupLog = new TableStore(gateway, queue, { spreadsheetKey: 'SYSTEM', spreadsheetId: ids.SYSTEM, tab: 'BACKUP_LOG', headers: sys.BACKUP_LOG, schema: zBackupLogRow });
     this.operationJournal = new TableStore(gateway, queue, { spreadsheetKey: 'SYSTEM', spreadsheetId: ids.SYSTEM, tab: 'OPERATION_JOURNAL', headers: sys.OPERATION_JOURNAL, schema: zOperationJournalRow });
@@ -122,7 +122,7 @@ export class Database {
       this.candidates, this.interviews, this.employees, this.employeeStageHistory, this.testBank, this.testAssignments, this.testAttempts,
       this.shiftAssignments, this.leaveRequests, this.shiftSwaps, this.scheduleWeeks,
       this.attendanceEvents, this.attendanceAdjustments,
-      this.payRates, this.payPeriods, this.payrollItems, this.payrollSnapshots, this.payslips, this.payslipRevisions, this.revenueInputs,
+      this.payRates, this.payPeriods, this.payrollItems, this.payrollSnapshots, this.payslips, this.payslipRevisions, this.payments, this.revenueInputs,
       this.notifications, this.campaigns, this.announcements, this.deliveryLogs, this.mediaAssets, this.supportTickets,
       this.deadLetters, this.backupLog, this.operationJournal,
     ];
@@ -193,7 +193,7 @@ export class Database {
       [this.users, this.branches, this.shiftTemplates, this.staffingRules, this.policies, this.systemSettings, this.maintenance],
       [this.candidates, this.interviews, this.employees, this.employeeStageHistory, this.testBank, this.testAssignments, this.testAttempts],
       [this.shiftAssignments, this.leaveRequests, this.shiftSwaps, this.scheduleWeeks, this.attendanceEvents, this.attendanceAdjustments],
-      [this.payRates, this.payPeriods, this.payrollItems, this.payrollSnapshots, this.payslips, this.payslipRevisions, this.revenueInputs],
+      [this.payRates, this.payPeriods, this.payrollItems, this.payrollSnapshots, this.payslips, this.payslipRevisions, this.payments, this.revenueInputs],
       [this.notifications, this.campaigns, this.announcements, this.deliveryLogs, this.mediaAssets, this.supportTickets, this.deadLetters, this.backupLog, this.operationJournal],
     ];
     const cooldownMs = Math.max(30_000, intervalSeconds * 1000);

@@ -1,6 +1,7 @@
 'use client';
 
 import { Space } from 'antd';
+import { AdminPayrollSignatureCard } from './AdminPayrollSignatureCard';
 import { DataPartitionCard } from './DataPartitionCard';
 import { OperationsConfigCard } from './OperationsConfigCard';
 
@@ -9,6 +10,7 @@ export function OperationsAndPartitionPane() {
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <OperationsConfigCard />
+      <AdminPayrollSignatureCard />
       <DataPartitionCard />
     </Space>
   );

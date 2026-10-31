@@ -57,6 +57,7 @@ export const zEmployee = zSystemColumns.extend({
   tax_code: z.string().default(''),
   base_hourly_rate_vnd: z.coerce.number().min(0).default(0),
   note: z.string().default(''),
+  bank_qr_file_id: z.string().default(''),
 });
 export type Employee = z.infer<typeof zEmployee>;
 
@@ -144,6 +145,12 @@ export const zPayPeriod = zSystemColumns.extend({
   published_by: z.string().default(''),
   paid_by: z.string().default(''),
   note: z.string().default(''),
+  admin_signature_file_id: z.string().default(''),
+  admin_signed_by: z.string().default(''),
+  admin_signed_at: z.string().default(''),
+  finance_signature_file_id: z.string().default(''),
+  finance_signed_by: z.string().default(''),
+  finance_signed_at: z.string().default(''),
 });
 export type PayPeriod = z.infer<typeof zPayPeriod>;
 

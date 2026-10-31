@@ -140,6 +140,8 @@ export async function applyPayslipAdjustment(
             {
               ...buildPayslipPayload(ctx, period, latestSnap, nextRevision, after, activeSlip.gross_vnd + Math.max(0, body.delta_vnd)),
               status: 'PUBLISHED',
+              admin_signature_file_id: activeSlip.admin_signature_file_id || period.admin_signature_file_id || '',
+              finance_signature_file_id: activeSlip.finance_signature_file_id || period.finance_signature_file_id || '',
               dispute_status: openTicket ? 'OPEN' : linkedTickets.length > 0 ? 'RESOLVED' : 'NONE',
               dispute_reason: activeSlip.dispute_reason || '',
             },
@@ -165,6 +167,6 @@ export async function applyPayslipAdjustment(
     before: { payslip_code: activeSlip.payslip_code, net_vnd: activeSlip.net_vnd },
     after: { payslip_code: result.payslip_code, net_vnd: result.net_vnd, reason: body.reason },
     message: `Đã tạo phiếu lương điều chỉnh lần ${nextRevision} (phiếu gốc được giữ nguyên để truy vết)`,
-    data: mapPayslip(result),
+    data: mapPayslip(result, ctx),
   };
 }

@@ -1,11 +1,12 @@
 'use client';
 
 import { App, Button, Card, Col, Empty, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Table, Tabs, Tag } from 'antd';
-import { BarChartOutlined, CalendarOutlined, CloseOutlined, FileExcelOutlined, GiftOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { BarChartOutlined, CalendarOutlined, CloseOutlined, FileExcelOutlined, FileZipOutlined, GiftOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
+import { downloadBase64File, type ExportFilePayload } from '@/lib/payroll-file-helpers';
 import { buildClickableRowProps } from '@/ui/components/BulkActionBar';
 import { PayrollAttendanceReconcileCard } from '@/ui/components/PayrollAttendanceReconcileCard';
 import { CreatePeriodModal, PayrollItemModal } from '@/ui/components/PayrollModals';
@@ -56,14 +57,23 @@ function PayrollView() {
 
   const saveRevMut = useMutation({
     mutationFn: (v: Record<string, unknown>) => api.post('/admin/payroll/revenue-inputs', { ...v, period_id: v.period_id || currentPeriod?.id || '' }),
-    onSuccess: () => { message.success('Đã lưu doanh thu đối chiếu & tính tỷ lệ chi phí lương/doanh thu'); setRevInputOpen(false); qc.invalidateQueries({ queryKey: ['payroll-revenue-inputs'] }); },
+    onSuccess: () => { message.success('Đã lưu doanh thu đối chiếu & tính tỷ lệ chi phí lương/doanh thu'); setRevInputOpen(false); void qc.invalidateQueries({ queryKey: ['payroll-revenue-inputs'] }); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu doanh thu đối chiếu thất bại'),
+  });
+
+  const exportAllPdfZipMut = useMutation({
+    mutationFn: () => api.post<ExportFilePayload>(`/admin/payroll/periods/${currentPeriod!.id}/export-pdf-zip`, { selected_ids: [] }),
+    onSuccess: (out) => {
+      downloadBase64File(out.base64, out.fileName, out.mimeType);
+      message.success(`Đã kết xuất toàn bộ ${out.count ?? 0} phiếu lương PDF đầy đủ chữ ký và nén tệp ${out.fileName}`);
+    },
+    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xuất toàn bộ PDF (.ZIP) thất bại'),
   });
 
   const isLocked = !!currentPeriod && currentPeriod.status !== 'DRAFT' && currentPeriod.status !== 'RECONCILE';
   const refreshAll = async () => {
     if (currentPeriod) await api.get(`/admin/payroll/periods/${currentPeriod.id}/snapshots?refresh=1`).catch(() => null);
-    ['payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items', 'payroll-revenue-inputs', 'salary-profiles'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    ['payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items', 'payroll-revenue-inputs', 'salary-profiles'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
     message.success('Đã đồng bộ và cập nhật dữ liệu bảng lương & đối soát công mới nhất');
   };
   const openRevModal = () => {
@@ -102,11 +112,14 @@ function PayrollView() {
           {tab !== 'SALARY' && (
             <Space size={8} wrap>
               {tab !== 'REPORTS' && (
-                <Button icon={<FileExcelOutlined style={{ color: '#15803D' }} />} onClick={() => void handleExportSheet()} disabled={!currentPeriod}>Xuất Bảng lương Excel</Button>
+                <>
+                  <Button icon={<FileZipOutlined style={{ color: '#2563EB' }} />} loading={exportAllPdfZipMut.isPending} onClick={() => exportAllPdfZipMut.mutate()} disabled={!currentPeriod}>
+                    Xuất toàn bộ PDF (.ZIP)
+                  </Button>
+                  <Button icon={<FileExcelOutlined style={{ color: '#15803D' }} />} onClick={() => void handleExportSheet()} disabled={!currentPeriod}>Xuất Bảng lương Excel</Button>
+                </>
               )}
-              {canManage && tab === 'REPORTS' && (
-                <Button type="primary" icon={<BarChartOutlined />} onClick={openRevModal}>Nhập Doanh thu đối chiếu</Button>
-              )}
+              {canManage && tab === 'REPORTS' && <Button type="primary" icon={<BarChartOutlined />} onClick={openRevModal}>Nhập Doanh thu đối chiếu</Button>}
               {canManage && (tab === 'SHEET' || tab === 'ITEMS') && currentPeriod && !isLocked && (
                 <Button icon={<GiftOutlined />} onClick={() => { setEditingItem(null); setItemModalOpen(true); }}>Thêm Thưởng / Phụ cấp</Button>
               )}
@@ -132,8 +145,7 @@ function PayrollView() {
       {tab === 'REPORTS' && (
         <Card size="small" styles={{ body: { padding: '10px 18px 18px' } }}>
           <Tabs
-            activeKey={reportSubTab}
-            onChange={(k) => setReportSubTab(k as 'revenue' | 'periods')}
+            activeKey={reportSubTab} onChange={(k) => setReportSubTab(k as 'revenue' | 'periods')}
             items={[
               {
                 key: 'revenue',
@@ -185,7 +197,7 @@ function PayrollView() {
       <CreatePeriodModal open={periodModalOpen} onClose={() => setPeriodModalOpen(false)} />
       {currentPeriod && <PayrollItemModal open={itemModalOpen} periodId={currentPeriod.id} employees={empOptions} editing={editingItem} onClose={() => { setItemModalOpen(false); setEditingItem(null); }} />}
       <PayslipDrawer snapshot={payslipSnap} periodStatus={currentPeriod?.status} onClose={() => setPayslipSnap(null)} />
-      <Modal width={680} title="Nhập Doanh Thu Đối Chiếu & Tính Tỷ Lệ Chi Phí Lương" open={revInputOpen} onCancel={() => setRevInputOpen(false)} onOk={() => revForm.submit()} okText="Lưu đối chiếu" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} confirmLoading={saveRevMut.isPending}>
+      <Modal width={680} title="Nhập Doanh Thu Đối Chiếu & Tính Tỷ Lệ Chi Phí Lương" open={revInputOpen} onCancel={() => setRevInputOpen(false)} onOk={() => revForm.submit()} okText="Lưu đối chiếu" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} confirmLoading={saveRevMut.isPending} destroyOnHidden>
         <Form form={revForm} layout="vertical" onFinish={(v) => saveRevMut.mutate(v)} style={{ marginTop: 12 }}>
           <Row gutter={12}>
             <Col xs={24} md={12}><Form.Item name="period_id" label="Kỳ lương áp dụng"><Select allowClear placeholder="Chọn kỳ lương (hoặc kỳ hiện hành)" options={periods.map((p) => ({ value: p.id, label: `${p.name} (${p.statusLabel})` }))} /></Form.Item></Col>

@@ -7,6 +7,7 @@ import {
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { resolveStaffGroupLabel } from '../routes/employee-mapper.js';
+import { resolvePayrollMediaUrl } from './payroll-media-storage.js';
 import { collectWorkEntries, type ShiftPayrollLog } from './payroll-work-collector.js';
 import { currentProfile, profilesOf, resolveProfileAt } from './salary-profile.service.js';
 
@@ -115,6 +116,7 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
         actionGuide,
       };
     });
+  const emp = ctx.db.employees.get(s.employee_id) ?? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === s.employee_code.trim().toUpperCase());
   const slip = ctx.db.payslips.find(
     (p) => p.status !== 'REVISED' && (p.snapshot_id === s.id || (p.period_id === s.period_id && (p.employee_id === s.employee_id || p.employee_code.trim().toUpperCase() === s.employee_code.trim().toUpperCase()))),
   );
@@ -122,6 +124,8 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
   const periodStatus = period?.status ?? 'DRAFT';
   const isPaid = periodStatus === 'PAID' || slip?.status === 'PAID';
   const isConfirmed = Boolean(slip?.employee_confirmed_at);
+  const payerId = slip?.paid_by || period?.paid_by || '';
+  const paidByName = payerId ? (ctx.db.users.get(payerId)?.display_name || ctx.db.users.find((u) => u.username === payerId)?.display_name || payerId) : '';
   const confirmationStatus: 'CONFIRMED' | 'DISPUTED' | 'PENDING' | 'NOT_ISSUED' = isConfirmed
     ? 'CONFIRMED'
     : slip?.dispute_status === 'OPEN'
@@ -173,7 +177,17 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
     attendanceBonusVnd: s.attendance_bonus_vnd, kpiBonusVnd: s.kpi_bonus_vnd, otherAllowancesVnd: s.other_allowances_vnd,
     positiveAdjustmentsVnd: s.positive_adjustments_vnd, approvedDeductionsVnd: s.approved_deductions_vnd,
     advanceDeductionVnd: s.advance_deduction_vnd, grossVnd: s.gross_vnd, netVnd: s.net_vnd,
-    bankName: s.bank_name, bankAccountNumber: s.bank_account_number,
+    bankName: emp?.bank_name || s.bank_name, bankAccountNumber: emp?.bank_account_number || s.bank_account_number,
+    bankAccountHolder: emp?.bank_account_holder || s.bank_account_holder || s.full_name,
+    hasEmployeeBankQr: Boolean(emp?.bank_qr_file_id),
+    bankQrUrl: isConfirmed ? resolvePayrollMediaUrl(emp?.bank_qr_file_id) : null,
+    adminSignatureUrl: resolvePayrollMediaUrl(slip?.admin_signature_file_id || period?.admin_signature_file_id),
+    adminSignedBy: period?.admin_signed_by || '', adminSignedAt: period?.admin_signed_at || null,
+    financeSignatureUrl: resolvePayrollMediaUrl(slip?.finance_signature_file_id || period?.finance_signature_file_id),
+    financeSignedBy: period?.finance_signed_by || '', financeSignedAt: period?.finance_signed_at || null,
+    employeeSignatureUrl: resolvePayrollMediaUrl(slip?.employee_signature_file_id),
+    paidAt: slip?.paid_at || (periodStatus === 'PAID' ? period?.paid_at || null : null),
+    paidByName: isPaid ? paidByName : '', paymentReference: slip?.payment_reference || '',
     payslipId: slip?.id ?? '', payslipCode: slip?.payslip_code ?? '', payslipRevision: slip?.revision ?? 0, payslipStatus: slip?.status ?? '',
     viewedByEmployeeAt: slip?.viewed_by_employee_at || null, employeeConfirmedAt: slip?.employee_confirmed_at || null,
     confirmationStatus, confirmationLabel, canAdjust, adjustLockReason,

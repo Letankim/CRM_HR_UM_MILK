@@ -10,42 +10,33 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isEmployeeRole, type Role } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { ChangeSecretFields } from './ChangeSecretFields';
+import { ProfileBankQrUploader } from './ProfileBankQrUploader';
 
 interface SelfProfileData {
-  id: string;
-  version: number;
-  username: string;
-  displayName: string;
-  phone: string;
-  email: string;
-  role: string;
-  roleLabel: string;
-  employeeId: string | null;
-  employeeCode: string | null;
-  branchName: string;
-  currentAddress: string;
-  emergencyContactName: string;
-  emergencyContactPhone: string;
-  bankName: string;
-  bankAccountNumber: string;
-  bankAccountHolder: string;
+  id: string; version: number; username: string; displayName: string; phone: string; email: string;
+  role: string; roleLabel: string; employeeId: string | null; employeeCode: string | null; branchName: string;
+  currentAddress: string; emergencyContactName: string; emergencyContactPhone: string;
+  bankName: string; bankAccountNumber: string; bankAccountHolder: string;
+  bankQrFileId?: string; bankQrUrl?: string | null; bankQrDriveFolder?: string;
 }
 
-export interface UserProfileModalProps {
-  open: boolean;
-  initialTab?: 'info' | 'password';
-  onClose: () => void;
-}
+export interface UserProfileModalProps { open: boolean; initialTab?: 'info' | 'password'; onClose: () => void; }
 
 export function UserProfileModal({ open, initialTab = 'info', onClose }: UserProfileModalProps) {
   const qc = useQueryClient();
   const { message } = App.useApp();
   const [activeTab, setActiveTab] = useState<'info' | 'password'>(initialTab);
+  const [draftQrBase64, setDraftQrBase64] = useState('');
+  const [removeQr, setRemoveQr] = useState(false);
   const [infoForm] = Form.useForm();
   const [pwdForm] = Form.useForm();
 
   useEffect(() => {
-    if (open) setActiveTab(initialTab);
+    if (open) {
+      setActiveTab(initialTab);
+      setDraftQrBase64('');
+      setRemoveQr(false);
+    }
   }, [open, initialTab]);
 
   const profileQ = useQuery({
@@ -64,25 +55,34 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
 
   useEffect(() => {
     if (!open || !profileQ.data) return;
-    const p = profileQ.data;
+    const d = profileQ.data;
+    setDraftQrBase64('');
+    setRemoveQr(false);
     infoForm.setFieldsValue({
-      display_name: p.displayName,
-      phone: p.phone,
-      email: p.email,
-      current_address: p.currentAddress,
-      emergency_contact_name: p.emergencyContactName,
-      emergency_contact_phone: p.emergencyContactPhone,
-      bank_name: p.bankName,
-      bank_account_number: p.bankAccountNumber,
-      bank_account_holder: p.bankAccountHolder,
+      display_name: d.displayName,
+      phone: d.phone,
+      email: d.email,
+      current_address: d.currentAddress,
+      emergency_contact_name: d.emergencyContactName,
+      emergency_contact_phone: d.emergencyContactPhone,
+      bank_name: d.bankName,
+      bank_account_number: d.bankAccountNumber,
+      bank_account_holder: d.bankAccountHolder,
     });
   }, [open, profileQ.data, infoForm]);
 
   const updateInfoMut = useMutation({
-    mutationFn: (body: unknown) => api.put('/auth/profile', body),
+    mutationFn: (body: Record<string, unknown>) =>
+      api.put('/auth/profile', {
+        ...body,
+        ...(draftQrBase64 ? { bank_qr_base64: draftQrBase64 } : {}),
+        ...(removeQr ? { remove_bank_qr: true } : {}),
+      }),
     onSuccess: () => {
-      message.success('Đã cập nhật thông tin cá nhân của bạn thành công');
-      ['me', 'auth-profile', 'my-attendance', 'employees', 'accounts'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      message.success('Đã cập nhật thông tin cá nhân & ngân hàng thành công');
+      ['me', 'auth-profile', 'my-attendance', 'employees', 'accounts', 'payroll-snapshots'].forEach((k) =>
+        void qc.invalidateQueries({ queryKey: [k] }),
+      );
       onClose();
     },
     onError: (e) => {
@@ -115,7 +115,7 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
     <Modal
       open={open}
       forceRender
-      width={660}
+      width={680}
       title={p ? `Hồ sơ Cá nhân & Bảo mật Tài khoản — @${p.username}` : 'Hồ sơ Cá nhân & Bảo mật Tài khoản'}
       onCancel={onClose}
       footer={
@@ -134,10 +134,10 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
       }
     >
       {p && (
-        <Descriptions size="small" bordered column={1} styles={{ label: { width: 175, fontWeight: 500, whiteSpace: 'nowrap' } }} style={{ marginBottom: 12 }}>
-          <Descriptions.Item label="Tài khoản đăng nhập"><Tag color="geekblue" style={{ margin: 0 }}>@{p.username}</Tag></Descriptions.Item>
-          <Descriptions.Item label="Vai trò hệ thống"><Tag color="blue" style={{ margin: 0 }}>{p.roleLabel}</Tag></Descriptions.Item>
-          <Descriptions.Item label="Mã nhân sự liên kết">{p.employeeCode ? <Tag style={{ margin: 0 }}>{p.employeeCode}</Tag> : 'Tài khoản quản trị nội bộ'}</Descriptions.Item>
+        <Descriptions size="small" bordered column={2} styles={{ label: { width: 130, fontWeight: 500, whiteSpace: 'nowrap' } }} style={{ marginBottom: 10 }}>
+          <Descriptions.Item label="Tài khoản"><Tag color="geekblue" style={{ margin: 0 }}>@{p.username}</Tag></Descriptions.Item>
+          <Descriptions.Item label="Vai trò"><Tag color="blue" style={{ margin: 0 }}>{p.roleLabel}</Tag></Descriptions.Item>
+          <Descriptions.Item label="Mã nhân sự">{p.employeeCode ? <Tag style={{ margin: 0 }}>{p.employeeCode}</Tag> : 'Quản trị nội bộ'}</Descriptions.Item>
           <Descriptions.Item label="Chi nhánh">{p.branchName}</Descriptions.Item>
         </Descriptions>
       )}
@@ -149,20 +149,12 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
           {
             key: 'info',
             forceRender: true,
-            label: <span><IdcardOutlined /> Thông tin cá nhân &amp; Ngân hàng</span>,
+            label: <span><IdcardOutlined /> Thông tin cá nhân &amp; Ngân hàng (Mã QR)</span>,
             children: (
-              <Form form={infoForm} layout="vertical" onFinish={(v) => updateInfoMut.mutate(v)} style={{ marginTop: 4 }}>
+              <Form form={infoForm} layout="vertical" onFinish={(v) => updateInfoMut.mutate(v as Record<string, unknown>)} style={{ marginTop: 2 }}>
                 <Row gutter={12}>
-                  <Col xs={24} sm={12}>
-                    <Form.Item name="display_name" label="Họ và tên" rules={[{ required: true, message: 'Vui lòng nhập họ và tên' }]}>
-                      <Input prefix={<UserOutlined />} placeholder="Nhập họ và tên hiển thị" />
-                    </Form.Item>
-                  </Col>
-                  <Col xs={24} sm={12}>
-                    <Form.Item name="phone" label="Số điện thoại">
-                      <Input prefix={<PhoneOutlined />} placeholder="Ví dụ: 0901000001" />
-                    </Form.Item>
-                  </Col>
+                  <Col xs={24} sm={12}><Form.Item name="display_name" label="Họ và tên" rules={[{ required: true, message: 'Vui lòng nhập họ và tên' }]}><Input prefix={<UserOutlined />} placeholder="Nhập họ và tên hiển thị" /></Form.Item></Col>
+                  <Col xs={24} sm={12}><Form.Item name="phone" label="Số điện thoại"><Input prefix={<PhoneOutlined />} placeholder="Ví dụ: 0901000001" /></Form.Item></Col>
                 </Row>
                 <Row gutter={12}>
                   <Col xs={24} sm={12}><Form.Item name="email" label="Email"><Input prefix={<MailOutlined />} placeholder="Ví dụ: ten.ban@umbomilk.vn" /></Form.Item></Col>
@@ -177,6 +169,16 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
                   <Col xs={24} sm={8}><Form.Item name="bank_account_number" label="Số tài khoản"><Input placeholder="Nhập số tài khoản" /></Form.Item></Col>
                   <Col xs={24} sm={8}><Form.Item name="bank_account_holder" label="Chủ tài khoản"><Input placeholder="NGUYEN VAN A" /></Form.Item></Col>
                 </Row>
+                {p?.employeeId && (
+                  <ProfileBankQrUploader
+                    currentQrUrl={p.bankQrUrl}
+                    driveFolder={p.bankQrDriveFolder}
+                    draftQrBase64={draftQrBase64}
+                    removeQr={removeQr}
+                    onChangeDraft={setDraftQrBase64}
+                    onToggleRemove={setRemoveQr}
+                  />
+                )}
               </Form>
             ),
           },
@@ -187,10 +189,7 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
             children: (
               <Form form={pwdForm} layout="vertical" onFinish={(v) => changePwdMut.mutate(v)} style={{ marginTop: 4 }}>
                 {pinRotationDays > 0 && (
-                  <Alert
-                    type="info" showIcon style={{ marginBottom: 12, borderRadius: 4 }}
-                    message={`Theo quy định bảo mật, ${isEmployee ? 'mã PIN' : 'mật khẩu'} cần được đổi định kỳ mỗi ${pinRotationDays} ngày`}
-                  />
+                  <Alert type="info" showIcon style={{ marginBottom: 12, borderRadius: 4 }} message={`Theo quy định bảo mật, ${isEmployee ? 'mã PIN' : 'mật khẩu'} cần được đổi định kỳ mỗi ${pinRotationDays} ngày`} />
                 )}
                 <ChangeSecretFields isEmployee={isEmployee} />
               </Form>

@@ -153,3 +153,24 @@ export const PAYSLIP_STATUS_LABELS: Record<'DRAFT' | 'PUBLISHED' | 'REVISED' | '
   REVISED: 'Đã thay thế bằng bản điều chỉnh',
   PAID: 'Đã thanh toán',
 };
+
+/** Sổ ghi nhận chi lương chuyển khoản cho từng phiếu lương (PAYROLL.PAYMENTS) */
+export const zPayment = zSystemColumns.extend({
+  period_id: z.string().min(1),
+  employee_id: z.string().min(1),
+  amount_vnd: z.coerce.number().min(0).default(0),
+  paid_at: z.string().default(''),
+  reference: z.string().default(''),
+  recorded_by: z.string().default(''),
+  payment_code: z.string().default(''),
+  payslip_id: z.string().default(''),
+  branch_id: z.string().default(''),
+  payment_method: z.string().default('BANK_QR_TRANSFER'),
+  bank_name: z.string().default(''),
+  bank_account_number: z.string().default(''),
+  bank_account_holder: z.string().default(''),
+  evidence_file_id: z.string().default(''),
+  status: z.string().default('COMPLETED'),
+  note: z.string().default(''),
+});
+export type Payment = z.infer<typeof zPayment>;

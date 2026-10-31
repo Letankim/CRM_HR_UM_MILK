@@ -134,10 +134,11 @@ describe('Tuyển dụng, Bài kiểm tra TEST & Phân quyền MKT (AI-INFRA-08,
       expect((await app.inject({ method: 'GET', url: '/api/admin/interviews', headers: h })).statusCode).toBe(403);
     }
 
-    // HR, STORE, ADMIN bị chặn truy cập Kỳ lương & Thưởng (FIN-01..10 chỉ dành cho FINANCE)
-    for (const h of [hrHeaders, storeHeaders, adminHeaders, mktHeaders]) {
+    // HR, STORE, MKT bị chặn truy cập Kỳ lương & Thưởng; ADMIN được quyền xem bảng lương để phê duyệt ký số & thanh toán QR
+    for (const h of [hrHeaders, storeHeaders, mktHeaders]) {
       expect((await app.inject({ method: 'GET', url: '/api/admin/payroll/periods', headers: h })).statusCode).toBe(403);
     }
+    expect((await app.inject({ method: 'GET', url: '/api/admin/payroll/periods', headers: adminHeaders })).statusCode).toBe(200);
     await app.close();
   });
 });

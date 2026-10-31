@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { normalizePhone, ROLE_LABELS, type PublicUser, type User } from '@umbm/shared';
+import { DRIVE_FOLDERS, normalizePhone, ROLE_LABELS, type PublicUser, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { auditContext, requireAuth } from '../plugins/auth-context.js';
+import { persistPayrollMedia, resolvePayrollMediaUrl, toCleanDriveSlug } from '../services/payroll-media-storage.js';
 import { assertUniquePersonalIdentifiers } from './employee-mapper.js';
 
 const zUpdateProfileBody = z.object({
@@ -17,6 +18,8 @@ const zUpdateProfileBody = z.object({
   bank_name: z.string().trim().max(100).optional().default(''),
   bank_account_number: z.string().trim().max(50).optional().default(''),
   bank_account_holder: z.string().trim().max(100).optional().default(''),
+  bank_qr_base64: z.string().trim().optional().default(''),
+  remove_bank_qr: z.boolean().optional().default(false),
 });
 
 /** Hồ sơ cá nhân của người dùng đang đăng nhập (xem & tự cập nhật). */
@@ -45,6 +48,9 @@ export function registerAuthProfileRoutes(app: FastifyInstance, ctx: AppContext,
       bankName: emp?.bank_name ?? 'Techcombank',
       bankAccountNumber: emp?.bank_account_number ?? '',
       bankAccountHolder: emp?.bank_account_holder ?? user.display_name.toUpperCase(),
+      bankQrFileId: emp?.bank_qr_file_id ?? '',
+      bankQrUrl: resolvePayrollMediaUrl(emp?.bank_qr_file_id),
+      bankQrDriveFolder: DRIVE_FOLDERS.EMPLOYEE_BANK_QR,
     });
   });
 
@@ -83,6 +89,21 @@ export function registerAuthProfileRoutes(app: FastifyInstance, ctx: AppContext,
       user.id,
     );
 
+    let nextBankQrFileId = emp?.bank_qr_file_id ?? '';
+    if (body.remove_bank_qr) nextBankQrFileId = '';
+    if (body.bank_qr_base64) {
+      if (!emp) throw Errors.badRequest('Tài khoản chưa liên kết hồ sơ nhân sự nên không thể lưu Mã QR ngân hàng nhận lương');
+      const bankLabel = body.bank_name || emp.bank_name || 'Bank';
+      const savedQr = await persistPayrollMedia(ctx, {
+        base64: body.bank_qr_base64,
+        rootFolder: DRIVE_FOLDERS.EMPLOYEE_BANK_QR,
+        fileBaseName: `${emp.employee_code}_${toCleanDriveSlug(body.display_name || emp.full_name)}_${toCleanDriveSlug(bankLabel)}_QR`,
+        fieldName: 'bank_qr_base64',
+        labelVi: 'Ảnh Mã QR ngân hàng',
+      });
+      nextBankQrFileId = savedQr.fileId;
+    }
+
     if (emp) {
       await ctx.db.employees.update(
         emp.id,
@@ -97,6 +118,7 @@ export function registerAuthProfileRoutes(app: FastifyInstance, ctx: AppContext,
           bank_name: body.bank_name || emp.bank_name,
           bank_account_number: body.bank_account_number,
           bank_account_holder: body.bank_account_holder || body.display_name.toUpperCase(),
+          bank_qr_file_id: nextBankQrFileId,
         },
         user.id,
       );
@@ -110,6 +132,11 @@ export function registerAuthProfileRoutes(app: FastifyInstance, ctx: AppContext,
       after: { display_name: updatedUser.display_name, phone: updatedUser.phone, email: updatedUser.email },
     });
 
-    return sendSuccess(request, 'Đã cập nhật thông tin cá nhân thành công', { user: toResolvedPublicUser(updatedUser) });
+    return sendSuccess(request, 'Đã cập nhật thông tin cá nhân thành công', {
+      user: toResolvedPublicUser(updatedUser),
+      bankQrFileId: nextBankQrFileId,
+      bankQrUrl: resolvePayrollMediaUrl(nextBankQrFileId),
+      bankQrDriveFolder: DRIVE_FOLDERS.EMPLOYEE_BANK_QR,
+    });
   });
 }

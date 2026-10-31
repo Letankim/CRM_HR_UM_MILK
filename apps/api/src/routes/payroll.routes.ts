@@ -9,6 +9,7 @@ import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { recalculatePeriodSnapshots } from '../services/payroll-snapshot.service.js';
 import { payrollPeriodRoutes } from './payroll-periods.routes.js';
+import { payrollSignatureRoutes } from './payroll-signatures.routes.js';
 import { payslipRoutes } from './payslips.routes.js';
 import { salaryProfileRoutes } from './salary-profiles.routes.js';
 
@@ -153,4 +154,5 @@ export async function payrollRoutes(app: FastifyInstance, ctx: AppContext) {
   await salaryProfileRoutes(app, ctx);
   await payrollPeriodRoutes(app, ctx);
   await payslipRoutes(app, ctx);
+  await payrollSignatureRoutes(app, ctx);
 }

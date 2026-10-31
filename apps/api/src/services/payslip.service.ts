@@ -7,6 +7,7 @@ import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 import { queuePayslipPublishedEmails } from './action-email-dispatcher.js';
 import { isSyntheticDemoEmail } from './email.service.js';
 import { ensureSyncedNotifications } from './notification-sync.service.js';
+import { resolvePayrollMediaUrl } from './payroll-media-storage.js';
 import { mapSnapshot, recalculatePeriodSnapshots } from './payroll-snapshot.service.js';
 
 function collectRealPayslipEmailRefs(ctx: AppContext): string {
@@ -101,12 +102,23 @@ export function buildPayslipPayload(ctx: AppContext, period: PayPeriod, s: Payro
     total_deductions_vnd: s.approved_deductions_vnd + s.advance_deduction_vnd,
     gross_vnd: Math.max(0, gross), net_vnd: Math.max(0, net), breakdown_json: JSON.stringify(mapSnapshot(s, ctx)),
     viewed_by_employee_at: '', employee_confirmed_at: '', dispute_status: 'NONE' as const, dispute_reason: '', pdf_drive_file_id: '',
+    admin_signature_file_id: period.admin_signature_file_id || '',
+    finance_signature_file_id: period.finance_signature_file_id || '',
+    employee_signature_file_id: '',
+    paid_at: '', paid_by: '', payment_reference: '',
   };
 }
 
-export function mapPayslip(p: Payslip) {
+export function mapPayslip(p: Payslip, ctx?: AppContext) {
   let breakdown: Record<string, unknown> = {};
   try { breakdown = JSON.parse(p.breakdown_json || '{}'); } catch { breakdown = {}; }
+  const period = ctx?.db.payPeriods.get(p.period_id);
+  const adminSigId = p.admin_signature_file_id || period?.admin_signature_file_id || '';
+  const financeSigId = p.finance_signature_file_id || period?.finance_signature_file_id || '';
+  const payerId = p.paid_by || period?.paid_by || '';
+  const paidByName = payerId && ctx
+    ? (ctx.db.users.get(payerId)?.display_name || ctx.db.users.find((u) => u.username === payerId)?.display_name || payerId)
+    : '';
   return {
     id: p.id, payslipCode: p.payslip_code, periodId: p.period_id, periodName: p.period_name, fromDate: p.from_date, toDate: p.to_date,
     employeeId: p.employee_id, employeeCode: p.employee_code, fullName: p.full_name, branchName: p.branch_name,
@@ -117,6 +129,16 @@ export function mapPayslip(p: Payslip) {
     totalAdjustmentsVnd: p.total_adjustments_vnd, totalDeductionsVnd: p.total_deductions_vnd,
     grossVnd: p.gross_vnd, netVnd: p.net_vnd, viewedByEmployeeAt: p.viewed_by_employee_at || null,
     employeeConfirmedAt: p.employee_confirmed_at || null, disputeStatus: p.dispute_status, disputeReason: p.dispute_reason || '',
+    adminSignatureUrl: resolvePayrollMediaUrl(adminSigId),
+    adminSignedBy: period?.admin_signed_by || '',
+    adminSignedAt: period?.admin_signed_at || null,
+    financeSignatureUrl: resolvePayrollMediaUrl(financeSigId),
+    financeSignedBy: period?.finance_signed_by || '',
+    financeSignedAt: period?.finance_signed_at || null,
+    employeeSignatureUrl: resolvePayrollMediaUrl(p.employee_signature_file_id),
+    paidAt: p.paid_at || period?.paid_at || null,
+    paidByName,
+    paymentReference: p.payment_reference || '',
     breakdown, version: p.version,
   };
 }

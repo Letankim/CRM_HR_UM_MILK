@@ -1,7 +1,7 @@
 'use client';
 
-import { CheckCircleOutlined, ClockCircleOutlined, LockOutlined, MessageOutlined } from '@ant-design/icons';
-import { Space, Tag, Tooltip } from 'antd';
+import { CheckCircleOutlined, ClockCircleOutlined, LockOutlined, MessageOutlined, QrcodeOutlined } from '@ant-design/icons';
+import { Button, Space, Tag, Tooltip } from 'antd';
 import dayjs from 'dayjs';
 import { exportToExcel } from '@/lib/export-excel';
 import { allowancesOf, bonusesOf, deductionsOf, fmtVnd, type PayPeriodRow, type PayrollSnapshotItem, type ShiftPayrollLog } from './payroll-types';
@@ -44,12 +44,12 @@ export function payslipLines(s: PayrollSnapshotItem): PayslipLine[] {
 
 const sumRows = (rows: PayrollSnapshotItem[], f: (r: PayrollSnapshotItem) => number) => rows.reduce((s, r) => s + f(r), 0);
 
-/** Xuất Bảng lương tổng hợp chuẩn kế toán (kèm trạng thái xác nhận của nhân sự) */
+/** Xuất Bảng lương tổng hợp chuẩn kế toán (kèm trạng thái ký xác nhận & thanh toán) */
 export function exportPayrollSheet(period: PayPeriodRow, rows: PayrollSnapshotItem[]) {
   exportToExcel({
     fileName: `Bang_Luong_${period.period_code}_${dayjs().format('YYYYMMDD')}.xls`,
     sheetTitle: `BẢNG TỔNG HỢP LƯƠNG & THƯỞNG — ${period.name} (${period.from_date} đến ${period.to_date})`,
-    subtitle: `Trạng thái: ${period.statusLabel} | Tổng nhân sự: ${rows.length} | Đã xác nhận: ${rows.filter((r) => Boolean(r.employeeConfirmedAt)).length}/${rows.length} | Tổng thực lĩnh: ${fmtVnd(period.total_net_vnd)}`,
+    subtitle: `Trạng thái: ${period.statusLabel} | Tổng nhân sự: ${rows.length} | Đã ký: ${rows.filter((r) => Boolean(r.employeeConfirmedAt)).length}/${rows.length} | Tổng thực lĩnh: ${fmtVnd(period.total_net_vnd)}`,
     columns: [
       { header: 'Mã NV', key: 'employeeCode' },
       { header: 'Họ và tên', key: 'fullName' },
@@ -66,8 +66,8 @@ export function exportPayrollSheet(period: PayPeriodRow, rows: PayrollSnapshotIt
       { header: 'Khấu trừ', render: deductionsOf, isCurrency: true },
       { header: 'Tổng thu nhập', key: 'grossVnd', isCurrency: true },
       { header: 'THỰC LĨNH', key: 'netVnd', isCurrency: true },
-      { header: 'Xác nhận của NV', render: (r: PayrollSnapshotItem) => r.confirmationLabel || 'Chưa phát hành' },
-      { header: 'Thời gian xác nhận', render: (r: PayrollSnapshotItem) => (r.employeeConfirmedAt ? dayjs(r.employeeConfirmedAt).format('HH:mm DD/MM/YYYY') : '—') },
+      { header: 'Ký xác nhận NV', render: (r: PayrollSnapshotItem) => (r.employeeConfirmedAt ? 'Đã ký trực tiếp' : r.confirmationLabel || 'Chưa phát hành') },
+      { header: 'Trạng thái TT', render: (r: PayrollSnapshotItem) => (period.status === 'PAID' || r.payslipStatus === 'PAID' ? 'Đã thanh toán' : 'Chưa thanh toán') },
       { header: 'Ngân hàng', key: 'bankName' },
       { header: 'Số tài khoản', key: 'bankAccountNumber' },
     ],
@@ -76,22 +76,47 @@ export function exportPayrollSheet(period: PayPeriodRow, rows: PayrollSnapshotIt
       'TỔNG CỘNG', `${rows.length} nhân sự`, '', '', '',
       sumRows(rows, (r) => r.probationHours), sumRows(rows, (r) => r.probationPayVnd), sumRows(rows, (r) => r.officialHours), sumRows(rows, (r) => r.officialPayVnd),
       sumRows(rows, (r) => r.otPayVnd), sumRows(rows, allowancesOf), sumRows(rows, bonusesOf), sumRows(rows, deductionsOf), sumRows(rows, (r) => r.grossVnd), sumRows(rows, (r) => r.netVnd),
-      `${rows.filter((r) => Boolean(r.employeeConfirmedAt)).length}/${rows.length} đã XN`, '', '', '',
+      `${rows.filter((r) => Boolean(r.employeeConfirmedAt)).length}/${rows.length} đã ký`, '', '', '',
     ],
   });
 }
 
-export function PayrollConfirmationCell({ row, periodStatus, onOpenTickets }: { row: PayrollSnapshotItem; periodStatus: PayPeriodRow['status']; onOpenTickets: () => void }) {
+export function PayrollConfirmationCell({
+  row,
+  periodStatus,
+  onOpenTickets,
+  onOpenQrPay,
+}: {
+  row: PayrollSnapshotItem;
+  periodStatus: PayPeriodRow['status'];
+  onOpenTickets: () => void;
+  onOpenQrPay?: (r: PayrollSnapshotItem) => void;
+}) {
   const isPaid = periodStatus === 'PAID' || row.payslipStatus === 'PAID';
   if (row.employeeConfirmedAt) {
     return (
-      <div>
+      <div data-no-row-click>
         <Space size={4} wrap>
-          <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>Đã xác nhận</Tag>
-          {(row.payslipRevision ?? 0) > 1 && <Tag color="blue" style={{ margin: 0, borderRadius: 2 }}>ĐC #{row.payslipRevision}</Tag>}
+          <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>NV đã ký</Tag>
+          {isPaid ? (
+            <Tag color="blue" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>Đã TT</Tag>
+          ) : (
+            <Tag color="gold" style={{ margin: 0, borderRadius: 2 }}>Chờ CK</Tag>
+          )}
         </Space>
         <div className="num" style={{ fontSize: 11, color: '#15803D', marginTop: 2 }}>{dayjs(row.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')}</div>
-        <div style={{ fontSize: 11, color: '#64748B' }}><LockOutlined /> Đã khóa điều chỉnh</div>
+        {onOpenQrPay && (
+          <Button
+            size="small"
+            type={isPaid ? 'default' : 'primary'}
+            ghost={!isPaid}
+            icon={<QrcodeOutlined />}
+            style={{ marginTop: 4, fontSize: 11, height: 22, padding: '0 6px' }}
+            onClick={(e) => { e.stopPropagation(); onOpenQrPay(row); }}
+          >
+            {isPaid ? 'Xem QR & CT' : row.bankQrUrl ? 'Quét QR & TT' : 'Thông tin CK & TT'}
+          </Button>
+        )}
       </div>
     );
   }
@@ -111,8 +136,8 @@ export function PayrollConfirmationCell({ row, periodStatus, onOpenTickets }: { 
     return (
       <div>
         <Space size={4} wrap>
-          <Tag color={isPaid ? 'default' : row.disputeStatus === 'RESOLVED' ? 'cyan' : 'gold'} icon={isPaid ? <LockOutlined /> : <ClockCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>
-            {isPaid ? 'Đã chi trả (Chưa bấm XN)' : row.disputeStatus === 'RESOLVED' ? 'Đã phản hồi · Chờ XN' : 'Chờ xác nhận'}
+          <Tag color={isPaid ? 'blue' : row.disputeStatus === 'RESOLVED' ? 'cyan' : 'gold'} icon={isPaid ? <LockOutlined /> : <ClockCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>
+            {isPaid ? 'Đã thanh toán' : row.disputeStatus === 'RESOLVED' ? 'Đã phản hồi · Chờ ký' : 'Chờ NV ký tay'}
           </Tag>
           {(row.payslipRevision ?? 0) > 1 && <Tag color="blue" style={{ margin: 0, borderRadius: 2 }}>ĐC #{row.payslipRevision}</Tag>}
         </Space>

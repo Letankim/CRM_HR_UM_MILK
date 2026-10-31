@@ -7,6 +7,7 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
+import { resolvePayrollMediaUrl } from '../services/payroll-media-storage.js';
 import { mapSnapshot, recalculatePeriodSnapshots } from '../services/payroll-snapshot.service.js';
 import { ensurePublishedPeriodPayslips, generatePayslips } from '../services/payslip.service.js';
 import { healBranchConsistency } from './account-employee-sync.js';
@@ -29,21 +30,21 @@ const ALLOWED: Record<PayPeriodStatus, PayPeriodStatus[]> = {
   DRAFT: ['RECONCILE'], RECONCILE: ['APPROVED', 'DRAFT'], APPROVED: ['PUBLISHED', 'RECONCILE'], PUBLISHED: ['PAID'], PAID: [],
 };
 
-const withLabel = (ctx: AppContext, p: PayPeriod) => {
+export const withPeriodLabel = (ctx: AppContext, p: PayPeriod) => {
   const slips = ctx.db.payslips.filter((x) => x.period_id === p.id && x.status !== 'REVISED');
   const confirmed = slips.filter((x) => Boolean(x.employee_confirmed_at)).length;
   const disputed = slips.filter((x) => !x.employee_confirmed_at && x.dispute_status === 'OPEN').length;
+  const paidCount = slips.filter((x) => x.status === 'PAID' || p.status === 'PAID').length;
   const totalIssued = slips.length || (p.status === 'PUBLISHED' || p.status === 'PAID' ? p.total_employees : 0);
   return {
-    ...p,
-    statusLabel: PAY_PERIOD_STATUS_LABELS[p.status],
+    ...p, statusLabel: PAY_PERIOD_STATUS_LABELS[p.status],
     paid_by_name: p.paid_by ? (ctx.db.users.get(p.paid_by)?.display_name || ctx.db.users.find((u) => u.username === p.paid_by)?.display_name || 'Kế toán') : '',
-    issued_payslips_count: slips.length,
-    confirmed_count: confirmed,
-    unconfirmed_count: Math.max(0, totalIssued - confirmed),
-    disputed_count: disputed,
+    issued_payslips_count: slips.length, confirmed_count: confirmed, unconfirmed_count: Math.max(0, totalIssued - confirmed), disputed_count: disputed, paid_count: paidCount,
+    adminSignatureUrl: resolvePayrollMediaUrl(p.admin_signature_file_id), adminSignedBy: p.admin_signed_by || '', adminSignedAt: p.admin_signed_at || null,
+    financeSignatureUrl: resolvePayrollMediaUrl(p.finance_signature_file_id), financeSignedBy: p.finance_signed_by || '', financeSignedAt: p.finance_signed_at || null,
   };
 };
+const withLabel = withPeriodLabel;
 
 export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/payroll/runs', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {

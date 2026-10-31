@@ -13,6 +13,7 @@ export interface GoogleStatus {
   check: () => Promise<{ ok: boolean; detail: string }>;
   uploadAttendancePhoto?: (params: { fileName: string; mimeType: string; data: Buffer; monthFolder: string; folderSegments?: string[]; rootFolder?: 'ATTENDANCE' | 'EVIDENCE' }) => Promise<{ fileId: string }>;
   uploadMktMedia?: (params: { fileName: string; mimeType: string; data: Buffer; monthFolder: string }) => Promise<{ fileId: string }>;
+  uploadDriveMedia?: (params: { rootFolder: string; folderSegments?: string[]; fileName: string; mimeType: string; data: Buffer }) => Promise<{ fileId: string }>;
   getDriveFileMeta?: (fileId: string) => Promise<{ name: string; mimeType: string; sizeBytes: number } | null>;
   downloadDriveFile?: (fileId: string) => Promise<Buffer | null>;
 }

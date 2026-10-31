@@ -1,36 +1,44 @@
 'use client';
 
 import { Alert, App, Button, Flex, Input, Popconfirm, Space, Steps, Tag } from 'antd';
-import { CalculatorOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, MailOutlined, RollbackOutlined } from '@ant-design/icons';
+import {
+  CalculatorOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined,
+  DeleteOutlined, MailOutlined, RollbackOutlined, SafetyCertificateOutlined, SendOutlined,
+} from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { PAY_PERIOD_STATUS_LABELS, type PayPeriodStatus } from '@umbm/shared';
 import { useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
-import { useCan } from '@/lib/auth';
+import { useCan, useMe } from '@/lib/auth';
 import { StatusTag } from '@/ui/StatusTag';
 import { fmtVnd, type PayPeriodRow } from './payroll-types';
+import { AdminApprovePeriodModal, FinancePublishPeriodModal } from './PayrollWorkflowModals';
 
 const STEP_ORDER: PayPeriodStatus[] = ['DRAFT', 'RECONCILE', 'APPROVED', 'PUBLISHED', 'PAID'];
-const NEXT: Partial<Record<PayPeriodStatus, { next: PayPeriodStatus; label: string; confirm: string }>> = {
-  DRAFT: { next: 'RECONCILE', label: 'Chuyển sang Đối soát công', confirm: 'Hệ thống sẽ tính lại bảng lương theo công và hồ sơ lương mới nhất.' },
-  RECONCILE: { next: 'APPROVED', label: 'Phê duyệt & Chốt bảng lương', confirm: 'Sau khi phê duyệt, bảng lương được khóa số liệu và không tự tính lại khi dữ liệu nguồn thay đổi.' },
-  APPROVED: { next: 'PUBLISHED', label: 'Phát hành Phiếu lương', confirm: 'Phiếu lương sẽ được phát cho từng nhân viên kiểm tra và xác nhận. Ở bước Đã phát hành, Kế toán vẫn điều chỉnh được cho nhân sự chưa xác nhận; nhân sự đã xác nhận sẽ khóa điều chỉnh.' },
-  PUBLISHED: { next: 'PAID', label: 'Xác nhận Đã thanh toán', confirm: 'Sau khi chuyển sang Đã thanh toán, toàn bộ bảng lương và mọi phiếu lương sẽ khóa vĩnh viễn 100%, không thể thay đổi bất cứ thông tin nào.' },
-};
 const BACK: Partial<Record<PayPeriodStatus, PayPeriodStatus>> = { RECONCILE: 'DRAFT', APPROVED: 'RECONCILE' };
 
 export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: PayPeriodRow; canManage: boolean; onDeleted: () => void }) {
   const qc = useQueryClient();
   const can = useCan();
+  const me = useMe().data?.user;
+  const isAdmin = me?.role === 'ADMIN';
   const { message } = App.useApp();
   const [payVoucherNote, setPayVoucherNote] = useState('');
+  const [adminApproveOpen, setAdminApproveOpen] = useState(false);
+  const [financePublishOpen, setFinancePublishOpen] = useState(false);
+
   const refresh = () => {
-    ['payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items'].forEach((k) =>
-      qc.invalidateQueries({ queryKey: [k] }),
+    ['payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items', 'notifications'].forEach((k) =>
+      void qc.invalidateQueries({ queryKey: [k] }),
     );
   };
   const onError = (e: unknown) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại, vui lòng thử lại');
 
+  const submitAdminMut = useMutation({
+    mutationFn: () => api.post(`/admin/payroll/periods/${period.id}/submit-to-admin`, {}),
+    onSuccess: () => { message.success('Đã gửi bảng lương trình Ban Quản trị ký phê duyệt'); refresh(); },
+    onError,
+  });
   const transition = useMutation({
     mutationFn: (payload: { target: PayPeriodStatus; note?: string }) =>
       api.post(`/admin/payroll/periods/${period.id}/transition`, { version: period.version, target_status: payload.target, note: payload.note }),
@@ -51,7 +59,7 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
     mutationFn: () => api.post<{ count: number }>(`/admin/payroll/periods/${period.id}/notify-payslips`),
     onSuccess: (d) => {
       message.success(`Đã đồng bộ và gửi phiếu lương cho ${d?.count ?? period.total_employees} nhân sự`);
-      qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
+      void qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
       refresh();
     },
     onError,
@@ -59,94 +67,119 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
 
   const editable = period.status === 'DRAFT' || period.status === 'RECONCILE';
   const isPublishedOrPaid = period.status === 'PUBLISHED' || period.status === 'PAID';
-  const canNotify = canManage || can('payroll.publish', 'payroll.pay');
-  const next = NEXT[period.status];
+  const canPublish = can('payroll.publish', 'payroll.manage');
+  const canPay = can('payroll.pay', 'payroll.manage');
   const back = BACK[period.status];
-  const canDoNext = next?.next === 'PUBLISHED'
-    ? can('payroll.publish', 'payroll.manage')
-    : next?.next === 'PAID'
-      ? can('payroll.pay', 'payroll.manage')
-      : canManage;
+  const totalIssued = period.issued_payslips_count || period.total_employees;
 
   return (
     <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #E5E7EB' }}>
       <Steps size="small" current={STEP_ORDER.indexOf(period.status)} items={STEP_ORDER.map((st) => ({ title: PAY_PERIOD_STATUS_LABELS[st] }))} />
       {period.unreconciled_records_count > 0 && editable && (
-        <Alert style={{ marginTop: 12 }} type="warning" showIcon message={`Còn ${period.unreconciled_records_count} nhân sự có công nhưng chưa thiết lập hồ sơ lương hợp lệ — chưa thể phê duyệt kỳ lương.`} />
+        <Alert style={{ marginTop: 12 }} type="warning" showIcon message={`Còn ${period.unreconciled_records_count} nhân sự có công nhưng chưa thiết lập hồ sơ lương hợp lệ — chưa thể trình / phê duyệt kỳ lương.`} />
       )}
       <Flex justify="space-between" align="center" wrap gap={10} style={{ marginTop: 12 }}>
-        <Space size={14} wrap>
+        <Space size={10} wrap>
           <span>Kỳ: <strong>{period.from_date} → {period.to_date}</strong></span>
           <span>Nhân sự: <strong>{period.total_employees}</strong></span>
-          <span>Tổng thu nhập: <strong className="num">{fmtVnd(period.total_gross_vnd)}</strong></span>
-          <span>Tổng thực lĩnh: <strong className="num" style={{ color: '#15803D', fontSize: 15 }}>{fmtVnd(period.total_net_vnd)}</strong></span>
+          <span>Thực lĩnh: <strong className="num" style={{ color: '#15803D', fontSize: 15 }}>{fmtVnd(period.total_net_vnd)}</strong></span>
           <StatusTag value={period.status} label={PAY_PERIOD_STATUS_LABELS[period.status]} />
+          {period.adminSignedBy && (
+            <Tag color="geekblue" icon={<SafetyCertificateOutlined />} style={{ margin: 0, borderRadius: 2 }}>
+              Quản trị đã ký: {period.adminSignedBy}
+            </Tag>
+          )}
+          {period.financeSignedBy && (
+            <Tag color="blue" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>
+              Kế toán đã ký: {period.financeSignedBy}
+            </Tag>
+          )}
           {isPublishedOrPaid && (
             <>
               <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>
-                NV đã xác nhận: {period.confirmed_count ?? 0}/{period.issued_payslips_count || period.total_employees}
+                NV đã ký: {period.confirmed_count ?? 0}/{totalIssued}
               </Tag>
-              {period.status === 'PUBLISHED' && (period.unconfirmed_count ?? 0) > 0 && (
-                <Tag color="gold" style={{ margin: 0, borderRadius: 2 }}>
-                  Chưa xác nhận (còn điều chỉnh): {period.unconfirmed_count}
-                </Tag>
-              )}
+              <Tag color={(period.paid_count ?? 0) >= totalIssued && totalIssued > 0 ? 'green' : 'cyan'} style={{ margin: 0, borderRadius: 2 }}>
+                Đã TT: {period.paid_count ?? 0}/{totalIssued}
+              </Tag>
               {(period.disputed_count ?? 0) > 0 && (
-                <Tag color="volcano" style={{ margin: 0, borderRadius: 2 }}>
-                  Đang thắc mắc: {period.disputed_count}
-                </Tag>
+                <Tag color="volcano" style={{ margin: 0, borderRadius: 2 }}>Thắc mắc: {period.disputed_count}</Tag>
               )}
             </>
           )}
-          {period.paid_at && (
-            <Tag color="green">Đã thanh toán: {String(period.paid_at).slice(0, 16).replace('T', ' ')}{period.paid_by_name ? ` (${period.paid_by_name})` : ''}{period.note ? ` · CT: ${period.note}` : ''}</Tag>
+        </Space>
+
+        <Space size={8} wrap>
+          {isPublishedOrPaid && (canManage || canPublish || canPay) && (
+            <Button size="small" icon={<MailOutlined />} loading={notifyPayslips.isPending} onClick={() => notifyPayslips.mutate()}>
+              Gửi lại phiếu lương
+            </Button>
+          )}
+          {canManage && editable && <Button size="small" icon={<CalculatorOutlined />} loading={recalc.isPending} onClick={() => recalc.mutate()}>Tính lại</Button>}
+          {canManage && editable && (
+            <Popconfirm title="Xóa kỳ lương này?" description="Toàn bộ bảng lương nháp của kỳ sẽ bị xóa." okText="Xóa" cancelText="Hủy bỏ" okButtonProps={{ danger: true, icon: <DeleteOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onConfirm={() => remove.mutateAsync()}>
+              <Button size="small" danger icon={<DeleteOutlined />} loading={remove.isPending}>Xóa kỳ</Button>
+            </Popconfirm>
+          )}
+          {(canManage || isAdmin) && back && (
+            <Button size="small" icon={<RollbackOutlined />} loading={transition.isPending && transition.variables?.target === back} onClick={() => transition.mutate({ target: back })}>
+              Trả về {PAY_PERIOD_STATUS_LABELS[back]}
+            </Button>
+          )}
+
+          {period.status === 'DRAFT' && canManage && (
+            <Popconfirm
+              title="Gửi bảng lương trình Ban Quản trị ký phê duyệt?"
+              description="Hệ thống sẽ tổng hợp lại số liệu công lương mới nhất và gửi thông báo tới Ban Quản trị để rà soát & ký chữ ký số."
+              okText="Gửi trình Quản trị" cancelText="Hủy bỏ" okButtonProps={{ icon: <SendOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
+              onConfirm={() => submitAdminMut.mutateAsync()}
+            >
+              <Button size="small" type="primary" icon={<SendOutlined />} loading={submitAdminMut.isPending}>
+                Gửi trình Quản trị phê duyệt
+              </Button>
+            </Popconfirm>
+          )}
+
+          {period.status === 'RECONCILE' && (
+            isAdmin ? (
+              <Button size="small" type="primary" icon={<SafetyCertificateOutlined />} onClick={() => setAdminApproveOpen(true)}>
+                Duyệt &amp; Ký chữ ký Quản trị
+              </Button>
+            ) : (
+              <Tag color="processing" icon={<ClockCircleOutlined />} style={{ margin: 0, padding: '2px 8px' }}>
+                Đã gửi trình — Đang chờ Ban Quản trị ký phê duyệt
+              </Tag>
+            )
+          )}
+
+          {period.status === 'APPROVED' && canPublish && (
+            <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => setFinancePublishOpen(true)}>
+              Ký chữ ký Kế toán &amp; Phát hành xuống NV
+            </Button>
+          )}
+
+          {period.status === 'PUBLISHED' && canPay && (
+            <Popconfirm
+              title="Tất toán & khóa hoàn tất toàn bộ kỳ lương?"
+              description={
+                <div style={{ maxWidth: 330 }}>
+                  <div>Bạn có thể đánh dấu Đã thanh toán cho từng nhân sự qua nút Mã QR trên bảng, hoặc bấm xác nhận bên dưới để tất toán toàn bộ kỳ lương.</div>
+                  <Input size="small" style={{ marginTop: 8 }} placeholder="Mã chứng từ / UNC tổng (VD: UNC-202610)" value={payVoucherNote} onChange={(e) => setPayVoucherNote(e.target.value)} />
+                </div>
+              }
+              okText="Tất toán cả kỳ" cancelText="Hủy bỏ" okButtonProps={{ icon: <CheckCircleOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
+              onConfirm={() => transition.mutateAsync({ target: 'PAID', note: payVoucherNote.trim() || period.note || 'Đã tất toán toàn bộ kỳ lương' })}
+            >
+              <Button size="small" icon={<CheckCircleOutlined />} loading={transition.isPending && transition.variables?.target === 'PAID'}>
+                Tất toán cả kỳ
+              </Button>
+            </Popconfirm>
           )}
         </Space>
-        {(canManage || canDoNext || (isPublishedOrPaid && canNotify)) && (
-          <Space size={8} wrap>
-            {isPublishedOrPaid && canNotify && (
-              <Button size="small" icon={<MailOutlined />} loading={notifyPayslips.isPending} onClick={() => notifyPayslips.mutate()}>
-                Gửi lại phiếu lương
-              </Button>
-            )}
-            {canManage && editable && <Button size="small" icon={<CalculatorOutlined />} loading={recalc.isPending} onClick={() => recalc.mutate()}>Tính lại</Button>}
-            {canManage && editable && (
-              <Popconfirm title="Xóa kỳ lương này?" description="Toàn bộ bảng lương nháp của kỳ sẽ bị xóa." okText="Xóa" cancelText="Hủy bỏ" okButtonProps={{ danger: true, icon: <DeleteOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onConfirm={() => remove.mutateAsync()}>
-                <Button size="small" danger icon={<DeleteOutlined />} loading={remove.isPending}>Xóa kỳ</Button>
-              </Popconfirm>
-            )}
-            {canManage && back && <Button size="small" icon={<RollbackOutlined />} loading={transition.isPending && transition.variables?.target === back} onClick={() => transition.mutate({ target: back })}>Trả về {PAY_PERIOD_STATUS_LABELS[back]}</Button>}
-            {canDoNext && next && (
-              <Popconfirm
-                title={next.label}
-                description={
-                  <div style={{ maxWidth: 340 }}>
-                    <div>{next.confirm}</div>
-                    {next.next === 'PAID' && (
-                      <>
-                        <div style={{ marginTop: 6, fontSize: 12, color: (period.disputed_count ?? 0) > 0 ? '#DC2626' : '#0F172A' }}>
-                          Tiến độ xác nhận: <strong>{period.confirmed_count ?? 0}/{period.issued_payslips_count || period.total_employees}</strong> nhân sự đã xác nhận
-                          {(period.disputed_count ?? 0) > 0 ? ` · Đang có ${period.disputed_count} phiếu thắc mắc mở` : ''}.
-                        </div>
-                        <Input
-                          size="small" style={{ marginTop: 8 }}
-                          placeholder="Mã chứng từ / Ủy nhiệm chi (VD: UNC-202610-01)"
-                          value={payVoucherNote}
-                          onChange={(e) => setPayVoucherNote(e.target.value)}
-                        />
-                      </>
-                    )}
-                  </div>
-                }
-                okText="Xác nhận" cancelText="Hủy bỏ" okButtonProps={{ icon: <CheckCircleOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
-                onConfirm={() => transition.mutateAsync({ target: next.next, note: next.next === 'PAID' ? (payVoucherNote.trim() || period.note || 'Đã đối chiếu UNC ngân hàng') : undefined })}
-              >
-                <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={transition.isPending && transition.variables?.target === next.next}>{next.label}</Button>
-              </Popconfirm>
-            )}
-          </Space>
-        )}
       </Flex>
+
+      <AdminApprovePeriodModal open={adminApproveOpen} period={period} onClose={() => setAdminApproveOpen(false)} onSuccess={refresh} />
+      <FinancePublishPeriodModal open={financePublishOpen} period={period} onClose={() => setFinancePublishOpen(false)} onSuccess={refresh} />
     </div>
   );
 }

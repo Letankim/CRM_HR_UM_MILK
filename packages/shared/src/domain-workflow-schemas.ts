@@ -47,6 +47,12 @@ export const zPayslip = zSystemColumns.extend({
   dispute_status: enumOrDefault(['NONE', 'OPEN', 'RESOLVED'] as const, 'NONE'),
   dispute_reason: z.string().default(''),
   pdf_drive_file_id: z.string().default(''),
+  admin_signature_file_id: z.string().default(''),
+  finance_signature_file_id: z.string().default(''),
+  employee_signature_file_id: z.string().default(''),
+  paid_at: z.string().default(''),
+  paid_by: z.string().default(''),
+  payment_reference: z.string().default(''),
 });
 export type Payslip = z.infer<typeof zPayslip>;
 
