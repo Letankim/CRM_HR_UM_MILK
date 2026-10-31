@@ -9,6 +9,7 @@ import { nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { queueAttendanceAdjustmentCreatedEmail, queueAttendanceAdjustmentDecidedEmails } from '../services/action-email-dispatcher.js';
+import { runBackgroundSideEffect } from '../services/background-write.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { applyApprovedAdjustmentToShift, assertNoDuplicateAdjustment } from '../services/shift-absent-scanner.js';
@@ -72,10 +73,17 @@ export function registerAttendanceAdjustmentRoutes(app: FastifyInstance, ctx: Ap
       requested_check_in_at: punchType === 'CHECK_OUT' ? shiftStart : (body.requested_check_in_at || shiftStart), requested_check_out_at: punchType === 'CHECK_IN' ? shiftEnd : (body.requested_check_out_at || shiftEnd), requested_hours: shiftHours,
       reason: body.reason, evidence_file_id: evidence?.fileId ?? '', exception_source: isSelfEmp ? 'EMPLOYEE' : 'MANAGER', status: 'PENDING', store_confirmed_by: '', store_confirmed_at: '', store_note: '', hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
     }, caller.id);
+    evidence?.syncDrive?.(async (driveFileId) => {
+      const cur = ctx.db.attendanceAdjustments.get(created.id);
+      if (cur) await ctx.db.attendanceAdjustments.update(cur.id, cur.version, { evidence_file_id: driveFileId }, 'system-drive-sync');
+    });
     queueAttendanceAdjustmentCreatedEmail(ctx, created, caller.id);
-    await ensureSyncedNotifications(ctx);
-    await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.create', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: created.id, after: { adjustment_code: created.adjustment_code, assignment_id: created.assignment_id, punch_type: created.punch_type, has_evidence: Boolean(evidence) } });
+    const reqAuditCtx = auditContext(request);
     emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: effectiveBranchId, employeeIds: [emp.id], kind: 'ADJUSTMENT_CREATED', message: `${emp.full_name} (${emp.employee_code}) vừa gửi ${ADJUSTMENT_PUNCH_TYPE_LABELS[punchType].toLowerCase()} ${created.adjustment_code} chờ duyệt`, actorId: caller.id });
+    await runBackgroundSideEffect(async () => {
+      await ensureSyncedNotifications(ctx);
+      await ctx.audit.record(reqAuditCtx, { action: 'attendance.adjustment.create', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: created.id, after: { adjustment_code: created.adjustment_code, assignment_id: created.assignment_id, punch_type: created.punch_type, has_evidence: Boolean(evidence) } });
+    });
     return reply.code(201), sendSuccess(request, `Đã gửi phiếu ${ADJUSTMENT_PUNCH_TYPE_LABELS[punchType].toLowerCase()} kèm minh chứng — chờ HR phê duyệt`, mapAdjustmentRecord(ctx, created));
   });
 
@@ -89,9 +97,12 @@ export function registerAttendanceAdjustmentRoutes(app: FastifyInstance, ctx: Ap
     const updated = await ctx.db.attendanceAdjustments.update(id, body.version, patch, actorId);
     if (body.action === 'HR_APPROVE') await applyApprovedAdjustmentToShift(ctx.db, id, actorId);
     queueAttendanceAdjustmentDecidedEmails(ctx, updated, body.action, actorId);
-    await ensureSyncedNotifications(ctx);
-    await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.decide', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: id, before: { status: before.status }, after: { status: updated.status, hr_decision: updated.hr_decision } });
+    const reqAuditCtx = auditContext(request);
     emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: body.action === 'STORE_CONFIRM' ? 'ADJUSTMENT_STORE_CONFIRMED' : 'ADJUSTMENT_DECIDED', message: `Phiếu bổ sung công ${updated.adjustment_code} ngày ${updated.work_date} đã ${body.action === 'STORE_CONFIRM' ? 'được Cửa hàng xác nhận' : body.action === 'HR_APPROVE' ? 'được HR phê duyệt' : 'bị từ chối'}`, actorId });
+    await runBackgroundSideEffect(async () => {
+      await ensureSyncedNotifications(ctx);
+      await ctx.audit.record(reqAuditCtx, { action: 'attendance.adjustment.decide', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: id, before: { status: before.status }, after: { status: updated.status, hr_decision: updated.hr_decision } });
+    });
     const approvedMsg = before.punch_type === 'CHECK_IN' ? 'Đã phê duyệt minh chứng — ghi nhận Vào ca thành công' : before.punch_type === 'CHECK_OUT' ? 'Đã phê duyệt minh chứng — ghi nhận Ra ca, ca làm việc hoàn thành' : 'Đã phê duyệt phiếu bổ sung công và cập nhật trạng thái hoàn thành ca làm việc';
     return sendSuccess(request, body.action === 'STORE_CONFIRM' ? 'Cửa hàng đã xác nhận phiếu bổ sung công để chuyển HR duyệt' : body.action === 'HR_APPROVE' ? approvedMsg : 'Đã từ chối phiếu bổ sung công', mapAdjustmentRecord(ctx, updated));
   });

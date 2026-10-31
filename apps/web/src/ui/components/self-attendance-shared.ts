@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type QueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { addDaysYmd, DEFAULT_OPERATION_SETTINGS, type OffWindowState, type OperationSettings } from '@umbm/shared';
 import { api } from '@/lib/api';
@@ -26,6 +26,54 @@ export interface SelfAttendanceExtras {
 export type OffWindowInfo = OffWindowState & { officialWeeklyOffLimit: number; maxShiftsPerDay: number };
 
 export const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
+
+export function formatPendingShiftLabel(code: string, punchType?: unknown, hasIn?: boolean): string {
+  const pt = String(punchType || '');
+  if (pt === 'CHECK_IN' || (!pt && !hasIn)) return `Đã gửi yêu cầu Vào ca (${code} · Chờ duyệt)`;
+  if (pt === 'CHECK_OUT' || (!pt && hasIn)) return `Đã gửi yêu cầu Ra ca (${code} · Chờ duyệt)`;
+  return `Đã gửi bù công (${code} · Chờ duyệt)`;
+}
+
+export function formatPendingShiftButtonText(code: string, punchType?: unknown, hasIn?: boolean): string {
+  const pt = String(punchType || '');
+  if (pt === 'CHECK_IN' || (!pt && !hasIn)) return `Đã gửi yêu cầu Vào ca — Chờ duyệt (${code})`;
+  if (pt === 'CHECK_OUT' || (!pt && hasIn)) return `Đã gửi yêu cầu Ra ca — Chờ duyệt (${code})`;
+  return `Đã gửi yêu cầu bù công — Chờ duyệt (${code})`;
+}
+
+/** Cập nhật lạc quan cache `['my-attendance']` ngay lập tức (0ms) sau khi nhân viên gửi phiếu bổ sung công. */
+export function applyOptimisticAdjustmentToMyAttendance(qc: QueryClient, createdAdj?: Record<string, unknown> | null): void {
+  if (!createdAdj) return;
+  const code = String(createdAdj.adjustment_code || 'ADJ');
+  const assignId = String(createdAdj.assignment_id || '');
+  const workDate = String(createdAdj.work_date || '');
+  const shiftCode = String(createdAdj.shift_code || '');
+  const punchType = String(createdAdj.punch_type || 'FULL_SHIFT');
+
+  qc.setQueryData<Record<string, unknown>>(['my-attendance'], (old) => {
+    if (!old) return old;
+    const prevAdjs = Array.isArray(old.adjustments) ? (old.adjustments as Record<string, unknown>[]) : [];
+    const nextAdjs = [createdAdj, ...prevAdjs.filter((a) => String(a.id) !== String(createdAdj.id))];
+    const prevShifts = Array.isArray(old.shifts) ? (old.shifts as Record<string, unknown>[]) : [];
+    const nextShifts = prevShifts.map((s) => {
+      const matched = (assignId && String(s.id) === assignId)
+        || (String(s.workDate || s.work_date) === workDate && String(s.shiftCode || s.shift_code) === shiftCode);
+      if (!matched) return s;
+      return {
+        ...s,
+        pendingAdjustmentCode: code,
+        pendingAdjustmentStatus: 'PENDING',
+        pendingAdjustmentPunchType: punchType,
+        rejectedAdjustmentCode: null,
+        rejectedAdjustmentPunchType: null,
+        rejectedAdjustmentReason: null,
+        attendanceStatusLabel: formatPendingShiftLabel(code, punchType, Boolean(s.checkInEvent)),
+        attendanceStatusColor: 'orange',
+      };
+    });
+    return { ...old, shifts: nextShifts, adjustments: nextAdjs };
+  });
+}
 
 /** Đọc dữ liệu Cổng nhân viên dùng chung cache `['my-attendance']`. */
 export function useMyAttendanceExtras(enabled = true) {
@@ -81,6 +129,7 @@ export function describeSelfShiftState(s: Record<string, unknown>, todayDate: st
   const exp = s.status === 'ABSENT' || Boolean(s.isAbsentShift) || (!hasIn && s.status === 'PUBLISHED' && (wd < todayDate || (isT && (Boolean(s.isExpiredToday) || nowHm > String(s.endAt || '12:00')))));
   if (s.status === 'DRAFT') return 'Chờ CH / HR duyệt phân ca';
   if (s.status === 'COMPLETED' || (hasIn && hasOut)) return 'Đã hoàn thành ca';
+  if (s.pendingAdjustmentCode) return formatPendingShiftLabel(String(s.pendingAdjustmentCode), s.pendingAdjustmentPunchType, hasIn);
   if (exp) return 'Vắng mặt (Quá giờ ca — Cần bù công)';
   if (hasIn && Boolean(s.isForgotCheckout)) return `Quên Ra ca (Quá ${lateHours} giờ sau giờ kết thúc — Cần gửi phiếu lỗi)`;
   if (hasIn && Boolean(s.isWithinCheckoutGrace)) return `Đã vào ca (Còn hạn Ra ca đến ${String(s.checkoutGraceDeadlineHm || '')})`;

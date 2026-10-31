@@ -8,13 +8,14 @@ import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
 import { useMe } from '@/lib/auth';
 import { ADJUSTMENT_CAUSE_OPTIONS, AdjustmentEvidenceFields, inferAdjustmentPunchType, kindFromPunchType, type AdjustmentPunchType } from './AdjustmentEvidenceFields';
+import { applyOptimisticAdjustmentToMyAttendance } from './self-attendance-shared';
 
 const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
 
 /** Kiểm tra một bản ghi phân ca có đang ở trạng thái Vắng mặt hoặc Quên Ra ca cần bổ sung công (chưa gửi phiếu chờ duyệt) hay không. */
 export function isAbsentShiftRecord(r?: Record<string, unknown> | null): boolean {
   if (!r || r.status === 'COMPLETED' || r.status === 'DRAFT' || r.dayType === 'OFF' || r.status === 'ON_LEAVE') return false;
-  if (r.pendingAdjustmentCode || String(r.attendanceStatusLabel || '').includes('Đã gửi bù công')) return false;
+  if (r.pendingAdjustmentCode || String(r.attendanceStatusLabel || '').includes('Đã gửi')) return false;
   const lbl = String(r.attendanceStatusLabel || '');
   return (
     r.status === 'ABSENT' ||
@@ -29,7 +30,7 @@ export function isAbsentShiftRecord(r?: Record<string, unknown> | null): boolean
 /** Kiểm tra một ca làm việc đã gửi Phiếu bổ sung công đang chờ duyệt hay chưa. */
 export function hasPendingAdjustmentRecord(r?: Record<string, unknown> | null): boolean {
   if (!r) return false;
-  return Boolean(r.pendingAdjustmentCode) || String(r.attendanceStatusLabel || '').includes('Đã gửi bù công');
+  return Boolean(r.pendingAdjustmentCode) || String(r.attendanceStatusLabel || '').includes('Đã gửi');
 }
 
 export interface QuickAbsentAdjustmentModalProps {
@@ -81,7 +82,7 @@ export function QuickAbsentAdjustmentModal({
     try {
       const vals = await form.validateFields();
       setSubmitting(true);
-      await api.post('/admin/attendance/adjustments', {
+      const created = await api.post<Record<string, unknown>>('/admin/attendance/adjustments', {
         employee_id: empId,
         assignment_id: String(shift.id),
         work_date: workDate,
@@ -94,6 +95,7 @@ export function QuickAbsentAdjustmentModal({
         requested_hours: hours,
         reason: vals.reason,
       });
+      applyOptimisticAdjustmentToMyAttendance(qc, created);
       message.success('Đã tạo phiếu bổ sung công cho ca vắng mặt thành công');
       ['schedules', 'attendance-adjustments', 'my-attendance', 'employees', 'employee-dossier', 'nv-schedules'].forEach((k) =>
         qc.invalidateQueries({ queryKey: [k] }),

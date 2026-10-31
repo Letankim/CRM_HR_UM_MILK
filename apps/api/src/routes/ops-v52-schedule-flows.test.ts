@@ -184,4 +184,34 @@ describe('Ops V5.2 — Chốt lịch tuần & tự động sắp ca theo ca mặ
     expect(t.db.attendanceAdjustments.get(inAdj.json().data.id)).toBeTruthy();
     expect(t.db.attendanceAdjustments.get(outAdj.json().data.id)).toBeTruthy();
   });
+
+  it('Khóa nút Vào ca / Ra ca khi đang chờ duyệt phiếu bù công; từ chối thì mở khóa lại & ảnh minh chứng phục vụ tức thì từ cache', async () => {
+    const hr = await t.loginHeaders('hr');
+    const emp = t.db.employees.find((e) => e.employee_code === 'NV0002')!;
+    const branch = t.db.branches.get(emp.branch_id)!;
+    const nv2 = { ...web, cookie: (await t.login('0901000002', DEMO_PIN, 'employee')).cookie };
+    const workDate = day(50);
+    const sh = (await t.app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hr, payload: { employee_id: emp.id, work_date: workDate, shift_code: 'CA_SANG', status: 'PUBLISHED' } })).json().data;
+    const bigImg = `data:image/jpeg;base64,${Buffer.alloc(128, 7).toString('base64')}`;
+    const adjIn = (await t.app.inject({ method: 'POST', url: '/api/admin/attendance/adjustments', headers: nv2, payload: { employee_id: emp.id, assignment_id: sh.id, work_date: workDate, shift_code: 'CA_SANG', punch_type: 'CHECK_IN', reason: 'Lỗi mạng khi vào ca', evidence_photo_base64: bigImg } })).json().data;
+    expect((await t.app.inject({ method: 'GET', url: adjIn.evidencePhotoUrl })).statusCode).toBe(200);
+
+    const myPending = (await t.app.inject({ method: 'GET', url: '/api/my-attendance', headers: nv2 })).json().data.shifts.find((s: { id: string }) => s.id === sh.id);
+    expect(myPending.pendingAdjustmentCode).toBe(adjIn.adjustment_code);
+    expect(myPending.pendingAdjustmentPunchType).toBe('CHECK_IN');
+    expect(myPending.attendanceStatusLabel).toContain('Đã gửi yêu cầu Vào ca');
+    const blockedIn = await t.app.inject({ method: 'POST', url: '/api/attendance/check', headers: nv2, payload: { assignment_id: sh.id, type: 'CHECK_IN', lat: branch.lat, lng: branch.lng } });
+    expect(blockedIn.statusCode).toBe(400);
+
+    await t.app.inject({ method: 'POST', url: `/api/admin/attendance/adjustments/${adjIn.id}/decide`, headers: hr, payload: { version: adjIn.version, action: 'HR_REJECT', decision_reason: 'Ảnh minh chứng bị mờ' } });
+    const myRej = (await t.app.inject({ method: 'GET', url: '/api/my-attendance', headers: nv2 })).json().data.shifts.find((s: { id: string }) => s.id === sh.id);
+    expect(myRej.pendingAdjustmentCode).toBeNull();
+    expect(myRej.rejectedAdjustmentCode).toBe(adjIn.adjustment_code);
+    expect(myRej.rejectedAdjustmentReason).toBe('Ảnh minh chứng bị mờ');
+    expect((await t.app.inject({ method: 'POST', url: '/api/attendance/check', headers: nv2, payload: { assignment_id: sh.id, type: 'CHECK_IN', lat: branch.lat, lng: branch.lng } })).statusCode).toBe(201);
+
+    const adjOut = (await t.app.inject({ method: 'POST', url: '/api/admin/attendance/adjustments', headers: nv2, payload: { employee_id: emp.id, assignment_id: sh.id, work_date: workDate, shift_code: 'CA_SANG', punch_type: 'CHECK_OUT', reason: 'Lỗi GPS khi ra ca', evidence_photo_base64: bigImg } })).json().data;
+    expect((await t.app.inject({ method: 'POST', url: '/api/attendance/check', headers: nv2, payload: { assignment_id: sh.id, type: 'CHECK_OUT', lat: branch.lat, lng: branch.lng } })).statusCode).toBe(400);
+    expect(adjOut.punch_type).toBe('CHECK_OUT');
+  });
 });

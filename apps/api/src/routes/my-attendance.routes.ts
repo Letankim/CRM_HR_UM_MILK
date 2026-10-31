@@ -7,9 +7,11 @@ import { sendSuccess } from '../lib/response.js';
 import { dayjs } from '../lib/time.js';
 import { requireAuth } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { runBackgroundSideEffect } from '../services/background-write.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { evaluateBranchShiftCapacity, getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
+import { formatPendingAdjustmentLabel } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { mapAttendanceEvent, migrateLegacyBase64Photos } from './attendance-helpers.js';
 import { findLinkedEmployeeForUser } from './employee-mapper.js';
@@ -58,7 +60,7 @@ export async function ensurePersonalProfile(ctx: AppContext, user: User): Promis
 export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/my-attendance', { preHandler: requireAuth() }, async (request) => {
     void migrateLegacyBase64Photos(ctx);
-    await healBranchConsistency(ctx);
+    await runBackgroundSideEffect(() => healBranchConsistency(ctx));
     const user = request.auth!.user, settings = getOperationSettings(ctx.db);
     const emp = await ensurePersonalProfile(ctx, user);
     const branch = ctx.db.branches.get(emp.branch_id) ?? ctx.db.branches.all()[0];
@@ -87,14 +89,24 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       const effectiveStatus = isDone && (base.status === 'PUBLISHED' || base.status === 'ABSENT') ? 'COMPLETED' : base.status;
       const effectiveStatusLabel = effectiveStatus === 'COMPLETED' ? 'Đã hoàn thành' : base.statusLabel;
       const inTimeHm = inEv ? String(inEv.checkTimeFormatted || '').slice(0, 5) : '';
+      const pendingLabel = base.pendingAdjustmentCode ? formatPendingAdjustmentLabel(base.pendingAdjustmentCode, base.pendingAdjustmentPunchType) : '';
+      const hasRelevantRejection = !isDone && !pendingLabel && Boolean(base.rejectedAdjustmentCode) && !(inEv && base.rejectedAdjustmentPunchType === 'CHECK_IN');
       const attendanceStatusLabel = isDone ? 'Đã hoàn thành ca'
-        : isAbsentShift ? (base.pendingAdjustmentCode ? `Đã gửi bù công (${base.pendingAdjustmentCode} · Chờ duyệt)` : 'Vắng mặt (Quá giờ ca — Cần bổ sung công)')
         : isPendingApproval ? 'Chờ CH / HR duyệt phân ca'
-        : inEv ? (base.pendingAdjustmentCode ? `Đã gửi bù công (${base.pendingAdjustmentCode} · Chờ duyệt)` : isForgotCheckout ? `Quên Ra ca (Vào ${inTimeHm} — Cần bổ sung công)` : isWithinCheckoutGrace ? `Đã vào ca (${inTimeHm} · Còn hạn Ra ca đến ${win.graceDeadlineHm})` : `Đã vào ca (${inTimeHm})`)
+        : pendingLabel ? pendingLabel
+        : isAbsentShift ? 'Vắng mặt (Quá giờ ca — Cần bổ sung công)'
+        : inEv ? (isForgotCheckout ? `Quên Ra ca (Vào ${inTimeHm} — Cần bổ sung công)` : isWithinCheckoutGrace ? `Đã vào ca (${inTimeHm} · Còn hạn Ra ca đến ${win.graceDeadlineHm})` : `Đã vào ca (${inTimeHm})`)
         : base.pendingSwapCode ? `Chờ duyệt đổi ca (${base.pendingSwapCode})`
         : base.pendingLeaveCode ? `Chờ duyệt nghỉ (${base.pendingLeaveCode})` : 'Chưa điểm danh';
-      const attendanceStatusColor = isDone ? 'green' : isAbsentShift ? (base.pendingAdjustmentCode ? 'orange' : 'red') : isPendingApproval ? 'gold' : inEv ? (base.pendingAdjustmentCode ? 'orange' : isForgotCheckout || inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : base.pendingSwapCode ? 'purple' : base.pendingLeaveCode ? 'gold' : 'default';
-      return { ...base, status: effectiveStatus, statusLabel: effectiveStatusLabel, isToday, isExpiredToday, isAbsentShift: !isDone && isAbsentShift, isForgotCheckout, isWithinCheckoutGrace, canCheckOutNow, checkoutGraceDeadlineHm: win.graceDeadlineHm, checkInEvent: inEv, checkOutEvent: outEv, attendanceStatusLabel, attendanceStatusColor };
+      const attendanceStatusColor = isDone ? 'green' : isPendingApproval ? 'gold' : pendingLabel ? 'orange' : isAbsentShift ? 'red' : inEv ? (isForgotCheckout || inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : base.pendingSwapCode ? 'purple' : base.pendingLeaveCode ? 'gold' : 'default';
+      return {
+        ...base, status: effectiveStatus, statusLabel: effectiveStatusLabel, isToday, isExpiredToday, isAbsentShift: !isDone && isAbsentShift,
+        isForgotCheckout, isWithinCheckoutGrace, canCheckOutNow, checkoutGraceDeadlineHm: win.graceDeadlineHm, checkInEvent: inEv, checkOutEvent: outEv,
+        rejectedAdjustmentCode: hasRelevantRejection ? base.rejectedAdjustmentCode : null,
+        rejectedAdjustmentPunchType: hasRelevantRejection ? base.rejectedAdjustmentPunchType : null,
+        rejectedAdjustmentReason: hasRelevantRejection ? base.rejectedAdjustmentReason : null,
+        attendanceStatusLabel, attendanceStatusColor,
+      };
     }).sort((a, b) => {
       const rank = (s: { workDate: string; isToday: boolean; status: string; isAbsentShift: boolean; isExpiredToday: boolean; canCheckOutNow: boolean; checkInEvent: unknown; checkOutEvent: unknown }) =>
         s.canCheckOutNow ? 0 : s.isToday ? (s.status === 'PUBLISHED' && !s.isAbsentShift && !s.isExpiredToday && !s.checkInEvent ? 1 : s.status === 'PUBLISHED' ? 2 : 3) : s.workDate > todayStr ? 4 : 5;

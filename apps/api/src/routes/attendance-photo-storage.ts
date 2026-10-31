@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { AttendanceEvent } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { dayjs } from '../lib/time.js';
+import { tolerantWrite } from '../services/background-write.js';
 
 /**
  * Lưu trữ ảnh Camera chấm công & ảnh minh chứng phiếu lỗi chấm công.
@@ -16,8 +17,9 @@ function getLocalPhotosDir(ctx: AppContext): string {
   return dir;
 }
 const sanitizeFileId = (fileId: string) => fileId.replace(/[^a-zA-Z0-9_-]/g, '');
-const MAX_PHOTO_RAM_CACHE = 60;
+const MAX_PHOTO_RAM_CACHE = 80;
 const photoRamCache = new Map<string, Buffer>();
+const driveUploadQueue: Array<() => Promise<void>> = [];
 let driveUploadsInFlight = 0;
 let migratingPhotos = false;
 
@@ -29,6 +31,28 @@ function putPhotoCache(key: string, buf: Buffer): void {
     if (oldest) photoRamCache.delete(oldest);
   }
   photoRamCache.set(key, buf);
+}
+
+function savePhotoLocally(ctx: AppContext, fileId: string, buf: Buffer): void {
+  const safeKey = sanitizeFileId(fileId);
+  if (!safeKey) return;
+  putPhotoCache(safeKey, buf);
+  try { writeFileSync(join(getLocalPhotosDir(ctx), `${safeKey}.jpg`), buf); } catch { /* ignore ephemeral disk */ }
+}
+
+function enqueueDriveUpload(job: () => Promise<void>): void {
+  driveUploadQueue.push(job);
+  const pump = () => {
+    while (driveUploadsInFlight < 2 && driveUploadQueue.length > 0) {
+      const next = driveUploadQueue.shift()!;
+      driveUploadsInFlight++;
+      void next().catch(() => undefined).finally(() => {
+        driveUploadsInFlight--;
+        pump();
+      });
+    }
+  };
+  pump();
 }
 
 /** Tên thư mục ca an toàn cho Google Drive, ví dụ "Ca Sáng (07h00-12h00)". */
@@ -43,11 +67,18 @@ export function buildAttendanceFolderSegments(workDate: string, shiftFolder: str
   return [day.slice(0, 7), day, shiftFolder];
 }
 
+export interface PersistedPhotoResult {
+  fileId: string;
+  sha256: string;
+  /** Gọi sau khi đã insert bản ghi để đồng bộ fileId Google Drive chạy ngầm mà không chặn phản hồi HTTP. */
+  syncDrive?: (onDriveFileId: (driveFileId: string) => Promise<unknown>) => void;
+}
+
 export async function persistAttendancePhoto(
   ctx: AppContext,
   params: { base64: string; employeeCode: string; checkType: 'CHECK_IN' | 'CHECK_OUT' | 'EVIDENCE'; workDate: string; shiftFolder?: string; rootFolder?: 'ATTENDANCE' | 'EVIDENCE' },
   forceDriveUpload = false,
-): Promise<{ fileId: string; sha256: string }> {
+): Promise<PersistedPhotoResult> {
   const match = params.base64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   const mimeType = match?.[1] ?? 'image/jpeg', rawPayload = match?.[2] ?? params.base64;
   const buffer = Buffer.from(rawPayload, 'base64');
@@ -59,24 +90,40 @@ export async function persistAttendancePhoto(
   const workDate = params.workDate || dayjs().format('YYYY-MM-DD');
   const folderSegments = buildAttendanceFolderSegments(workDate, params.shiftFolder || 'Ca lam viec');
   const fileName = `${safeCode}_${params.checkType}_${workDate}_${dayjs().format('HHmmss')}_${Date.now() % 100000}.${ext}`;
-  let fileId = `local_${Date.now()}_${sha256.slice(-6)}`, uploadedToDrive = false;
+  const localId = `local_${Date.now()}_${sha256.slice(-6)}`;
+  savePhotoLocally(ctx, localId, buffer);
 
-  if (ctx.google.uploadAttendancePhoto && (forceDriveUpload || driveUploadsInFlight < 2)) {
-    driveUploadsInFlight++;
+  if (!ctx.google.uploadAttendancePhoto) return { fileId: localId, sha256 };
+
+  const uploadArgs = { fileName, mimeType, data: buffer, monthFolder: workDate.slice(0, 7), folderSegments, rootFolder: params.rootFolder ?? 'ATTENDANCE' };
+  const shouldUploadSync = forceDriveUpload || Boolean(process.env.VITEST) || ctx.google.mode !== 'google';
+
+  if (shouldUploadSync) {
+    let fileId = localId, uploadedToDrive = false;
     try {
-      const uploaded = await ctx.google.uploadAttendancePhoto({ fileName, mimeType, data: buffer, monthFolder: workDate.slice(0, 7), folderSegments, rootFolder: params.rootFolder ?? 'ATTENDANCE' });
-      if (uploaded.fileId) { fileId = uploaded.fileId; uploadedToDrive = true; }
-    } catch { /* fallback */ } finally { driveUploadsInFlight--; }
+      const uploaded = await ctx.google.uploadAttendancePhoto(uploadArgs);
+      if (uploaded.fileId) { fileId = uploaded.fileId; uploadedToDrive = true; savePhotoLocally(ctx, fileId, buffer); }
+    } catch { /* fallback local cache */ }
+    if (!uploadedToDrive && params.base64.length <= 42_000) {
+      setTimeout(() => { void migrateLegacyBase64Photos(ctx); }, 1500);
+      return { fileId: params.base64, sha256 };
+    }
+    return { fileId, sha256 };
   }
-  const safeCacheKey = sanitizeFileId(fileId);
-  putPhotoCache(safeCacheKey, buffer);
-  try { writeFileSync(join(getLocalPhotosDir(ctx), `${safeCacheKey}.jpg`), buffer); } catch { /* ignore ephemeral disk */ }
 
-  if (!uploadedToDrive && ctx.google.uploadAttendancePhoto && params.base64.length <= 42_000) {
-    setTimeout(() => { void migrateLegacyBase64Photos(ctx); }, 1500);
-    return { fileId: params.base64, sha256 };
-  }
-  return { fileId, sha256 };
+  return {
+    fileId: localId,
+    sha256,
+    syncDrive: (onDriveFileId) => {
+      enqueueDriveUpload(async () => {
+        const uploaded = await ctx.google.uploadAttendancePhoto!(uploadArgs);
+        if (uploaded.fileId) {
+          savePhotoLocally(ctx, uploaded.fileId, buffer);
+          await tolerantWrite(() => onDriveFileId(uploaded.fileId));
+        }
+      });
+    },
+  };
 }
 
 export async function loadAttendancePhotoBuffer(ctx: AppContext, fileId: string): Promise<Buffer | null> {
@@ -90,7 +137,7 @@ export async function loadAttendancePhotoBuffer(ctx: AppContext, fileId: string)
   }
   if (ctx.google.downloadDriveFile && !safeId.startsWith('local_')) {
     const buf = await ctx.google.downloadDriveFile(safeId);
-    if (buf) { putPhotoCache(safeId, buf); try { writeFileSync(cachePath, buf); } catch { /* ignore */ } return buf; }
+    if (buf) { savePhotoLocally(ctx, safeId, buf); return buf; }
   }
   return null;
 }

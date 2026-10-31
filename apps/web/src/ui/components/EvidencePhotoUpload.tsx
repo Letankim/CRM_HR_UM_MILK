@@ -20,7 +20,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 /** Nén ảnh người dùng tải lên hoặc chụp thành JPEG data URL (cạnh dài tối đa `maxSize`px, chất lượng `quality`). */
-export async function compressImageToJpegDataUrl(file: File, maxSize = 1280, quality = 0.82): Promise<string> {
+export async function compressImageToJpegDataUrl(file: File, maxSize = 1024, quality = 0.76): Promise<string> {
   const srcUrl = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {

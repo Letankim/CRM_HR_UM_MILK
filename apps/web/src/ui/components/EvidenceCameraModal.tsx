@@ -77,7 +77,7 @@ export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }
     if (!video || !cameraReady) return;
     const rawW = video.videoWidth || 960;
     const rawH = video.videoHeight || 720;
-    const scale = Math.min(1, 1280 / Math.max(rawW, rawH));
+    const scale = Math.min(1, 1024 / Math.max(rawW, rawH));
     const w = Math.max(1, Math.round(rawW * scale));
     const h = Math.max(1, Math.round(rawH * scale));
     const canvas = document.createElement('canvas');
@@ -86,7 +86,7 @@ export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, w, h);
-    setPreviewUrl(canvas.toDataURL('image/jpeg', 0.85));
+    setPreviewUrl(canvas.toDataURL('image/jpeg', 0.76));
   };
 
   return (

@@ -12,7 +12,8 @@ import { assertDateNotLockedByPayroll, findLockedPayrollPeriodForDate } from '..
 import { assertNoDuplicateOrOverlappingEmployeeShift, getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
 import { applyProbationExtraApproval, assertApprovedShiftNoteOnlyPatch, assertMaxShiftsPerDay } from '../services/schedule-rules.js';
 import { getOperationSettings } from '../services/operations-settings.service.js';
-import { clearShiftAttendanceOnWorkflowOverride, resolveShiftActiveRequests } from '../services/shift-absent-scanner.js';
+import { runBackgroundSideEffect } from '../services/background-write.js';
+import { clearShiftAttendanceOnWorkflowOverride, formatPendingAdjustmentLabel, resolveShiftActiveRequests } from '../services/shift-absent-scanner.js';
 import { queueScheduleShiftEmail } from '../services/action-email-dispatcher.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { emitScheduleRealtime, findBranchShiftTemplate, healBranchConsistency, resolveEmployeeBranchId } from './account-employee-sync.js';
@@ -41,13 +42,11 @@ export function mapShiftAssignment(a: ShiftAssignment, ctx: AppContext, shiftEve
   let attendanceStatusLabel = 'Chưa điểm danh', attendanceStatusColor = 'default';
   if (effectiveStatus === 'DRAFT') { attendanceStatusLabel = 'Chờ CH / HR duyệt phân ca'; attendanceStatusColor = 'gold'; }
   else if (effectiveStatus === 'COMPLETED') { attendanceStatusLabel = 'Đã hoàn thành ca'; attendanceStatusColor = 'green'; }
-  else if (effectiveStatus === 'ABSENT') {
-    attendanceStatusLabel = activeReqs.pendingAdjustmentCode ? `Đã gửi bù công (${activeReqs.pendingAdjustmentCode} · Chờ duyệt)` : 'Vắng mặt (Quá giờ ca — Cần bổ sung công)';
-    attendanceStatusColor = activeReqs.pendingAdjustmentCode ? 'orange' : 'red';
-  } else if (effectiveStatus === 'ON_LEAVE' || a.day_type === 'OFF') { attendanceStatusLabel = 'Nghỉ phép OFF'; attendanceStatusColor = 'default'; }
+  else if (effectiveStatus === 'ON_LEAVE' || a.day_type === 'OFF') { attendanceStatusLabel = 'Nghỉ phép OFF'; attendanceStatusColor = 'default'; }
+  else if (activeReqs.pendingAdjustmentCode) { attendanceStatusLabel = formatPendingAdjustmentLabel(activeReqs.pendingAdjustmentCode, activeReqs.pendingAdjustmentPunchType); attendanceStatusColor = 'orange'; }
+  else if (effectiveStatus === 'ABSENT') { attendanceStatusLabel = 'Vắng mặt (Quá giờ ca — Cần bổ sung công)'; attendanceStatusColor = 'red'; }
   else if (shiftEvents?.inHm) {
-    if (activeReqs.pendingAdjustmentCode) { attendanceStatusLabel = `Đã gửi bù công (${activeReqs.pendingAdjustmentCode} · Chờ duyệt)`; attendanceStatusColor = 'orange'; }
-    else if (win.isCheckoutLocked) { attendanceStatusLabel = `Quên Ra ca (Vào ${shiftEvents.inHm} — Cần bổ sung công)`; attendanceStatusColor = 'volcano'; }
+    if (win.isCheckoutLocked) { attendanceStatusLabel = `Quên Ra ca (Vào ${shiftEvents.inHm} — Cần bổ sung công)`; attendanceStatusColor = 'volcano'; }
     else if (win.isWithinCheckoutGrace) { attendanceStatusLabel = `Đã vào ca (${shiftEvents.inHm} · Còn hạn Ra ca đến ${win.graceDeadlineHm})`; attendanceStatusColor = 'processing'; }
     else { const punc = describePunctuality('CHECK_IN', shiftEvents.inLateMins ?? 0, 0); attendanceStatusLabel = `Đã vào ca (${shiftEvents.inHm} · ${punc.punctualityLabel})`; attendanceStatusColor = punc.punctualityStatus === 'LATE' ? 'volcano' : 'processing'; }
   } else if (activeReqs.pendingSwapCode) { attendanceStatusLabel = `Chờ duyệt đổi ca (${activeReqs.pendingSwapCode})`; attendanceStatusColor = 'purple'; }
@@ -78,8 +77,8 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/schedules', { preHandler: requirePermission('schedule.read', 'schedule.propose', 'schedule.publish', 'employee.read', 'self.schedule') }, async (request) => {
     const query = zScheduleQuery.parse(request.query);
     if (query.branch_id && query.branch_id !== 'ALL') assertBranchAccess(request, query.branch_id);
-    if (query.refresh === '1' || query.refresh === 'true') await Promise.all([ctx.db.shiftAssignments.refreshIfIdle(), ctx.db.employees.refreshIfIdle(), ctx.db.shiftTemplates.refreshIfIdle(), ctx.db.staffingRules.refreshIfIdle(), ctx.db.attendanceEvents.refreshIfIdle()]);
-    await healBranchConsistency(ctx);
+    if (query.refresh === '1' || query.refresh === 'true') { await Promise.all([ctx.db.shiftAssignments.refreshIfIdle(), ctx.db.employees.refreshIfIdle(), ctx.db.shiftTemplates.refreshIfIdle(), ctx.db.staffingRules.refreshIfIdle(), ctx.db.attendanceEvents.refreshIfIdle()]); await healBranchConsistency(ctx); }
+    else { await runBackgroundSideEffect(() => healBranchConsistency(ctx)); }
     let scoped = filterByBranch(request, ctx.db.shiftAssignments.all(), (a) => resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id));
     if (isEmployeeRole(request.auth!.user.role)) scoped = scoped.filter((a) => a.status !== 'DRAFT');
     if (query.from_date) scoped = scoped.filter((a) => a.work_date >= query.from_date!);

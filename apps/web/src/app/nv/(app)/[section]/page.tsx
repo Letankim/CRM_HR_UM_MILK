@@ -100,6 +100,7 @@ export default function EmployeeSection() {
 
   const refreshSection = () => ['my-attendance', 'schedules', 'nv-swaps', 'nv-tests', 'nv-comms', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const isRefreshing = myQ.isFetching || testsQ.isFetching || commsQ.isFetching;
+  const isInitialLoading = myQ.isLoading || (section === 'bai-kiem-tra' && testsQ.isLoading) || (section === 'ban-tin' && commsQ.isLoading);
   const isSchedSection = section === 'lich' || section === 'nghi-phep' || section === 'doi-ca';
   const schedMode = section === 'nghi-phep' ? 'leaves' : section === 'doi-ca' ? 'swaps' : 'shifts';
   const schedCenter = <EmployeeScheduleAndLeaveCenter todayDate={todayDate} empId={empId} empCode={empCode} stage={myQ.data?.profile.stage} canRegisterShift={myQ.data?.canRegisterShift} mode={schedMode} initialTab={schedMode} shifts={publishedShifts} leaves={myQ.data?.leaves ?? []} swaps={mySwaps} branchPeers={myQ.data?.branchPeers ?? []} refreshing={myQ.isFetching} onRefresh={refreshSection} />;
@@ -107,7 +108,7 @@ export default function EmployeeSection() {
   return (
     <div style={{ padding: isDesktop ? 0 : '8px 6px', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
       <Card size="small" title={title} extra={isSchedSection || section === 'them' ? undefined : <Button size="small" icon={<ReloadOutlined />} loading={isRefreshing} onClick={refreshSection}>Làm mới</Button>} style={{ marginBottom: 12 }}>
-        <Spin spinning={section !== 'them' && section !== 'thong-bao' && isRefreshing} tip="Đang tải dữ liệu...">
+        <Spin spinning={section !== 'them' && section !== 'thong-bao' && isInitialLoading} tip="Đang tải dữ liệu...">
         {isSchedSection && schedCenter}
         {section === 'diem-danh' && (
           <Row gutter={[16, 16]}>

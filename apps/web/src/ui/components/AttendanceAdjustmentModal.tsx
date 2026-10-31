@@ -9,6 +9,7 @@ import { api, ApiClientError } from '@/lib/api';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { ADJUSTMENT_CAUSE_OPTIONS, AdjustmentEvidenceFields, inferAdjustmentPunchType, kindFromPunchType } from './AdjustmentEvidenceFields';
 import { DateStringPicker, TimeStringPicker } from './DateTimePickers';
+import { applyOptimisticAdjustmentToMyAttendance } from './self-attendance-shared';
 
 const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
 
@@ -38,7 +39,7 @@ export function AttendanceAdjustmentModal({
     s.status === 'PUBLISHED' && !s.checkInEvent && !s.isAbsentShift && !s.isExpiredToday && (Boolean(s.isToday) || String(s.workDate || s.work_date) <= todayStr);
   const isShiftNeedsSupplement = (s: Record<string, unknown>) =>
     !s.pendingAdjustmentCode &&
-    !String(s.attendanceStatusLabel || '').includes('Đã gửi bù công') &&
+    !String(s.attendanceStatusLabel || '').includes('Đã gửi') &&
     (s.status === 'ABSENT' || Boolean(s.isAbsentShift) || isForgotOutShift(s) || isCheckInIncidentShift(s) || (s.status === 'PUBLISHED' && !s.checkInEvent && Boolean(s.isExpiredToday)));
 
   const absentShifts = useMemo(() => {
@@ -124,7 +125,8 @@ export function AttendanceAdjustmentModal({
     try {
       const vals = await form.validateFields();
       setLoading(true);
-      await api.post('/admin/attendance/adjustments', { ...vals, employee_id: employeeId });
+      const created = await api.post<Record<string, unknown>>('/admin/attendance/adjustments', { ...vals, employee_id: employeeId });
+      applyOptimisticAdjustmentToMyAttendance(qc, created);
       message.success('Đã gửi phiếu lỗi chấm công / bổ sung công kèm ảnh minh chứng thành công');
       form.resetFields(); onSuccess(); onClose();
     } catch (e) {

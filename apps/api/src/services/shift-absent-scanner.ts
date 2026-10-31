@@ -14,11 +14,8 @@ export function getVnNowDateAndHm(): { todayStr: string; nowHm: string } {
 }
 
 /**
- * Quét ngầm tự động các ca làm việc đã phát hành (PUBLISHED) nhưng đã qua giờ kết thúc ca
- * (ví dụ ca 07:00 - 12:00 mà hiện tại là 12:30 vẫn chưa có CHECK_IN và chưa có Phiếu bổ sung công được duyệt)
- * để khóa điểm danh và chuyển trạng thái sang Vắng mặt (ABSENT).
- * Đồng thời tự động khôi phục sang Đã hoàn thành (COMPLETED) nếu đã có Phiếu bổ sung công được HR phê duyệt.
- * Chỉ một lượt quét chạy tại một thời điểm; dòng bị xung đột phiên bản được bỏ qua và xử lý ở lượt sau.
+ * Quét ngầm tự động các ca PUBLISHED đã qua giờ kết thúc ca mà chưa CHECK_IN để chuyển sang Vắng mặt (ABSENT),
+ * đồng thời khôi phục sang Đã hoàn thành (COMPLETED) nếu đã có Phiếu bổ sung công được HR phê duyệt.
  */
 export function sweepExpiredShiftsAndMarkAbsent(
   db: Database,
@@ -148,15 +145,24 @@ export async function applyApprovedAdjustmentToShift(db: Database, adjustmentId:
   await db.shiftAssignments.update(targetShift.id, targetShift.version, { status: 'COMPLETED', scheduled_hours: adj.requested_hours || targetShift.scheduled_hours, note: `Đã bù công theo phiếu bổ sung ${adj.adjustment_code}` }, actorId);
   return targetShift.id;
 }
+export function formatPendingAdjustmentLabel(code: string, punchType?: string | null): string {
+  if (punchType === 'CHECK_IN') return `Đã gửi yêu cầu Vào ca (${code} · Chờ duyệt)`;
+  if (punchType === 'CHECK_OUT') return `Đã gửi yêu cầu Ra ca (${code} · Chờ duyệt)`;
+  return `Đã gửi bù công (${code} · Chờ duyệt)`;
+}
+
 export function resolveShiftActiveRequests(db: Database, shift: ShiftAssignment, emp?: Employee) {
   const matchEmp = (eid: string) => eid === shift.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
-  const approvedAdj = db.attendanceAdjustments.find((a) => a.status === 'APPROVED' && a.punch_type !== 'CHECK_IN' && ((shift.id && a.assignment_id === shift.id) || (matchEmp(a.employee_id) && a.work_date === shift.work_date && a.shift_code === shift.shift_code)));
-  const pendingAdj = db.attendanceAdjustments.find((a) => (a.status === 'PENDING' || a.status === 'STORE_CONFIRMED') && ((shift.id && a.assignment_id === shift.id) || (matchEmp(a.employee_id) && a.work_date === shift.work_date && a.shift_code === shift.shift_code)));
+  const shiftAdjs = db.attendanceAdjustments.filter((a) => (shift.id && a.assignment_id === shift.id) || (matchEmp(a.employee_id) && a.work_date === shift.work_date && a.shift_code === shift.shift_code)).reverse();
+  const approvedAdj = shiftAdjs.find((a) => a.status === 'APPROVED' && a.punch_type !== 'CHECK_IN');
+  const pendingAdj = shiftAdjs.find((a) => a.status === 'PENDING' || a.status === 'STORE_CONFIRMED');
+  const rejectedAdj = !pendingAdj && !approvedAdj ? shiftAdjs.find((a) => a.status === 'REJECTED') : undefined;
   const pendingSwap = db.shiftSwaps.find((s) => (s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED') && (s.from_assignment_id === shift.id || s.to_assignment_id === shift.id || (matchEmp(s.requester_id) && s.from_work_date === shift.work_date && s.from_shift_code === shift.shift_code)));
   const pendingLeave = db.leaveRequests.find((l) => (l.status === 'PENDING' || l.status === 'DRAFT') && ((shift.id && l.assignment_id === shift.id) || (matchEmp(l.employee_id) && l.leave_date === shift.work_date)));
   return {
     hasApprovedAdjustment: Boolean(approvedAdj),
-    pendingAdjustmentCode: pendingAdj?.adjustment_code ?? null, pendingAdjustmentStatus: pendingAdj?.status ?? null,
+    pendingAdjustmentCode: pendingAdj?.adjustment_code ?? null, pendingAdjustmentStatus: pendingAdj?.status ?? null, pendingAdjustmentPunchType: pendingAdj?.punch_type ?? null,
+    rejectedAdjustmentCode: rejectedAdj?.adjustment_code ?? null, rejectedAdjustmentPunchType: rejectedAdj?.punch_type ?? null, rejectedAdjustmentReason: rejectedAdj?.decision_reason ?? null,
     pendingSwapCode: pendingSwap?.swap_code ?? null, pendingLeaveCode: pendingLeave?.request_code ?? null,
   };
 }

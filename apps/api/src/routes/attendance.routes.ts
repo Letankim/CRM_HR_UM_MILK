@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { zListQueryBase } from '@umbm/shared';
+import { isEmployeeRole, zListQueryBase } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
@@ -8,6 +8,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
+import { runBackgroundSideEffect } from '../services/background-write.js';
 import { formatGraceLabel, getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
@@ -37,7 +38,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     return reply.header('Content-Type', 'image/jpeg').header('Cache-Control', 'public, max-age=31536000, immutable').send(buf);
   });
   app.get('/api/admin/attendance', { preHandler: requirePermission('attendance.read', 'self.attendance') }, async (request) => {
-    void migrateLegacyBase64Photos(ctx); await healBranchConsistency(ctx);
+    void migrateLegacyBase64Photos(ctx); await runBackgroundSideEffect(() => healBranchConsistency(ctx));
     const rawEvents = [...filterByBranch(request, ctx.db.attendanceEvents.all(), (e) => resolveEmployeeBranchId(ctx, e.employee_id, e.branch_id))].reverse().slice(0, 200);
     const events = rawEvents.map((e) => mapAttendanceEvent(e, ctx));
     const adjustments = [...filterByBranch(request, ctx.db.attendanceAdjustments.all(), (a) => resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id))].reverse().map((a) => {
@@ -49,8 +50,9 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   });
   app.get('/api/admin/attendance/sessions', { preHandler: requirePermission('attendance.read', 'schedule.read', 'self.attendance') }, async (request) => {
     const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), shift_code: z.string().trim().optional(), status: z.string().trim().optional(), from_date: z.string().trim().optional(), to_date: z.string().trim().optional(), refresh: z.string().trim().optional() }).parse(request.query ?? {});
-    if (query.refresh === '1') await ctx.db.attendanceEvents.refreshIfIdle();
-    void migrateLegacyBase64Photos(ctx); await healBranchConsistency(ctx);
+    if (query.refresh === '1') { await ctx.db.attendanceEvents.refreshIfIdle(); await healBranchConsistency(ctx); }
+    else { await runBackgroundSideEffect(() => healBranchConsistency(ctx)); }
+    void migrateLegacyBase64Photos(ctx);
     const scoped = filterByBranch(request, ctx.db.attendanceEvents.all(), (e) => resolveEmployeeBranchId(ctx, e.employee_id, e.branch_id));
     return sendPaginated(request, 'Lấy danh sách điểm danh Vào/Ra ca theo phiên làm việc thành công', buildPaginatedAttendanceSessions(ctx, scoped, query));
   });
@@ -80,6 +82,18 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const branch = findBranch(assign.branch_id) ?? empBranch;
     if (!branch || branch.status !== 'ACTIVE') throw Errors.notFound('Chi nhánh hoạt động', assign.branch_id || empRecord.branch_id);
     if (empBranch && empBranch.id !== branch.id) throw Errors.forbidden(`Nhân sự thuộc chi nhánh "${empBranch.name}", không được phép điểm danh Vào/Ra ca tại chi nhánh khác ("${branch.name}")`);
+    if (body.enforce_shift_state || isEmployeeRole(request.auth!.user.role)) {
+      const matchAssignEmp = (eid: string) => eid === assign.employee_id || eid === empRecord.id || eid === empRecord.employee_code;
+      const blockingAdj = ctx.db.attendanceAdjustments.find((a) =>
+        (a.status === 'PENDING' || a.status === 'STORE_CONFIRMED') &&
+        (a.assignment_id === assign.id || (matchAssignEmp(a.employee_id) && a.work_date === assign.work_date && a.shift_code === assign.shift_code)) &&
+        (a.punch_type === 'FULL_SHIFT' || a.punch_type === checkType),
+      );
+      if (blockingAdj) {
+        const actionLabel = checkType === 'CHECK_IN' ? 'Vào ca' : 'Ra ca';
+        throw Errors.badRequest(`Ca làm việc này đã gửi yêu cầu ${actionLabel} qua phiếu ${blockingAdj.adjustment_code} và đang chờ phê duyệt nên tạm khóa nút ${actionLabel}. Nếu phiếu bị từ chối khi vẫn còn trong khung giờ hợp lệ, hệ thống sẽ mở lại để bạn chấm công hoặc gửi lại minh chứng.`);
+      }
+    }
 
     if (body.enforce_shift_state) {
       const user = request.auth!.user;
@@ -128,9 +142,14 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       work_date: assign.work_date, shift_code: assign.shift_code, scheduled_time: schedTime, late_minutes: lateMinutes, early_leave_minutes: earlyLeaveMinutes, allowed_radius_m: branch.radius_m, gps_status: accuracyOk ? 'OK' : 'WARNING',
       photo_drive_file_id: uploadedPhoto.fileId, ip_address: request.ip, anomaly_flags_json: '[]', note: `${punc.punctualityLabel} · Khoảng cách GPS ${distanceM}m`,
     }, request.auth!.user.id);
+    uploadedPhoto.syncDrive?.(async (driveFileId) => {
+      const cur = ctx.db.attendanceEvents.get(created.id);
+      if (cur) await ctx.db.attendanceEvents.update(cur.id, cur.version, { photo_drive_file_id: driveFileId }, 'system-drive-sync');
+    });
     if (checkType === 'CHECK_OUT' && assign.status !== 'COMPLETED') await ctx.db.shiftAssignments.update(assign.id, assign.version, { status: 'COMPLETED' }, request.auth!.user.id);
-    await ctx.audit.record(auditContext(request), { action: checkType === 'CHECK_IN' ? 'attendance.check_in' : 'attendance.check_out', entity: 'ATTENDANCE_EVENTS', entityId: created.id, after: { type: created.type, distance_m: distanceM, within_radius: withinRadius, result, late_minutes: lateMinutes, early_leave_minutes: earlyLeaveMinutes } });
+    const reqAuditCtx = auditContext(request);
     ctx.realtime()?.toBranch(branch.id, 'attendance:event', { id: created.id, type: created.type, result, distanceM, lateMinutes, earlyLeaveMinutes, message: '' });
+    await runBackgroundSideEffect(() => ctx.audit.record(reqAuditCtx, { action: checkType === 'CHECK_IN' ? 'attendance.check_in' : 'attendance.check_out', entity: 'ATTENDANCE_EVENTS', entityId: created.id, after: { type: created.type, distance_m: distanceM, within_radius: withinRadius, result, late_minutes: lateMinutes, early_leave_minutes: earlyLeaveMinutes } }));
     return reply.code(201), sendSuccess(request, `Điểm danh ${checkType === 'CHECK_IN' ? 'vào ca' : 'ra ca'} thành công (${punc.punctualityLabel} · GPS ${distanceM}m)`, mapAttendanceEvent(created, ctx));
   });
 
