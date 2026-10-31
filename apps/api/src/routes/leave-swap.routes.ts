@@ -13,6 +13,7 @@ import { ensureSyncedNotifications } from '../services/notification-sync.service
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { findProbationLock, findWeekLock, matchEmp, resolveProbationCycle } from '../services/schedule-rules.js';
+import { resolveApplicableStaffingRule } from '../services/schedule-staffing-helper.js';
 import { assertNoDuplicateShiftWorkflow, clearShiftAttendanceOnWorkflowOverride, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { findLinkedEmployeeForUser } from './employee-mapper.js';
@@ -53,8 +54,8 @@ function assertSelfLeaveAllowed(ctx: AppContext, emp: Employee, leaveDate: strin
 export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
   const computeLeaveStaffing = (branchId: string, leaveDate: string, shiftCode: string, empId: string) => {
     const activeShifts = ctx.db.shiftAssignments.filter((a) => a.branch_id === branchId && a.work_date === leaveDate && a.shift_code === shiftCode && a.day_type !== 'OFF' && a.status !== 'ON_LEAVE' && a.status !== 'ABSENT');
-    const rule = ctx.db.staffingRules.find((sr) => (sr.branch_id === branchId || sr.branch_id === 'ALL') && (sr.shift_template_id === shiftCode || sr.shift_template_id === 'ALL'));
-    return { staffing_after_leave: activeShifts.filter((a) => a.employee_id !== empId).length, min_staff_required: rule?.min_staff ?? 2 };
+    const rule = resolveApplicableStaffingRule(ctx, branchId, shiftCode);
+    return { staffing_after_leave: activeShifts.filter((a) => a.employee_id !== empId).length, min_staff_required: rule?.min_staff ?? 1 };
   };
   app.get('/api/admin/leave-requests', { preHandler: requirePermission('schedule.read', 'leave.approve', 'self.leave') }, async (request) => {
     await healBranchConsistency(ctx);

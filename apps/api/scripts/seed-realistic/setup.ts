@@ -79,12 +79,11 @@ function planBranches(ctx: SeedCtx): BranchPlan[] {
 
     for (const tpl of shifts) {
       if (db.staffingRules.find((r) => r.branch_id === branch.id && r.shift_template_id === tpl.id)) continue;
-      const evening = tpl.start >= '17:00';
       out.staffingRules.push({
-        ...sys(ctx.nowIso), branch_id: branch.id, shift_template_id: tpl.id, min_staff: 2, max_staff: evening ? 3 : 4,
-        enforcement: evening ? 'SOFT_WARN' : 'HARD_BLOCK', effective_from: addDays(ctx.today, -ctx.opts.daysBack), day_of_week: 'ALL',
-        required_groups_json: JSON.stringify(evening ? ['BARISTA', 'SERVICE'] : ['BARISTA', 'CASHIER']), approved_by: ctx.hrUserName,
-        note: `Định biên chuẩn ${tpl.name} tại ${branch.code}`,
+        ...sys(ctx.nowIso), branch_id: branch.id, shift_template_id: tpl.id, min_staff: 1, max_staff: 1,
+        enforcement: 'HARD_BLOCK', effective_from: addDays(ctx.today, -ctx.opts.daysBack), day_of_week: 'ALL',
+        required_groups_json: JSON.stringify(['BARISTA']), approved_by: ctx.hrUserName,
+        note: `Định biên chuẩn ${tpl.name} tại ${branch.code}: 1 nhân sự / ca`,
       });
     }
 

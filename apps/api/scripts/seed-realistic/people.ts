@@ -40,7 +40,8 @@ function addStaff(ctx: SeedCtx, bp: BranchPlan, group: string, stage: 'OFFICIAL'
   const code = nextEmployeeCode(ctx);
   const username = pool.take('username', () => (flags.manager ? `ql.${branch.code.toLowerCase()}` : `nv.${code.toLowerCase()}`));
   const onboardAt = minIso(iso(addDays(dates.start, -1), `${rng.int(9, 16)}:${String(rng.int(0, 59)).padStart(2, '0')}`), ctx.nowIso);
-  const preferred = flags.manager ? bp.shifts[0]! : rng.pick(bp.shifts);
+  const nonManagerCount = bp.staff.filter((x) => !x.isManager).length;
+  const preferred = flags.manager ? bp.shifts[0]! : bp.shifts[nonManagerCount % bp.shifts.length]!;
   const label = STAFF_GROUP_LABELS[group] ?? group;
   const empId = newId();
   const userId = newId();

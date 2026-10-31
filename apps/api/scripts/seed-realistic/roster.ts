@@ -40,7 +40,7 @@ function planLeaves(ctx: SeedCtx, bp: BranchPlan): void {
         decided_by: decided ? bp.storeUserId : '', decision_reason: status === 'APPROVED' ? 'Đảm bảo đủ định biên ca, đồng ý cho nghỉ' : status === 'REJECTED' ? 'Ca đang thiếu định biên, vui lòng chọn ngày khác' : '',
         request_code: '', employee_stage: stageAt(s, date), schedule_week_id: `WK-${date.slice(0, 7)}`, assignment_id: '', shift_code: s.preferredShift,
         quota_cycle_used: 1, quota_cycle_limit: s.stage === 'PROBATION' ? SYSTEM_CONFIG.defaults.probationOffDays : 4,
-        staffing_after_leave: rng.int(2, 3), min_staff_required: 2, submitted_at: submittedAt,
+        staffing_after_leave: 1, min_staff_required: 1, submitted_at: submittedAt,
         store_reviewed_by: decided ? bp.storeUserId : '', store_reviewed_at: decidedAt, decided_at: decidedAt,
       });
       if (status === 'APPROVED') {
@@ -56,31 +56,29 @@ function scheduleDay(ctx: SeedCtx, bp: BranchPlan, date: string): void {
   const { rng } = ctx;
   const wd = weekday(date);
   const avail = bp.staff.filter((s) =>
-    date >= s.startDate && (s.isManager ? wd !== 0 : wd !== s.weeklyOff) &&
+    !s.isManager && !s.pending && date >= s.startDate && wd !== s.weeklyOff &&
     !ctx.approvedLeave.get(empId(s))?.has(date) && (s.workRatio >= 1 || rng.chance(s.workRatio)));
 
-  const buckets = new Map<string, StaffPlan[]>(bp.shifts.map((t) => [t.code, []]));
-  for (const s of avail) (buckets.get(s.isManager ? bp.shifts[0]!.code : s.preferredShift) ?? buckets.get(bp.shifts[0]!.code)!).push(s);
-  const movable = (list: StaffPlan[]) => list.filter((s) => !s.isManager);
-  const target = Math.min(2, Math.floor(avail.filter((s) => !s.isManager).length / bp.shifts.length));
-  for (let guard = 0; guard < 30; guard++) {
-    const sorted = [...buckets.entries()].sort((a, b) => movable(a[1]).length - movable(b[1]).length);
-    const [lowCode, low] = sorted[0]!;
-    const [, high] = sorted[sorted.length - 1]!;
-    if (movable(low).length >= target || movable(high).length <= target) break;
-    const candidates = movable(high);
-    const moved = candidates.find((s) => s.emp.staff_group !== 'SHIFT_LEADER') ?? candidates[0]!;
-    high.splice(high.indexOf(moved), 1);
-    buckets.get(lowCode)!.push(moved);
+  const assignedToday = new Set<string>();
+  const pickedByShift = new Map<string, StaffPlan>();
+  for (const tpl of bp.shifts) {
+    const primary = avail.find((s) => !assignedToday.has(empId(s)) && s.preferredShift === tpl.code);
+    if (primary) {
+      pickedByShift.set(tpl.code, primary);
+      assignedToday.add(empId(primary));
+    }
   }
-
-  for (const tpl of bp.shifts) for (const s of buckets.get(tpl.code) ?? []) pushAssignment(ctx, bp, s, tpl, date, 'WORK');
-
-  const isWeekend = wd === 0 || wd === 6;
-  const lastTpl = bp.shifts[bp.shifts.length - 1]!;
-  if (isWeekend && bp.shifts.length > 1 && rng.chance(0.4)) {
-    const helper = rng.shuffle(movable(buckets.get(bp.shifts[0]!.code) ?? [])).find((s) => s.stage === 'OFFICIAL');
-    if (helper) pushAssignment(ctx, bp, helper, lastTpl, date, 'OT');
+  for (const tpl of bp.shifts) {
+    if (pickedByShift.has(tpl.code)) continue;
+    const cover = avail.find((s) => !assignedToday.has(empId(s))) ?? avail.find((s) => s.stage === 'OFFICIAL');
+    if (cover) {
+      pickedByShift.set(tpl.code, cover);
+      assignedToday.add(empId(cover));
+    }
+  }
+  for (const tpl of bp.shifts) {
+    const chosen = pickedByShift.get(tpl.code);
+    if (chosen) pushAssignment(ctx, bp, chosen, tpl, date, 'WORK');
   }
 }
 

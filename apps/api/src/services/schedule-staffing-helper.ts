@@ -48,7 +48,7 @@ export function getShiftCheckoutWindow(
   };
 }
 
-function toMinuteSpan(startAt: string, endAt: string): [number, number] {
+export function toMinuteSpan(startAt: string, endAt: string): [number, number] {
   const s = parseHm(startAt || '07:00');
   const rawE = parseHm(endAt || '12:00');
   return [s, rawE <= s ? rawE + 1440 : rawE];
@@ -56,16 +56,7 @@ function toMinuteSpan(startAt: string, endAt: string): [number, number] {
 
 export function findEmployeeShiftConflictOnDate(
   ctx: AppContext,
-  params: {
-    emp: Employee;
-    workDate: string;
-    shiftCode: string;
-    startAt: string;
-    endAt: string;
-    dayType?: string;
-    status?: string;
-    excludeId?: string;
-  },
+  params: { emp: Employee; workDate: string; shiftCode: string; startAt: string; endAt: string; dayType?: string; status?: string; excludeId?: string },
 ): { kind: 'SAME_SHIFT' | 'OVERLAP_SHIFT'; message: string } | null {
   const { emp, workDate, shiftCode, startAt, endAt, dayType = 'WORK', status = 'PUBLISHED', excludeId } = params;
   const dateVi = dayjs(workDate).format('DD/MM/YYYY');
@@ -166,9 +157,9 @@ export function evaluateBranchShiftCapacity(
   const approvedCount = branchShiftRows.filter((a) => a.status === 'PUBLISHED' || a.status === 'COMPLETED').length;
   const pendingDraftCount = branchShiftRows.filter((a) => a.status === 'DRAFT').length;
   const rule = resolveApplicableStaffingRule(ctx, canonicalBranchId, params.shiftCode);
-  const minStaff = rule?.min_staff ?? null;
-  const maxStaff = rule?.max_staff ?? null;
-  const isFullOrExceeded = maxStaff !== null && approvedCount >= maxStaff;
+  const minStaff = rule?.min_staff ?? 1;
+  const maxStaff = rule?.max_staff ?? 1;
+  const isFullOrExceeded = approvedCount >= maxStaff;
 
   const empConflict = params.emp
     ? findEmployeeShiftConflictOnDate(ctx, { emp: params.emp, workDate: params.workDate, shiftCode: params.shiftCode, startAt, endAt })
@@ -181,8 +172,8 @@ export function evaluateBranchShiftCapacity(
   if (empConflict) {
     message = empConflict.message.replace(`Nhân sự ${params.emp!.full_name} (${params.emp!.employee_code})`, 'Bạn');
   } else if (isFullOrExceeded) {
-    message = `${shiftLabel} ngày ${dateVi} tại ${branchName} đã đạt tối đa quân số đã duyệt (${approvedCount}/${maxStaff} nhân sự), không thể đăng ký thêm.`;
-  } else if (maxStaff !== null) {
+    message = `${shiftLabel} ngày ${dateVi} tại ${branchName} đã đủ ${approvedCount}/${maxStaff} nhân sự theo định biên (mỗi ca chỉ bố trí đúng ${maxStaff} người), không thể xếp thêm.`;
+  } else {
     message = `${shiftLabel} ngày ${dateVi} tại ${branchName}: Đã duyệt ${approvedCount}/${maxStaff} nhân sự (còn nhận tối đa ${Math.max(0, maxStaff - approvedCount)} suất).`;
   }
 
@@ -191,4 +182,30 @@ export function evaluateBranchShiftCapacity(
     approvedCount, pendingDraftCount, minStaff, maxStaff, isFullOrExceeded,
     alreadyHasShift, hasOverlappingShift, canRegister: !isFullOrExceeded && !empConflict, message,
   };
+}
+
+export function assertBranchShiftCapacityAvailable(
+  ctx: AppContext,
+  params: { branchId: string; workDate: string; shiftCode: string; excludeIds?: string[]; extraCount?: number; field?: string },
+): void {
+  const branch = ctx.db.branches.get(params.branchId) ?? ctx.db.branches.find((b) => b.code === params.branchId);
+  const canonicalBranchId = branch?.id ?? params.branchId;
+  const branchName = branch ? `${branch.code} — ${branch.name}` : params.branchId;
+  const tpl = findBranchShiftTemplate(ctx, params.shiftCode, canonicalBranchId);
+  const shiftLabel = tpl?.name ?? DEFAULT_SHIFT_LABELS[params.shiftCode as keyof typeof DEFAULT_SHIFT_LABELS] ?? params.shiftCode;
+  const skip = new Set((params.excludeIds ?? []).filter(Boolean));
+  const approvedCount = ctx.db.shiftAssignments.filter(
+    (a) => !skip.has(a.id) && a.work_date === params.workDate && a.shift_code === params.shiftCode
+      && a.day_type !== 'OFF' && (a.status === 'PUBLISHED' || a.status === 'COMPLETED')
+      && resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id) === canonicalBranchId,
+  ).length + (params.extraCount ?? 0);
+  const maxStaff = resolveApplicableStaffingRule(ctx, canonicalBranchId, params.shiftCode)?.max_staff ?? 1;
+  if (approvedCount >= maxStaff) {
+    const dateVi = dayjs(params.workDate).format('DD/MM/YYYY');
+    throw Errors.fieldValidation(
+      params.field ?? 'shift_code', 'OUT_OF_RANGE',
+      `${shiftLabel} ngày ${dateVi} tại ${branchName} đã đủ ${approvedCount}/${maxStaff} nhân sự theo quy định (mỗi ca chỉ có ${maxStaff} người, không thể xếp nhiều hơn).`,
+      params.shiftCode,
+    );
+  }
 }

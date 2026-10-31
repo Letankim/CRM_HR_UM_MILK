@@ -32,9 +32,9 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
   const lockMut = useMutation({
     mutationFn: (ws: string) => api.post<PlannerWeekLockResult>('/admin/schedule-planner/week/lock', { week_start: ws, branch_id: branchId }),
     onSuccess: (res) => {
-      const summary = `Đã chốt lịch tuần ${fmtDm(res.weekStart)}: duyệt ${res.approvedOffCount} đơn OFF và tự động sắp ${res.createdCount} ca theo ca mặc định.`;
+      const summary = `Đã chốt lịch tuần ${fmtDm(res.weekStart)}: duyệt ${res.approvedOffCount} đơn OFF và tự động sắp ${res.createdCount} ca (đúng 1 người/ca).`;
       if (res.issues.length > 0) {
-        modal.warning({ width: 680, title: 'Đã chốt lịch nhưng còn trường hợp chưa xếp được', content: <Space direction="vertical" size={10} style={{ width: '100%' }}><span>{summary}</span><PlannerIssuesAlert issues={res.issues} maxHeight={320} collapsible={false} /></Space>, okText: 'Đã hiểu' });
+        modal.warning({ width: 680, title: 'Đã chốt lịch nhưng còn ca chưa đủ định biên 1 người/ca', content: <Space direction="vertical" size={10} style={{ width: '100%' }}><span>{summary}</span><PlannerIssuesAlert issues={res.issues} maxHeight={320} collapsible={false} /></Space>, okText: 'Đã hiểu' });
       } else message.success(summary);
       invalidate();
     },
@@ -56,8 +56,8 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
           <Space size={8} wrap>
             <Button icon={<ReloadOutlined />} loading={q.isFetching && !q.isLoading} onClick={() => q.refetch()}>Làm mới</Button>
             <Popconfirm
-              title="Chốt lịch & Tự động sắp ca"
-              description={<div style={{ maxWidth: 360 }}>Hệ thống sẽ duyệt toàn bộ đơn OFF đang chờ duyệt trong tuần và xếp ca mặc định cho nhân viên chính thức (mỗi khung ca 1 người theo định biên). Bạn có thể chốt lại để xếp bổ sung.</div>}
+              title="Chốt lịch & Tự động sắp kín tuần (1 người/ca)"
+              description={<div style={{ maxWidth: 380 }}>Hệ thống sẽ duyệt toàn bộ đơn OFF đang chờ duyệt trong tuần, ưu tiên xếp ca mặc định và tự động điều phối nhân sự chính thức cùng chi nhánh bù các ca có người nghỉ OFF để mỗi ca luôn có đúng 1 người trực.</div>}
               okText="Xác nhận chốt lịch" cancelText="Hủy bỏ" okButtonProps={{ icon: <CheckCircleOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
               disabled={!canPublish || !effWeek} onConfirm={() => effWeek && lockMut.mutate(effWeek)}
             >

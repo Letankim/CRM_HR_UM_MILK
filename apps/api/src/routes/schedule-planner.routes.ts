@@ -11,9 +11,9 @@ import { ensureSyncedNotifications } from '../services/notification-sync.service
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { planOfficialWeek, planProbationCycle, type PlanResult } from '../services/schedule-auto-planner.js';
-import { findProbationLock, findWeekLock, matchEmp, probationLockCode, weekLockCode } from '../services/schedule-rules.js';
-import { getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
-import { emitScheduleRealtime } from './account-employee-sync.js';
+import { findProbationLock, findWeekLock, isCountedWorkShift, matchEmp, probationLockCode, weekLockCode } from '../services/schedule-rules.js';
+import { clearShiftAttendanceOnWorkflowOverride, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
+import { emitScheduleRealtime, resolveEmployeeBranchId } from './account-employee-sync.js';
 
 const zWeekQuery = z.object({ week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày đầu tuần phải theo định dạng YYYY-MM-DD').optional(), branch_id: z.string().trim().optional().default('ALL') });
 const zWeekLockBody = z.object({ week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày đầu tuần phải theo định dạng YYYY-MM-DD'), branch_id: z.string().trim().optional().default('ALL'), note: z.string().trim().max(300).optional().default('') });
@@ -24,17 +24,31 @@ function mapOff(ctx: AppContext, l: LeaveRequest) {
   return { id: l.id, version: l.version, requestCode: l.request_code, leaveDate: l.leave_date, status: l.status, statusLabel: REQUEST_STATUS_LABELS[l.status], reason: l.reason, employeeId: emp?.id ?? l.employee_id, employeeCode: emp?.employee_code ?? l.employee_id, employeeName: emp?.full_name ?? 'Nhân sự', stage: emp?.stage ?? l.employee_stage, branchId: emp?.branch_id ?? l.branch_id, branchName: ctx.db.branches.get(emp?.branch_id ?? l.branch_id)?.name ?? 'Chi nhánh' };
 }
 
-/** Ghi kết quả chốt lịch: duyệt toàn bộ đơn OFF chờ duyệt, tạo ca chính thức và lưu biên bản chốt tuần / chu kỳ. */
+/** Ghi kết quả chốt lịch: duyệt toàn bộ đơn OFF chờ duyệt, gỡ ca cũ trùng ngày OFF / ca nháp trùng ô 1/1, tạo ca chính thức và lưu biên bản chốt tuần / chu kỳ. */
 async function applyPlan(ctx: AppContext, plan: PlanResult, lock: { code: string; branchId: string; weekStart: string; weekEnd: string; kind: 'WEEKLY' | 'PROBATION_12_DAYS'; note: string }, actorId: string) {
   const now = nowIso();
   const pendingOffs = plan.offRequests.filter((l) => l.status === 'PENDING' || l.status === 'DRAFT');
   if (pendingOffs.length > 0) {
     await ctx.db.leaveRequests.batchUpdate(pendingOffs.map((l) => ({ id: l.id, expectedVersion: l.version, patch: { status: 'APPROVED' as const, decided_by: actorId, decided_at: now, decision_reason: 'Đã duyệt khi HR chốt lịch & tự động sắp ca' } })), actorId);
   }
+  for (const off of plan.offRequests) {
+    const emp = ctx.db.employees.get(off.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === off.employee_id);
+    const staleShifts = ctx.db.shiftAssignments.filter((a) => a.work_date === off.leave_date && isCountedWorkShift(a) && (a.employee_id === off.employee_id || Boolean(emp && matchEmp(emp)(a.employee_id))));
+    for (const s of staleShifts) {
+      await ctx.db.shiftAssignments.softDelete(s.id, s.version, actorId);
+      await clearShiftAttendanceOnWorkflowOverride(ctx.db, s, actorId, 'Đã duyệt đơn nghỉ OFF khi HR chốt lịch');
+    }
+  }
+  for (const p of plan.planned) {
+    const staleDrafts = ctx.db.shiftAssignments.filter((a) => a.status === 'DRAFT' && a.work_date === p.workDate && a.shift_code === p.shiftCode && resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id) === p.branchId);
+    for (const d of staleDrafts) await ctx.db.shiftAssignments.softDelete(d.id, d.version, actorId);
+  }
   const created = await Promise.all(plan.planned.map((p) => ctx.db.shiftAssignments.insert({
     schedule_week_id: lock.code, employee_id: p.employeeId, branch_id: p.branchId, work_date: p.workDate, shift_template_id: p.templateId,
     start_at: p.startAt, end_at: p.endAt, status: 'PUBLISHED', source: 'AUTO_PLAN', employee_stage: p.stage, day_type: 'WORK', shift_code: p.shiftCode,
-    scheduled_hours: p.hours, swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now, note: 'Tự động sắp ca theo ca mặc định khi HR chốt lịch', linked_assignment_id: '',
+    scheduled_hours: p.hours, swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now,
+    note: p.isCoverShift ? 'Tự động điều phối bù ca OFF để đủ 1 người/ca khi HR chốt lịch' : 'Tự động sắp ca theo ca mặc định (1 người/ca) khi HR chốt lịch',
+    linked_assignment_id: '',
   }, actorId)));
   const existing = ctx.db.scheduleWeeks.find((w) => w.code === lock.code);
   const record = { branch_id: lock.branchId, week_start: lock.weekStart, week_end: lock.weekEnd, status: 'PUBLISHED' as const, published_by: actorId, published_at: now, code: lock.code, schedule_kind: lock.kind, store_confirmed_by: '', store_confirmed_at: '', locked_at: now, note: lock.note || `Đã xếp ${created.length} ca · Duyệt ${pendingOffs.length} đơn OFF · ${plan.issues.length} cảnh báo` };

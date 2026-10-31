@@ -8,43 +8,19 @@ let app: TestAppContext['app'];
 let db: Database;
 const loginHeaders = (username: string) => t.loginHeaders(username);
 
-beforeAll(async () => {
-  t = await buildTestApp('z');
-  app = t.app;
-  db = t.db;
-});
-
-afterAll(async () => {
-  await app.close();
-});
+beforeAll(async () => { t = await buildTestApp('z'); app = t.app; db = t.db; });
+afterAll(async () => { await app.close(); });
 
 describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
   it('supports full CRUD on Shift Templates & Branches', async () => {
     const headers = await loginHeaders('admin');
-    const createShift = await app.inject({
-      method: 'POST',
-      url: '/api/admin/shift-templates',
-      headers,
-      payload: { code: 'CA_GAY', name: 'Ca gãy linh hoạt', start_time: '09:00', end_time: '14:00', standard_hours: 5 },
-    });
+    const createShift = await app.inject({ method: 'POST', url: '/api/admin/shift-templates', headers, payload: { code: 'CA_GAY', name: 'Ca gãy linh hoạt', start_time: '09:00', end_time: '14:00', standard_hours: 5 } });
     expect(createShift.statusCode).toBe(201);
     const shift = createShift.json().data;
-
-    const updateShift = await app.inject({
-      method: 'PUT',
-      url: `/api/admin/shift-templates/${shift.id}`,
-      headers,
-      payload: { version: shift.version, name: 'Ca gãy cập nhật', standard_hours: 5.5 },
-    });
+    const updateShift = await app.inject({ method: 'PUT', url: `/api/admin/shift-templates/${shift.id}`, headers, payload: { version: shift.version, name: 'Ca gãy cập nhật', standard_hours: 5.5 } });
     expect(updateShift.statusCode).toBe(200);
     expect(updateShift.json().data.name).toBe('Ca gãy cập nhật');
-
-    const delShift = await app.inject({
-      method: 'DELETE',
-      url: `/api/admin/shift-templates/${shift.id}`,
-      headers,
-      payload: { version: updateShift.json().data.version },
-    });
+    const delShift = await app.inject({ method: 'DELETE', url: `/api/admin/shift-templates/${shift.id}`, headers, payload: { version: updateShift.json().data.version } });
     expect(delShift.statusCode).toBe(200);
   });
 
@@ -175,10 +151,14 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
     expect(reqShiftRes.statusCode).toBe(201);
     const reqShift = reqShiftRes.json().data;
 
-    await app.inject({
+    const dupSlotRes = await app.inject({
       method: 'POST', url: '/api/admin/schedules', headers: hrHeaders,
-      payload: { branch_id: busyPeer.branch_id, employee_id: busyPeer.id, work_date: '2027-11-20', shift_code: 'CA_SANG', status: 'PUBLISHED', day_type: 'WORK', note: 'Đã có ca sáng cùng ngày' },
+      payload: { branch_id: busyPeer.branch_id, employee_id: busyPeer.id, work_date: '2027-11-20', shift_code: 'CA_SANG', status: 'PUBLISHED', day_type: 'WORK', note: 'Vượt 1 người/ca' },
     });
+    expect(dupSlotRes.statusCode).toBe(400);
+    await app.inject({ method: 'POST', url: '/api/admin/shift-templates', headers: hrHeaders, payload: { code: 'CA_GOP_SANG', name: 'Ca gộp sáng', start_time: '09:00', end_time: '14:00', standard_hours: 5 } });
+    const busyRes = await app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hrHeaders, payload: { branch_id: busyPeer.branch_id, employee_id: busyPeer.id, work_date: '2027-11-20', shift_code: 'CA_GOP_SANG', status: 'PUBLISHED', day_type: 'WORK' } });
+    expect(busyRes.statusCode).toBe(201);
 
     const swapConflictRes = await app.inject({
       method: 'POST', url: '/api/admin/shift-swaps', headers: hrHeaders,

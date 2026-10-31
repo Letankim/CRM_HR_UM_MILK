@@ -14,18 +14,25 @@ beforeAll(async () => { t = await buildTestApp('q'); });
 afterAll(async () => { await t.app.close(); });
 
 describe('Ops V5.2 — Chốt lịch tuần & tự động sắp ca theo ca mặc định', () => {
-  it('HR xem OFF đã đăng ký, chốt lịch → duyệt OFF, xếp ca mặc định (mỗi ca 1 người khi chưa cấu hình định biên) và báo cáo trường hợp không xếp được', async () => {
+  it('HR xem OFF đã đăng ký, chốt lịch → duyệt OFF, xếp đủ kín tuần đúng 1 người/ca (tự bù ca OFF) và cảnh báo khi thiếu người', async () => {
     const hr = await t.loginHeaders('hr');
     const official = t.db.employees.find((e) => e.employee_code === 'NV0002')!;
     const branchId = official.branch_id;
     for (const r of t.db.staffingRules.all()) await t.db.staffingRules.softDelete(r.id, r.version, 'test');
     const weekStart = mondayOfWeek(day(60));
     const offDate = dayjs(weekStart).add(2, 'day').format('YYYY-MM-DD');
+
+    // Khi chi nhánh mới chỉ có 1 NV chính thức (tối đa 2 ca/ngày < 3 ca/ngày) -> báo UNDERSTAFFED cho ca thứ 3 chưa đủ 1/1 người
+    const underPv = (await t.app.inject({ method: 'GET', url: `/api/admin/schedule-planner/week?week_start=${weekStart}&branch_id=${branchId}`, headers: hr })).json().data;
+    expect(underPv.issues.some((i: { kind: string }) => i.kind === 'UNDERSTAFFED')).toBe(true);
+
+    // Bổ sung đủ đội ngũ chính thức tại chi nhánh & cân bằng ca mặc định (CA_SANG, CA_CHIEU, CA_TOI)
+    const e2 = (await t.app.inject({ method: 'POST', url: '/api/admin/employees', headers: hr, payload: { full_name: 'Trần Chính Thức Chiều', phone_number: '0913111222', branch_id: branchId, stage: 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: 'CA_CHIEU', create_account: false } })).json().data;
+    const e3 = (await t.app.inject({ method: 'POST', url: '/api/admin/employees', headers: hr, payload: { full_name: 'Lê Chính Thức Tối', phone_number: '0913111223', branch_id: branchId, stage: 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: 'CA_TOI', create_account: false } })).json().data;
+    expect(e2.id && e3.id).toBeTruthy();
+
     const off = await t.app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: hr, payload: { employee_id: official.id, leave_date: offDate, reason: 'Nghỉ OFF giữa tuần' } });
     expect(off.statusCode).toBe(201);
-
-    const dup = await t.app.inject({ method: 'POST', url: '/api/admin/employees', headers: hr, payload: { full_name: 'Trịnh Văn Trùng Ca', phone_number: '0913111222', branch_id: branchId, stage: 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: official.default_shift_code || 'CA_SANG', create_account: false } });
-    expect(dup.statusCode).toBe(201);
 
     const preview = await t.app.inject({ method: 'GET', url: `/api/admin/schedule-planner/week?week_start=${weekStart}&branch_id=${branchId}`, headers: hr });
     expect(preview.statusCode).toBe(200);
@@ -33,23 +40,23 @@ describe('Ops V5.2 — Chốt lịch tuần & tự động sắp ca theo ca mặ
     expect(pv.isLocked).toBe(false);
     expect(pv.offRequests.some((o: { leaveDate: string; status: string }) => o.leaveDate === offDate && o.status === 'PENDING')).toBe(true);
     expect(pv.planned.some((p: { employeeId: string; workDate: string }) => p.employeeId === official.id && p.workDate === offDate)).toBe(false);
-    expect(pv.issues.some((i: { kind: string }) => i.kind === 'CAPACITY_FULL')).toBe(true);
+    expect(pv.planned.length).toBe(21);
+    expect(pv.issues.length).toBe(0);
 
     const store = await t.loginHeaders('store1');
     expect((await t.app.inject({ method: 'POST', url: '/api/admin/schedule-planner/week/lock', headers: store, payload: { week_start: weekStart, branch_id: branchId } })).statusCode).toBe(403);
     const lock = await t.app.inject({ method: 'POST', url: '/api/admin/schedule-planner/week/lock', headers: hr, payload: { week_start: weekStart, branch_id: branchId } });
     expect(lock.statusCode).toBe(200);
-    expect(lock.json().data.createdCount).toBe(pv.planned.length);
+    expect(lock.json().data.createdCount).toBe(21);
     expect(lock.json().data.approvedOffCount).toBeGreaterThanOrEqual(1);
     expect(t.db.leaveRequests.get(off.json().data.id)?.status).toBe('APPROVED');
-    const created = t.db.shiftAssignments.filter((a) => a.source === 'AUTO_PLAN' && a.employee_id === official.id);
-    expect(created.length).toBe(6);
-    expect(created.every((a) => a.status === 'PUBLISHED' && a.shift_code === (official.default_shift_code || 'CA_SANG'))).toBe(true);
 
-    const relock = await t.app.inject({ method: 'POST', url: '/api/admin/schedule-planner/week/lock', headers: hr, payload: { week_start: weekStart, branch_id: branchId } });
-    expect(relock.json().data.createdCount).toBe(0);
-    const after = (await t.app.inject({ method: 'GET', url: `/api/admin/schedule-planner/week?week_start=${weekStart}&branch_id=${branchId}`, headers: hr })).json().data;
-    expect(after.isLocked).toBe(true);
+    const weekEnd = dayjs(weekStart).add(6, 'day').format('YYYY-MM-DD');
+    const weekShifts = t.db.shiftAssignments.filter((a) => a.branch_id === branchId && a.work_date >= weekStart && a.work_date <= weekEnd && a.status === 'PUBLISHED');
+    expect(weekShifts.length).toBe(21);
+    for (let i = 0; i < 7; i++) for (const sc of ['CA_SANG', 'CA_CHIEU', 'CA_TOI']) expect(weekShifts.filter((a) => a.work_date === dayjs(weekStart).add(i, 'day').format('YYYY-MM-DD') && a.shift_code === sc).length).toBe(1);
+    expect((await t.app.inject({ method: 'POST', url: '/api/admin/schedule-planner/week/lock', headers: hr, payload: { week_start: weekStart, branch_id: branchId } })).json().data.createdCount).toBe(0);
+    expect((await t.app.inject({ method: 'GET', url: `/api/admin/schedule-planner/week?week_start=${weekStart}&branch_id=${branchId}`, headers: hr })).json().data.isLocked).toBe(true);
   });
 
   it('Thử việc: chốt chu kỳ 12 ngày xếp đủ 7 ca trừ 5 OFF; đăng ký thêm ca (tối đa 2 ca/ngày) dời ca cuối khi HR duyệt', async () => {
@@ -121,23 +128,14 @@ describe('Ops V5.2 — Chốt lịch tuần & tự động sắp ca theo ca mặ
   });
 
   it('Đổi ca 2 chiều giữa 2 NV chính thức tự cập nhật không qua HR; Nhường ca thứ 3 trong ngày bắt buộc qua HR duyệt / từ chối', async () => {
-    const hr = await t.loginHeaders('hr');
-    const admin = await t.loginHeaders('admin');
-    const offA = t.db.employees.find((e) => e.employee_code === 'NV0002')!;
-    const createB = await t.app.inject({
-      method: 'POST', url: '/api/admin/employees', headers: hr,
-      payload: { full_name: 'Phạm Chính Thức B', phone_number: '0914222333', branch_id: offA.branch_id, stage: 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: 'CA_CHIEU', create_account: true, initial_pin: '654321' },
-    });
+    const hr = await t.loginHeaders('hr'), admin = await t.loginHeaders('admin'), offA = t.db.employees.find((e) => e.employee_code === 'NV0002')!;
+    const createB = await t.app.inject({ method: 'POST', url: '/api/admin/employees', headers: hr, payload: { full_name: 'Phạm Chính Thức B', phone_number: '0914222333', branch_id: offA.branch_id, stage: 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: 'CA_CHIEU', create_account: true, initial_pin: '654321' } });
     expect(createB.statusCode).toBe(201);
-    const offBId = createB.json().data.id as string;
-    const userB = t.db.users.find((u) => u.phone === '0914222333')!;
+    const offBId = createB.json().data.id as string, userB = t.db.users.find((u) => u.phone === '0914222333')!;
     await t.app.inject({ method: 'POST', url: '/api/admin/accounts/bulk-action', headers: admin, payload: { action: 'ACTIVATE', items: [{ id: userB.id, version: userB.version }] } });
-    const loginB = await t.login('0914222333', '654321', 'employee');
-    const nvB = { ...web, cookie: loginB.cookie };
+    const nvB = { ...web, cookie: (await t.login('0914222333', '654321', 'employee')).cookie };
     await t.app.inject({ method: 'PUT', url: '/api/auth/password', headers: nvB, payload: { current_secret: '654321', new_secret: '654322', confirm_secret: '654322' } });
-    const nvA = { ...web, cookie: (await t.login('0901000002', DEMO_PIN, 'employee')).cookie };
-
-    const dSwap = day(45);
+    const nvA = { ...web, cookie: (await t.login('0901000002', DEMO_PIN, 'employee')).cookie }, dSwap = day(45);
     const sA = (await t.app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hr, payload: { employee_id: offA.id, work_date: dSwap, shift_code: 'CA_SANG', status: 'PUBLISHED' } })).json().data;
     const sB = (await t.app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hr, payload: { employee_id: offBId, work_date: dSwap, shift_code: 'CA_CHIEU', status: 'PUBLISHED' } })).json().data;
     const swapReq = await t.app.inject({ method: 'POST', url: '/api/admin/shift-swaps', headers: nvA, payload: { kind: 'SWAP', requester_id: offA.id, peer_id: offBId, from_assignment_id: sA.id, to_assignment_id: sB.id, reason: 'Đổi ca sáng chiều' } });

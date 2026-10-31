@@ -17,6 +17,7 @@ import { ensureSyncedNotifications } from './services/notification-sync.service.
 import { ensurePublishedPeriodPayslips } from './services/payslip.service.js';
 import { ReconciliationService } from './services/reconciliation.service.js';
 import { hasSmtpRelayOrigin, sendSmtpTlsMail } from './services/smtp-sender.js';
+import { ensureStartupOnePersonPerShiftMigration } from './services/staffing-one-per-shift.service.js';
 import { GoogleSheetsGateway, type SheetsGateway } from './sheets/gateway.js';
 import { WriteQueue } from './sheets/write-queue.js';
 
@@ -163,6 +164,7 @@ async function main() {
   try {
     await db.loadAll();
     email.hydrateFromDatabase();
+    await ensureStartupOnePersonPerShiftMigration(ctx, 'startup-sync').catch(() => undefined);
     await reconciliation.scanAndRepair({ autoFix: true, actorId: 'startup-sync' }).catch(() => undefined);
     await ensurePublishedPeriodPayslips(ctx, 'startup-sync', { skipEmail: env.NODE_ENV === 'production' && !hasSmtpRelayOrigin() }).catch(() => undefined);
     await sweepDueScheduledAnnouncements(ctx, 'startup-sync').catch(() => undefined);

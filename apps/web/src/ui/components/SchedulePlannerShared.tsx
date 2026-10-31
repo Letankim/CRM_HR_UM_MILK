@@ -101,7 +101,7 @@ export function PlannerOffTable({ rows, renderActions, loading }: { rows: Planne
   );
 }
 
-/** Bảng ca dự kiến sẽ tự động sắp theo ca mặc định. */
+/** Bảng ca dự kiến sẽ tự động sắp theo quy tắc 1 người/ca (ưu tiên ca mặc định & tự động bù ca OFF). */
 export function PlannerShiftTable({ rows, showEmployee = true }: { rows: PlannerShift[]; showEmployee?: boolean }) {
   return (
     <Table<PlannerShift>
@@ -110,8 +110,20 @@ export function PlannerShiftTable({ rows, showEmployee = true }: { rows: Planner
       locale={{ emptyText: 'Không còn ca nào cần tự động sắp' }}
       columns={[
         { title: 'Ngày làm việc', dataIndex: 'workDate', width: 125, render: (v: string) => <strong className="num">{fmtYmd(v)}</strong> },
-        ...(showEmployee ? [{ title: 'Nhân sự', width: 230, ellipsis: true, render: (_: unknown, r: PlannerShift) => <span><strong>{r.employeeName}</strong> <span style={{ color: '#64748B' }}>({r.employeeCode})</span></span> }] : []),
-        { title: 'Khung ca', render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftLabel(r.shiftLabel)}</span><Tag color="blue" style={{ margin: 0 }}>{r.startAt} – {r.endAt} ({r.hours} giờ)</Tag></Space> },
+        ...(showEmployee ? [
+          { title: 'Chi nhánh', dataIndex: 'branchName', width: 180, ellipsis: true, render: (v?: string) => v || '—' },
+          { title: 'Nhân sự', width: 225, ellipsis: true, render: (_: unknown, r: PlannerShift) => <span><strong>{r.employeeName}</strong> <span style={{ color: '#64748B' }}>({r.employeeCode})</span></span> },
+        ] : []),
+        {
+          title: 'Khung ca & Phân bổ (1 người/ca)',
+          render: (_, r) => (
+            <Space size={6} wrap>
+              <span style={{ fontWeight: 600 }}>{cleanShiftLabel(r.shiftLabel)}</span>
+              <Tag color="blue" style={{ margin: 0 }}>{r.startAt} – {r.endAt} ({r.hours} giờ)</Tag>
+              <Tag color={r.isCoverShift ? 'cyan' : 'geekblue'} style={{ margin: 0 }}>{r.isCoverShift ? 'Điều phối bù OFF' : 'Ca mặc định'}</Tag>
+            </Space>
+          ),
+        },
       ]}
     />
   );

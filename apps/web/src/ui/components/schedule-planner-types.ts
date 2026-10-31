@@ -9,8 +9,8 @@ export interface PlannerOffItem {
 
 /** Ca dự kiến sẽ được hệ thống tự động sắp khi HR chốt lịch. */
 export interface PlannerShift {
-  employeeId: string; employeeCode: string; employeeName: string; stage: string; branchId: string;
-  workDate: string; shiftCode: string; shiftLabel: string; startAt: string; endAt: string; hours: number; templateId: string;
+  employeeId: string; employeeCode: string; employeeName: string; stage: string; branchId: string; branchName?: string;
+  workDate: string; shiftCode: string; shiftLabel: string; startAt: string; endAt: string; hours: number; templateId: string; isCoverShift?: boolean;
 }
 
 export interface PlannerIssue {
@@ -36,8 +36,8 @@ export interface PlannerProbationItem {
 
 export interface PlannerProbationLockResult { createdCount: number; approvedOffCount: number; cycleStart: string; cycleEnd: string; issues: PlannerIssue[] }
 
-/** Các loại vướng mắc nghiêm trọng (không xếp được ca) hiển thị màu đỏ; còn lại là cảnh báo. */
-const ERROR_ISSUE_KINDS = new Set<PlannerIssue['kind']>(['NO_TEMPLATE', 'CAPACITY_FULL', 'CONFLICT', 'NOT_ENOUGH_SHIFTS']);
+/** Các loại vướng mắc nghiêm trọng (thiếu hoặc vượt 1 người/ca, không xếp được ca) hiển thị màu đỏ; còn lại là cảnh báo. */
+const ERROR_ISSUE_KINDS = new Set<PlannerIssue['kind']>(['NO_TEMPLATE', 'CAPACITY_FULL', 'CONFLICT', 'UNDERSTAFFED', 'NOT_ENOUGH_SHIFTS']);
 export const issueSeverity = (i: PlannerIssue): 'error' | 'warning' => (ERROR_ISSUE_KINDS.has(i.kind) ? 'error' : 'warning');
 
 export const fmtYmd = (raw?: string | null) => (raw ? dayjs(raw).format('DD/MM/YYYY') : '—');

@@ -108,16 +108,16 @@ async function main() {
     const uCt = db.users.find((x) => x.username === 'nv.chinhthuc');
     const uMoi = db.users.find((x) => x.username === 'nv.moi');
     const sampleEmps = [
-      { employee_code: 'NV0001', user_id: uTv?.id ?? '', full_name: 'Võ Thị Thử Việc', phone: '0901000001', stage: 'PROBATION' as const, branch_id: cn1, position_title: 'Pha chế', probation_start: '2026-10-01', probation_end: '2026-10-12', official_from: '', base_hourly_rate_vnd: 22000 },
-      { employee_code: 'NV0002', user_id: uCt?.id ?? '', full_name: 'Đặng Văn Chính Thức', phone: '0901000002', stage: 'OFFICIAL' as const, branch_id: cn1, position_title: 'Thu ngân', probation_start: '2026-08-01', probation_end: '2026-08-12', official_from: '2026-08-13', base_hourly_rate_vnd: 28000 },
-      { employee_code: 'NV0003', user_id: uMoi?.id ?? '', full_name: 'Bùi Thị Mới', phone: '0901000003', stage: 'PROBATION' as const, branch_id: cn1, position_title: 'Phục vụ', probation_start: '', probation_end: '', official_from: '', base_hourly_rate_vnd: 22000 },
+      { employee_code: 'NV0001', user_id: uTv?.id ?? '', full_name: 'Võ Thị Thử Việc', phone: '0901000001', stage: 'PROBATION' as const, branch_id: cn1, position_title: 'Pha chế', default_shift_code: 'CA_CHIEU', probation_start: '2026-10-01', probation_end: '2026-10-12', official_from: '', base_hourly_rate_vnd: 22000 },
+      { employee_code: 'NV0002', user_id: uCt?.id ?? '', full_name: 'Đặng Văn Chính Thức', phone: '0901000002', stage: 'OFFICIAL' as const, branch_id: cn1, position_title: 'Thu ngân', default_shift_code: 'CA_SANG', probation_start: '2026-08-01', probation_end: '2026-08-12', official_from: '2026-08-13', base_hourly_rate_vnd: 28000 },
+      { employee_code: 'NV0003', user_id: uMoi?.id ?? '', full_name: 'Bùi Thị Mới', phone: '0901000003', stage: 'PROBATION' as const, branch_id: cn1, position_title: 'Phục vụ', default_shift_code: 'CA_TOI', probation_start: '', probation_end: '', official_from: '', base_hourly_rate_vnd: 22000 },
     ];
     for (const e of sampleEmps) {
       await db.employees.insert(
         {
           ...e, staff_group: 'BARISTA', status: 'ACTIVE', candidate_id: '', email: '', date_of_birth: '2003-05-15', gender: 'Nữ',
           citizen_id: '', citizen_issue_date: '', permanent_address: 'TP. Hồ Chí Minh', current_address: 'TP. Hồ Chí Minh',
-          emergency_contact_name: '', emergency_contact_phone: '', employment_type: 'PART_TIME', default_shift_code: 'CA_SANG',
+          emergency_contact_name: '', emergency_contact_phone: '', employment_type: 'PART_TIME',
           probation_cycle_days: 12, probation_work_days: 7, probation_off_days: 5, resigned_at: '', resign_reason: '',
           bank_name: 'Techcombank', bank_account_number: '1903888999001', bank_account_holder: e.full_name.toUpperCase(), tax_code: '', note: '',
         },

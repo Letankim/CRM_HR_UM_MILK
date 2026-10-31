@@ -7,20 +7,21 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
+import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
+import { normalizeOnePersonPerShiftAndDefaults } from '../services/staffing-one-per-shift.service.js';
 
 const zBranchListQuery = zListQueryBase.extend({ status: z.enum([...BRANCH_STATUSES, 'ALL'] as const).optional(), refresh: z.enum(['0', '1', 'true', 'false']).optional() });
 const zBranchBody = z.object({ code: z.string({ required_error: 'Mã chi nhánh là bắt buộc' }).trim().min(2).max(10), name: z.string({ required_error: 'Tên chi nhánh là bắt buộc' }).trim().min(2).max(100), address: z.string().trim().max(200).optional().default(''), lat: z.coerce.number().min(-90).max(90), lng: z.coerce.number().min(-180).max(180), radius_m: z.coerce.number().int().min(10).max(2000).default(100), max_accuracy_m: z.coerce.number().int().min(5).max(500).default(50), open_time: z.string().regex(/^\d{2}:\d{2}$/).default('07:00'), close_time: z.string().regex(/^\d{2}:\d{2}$/).default('22:30'), phone_contact: z.string().trim().max(20).optional().default(''), effective_from: z.string().trim().optional().default(''), status: z.enum(BRANCH_STATUSES).default('ACTIVE'), note: z.string().trim().max(300).optional().default('') });
 const zUpdateBranchBody = zBranchBody.partial().extend({ version: z.coerce.number().int().min(1) });
 const zShiftTemplateBody = z.object({ code: z.string({ required_error: 'Mã ca là bắt buộc' }).trim().min(2).max(20), name: z.string({ required_error: 'Tên ca làm việc là bắt buộc' }).trim().min(2).max(60), branch_id: z.string().trim().optional().default('ALL'), start_time: z.string().regex(/^\d{2}:\d{2}$/), end_time: z.string().regex(/^\d{2}:\d{2}$/), standard_hours: z.coerce.number().min(0.5).max(24).default(5), break_minutes: z.coerce.number().int().min(0).default(0), effective_from: z.string().trim().optional().default(''), status: z.enum(BRANCH_STATUSES).default('ACTIVE'), note: z.string().trim().max(200).optional().default('') });
 const zUpdateShiftBody = zShiftTemplateBody.partial().extend({ version: z.coerce.number().int().min(1) });
-const zStaffingRuleBody = z.object({ branch_id: z.string().trim().default('ALL'), shift_template_id: z.string().trim().default('ALL'), min_staff: z.coerce.number().int().min(1).default(2), max_staff: z.coerce.number().int().min(1).default(6), enforcement: z.enum(['HARD_BLOCK', 'SOFT_WARN']).default('HARD_BLOCK'), effective_from: z.string().optional().default(''), day_of_week: z.string().default('ALL'), required_groups_json: z.string().default('["BARISTA"]'), note: z.string().default('') });
+const zStaffingRuleBody = z.object({ branch_id: z.string().trim().default('ALL'), shift_template_id: z.string().trim().default('ALL'), min_staff: z.coerce.number().int().min(1).default(1), max_staff: z.coerce.number().int().min(1).default(1), enforcement: z.enum(['HARD_BLOCK', 'SOFT_WARN']).default('HARD_BLOCK'), effective_from: z.string().optional().default(''), day_of_week: z.string().default('ALL'), required_groups_json: z.string().default('["BARISTA"]'), note: z.string().default('') });
 
 function mapBranch(b: Branch, ctx: AppContext) {
   const employeeCount = ctx.db.employees.filter((e) => e.branch_id === b.id && e.status === 'ACTIVE').length;
   return {
-    id: b.id, code: b.code, name: b.name, address: b.address, lat: b.lat, lng: b.lng,
-    radiusM: b.radius_m, maxAccuracyM: b.max_accuracy_m, timezone: b.timezone,
-    openTime: b.open_time, closeTime: b.close_time, phoneContact: b.phone_contact,
+    id: b.id, code: b.code, name: b.name, address: b.address, lat: b.lat, lng: b.lng, radiusM: b.radius_m, maxAccuracyM: b.max_accuracy_m,
+    timezone: b.timezone, openTime: b.open_time, closeTime: b.close_time, phoneContact: b.phone_contact,
     effectiveFrom: b.effective_from || '2026-01-01', status: b.status, statusLabel: BRANCH_STATUS_LABELS[b.status],
     employeeCount, note: b.note, version: b.version, created_at: b.created_at, updated_at: b.updated_at,
   };
@@ -30,11 +31,10 @@ function mapShift(s: ShiftTemplate, ctx: AppContext) {
   const isGlobal = !s.shift_group || s.shift_group === 'STORE' || s.shift_group === 'ALL';
   const branch = !isGlobal ? (ctx.db.branches.get(s.shift_group) ?? ctx.db.branches.find((b) => b.code === s.shift_group)) : undefined;
   return {
-    id: s.id, code: s.code, name: s.name, startTime: s.start_time, endTime: s.end_time,
-    standardHours: s.standard_hours, breakMinutes: s.break_minutes, effectiveFrom: s.effective_from || '2026-01-01',
-    branchId: branch?.id ?? 'ALL', branchCode: branch?.code ?? 'ALL', branchName: branch ? `${branch.code} — ${branch.name}` : 'Tất cả chi nhánh',
-    status: s.status, statusLabel: BRANCH_STATUS_LABELS[s.status], note: s.note,
-    version: s.version, created_at: s.created_at, updated_at: s.updated_at,
+    id: s.id, code: s.code, name: s.name, startTime: s.start_time, endTime: s.end_time, standardHours: s.standard_hours, breakMinutes: s.break_minutes,
+    effectiveFrom: s.effective_from || '2026-01-01', branchId: branch?.id ?? 'ALL', branchCode: branch?.code ?? 'ALL',
+    branchName: branch ? `${branch.code} — ${branch.name}` : 'Tất cả chi nhánh',
+    status: s.status, statusLabel: BRANCH_STATUS_LABELS[s.status], note: s.note, version: s.version, created_at: s.created_at, updated_at: s.updated_at,
   };
 }
 
@@ -64,18 +64,11 @@ export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.post('/api/admin/branches', { preHandler: requirePermission('system.config') }, async (request, reply) => {
-    const body = zBranchBody.parse(request.body);
-    const code = body.code.toUpperCase();
-    if (ctx.db.branches.find((b) => b.code.toUpperCase() === code)) {
-      throw Errors.fieldValidation('code', 'DUPLICATE_VALUE', 'Mã chi nhánh đã tồn tại', body.code);
-    }
-    const created = await ctx.db.branches.insert(
-      { ...body, code, timezone: 'Asia/Ho_Chi_Minh', manager_employee_id: '', effective_from: body.effective_from || dayjs().format('YYYY-MM-DD') },
-      request.auth!.user.id,
-    );
+    const body = zBranchBody.parse(request.body), code = body.code.toUpperCase();
+    if (ctx.db.branches.find((b) => b.code.toUpperCase() === code)) throw Errors.fieldValidation('code', 'DUPLICATE_VALUE', 'Mã chi nhánh đã tồn tại', body.code);
+    const created = await ctx.db.branches.insert({ ...body, code, timezone: 'Asia/Ho_Chi_Minh', manager_employee_id: '', effective_from: body.effective_from || dayjs().format('YYYY-MM-DD') }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'branch.create', entity: 'BRANCHES', entityId: created.id, after: { code: created.code, name: created.name } });
-    reply.code(201);
-    return sendSuccess(request, 'Thêm mới chi nhánh thành công', mapBranch(created, ctx));
+    return reply.code(201), sendSuccess(request, 'Thêm mới chi nhánh thành công', mapBranch(created, ctx));
   });
 
   app.put('/api/admin/branches/:id', { preHandler: requirePermission('system.config') }, async (request) => {
@@ -203,11 +196,18 @@ export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.delete('/api/admin/staffing-rules/:id', { preHandler: requirePermission('system.config', 'schedule.publish') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const before = ctx.db.staffingRules.get(id);
+    const { id } = request.params as { id: string }, before = ctx.db.staffingRules.get(id);
     if (!before) throw Errors.notFound('Định biên ca làm', id);
     if (before.branch_id !== 'ALL') assertBranchAccess(request, before.branch_id);
     await ctx.db.staffingRules.softDelete(id, before.version, request.auth!.user.id);
     return sendSuccess(request, 'Đã xóa cấu hình định biên ca làm việc', { id });
+  });
+
+  app.post('/api/admin/staffing-rules/normalize-single', { preHandler: requirePermission('system.config', 'schedule.publish') }, async (request) => {
+    const actorId = request.auth!.user.id;
+    const res = await normalizeOnePersonPerShiftAndDefaults(ctx, actorId, { createMissingRules: true, rebalanceDefaults: true, trimFutureOverstaffed: true });
+    if (res.trimmedFutureShifts > 0) await recalculateOpenPeriods(ctx, actorId);
+    await ctx.audit.record(auditContext(request), { action: 'staffing_rule.normalize_single', entity: 'STAFFING_RULES', entityId: 'ALL', after: res });
+    return sendSuccess(request, `Đã chuẩn hóa toàn bộ định biên về 1 người/ca (cập nhật ${res.updatedRules}, tạo bổ sung ${res.createdRules}), cân bằng ca mặc định cho ${res.rebalancedEmployees} nhân sự và gỡ ${res.trimmedFutureShifts} ca tương lai xếp trùng`, res);
   });
 }
