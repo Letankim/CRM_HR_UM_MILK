@@ -2,6 +2,7 @@ import { deflateSync } from 'node:zlib';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEMO_PIN } from '../data/memory-seed.js';
+import { docSoTienBangChu } from '../services/payslip-pdf-table-helpers.js';
 import { buildTestApp, type TestAppContext } from '../test-utils/build-test-app.js';
 
 function makeValidPngDataUrl(r: number, g: number, b: number): string {
@@ -205,5 +206,6 @@ describe('Luồng 3 chữ ký lương (Kế toán -> Quản trị -> Kế toán 
     expect(allZipRes.statusCode).toBe(200);
     const allZip = await JSZip.loadAsync(Buffer.from(allZipRes.json().data.base64, 'base64'));
     expect(Object.keys(allZip.files).length).toBe(allSnaps.length);
+    expect(docSoTienBangChu(1393000)).toBe('Một triệu ba trăm chín mươi ba nghìn đồng chẵn');
   });
 });

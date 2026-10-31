@@ -121,7 +121,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
       <SelectableTable<PayrollSnapshotItem>
         size="small" rowKey="id" loading={snapshotsQ.isLoading || snapshotsQ.isFetching} dataSource={rows} onRowClick={onOpenPayslip}
         bulkActions={(sel, clear) => [
-          { key: 'pdf-zip', label: 'Xuất PDF Phiếu lương đã chọn (.ZIP)', type: 'primary', icon: <FileZipOutlined />, loading: exportZipMut.isPending, onClick: (items) => exportZipMut.mutate(items.map((r) => r.id)) },
+          { key: 'pdf-zip', label: 'Xuất phiếu lương', type: 'primary', icon: <FileZipOutlined />, loading: exportZipMut.isPending, onClick: (items) => exportZipMut.mutate(items.map((r) => r.id)) },
           ...(canPay && period.status === 'PUBLISHED'
             ? [{ key: 'bulk-pay', label: 'Đánh dấu Đã thanh toán đã chọn', icon: <CheckCircleOutlined />, loading: bulkPayMut.isPending, confirm: `Xác nhận đánh dấu Đã thanh toán cho ${sel.length} phiếu lương đã chọn?`, onClick: async (items: PayrollSnapshotItem[]) => { await bulkPayMut.mutateAsync(items.map((r) => r.payslipId || r.id)); clear(); } }]
             : []),
@@ -181,7 +181,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
                 <RowActionButtons
                   detailTooltip="Xem chi tiết phiếu lương" onViewDetail={() => onOpenPayslip(r)}
                   menuItems={[
-                    { key: 'pdf', icon: <FilePdfOutlined />, label: 'Tải PDF Phiếu lương (Đủ 3 chữ ký)', onClick: () => void downloadSinglePdf(r) },
+                    { key: 'pdf', icon: <FilePdfOutlined />, label: 'Xuất phiếu lương', onClick: () => void downloadSinglePdf(r) },
                     ...(r.employeeConfirmedAt ? [{ key: 'qr', icon: <QrcodeOutlined />, label: 'Mã QR Ngân hàng & Đánh dấu Đã TT', onClick: () => setQrPayTarget(r) }] : []),
                     ...(canAdj ? [{ key: 'adjust', icon: <EditOutlined />, label: 'Điều chỉnh phiếu lương (+ / -)', onClick: () => onOpenPayslip(r) }] : []),
                   ]}

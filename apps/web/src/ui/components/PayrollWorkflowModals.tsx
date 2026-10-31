@@ -46,7 +46,7 @@ export function AdminApprovePeriodModal({ open, period, onClose, onSuccess }: { 
 
   return (
     <Modal
-      width={640}
+      width={760}
       open={open}
       title={`Ban Quản Trị Phê Duyệt & Ký Chữ Ký Số — ${period.name}`}
       onCancel={onClose}
@@ -154,7 +154,7 @@ export function FinancePublishPeriodModal({
 
   return (
     <Modal
-      width={640}
+      width={760}
       open={open}
       title={`Kế Toán Ký Chữ Ký & Phát Hành Phiếu Lương — ${period.name}`}
       onCancel={onClose}

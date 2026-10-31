@@ -1,12 +1,12 @@
 'use client';
 
-import { Alert, App, Button, Flex, Modal, Space, Typography } from 'antd';
+import { App, Button, Flex, Modal, Space, Tag, Typography } from 'antd';
 import { CheckCircleOutlined, ClearOutlined, CloseOutlined, EditOutlined } from '@ant-design/icons';
 import { useEffect, useRef, useState } from 'react';
 import { fmtVnd } from './payroll-types';
 
-const CANVAS_CSS_W = 540;
-const CANVAS_CSS_H = 190;
+const CANVAS_CSS_W = 660;
+const CANVAS_CSS_H = 220;
 
 export function EmployeeSignaturePadModal({
   open,
@@ -124,7 +124,9 @@ export function EmployeeSignaturePadModal({
 
   return (
     <Modal
-      width={600}
+      width={720}
+      centered
+      style={{ maxWidth: 'calc(100vw - 24px)' }}
       open={open}
       title={`Ký Tay Trực Tiếp Xác Nhận Phiếu Lương — ${periodName}`}
       onCancel={onClose}
@@ -141,13 +143,16 @@ export function EmployeeSignaturePadModal({
       }
       destroyOnHidden
     >
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 12 }}
-        message={`Mã phiếu: ${payslipCode} — Thực lĩnh: ${fmtVnd(netVnd)}`}
-        description="Theo quy định bảo mật, nhân sự bắt buộc ký tay trực tiếp trên khung cảm ứng / chuột bên dưới (không được phép tải ảnh từ thiết bị). Sau khi xác nhận, Mã QR Ngân hàng trong hồ sơ của bạn sẽ tự động gửi tới Ban Quản trị & Kế toán để chuyển khoản."
-      />
+      <Flex justify="space-between" align="center" wrap gap={8} style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '8px 12px', marginBottom: 12 }}>
+        <Space size={6} wrap>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>Mã phiếu:</Typography.Text>
+          <Tag color="geekblue" style={{ margin: 0 }}>{payslipCode}</Tag>
+        </Space>
+        <Space size={6}>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>Thực lĩnh:</Typography.Text>
+          <strong className="num" style={{ fontSize: 15, color: '#15803D' }}>{fmtVnd(netVnd)}</strong>
+        </Space>
+      </Flex>
       <div style={{ marginBottom: 6 }}>
         <Typography.Text strong style={{ fontSize: 13 }}>
           <EditOutlined /> Ký trực tiếp chữ ký của bạn vào khung trắng bên dưới:
@@ -169,9 +174,6 @@ export function EmployeeSignaturePadModal({
             background: 'linear-gradient(to bottom, #FFFFFF 82%, #F1F5F9 83%, #FFFFFF 84%)',
           }}
         />
-      </div>
-      <div style={{ fontSize: 11, color: '#64748B', marginTop: 6, textAlign: 'center' }}>
-        Dùng ngón tay (trên điện thoại) hoặc chuột / bút cảm ứng (trên máy tính) để ký trên đường kẻ ngang
       </div>
     </Modal>
   );

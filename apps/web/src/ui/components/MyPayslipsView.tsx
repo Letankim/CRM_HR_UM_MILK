@@ -152,7 +152,7 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
         extra={
           open && (
             <Space size={6} wrap>
-              <Button size="small" icon={<FilePdfOutlined style={{ color: '#DC2626' }} />} loading={downloadingPdf} onClick={() => void handleDownloadPdf(open.id)}>Tải PDF</Button>
+              <Button size="small" icon={<FilePdfOutlined style={{ color: '#DC2626' }} />} loading={downloadingPdf} onClick={() => void handleDownloadPdf(open.id)}>Xuất phiếu lương</Button>
               {open.linkedTicket && (
                 <Button size="small" icon={<CustomerServiceOutlined />} onClick={() => setTicketDrawerId(open.linkedTicket!.id)}>Phiếu hỗ trợ ({open.linkedTicket.ticketCode})</Button>
               )}

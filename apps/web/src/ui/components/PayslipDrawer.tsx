@@ -91,7 +91,7 @@ export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { s
               <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>NV đã ký — Khóa ĐC</Tag>
             ) : null
           )}
-          {s && <Button size="small" icon={<FilePdfOutlined style={{ color: '#DC2626' }} />} loading={downloadingPdf} onClick={() => void handleDownloadPdf()}>Tải PDF</Button>}
+          {s && <Button size="small" icon={<FilePdfOutlined style={{ color: '#DC2626' }} />} loading={downloadingPdf} onClick={() => void handleDownloadPdf()}>Xuất phiếu lương</Button>}
           {s && (
             <Button
               size="small" icon={<FileExcelOutlined style={{ color: '#15803D' }} />}

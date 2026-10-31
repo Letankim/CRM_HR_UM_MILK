@@ -61,7 +61,9 @@ export function PayrollBankQrPayModal({
 
   return (
     <Modal
-      width={680}
+      width={940}
+      centered
+      style={{ maxWidth: 'calc(100vw - 28px)' }}
       open={Boolean(row)}
       title={row ? `Chuyển Khoản QR & Thanh Toán Phiếu Lương — ${row.fullName} (${row.employeeCode})` : 'Thanh toán lương'}
       onCancel={onClose}
@@ -81,60 +83,67 @@ export function PayrollBankQrPayModal({
         <>
           {isPaid ? (
             <Alert
-              type="success" showIcon style={{ marginBottom: 12 }}
+              type="success" showIcon style={{ marginBottom: 14 }}
               message={`Phiếu lương này ĐÃ THANH TOÁN${row.paidAt ? ` lúc ${dayjs(row.paidAt).format('HH:mm DD/MM/YYYY')}` : ''}${row.paidByName ? ` bởi ${row.paidByName}` : ''}${row.paymentReference ? ` · Mã tham chiếu: ${row.paymentReference}` : ''}`}
             />
           ) : row.employeeConfirmedAt ? (
             <Alert
-              type="info" showIcon style={{ marginBottom: 12 }}
+              type="info" showIcon style={{ marginBottom: 14 }}
               message={`Nhân sự ${row.fullName} đã ký tay xác nhận phiếu lương lúc ${dayjs(row.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')}. Vui lòng quét mã QR ngân hàng bên dưới để chuyển khoản và đánh dấu Đã thanh toán.`}
             />
           ) : (
             <Alert
-              type="warning" showIcon style={{ marginBottom: 12 }}
+              type="warning" showIcon style={{ marginBottom: 14 }}
               message="Nhân sự chưa ký xác nhận phiếu lương nên Mã QR Ngân hàng chưa được mở khóa hiển thị."
             />
           )}
 
-          <Row gutter={[16, 12]} align="stretch">
-            <Col xs={24} sm={10}>
-              <div style={{ border: '1px solid #E5E7EB', borderRadius: 4, background: '#F8FAFC', padding: 12, textAlign: 'center', height: '100%' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#0F172A', marginBottom: 8 }}>
-                  <QrcodeOutlined /> MÃ QR NGÂN HÀNG NHÂN VIÊN
-                </div>
-                {row.bankQrUrl ? (
-                  <img src={row.bankQrUrl} alt="Mã QR Ngân hàng" style={{ maxWidth: '100%', maxHeight: 220, objectFit: 'contain', borderRadius: 4, background: '#FFFFFF', padding: 6, border: '1px solid #E5E7EB' }} />
-                ) : (
-                  <div style={{ height: 170, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      {row.employeeConfirmedAt
-                        ? 'Nhân sự chưa tải ảnh Mã QR Ngân hàng trong Hồ sơ cá nhân (vẫn có thể chuyển khoản theo Số tài khoản bên cạnh)'
-                        : 'Mã QR sẽ hiển thị ngay sau khi nhân sự ký xác nhận phiếu lương'}
-                    </Typography.Text>
+          <Row gutter={[20, 16]} align="stretch">
+            <Col xs={24} md={9}>
+              <div style={{ border: '1px solid #E5E7EB', borderRadius: 4, background: '#F8FAFC', padding: 16, textAlign: 'center', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0F172A', marginBottom: 12 }}>
+                    <QrcodeOutlined /> MÃ QR NGÂN HÀNG NHÂN VIÊN
                   </div>
-                )}
+                  {row.bankQrUrl ? (
+                    <img src={row.bankQrUrl} alt="Mã QR Ngân hàng" style={{ maxWidth: '100%', maxHeight: 240, objectFit: 'contain', borderRadius: 4, background: '#FFFFFF', padding: 8, border: '1px solid #E5E7EB' }} />
+                  ) : (
+                    <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                      <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                        {row.employeeConfirmedAt
+                          ? 'Nhân sự chưa tải ảnh Mã QR Ngân hàng trong Hồ sơ cá nhân (vẫn có thể chuyển khoản theo Số tài khoản bên cạnh)'
+                          : 'Mã QR sẽ hiển thị ngay sau khi nhân sự ký xác nhận phiếu lương'}
+                      </Typography.Text>
+                    </div>
+                  )}
+                </div>
                 {row.employeeSignatureUrl && (
-                  <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #CBD5E1' }}>
-                    <div style={{ fontSize: 10, color: '#64748B', marginBottom: 4 }}>Chữ ký trực tiếp của nhân viên</div>
-                    <img src={row.employeeSignatureUrl} alt="Chữ ký nhân viên" style={{ maxHeight: 46, maxWidth: '100%', objectFit: 'contain' }} />
+                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed #CBD5E1' }}>
+                    <div style={{ fontSize: 11, color: '#64748B', marginBottom: 4 }}>Chữ ký trực tiếp của nhân viên</div>
+                    <img src={row.employeeSignatureUrl} alt="Chữ ký nhân viên" style={{ maxHeight: 54, maxWidth: '100%', objectFit: 'contain' }} />
                   </div>
                 )}
               </div>
             </Col>
 
-            <Col xs={24} sm={14}>
-              <Descriptions size="small" bordered column={1} styles={{ label: { width: 138 } }}>
+            <Col xs={24} md={15}>
+              <Descriptions
+                size="middle"
+                bordered
+                column={1}
+                styles={{ label: { width: 170, whiteSpace: 'nowrap', fontWeight: 500 }, content: { wordBreak: 'break-word' } }}
+              >
                 <Descriptions.Item label="Nhân sự">
-                  <strong>{row.fullName}</strong> <Tag color="geekblue" style={{ marginLeft: 4 }}>{row.employeeCode}</Tag>
+                  <strong>{row.fullName}</strong> <Tag color="geekblue" style={{ marginLeft: 6 }}>{row.employeeCode}</Tag>
                 </Descriptions.Item>
                 <Descriptions.Item label="Ngân hàng">
                   <BankOutlined /> <strong>{row.bankName || 'Chưa cập nhật'}</strong>
                 </Descriptions.Item>
                 <Descriptions.Item label="Số tài khoản">
-                  <Flex justify="space-between" align="center" gap={6}>
-                    <strong className="num" style={{ fontSize: 14 }}>{row.bankAccountNumber || 'Chưa cập nhật'}</strong>
+                  <Flex justify="space-between" align="center" gap={12} wrap={false}>
+                    <strong className="num" style={{ fontSize: 15 }}>{row.bankAccountNumber || 'Chưa cập nhật'}</strong>
                     {row.bankAccountNumber && (
-                      <Button size="small" icon={<CopyOutlined />} onClick={() => void copyText('Số tài khoản', row.bankAccountNumber)}>Sao chép</Button>
+                      <Button size="small" style={{ flexShrink: 0 }} icon={<CopyOutlined />} onClick={() => void copyText('Số tài khoản', row.bankAccountNumber)}>Sao chép</Button>
                     )}
                   </Flex>
                 </Descriptions.Item>
@@ -142,21 +151,21 @@ export function PayrollBankQrPayModal({
                   <strong>{row.bankAccountHolder || row.fullName}</strong>
                 </Descriptions.Item>
                 <Descriptions.Item label="Số tiền Thực lĩnh">
-                  <Flex justify="space-between" align="center" gap={6}>
-                    <strong className="num" style={{ fontSize: 16, color: '#15803D' }}>{fmtVnd(row.netVnd)}</strong>
-                    <Button size="small" icon={<CopyOutlined />} onClick={() => void copyText('Số tiền thực lĩnh', String(Math.round(row.netVnd)))}>Sao chép số</Button>
+                  <Flex justify="space-between" align="center" gap={12} wrap={false}>
+                    <strong className="num" style={{ fontSize: 17, color: '#15803D' }}>{fmtVnd(row.netVnd)}</strong>
+                    <Button size="small" style={{ flexShrink: 0 }} icon={<CopyOutlined />} onClick={() => void copyText('Số tiền thực lĩnh', String(Math.round(row.netVnd)))}>Sao chép số</Button>
                   </Flex>
                 </Descriptions.Item>
                 <Descriptions.Item label="Nội dung CK gợi ý">
-                  <Flex justify="space-between" align="center" gap={6}>
-                    <span className="num">{suggestedMemo}</span>
-                    <Button size="small" icon={<CopyOutlined />} onClick={() => void copyText('Nội dung chuyển khoản', suggestedMemo)}>Sao chép</Button>
+                  <Flex justify="space-between" align="center" gap={12} wrap={false}>
+                    <span className="num" style={{ fontWeight: 500 }}>{suggestedMemo}</span>
+                    <Button size="small" style={{ flexShrink: 0 }} icon={<CopyOutlined />} onClick={() => void copyText('Nội dung chuyển khoản', suggestedMemo)}>Sao chép</Button>
                   </Flex>
                 </Descriptions.Item>
               </Descriptions>
 
               {canPay && !isPaid && (
-                <div style={{ marginTop: 12 }}>
+                <div style={{ marginTop: 14 }}>
                   <div style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>Mã giao dịch / Nội dung xác nhận chuyển khoản</div>
                   <Input
                     value={reference}

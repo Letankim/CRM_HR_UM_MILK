@@ -114,7 +114,7 @@ function PayrollView() {
               {tab !== 'REPORTS' && (
                 <>
                   <Button icon={<FileZipOutlined style={{ color: '#2563EB' }} />} loading={exportAllPdfZipMut.isPending} onClick={() => exportAllPdfZipMut.mutate()} disabled={!currentPeriod}>
-                    Xuất toàn bộ PDF (.ZIP)
+                    Xuất phiếu lương
                   </Button>
                   <Button icon={<FileExcelOutlined style={{ color: '#15803D' }} />} onClick={() => void handleExportSheet()} disabled={!currentPeriod}>Xuất Bảng lương Excel</Button>
                 </>
