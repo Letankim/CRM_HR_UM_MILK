@@ -100,6 +100,21 @@ export function findLinkedUserForEmployee(e: Employee, ctx: AppContext): User | 
   return undefined;
 }
 
+/**
+ * Kiểm tra nhân sự có đủ điều kiện tham gia Đổi ca 2 chiều (SWAP) và Nhường ca (GIVE) hay không:
+ * - Bắt buộc đang làm việc (ACTIVE) và ở giai đoạn Nhân viên Chính thức (OFFICIAL) — nhân viên thử việc chưa được đổi hoặc nhường ca.
+ * - Không thuộc khối quản trị / văn phòng / quản lý cửa hàng (BACKOFFICE, STORE_MANAGER) và không phải hồ sơ hệ thống của tài khoản quản trị.
+ * - Nếu liên kết với tài khoản đăng nhập thì vai trò bắt buộc là Nhân viên chính thức (CHINH_THUC) và chưa bị khóa / thu hồi.
+ */
+export function isOfficialSwapEligibleEmployee(ctx: AppContext, e: Employee): boolean {
+  if (e.status !== 'ACTIVE' || e.stage !== 'OFFICIAL') return false;
+  if (e.staff_group === 'BACKOFFICE' || e.staff_group === 'STORE_MANAGER') return false;
+  if (e.note === 'Hồ sơ nhân sự liên kết tài khoản hệ thống') return false;
+  const linkedUser = findLinkedUserForEmployee(e, ctx);
+  if (linkedUser && (linkedUser.role !== 'CHINH_THUC' || linkedUser.status === 'REVOKED' || linkedUser.status === 'LOCKED')) return false;
+  return true;
+}
+
 /** Tìm toàn bộ hồ sơ nhân sự khớp với tài khoản (chống gán nhầm hồ sơ đã thuộc tài khoản khác khi dùng chung email thử nghiệm) */
 export function findAllLinkedEmployeesForUser(u: User, ctx: AppContext): Employee[] {
   const codeUpper = (u.employee_id || '').trim().toUpperCase(), unameUpper = u.username.trim().toUpperCase();
@@ -183,6 +198,7 @@ export function mapEmployeeRecord(e: Employee, ctx: AppContext) {
     userId: linkedUser?.id ?? null, username: linkedUser?.username ?? null, userDisplayName: linkedUser?.display_name ?? null,
     userRole: linkedUser?.role ?? null, userRoleLabel: linkedUser ? ROLE_LABELS[linkedUser.role] : null,
     accountStatus: linkedUser?.status ?? null, accountStatusLabel: linkedUser ? ACCOUNT_STATUS_LABELS[linkedUser.status] : 'Chưa liên kết tài khoản',
+    canSwapShift: isOfficialSwapEligibleEmployee(ctx, e),
     note: e.note || '', version: e.version, created_at: e.created_at, updated_at: e.updated_at,
   };
 }

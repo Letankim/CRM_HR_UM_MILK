@@ -141,8 +141,8 @@ export default function MyAttendancePage() {
               ),
             },
             {
-              key: 'my-schedule', label: <span><CalendarOutlined /> Lịch cá nhân, Nghỉ OFF &amp; Nhường / Đổi ca ({shifts.length})</span>,
-              children: <EmployeeScheduleAndLeaveCenter todayDate={todayDate} empId={profile?.employeeId || ''} empCode={profile?.employeeCode || ''} stage={profile?.stage} canRegisterShift={canRegisterShift} shifts={shifts} leaves={leaves} swaps={myQ.data?.swaps ?? []} branchPeers={myQ.data?.branchPeers ?? []} refreshing={myQ.isFetching} onRefresh={refreshAll} />,
+              key: 'my-schedule', label: <span><CalendarOutlined /> {myQ.data?.canSwapShift ? `Lịch cá nhân, Nghỉ OFF & Nhường / Đổi ca (${shifts.length})` : `Lịch cá nhân & Nghỉ OFF (${shifts.length})`}</span>,
+              children: <EmployeeScheduleAndLeaveCenter todayDate={todayDate} empId={profile?.employeeId || ''} empCode={profile?.employeeCode || ''} stage={profile?.stage} canRegisterShift={canRegisterShift} canSwapShift={myQ.data?.canSwapShift} shifts={shifts} leaves={leaves} swaps={myQ.data?.swaps ?? []} branchPeers={myQ.data?.branchPeers ?? []} refreshing={myQ.isFetching} onRefresh={refreshAll} />,
             },
             {
               key: 'my-payslips', label: <span><FileTextOutlined /> Phiếu lương của bạn</span>,

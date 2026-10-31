@@ -21,7 +21,7 @@ import { confirmWorkflowShiftOverride, type WorkflowConfirmKind } from './workfl
 import { WorkflowSubFilterBar } from './WorkflowSubFilterBar';
 
 type RowRec = Record<string, unknown>;
-interface Props { employees: { value: string; label: string }[]; assignments: WorkflowAssignmentOption[] }
+interface Props { employees: { value: string; label: string; branchId?: string; canSwapShift?: boolean }[]; assignments: WorkflowAssignmentOption[] }
 
 const ADJ_STATUS_OPTS = [{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'PENDING', label: 'Chờ duyệt' }, { value: 'STORE_CONFIRMED', label: 'CH đã xác nhận' }, { value: 'APPROVED', label: 'Đã phê duyệt' }, { value: 'REJECTED', label: 'Đã từ chối' }];
 const LEAVE_STATUS_OPTS = [{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'PENDING', label: 'Chờ duyệt nghỉ OFF' }, { value: 'APPROVED', label: 'Đã phê duyệt nghỉ OFF' }, { value: 'REJECTED', label: 'Đã từ chối' }];

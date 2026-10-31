@@ -13,7 +13,7 @@ import { cleanShiftName, type BranchPeerItem } from './self-attendance-shared';
 type SwapKind = 'GIVE' | 'SWAP';
 
 export interface ShiftSwapRequestModalProps {
-  open: boolean; employeeId: string; stage?: string; shifts: Record<string, unknown>[]; peers: BranchPeerItem[];
+  open: boolean; employeeId: string; stage?: string; canSwapShift?: boolean; shifts: Record<string, unknown>[]; peers: BranchPeerItem[];
   onClose: () => void; onSuccess: () => void;
 }
 
@@ -26,12 +26,12 @@ function isUpcoming(s: Record<string, unknown>, today: string, nowHm: string) {
   return wd > today || (wd === today && nowHm < String(s.startAt || '07:00'));
 }
 
-/** Tạo yêu cầu Nhường ca (mọi nhân viên) hoặc Đổi ca 2 chiều (chỉ nhân viên chính thức, cùng chi nhánh). */
-export function ShiftSwapRequestModal({ open, employeeId, stage, shifts, peers, onClose, onSuccess }: ShiftSwapRequestModalProps) {
+/** Tạo yêu cầu Nhường ca hoặc Đổi ca 2 chiều (chỉ áp dụng giữa các Nhân viên Chính thức cùng chi nhánh). */
+export function ShiftSwapRequestModal({ open, employeeId, stage, canSwapShift, shifts, peers, onClose, onSuccess }: ShiftSwapRequestModalProps) {
   const { message } = App.useApp();
   const [form] = Form.useForm<{ kind: SwapKind; from_assignment_id?: string; peer_id?: string; to_assignment_id?: string; reason: string }>();
   const [loading, setLoading] = useState(false);
-  const isOfficial = stage === 'OFFICIAL';
+  const canSwap = canSwapShift ?? (stage === 'OFFICIAL');
   const kind: SwapKind = Form.useWatch('kind', form) ?? 'GIVE';
   const peerId = Form.useWatch('peer_id', form);
   const fromId = Form.useWatch('from_assignment_id', form);
@@ -51,18 +51,20 @@ export function ShiftSwapRequestModal({ open, employeeId, stage, shifts, peers, 
   const peerShiftsQ = useQuery({
     queryKey: ['swap-peer-shifts', today],
     queryFn: () => api.list<ScheduleAssignmentItem>(`/admin/schedules?per_page=1000&from_date=${today}&to_date=${addDaysYmd(today, 45)}`),
-    enabled: open && kind === 'SWAP',
+    enabled: open && canSwap && kind === 'SWAP',
   });
+  const officialPeers = useMemo(() => peers.filter((p) => !p.stage || p.stage === 'OFFICIAL'), [peers]);
+  const officialPeerIds = useMemo(() => new Set(officialPeers.map((p) => p.id)), [officialPeers]);
   const peerPool = useMemo(
-    () => (peerShiftsQ.data?.data ?? []).filter((a) => a.status === 'PUBLISHED' && a.employeeId !== employeeId && isUpcoming(a as unknown as Record<string, unknown>, today, nowHm)),
-    [peerShiftsQ.data, employeeId, today, nowHm],
+    () => (peerShiftsQ.data?.data ?? []).filter((a) => a.status === 'PUBLISHED' && a.employeeId !== employeeId && officialPeerIds.has(a.employeeId) && (!a.employeeStage || a.employeeStage === 'OFFICIAL') && isUpcoming(a as unknown as Record<string, unknown>, today, nowHm)),
+    [peerShiftsQ.data, employeeId, officialPeerIds, today, nowHm],
   );
   const peerShiftOptions = peerPool
     .filter((a) => a.employeeId === peerId && !a.pendingSwapCode && !a.pendingLeaveCode)
     .map((a) => ({ value: a.id, label: shiftLabelOf(a as unknown as Record<string, unknown>) }));
 
-  const peerOptions = peers
-    .filter((p) => kind === 'GIVE' || peerPool.some((a) => a.employeeId === p.id && (!a.employeeStage || a.employeeStage === 'OFFICIAL')))
+  const peerOptions = officialPeers
+    .filter((p) => kind === 'GIVE' || peerPool.some((a) => a.employeeId === p.id))
     .map((p) => {
       const busy = kind === 'GIVE' && fromDate ? p.busyShiftsByDate?.[fromDate] : undefined;
       return { value: p.id, label: `${p.employeeCode} — ${p.fullName}${p.positionTitle ? ` (${p.positionTitle})` : ''}${busy ? ` · Đã có ${cleanShiftName(busy)} ngày ${dayjs(fromDate).format('DD/MM')}` : ''}` };
@@ -95,29 +97,33 @@ export function ShiftSwapRequestModal({ open, employeeId, stage, shifts, peers, 
   return (
     <Modal
       width={640} open={open} forceRender title="Tạo yêu cầu Nhường ca / Đổi ca" onCancel={onClose} onOk={handleSubmit} confirmLoading={loading}
-      okText="Gửi yêu cầu" cancelText="Đóng" okButtonProps={{ icon: <SendOutlined />, disabled: ownOptions.length === 0 }} cancelButtonProps={{ icon: <CloseOutlined /> }}
+      okText="Gửi yêu cầu" cancelText="Đóng" okButtonProps={{ icon: <SendOutlined />, disabled: !canSwap || ownOptions.length === 0 }} cancelButtonProps={{ icon: <CloseOutlined /> }}
     >
-      {ownOptions.length === 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Bạn chưa có ca làm việc đã phát hành nào sắp tới (chưa bắt đầu) để nhường hoặc đổi." />}
-      <Alert
-        type="info" showIcon style={{ marginBottom: 12 }}
-        message={kind === 'SWAP' ? 'Đồng nghiệp đồng ý là lịch được đổi ngay, không cần HR duyệt.' : 'Nếu người nhận vượt 2 ca/ngày, yêu cầu sẽ chuyển HR duyệt.'}
-      />
-      <Form form={form} layout="vertical" initialValues={{ kind: 'GIVE' }} onValuesChange={(changed) => {
+      {!canSwap && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Chức năng Nhường ca và Đổi ca chỉ áp dụng cho Nhân viên Chính thức tại cửa hàng. Nhân viên thử việc chưa được đổi hoặc nhường ca." />}
+      {canSwap && ownOptions.length === 0 && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Bạn chưa có ca làm việc đã phát hành nào sắp tới (chưa bắt đầu) để nhường hoặc đổi." />}
+      {canSwap && (
+        <Alert
+          type="info" showIcon style={{ marginBottom: 12 }}
+          message={kind === 'SWAP'
+            ? 'Chỉ áp dụng giữa 2 Nhân viên Chính thức cùng chi nhánh. Đồng nghiệp đồng ý là lịch được đổi ngay, không cần HR duyệt.'
+            : 'Chỉ được nhường ca cho Nhân viên Chính thức cùng chi nhánh. Nếu người nhận vượt 2 ca/ngày, yêu cầu sẽ chuyển HR duyệt.'}
+        />
+      )}
+      <Form form={form} layout="vertical" disabled={!canSwap} initialValues={{ kind: 'GIVE' }} onValuesChange={(changed) => {
         if (changed.kind) form.setFieldsValue({ peer_id: undefined, to_assignment_id: undefined });
         if (changed.peer_id !== undefined) form.setFieldValue('to_assignment_id', undefined);
       }}>
         <Form.Item name="kind" label="Loại yêu cầu" rules={[{ required: true }]}>
           <Radio.Group optionType="button" buttonStyle="solid" options={[
             { value: 'GIVE', label: SHIFT_SWAP_KIND_LABELS.GIVE },
-            { value: 'SWAP', label: SHIFT_SWAP_KIND_LABELS.SWAP, disabled: !isOfficial },
+            { value: 'SWAP', label: SHIFT_SWAP_KIND_LABELS.SWAP },
           ]} />
         </Form.Item>
-        {!isOfficial && <div style={{ fontSize: 12, color: '#64748B', marginTop: -16, marginBottom: 12 }}>Đổi ca 2 chiều chỉ áp dụng cho nhân viên chính thức.</div>}
         <Form.Item name="from_assignment_id" label="Ca của bạn" rules={[{ required: true, message: 'Vui lòng chọn ca của bạn' }]}>
           <Select showSearch optionFilterProp="label" options={ownOptions} placeholder="Chọn ca đã phát hành, chưa bắt đầu" />
         </Form.Item>
-        <Form.Item name="peer_id" label={kind === 'SWAP' ? 'Đồng nghiệp đổi ca' : 'Đồng nghiệp nhận ca'} rules={[{ required: true, message: 'Vui lòng chọn đồng nghiệp' }]}>
-          <Select showSearch optionFilterProp="label" options={peerOptions} loading={kind === 'SWAP' && peerShiftsQ.isLoading} placeholder="Chọn đồng nghiệp cùng chi nhánh" notFoundContent="Không có đồng nghiệp phù hợp" />
+        <Form.Item name="peer_id" label={kind === 'SWAP' ? 'Đồng nghiệp đổi ca (Nhân viên Chính thức)' : 'Đồng nghiệp nhận ca (Nhân viên Chính thức)'} rules={[{ required: true, message: 'Vui lòng chọn đồng nghiệp là Nhân viên Chính thức' }]}>
+          <Select showSearch optionFilterProp="label" options={peerOptions} loading={kind === 'SWAP' && peerShiftsQ.isLoading} placeholder="Chọn nhân viên chính thức cùng chi nhánh" notFoundContent="Chưa có nhân viên chính thức cùng chi nhánh phù hợp" />
         </Form.Item>
         {kind === 'SWAP' && (
           <Form.Item name="to_assignment_id" label="Ca của đồng nghiệp nhận về" rules={[{ required: true, message: 'Vui lòng chọn ca của đồng nghiệp' }]}>

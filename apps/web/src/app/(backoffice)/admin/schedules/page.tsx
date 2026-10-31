@@ -46,7 +46,7 @@ function SchedulesView() {
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
   const branchesQuery = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
-  const employeesQuery = useQuery({ queryKey: ['employees', 'select-all'], queryFn: () => api.list<{ id: string; employeeCode: string; fullName: string; branchId: string; branchName: string }>('/admin/employees?per_page=100') });
+  const employeesQuery = useQuery({ queryKey: ['employees', 'select-all'], queryFn: () => api.list<{ id: string; employeeCode: string; fullName: string; branchId: string; branchName: string; canSwapShift?: boolean }>('/admin/employees?per_page=100') });
   const { options: shiftFilterOptions } = useShiftTemplates(branchId);
 
   const attCountQ = useQuery({ queryKey: ['attendance-sessions-count', branchId], queryFn: () => api.list<AttendanceEventRow>(`/admin/attendance/sessions?page=1&per_page=1${branchId !== 'ALL' ? `&branch_id=${branchId}` : ''}`) });
@@ -117,7 +117,7 @@ function SchedulesView() {
   });
 
   const { bulkActions } = useScheduleBulkActions({ canEdit });
-  const employeeOptions = useMemo(() => (employeesQuery.data?.data ?? []).map((e) => ({ value: e.id, label: `${e.employeeCode} — ${e.fullName} (${e.branchName})`, branchId: e.branchId })), [employeesQuery.data]);
+  const employeeOptions = useMemo(() => (employeesQuery.data?.data ?? []).map((e) => ({ value: e.id, label: `${e.employeeCode} — ${e.fullName} (${e.branchName})`, branchId: e.branchId, canSwapShift: Boolean(e.canSwapShift) })), [employeesQuery.data]);
   const items = query.data?.data ?? [], scopeAssignments = needFullScope ? (staffingScopeQ.data?.data ?? items) : items;
   const draftItems = useMemo(() => items.filter((i) => i.status === 'DRAFT'), [items]);
   const totalDraftCount = Number(query.data?.meta.filters?.draft_count ?? draftItems.length);

@@ -2,6 +2,7 @@ import { DEFAULT_SHIFT_LABELS, weekDates, type Employee, type LeaveRequest } fro
 import type { AppContext } from '../context.js';
 import { dayjs } from '../lib/time.js';
 import { findBranchShiftTemplate, resolveEmployeeBranchId } from '../routes/account-employee-sync.js';
+import { isOfficialSwapEligibleEmployee } from '../routes/employee-mapper.js';
 import { getOperationSettings } from './operations-settings.service.js';
 import { employeeShiftsOnDate, matchEmp, resolveProbationCycle } from './schedule-rules.js';
 import { findEmployeeShiftConflictOnDate, resolveApplicableStaffingRule } from './schedule-staffing-helper.js';
@@ -67,7 +68,7 @@ const isPlanned = (x: PlannedShift | PlanIssue): x is PlannedShift => !('kind' i
 export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; branchId?: string }): PlanResult {
   const settings = getOperationSettings(ctx.db), tracker = createCapacityTracker(ctx), dates = weekDates(params.weekStart);
   const inBranch = (e: Employee) => !params.branchId || params.branchId === 'ALL' || e.branch_id === params.branchId;
-  const emps = ctx.db.employees.filter((e) => e.status === 'ACTIVE' && e.stage === 'OFFICIAL' && Boolean(e.branch_id) && inBranch(e))
+  const emps = ctx.db.employees.filter((e) => isOfficialSwapEligibleEmployee(ctx, e) && Boolean(e.branch_id) && inBranch(e))
     .sort((a, b) => a.employee_code.localeCompare(b.employee_code));
   const offRequests = ctx.db.leaveRequests.filter((l) => OFF_ACTIVE.has(l.status) && l.leave_date >= dates[0]! && l.leave_date <= dates[6]! && emps.some((e) => matchEmp(e)(l.employee_id)));
   const planned: PlannedShift[] = [], issues: PlanIssue[] = [];

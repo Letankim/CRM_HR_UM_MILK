@@ -96,25 +96,28 @@ describe('Ops V5.2 — Chốt lịch tuần & tự động sắp ca theo ca mặ
     expect(t.db.notifications.all().some((n) => n.entity_type === 'PROBATION_READY_HR' && n.entity_id === prob.id)).toBe(true);
   });
 
-  it('Nhường ca cho đồng nghiệp chưa vượt 2 ca/ngày được cập nhật ngay khi người nhận đồng ý; người khác không thể xác nhận thay', async () => {
-    const hr = await t.loginHeaders('hr');
+  it('Chặn thử việc đổi/nhường ca; Nhường ca cho NV chính thức chưa vượt 2 ca/ngày tự cập nhật ngay khi đồng ý', async () => {
+    const hr = await t.loginHeaders('hr'), admin = await t.loginHeaders('admin');
     const giver = t.db.employees.find((e) => e.employee_code === 'NV0002')!;
-    const receiver = t.db.employees.find((e) => e.employee_code === 'NV0001')!;
+    const prob = t.db.employees.find((e) => e.employee_code === 'NV0001')!;
+    const createOff = await t.app.inject({ method: 'POST', url: '/api/admin/employees', headers: hr, payload: { full_name: 'Lê Chính Thức Nhận Ca', phone_number: '0914111222', branch_id: giver.branch_id, stage: 'OFFICIAL', employment_type: 'FULL_TIME', create_account: true, initial_pin: DEMO_PIN } });
+    const receiverId = createOff.json().data.id as string, recUser = t.db.users.find((u) => u.phone === '0914111222')!;
+    await t.app.inject({ method: 'POST', url: '/api/admin/accounts/bulk-action', headers: admin, payload: { action: 'ACTIVATE', items: [{ id: recUser.id, version: recUser.version }] } });
     const shift = (await t.app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hr, payload: { employee_id: giver.id, work_date: day(40), shift_code: 'CA_TOI', status: 'PUBLISHED' } })).json().data;
     const nv2 = { ...web, cookie: (await t.login('0901000002', DEMO_PIN, 'employee')).cookie };
     const nv1 = { ...web, cookie: (await t.login('0901000001', DEMO_PIN, 'employee')).cookie };
-    const notOwn = await t.app.inject({ method: 'POST', url: '/api/admin/shift-swaps', headers: nv1, payload: { kind: 'GIVE', requester_id: giver.id, peer_id: receiver.id, from_assignment_id: shift.id, reason: 'Giả mạo' } });
-    expect(notOwn.statusCode).toBe(403);
-    const swapNotAllowed = await t.app.inject({ method: 'POST', url: '/api/admin/shift-swaps', headers: nv2, payload: { kind: 'SWAP', requester_id: giver.id, peer_id: receiver.id, from_assignment_id: shift.id, to_assignment_id: shift.id, reason: 'Đổi với thử việc' } });
-    expect(swapNotAllowed.statusCode).toBe(400);
-    const give = await t.app.inject({ method: 'POST', url: '/api/admin/shift-swaps', headers: nv2, payload: { kind: 'GIVE', requester_id: giver.id, peer_id: receiver.id, from_assignment_id: shift.id, reason: 'Có việc gấp' } });
+    const nvRec = { ...web, cookie: (await t.login('0914111222', DEMO_PIN, 'employee')).cookie };
+    await t.app.inject({ method: 'PUT', url: '/api/auth/password', headers: nvRec, payload: { current_secret: DEMO_PIN, new_secret: '654329', confirm_secret: '654329' } });
+    expect((await t.app.inject({ method: 'POST', url: '/api/admin/shift-swaps', headers: nv1, payload: { kind: 'GIVE', requester_id: giver.id, peer_id: receiverId, from_assignment_id: shift.id, reason: 'Giả mạo' } })).statusCode).toBe(403);
+    expect((await t.app.inject({ method: 'POST', url: '/api/admin/shift-swaps', headers: nv2, payload: { kind: 'GIVE', requester_id: giver.id, peer_id: prob.id, from_assignment_id: shift.id, reason: 'Nhường cho thử việc' } })).statusCode).toBe(400);
+    const give = await t.app.inject({ method: 'POST', url: '/api/admin/shift-swaps', headers: nv2, payload: { kind: 'GIVE', requester_id: giver.id, peer_id: receiverId, from_assignment_id: shift.id, reason: 'Có việc gấp' } });
     expect(give.statusCode).toBe(201);
-    expect(give.json().data.requires_hr_approval).toBe(false);
-    const accept = await t.app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${give.json().data.id}/peer-respond`, headers: nv1, payload: { version: give.json().data.version, accept: true } });
+    expect((await t.app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${give.json().data.id}/peer-respond`, headers: nv1, payload: { version: give.json().data.version, accept: true } })).statusCode).toBe(403);
+    const accept = await t.app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${give.json().data.id}/peer-respond`, headers: nvRec, payload: { version: give.json().data.version, accept: true } });
     expect(accept.statusCode).toBe(200);
     expect(accept.json().data.status).toBe('APPROVED');
     expect(accept.json().data.allowance_eligible).toBe(true);
-    expect(t.db.shiftAssignments.get(shift.id)?.employee_id).toBe(receiver.id);
+    expect(t.db.shiftAssignments.get(shift.id)?.employee_id).toBe(receiverId);
   });
 
   it('Đổi ca 2 chiều giữa 2 NV chính thức tự cập nhật không qua HR; Nhường ca thứ 3 trong ngày bắt buộc qua HR duyệt / từ chối', async () => {

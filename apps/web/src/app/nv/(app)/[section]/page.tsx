@@ -103,7 +103,7 @@ export default function EmployeeSection() {
   const isInitialLoading = myQ.isLoading || (section === 'bai-kiem-tra' && testsQ.isLoading) || (section === 'ban-tin' && commsQ.isLoading);
   const isSchedSection = section === 'lich' || section === 'nghi-phep' || section === 'doi-ca';
   const schedMode = section === 'nghi-phep' ? 'leaves' : section === 'doi-ca' ? 'swaps' : 'shifts';
-  const schedCenter = <EmployeeScheduleAndLeaveCenter todayDate={todayDate} empId={empId} empCode={empCode} stage={myQ.data?.profile.stage} canRegisterShift={myQ.data?.canRegisterShift} mode={schedMode} initialTab={schedMode} shifts={publishedShifts} leaves={myQ.data?.leaves ?? []} swaps={mySwaps} branchPeers={myQ.data?.branchPeers ?? []} refreshing={myQ.isFetching} onRefresh={refreshSection} />;
+  const schedCenter = <EmployeeScheduleAndLeaveCenter todayDate={todayDate} empId={empId} empCode={empCode} stage={myQ.data?.profile.stage} canRegisterShift={myQ.data?.canRegisterShift} canSwapShift={myQ.data?.canSwapShift} mode={schedMode} initialTab={schedMode} shifts={publishedShifts} leaves={myQ.data?.leaves ?? []} swaps={mySwaps} branchPeers={myQ.data?.branchPeers ?? []} refreshing={myQ.isFetching} onRefresh={refreshSection} />;
 
   return (
     <div style={{ padding: isDesktop ? 0 : '8px 6px', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>

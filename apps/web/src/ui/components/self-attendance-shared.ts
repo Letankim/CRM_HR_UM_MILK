@@ -13,13 +13,14 @@ export interface ProbationCycleSummary {
 }
 
 export interface BranchPeerItem {
-  id: string; employeeCode: string; fullName: string; positionTitle?: string; branchName?: string; busyShiftsByDate?: Record<string, string>;
+  id: string; employeeCode: string; fullName: string; stage?: string; positionTitle?: string; branchName?: string; busyShiftsByDate?: Record<string, string>;
 }
 
-/** Các trường bổ sung của `GET /my-attendance` phục vụ Cổng nhân viên (cổng OFF, đăng ký ca thử việc). */
+/** Các trường bổ sung của `GET /my-attendance` phục vụ Cổng nhân viên (cổng OFF, đăng ký ca thử việc, quyền đổi/nhường ca chính thức). */
 export interface SelfAttendanceExtras {
   offWindow?: OffWindowState;
   canRegisterShift?: boolean;
+  canSwapShift?: boolean;
   probationCycle?: ProbationCycleSummary | null;
 }
 

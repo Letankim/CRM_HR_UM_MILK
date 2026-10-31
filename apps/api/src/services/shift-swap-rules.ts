@@ -2,16 +2,20 @@ import type { Employee, ShiftAssignment, ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs } from '../lib/time.js';
+import { isOfficialSwapEligibleEmployee } from '../routes/employee-mapper.js';
 import { getOperationSettings } from './operations-settings.service.js';
 import { employeeShiftsOnDate } from './schedule-rules.js';
 import { findEmployeeShiftConflictOnDate } from './schedule-staffing-helper.js';
 import { clearShiftAttendanceOnWorkflowOverride, getVnNowDateAndHm } from './shift-absent-scanner.js';
 
+export { isOfficialSwapEligibleEmployee } from '../routes/employee-mapper.js';
+
 /**
  * Quy tắc Đổi ca 2 chiều (SWAP) và Nhường ca (GIVE):
- * - Cùng chi nhánh, ca đã phát hành chính thức, chưa bắt đầu và chưa phát sinh chấm công.
+ * - Cả người gửi và người nhận đều bắt buộc là Nhân viên Chính thức tại cửa hàng cùng chi nhánh (nhân viên thử việc chưa được đổi hoặc nhường ca).
+ * - Ca đã phát hành chính thức, chưa bắt đầu và chưa phát sinh chấm công.
  * - SWAP: 2 nhân viên chính thức đổi 2 ca cho nhau — đồng nghiệp đồng ý là cập nhật lịch ngay, không cần HR.
- * - GIVE: người nhận được thêm ca; nếu vượt số ca tối đa / ngày (mặc định 2) thì bắt buộc HR phê duyệt.
+ * - GIVE: đồng nghiệp chính thức nhận thêm ca; nếu vượt số ca tối đa / ngày (mặc định 2) thì bắt buộc HR phê duyệt.
  */
 export const findEmp = (ctx: AppContext, id: string) => ctx.db.employees.get(id) ?? ctx.db.employees.find((e) => e.employee_code === id);
 
@@ -40,9 +44,14 @@ export function evaluateSwapRequest(ctx: AppContext, params: { kind: 'SWAP' | 'G
   if (requester.branch_id !== peer.branch_id) throw Errors.fieldValidation('peer_id', 'INVALID_VALUE', 'Chỉ được đổi / nhường ca với đồng nghiệp cùng chi nhánh', peer.id);
   if (requester.id === peer.id) throw Errors.fieldValidation('peer_id', 'INVALID_VALUE', 'Người nhận phải khác người gửi yêu cầu', peer.id);
   if (peer.status !== 'ACTIVE') throw Errors.fieldValidation('peer_id', 'INVALID_VALUE', 'Đồng nghiệp đã nghỉ việc hoặc ngừng hoạt động', peer.id);
+  if (!isOfficialSwapEligibleEmployee(ctx, requester)) {
+    throw Errors.fieldValidation('requester_id', 'INVALID_VALUE', 'Chức năng đổi ca và nhường ca chỉ áp dụng cho Nhân viên Chính thức tại cửa hàng (nhân viên thử việc chưa được đổi hoặc nhường ca)', requester.id);
+  }
+  if (!isOfficialSwapEligibleEmployee(ctx, peer)) {
+    throw Errors.fieldValidation('peer_id', 'INVALID_VALUE', 'Chỉ được đổi hoặc nhường ca cho đồng nghiệp là Nhân viên Chính thức cùng chi nhánh (nhân viên thử việc và khối quản trị / quản lý không nhận chuyển ca)', peer.id);
+  }
   assertShiftTransferable(ctx, from, 'from_assignment_id', 'Ca của bạn', params.hrOverride);
   if (kind === 'SWAP') {
-    if (requester.stage !== 'OFFICIAL' || peer.stage !== 'OFFICIAL') throw Errors.fieldValidation('peer_id', 'INVALID_VALUE', 'Chức năng đổi ca 2 chiều chỉ áp dụng giữa 2 nhân viên chính thức', peer.id);
     if (!to) throw Errors.fieldValidation('to_assignment_id', 'REQUIRED_FIELD', 'Vui lòng chọn ca của đồng nghiệp để đổi', '');
     if (to.employee_id !== peer.id && to.employee_id !== peer.employee_code) throw Errors.fieldValidation('to_assignment_id', 'INVALID_VALUE', 'Ca được chọn không thuộc lịch của đồng nghiệp', to.id);
     assertShiftTransferable(ctx, to, 'to_assignment_id', 'Ca của đồng nghiệp', params.hrOverride);

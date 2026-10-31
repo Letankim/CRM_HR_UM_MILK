@@ -40,7 +40,7 @@ export default function EmployeeHome() {
   const nowHm = useNowHm(), lateHours = useCheckoutLateHours();
 
   const myQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<MyAttendanceData>('/my-attendance'), enabled: !!data });
-  const swapsQ = useQuery({ queryKey: ['nv-swaps'], queryFn: () => api.list<Record<string, unknown>>('/admin/shift-swaps?per_page=50'), enabled: !!data });
+  const swapsQ = useQuery({ queryKey: ['nv-swaps'], queryFn: () => api.list<Record<string, unknown>>('/admin/shift-swaps?per_page=50'), enabled: !!data && data.user.role === 'CHINH_THUC' });
   const testsQ = useQuery({ queryKey: ['nv-tests'], queryFn: () => api.get<{ tests: Record<string, unknown>[]; assignments: Record<string, unknown>[] }>('/admin/tests/bank'), enabled: !!data });
   const commsQ = useQuery({ queryKey: ['nv-comms'], queryFn: () => api.get<{ announcements: Record<string, unknown>[] }>('/announcements'), enabled: !!data });
 
@@ -98,7 +98,7 @@ export default function EmployeeHome() {
   );
 
   const shiftsCard = (
-    <Card size="small" title={<span><CalendarOutlined /> Ca làm việc đã phát hành của bạn</span>} extra={<Space size={8}><Button size="small" icon={<ReloadOutlined />} loading={myQ.isFetching} onClick={() => { myQ.refetch(); swapsQ.refetch(); }}>Làm mới</Button><Link href="/nv/lich" style={{ fontSize: 12 }}>Xem tất cả</Link></Space>} style={{ marginBottom: isDesktop ? 0 : 12 }}>
+    <Card size="small" title={<span><CalendarOutlined /> Ca làm việc đã phát hành của bạn</span>} extra={<Space size={8}><Button size="small" icon={<ReloadOutlined />} loading={myQ.isFetching} onClick={() => { myQ.refetch(); if (!isProbation && !isInternal) swapsQ.refetch(); }}>Làm mới</Button><Link href="/nv/lich" style={{ fontSize: 12 }}>Xem tất cả</Link></Space>} style={{ marginBottom: isDesktop ? 0 : 12 }}>
       {displayShifts.length === 0 ? (
         <Typography.Text type="secondary">Chưa có ca làm việc nào được phân công cho bạn trong kỳ này.</Typography.Text>
       ) : (
@@ -117,7 +117,7 @@ export default function EmployeeHome() {
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><FieldTimeOutlined /> Cảnh báo công / Ca cần bổ sung</span><Link href="/nv/cong"><Badge count={abnormalShiftsCount} showZero color="#DC2626" /></Link></div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><ClockCircleOutlined /> Đơn nghỉ OFF đang chờ duyệt</span><Link href="/nv/nghi-phep"><Badge count={myLeaves.filter((l) => l.status === 'PENDING').length} showZero color="#D97706" /></Link></div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><SwapOutlined /> Yêu cầu nhường / đổi ca đang xử lý</span><Link href="/nv/doi-ca"><Badge count={pendingSwaps.length} showZero color={BRAND.primary} /></Link></div>
+        {!isProbation && !isInternal && <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><SwapOutlined /> Yêu cầu nhường / đổi ca đang xử lý</span><Link href="/nv/doi-ca"><Badge count={pendingSwaps.length} showZero color={BRAND.primary} /></Link></div>}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><BookOutlined /> Bài kiểm tra TEST / Đào tạo</span><Link href="/nv/bai-kiem-tra"><Tag color="blue" style={{ margin: 0 }}>{myTests.length} bài được giao</Tag></Link></div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><NotificationOutlined /> Bản tin truyền thông nội bộ</span><Link href="/nv/ban-tin"><Tag color="geekblue" style={{ margin: 0 }}>{(commsQ.data?.announcements ?? []).length} bản tin · Xem ngay</Tag></Link></div>
       </Space>

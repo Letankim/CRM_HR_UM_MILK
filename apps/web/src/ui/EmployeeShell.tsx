@@ -64,22 +64,28 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   }, [data, error, isLoading, pathname, router]);
   if (isLoading || !data) return <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center' }}><Spin /></div>;
 
-  const u = data.user, isEmp = isEmployeeRole(u.role), isInternal = !isEmp;
-  const isMoreActive = ['/nv/them', '/nv/nghi-phep', '/nv/cong', '/nv/ho-tro', '/nv/phieu-luong', '/nv/bai-kiem-tra', '/nv/ban-tin'].some((p) => pathname.startsWith(p));
+  const u = data.user, isEmp = isEmployeeRole(u.role), isInternal = !isEmp, isProbation = u.role === 'THU_VIEC';
+  const mobileTabs = isProbation
+    ? MOBILE_TABS.map((t) => (t.href === '/nv/doi-ca' ? { href: '/nv/nghi-phep', label: 'Nghỉ OFF', icon: <FileDoneOutlined /> } : t))
+    : MOBILE_TABS;
+  const desktopGroups = isProbation
+    ? DESKTOP_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => i.key !== '/nv/doi-ca') }))
+    : DESKTOP_GROUPS;
+  const isMoreActive = ['/nv/them', ...(isProbation ? [] : ['/nv/nghi-phep']), '/nv/cong', '/nv/ho-tro', '/nv/phieu-luong', '/nv/bai-kiem-tra', '/nv/ban-tin'].some((p) => pathname.startsWith(p));
   const versionLabel = SYSTEM_CONFIG.version.startsWith('v') ? SYSTEM_CONFIG.version : `v${SYSTEM_CONFIG.version}`;
   const activeDesktopItem = (() => {
-    for (const g of DESKTOP_GROUPS) for (const item of g.items) if (item.key === '/nv' ? pathname === '/nv' : pathname.startsWith(item.key)) return { group: g.label, item };
-    return { group: 'Bàn làm việc cá nhân', item: DESKTOP_GROUPS[0]!.items[0]! };
+    for (const g of desktopGroups) for (const item of g.items) if (item.key === '/nv' ? pathname === '/nv' : pathname.startsWith(item.key)) return { group: g.label, item };
+    return { group: 'Bàn làm việc cá nhân', item: desktopGroups[0]!.items[0]! };
   })();
   const desktopMenuItems: ItemType[] = collapsed
-    ? DESKTOP_GROUPS.flatMap((g) => g.items.map((i) => ({ key: i.key, icon: i.icon, label: <Link href={i.key}>{i.label}</Link> })))
-    : DESKTOP_GROUPS.map((g) => ({ key: g.key, label: <span style={{ fontSize: 12, fontWeight: 600, color: '#64748B' }}>{g.label}</span>, children: g.items.map((i) => ({ key: i.key, icon: i.icon, label: <Link href={i.key}>{i.label}</Link> })) }));
+    ? desktopGroups.flatMap((g) => g.items.map((i) => ({ key: i.key, icon: i.icon, label: <Link href={i.key}>{i.label}</Link> })))
+    : desktopGroups.map((g) => ({ key: g.key, label: <span style={{ fontSize: 12, fontWeight: 600, color: '#64748B' }}>{g.label}</span>, children: g.items.map((i) => ({ key: i.key, icon: i.icon, label: <Link href={i.key}>{i.label}</Link> })) }));
   const mobileMoreMenu = (
     <div style={{ width: 280, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100dvh - 140px)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.textSecondary, padding: '2px 8px 4px', borderBottom: `1px solid ${BRAND.border}` }}>CHỌN TIỆN ÍCH NHÂN SỰ</div>
       {[
         { label: 'Đơn nghỉ OFF & Nghỉ khẩn cấp', desc: 'Đăng ký nghỉ phép OFF & xem trạng thái duyệt', icon: <FileDoneOutlined />, onClick: () => router.push('/nv/nghi-phep') },
-        { label: 'Yêu cầu Đổi ca nội bộ', desc: 'Tạo đề nghị đổi ca & xác nhận nhận ca', icon: <SwapOutlined />, onClick: () => router.push('/nv/doi-ca') },
+        ...(!isProbation ? [{ label: 'Yêu cầu Đổi ca nội bộ', desc: 'Tạo đề nghị đổi / nhường ca giữa nhân viên chính thức', icon: <SwapOutlined />, onClick: () => router.push('/nv/doi-ca') }] : []),
         { label: 'Bảng công & Bổ sung công', desc: 'Gửi phiếu giải trình bổ sung công', icon: <FieldTimeOutlined />, onClick: () => router.push('/nv/cong') },
         { label: 'Trung tâm Thông báo', desc: 'Tất cả thông báo cá nhân & vai trò', icon: <BellOutlined />, onClick: () => router.push('/nv/thong-bao') },
         { label: 'Phiếu hỗ trợ & Giải đáp thắc mắc', desc: 'Gửi ticket chọn bộ phận & người xử lý', icon: <CustomerServiceOutlined />, onClick: () => router.push('/nv/ho-tro') },
@@ -162,7 +168,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
         {activeMaint && <Alert type="warning" banner showIcon message={activeMaint.message || 'Hệ thống đang bảo trì nâng cấp định kỳ.'} />}
         {children}
         <nav className="safe-bottom" style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', background: '#fff', borderTop: `1px solid ${BRAND.border}`, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', zIndex: 20 }}>
-          {MOBILE_TABS.map((t) => {
+          {mobileTabs.map((t) => {
             const active = t.href === '/nv' ? pathname === '/nv' : pathname.startsWith(t.href);
             return (
               <Link key={t.href} href={t.href} style={{ minHeight: 56, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, fontSize: 11, fontWeight: active ? 600 : 400, color: active ? BRAND.primary : BRAND.textSecondary, textDecoration: 'none' }}>

@@ -183,6 +183,13 @@ describe('Luồng Chuông Thông Báo & Email Phân Vai Chuẩn Xác (HR / Cửa
     const third = await t.app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hrHeaders, payload: { employee_id: emp2.id, work_date: workDate, shift_code: 'CA_HANH_CHINH', status: 'PUBLISHED' } });
     expect(third.statusCode).toBe(400);
 
+    // Nhân viên thử việc (emp1) chưa được nhường / đổi ca -> bị từ chối 400; sau khi được duyệt lên Chính thức mới nhường ca thành công
+    const probSwapBlocked = await t.app.inject({ method: 'POST', url: '/api/admin/shift-swaps', headers: nv1Headers, payload: { kind: 'GIVE', requester_id: emp1.id, peer_id: emp2.id, from_assignment_id: draftShift.id, reason: 'Thử việc thử nhường ca' } });
+    expect(probSwapBlocked.statusCode).toBe(400);
+    const curEmp1 = t.db.employees.get(emp1.id)!;
+    await t.db.employees.update(emp1.id, curEmp1.version, { stage: 'OFFICIAL', official_from: today }, 'test');
+    if (curEmp1.user_id) { const u1 = t.db.users.get(curEmp1.user_id)!; await t.db.users.update(u1.id, u1.version, { role: 'CHINH_THUC' }, 'test'); }
+
     const swCreate = await t.app.inject({ method: 'POST', url: '/api/admin/shift-swaps', headers: nv1Headers, payload: { kind: 'GIVE', requester_id: emp1.id, peer_id: emp2.id, from_assignment_id: draftShift.id, reason: 'Có việc gấp, nhờ đồng nghiệp nhận ca sáng' } });
     expect(swCreate.statusCode).toBe(201);
     const sw = swCreate.json().data;

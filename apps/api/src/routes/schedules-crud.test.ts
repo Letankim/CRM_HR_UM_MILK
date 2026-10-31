@@ -164,9 +164,9 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
 
   it('rejects creating a Shift Swap when the peer already has a shift on the same work_date', async () => {
     const hrHeaders = await loginHeaders('hr');
-    const emps = db.employees.all();
-    const reqEmp = emps[0]!;
-    const busyPeer = emps[1]!;
+    const emps = db.employees.all(), reqEmp = emps[0]!, busyPeer = emps[1]!;
+    await db.employees.update(reqEmp.id, reqEmp.version, { stage: 'OFFICIAL', official_from: '2026-10-01' }, 'test');
+    if (reqEmp.user_id) { const reqUser = db.users.get(reqEmp.user_id); if (reqUser) await db.users.update(reqUser.id, reqUser.version, { role: 'CHINH_THUC' }, 'test'); }
 
     const reqShiftRes = await app.inject({
       method: 'POST', url: '/api/admin/schedules', headers: hrHeaders,

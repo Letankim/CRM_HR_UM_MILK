@@ -14,7 +14,7 @@ import { evaluateBranchShiftCapacity, getShiftCheckoutWindow } from '../services
 import { formatPendingAdjustmentLabel } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { mapAttendanceEvent, migrateLegacyBase64Photos } from './attendance-helpers.js';
-import { findLinkedEmployeeForUser } from './employee-mapper.js';
+import { findLinkedEmployeeForUser, findLinkedUserForEmployee, isOfficialSwapEligibleEmployee, resolveStaffGroupLabel } from './employee-mapper.js';
 import { mapAdjustmentRecord } from './attendance-adjustments.routes.js';
 import { buildProbationCycleSummary, registerMyShiftRegisterRoute } from './my-shift-register.routes.js';
 import { getOperationSettings } from '../services/operations-settings.service.js';
@@ -140,21 +140,26 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       if (l.status === 'APPROVED' || l.status === 'PENDING') putBusy(l.employee_id, l.leave_date, 'Đang nghỉ OFF');
     }
     const branchPeers = ctx.db.employees
-      .filter((e) => e.id !== emp.id && e.status === 'ACTIVE' && e.branch_id === emp.branch_id)
+      .filter((e) => {
+        if (e.id === emp.id || e.branch_id !== emp.branch_id || !isOfficialSwapEligibleEmployee(ctx, e)) return false;
+        const linked = findLinkedUserForEmployee(e, ctx);
+        return !linked || linked.status === 'ACTIVE';
+      })
       .map((e) => ({
-        id: e.id, employeeCode: e.employee_code, fullName: e.full_name, positionTitle: e.position_title || 'Nhân sự cửa hàng',
+        id: e.id, employeeCode: e.employee_code, fullName: e.full_name, stage: e.stage,
+        positionTitle: resolveStaffGroupLabel(ctx, e.staff_group, e.position_title),
         branchName: ctx.db.branches.get(e.branch_id)?.name ?? '',
         busyShiftsByDate: { ...(peerBusyByEmp.get(e.employee_code) ?? {}), ...(peerBusyByEmp.get(e.id) ?? {}) },
       }));
 
     const adjustments = ctx.db.attendanceAdjustments
       .filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code)
-      .reverse()
-      ;
+      .reverse();
 
     const cycleDays = emp.probation_cycle_days || 12;
     const rawDiff = emp.probation_start ? dayjs(todayStr).diff(dayjs(emp.probation_start), 'day') + 1 : (emp.probation_work_days || 7);
     const probationDaysPassed = Math.min(cycleDays, Math.max(1, rawDiff > cycleDays ? (emp.probation_work_days || 7) : rawDiff));
+    const canSwapShift = isOfficialSwapEligibleEmployee(ctx, emp);
 
     return sendSuccess(request, 'Lấy dữ liệu điểm danh và ca làm việc cá nhân thành công', {
       todayDate: todayStr, nowTimeHm: nowHm,
@@ -166,7 +171,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
         probationCycleDays: cycleDays, probationDaysPassed, probationDaysRemaining: Math.max(0, cycleDays - probationDaysPassed),
       },
       shifts, events, leaves, swaps, branchPeers, adjustments: adjustments.map((a) => mapAdjustmentRecord(ctx, a)),
-      offWindow: evaluateOffWindow(settings, todayStr, nowHm), canRegisterShift: emp.stage === 'PROBATION',
+      offWindow: evaluateOffWindow(settings, todayStr, nowHm), canRegisterShift: emp.stage === 'PROBATION', canSwapShift,
       probationCycle: emp.stage === 'PROBATION' ? buildProbationCycleSummary(ctx, emp, todayStr) : null,
     });
   });
@@ -186,7 +191,11 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     if (!shift || (shift.employee_id !== emp.id && shift.employee_id !== emp.employee_code)) throw Errors.forbidden('Bạn chỉ được phép hủy ca làm việc của chính mình');
     assertDateNotLockedByPayroll(ctx.db, shift.work_date, 'hủy ca làm việc');
     if (ctx.db.attendanceEvents.find((e) => e.assignment_id === shift.id)) throw Errors.badRequest('Ca làm việc này đã có dữ liệu điểm danh thực tế, không thể hủy ca');
-    if (shift.status !== 'DRAFT') throw Errors.badRequest('Ca làm việc này đã được Quản lý cửa hàng / HR duyệt phân ca chính thức. Nếu cần thay đổi, vui lòng dùng chức năng Đổi ca / Nhường ca.');
+    if (shift.status !== 'DRAFT') {
+      throw Errors.badRequest(isOfficialSwapEligibleEmployee(ctx, emp)
+        ? 'Ca làm việc này đã được Quản lý cửa hàng / HR duyệt phân ca chính thức. Nếu cần thay đổi, vui lòng dùng chức năng Đổi ca / Nhường ca.'
+        : 'Ca làm việc này đã được Quản lý cửa hàng / HR duyệt phân ca chính thức, không thể tự hủy.');
+    }
     await ctx.db.shiftAssignments.softDelete(shift.id, shift.version, user.id);
     await ensureSyncedNotifications(ctx);
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: shift.branch_id || emp.branch_id, employeeIds: [emp.id], kind: 'SHIFT_CANCELLED', actorId: user.id });

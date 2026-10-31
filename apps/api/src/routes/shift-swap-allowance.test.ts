@@ -11,6 +11,12 @@ describe('Duyệt đổi ca có nút tick & tùy chỉnh Phụ cấp đổi ca �
     const seededSwap = db.shiftSwaps.find((s) => s.status === 'PEER_ACCEPTED')!;
     expect(seededSwap).toBeDefined();
     const peerEmp = db.employees.get(seededSwap.peer_id)!;
+    // Quy tắc V5.2: chỉ Nhân viên Chính thức mới được tham gia đổi / nhường ca -> chuyển người nhận sang Chính thức trước khi HR phê duyệt
+    await db.employees.update(peerEmp.id, peerEmp.version, { stage: 'OFFICIAL', official_from: '2026-10-01' }, 'test');
+    if (peerEmp.user_id) {
+      const peerUser = db.users.get(peerEmp.user_id);
+      if (peerUser) await db.users.update(peerUser.id, peerUser.version, { role: 'CHINH_THUC' }, 'test');
+    }
 
     // Tạo kỳ lương tháng 10/2026 bên Kế toán
     const createPeriodRes = await app.inject({

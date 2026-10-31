@@ -9,13 +9,13 @@ import { DateStringPicker, TimeStringPicker } from './DateTimePickers';
 import { WorkflowSwapCreateModal } from './WorkflowSwapCreateModal';
 
 export interface WorkflowAssignmentOption {
-  id: string; employeeId: string; employeeName: string; workDate: string; shiftCode: string; shiftLabel: string;
+  id: string; employeeId: string; employeeName: string; employeeStage?: string; branchId?: string; workDate: string; shiftCode: string; shiftLabel: string;
   startAt?: string; endAt?: string; scheduledHours?: number; status?: string; statusLabel?: string; attendanceStatusLabel?: string;
   pendingAdjustmentCode?: string | null; pendingSwapCode?: string | null; pendingLeaveCode?: string | null;
 }
 
 interface Props {
-  employees: { value: string; label: string; branchId?: string }[];
+  employees: { value: string; label: string; branchId?: string; canSwapShift?: boolean }[];
   assignments: WorkflowAssignmentOption[];
   leaveModal: boolean;
   swapModal: boolean;
