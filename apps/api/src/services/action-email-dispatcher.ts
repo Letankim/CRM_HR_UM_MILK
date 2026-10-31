@@ -1,4 +1,4 @@
-import { DEFAULT_SHIFT_LABELS, isEmployeeRole, STAFF_GROUP_LABELS, SYSTEM_CONFIG, type Candidate, type EmergencyLeave, type Employee, type Interview, type PayPeriod, type Payslip, type ShiftSwap, type StaffGroup } from '@umbm/shared';
+import { DEFAULT_SHIFT_LABELS, isEmployeeRole, STAFF_GROUP_LABELS, SYSTEM_CONFIG, type Candidate, type Employee, type Interview, type PayPeriod, type Payslip, type ShiftSwap, type StaffGroup } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { resolveRolePortalPath, resolveSystemHrMailbox, webOrigin } from './account-email-dispatcher.js';
 import { isSyntheticDemoEmail } from './email.service.js';
@@ -37,13 +37,13 @@ export function queueSwapEventEmail(ctx: AppContext, swap: ShiftSwap, stage: 'CR
   if (stage === 'PEER_RESPONDED') {
     const accepted = swap.status === 'PEER_ACCEPTED';
     if (accepted) {
-      const managers = resolveManagerReviewRecipients(ctx, { roles: managerRolesFor(ctx, reqContact, actorId), branchId: swap.branch_id || reqContact?.branchId, actorId });
+      const managers = resolveManagerReviewRecipients(ctx, { roles: ['HR'], branchId: swap.branch_id || reqContact?.branchId, actorId });
       for (const mgr of managers) {
         ctx.email.enqueue({
           to: mgr.email, template: 'LEAVE_SWAP_DECISION',
-          subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Yêu cầu đổi ca chờ Quản lý / HR phê duyệt (${swap.swap_code})`,
+          subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Yêu cầu nhường ca vượt 2 ca/ngày chờ HR phê duyệt (${swap.swap_code})`,
           recipientName: `${mgr.name} (${mgr.roleLabel})`, referenceCode: `${swap.swap_code}-B2`,
-          summary: `Đồng nghiệp ${peerContact?.name || swap.peer_id} đã xác nhận đồng ý nhận thay ca ngày ${swap.from_work_date} cho ${reqContact?.name || swap.requester_id} tại ${branchName}. Đơn đang chờ phê duyệt Bước 3/3.`,
+          summary: `Đồng nghiệp ${peerContact?.name || swap.peer_id} đã xác nhận đồng ý nhận thay ca ngày ${swap.from_work_date} cho ${reqContact?.name || swap.requester_id} tại ${branchName}. Người nhận sẽ làm quá 2 ca trong ngày nên cần HR phê duyệt.`,
           metadata: [{ label: 'Mã đơn đổi ca', value: swap.swap_code }, { label: 'Người xin đổi', value: `${reqContact?.name || swap.requester_id} (${reqContact?.code || ''})` }, { label: 'Người nhận thay', value: `${peerContact?.name || swap.peer_id} (${peerContact?.code || ''})` }, { label: 'Chi nhánh & Ca', value: `${branchName} · ${swap.from_work_date} (${shiftLabel(swap.from_shift_code)})` }],
           actionLabel: 'Phê duyệt yêu cầu đổi ca', actionUrl: `${webOrigin(ctx)}/admin/schedules?section=workflows`,
         }, { dedupeKey: `swap_mgr:${swap.id}:v${swap.version}:${mgr.email}` });
@@ -54,9 +54,9 @@ export function queueSwapEventEmail(ctx: AppContext, swap: ShiftSwap, stage: 'CR
       ctx.email.enqueue({
         to: reqContact.personalEmail, template: 'LEAVE_SWAP_DECISION', recipientName: reqContact.name, referenceCode: `${swap.swap_code}-PEER`,
         summary: accepted
-          ? `Đồng nghiệp ${peerContact?.name || swap.peer_id} đã đồng ý nhận thay ca ngày ${swap.from_work_date}. Yêu cầu ${swap.swap_code} đã chuyển lên Quản lý / HR phê duyệt.`
+          ? `Đồng nghiệp ${peerContact?.name || swap.peer_id} đã đồng ý nhận thay ca ngày ${swap.from_work_date}. Yêu cầu ${swap.swap_code} đã chuyển HR phê duyệt (người nhận vượt 2 ca/ngày).`
           : `Đồng nghiệp ${peerContact?.name || swap.peer_id} đã từ chối nhận thay ca ngày ${swap.from_work_date} (${swap.swap_code}).`,
-        metadata: [{ label: 'Mã đơn đổi ca', value: swap.swap_code }, { label: 'Ngày & Khung ca', value: `${swap.from_work_date} (${shiftLabel(swap.from_shift_code)})` }, { label: 'Phản hồi đồng nghiệp', value: accepted ? 'Đã đồng ý (Chờ Quản lý / HR duyệt)' : 'Từ chối nhận ca' }, { label: 'Ghi chú', value: swap.peer_note || swap.reason }],
+        metadata: [{ label: 'Mã đơn đổi ca', value: swap.swap_code }, { label: 'Ngày & Khung ca', value: `${swap.from_work_date} (${shiftLabel(swap.from_shift_code)})` }, { label: 'Phản hồi đồng nghiệp', value: accepted ? 'Đã đồng ý (Chờ HR duyệt)' : 'Từ chối nhận ca' }, { label: 'Ghi chú', value: swap.peer_note || swap.reason }],
         actionLabel: 'Xem chi tiết yêu cầu đổi ca', actionUrl: `${webOrigin(ctx)}${resolveRolePortalPath(reqContact.role, 'swap')}`,
       }, { dedupeKey: `swap_peer_req:${swap.id}:v${swap.version}` });
       queued += 1;
@@ -69,70 +69,10 @@ export function queueSwapEventEmail(ctx: AppContext, swap: ShiftSwap, stage: 'CR
     if (!c?.personalEmail || c.userId === (actorId || swap.decided_by)) continue;
     ctx.email.enqueue({
       to: c.personalEmail, template: 'LEAVE_SWAP_DECISION', recipientName: c.name, referenceCode: `${swap.swap_code}-${swap.status}`,
-      summary: `Yêu cầu đổi ca ${swap.swap_code} ngày ${swap.from_work_date} đã ${approved ? 'được Quản lý phê duyệt (Bước 3/3 — Đã cập nhật lịch chính thức)' : 'bị từ chối'}.`,
+      summary: `Yêu cầu đổi ca ${swap.swap_code} ngày ${swap.from_work_date} đã ${approved ? 'được chấp thuận và cập nhật lịch làm việc chính thức' : 'bị từ chối'}.`,
       metadata: [{ label: 'Mã đơn đổi ca', value: swap.swap_code }, { label: 'Ngày ca hoán đổi', value: `${swap.from_work_date} (${shiftLabel(swap.from_shift_code)})` }, { label: 'Kết quả duyệt cuối', value: approved ? 'Đã phê duyệt & chuyển lịch chính thức' : 'Từ chối' }, ...(approved ? [{ label: 'Phụ cấp nhận đổi ca', value: swapAllowanceText }] : []), { label: 'Ghi chú Quản lý', value: swap.decision_reason || 'Đảm bảo định biên ca trực' }],
       actionLabel: 'Kiểm tra lịch làm việc mới', actionUrl: `${webOrigin(ctx)}${resolveRolePortalPath(c.role, 'schedule')}`,
     }, { dedupeKey: `swap_decide:${swap.id}:v${swap.version}:${c.personalEmail}` });
-    queued += 1;
-  }
-  flushMail(ctx, queued);
-}
-
-export function queueEmergencyLeaveEmail(ctx: AppContext, emg: EmergencyLeave, actorId?: string) {
-  const emp = resolveStrictEmployeeContact(ctx, emg.employee_id);
-  const branchName = ctx.db.branches.get(emg.branch_id)?.name || emp?.branchName || 'Chi nhánh';
-  const managers = resolveManagerReviewRecipients(ctx, { roles: managerRolesFor(ctx, emp, actorId), branchId: emg.branch_id || emp?.branchId, actorId });
-  for (const mgr of managers) {
-    ctx.email.enqueue({
-      to: mgr.email, template: 'EMERGENCY_LEAVE_ALERT', recipientName: `${mgr.name} (${mgr.roleLabel})`, referenceCode: emg.emergency_code,
-      summary: `Cảnh báo nghỉ đột xuất sát giờ ca (<12h): Nhân sự ${emp ? `${emp.name} (${emp.code})` : emg.employee_id} tại ${branchName} vừa báo nghỉ khẩn cấp ngày ${emg.work_date}.`,
-      metadata: [{ label: 'Mã báo cáo khẩn', value: emg.emergency_code }, { label: 'Nhân sự & Chi nhánh', value: `${emp ? `${emp.name} (${emp.code})` : emg.employee_id} · ${branchName}` }, { label: 'Ngày & Khung ca', value: `${emg.work_date} (${shiftLabel(emg.shift_code)})` }, { label: 'Lý do khẩn cấp', value: emg.reason }],
-      actionLabel: 'Điều phối người thay thế ngay', actionUrl: `${webOrigin(ctx)}/admin/schedules?section=workflows`,
-    }, { dedupeKey: `emg_create:${emg.id}:${mgr.email}` });
-  }
-  flushMail(ctx, managers.length);
-}
-
-export function queueEmergencyHandledEmail(ctx: AppContext, emg: EmergencyLeave, actorId?: string) {
-  const emp = resolveStrictEmployeeContact(ctx, emg.employee_id);
-  const branchName = ctx.db.branches.get(emg.branch_id)?.name || emp?.branchName || 'Chi nhánh';
-  let queued = 0;
-  if (emg.status === 'ESCALATED') {
-    const hrList = resolveManagerReviewRecipients(ctx, { roles: ['HR'], branchId: emg.branch_id, actorId: actorId || emg.handled_by });
-    for (const hr of hrList) {
-      ctx.email.enqueue({
-        to: hr.email, template: 'EMERGENCY_LEAVE_ALERT',
-        subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Cửa hàng báo thiếu nhân sự ca khẩn cấp lên HR (${emg.emergency_code})`,
-        recipientName: `${hr.name} (${hr.roleLabel})`, referenceCode: `${emg.emergency_code}-HR`,
-        summary: `Cửa hàng ${branchName} vừa chuyển cảnh báo thiếu nhân sự cho ca ${shiftLabel(emg.shift_code)} ngày ${emg.work_date} (nhân sự nghỉ: ${emp ? `${emp.name} (${emp.code})` : emg.employee_id}) lên Phòng Nhân sự (HR) để hỗ trợ điều phối.`,
-        metadata: [{ label: 'Mã báo cáo khẩn', value: emg.emergency_code }, { label: 'Chi nhánh thiếu người', value: branchName }, { label: 'Ngày & Khung ca', value: `${emg.work_date} (${shiftLabel(emg.shift_code)})` }, { label: 'Ghi chú từ Cửa hàng', value: emg.resolution_note || emg.reason }],
-        actionLabel: 'Điều phối chi viện tại Phân hệ HR', actionUrl: `${webOrigin(ctx)}/admin/schedules?section=workflows`,
-      }, { dedupeKey: `emg_esc:${emg.id}:v${emg.version}:${hr.email}` });
-      queued += 1;
-    }
-    return flushMail(ctx, queued);
-  }
-  if (emp?.personalEmail && emp.userId !== (actorId || emg.handled_by)) {
-    ctx.email.enqueue({
-      to: emp.personalEmail, template: 'EMERGENCY_LEAVE_ALERT',
-      subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Cập nhật xử lý báo nghỉ khẩn cấp của bạn (${emg.emergency_code})`,
-      recipientName: emp.name, referenceCode: emg.emergency_code,
-      summary: `Báo cáo nghỉ đột xuất ${emg.emergency_code} ngày ${emg.work_date} của bạn đã được Quản lý điều phối xử lý.`,
-      metadata: [{ label: 'Mã báo cáo', value: emg.emergency_code }, { label: 'Ngày & Khung ca', value: `${emg.work_date} (${shiftLabel(emg.shift_code)})` }, { label: 'Ghi chú xử lý', value: emg.resolution_note || 'Đã điều phối phương án trực ca' }],
-      actionLabel: 'Xem lịch & báo nghỉ của tôi', actionUrl: `${webOrigin(ctx)}${resolveRolePortalPath(emp.role, 'leave')}`,
-    }, { dedupeKey: `emg_emp:${emg.id}:v${emg.version}` });
-    queued += 1;
-  }
-  const rep = emg.replacement_id ? resolveStrictEmployeeContact(ctx, emg.replacement_id) : null;
-  if (rep?.personalEmail && rep.userId !== (actorId || emg.handled_by)) {
-    ctx.email.enqueue({
-      to: rep.personalEmail, template: 'SCHEDULE_SHIFT_DECISION',
-      subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Phân công trực thay ca khẩn cấp ngày ${emg.work_date} (${emg.emergency_code})`,
-      recipientName: rep.name, referenceCode: `${emg.emergency_code}-REP`,
-      summary: `Bạn vừa được Quản lý phân công trực thay ${shiftLabel(emg.shift_code)} ngày ${emg.work_date} tại ${branchName} (thay cho ${emp?.name || emg.employee_id}).`,
-      metadata: [{ label: 'Nhân sự trực thay', value: `${rep.name} (${rep.code})` }, { label: 'Ngày & Khung ca', value: `${emg.work_date} (${shiftLabel(emg.shift_code)})` }, { label: 'Chi nhánh', value: branchName }],
-      actionLabel: 'Xem lịch làm việc của bạn', actionUrl: `${webOrigin(ctx)}${resolveRolePortalPath(rep.role, 'schedule')}`,
-    }, { dedupeKey: `emg_rep:${emg.id}:v${emg.version}` });
     queued += 1;
   }
   flushMail(ctx, queued);

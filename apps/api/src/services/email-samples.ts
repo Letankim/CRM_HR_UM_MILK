@@ -103,24 +103,6 @@ export function buildEmailPreviewSamples(baseUrl = 'http://localhost:3100'): Rec
       actionLabel: 'Kiểm tra trạng thái đơn',
       actionUrl: `${baseUrl}/nv/lich`,
     },
-    EMERGENCY_LEAVE_ALERT: {
-      to: `quanly.cn1@${domain}`,
-      template: 'EMERGENCY_LEAVE_ALERT',
-      recipientName: 'Trần Văn Cửa Hàng',
-      referenceCode: 'EMG-2026-0012',
-      summary:
-        'Hệ thống vừa ghi nhận một báo nghỉ khẩn cấp sát giờ vào ca. Đề nghị Quản lý cửa hàng điều phối nhân sự thay thế ngay.',
-      metadata: [
-        { label: 'Nhân sự báo nghỉ', value: 'Võ Thị Thử Việc (Mã NV: NV0001)' },
-        { label: 'Ca làm việc bị ảnh hưởng', value: 'Ca Sáng (07:00 - 15:00) ngày 24/10/2026' },
-        { label: 'Chi nhánh', value: 'Ụm Bò Milk Chi nhánh 1' },
-        { label: 'Định biên tối thiểu', value: 'Cần bổ sung 01 nhân sự thay thế' },
-        { label: 'Lý do khẩn cấp', value: 'Sự cố sức khỏe đột xuất' },
-      ],
-      actionLabel: 'Mở bảng điều phối ca trực',
-      actionUrl: `${baseUrl}/dashboard`,
-      securityNote: 'Ca thiếu người dưới ngưỡng tối thiểu được đánh dấu cảnh báo ưu tiên cao trên Bảng điều khiển.',
-    },
     TEST_ASSIGNED: {
       to: `nhanvien@${domain}`,
       template: 'TEST_ASSIGNED',

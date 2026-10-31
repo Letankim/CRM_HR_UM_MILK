@@ -19,6 +19,7 @@ export const SPREADSHEETS = {
         'username', 'phone', 'display_name', 'password_hash', 'role', 'permissions_json', 'branch_scope',
         'employee_id', 'status', 'session_version', 'failed_login_count', 'locked_until', 'last_login_at',
         'activated_by', 'activated_at', 'revoked_at', 'email', 'revoked_by', 'revoke_reason',
+        'must_change_pin', 'pin_changed_at',
       ),
       SYSTEM_SETTINGS: cols('key', 'value', 'note', 'category', 'label', 'value_type'),
       MAINTENANCE: cols('scope', 'enabled', 'message', 'expected_end_at', 'target_module', 'title', 'started_at'),
@@ -67,6 +68,7 @@ export const SPREADSHEETS = {
       SHIFT_ASSIGNMENTS: cols(
         'schedule_week_id', 'employee_id', 'branch_id', 'work_date', 'shift_template_id', 'start_at', 'end_at', 'status', 'source',
         'employee_stage', 'day_type', 'shift_code', 'scheduled_hours', 'swapped_from_employee_id', 'replacement_for_employee_id', 'published_at', 'note',
+        'linked_assignment_id',
       ),
       LEAVE_REQUESTS: cols(
         'employee_id', 'branch_id', 'leave_date', 'kind', 'reason', 'status', 'decided_by', 'decision_reason',
@@ -78,13 +80,7 @@ export const SPREADSHEETS = {
         'requester_id', 'peer_id', 'from_assignment_id', 'to_assignment_id', 'reason', 'status',
         'peer_responded_at', 'decided_by', 'decision_reason', 'allowance_eligible', 'swap_code', 'branch_id',
         'from_work_date', 'from_shift_code', 'to_work_date', 'to_shift_code', 'has_conflict', 'staffing_valid',
-        'requested_at', 'peer_note', 'decided_at', 'allowance_amount_vnd',
-      ),
-      EMERGENCY_LEAVES: cols(
-        'employee_id', 'assignment_id', 'reason', 'replacement_id', 'status', 'escalated', 'handled_by',
-        'emergency_code', 'branch_id', 'work_date', 'shift_code', 'reported_at', 'minutes_before_shift',
-        'evidence_file_id', 'replacement_confirmed_at', 'shift_coverage_status', 'escalated_at',
-        'escalated_to_role', 'handled_at', 'resolution_note',
+        'requested_at', 'peer_note', 'decided_at', 'allowance_amount_vnd', 'kind', 'requires_hr_approval',
       ),
     },
   },
@@ -110,7 +106,7 @@ export const SPREADSHEETS = {
         'store_confirmed_by', 'store_confirmed_at', 'hr_decision', 'decided_by', 'decision_reason',
         'adjustment_code', 'record_id', 'branch_id', 'work_date', 'shift_code', 'exception_source',
         'requested_check_in_at', 'requested_check_out_at', 'requested_hours', 'status', 'store_note',
-        'decided_at', 'applied_to_record',
+        'decided_at', 'applied_to_record', 'punch_type',
       ),
       ATTENDANCE_CONFIRMATIONS: cols('branch_id', 'work_date', 'confirmed_by', 'note', 'from_date', 'to_date', 'total_shifts', 'confirmed_shifts', 'pending_adjustments_count', 'status', 'confirmed_at'),
       PHOTOS: cols('event_id', 'local_path', 'sha256', 'size_bytes', 'drive_file_id', 'sync_status', 'synced_at', 'employee_id', 'branch_id', 'work_date', 'mime_type', 'drive_folder_id', 'last_error'),
@@ -188,6 +184,23 @@ export const SPREADSHEETS = {
 export type SpreadsheetKey = keyof typeof SPREADSHEETS;
 export type TabName<K extends SpreadsheetKey> = keyof (typeof SPREADSHEETS)[K]['tabs'] & string;
 export const MONTHLY_TABS: Partial<Record<SpreadsheetKey, readonly string[]>> = { SYSTEM: ['AUDIT_LOG'] };
+
+/**
+ * Các bảng phát sinh dữ liệu lớn theo tháng (ca làm việc, nghỉ OFF, đổi/nhường ca, chấm công, phiếu bổ sung công).
+ * Quản trị viên có thể chuyển "phân vùng dữ liệu" sang sheet tháng mới (ví dụ SHIFT_ASSIGNMENTS_2026_11)
+ * hoặc quay lại sheet tháng cũ để rà soát. Phân vùng rỗng ('') nghĩa là dùng tab gốc.
+ */
+export const MONTHLY_PARTITION_TABS = {
+  SCHEDULE: ['SHIFT_ASSIGNMENTS', 'LEAVE_REQUESTS', 'SHIFT_SWAPS'],
+  ATTENDANCE: ['ATTENDANCE_EVENTS', 'ATTENDANCE_ADJUSTMENTS'],
+} as const;
+
+/** Mã phân vùng tháng dạng YYYY_MM (ví dụ 2026_11). */
+export const PARTITION_MONTH_REGEX = /^\d{4}_(0[1-9]|1[0-2])$/;
+
+export function partitionTabName(base: string, monthKey: string): string {
+  return monthKey ? `${base}_${monthKey}` : base;
+}
 
 export function monthlyTabName(base: string, date: Date = new Date()): string {
   const local = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));

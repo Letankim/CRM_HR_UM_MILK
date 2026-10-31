@@ -10,7 +10,7 @@ import { healOpenPayslipDisputesToTickets, isStaleTicketNotification, syncSuppor
 const syncInFlight = new WeakMap<object, Promise<void>>(), lastSyncSig = new WeakMap<object, string>(), SYNC_ACTOR = 'system-sync';
 function computeSyncSig(ctx: AppContext): string {
   const sumV = (rows: { version: number }[]) => rows.reduce((acc, r) => acc + r.version, rows.length * 97);
-  return [ctx.db.announcements, ctx.db.users, ctx.db.shiftAssignments, ctx.db.leaveRequests, ctx.db.shiftSwaps, ctx.db.attendanceAdjustments, ctx.db.emergencyLeaves, ctx.db.payPeriods, ctx.db.payslips, ctx.db.supportTickets].map((s) => sumV(s.all())).join(':');
+  return [ctx.db.announcements, ctx.db.users, ctx.db.employees, ctx.db.shiftAssignments, ctx.db.leaveRequests, ctx.db.shiftSwaps, ctx.db.attendanceAdjustments, ctx.db.payPeriods, ctx.db.payslips, ctx.db.supportTickets].map((s) => sumV(s.all())).join(':');
 }
 function activePlusRecent<T extends { id: string }>(rows: T[], isActive: (r: T) => boolean, recentLimit = 50): T[] {
   const active = rows.filter(isActive), seen = new Set(active.map((r) => r.id));
@@ -26,8 +26,8 @@ async function deduplicateAdjustmentsAndNotifications(ctx: AppContext): Promise<
   const adjDeletes: { id: string; expectedVersion: number; patch: { is_deleted: boolean } }[] = [];
   for (const adj of [...ctx.db.attendanceAdjustments.all()].reverse()) {
     if (adj.status === 'REJECTED') continue;
-    const eid = empByCode.get(adj.employee_id) ?? adj.employee_id;
-    const key = adj.assignment_id ? `asg:${adj.assignment_id}` : `emp:${eid}:${adj.work_date}:${adj.shift_code}`;
+    const eid = empByCode.get(adj.employee_id) ?? adj.employee_id, pType = adj.punch_type || 'FULL_SHIFT';
+    const key = adj.assignment_id ? `asg:${adj.assignment_id}:${pType}` : `emp:${eid}:${adj.work_date}:${adj.shift_code}:${pType}`;
     if (seenAdjKeys.has(key)) adjDeletes.push({ id: adj.id, expectedVersion: adj.version, patch: { is_deleted: true } });
     else seenAdjKeys.add(key);
   }
@@ -43,14 +43,13 @@ async function deduplicateAdjustmentsAndNotifications(ctx: AppContext): Promise<
   for (const n of [...ctx.db.notifications.all()].reverse()) {
     const rawAdjId = (n.entity_id || '').replace(/_(STORE_CONFIRMED|APPROVED|REJECTED)$/, '');
     const adj = n.entity_type.startsWith('ATT_ADJ_') && !n.entity_id.startsWith('BULK_') ? ctx.db.attendanceAdjustments.get(rawAdjId) : undefined;
-    const rawEmgId = (n.entity_id || '').replace(/_ESCALATED$/, '');
-    const emg = n.entity_type === 'EMG_STORE' ? ctx.db.emergencyLeaves.get(rawEmgId) : undefined;
     const isResolvedPending =
       (n.entity_type === 'ATT_ADJ_HR' && (!adj || (adj.status !== 'PENDING' && adj.status !== 'STORE_CONFIRMED') || (adj.status === 'STORE_CONFIRMED' && !n.entity_id.endsWith('_STORE_CONFIRMED')))) ||
       (n.entity_type === 'LEAVE_ROLE' && ctx.db.leaveRequests.get(n.entity_id)?.status !== 'PENDING') ||
       (n.entity_type === 'SHIFT_DRAFT_ROLE' && ctx.db.shiftAssignments.get(n.entity_id)?.status !== 'DRAFT') ||
       (n.entity_type === 'SWAP_STORE' && ctx.db.shiftSwaps.get((n.entity_id || '').replace(/_(PENDING_PEER|PEER_ACCEPTED)$/, ''))?.status !== 'PEER_ACCEPTED') ||
-      (n.entity_type === 'EMG_STORE' && (!emg || ['RESOLVED', 'REPLACEMENT_FOUND'].includes(emg.status) || (emg.status === 'ESCALATED' && !n.entity_id.endsWith('_ESCALATED')))) ||
+      n.entity_type === 'EMG_STORE' || n.entity_type === 'EMG_USER' ||
+      (n.entity_type === 'PROBATION_READY_HR' && ctx.db.employees.get(n.entity_id)?.stage !== 'PROBATION') ||
       (n.entity_type === 'USERS_PENDING' && ctx.db.users.get(n.entity_id)?.status !== 'PENDING_ACTIVATION') ||
       isStaleTicketNotification(ctx, n);
     const isMergedIntoBulk = n.entity_type === 'ATT_ADJ_USER' && !n.entity_id.startsWith('BULK_') && adj?.decided_at && (adjBatchCounts.get(`${adj.decided_at.slice(0, 16)}_${adj.status}`) ?? 0) > 1;
@@ -105,6 +104,13 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
       await ins({ recipient_user_id: '', recipient_role: 'ADMIN', branch_id: 'ALL', category: 'SYSTEM', title: `Tài khoản mới chờ kích hoạt: ${u.display_name || u.username}`, body: `Tài khoản @${u.username} (${ROLE_LABELS[u.role as Role] ?? u.role}) đang chờ Quản trị viên phê duyệt kích hoạt.`, link: '/admin/accounts?status=PENDING_ACTIVATION', severity: 'WARNING', entity_type: 'USERS_PENDING', entity_id: u.id });
     }
   }
+  for (const emp of ctx.db.employees.filter((e) => e.status === 'ACTIVE' && e.stage === 'PROBATION')) {
+    const reqWork = emp.probation_work_days || 7;
+    const doneShifts = ctx.db.shiftAssignments.filter((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.day_type !== 'OFF' && a.status === 'COMPLETED').length;
+    if (doneShifts >= reqWork && !hasKey('PROBATION_READY_HR', emp.id)) {
+      await ins({ recipient_user_id: '', recipient_role: 'HR,ADMIN', branch_id: emp.branch_id || 'ALL', category: 'WORKFLOW', title: `Nhân viên thử việc đã làm đủ ${doneShifts}/${reqWork} ca — Chờ duyệt Chính thức: ${emp.full_name} (${emp.employee_code})`, body: `${emp.full_name} (${emp.employee_code}) đã hoàn thành đủ ${doneShifts} ca thử việc bắt buộc, sẵn sàng để HR xét duyệt lên Nhân viên chính thức.`, link: '/admin/schedules', severity: 'WARNING', entity_type: 'PROBATION_READY_HR', entity_id: emp.id });
+    }
+  }
   for (const a of activePlusRecent(ctx.db.shiftAssignments.all(), (x) => x.status === 'DRAFT', 50)) {
     const emp = findEmp(a.employee_id), empUser = findUserByEmp(a.employee_id), empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : a.employee_id, brId = emp?.branch_id || a.branch_id || 'ALL';
     if (a.status === 'DRAFT' && !hasKey('SHIFT_DRAFT_ROLE', a.id)) {
@@ -128,12 +134,12 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
     const reqEmp = findEmp(s.requester_id), reqUser = findUserByEmp(s.requester_id), peerUser = findUserByEmp(s.peer_id), swapKey = `${s.id}_${s.status}`, brId = reqEmp?.branch_id || s.branch_id || 'ALL';
     const reqLabel = reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id;
     if (s.status === 'PEER_ACCEPTED' && !hasKey('SWAP_STORE', `${s.id}_PEER_ACCEPTED`)) {
-      await ins({ recipient_user_id: '', recipient_role: isBoOrHr(reqEmp, reqUser, s.created_by) ? 'HR' : 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Yêu cầu đổi ca chờ duyệt (${s.swap_code || s.id}): ${reqLabel}`, body: `Đồng nghiệp đã đồng ý nhận thay ${shiftLabel(s.from_shift_code)} ngày ${s.from_work_date} — Chờ Quản lý / HR phê duyệt Bước 3/3.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'SWAP_STORE', entity_id: `${s.id}_PEER_ACCEPTED` }, peerUser?.id || s.updated_by);
+      await ins({ recipient_user_id: '', recipient_role: 'HR', branch_id: brId, category: 'WORKFLOW', title: `Yêu cầu nhường ca vượt 2 ca/ngày chờ HR duyệt (${s.swap_code || s.id}): ${reqLabel}`, body: `Người nhận đã đồng ý nhận ${shiftLabel(s.from_shift_code)} ngày ${s.from_work_date} và sẽ làm 3 ca trong ngày — cần HR phê duyệt.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'SWAP_STORE', entity_id: `${s.id}_PEER_ACCEPTED` }, peerUser?.id || s.updated_by);
     }
     const targetIds = s.status === 'PENDING_PEER' ? [peerUser?.id] : (s.status === 'PEER_ACCEPTED' || s.status === 'PEER_DECLINED') ? [reqUser?.id] : [reqUser?.id, peerUser?.id].filter((id) => id !== s.decided_by);
     const cleanTargetIds = targetIds.filter(Boolean).join(',');
     if (cleanTargetIds && !hasKey('SWAP_USER', swapKey)) {
-      await ins({ recipient_user_id: cleanTargetIds, recipient_role: '', branch_id: brId, category: 'WORKFLOW', title: `Cập nhật yêu cầu đổi ca (${s.swap_code || s.id})`, body: `Đổi ca ngày ${s.from_work_date} (${shiftLabel(s.from_shift_code)}): ${s.status === 'APPROVED' ? `Đã được Quản lý phê duyệt & cập nhật lịch chính thức (${s.allowance_eligible && Number(s.allowance_amount_vnd ?? 0) > 0 ? `Phụ cấp nhận ca: +${Number(s.allowance_amount_vnd).toLocaleString('vi-VN')}đ` : 'Không tính phụ cấp đổi ca'})` : s.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã xác nhận — Chờ Quản lý duyệt' : s.status === 'REJECTED' || s.status === 'PEER_DECLINED' ? 'Đã bị từ chối' : `${reqLabel} nhờ bạn nhận ca thay`}.`, link: '/nv/doi-ca', severity: s.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_USER', entity_id: swapKey }, s.status === 'PENDING_PEER' ? (reqUser?.id || s.created_by) : (s.decided_by || peerUser?.id || s.updated_by));
+      await ins({ recipient_user_id: cleanTargetIds, recipient_role: '', branch_id: brId, category: 'WORKFLOW', title: `Cập nhật yêu cầu ${s.kind === 'SWAP' ? 'đổi ca' : 'nhường ca'} (${s.swap_code || s.id})`, body: `Ca ngày ${s.from_work_date} (${shiftLabel(s.from_shift_code)}): ${s.status === 'APPROVED' ? `Đã cập nhật lịch chính thức (${s.allowance_eligible && Number(s.allowance_amount_vnd ?? 0) > 0 ? `Phụ cấp nhận ca: +${Number(s.allowance_amount_vnd).toLocaleString('vi-VN')}đ` : 'Không tính phụ cấp đổi ca'})` : s.status === 'PEER_ACCEPTED' ? 'Người nhận đã đồng ý — Chờ HR duyệt (vượt 2 ca/ngày)' : s.status === 'REJECTED' || s.status === 'PEER_DECLINED' ? 'Đã bị từ chối' : s.status === 'CANCELLED' ? 'Người gửi đã hủy yêu cầu' : `${reqLabel} ${s.kind === 'SWAP' ? 'đề nghị đổi ca 2 chiều với bạn' : 'nhờ bạn nhận ca được nhường'}`}.`, link: '/nv/doi-ca', severity: s.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_USER', entity_id: swapKey }, s.status === 'PENDING_PEER' ? (reqUser?.id || s.created_by) : (s.decided_by || peerUser?.id || s.updated_by));
     }
   }
   const adjList = activePlusRecent(ctx.db.attendanceAdjustments.all(), (x) => x.status === 'PENDING' || x.status === 'STORE_CONFIRMED', 60);
@@ -164,18 +170,6 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
       if (targetUids.length > 0 && !hasKey('ATT_ADJ_USER', bulkKey)) {
         await ins({ recipient_user_id: targetUids.join(','), recipient_role: '', branch_id: 'ALL', category: 'ATTENDANCE', title: `Kết quả xử lý hàng loạt ${group.length} phiếu bổ sung công (${codes[0]} .. ${codes[codes.length - 1]})`, body: `Phòng Nhân sự (HR) đã ${sample.status === 'APPROVED' ? 'phê duyệt' : 'từ chối'} ${group.length} phiếu bổ sung công: ${codes.slice(0, 6).join(', ')}${codes.length > 6 ? ` (+${codes.length - 6} phiếu)` : ''}.`, link: '/nv/cong', severity: sample.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'ATT_ADJ_USER', entity_id: bulkKey }, sample.decided_by);
       }
-    }
-  }
-  for (const emg of activePlusRecent(ctx.db.emergencyLeaves.all(), (x) => x.status === 'REPORTED' || x.status === 'ESCALATED', 40)) {
-    const emp = findEmp(emg.employee_id), empUser = findUserByEmp(emg.employee_id), repUser = emg.replacement_id ? findUserByEmp(emg.replacement_id) : undefined;
-    const empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : emg.employee_id, brId = emp?.branch_id || emg.branch_id || 'ALL';
-    if (emg.status === 'REPORTED' && !hasKey('EMG_STORE', emg.id)) {
-      await ins({ recipient_user_id: '', recipient_role: isBoOrHr(emp, empUser, emg.created_by) ? 'HR' : 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Cảnh báo nghỉ đột xuất & thiếu người: ${emg.emergency_code} (${empLabel})`, body: `${empLabel} báo nghỉ ${shiftLabel(emg.shift_code)} ngày ${emg.work_date} — Lý do: ${emg.reason}. Cần tìm người thay hoặc báo HR.`, link: '/admin/schedules?section=workflows', severity: 'CRITICAL', entity_type: 'EMG_STORE', entity_id: emg.id }, emg.created_by);
-    } else if (emg.status === 'ESCALATED' && !hasKey('EMG_STORE', `${emg.id}_ESCALATED`)) {
-      await ins({ recipient_user_id: '', recipient_role: 'HR', branch_id: brId, category: 'WORKFLOW', title: `CH chuyển cảnh báo thiếu nhân sự khẩn cấp lên HR: ${emg.emergency_code} (${empLabel})`, body: `Cửa hàng báo thiếu nhân sự ${shiftLabel(emg.shift_code)} ngày ${emg.work_date} — ${emg.resolution_note || emg.reason}. Cần HR điều phối chi viện.`, link: '/admin/schedules?section=workflows', severity: 'CRITICAL', entity_type: 'EMG_STORE', entity_id: `${emg.id}_ESCALATED` }, emg.handled_by || emg.updated_by);
-    } else if ((emg.status === 'RESOLVED' || emg.status === 'REPLACEMENT_FOUND') && !hasKey('EMG_USER', `${emg.id}_${emg.status}`)) {
-      const uids = [empUser?.id, repUser?.id].filter((id): id is string => Boolean(id && id !== emg.handled_by));
-      if (uids.length > 0) await ins({ recipient_user_id: Array.from(new Set(uids)).join(','), recipient_role: '', branch_id: brId, category: 'WORKFLOW', title: `Đã xử lý điều phối ca nghỉ khẩn cấp (${emg.emergency_code})`, body: `Ngày ${emg.work_date} (${shiftLabel(emg.shift_code)}) — ${emg.resolution_note || 'Đã cập nhật phương án trực ca'}.`, link: '/nv/nghi-phep', severity: 'INFO', entity_type: 'EMG_USER', entity_id: `${emg.id}_${emg.status}` }, emg.handled_by);
     }
   }
   const paidPeriodIds = new Set(ctx.db.payPeriods.filter((p) => p.status === 'PAID').map((p) => p.id));
@@ -214,7 +208,6 @@ export function isNotificationCreatedByOrSelfAction(ctx: AppContext, n: Notifica
     const s = ctx.db.shiftSwaps.get(rawId);
     return !s || (n.entity_id.endsWith('_PENDING_PEER') && (s.created_by === userId || isMyEmp(s.requester_id))) || ((n.entity_id.endsWith('_PEER_ACCEPTED') || n.entity_id.endsWith('_PEER_DECLINED')) && (s.updated_by === userId || isMyEmp(s.peer_id))) || ((n.entity_id.endsWith('_APPROVED') || n.entity_id.endsWith('_REJECTED')) && s.decided_by === userId);
   }
-  if (n.entity_type === 'EMG_STORE') { const emg = ctx.db.emergencyLeaves.get(rawId); return !emg || (n.entity_id.endsWith('_ESCALATED') ? emg.handled_by === userId : emg.created_by === userId); }
-  if (n.entity_type === 'EMG_USER') { const emg = ctx.db.emergencyLeaves.get(rawId); return !emg || emg.handled_by === userId; }
+  if (n.entity_type === 'EMG_STORE' || n.entity_type === 'EMG_USER') return true;
   return false;
 }

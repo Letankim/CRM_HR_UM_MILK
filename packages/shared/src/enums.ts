@@ -108,11 +108,11 @@ export const REQUEST_STATUS_LABELS: Record<RequestStatus, string> = {
 };
 
 export const SHIFT_SWAP_STATUS_LABELS: Record<ShiftSwapStatus, string> = {
-  PENDING_PEER: 'Chờ đồng nghiệp nhận',
-  PEER_ACCEPTED: 'Chờ Quản lý duyệt',
+  PENDING_PEER: 'Chờ đồng nghiệp xác nhận',
+  PEER_ACCEPTED: 'Chờ HR duyệt (người nhận vượt 2 ca/ngày)',
   PEER_DECLINED: 'Đồng nghiệp từ chối',
-  APPROVED: 'Đã duyệt đổi ca',
-  REJECTED: 'Từ chối đổi ca',
+  APPROVED: 'Đã cập nhật lịch',
+  REJECTED: 'Từ chối',
   CANCELLED: 'Đã hủy',
 };
 
@@ -168,17 +168,8 @@ export const RECONCILIATION_ISSUE_LABELS: Record<ReconciliationIssueCode, string
 };
 
 export const EMAIL_TEMPLATE_CODES = [
-  'ACCOUNT_ACTIVATED',
-  'ACCOUNT_REVOKED',
-  'INTERVIEW_INVITATION',
-  'PROBATION_TO_OFFICIAL',
-  'SCHEDULE_SHIFT_DECISION',
-  'LEAVE_SWAP_DECISION',
-  'EMERGENCY_LEAVE_ALERT',
-  'TEST_ASSIGNED',
-  'PAYSLIP_PUBLISHED',
-  'INTERNAL_ANNOUNCEMENT',
-  'SYSTEM_RECONCILIATION_REPORT',
+  'ACCOUNT_ACTIVATED', 'ACCOUNT_REVOKED', 'INTERVIEW_INVITATION', 'PROBATION_TO_OFFICIAL', 'SCHEDULE_SHIFT_DECISION',
+  'LEAVE_SWAP_DECISION', 'TEST_ASSIGNED', 'PAYSLIP_PUBLISHED', 'INTERNAL_ANNOUNCEMENT', 'SYSTEM_RECONCILIATION_REPORT',
 ] as const;
 export type EmailTemplateCode = (typeof EMAIL_TEMPLATE_CODES)[number];
 
@@ -189,7 +180,6 @@ export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplateCode, string> = {
   PROBATION_TO_OFFICIAL: 'Quyết định công nhận Nhân viên Chính thức',
   SCHEDULE_SHIFT_DECISION: 'Thông báo phân ca & duyệt lịch làm việc',
   LEAVE_SWAP_DECISION: 'Thông báo kết quả duyệt Nghỉ OFF / Đổi ca / Bù công',
-  EMERGENCY_LEAVE_ALERT: 'Cảnh báo nhân sự báo nghỉ khẩn cấp trong ca',
   TEST_ASSIGNED: 'Thông báo giao bài kiểm tra nghiệp vụ (TEST)',
   PAYSLIP_PUBLISHED: 'Thông báo phát hành phiếu lương kỳ mới',
   INTERNAL_ANNOUNCEMENT: 'Bản tin truyền thông & Chính sách nội bộ',
@@ -199,6 +189,7 @@ export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplateCode, string> = {
 export const API_ERROR_CODES = [
   'VALIDATION_ERROR', 'BAD_REQUEST', 'UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'VERSION_CONFLICT',
   'ACCOUNT_LOCKED', 'RATE_LIMITED', 'SYNC_PENDING', 'BUSINESS_RULE_VIOLATION', 'REQUEST_ERROR', 'INTERNAL_ERROR',
+  'PIN_CHANGE_REQUIRED',
 ] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 

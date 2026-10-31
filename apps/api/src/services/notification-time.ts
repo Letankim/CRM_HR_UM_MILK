@@ -73,15 +73,6 @@ export function resolveNotificationEventTime(ctx: AppContext, n: Pick<Notificati
     if (eid.endsWith('_STORE_CONFIRMED')) return pickIso(adj?.store_confirmed_at, adj?.updated_at, n.created_at) || n.created_at;
     return pickIso(adj?.decided_at, adj?.updated_at, adj?.created_at, n.created_at) || n.created_at;
   }
-  if (et === 'EMG_STORE') {
-    const emg = ctx.db.emergencyLeaves.get(rawId);
-    if (eid.endsWith('_ESCALATED')) return pickIso(emg?.escalated_at, emg?.updated_at, n.created_at) || n.created_at;
-    return pickIso(emg?.reported_at, emg?.created_at, n.created_at) || n.created_at;
-  }
-  if (et === 'EMG_USER') {
-    const emg = ctx.db.emergencyLeaves.get(rawId);
-    return pickIso(emg?.handled_at, emg?.replacement_confirmed_at, emg?.updated_at, n.created_at) || n.created_at;
-  }
   if (et === 'PAYSLIP_USER') {
     const ps = ctx.db.payslips.get(rawId);
     if (eid.endsWith('_PAID')) {

@@ -6,14 +6,8 @@ import { ClockCircleOutlined, CloseOutlined, FileAddOutlined } from '@ant-design
 import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
-
-const KIND_OPTIONS = [
-  { value: 'FORGOT_CHECK_IN', label: 'Bù ca Vắng mặt / Quên chấm công Vào ca' },
-  { value: 'FORGOT_CHECK_OUT', label: 'Quên chấm công Ra ca' },
-  { value: 'GPS_ERROR', label: 'Thiết bị lỗi định vị GPS tại cửa hàng' },
-  { value: 'CAMERA_ERROR', label: 'Thiết bị lỗi Camera không chụp được ảnh' },
-  { value: 'OTHER', label: 'Lý do công việc / Điều động khác' },
-];
+import { useMe } from '@/lib/auth';
+import { ADJUSTMENT_CAUSE_OPTIONS, AdjustmentEvidenceFields, inferAdjustmentPunchType, kindFromPunchType, type AdjustmentPunchType } from './AdjustmentEvidenceFields';
 
 const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
 
@@ -51,12 +45,14 @@ export function QuickAbsentAdjustmentModal({
 }: QuickAbsentAdjustmentModalProps) {
   const { message } = App.useApp();
   const qc = useQueryClient();
-  const [form] = Form.useForm<{ kind: string; reason: string }>();
+  const [form] = Form.useForm<{ kind: string; reason: string; punch_type: AdjustmentPunchType; evidence_photo_base64?: string }>();
   const [submitting, setSubmitting] = useState(false);
+  const me = useMe().data?.user;
 
   const empId = String(shift?.employeeId || shift?.employee_id || '');
   const empName = String(shift?.employeeName || shift?.fullName || 'Nhân sự');
   const empCode = String(shift?.employeeCode || shift?.employee_code || '');
+  const isSelfSubmit = Boolean(me && (['THU_VIEC', 'CHINH_THUC'].includes(me.role) || (me.employeeId && (me.employeeId === empId || me.employeeId === empCode))));
   const branchName = String(shift?.branchName || '');
   const workDate = String(shift?.workDate || shift?.work_date || dayjs().format('YYYY-MM-DD'));
   const shiftCode = String(shift?.shiftCode || shift?.shift_code || 'CA_SANG');
@@ -68,9 +64,12 @@ export function QuickAbsentAdjustmentModal({
 
   useEffect(() => {
     if (!open || !shift) return;
-    const isForgotOut = Boolean(shift.isForgotCheckout) || Boolean(shift.checkInEvent && !shift.checkOutEvent) || String(shift.attendanceStatusLabel || '').includes('Quên Ra ca');
+    const punchType = inferAdjustmentPunchType(shift);
+    const isForgotOut = punchType === 'CHECK_OUT';
     form.setFieldsValue({
-      kind: isForgotOut ? 'FORGOT_CHECK_OUT' : 'FORGOT_CHECK_IN',
+      punch_type: punchType,
+      evidence_photo_base64: undefined,
+      kind: kindFromPunchType(punchType),
       reason: isForgotOut
         ? `Bổ sung công Ra ca (${shiftLabel} ngày ${dayjs(workDate).format('DD/MM/YYYY')}) do nhân sự đã Vào ca nhưng quên điểm danh Ra ca`
         : `Bổ sung công bù ca Vắng mặt (${shiftLabel} ngày ${dayjs(workDate).format('DD/MM/YYYY')}) do nhân sự quên điểm danh đúng giờ`,
@@ -88,6 +87,8 @@ export function QuickAbsentAdjustmentModal({
         work_date: workDate,
         shift_code: shiftCode,
         kind: vals.kind,
+        punch_type: vals.punch_type,
+        ...(vals.evidence_photo_base64 ? { evidence_photo_base64: vals.evidence_photo_base64 } : {}),
         requested_check_in_at: startAt,
         requested_check_out_at: endAt,
         requested_hours: hours,
@@ -100,7 +101,10 @@ export function QuickAbsentAdjustmentModal({
       onSuccess?.();
       onClose();
     } catch (e) {
-      message.error(e instanceof ApiClientError ? e.message : 'Không thể tạo phiếu bổ sung công');
+      if (e instanceof ApiClientError) {
+        if (e.details.length > 0) form.setFields(e.details.map((d) => ({ name: d.field as 'evidence_photo_base64', errors: [d.message] })));
+        message.error(e.message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -153,8 +157,9 @@ export function QuickAbsentAdjustmentModal({
             </Descriptions.Item>
           </Descriptions>
           <Form form={form} layout="vertical">
-            <Form.Item name="kind" label="Phân loại bổ sung công" rules={[{ required: true, message: 'Vui lòng chọn phân loại' }]}>
-              <Select options={KIND_OPTIONS} />
+            <AdjustmentEvidenceFields evidenceRequired={isSelfSubmit} />
+            <Form.Item name="kind" label="Nguyên nhân sự cố" rules={[{ required: true, message: 'Vui lòng chọn nguyên nhân' }]}>
+              <Select options={ADJUSTMENT_CAUSE_OPTIONS} />
             </Form.Item>
             <Form.Item name="reason" label="Lý do giải trình bổ sung công" rules={[{ required: true, message: 'Vui lòng nhập lý do giải trình' }]}>
               <Input.TextArea rows={3} placeholder="Nhập rõ lý do bổ sung công cho ca vắng mặt này..." />

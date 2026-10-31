@@ -1,74 +1,82 @@
 'use client';
 
-import { App, Button, Card, Flex, Input, Select, Space, Tabs, Tag } from 'antd';
-import { AlertOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, DollarOutlined, DownloadOutlined, EnvironmentOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SwapOutlined } from '@ant-design/icons';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import dayjs from 'dayjs';
 import { useState } from 'react';
+import { App, Card, Select, Tabs } from 'antd';
+import { CalendarOutlined, EnvironmentOutlined, FileAddOutlined, FormOutlined, PlusOutlined, ScheduleOutlined, SwapOutlined } from '@ant-design/icons';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { SHIFT_SWAP_KIND_LABELS, SHIFT_SWAP_STATUS_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { StatusTag } from '../StatusTag';
 import { AttendanceEventsTable, type AttendanceEventRow } from './AttendanceEventsTable';
 import { SelectableTable } from './BulkActionBar';
 import { GuardButton, usePermissionGuard } from './GuardButton';
-import { RowActionButtons } from './RowActionButtons';
+import { SchedulePlannerPanel } from './SchedulePlannerPanel';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
+import { ScheduleShiftRegistrationsPane } from './ScheduleShiftRegistrationsPane';
 import { ScheduleWorkflowModals, type WorkflowAssignmentOption } from './ScheduleWorkflowModals';
-import { renderSwapAllowanceTag, ShiftSwapApproveModal, submitShiftSwapApproval, type ShiftSwapApprovePayload, type ShiftSwapApproveTarget } from './ShiftSwapApproveModal';
-import { buildAdjustmentsBulkActions, buildEmergencyBulkActions, buildLeavesBulkActions, buildSwapsBulkActions, exportAdjustmentsExcel, exportEmergencyExcel, exportLeavesExcel, exportSwapsExcel } from './workflow-bulk-helpers';
-import { confirmWorkflowShiftOverride, renderWorkflowShiftStateTag, type WorkflowConfirmKind } from './workflow-shift-warning';
+import { ShiftSwapApproveModal, submitShiftSwapApproval, type ShiftSwapApprovePayload, type ShiftSwapApproveTarget } from './ShiftSwapApproveModal';
+import { buildAdjustmentsBulkActions, buildLeavesBulkActions, buildSwapsBulkActions, exportAdjustmentsExcel, exportLeavesExcel, exportSwapsExcel } from './workflow-bulk-helpers';
+import { buildAdjustmentColumns, buildLeaveColumns, buildSwapColumns, type WorkflowColumnCtx } from './workflow-columns';
+import { confirmWorkflowShiftOverride, type WorkflowConfirmKind } from './workflow-shift-warning';
+import { WorkflowSubFilterBar } from './WorkflowSubFilterBar';
 
+type RowRec = Record<string, unknown>;
 interface Props { employees: { value: string; label: string }[]; assignments: WorkflowAssignmentOption[] }
-const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
-const fmtShiftTime = (r: Record<string, unknown>) => `${String(r.startAt || r.start_at || '07:00')} – ${String(r.endAt || r.end_at || '12:00')}${r.scheduledHours || r.scheduled_hours ? ` (${r.scheduledHours || r.scheduled_hours}h)` : ''}`;
-const fmtDate = (raw: unknown) => (raw ? dayjs(String(raw)).format('DD/MM/YYYY') : '—');
 
 const ADJ_STATUS_OPTS = [{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'PENDING', label: 'Chờ duyệt' }, { value: 'STORE_CONFIRMED', label: 'CH đã xác nhận' }, { value: 'APPROVED', label: 'Đã phê duyệt' }, { value: 'REJECTED', label: 'Đã từ chối' }];
 const LEAVE_STATUS_OPTS = [{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'PENDING', label: 'Chờ duyệt nghỉ OFF' }, { value: 'APPROVED', label: 'Đã phê duyệt nghỉ OFF' }, { value: 'REJECTED', label: 'Đã từ chối' }];
-const SWAP_STATUS_OPTS = [{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'PENDING_PEER', label: 'Chờ đồng nghiệp nhận' }, { value: 'PEER_ACCEPTED', label: 'Đồng nghiệp đã nhận' }, { value: 'APPROVED', label: 'Đã phê duyệt đổi ca' }, { value: 'REJECTED', label: 'Đã từ chối' }];
-const EMG_STATUS_OPTS = [{ value: 'ALL', label: 'Tất cả trạng thái' }, { value: 'REPORTED', label: 'Mới báo nghỉ khẩn' }, { value: 'RESOLVED', label: 'Đã có người thay ca' }, { value: 'ESCALATED', label: 'Cảnh báo thiếu nhân sự ca' }];
+const SWAP_STATUS_OPTS = [{ value: 'ALL', label: 'Tất cả trạng thái' }, ...SHIFT_SWAP_STATUS_OPTIONS.map((o) => ({ value: String(o.value), label: String(o.label) }))];
+const SWAP_KIND_OPTS = [{ value: 'ALL', label: 'Tất cả loại yêu cầu' }, ...(Object.keys(SHIFT_SWAP_KIND_LABELS) as (keyof typeof SHIFT_SWAP_KIND_LABELS)[]).map((k) => ({ value: k, label: SHIFT_SWAP_KIND_LABELS[k] }))];
+const REFRESH_KEYS = ['attendance-adjustments', 'leave-requests', 'shift-swaps', 'shift-registrations', 'attendance-sessions', 'attendance-sessions-count', 'schedules', 'schedule-planner-week', 'schedule-planner-probation', 'my-attendance', 'payroll-periods', 'payroll-snapshots', 'payroll-reconcile'];
 
 export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
   const qc = useQueryClient(), { message, modal } = App.useApp();
   const canConfirmAtt = usePermissionGuard({ perms: ['attendance.confirm'] }), canApproveAdj = usePermissionGuard({ perms: ['adjustment.approve'] });
-  const canApproveLeave = usePermissionGuard({ perms: ['leave.approve'] }), canApproveSwap = usePermissionGuard({ perms: ['swap.approve'] }), canHandleEmg = usePermissionGuard({ perms: ['emergency.handle'] });
-  const [activeTab, setActiveTab] = useState('attendance'), [leaveModal, setLeaveModal] = useState(false), [swapModal, setSwapModal] = useState(false), [emgModal, setEmgModal] = useState(false), [adjModal, setAdjModal] = useState(false);
+  const canApproveLeave = usePermissionGuard({ perms: ['leave.approve'] }), canApproveSwap = usePermissionGuard({ perms: ['swap.approve'] });
+  const [activeTab, setActiveTab] = useState('planner'), [leaveModal, setLeaveModal] = useState(false), [swapModal, setSwapModal] = useState(false), [adjModal, setAdjModal] = useState(false);
   const [detailTarget, setDetailTarget] = useState<ScheduleDetailTarget | null>(null), [swapApproveTarget, setSwapApproveTarget] = useState<ShiftSwapApproveTarget | null>(null);
   const [searchInput, setSearchInput] = useState(''), debouncedQ = useDebouncedValue(searchInput, 400);
-  const [branchFilter, setBranchFilter] = useState('ALL'), [statusFilter, setStatusFilter] = useState('ALL'), [page, setPage] = useState(1), [perPage, setPerPage] = useState(10);
+  const [branchFilter, setBranchFilter] = useState('ALL'), [statusFilter, setStatusFilter] = useState('ALL'), [kindFilter, setKindFilter] = useState('ALL');
+  const [page, setPage] = useState(1), [perPage, setPerPage] = useState(10);
 
   const mkParams = (tabKey: string) => {
     const p = new URLSearchParams({ page: String(activeTab === tabKey ? page : 1), per_page: String(perPage) });
     if (debouncedQ) p.set('q', debouncedQ);
     if (branchFilter !== 'ALL') p.set('branch_id', branchFilter);
     if (activeTab === tabKey && statusFilter !== 'ALL') p.set('status', statusFilter);
+    if (tabKey === 'swap' && kindFilter !== 'ALL') p.set('kind', kindFilter);
     return p.toString();
   };
 
   const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
-  const adjParams = mkParams('adjustments'), leaveParams = mkParams('leave'), swapParams = mkParams('swap'), emgParams = mkParams('emergency');
-  const adjQ = useQuery({ queryKey: ['attendance-adjustments', adjParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/attendance/adjustments?${adjParams}`) });
-  const leavesQ = useQuery({ queryKey: ['leave-requests', leaveParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/leave-requests?${leaveParams}`) });
-  const swapsQ = useQuery({ queryKey: ['shift-swaps', swapParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/shift-swaps?${swapParams}`) });
-  const emgQ = useQuery({ queryKey: ['emergency-leaves', emgParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/emergency-leaves?${emgParams}`) });
+  const adjParams = mkParams('adjustments'), leaveParams = mkParams('leave'), swapParams = mkParams('swap');
+  const adjQ = useQuery({ queryKey: ['attendance-adjustments', adjParams], queryFn: () => api.list<RowRec>(`/admin/attendance/adjustments?${adjParams}`) });
+  const leavesQ = useQuery({ queryKey: ['leave-requests', leaveParams], queryFn: () => api.list<RowRec>(`/admin/leave-requests?${leaveParams}`) });
+  const swapsQ = useQuery({ queryKey: ['shift-swaps', swapParams], queryFn: () => api.list<RowRec>(`/admin/shift-swaps?${swapParams}`) });
   const attCountQ = useQuery({ queryKey: ['attendance-sessions-count', branchFilter], queryFn: () => api.list<AttendanceEventRow>(`/admin/attendance/sessions?page=1&per_page=1${branchFilter !== 'ALL' ? `&branch_id=${branchFilter}` : ''}`) });
+  const draftCountQ = useQuery({ queryKey: ['shift-registrations', 'count'], queryFn: () => api.list<RowRec>('/admin/schedules?status=DRAFT&page=1&per_page=1') });
+  const draftTotal = draftCountQ.data?.meta.pagination.total ?? 0;
 
-  const refreshAll = () => ['attendance-adjustments', 'leave-requests', 'shift-swaps', 'emergency-leaves', 'attendance-sessions', 'attendance-sessions-count', 'schedules', 'my-attendance', 'payroll-periods', 'payroll-snapshots', 'payroll-reconcile'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-  const isRefreshing = adjQ.isFetching || leavesQ.isFetching || swapsQ.isFetching || emgQ.isFetching || attCountQ.isFetching;
-  const actMut = useMutation({ mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body), onSuccess: () => { message.success('Đã thực hiện thao tác thành công'); setPage(1); refreshAll(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại') });
+  const refreshAll = () => REFRESH_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+  const isRefreshing = adjQ.isFetching || leavesQ.isFetching || swapsQ.isFetching || attCountQ.isFetching;
+  const actMut = useMutation({
+    mutationFn: ({ url, body }: { url: string; body: unknown; successMsg?: string }) => api.post(url, body),
+    onSuccess: (_r, { successMsg }) => { message.success(successMsg || 'Đã thực hiện thao tác thành công'); setPage(1); refreshAll(); },
+    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại'),
+  });
   const swapApproveMut = useMutation({
     mutationFn: ({ target, payload }: { target: ShiftSwapApproveTarget; payload: ShiftSwapApprovePayload }) => submitShiftSwapApproval(target, payload),
     onSuccess: (_res, { target, payload }) => {
       const pcText = payload.allowance_eligible && payload.allowance_amount_vnd > 0 ? `+${payload.allowance_amount_vnd.toLocaleString('vi-VN')} đ/ca` : 'Không tính phụ cấp (0 đ)';
-      message.success(target.mode === 'edit-allowance' ? `Đã cập nhật phụ cấp đổi ca (${pcText}) và đồng bộ bảng lương` : `Đã phê duyệt ${target.rows.length > 1 ? `${target.rows.length} đơn đổi ca` : 'đổi ca'} (${pcText})`);
+      message.success(target.mode === 'edit-allowance' ? `Đã cập nhật phụ cấp nhận ca (${pcText}) và đồng bộ bảng lương` : `HR đã phê duyệt ${target.rows.length > 1 ? `${target.rows.length} yêu cầu` : 'yêu cầu'} và cập nhật lịch làm việc (${pcText})`);
       setSwapApproveTarget(null); setPage(1); refreshAll();
     },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Phê duyệt đổi ca thất bại'),
+    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Phê duyệt yêu cầu thất bại'),
   });
-  const runAct = (url: string, body: unknown, confirmKind?: WorkflowConfirmKind, row?: Record<string, unknown>) =>
-    confirmKind && row ? confirmWorkflowShiftOverride(modal, confirmKind, [row], () => actMut.mutate({ url, body })) : actMut.mutate({ url, body });
+  const runAct = (url: string, body: unknown, successMsg: string, confirmKind?: WorkflowConfirmKind, row?: RowRec) =>
+    confirmKind && row ? confirmWorkflowShiftOverride(modal, confirmKind, [row], () => actMut.mutate({ url, body, successMsg })) : actMut.mutate({ url, body, successMsg });
   const batchMut = useMutation({
-    mutationFn: async ({ items, buildCall, successMsg }: { items: Record<string, unknown>[]; buildCall: (r: Record<string, unknown>) => { url: string; body: unknown } | null; successMsg: string }) => {
+    mutationFn: async ({ items, buildCall, successMsg }: { items: RowRec[]; buildCall: (r: RowRec) => { url: string; body: unknown } | null; successMsg: string }) => {
       if (items.length === 0) throw new Error('Không có bản ghi nào ở trạng thái hợp lệ để thực hiện thao tác này');
       await Promise.all(items.map((r) => { const c = buildCall(r); return c ? api.post(c.url, c.body) : Promise.resolve(); }));
       return successMsg;
@@ -76,118 +84,55 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
     onSuccess: (msg) => { message.success(msg); refreshAll(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : e instanceof Error ? e.message : 'Thao tác hàng loạt thất bại'),
   });
-  const bulkOpts = { canConfirmAtt, canApproveAdj, canApproveLeave, canApproveSwap, canHandleEmg, loading: batchMut.isPending || swapApproveMut.isPending, onOpenApproveSwaps: (rows: Record<string, unknown>[]) => setSwapApproveTarget({ mode: 'approve', rows }), runBatch: (items: Record<string, unknown>[], buildCall: (r: Record<string, unknown>) => { url: string; body: unknown } | null, successMsg: string, confirmKind?: WorkflowConfirmKind) => confirmKind ? confirmWorkflowShiftOverride(modal, confirmKind, items, () => batchMut.mutate({ items, buildCall, successMsg })) : batchMut.mutate({ items, buildCall, successMsg }) };
+  const bulkOpts = { canConfirmAtt, canApproveAdj, canApproveLeave, canApproveSwap, loading: batchMut.isPending || swapApproveMut.isPending, onOpenApproveSwaps: (rows: RowRec[]) => setSwapApproveTarget({ mode: 'approve', rows }), runBatch: (items: RowRec[], buildCall: (r: RowRec) => { url: string; body: unknown } | null, successMsg: string, confirmKind?: WorkflowConfirmKind) => confirmKind ? confirmWorkflowShiftOverride(modal, confirmKind, items, () => batchMut.mutate({ items, buildCall, successMsg })) : batchMut.mutate({ items, buildCall, successMsg }) };
+  const colCtx: WorkflowColumnCtx = {
+    loading: actMut.isPending || swapApproveMut.isPending, canConfirmAtt, canApproveAdj, canApproveLeave, canApproveSwap, runAct,
+    onDetail: (kind, record) => setDetailTarget({ kind, record }),
+    onApproveSwap: (r) => setSwapApproveTarget({ mode: 'approve', rows: [r] }), onEditSwapAllowance: (r) => setSwapApproveTarget({ mode: 'edit-allowance', rows: [r] }),
+  };
 
   const branchList = branchesQ.data?.data ?? [];
   const branchOptions = branchList.length === 1 ? [{ value: 'ALL', label: `${branchList[0]!.code} — ${branchList[0]!.name}` }] : [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branchList.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))];
-  const filteredAdjustments = adjQ.data?.data ?? [], filteredLeaves = leavesQ.data?.data ?? [], filteredSwaps = swapsQ.data?.data ?? [], filteredEmg = emgQ.data?.data ?? [];
+  const adjRows = adjQ.data?.data ?? [], leaveRows = leavesQ.data?.data ?? [], swapRows = swapsQ.data?.data ?? [];
   const mkPag = (total?: number) => ({ current: page, pageSize: perPage, total: total ?? 0, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t: number) => `Tổng ${t} đơn`, onChange: (p: number, ps: number) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } });
-
-  const renderSubFilterBar = (statusOpts: { value: string; label: string }[], onExport: () => void, actionBtn: React.ReactNode) => (
-    <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '12px 16px', marginTop: 4, marginBottom: 12 }}>
-      <Flex justify="space-between" align="center" wrap gap={10}>
-        <Space size={10} wrap>
-          <Input allowClear prefix={<SearchOutlined style={{ color: '#94A3B8' }} />} placeholder="Tìm tên nhân sự, mã đơn, ngày, lý do..." value={searchInput} onChange={(e) => { setSearchInput(e.target.value); setPage(1); }} style={{ width: 245 }} />
-          <Select value={branchFilter} onChange={(v) => { setBranchFilter(v); setPage(1); }} style={{ width: 195 }} options={branchOptions} />
-          <Select value={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1); }} style={{ width: 195 }} options={statusOpts} />
-        </Space>
-        <Space size={8} wrap><Button icon={<ReloadOutlined />} loading={isRefreshing} onClick={refreshAll}>Làm mới</Button><Button icon={<DownloadOutlined />} onClick={onExport}>Xuất Excel</Button>{actionBtn}</Space>
-      </Flex>
-    </div>
+  const filterBar = (statusOptions: { value: string; label: string }[], onExport: () => void, actionBtn: React.ReactNode, extraFilters?: React.ReactNode) => (
+    <WorkflowSubFilterBar
+      searchInput={searchInput} onSearchChange={(v) => { setSearchInput(v); setPage(1); }}
+      branchValue={branchFilter} branchOptions={branchOptions} onBranchChange={(v) => { setBranchFilter(v); setPage(1); }}
+      statusValue={statusFilter} statusOptions={statusOptions} onStatusChange={(v) => { setStatusFilter(v); setPage(1); }}
+      extraFilters={extraFilters} refreshing={isRefreshing} onRefresh={refreshAll} onExport={onExport} actionBtn={actionBtn}
+    />
   );
 
   return (
     <Card size="small" styles={{ body: { padding: '12px 20px 20px' } }}>
       <Tabs activeKey={activeTab} onChange={(k) => { setActiveTab(k); setStatusFilter('ALL'); setPage(1); }} items={[
-          { key: 'attendance', label: <span><EnvironmentOutlined /> Lịch sử Điểm danh Vào/Ra ca ({attCountQ.data?.meta.pagination.total ?? 0})</span>, children: <AttendanceEventsTable assignments={assignments as unknown as Record<string, unknown>[]} /> },
-          { key: 'adjustments', label: <span><FileAddOutlined /> Phiếu bổ sung công ({adjQ.data?.meta.pagination.total ?? filteredAdjustments.length})</span>, children: (
-              <>
-                {renderSubFilterBar(ADJ_STATUS_OPTS, () => exportAdjustmentsExcel(filteredAdjustments), <GuardButton type="primary" icon={<FileAddOutlined />} perms={['attendance.confirm', 'adjustment.approve']} onClick={() => setAdjModal(true)}>Tạo phiếu bổ sung công</GuardButton>)}
-                <SelectableTable<Record<string, unknown>> size="small" rowKey="id" loading={adjQ.isLoading} pagination={mkPag(adjQ.data?.meta.pagination.total)} dataSource={filteredAdjustments} bulkActions={buildAdjustmentsBulkActions(bulkOpts)}
-                  columns={[
-                    { title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 115, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
-                    { title: 'Nhân sự', width: 205, ellipsis: true, render: (_, r) => <strong>{String(r.employeeName || '')}</strong> },
-                    { title: 'Ngày công', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                    { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 115, render: (v: number) => <strong>{v} giờ</strong> },
-                    { title: 'Trạng thái', dataIndex: 'status', width: 165, render: (v: string) => <StatusTag value={v} /> },
-                    { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => (
-                        <RowActionButtons detailTooltip="Xem chi tiết phiếu bổ sung công" onViewDetail={() => setDetailTarget({ kind: 'adjustment', record: r })} loading={actMut.isPending}
-                          menuItems={[
-                            ...(r.status === 'PENDING' && canConfirmAtt ? [{ key: 'store-confirm', icon: <CheckCircleOutlined style={{ color: '#2563EB' }} />, label: 'Cửa hàng xác nhận thực tế', onClick: () => actMut.mutate({ url: `/admin/attendance/adjustments/${r.id}/decide`, body: { version: r.version, action: 'STORE_CONFIRM', decision_reason: 'CH xác nhận có làm thực tế' } }) }] : []),
-                            ...((r.status === 'PENDING' || r.status === 'STORE_CONFIRMED') && canApproveAdj ? [{ key: 'hr-approve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Phê duyệt phiếu bổ sung công', onClick: () => actMut.mutate({ url: `/admin/attendance/adjustments/${r.id}/decide`, body: { version: r.version, action: 'HR_APPROVE', decision_reason: 'HR duyệt bổ sung công' } }) }, { key: 'hr-reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối phiếu bổ sung công', onClick: () => actMut.mutate({ url: `/admin/attendance/adjustments/${r.id}/decide`, body: { version: r.version, action: 'HR_REJECT', decision_reason: 'Không đủ căn cứ bổ sung công' } }) }] : []),
-                          ]}
-                        />
-                      ) },
-                  ]}
-                />
-              </>
-            ) },
-          { key: 'leave', label: <span><CalendarOutlined /> Đơn xin nghỉ phép (OFF) ({leavesQ.data?.meta.pagination.total ?? filteredLeaves.length})</span>, children: (
-              <>
-                {renderSubFilterBar(LEAVE_STATUS_OPTS, () => exportLeavesExcel(filteredLeaves), <GuardButton type="primary" icon={<PlusOutlined />} perms={['leave.approve']} onClick={() => setLeaveModal(true)}>Đăng ký nghỉ OFF</GuardButton>)}
-                <SelectableTable<Record<string, unknown>> size="small" rowKey="id" loading={leavesQ.isLoading} pagination={mkPag(leavesQ.data?.meta.pagination.total)} dataSource={filteredLeaves} bulkActions={buildLeavesBulkActions(bulkOpts)}
-                  columns={[
-                    { title: 'Mã đơn', dataIndex: 'request_code', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
-                    { title: 'Nhân sự', width: 215, ellipsis: true, render: (_, r) => <strong>{String(r.employeeName)} ({String(r.employeeCode)})</strong> },
-                    { title: 'Ngày nghỉ', dataIndex: 'leave_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 255, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
-                    { title: 'Định mức & Định biên', width: 175, render: (_, r) => <Space size={4} wrap><Tag color="blue" style={{ margin: 0 }}>{String(r.quota_cycle_used)}/{String(r.quota_cycle_limit)} ngày</Tag><Tag color={Number(r.staffing_after_leave ?? 2) >= Number(r.min_staff_required ?? 2) ? 'green' : 'volcano'} style={{ margin: 0 }}>Còn {String(r.staffing_after_leave ?? 2)}/{String(r.min_staff_required ?? 2)} NV</Tag></Space> },
-                    { title: 'Trạng thái', dataIndex: 'status', width: 155, render: (v: string) => <StatusTag value={v} /> },
-                    { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => (
-                        <RowActionButtons detailTooltip="Xem chi tiết đơn nghỉ OFF" onViewDetail={() => setDetailTarget({ kind: 'leave', record: r })} loading={actMut.isPending}
-                          menuItems={r.status === 'PENDING' && canApproveLeave ? [{ key: 'approve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Phê duyệt đơn nghỉ phép', onClick: () => runAct(`/admin/leave-requests/${r.id}/decide`, { version: r.version, decision: 'APPROVED', decision_reason: 'Đảm bảo đủ định biên ca' }, 'leave', r) }, { key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối đơn nghỉ phép', onClick: () => runAct(`/admin/leave-requests/${r.id}/decide`, { version: r.version, decision: 'REJECTED', decision_reason: 'Ca đang thiếu định biên' }) }] : []}
-                        />
-                      ) },
-                  ]}
-                />
-              </>
-            ) },
-          { key: 'swap', label: <span><SwapOutlined /> Đơn xin đổi ca ({swapsQ.data?.meta.pagination.total ?? filteredSwaps.length})</span>, children: (
-              <>
-                {renderSubFilterBar(SWAP_STATUS_OPTS, () => exportSwapsExcel(filteredSwaps), <GuardButton type="primary" icon={<PlusOutlined />} perms={['swap.approve']} onClick={() => setSwapModal(true)}>Tạo yêu cầu đổi ca</GuardButton>)}
-                <SelectableTable<Record<string, unknown>> size="small" rowKey="id" loading={swapsQ.isLoading} pagination={mkPag(swapsQ.data?.meta.pagination.total)} dataSource={filteredSwaps} bulkActions={buildSwapsBulkActions(bulkOpts)}
-                  columns={[
-                    { title: 'Mã đơn', dataIndex: 'swap_code', width: 110, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
-                    { title: 'Ngày ca', dataIndex: 'from_work_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 255, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
-                    { title: 'Người xin đổi', dataIndex: 'requesterName', width: 185, ellipsis: true },
-                    { title: 'Người nhận thay', dataIndex: 'peerName', width: 185, ellipsis: true },
-                    { title: 'Phụ cấp đổi ca', width: 145, render: (_, r) => renderSwapAllowanceTag(r) },
-                    { title: 'Trạng thái', dataIndex: 'status', width: 165, render: (v: string) => <StatusTag value={v} /> },
-                    { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => (
-                        <RowActionButtons detailTooltip="Xem chi tiết yêu cầu đổi ca" onViewDetail={() => setDetailTarget({ kind: 'swap', record: r })} loading={actMut.isPending || swapApproveMut.isPending}
-                          menuItems={canApproveSwap ? [...(r.status === 'PENDING_PEER' ? [{ key: 'peer-accept', icon: <CheckCircleOutlined style={{ color: '#2563EB' }} />, label: 'Xác nhận đồng nghiệp nhận ca', onClick: () => runAct(`/admin/shift-swaps/${r.id}/peer-respond`, { version: r.version, accept: true, peer_note: 'Đồng ý nhận ca thay' }, 'swap', r) }] : []), ...(r.status === 'PEER_ACCEPTED' ? [{ key: 'approve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Phê duyệt đổi ca & Phụ cấp', onClick: () => setSwapApproveTarget({ mode: 'approve', rows: [r] }) }] : []), ...(r.status === 'APPROVED' ? [{ key: 'edit-allowance', icon: <DollarOutlined style={{ color: '#7C3AED' }} />, label: 'Điều chỉnh phụ cấp đổi ca', onClick: () => setSwapApproveTarget({ mode: 'edit-allowance', rows: [r] }) }] : []), ...(r.status === 'PENDING_PEER' || r.status === 'PEER_ACCEPTED' ? [{ key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối yêu cầu đổi ca', onClick: () => runAct(`/admin/shift-swaps/${r.id}/decide`, { version: r.version, decision: 'REJECTED', decision_reason: 'Không đạt yêu cầu vị trí' }) }] : [])] : []}
-                        />
-                      ) },
-                  ]}
-                />
-              </>
-            ) },
-          { key: 'emergency', label: <span><AlertOutlined /> Báo nghỉ đột xuất ({emgQ.data?.meta.pagination.total ?? filteredEmg.length})</span>, children: (
-              <>
-                {renderSubFilterBar(EMG_STATUS_OPTS, () => exportEmergencyExcel(filteredEmg), <GuardButton danger icon={<AlertOutlined />} perms={['emergency.handle']} onClick={() => setEmgModal(true)}>Báo nghỉ khẩn</GuardButton>)}
-                <SelectableTable<Record<string, unknown>> size="small" rowKey="id" loading={emgQ.isLoading} pagination={mkPag(emgQ.data?.meta.pagination.total)} dataSource={filteredEmg} bulkActions={buildEmergencyBulkActions(bulkOpts)}
-                  columns={[
-                    { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 115, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
-                    { title: 'Nhân sự', dataIndex: 'employeeName', width: 200, ellipsis: true },
-                    { title: 'Ngày ca', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{fmtDate(v)}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 255, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
-                    { title: 'Trạng thái & Phủ ca', dataIndex: 'status', width: 205, render: (v: string, r) => <Space size={4} wrap><StatusTag value={v} />{v !== 'REPORTED' && <Tag color={v === 'RESOLVED' || r.shift_coverage_status === 'COVERED' ? 'green' : 'red'} style={{ margin: 0 }}>{v === 'RESOLVED' || r.shift_coverage_status === 'COVERED' ? 'Đã phủ đủ ca' : 'Chưa có người thay'}</Tag>}</Space> },
-                    { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => (
-                        <RowActionButtons detailTooltip="Xem chi tiết báo nghỉ khẩn" onViewDetail={() => setDetailTarget({ kind: 'emergency', record: r })} loading={actMut.isPending}
-                          menuItems={canHandleEmg ? [...(r.status === 'REPORTED' || r.status === 'ESCALATED' ? [{ key: 'resolve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: canConfirmAtt && !canApproveAdj ? 'Xác nhận đã có người thay ca' : 'Xác nhận đã điều phối người thay ca', onClick: () => runAct(`/admin/emergency-leaves/${r.id}/handle`, { version: r.version, action: 'RESOLVE', resolution_note: canConfirmAtt && !canApproveAdj ? 'Cửa hàng đã bố trí nhân sự thay ca' : 'Đã điều phối nhân sự thay ca' }, 'emergency', r) }] : []), ...(r.status === 'REPORTED' ? [{ key: 'escalate', icon: <AlertOutlined />, danger: true, label: canConfirmAtt && !canApproveAdj ? 'Báo thiếu ca khẩn cấp lên HR' : 'Xác nhận ca thiếu nhân sự (Chưa có người thay)', onClick: () => runAct(`/admin/emergency-leaves/${r.id}/handle`, { version: r.version, action: 'ESCALATE', resolution_note: canConfirmAtt && !canApproveAdj ? 'Không có người thay tại CH, chuyển cảnh báo lên HR' : 'Xác nhận ca đang thiếu nhân sự chờ điều phối' }, 'emergency', r) }] : [])] : []}
-                        />
-                      ) },
-                  ]}
-                />
-              </>
-            ) },
-        ]}
-      />
+        { key: 'planner', label: <span><ScheduleOutlined /> Chốt lịch & Sắp ca</span>, children: <SchedulePlannerPanel /> },
+        { key: 'registrations', label: <span><FormOutlined /> Đăng ký ca chờ duyệt ({draftTotal})</span>, children: <ScheduleShiftRegistrationsPane branchOptions={branchOptions} onDetail={setDetailTarget} /> },
+        { key: 'attendance', label: <span><EnvironmentOutlined /> Lịch sử Điểm danh Vào/Ra ca ({attCountQ.data?.meta.pagination.total ?? 0})</span>, children: <AttendanceEventsTable assignments={assignments as unknown as RowRec[]} /> },
+        { key: 'adjustments', label: <span><FileAddOutlined /> Phiếu bổ sung công ({adjQ.data?.meta.pagination.total ?? adjRows.length})</span>, children: (
+          <>
+            {filterBar(ADJ_STATUS_OPTS, () => exportAdjustmentsExcel(adjRows), <GuardButton type="primary" icon={<FileAddOutlined />} perms={['attendance.confirm', 'adjustment.approve']} onClick={() => setAdjModal(true)}>Tạo phiếu bổ sung công</GuardButton>)}
+            <SelectableTable<RowRec> size="small" rowKey="id" loading={adjQ.isLoading} scroll={{ x: 1300 }} pagination={mkPag(adjQ.data?.meta.pagination.total)} dataSource={adjRows} bulkActions={buildAdjustmentsBulkActions(bulkOpts)} columns={buildAdjustmentColumns(colCtx)} />
+          </>
+        ) },
+        { key: 'leave', label: <span><CalendarOutlined /> Đơn xin nghỉ phép (OFF) ({leavesQ.data?.meta.pagination.total ?? leaveRows.length})</span>, children: (
+          <>
+            {filterBar(LEAVE_STATUS_OPTS, () => exportLeavesExcel(leaveRows), <GuardButton type="primary" icon={<PlusOutlined />} perms={['leave.approve']} onClick={() => setLeaveModal(true)}>Đăng ký nghỉ OFF</GuardButton>)}
+            <SelectableTable<RowRec> size="small" rowKey="id" loading={leavesQ.isLoading} pagination={mkPag(leavesQ.data?.meta.pagination.total)} dataSource={leaveRows} bulkActions={buildLeavesBulkActions(bulkOpts)} columns={buildLeaveColumns(colCtx)} />
+          </>
+        ) },
+        { key: 'swap', label: <span><SwapOutlined /> Đổi ca / Nhường ca ({swapsQ.data?.meta.pagination.total ?? swapRows.length})</span>, children: (
+          <>
+            {filterBar(SWAP_STATUS_OPTS, () => exportSwapsExcel(swapRows), <GuardButton type="primary" icon={<PlusOutlined />} perms={['swap.approve']} onClick={() => setSwapModal(true)}>Tạo yêu cầu đổi / nhường ca</GuardButton>,
+              <Select value={kindFilter} onChange={(v) => { setKindFilter(v); setPage(1); }} options={SWAP_KIND_OPTS} style={{ width: 185 }} />)}
+            <SelectableTable<RowRec> size="small" rowKey="id" loading={swapsQ.isLoading} scroll={{ x: 1450 }} pagination={mkPag(swapsQ.data?.meta.pagination.total)} dataSource={swapRows} bulkActions={buildSwapsBulkActions(bulkOpts)} columns={buildSwapColumns(colCtx)} />
+          </>
+        ) },
+      ]} />
       <ScheduleRequestDetailModal target={detailTarget} onClose={() => setDetailTarget(null)} onApproveSwap={canApproveSwap ? (r) => setSwapApproveTarget({ mode: 'approve', rows: [r] }) : undefined} onEditSwapAllowance={canApproveSwap ? (r) => setSwapApproveTarget({ mode: 'edit-allowance', rows: [r] }) : undefined} />
       <ShiftSwapApproveModal target={swapApproveTarget} loading={swapApproveMut.isPending} onClose={() => setSwapApproveTarget(null)} onConfirm={(payload) => swapApproveTarget && swapApproveMut.mutate({ target: swapApproveTarget, payload })} />
-      <ScheduleWorkflowModals employees={employees} assignments={assignments} leaveModal={leaveModal} swapModal={swapModal} emgModal={emgModal} adjModal={adjModal} submitting={actMut.isPending} onCloseLeave={() => setLeaveModal(false)} onCloseSwap={() => setSwapModal(false)} onCloseEmg={() => setEmgModal(false)} onCloseAdj={() => setAdjModal(false)} onSubmitAction={(url, body) => !actMut.isPending && actMut.mutate({ url, body })} />
+      <ScheduleWorkflowModals employees={employees} assignments={assignments} leaveModal={leaveModal} swapModal={swapModal} adjModal={adjModal} submitting={actMut.isPending} onCloseLeave={() => setLeaveModal(false)} onCloseSwap={() => setSwapModal(false)} onCloseAdj={() => setAdjModal(false)} onSubmitAction={(url, body) => !actMut.isPending && actMut.mutate({ url, body, successMsg: url.includes('shift-swaps') ? 'Đã gửi yêu cầu — chờ đồng nghiệp xác nhận' : undefined })} />
     </Card>
   );
 }

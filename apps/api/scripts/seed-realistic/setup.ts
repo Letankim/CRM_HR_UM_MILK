@@ -46,7 +46,6 @@ export function createContext(db: Database, opts: SeedOptions, hashes: { pinHash
       emp: maxCode(db.employees.all(true).map((e) => e.employee_code), /^NV(\d+)$/i),
       off: Math.max(db.leaveRequests.all(true).length, maxCode(db.leaveRequests.all(true).map((x) => x.request_code), /^OFF-(\d+)$/)),
       swp: Math.max(db.shiftSwaps.all(true).length, maxCode(db.shiftSwaps.all(true).map((x) => x.swap_code), /^SWP-(\d+)$/)),
-      emg: Math.max(db.emergencyLeaves.all(true).length, maxCode(db.emergencyLeaves.all(true).map((x) => x.emergency_code), /^EMG-(\d+)$/)),
       adj: Math.max(db.attendanceAdjustments.all(true).length, maxCode(db.attendanceAdjustments.all(true).map((x) => x.adjustment_code), /^ADJ-(\d+)$/)),
       uv: Math.max(db.candidates.all(true).length, maxCode(db.candidates.all(true).map((x) => x.candidate_code), /^UV(\d+)$/)),
     },

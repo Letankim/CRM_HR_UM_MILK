@@ -77,7 +77,7 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
         ctx.db.payRates.load(), ctx.db.employees.load(), ctx.db.payPeriods.load(), ctx.db.payrollItems.load(),
         ctx.db.payrollSnapshots.load(), ctx.db.payslips.load(), ctx.db.supportTickets.load(),
         ctx.db.shiftAssignments.load(), ctx.db.attendanceEvents.load(), ctx.db.attendanceAdjustments.load(),
-        ctx.db.leaveRequests.load(), ctx.db.shiftSwaps.load(), ctx.db.emergencyLeaves.load(),
+        ctx.db.leaveRequests.load(), ctx.db.shiftSwaps.load(),
       ]);
     }
     let period = ctx.db.payPeriods.get(id);

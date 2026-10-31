@@ -102,6 +102,8 @@ export const zShiftAssignment = zSystemColumns.extend({
   replacement_for_employee_id: z.string().default(''),
   published_at: z.string().default(''),
   note: z.string().default(''),
+  /** Ca thử việc đăng ký thêm: id ca cuối chu kỳ sẽ được dời lên (xóa) khi HR duyệt để giữ đủ 7 ca */
+  linked_assignment_id: z.string().default(''),
 });
 export type ShiftAssignment = z.infer<typeof zShiftAssignment>;
 

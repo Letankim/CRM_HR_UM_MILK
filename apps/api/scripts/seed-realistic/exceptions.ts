@@ -1,5 +1,5 @@
 /**
- * Bước 3 — Ngoại lệ vận hành: Đổi ca 3 bước và Báo nghỉ đột xuất, tuân thủ đúng ràng buộc của hệ thống:
+ * Bước 3 — Ngoại lệ vận hành: Nhường ca (đồng nghiệp nhận ca), tuân thủ đúng ràng buộc của hệ thống:
  * người nhận ca phải cùng chi nhánh, không có ca và không nghỉ OFF trong ngày; đổi ca đã duyệt / thay ca đã điều phối
  * thì ca làm được chuyển hẳn sang người nhận (swapped_from_employee_id / replacement_for_employee_id) như luồng thật.
  */
@@ -9,7 +9,7 @@ import { busyKey, empId, stageAt, type AssignPlan, type BranchPlan, type Phase, 
 import { addDays, addMin, iso, minIso, sys, toMin, type Rec } from './kit.js';
 
 type SwapStatus = 'APPROVED' | 'REJECTED' | 'PENDING_PEER' | 'PEER_ACCEPTED';
-interface Pending { rec: Rec; assign?: AssignPlan; kind: 'SWAP' | 'EMG' }
+interface Pending { rec: Rec; assign?: AssignPlan; kind: 'SWAP' }
 
 export function buildExceptions(ctx: SeedCtx): void {
   const pending: Pending[] = [];
@@ -19,18 +19,12 @@ export function buildExceptions(ctx: SeedCtx): void {
       const rec = makeSwap(ctx, bp, status, phase, pending);
       if (rec) ctx.out.shiftSwaps.push(rec);
     }
-    for (const status of ['RESOLVED', 'RESOLVED', 'REPORTED'] as const) {
-      const rec = makeEmergency(ctx, bp, status, pending);
-      if (rec) ctx.out.emergencyLeaves.push(rec);
-    }
   }
   ctx.out.shiftSwaps.sort((a, b) => String(a.requested_at).localeCompare(String(b.requested_at)));
   for (const s of ctx.out.shiftSwaps) s.swap_code = `SWP-${String(++ctx.counters.swp).padStart(4, '0')}`;
-  ctx.out.emergencyLeaves.sort((a, b) => String(a.reported_at).localeCompare(String(b.reported_at)));
-  for (const e of ctx.out.emergencyLeaves) e.emergency_code = `EMG-${String(++ctx.counters.emg).padStart(4, '0')}`;
   for (const p of pending) {
     if (!p.assign) continue;
-    p.assign.rec.note = p.kind === 'SWAP' ? `Đã đổi ca từ ${String(p.rec.swap_code)}` : `Thay ca nghỉ đột xuất ${String(p.rec.emergency_code)}`;
+    p.assign.rec.note = `Nhận ca được nhường ${String(p.rec.swap_code)}`;
   }
 }
 
@@ -81,40 +75,6 @@ function makeSwap(ctx: SeedCtx, bp: BranchPlan, status: SwapStatus, phase: Phase
   } else {
     ctx.busy.add(busyKey(a.date, empId(peer)));
     pending.push({ rec, kind: 'SWAP' });
-  }
-  return rec;
-}
-
-function makeEmergency(ctx: SeedCtx, bp: BranchPlan, status: 'RESOLVED' | 'REPORTED', pending: Pending[]): Rec | null {
-  const { rng, today, nowHm } = ctx;
-  const isPast = status === 'RESOLVED';
-  const target = isPast
-    ? findTarget(ctx, bp, 'PAST', [addDays(today, -18), addDays(today, -1)])
-    : findTarget(ctx, bp, 'FUTURE', [today, addDays(today, 1)]);
-  if (!target) return null;
-  const { a, peer } = target;
-  if (!isPast && a.date === today && toMin(a.tpl.start) - toMin(nowHm) < 40) return null;
-  a.locked = true;
-  const before = isPast ? rng.int(45, 150) : 0;
-  const reportedAt = isPast
-    ? iso(a.date, addMin(a.tpl.start, -before))
-    : iso(today, addMin(nowHm, -Math.min(rng.int(5, 30), toMin(nowHm))));
-  const minutesBefore = isPast ? before : (a.date === today ? 0 : 1440) + toMin(a.tpl.start) - toMin(reportedAt.slice(11, 16));
-  const handledAt = isPast ? iso(a.date, addMin(a.tpl.start, -before + 25)) : '';
-  const rec: Rec = {
-    ...sys(reportedAt), ...(isPast ? { version: 2, updated_at: handledAt, updated_by: bp.storeUserId } : {}),
-    employee_id: empId(a.owner), assignment_id: a.rec.id, reason: rng.pick(C.EMERGENCY_REASONS), replacement_id: isPast ? empId(peer) : '',
-    status, escalated: false, handled_by: isPast ? bp.storeUserId : '', emergency_code: '', branch_id: bp.branch.id, work_date: a.date,
-    shift_code: a.tpl.code, reported_at: reportedAt, minutes_before_shift: minutesBefore, evidence_file_id: '',
-    replacement_confirmed_at: isPast ? iso(a.date, addMin(a.tpl.start, -before + 20)) : '', shift_coverage_status: isPast ? 'COVERED' : 'UNCOVERED',
-    escalated_at: '', escalated_to_role: '', handled_at: handledAt,
-    resolution_note: isPast ? `Đã điều phối ${String(peer.emp.full_name)} nhận thay ca` : '',
-  };
-  if (isPast) {
-    reassign(ctx, a, peer, 'replacement_for_employee_id', handledAt, bp.storeUserId);
-    pending.push({ rec, assign: a, kind: 'EMG' });
-  } else {
-    pending.push({ rec, kind: 'EMG' });
   }
   return rec;
 }

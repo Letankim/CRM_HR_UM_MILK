@@ -2,8 +2,8 @@
 
 import { Button, Card, Col, List, Row, Space, Statistic, Tag } from 'antd';
 import {
-  AlertOutlined, ArrowRightOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined,
-  ExclamationCircleOutlined, SolutionOutlined, TeamOutlined, WarningOutlined,
+  ArrowRightOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined,
+  ExclamationCircleOutlined, SolutionOutlined, SwapOutlined, TeamOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -47,15 +47,15 @@ export function HrDashboardActionPanel() {
     queryFn: () => api.list<{ id: string; status: string }>('/admin/shift-swaps?per_page=50'),
     enabled: can('schedule.read'),
   });
-  const emgQ = useQuery({
-    queryKey: ['dashboard-emergencies'],
-    queryFn: () => api.get<{ id: string; work_date: string; status: string; shift_coverage_status: string }[]>('/admin/emergency-leaves'),
-    enabled: can('schedule.read'),
-  });
   const adjQ = useQuery({
     queryKey: ['dashboard-attendance-adjustments'],
     queryFn: () => api.list<{ id: string; status: string }>('/admin/attendance/adjustments?per_page=50'),
     enabled: can('attendance.read', 'schedule.read'),
+  });
+  const probPlanQ = useQuery({
+    queryKey: ['schedule-planner-probation', 'ALL'],
+    queryFn: () => api.get<{ employeeId: string; readyForOfficial: boolean }[]>('/admin/schedule-planner/probation?branch_id=ALL'),
+    enabled: canPromote && can('schedule.read', 'leave.approve'),
   });
 
   if (!showHrPanel) return null;
@@ -72,7 +72,9 @@ export function HrDashboardActionPanel() {
 
   const employees = empQ.data?.data ?? [];
   const probationEmployees = employees.filter((e) => e.stage === 'PROBATION');
+  const ready7ShiftsCount = (probPlanQ.data ?? []).filter((p) => p.readyForOfficial).length;
   const endingProbationList = probationEmployees.filter((e) => !e.probationEnd || e.probationEnd <= soonCutoff);
+  const readyPromoteCount = Math.max(ready7ShiftsCount, endingProbationList.length);
 
   const shifts = schedQ.data?.data ?? [];
   const draftShiftsCount = shifts.filter((s) => s.status === 'DRAFT').length;
@@ -83,19 +85,16 @@ export function HrDashboardActionPanel() {
   const todayOffCount = leaves.filter((l) => l.leave_date === todayStr && l.status === 'APPROVED').length;
 
   const swaps = swapQ.data?.data ?? [];
-  const pendingSwapsCount = swaps.filter((s) => s.status === 'PEER_ACCEPTED' || s.status === 'PENDING_PEER').length;
-
-  const emergencies = emgQ.data ?? [];
-  const uncoveredEmergenciesCount = emergencies.filter((e) => e.status === 'REPORTED' || e.status === 'ESCALATED' || e.shift_coverage_status !== 'COVERED').length;
+  const pendingSwapsCount = swaps.filter((s) => s.status === 'PEER_ACCEPTED').length;
+  const waitingPeerSwapsCount = swaps.filter((s) => s.status === 'PENDING_PEER').length;
 
   const pendingAdjustmentsCount = (adjQ.data?.data ?? []).filter((a) => a.status === 'PENDING' || a.status === 'STORE_CONFIRMED').length;
   const abnormalEventsCount = absentShiftsCount + pendingAdjustmentsCount;
 
   const actionItems = [
-    ...(uncoveredEmergenciesCount > 0 ? [{ key: 'emg', priority: 'KHẨN CẤP', color: 'error', title: `${uncoveredEmergenciesCount} ca báo nghỉ đột xuất / thiếu ca cần điều phối khẩn`, desc: 'Kiểm tra người thay thế hoặc điều phối nhân sự chi nhánh, không ép nhân viên nghỉ khẩn đi làm.', link: '/admin/schedules?section=workflows', btn: 'Xử lý thiếu ca' }] : []),
-    ...(pendingLeavesCount > 0 || pendingSwapsCount > 0 ? [{ key: 'leave-swap', priority: 'CẦN DUYỆT', color: 'warning', title: `${pendingLeavesCount} đơn nghỉ OFF & ${pendingSwapsCount} yêu cầu đổi ca đang chờ phê duyệt`, desc: 'Kiểm tra định biên sau khi nghỉ và phê duyệt đổi ca 3 bước.', link: '/admin/schedules?section=workflows', btn: 'Duyệt đơn từ' }] : []),
+    ...(pendingLeavesCount > 0 || pendingSwapsCount > 0 ? [{ key: 'leave-swap', priority: 'CẦN DUYỆT', color: 'warning', title: `${pendingLeavesCount} đơn nghỉ OFF & ${pendingSwapsCount} yêu cầu nhường ca đang chờ HR duyệt`, desc: 'Duyệt đơn OFF khi chốt lịch tuần; yêu cầu nhường ca chỉ cần HR duyệt khi người nhận vượt 2 ca/ngày.', link: '/admin/schedules?section=workflows', btn: 'Duyệt đơn từ' }] : []),
     ...(pendingAdjustmentsCount > 0 || absentShiftsCount > 0 ? [{ key: 'att', priority: 'ĐỐI SOÁT CÔNG', color: 'warning', title: `${pendingAdjustmentsCount} phiếu bổ sung công chờ duyệt & ${absentShiftsCount} ca vắng mặt quá giờ`, desc: 'Đối soát chấm công bất thường và xử lý phiếu bù công trước kỳ lương.', link: '/admin/schedules?section=workflows', btn: 'Mở đối soát công' }] : []),
-    ...(canPromote && endingProbationList.length > 0 ? [{ key: 'promote', priority: 'NHÂN SỰ', color: 'processing', title: `${endingProbationList.length} nhân viên thử việc sắp hết hạn / đủ điều kiện xét Chuyển Chính thức`, desc: 'Xem công thử việc, điểm bài kiểm tra nghiệp vụ và quyết định chuyển chính thức.', link: '/admin/employees?stage=PROBATION', btn: 'Xét chuyển chính thức' }] : []),
+    ...(canPromote && readyPromoteCount > 0 ? [{ key: 'promote', priority: 'NHÂN SỰ', color: ready7ShiftsCount > 0 ? 'success' : 'processing', title: ready7ShiftsCount > 0 ? `${ready7ShiftsCount} nhân viên thử việc đã làm đủ 7 ca bắt buộc — Sẵn sàng duyệt Chính thức` : `${endingProbationList.length} nhân viên thử việc sắp hết hạn / đủ điều kiện xét Chuyển Chính thức`, desc: 'Xem công thử việc đã hoàn thành và duyệt chuyển lên Nhân viên chính thức.', link: ready7ShiftsCount > 0 ? '/admin/schedules' : '/admin/employees?stage=PROBATION', btn: 'Duyệt chính thức' }] : []),
     ...(canRecruit && (newCandidatesCount > 0 || todayInterviewsCount > 0 || rescheduleInterviewsCount > 0) ? [{ key: 'rec', priority: 'TUYỂN DỤNG', color: 'processing', title: `${newCandidatesCount} ứng viên mới & ${todayInterviewsCount} lịch phỏng vấn cần xử lý`, desc: 'Liên hệ ứng viên mới, theo dõi xác nhận và chấm điểm phỏng vấn.', link: '/admin/employees?section=recruitment', btn: 'Mở Tuyển dụng & PV' }] : []),
     ...(draftShiftsCount > 0 ? [{ key: 'draft', priority: 'LỊCH TUẦN', color: 'default', title: `${draftShiftsCount} ca đăng ký đang ở trạng thái Chờ duyệt phân ca`, desc: 'Kiểm tra định biên và nhấn Duyệt & Phát hành lịch để ca có hiệu lực chấm công.', link: '/admin/schedules', btn: 'Duyệt lịch phân ca' }] : []),
   ];
@@ -122,7 +121,7 @@ export function HrDashboardActionPanel() {
           <Card size="small"><Statistic title="Nghỉ hôm nay / Chờ duyệt" value={`${todayOffCount} / ${pendingLeavesCount}`} prefix={<ClockCircleOutlined style={{ color: '#16A34A' }} />} /><Link href="/admin/schedules?section=workflows" style={{ fontSize: 12 }}>Đơn nghỉ OFF</Link></Card>
         </Col>
         <Col xs={12} md={canRecruit ? 4 : 8}>
-          <Card size="small"><Statistic title="Thiếu ca / Nghỉ khẩn" value={uncoveredEmergenciesCount} prefix={<AlertOutlined style={{ color: '#DC2626' }} />} /><Link href="/admin/schedules?section=workflows" style={{ fontSize: 12 }}>Điều phối thiếu ca</Link></Card>
+          <Card size="small"><Statistic title="Nhường ca chờ HR / Chờ đồng nghiệp" value={`${pendingSwapsCount} / ${waitingPeerSwapsCount}`} prefix={<SwapOutlined style={{ color: '#7C3AED' }} />} /><Link href="/admin/schedules?section=workflows" style={{ fontSize: 12 }}>Đổi ca / Nhường ca</Link></Card>
         </Col>
         <Col xs={12} md={canRecruit ? 4 : 8}>
           <Card size="small"><Statistic title="Chấm công bất thường" value={abnormalEventsCount} prefix={<WarningOutlined style={{ color: '#B45309' }} />} /><Link href="/admin/schedules?section=workflows" style={{ fontSize: 12 }}>Phiếu bổ sung công</Link></Card>

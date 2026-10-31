@@ -7,6 +7,7 @@ import type {
 import { markSelfAction } from './notification-sound';
 
 export const SESSION_STORAGE_FLAG = 'umbm_has_session';
+export const PIN_CHANGE_REQUIRED_EVENT = 'umbm:pin-change-required';
 
 export function markSessionActive(active: boolean): void {
   if (typeof window === 'undefined') return;
@@ -147,8 +148,10 @@ async function requestEnvelope<TData, TMeta = Record<string, unknown> | null>(
     const details = errPayload?.errors?.details ?? [];
     const reqId = errPayload?.request_id ?? '';
 
-    if (res.status === 401 && !isAuthEndpoint) {
-      handleUnauthorizedRedirect();
+    if (res.status === 401 && !isAuthEndpoint) handleUnauthorizedRedirect();
+    // Bắt buộc đổi mã PIN: không đăng xuất, chỉ báo cho giao diện mở hộp thoại đổi mã PIN
+    if (res.status === 403 && code === 'PIN_CHANGE_REQUIRED' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(PIN_CHANGE_REQUIRED_EVENT));
     }
 
     if (

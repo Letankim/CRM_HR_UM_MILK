@@ -1,23 +1,24 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { REQUEST_STATUS_LABELS, ROLE_LABELS, type Employee, type User } from '@umbm/shared';
+import { evaluateOffWindow, REQUEST_STATUS_LABELS, ROLE_LABELS, type Employee, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { dayjs } from '../lib/time.js';
-import { auditContext, requireAuth } from '../plugins/auth-context.js';
+import { requireAuth } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
-import { queueShiftRegisteredEmail } from '../services/action-email-dispatcher.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
-import { assertNoDuplicateOrOverlappingEmployeeShift, evaluateBranchShiftCapacity, getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
+import { evaluateBranchShiftCapacity, getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { mapAttendanceEvent, migrateLegacyBase64Photos } from './attendance-helpers.js';
 import { findLinkedEmployeeForUser } from './employee-mapper.js';
+import { mapAdjustmentRecord } from './attendance-adjustments.routes.js';
+import { buildProbationCycleSummary, registerMyShiftRegisterRoute } from './my-shift-register.routes.js';
+import { getOperationSettings } from '../services/operations-settings.service.js';
 import { mapShiftAssignment } from './schedules.routes.js';
 import { mapShiftSwapRecord } from './shift-swap-helpers.js';
 
-const zCreateMyShiftBody = z.object({ work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng ngày YYYY-MM-DD'), shift_code: z.string().trim().default('CA_SANG'), note: z.string().trim().max(300).optional().default('Đăng ký ca làm việc cá nhân') });
 const SHIFT_DEFAULT_HOURS: Record<string, { start: string; end: string; hours: number }> = {
   CA_SANG: { start: '07:00', end: '12:00', hours: 5 }, CA_CHIEU: { start: '12:00', end: '17:00', hours: 5 },
   CA_TOI: { start: '17:00', end: '22:00', hours: 5 }, CA_HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
@@ -58,7 +59,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
   app.get('/api/my-attendance', { preHandler: requireAuth() }, async (request) => {
     void migrateLegacyBase64Photos(ctx);
     await healBranchConsistency(ctx);
-    const user = request.auth!.user;
+    const user = request.auth!.user, settings = getOperationSettings(ctx.db);
     const emp = await ensurePersonalProfile(ctx, user);
     const branch = ctx.db.branches.get(emp.branch_id) ?? ctx.db.branches.all()[0];
     const { todayStr, nowHm } = getVnDateAndHm();
@@ -91,8 +92,8 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
         : isPendingApproval ? 'Chờ CH / HR duyệt phân ca'
         : inEv ? (base.pendingAdjustmentCode ? `Đã gửi bù công (${base.pendingAdjustmentCode} · Chờ duyệt)` : isForgotCheckout ? `Quên Ra ca (Vào ${inTimeHm} — Cần bổ sung công)` : isWithinCheckoutGrace ? `Đã vào ca (${inTimeHm} · Còn hạn Ra ca đến ${win.graceDeadlineHm})` : `Đã vào ca (${inTimeHm})`)
         : base.pendingSwapCode ? `Chờ duyệt đổi ca (${base.pendingSwapCode})`
-        : (base.pendingLeaveCode || base.pendingEmergencyCode) ? `Chờ duyệt nghỉ (${base.pendingLeaveCode || base.pendingEmergencyCode})` : 'Chưa điểm danh';
-      const attendanceStatusColor = isDone ? 'green' : isAbsentShift ? (base.pendingAdjustmentCode ? 'orange' : 'red') : isPendingApproval ? 'gold' : inEv ? (base.pendingAdjustmentCode ? 'orange' : isForgotCheckout || inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : base.pendingSwapCode ? 'purple' : (base.pendingLeaveCode || base.pendingEmergencyCode) ? 'gold' : 'default';
+        : base.pendingLeaveCode ? `Chờ duyệt nghỉ (${base.pendingLeaveCode})` : 'Chưa điểm danh';
+      const attendanceStatusColor = isDone ? 'green' : isAbsentShift ? (base.pendingAdjustmentCode ? 'orange' : 'red') : isPendingApproval ? 'gold' : inEv ? (base.pendingAdjustmentCode ? 'orange' : isForgotCheckout || inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : base.pendingSwapCode ? 'purple' : base.pendingLeaveCode ? 'gold' : 'default';
       return { ...base, status: effectiveStatus, statusLabel: effectiveStatusLabel, isToday, isExpiredToday, isAbsentShift: !isDone && isAbsentShift, isForgotCheckout, isWithinCheckoutGrace, canCheckOutNow, checkoutGraceDeadlineHm: win.graceDeadlineHm, checkInEvent: inEv, checkOutEvent: outEv, attendanceStatusLabel, attendanceStatusColor };
     }).sort((a, b) => {
       const rank = (s: { workDate: string; isToday: boolean; status: string; isAbsentShift: boolean; isExpiredToday: boolean; canCheckOutNow: boolean; checkInEvent: unknown; checkOutEvent: unknown }) =>
@@ -106,11 +107,6 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       .filter((l) => l.employee_id === emp.id || l.employee_id === emp.employee_code)
       .reverse()
       .map((l) => ({ ...l, ...resolveShiftTimeDetails(ctx, l.shift_code, l.assignment_id, l.branch_id, l.employee_id, l.leave_date), branchName: ctx.db.branches.get(l.branch_id)?.name ?? branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[l.status] }));
-
-    const emergencyLeaves = ctx.db.emergencyLeaves
-      .filter((el) => el.employee_id === emp.id || el.employee_id === emp.employee_code)
-      .reverse()
-      .map((el) => ({ ...el, ...resolveShiftTimeDetails(ctx, el.shift_code, el.assignment_id, el.branch_id, el.employee_id, el.work_date), branchName: ctx.db.branches.get(el.branch_id)?.name ?? branch?.name ?? 'Chi nhánh' }));
 
     const swaps = ctx.db.shiftSwaps
       .filter((s) => s.requester_id === emp.id || s.requester_id === emp.employee_code || s.peer_id === emp.id || s.peer_id === emp.employee_code)
@@ -142,7 +138,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     const adjustments = ctx.db.attendanceAdjustments
       .filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code)
       .reverse()
-      .map((a) => ({ ...a, ...resolveShiftTimeDetails(ctx, a.shift_code, a.assignment_id), branchName: ctx.db.branches.get(a.branch_id)?.name ?? branch?.name ?? 'Chi nhánh' }));
+      ;
 
     const cycleDays = emp.probation_cycle_days || 12;
     const rawDiff = emp.probation_start ? dayjs(todayStr).diff(dayjs(emp.probation_start), 'day') + 1 : (emp.probation_work_days || 7);
@@ -157,7 +153,9 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
         probationStart: emp.probation_start, probationEnd: emp.probation_end, officialFrom: emp.official_from,
         probationCycleDays: cycleDays, probationDaysPassed, probationDaysRemaining: Math.max(0, cycleDays - probationDaysPassed),
       },
-      shifts, events, leaves, emergencyLeaves, swaps, branchPeers, adjustments,
+      shifts, events, leaves, swaps, branchPeers, adjustments: adjustments.map((a) => mapAdjustmentRecord(ctx, a)),
+      offWindow: evaluateOffWindow(settings, todayStr, nowHm), canRegisterShift: emp.stage === 'PROBATION',
+      probationCycle: emp.stage === 'PROBATION' ? buildProbationCycleSummary(ctx, emp, todayStr) : null,
     });
   });
 
@@ -169,39 +167,14 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     return sendSuccess(request, cap.message, cap);
   });
 
-  app.post('/api/my-attendance/shifts', { preHandler: requireAuth() }, async (request, reply) => {
-    const user = request.auth!.user, body = zCreateMyShiftBody.parse(request.body), emp = await ensurePersonalProfile(ctx, user);
-    const { todayStr, nowHm } = getVnDateAndHm();
-    if (body.work_date < todayStr) throw Errors.fieldValidation('work_date', 'OUT_OF_RANGE', `Không được phép đăng ký ca làm việc cho ngày trong quá khứ (${dayjs(body.work_date).format('DD/MM/YYYY')}). Hôm nay là ${dayjs(todayStr).format('DD/MM/YYYY')}.`, body.work_date);
-    assertDateNotLockedByPayroll(ctx.db, body.work_date, 'đăng ký ca làm việc');
-    const leaveOnDate = ctx.db.leaveRequests.find((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.leave_date === body.work_date && (l.status === 'APPROVED' || l.status === 'PENDING'));
-    if (leaveOnDate) throw Errors.fieldValidation('work_date', 'DUPLICATE_VALUE', `Bạn đã đăng ký nghỉ OFF trong ngày ${dayjs(body.work_date).format('DD/MM/YYYY')}, không thể đăng ký ca làm việc trùng ngày nghỉ.`, body.work_date);
-    const tpl = ctx.db.shiftTemplates.find((s) => s.code === body.shift_code), fallback = SHIFT_DEFAULT_HOURS[body.shift_code] ?? SHIFT_DEFAULT_HOURS.CA_SANG!;
-    const startAt = tpl?.start_time ?? fallback.start, endAt = tpl?.end_time ?? fallback.end;
-    if (body.work_date === todayStr && nowHm >= endAt) throw Errors.fieldValidation('shift_code', 'OUT_OF_RANGE', `Khung ca này (${startAt} – ${endAt}) trong ngày hôm nay (${dayjs(todayStr).format('DD/MM/YYYY')}) đã trôi qua (hiện tại là ${nowHm}). Không được phép đăng ký ca đã kết thúc, vui lòng chọn ca chưa kết thúc hoặc đăng ký cho ngày tiếp theo.`, body.shift_code);
-    assertNoDuplicateOrOverlappingEmployeeShift(ctx, { emp, workDate: body.work_date, shiftCode: body.shift_code, startAt, endAt });
-    const cap = evaluateBranchShiftCapacity(ctx, { branchId: emp.branch_id, workDate: body.work_date, shiftCode: body.shift_code, startAt, endAt });
-    if (cap.isFullOrExceeded) throw Errors.fieldValidation('shift_code', 'OUT_OF_RANGE', cap.message, body.shift_code);
-    const created = await ctx.db.shiftAssignments.insert({
-      schedule_week_id: `WK-${body.work_date.slice(0, 7)}`, employee_id: emp.id, branch_id: emp.branch_id, work_date: body.work_date,
-      shift_template_id: tpl?.id ?? '', start_at: startAt, end_at: endAt, status: 'DRAFT', source: 'EMPLOYEE_REGISTER',
-      employee_stage: emp.stage, day_type: 'WORK', shift_code: body.shift_code, scheduled_hours: tpl?.standard_hours ?? fallback.hours,
-      swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: '', note: body.note,
-    }, user.id);
-
-    queueShiftRegisteredEmail(ctx, created, user.id);
-    await ensureSyncedNotifications(ctx);
-    await ctx.audit.record(auditContext(request), { action: 'schedule.create', entity: 'SHIFT_ASSIGNMENTS', entityId: created.id, after: { employee_id: emp.employee_code, work_date: created.work_date, shift_code: created.shift_code, status: created.status } });
-    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'SHIFT_REGISTERED', message: `${emp.full_name} vừa gửi đăng ký ca ngày ${created.work_date} chờ duyệt`, actorId: user.id });
-    return reply.code(201), sendSuccess(request, 'Đã gửi đăng ký ca làm việc. Ca đăng ký đang ở trạng thái Chờ duyệt — cần Quản lý cửa hàng hoặc HR duyệt phân ca trước khi chấm công.', mapShiftAssignment(created, ctx));
-  });
+  registerMyShiftRegisterRoute(app, ctx);
 
   app.delete('/api/my-attendance/shifts/:id', { preHandler: requireAuth() }, async (request) => {
     const { id } = request.params as { id: string }, user = request.auth!.user, emp = await ensurePersonalProfile(ctx, user), shift = ctx.db.shiftAssignments.get(id);
     if (!shift || (shift.employee_id !== emp.id && shift.employee_id !== emp.employee_code)) throw Errors.forbidden('Bạn chỉ được phép hủy ca làm việc của chính mình');
     assertDateNotLockedByPayroll(ctx.db, shift.work_date, 'hủy ca làm việc');
     if (ctx.db.attendanceEvents.find((e) => e.assignment_id === shift.id)) throw Errors.badRequest('Ca làm việc này đã có dữ liệu điểm danh thực tế, không thể hủy ca');
-    if (shift.status !== 'DRAFT') throw Errors.badRequest('Ca làm việc này đã được Quản lý cửa hàng / HR duyệt phân ca chính thức. Nếu cần thay đổi, vui lòng gửi Đơn xin nghỉ OFF, Báo nghỉ khẩn cấp hoặc Yêu cầu đổi ca.');
+    if (shift.status !== 'DRAFT') throw Errors.badRequest('Ca làm việc này đã được Quản lý cửa hàng / HR duyệt phân ca chính thức. Nếu cần thay đổi, vui lòng dùng chức năng Đổi ca / Nhường ca.');
     await ctx.db.shiftAssignments.softDelete(shift.id, shift.version, user.id);
     await ensureSyncedNotifications(ctx);
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: shift.branch_id || emp.branch_id, employeeIds: [emp.id], kind: 'SHIFT_CANCELLED', actorId: user.id });

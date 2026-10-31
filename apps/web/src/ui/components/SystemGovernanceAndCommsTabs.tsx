@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Button, Card, Flex, Form, Input, Select, Space, Switch, Tabs, Tag, Typography } from 'antd';
-import { CloseOutlined, CloudDownloadOutlined, DeleteOutlined, EditOutlined, FileExcelOutlined, FileProtectOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SendOutlined, ToolOutlined } from '@ant-design/icons';
+import { CloseOutlined, CloudDownloadOutlined, DeleteOutlined, EditOutlined, FileExcelOutlined, FileProtectOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SendOutlined, SettingOutlined, ToolOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
@@ -14,6 +14,7 @@ import { SelectableTable } from './BulkActionBar';
 import { TimeSelect } from './DateTimePickers';
 import { BackupDetailDrawer, GovernanceDetailDrawer, POLICY_CATEGORY_LABELS, POLICY_CATEGORY_OPTIONS, PolicyFormModal } from './GovernanceAndCommsModals';
 import { MktCommsCenter } from './MktCommsCenter';
+import { OperationsAndPartitionPane } from './OperationsAndPartitionPane';
 import { RowActionButtons } from './RowActionButtons';
 
 export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: 'governance' | 'comms' }) {
@@ -27,7 +28,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
     Boolean(isAdmin || r.canEdit || r.isMine || (me && (r.created_by === me.id || r.approved_by === me.username || r.approved_by === me.displayName)));
   const { message, modal } = App.useApp();
 
-  const [govSubTab, setGovSubTab] = useState<'policies' | 'backups'>('policies');
+  const [govSubTab, setGovSubTab] = useState<'policies' | 'backups' | 'operations'>('policies');
   const [polModal, setPolModal] = useState(false);
   const [editingPol, setEditingPol] = useState<Record<string, unknown> | null>(null);
   const [viewing, setViewing] = useState<Record<string, unknown> | null>(null);
@@ -202,9 +203,10 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
   return (
     <>
       <Card size="small" styles={{ body: { padding: '12px 20px 20px' } }}>
-        <Tabs activeKey={govSubTab} onChange={(k) => setGovSubTab(k as 'policies' | 'backups')} items={[
+        <Tabs activeKey={govSubTab} onChange={(k) => setGovSubTab(k as 'policies' | 'backups' | 'operations')} items={[
           { key: 'policies', label: <span><FileProtectOutlined /> Chính sách Vận hành &amp; Quy định ({polTotal})</span>, children: policiesPane },
           ...(canBackupOrMaint ? [{ key: 'backups', label: <span><CloudDownloadOutlined /> Bảo trì &amp; Sao lưu ({bkpTotal})</span>, children: backupsPane }] : []),
+          ...(can('system.config', 'integration.read') ? [{ key: 'operations', label: <span><SettingOutlined /> Cấu hình vận hành &amp; Dữ liệu tháng</span>, children: <OperationsAndPartitionPane /> }] : []),
         ]} />
       </Card>
       <PolicyFormModal open={polModal} editing={editingPol} form={polForm} isAdmin={isAdmin} loading={postMut.isPending || putMut.isPending} onClose={() => setPolModal(false)} onSubmit={(v) => { if (editingPol) putMut.mutate({ url: `/admin/policies/${editingPol.id}`, body: { ...v, version: editingPol.version, owner_override_approved: true } }); else postMut.mutate({ url: '/admin/policies', body: v }); setPolModal(false); }} />

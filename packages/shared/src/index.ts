@@ -9,3 +9,4 @@ export * from './domain-schemas.js';
 export * from './schedule-payroll-schemas.js';
 export * from './ticket-schemas.js';
 export * from './sheets-schema.js';
+export * from './operations-config.js';

@@ -33,7 +33,7 @@ const zUpdateEmployeeBody = z.object({
   bank_account_number: z.string().trim().max(40).optional(), bank_account_holder: z.string().trim().max(80).optional(),
   note: z.string().trim().max(300).optional(), link_user_id: z.string().trim().optional(),
   create_account: z.boolean().optional(), username: z.string().trim().max(32).optional(),
-  initial_pin: z.string().trim().min(6, 'Mật khẩu tối thiểu 6 ký tự').or(z.literal('')).optional(),
+  initial_pin: z.string().trim().regex(/^\d{6}$/, 'Mã PIN đăng nhập phải gồm đúng 6 chữ số').or(z.literal('')).optional(),
 });
 
 const zPromoteOfficialBody = z.object({
@@ -77,7 +77,7 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
       excludeEmployeeId: id, excludeUserId: link_user_id || prevLinkedUser?.id || null,
     });
     const pinHash = initial_pin && initial_pin.length >= 6 ? await hashSecret(initial_pin) : null;
-    const pinPatch = pinHash ? { password_hash: pinHash, failed_login_count: 0, locked_until: '' } : {};
+    const pinPatch = pinHash ? { password_hash: pinHash, failed_login_count: 0, locked_until: '', must_change_pin: true } : {};
 
     if (create_account && !prevLinkedUser) {
       const targetUname = (username || `nv.${before.employee_code.toLowerCase()}`).toLowerCase();
@@ -85,7 +85,7 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
         username: targetUname, phone, display_name: rest.full_name || before.full_name, password_hash: pinHash ?? (await hashSecret(DEMO_PIN)),
         role: (rest.stage ?? before.stage) === 'OFFICIAL' ? 'CHINH_THUC' : 'THU_VIEC', permissions_json: '[]', branch_scope: rest.branch_id || before.branch_id,
         employee_id: before.employee_code, status: 'PENDING_ACTIVATION', session_version: 1, failed_login_count: 0, locked_until: '',
-        last_login_at: '', activated_by: '', activated_at: '', revoked_at: '', email: rest.email ?? before.email ?? '', revoked_by: '', revoke_reason: '',
+        last_login_at: '', activated_by: '', activated_at: '', revoked_at: '', email: rest.email ?? before.email ?? '', revoked_by: '', revoke_reason: '', must_change_pin: true, pin_changed_at: '',
       }, actorId);
       nextUserId = createdUser.id;
       queueAccountCreatedEmail(ctx, createdUser, request.auth?.user.email, initial_pin || DEMO_PIN);

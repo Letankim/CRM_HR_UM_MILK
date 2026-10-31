@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { Avatar, Badge, Button, Card, Col, Dropdown, Grid, Progress, Row, Space, Tag, Typography } from 'antd';
 import {
-  BookOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined,
-  DownOutlined, EnvironmentOutlined, EyeOutlined, FieldTimeOutlined, FileTextOutlined, KeyOutlined,
+  BookOutlined, CalendarOutlined, ClockCircleOutlined,
+  DownOutlined, EnvironmentOutlined, FieldTimeOutlined, FileTextOutlined, KeyOutlined,
   LogoutOutlined, NotificationOutlined, ReloadOutlined, SwapOutlined, UserOutlined, UserSwitchOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -17,15 +17,16 @@ import { useLogout, useMe } from '@/lib/auth';
 import { StatusTag } from '@/ui/StatusTag';
 import { BRAND } from '@/ui/theme';
 import { AhrBrandMark, AhrWordmarkSvg } from '@/ui/components/AhrBrandLogo';
+import { EmployeeHomeShiftItem } from '@/ui/components/EmployeeHomeShiftItem';
+import { useCheckoutLateHours, useNowHm, type BranchPeerItem, type SelfAttendanceExtras } from '@/ui/components/self-attendance-shared';
 import { ShiftAttendanceDetailModal } from '@/ui/components/ShiftAttendanceDetailModal';
 import { UserProfileModal } from '@/ui/components/UserProfileModal';
 
-interface MyAttendanceData {
+interface MyAttendanceData extends SelfAttendanceExtras {
   todayDate: string;
   profile: { employeeId: string; employeeCode: string; fullName: string; stage?: string; branchName?: string; probationStart?: string; probationEnd?: string; probationCycleDays?: number; probationDaysPassed?: number; probationDaysRemaining?: number };
   shifts: Record<string, unknown>[]; events: Record<string, unknown>[]; leaves: Record<string, unknown>[];
-  emergencyLeaves?: Record<string, unknown>[]; swaps?: Record<string, unknown>[];
-  branchPeers?: { id: string; employeeCode: string; fullName: string; positionTitle?: string; branchName?: string; busyShiftsByDate?: Record<string, string> }[];
+  swaps?: Record<string, unknown>[]; branchPeers?: BranchPeerItem[];
 }
 
 export default function EmployeeHome() {
@@ -36,6 +37,7 @@ export default function EmployeeHome() {
   const screens = Grid.useBreakpoint();
   const isDesktop = Boolean(screens.md);
   const [profileTab, setProfileTab] = useState<'info' | 'password' | null>(null), [attShiftId, setAttShiftId] = useState<string | null>(null);
+  const nowHm = useNowHm(), lateHours = useCheckoutLateHours();
 
   const myQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<MyAttendanceData>('/my-attendance'), enabled: !!data });
   const swapsQ = useQuery({ queryKey: ['nv-swaps'], queryFn: () => api.list<Record<string, unknown>>('/admin/shift-swaps?per_page=50'), enabled: !!data });
@@ -56,8 +58,10 @@ export default function EmployeeHome() {
   const myTests = (testsQ.data?.assignments ?? []).filter((a) => !empId || a.employee_id === empId || a.employeeCode === empCode);
   const probationDaysTotal = myQ.data?.profile.probationCycleDays || SYSTEM_CONFIG.defaults.probationCycleDays;
   const probationDaysPassed = myQ.data?.profile.probationDaysPassed ?? 7;
-  const probationOffLimit = SYSTEM_CONFIG.defaults.probationOffDays;
-  const usedOffCount = myLeaves.filter((l) => l.status !== 'REJECTED').length;
+  const cycle = myQ.data?.probationCycle;
+  const canRegisterShift = Boolean(myQ.data?.canRegisterShift);
+  const probationOffLimit = cycle?.offLimit ?? SYSTEM_CONFIG.defaults.probationOffDays;
+  const usedOffCount = cycle?.offCount ?? myLeaves.filter((l) => l.status !== 'REJECTED' && l.status !== 'CANCELLED').length;
   const branchName = myQ.data?.profile.branchName || 'Chi nhánh Ụm Bò Milk';
   const tomorrowDate = dayjs(todayDate).add(1, 'day').format('YYYY-MM-DD');
   const todayShifts = displayShifts.filter((s) => String(s.workDate) === todayDate);
@@ -99,43 +103,9 @@ export default function EmployeeHome() {
         <Typography.Text type="secondary">Chưa có ca làm việc nào được phân công cho bạn trong kỳ này.</Typography.Text>
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          {displayShifts.slice(0, isDesktop ? 6 : 4).map((s) => {
-            const sEvs = myEvents.filter((e) => String(e.assignment_id) === String(s.id));
-            const inEv = sEvs.find((e) => e.type === 'CHECK_IN');
-            const outEv = sEvs.find((e) => e.type === 'CHECK_OUT');
-            const isTodayShift = String(s.workDate) === todayDate;
-            return (
-              <div key={String(s.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '8px 10px', background: '#F8FAFC', border: `1px solid ${BRAND.border}`, borderRadius: 4 }}>
-                <div>
-                  <div style={{ fontWeight: 600 }}>{String(s.shiftLabel || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim()} ({String(s.startAt || '07:00')} – {String(s.endAt || '12:00')})</div>
-                  <div style={{ fontSize: 12, color: BRAND.textSecondary }}>Ngày {String(s.workDate)} · {String(s.branchName)}</div>
-                  {(inEv || outEv) && (
-                    <Space size={4} wrap style={{ marginTop: 4 }}>
-                      {inEv && <Tag color={inEv.punctualityStatus === 'LATE' ? 'volcano' : 'green'} style={{ margin: 0, fontSize: 11 }}>Vào: {String(inEv.checkTimeFormatted || '').slice(0, 5)} ({String(inEv.punctualityLabel)})</Tag>}
-                      {outEv && <Tag color={outEv.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} style={{ margin: 0, fontSize: 11 }}>Ra: {String(outEv.checkTimeFormatted || '').slice(0, 5)} ({String(outEv.punctualityLabel)})</Tag>}
-                    </Space>
-                  )}
-                </div>
-                {s.status === 'DRAFT' ? (
-                  <Tag color="gold" style={{ margin: 0 }}>Chờ CH / HR duyệt ca</Tag>
-                ) : (s.status === 'COMPLETED' || (inEv && outEv)) ? (
-                  <Space size={6}><Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>Đã hoàn thành ca</Tag><Button size="small" icon={<EyeOutlined />} onClick={() => setAttShiftId(String(s.id))}>Chi tiết điểm danh</Button></Space>
-                ) : (s.status === 'ABSENT' || Boolean(s.isAbsentShift)) ? (
-                  <Space size={6}><Tag color="red" style={{ margin: 0 }}>Vắng mặt (Quá giờ ca)</Tag><Link href="/nv/cong"><Button size="small" danger>Bổ sung công</Button></Link></Space>
-                ) : Boolean(s.isForgotCheckout) ? (
-                  <Space size={6}><Tag color="volcano" style={{ margin: 0 }}>Quên Ra ca (&gt;1h)</Tag><Link href="/nv/cong"><Button size="small" danger>Bổ sung công</Button></Link></Space>
-                ) : (Boolean(s.canCheckOutNow) || (isTodayShift && inEv && !outEv)) ? (
-                  <Space size={6}><Tag color={s.isWithinCheckoutGrace ? 'processing' : 'green'} style={{ margin: 0 }}>{s.isWithinCheckoutGrace ? `Còn hạn Ra ca đến ${String(s.checkoutGraceDeadlineHm || '')}` : 'Đã vào ca'}</Tag><Link href="/nv/diem-danh"><Button size="small" type="primary" icon={<CheckCircleOutlined />}>Ra ca</Button></Link></Space>
-                ) : !isTodayShift ? (
-                  <Tag color="gold" style={{ margin: 0 }}>Ca ngày {dayjs(String(s.workDate)).format('DD/MM')}</Tag>
-                ) : !inEv ? (
-                  <Link href="/nv/diem-danh"><Button size="small" type="primary" icon={<CheckCircleOutlined />}>Vào ca</Button></Link>
-                ) : (
-                  <Space size={6}><Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã hoàn thành ca</Tag><Button size="small" icon={<EyeOutlined />} onClick={() => setAttShiftId(String(s.id))}>Chi tiết điểm danh</Button></Space>
-                )}
-              </div>
-            );
-          })}
+          {displayShifts.slice(0, isDesktop ? 6 : 4).map((s) => (
+            <EmployeeHomeShiftItem key={String(s.id)} shift={s} events={myEvents} todayDate={todayDate} nowHm={nowHm} lateHours={lateHours} onViewAttendance={setAttShiftId} />
+          ))}
         </Space>
       )}
       <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
@@ -147,7 +117,7 @@ export default function EmployeeHome() {
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><FieldTimeOutlined /> Cảnh báo công / Ca cần bổ sung</span><Link href="/nv/cong"><Badge count={abnormalShiftsCount} showZero color="#DC2626" /></Link></div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><ClockCircleOutlined /> Đơn nghỉ OFF đang chờ duyệt</span><Link href="/nv/nghi-phep"><Badge count={myLeaves.filter((l) => l.status === 'PENDING').length} showZero color="#D97706" /></Link></div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><SwapOutlined /> Yêu cầu đổi ca đang xử lý</span><Link href="/nv/doi-ca"><Badge count={pendingSwaps.length} showZero color={BRAND.primary} /></Link></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><SwapOutlined /> Yêu cầu nhường / đổi ca đang xử lý</span><Link href="/nv/doi-ca"><Badge count={pendingSwaps.length} showZero color={BRAND.primary} /></Link></div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><BookOutlined /> Bài kiểm tra TEST / Đào tạo</span><Link href="/nv/bai-kiem-tra"><Tag color="blue" style={{ margin: 0 }}>{myTests.length} bài được giao</Tag></Link></div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><NotificationOutlined /> Bản tin truyền thông nội bộ</span><Link href="/nv/ban-tin"><Tag color="geekblue" style={{ margin: 0 }}>{(commsQ.data?.announcements ?? []).length} bản tin · Xem ngay</Tag></Link></div>
       </Space>
@@ -161,7 +131,7 @@ export default function EmployeeHome() {
           <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
             {[
               { href: '/nv/diem-danh', label: 'Điểm danh GPS', icon: <EnvironmentOutlined />, primary: true },
-              { href: '/nv/lich', label: 'Xem lịch & Đăng ký ca', icon: <CalendarOutlined /> },
+              { href: '/nv/lich', label: canRegisterShift ? 'Xem lịch & Đăng ký thêm ca' : 'Xem lịch làm việc', icon: <CalendarOutlined /> },
               { href: '/nv/nghi-phep', label: 'Đăng ký Nghỉ OFF', icon: <ClockCircleOutlined /> },
               { href: '/nv/bai-kiem-tra', label: 'Thi TEST Nghiệp vụ', icon: <BookOutlined /> },
               { href: '/nv/cong', label: 'Công của tôi & Bù công', icon: <FieldTimeOutlined /> },
@@ -202,7 +172,7 @@ export default function EmployeeHome() {
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
         {[
           { href: '/nv/diem-danh', label: 'Điểm danh GPS', icon: <EnvironmentOutlined />, primary: true },
-          { href: '/nv/lich', label: 'Xem lịch & Ca', icon: <CalendarOutlined /> },
+          { href: '/nv/lich', label: canRegisterShift ? 'Lịch & Thêm ca' : 'Xem lịch & Ca', icon: <CalendarOutlined /> },
           { href: '/nv/nghi-phep', label: 'Đăng ký Nghỉ OFF', icon: <ClockCircleOutlined /> },
           { href: '/nv/bai-kiem-tra', label: 'Thi TEST', icon: <BookOutlined /> },
           { href: '/nv/cong', label: 'Công & Bù công', icon: <FieldTimeOutlined /> },

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { ACCOUNT_STATUS_LABELS, PERMISSIONS, ROLE_LABELS, ROLES, isPermissionForbiddenForRole, normalizePhone } from '@umbm/shared';
+import { ACCOUNT_STATUS_LABELS, PERMISSIONS, PIN_REGEX, ROLE_LABELS, ROLES, isEmployeeRole, isPermissionForbiddenForRole, normalizePhone } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { parseExtraPermissions, toPublicUser } from '../auth/auth.service.js';
 import { hashSecret } from '../auth/password.js';
@@ -118,8 +118,10 @@ export async function accountBulkRoutes(app: FastifyInstance, ctx: AppContext) {
         ...(body.employee_id !== undefined || nextEmployeeCode !== before.employee_id ? { employee_id: nextEmployeeCode } : {}),
       };
       if (body.secret) {
+        if (isEmployeeRole(effectiveRole) && !PIN_REGEX.test(body.secret)) throw Errors.fieldValidation('secret', 'INVALID_FORMAT', 'Mã PIN đăng nhập của nhân viên phải gồm đúng 6 chữ số', '******');
         patch.password_hash = await hashSecret(body.secret);
         patch.session_version = before.session_version + 1;
+        patch.must_change_pin = true;
       }
 
       const updated = await ctx.db.users.update(id, body.version, patch, actorId);

@@ -9,7 +9,9 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll, findLockedPayrollPeriodForDate } from '../services/salary-profile.service.js';
-import { assertApprovedShiftNoteOnlyPatch, assertNoDuplicateOrOverlappingEmployeeShift, getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
+import { assertNoDuplicateOrOverlappingEmployeeShift, getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
+import { applyProbationExtraApproval, assertApprovedShiftNoteOnlyPatch, assertMaxShiftsPerDay } from '../services/schedule-rules.js';
+import { getOperationSettings } from '../services/operations-settings.service.js';
 import { clearShiftAttendanceOnWorkflowOverride, resolveShiftActiveRequests } from '../services/shift-absent-scanner.js';
 import { queueScheduleShiftEmail } from '../services/action-email-dispatcher.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
@@ -17,9 +19,7 @@ import { emitScheduleRealtime, findBranchShiftTemplate, healBranchConsistency, r
 import { describePunctuality, parseHm } from './attendance-helpers.js';
 
 const zScheduleQuery = zListQueryBase.extend({
-  per_page: z.coerce.number().int().min(1, 'Số dòng mỗi trang tối thiểu là 1').max(1000, 'Số dòng mỗi trang tối đa là 1000').default(15),
-  branch_id: z.string().max(64).optional(), shift_code: z.string().max(32).optional(),
-  status: z.enum([...SHIFT_ASSIGNMENT_STATUSES, 'ALL'] as const).optional(),
+  per_page: z.coerce.number().int().min(1, 'Số dòng mỗi trang tối thiểu là 1').max(1000, 'Số dòng mỗi trang tối đa là 1000').default(15), branch_id: z.string().max(64).optional(), shift_code: z.string().max(32).optional(), status: z.enum([...SHIFT_ASSIGNMENT_STATUSES, 'ALL'] as const).optional(),
   from_date: z.string().optional(), to_date: z.string().optional(), refresh: z.enum(['0', '1', 'true', 'false']).optional(),
 });
 const zCreateScheduleBody = z.object({ employee_id: z.string({ required_error: 'Vui lòng chọn nhân sự' }).trim().min(1), branch_id: z.string().trim().optional(), work_date: z.string({ required_error: 'Ngày làm việc là bắt buộc' }).regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng ngày YYYY-MM-DD'), shift_code: z.string().trim().default('CA_SANG'), status: z.enum(SHIFT_ASSIGNMENT_STATUSES).default('PUBLISHED'), day_type: z.enum(['WORK', 'OFF', 'OT']).default('WORK'), scheduled_hours: z.coerce.number().min(0).max(24).optional(), note: z.string().trim().max(300).optional().default('') });
@@ -51,9 +51,8 @@ export function mapShiftAssignment(a: ShiftAssignment, ctx: AppContext, shiftEve
     else if (win.isWithinCheckoutGrace) { attendanceStatusLabel = `Đã vào ca (${shiftEvents.inHm} · Còn hạn Ra ca đến ${win.graceDeadlineHm})`; attendanceStatusColor = 'processing'; }
     else { const punc = describePunctuality('CHECK_IN', shiftEvents.inLateMins ?? 0, 0); attendanceStatusLabel = `Đã vào ca (${shiftEvents.inHm} · ${punc.punctualityLabel})`; attendanceStatusColor = punc.punctualityStatus === 'LATE' ? 'volcano' : 'processing'; }
   } else if (activeReqs.pendingSwapCode) { attendanceStatusLabel = `Chờ duyệt đổi ca (${activeReqs.pendingSwapCode})`; attendanceStatusColor = 'purple'; }
-  else if (activeReqs.pendingLeaveCode || activeReqs.pendingEmergencyCode) {
-    attendanceStatusLabel = `Chờ duyệt nghỉ (${activeReqs.pendingLeaveCode || activeReqs.pendingEmergencyCode})`; attendanceStatusColor = 'gold';
-  }
+  else if (activeReqs.pendingLeaveCode) { attendanceStatusLabel = `Chờ duyệt nghỉ (${activeReqs.pendingLeaveCode})`; attendanceStatusColor = 'gold'; }
+  if (effectiveStatus === 'DRAFT' && a.source === 'PROBATION_EXTRA') attendanceStatusLabel = a.linked_assignment_id ? 'Thử việc đăng ký thêm ca (dời ca cuối) — chờ HR duyệt' : 'Thử việc đăng ký thêm ca — chờ HR duyệt';
 
   const lockedPeriod = findLockedPayrollPeriodForDate(ctx.db, a.work_date);
   return {
@@ -71,6 +70,7 @@ export function mapShiftAssignment(a: ShiftAssignment, ctx: AppContext, shiftEve
     attendanceStatusLabel, attendanceStatusColor, ...activeReqs,
     isLockedByPayroll: Boolean(lockedPeriod), lockedByPeriodCode: lockedPeriod?.period_code ?? null,
     note: a.note, version: a.version, created_at: a.created_at, updated_at: a.updated_at,
+    source: a.source, linkedAssignmentId: a.linked_assignment_id || null,
   };
 }
 
@@ -122,12 +122,13 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
     const tpl = findBranchShiftTemplate(ctx, body.shift_code, branchId);
     const startAt = tpl?.start_time ?? '07:00', endAt = tpl?.end_time ?? '12:00';
     assertNoDuplicateOrOverlappingEmployeeShift(ctx, { emp, workDate: body.work_date, shiftCode: body.shift_code, startAt, endAt, dayType: body.day_type, status: body.status });
+    if (body.day_type !== 'OFF' && body.status !== 'ON_LEAVE') assertMaxShiftsPerDay(ctx, { emp, workDate: body.work_date, maxPerDay: getOperationSettings(ctx.db).maxShiftsPerDay });
     const created = await ctx.db.shiftAssignments.insert({
       schedule_week_id: `WK-${body.work_date.slice(0, 7)}`, employee_id: emp.id, branch_id: branchId, work_date: body.work_date,
       shift_template_id: tpl?.id ?? '', start_at: startAt, end_at: endAt, status: body.status,
       source: 'MANUAL', employee_stage: emp.stage, day_type: body.day_type, shift_code: body.shift_code,
       scheduled_hours: body.scheduled_hours ?? (body.day_type === 'OFF' ? 0 : tpl?.standard_hours ?? 5),
-      swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: body.status === 'PUBLISHED' ? nowIso() : '', note: body.note,
+      swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: body.status === 'PUBLISHED' ? nowIso() : '', note: body.note, linked_assignment_id: '',
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'schedule.create', entity: 'SHIFT_ASSIGNMENTS', entityId: created.id, after: { employee_id: emp.employee_code, work_date: created.work_date, shift_code: created.shift_code, status: created.status } });
     if (created.status === 'PUBLISHED') queueScheduleShiftEmail(ctx, { empId: emp.id, shiftLabel: tpl?.name ?? created.shift_code, workDate: created.work_date, startAt: created.start_at, endAt: created.end_at, branchId, code: `SHF-${created.id.slice(0, 6)}` }, request.auth!.user.id);
@@ -161,11 +162,13 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
         if (approvedLeave) throw Errors.fieldValidation('work_date', 'DUPLICATE_VALUE', `Nhân sự ${origEmp.full_name} (${origEmp.employee_code}) đã có đơn xin nghỉ OFF được duyệt trong ngày ${targetDate}, không thể xếp ca làm việc trùng ngày nghỉ.`, targetDate);
       }
       assertNoDuplicateOrOverlappingEmployeeShift(ctx, { emp: origEmp, workDate: targetDate, shiftCode: nextShiftCode, startAt: tpl?.start_time ?? before.start_at, endAt: tpl?.end_time ?? before.end_at, dayType: patch.day_type ?? before.day_type, status: patch.status ?? before.status, excludeId: id });
+      if ((patch.day_type ?? before.day_type) !== 'OFF') assertMaxShiftsPerDay(ctx, { emp: origEmp, workDate: targetDate, maxPerDay: getOperationSettings(ctx.db).maxShiftsPerDay, excludeIds: [id, before.linked_assignment_id].filter(Boolean) });
     }
     const updated = await ctx.db.shiftAssignments.update(id, version, {
       ...patch, ...(tpl ? { start_at: tpl.start_time, end_at: tpl.end_time, shift_template_id: tpl.id } : {}),
       ...(patch.status === 'PUBLISHED' && !before.published_at ? { published_at: nowIso() } : {}),
     }, request.auth!.user.id);
+    if (before.status === 'DRAFT' && updated.status === 'PUBLISHED') await applyProbationExtraApproval(ctx, updated, request.auth!.user.id);
     if (updated.status === 'COMPLETED') emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: updated.branch_id, employeeIds: [updated.employee_id], kind: 'SHIFT_COMPLETED', actorId: request.auth!.user.id });
     if (before.status === 'DRAFT' && updated.status === 'PUBLISHED') queueScheduleShiftEmail(ctx, { empId: updated.employee_id, shiftLabel: tpl?.name ?? updated.shift_code, workDate: updated.work_date, startAt: updated.start_at, endAt: updated.end_at, branchId: updated.branch_id, code: `SHF-${updated.id.slice(0, 6)}` }, request.auth!.user.id);
     await ensureSyncedNotifications(ctx);
@@ -205,7 +208,8 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
       }
       processedIds.push(a.id); empIds.add(a.employee_id);
     }
-    await ctx.db.shiftAssignments.batchUpdate(patches, actorId);
+    const published = await ctx.db.shiftAssignments.batchUpdate(patches, actorId);
+    if (body.action === 'PUBLISH') for (const row of published) await applyProbationExtraApproval(ctx, row, actorId);
     for (const delRow of deletedRows) await clearShiftAttendanceOnWorkflowOverride(ctx.db, delRow, actorId, 'Đã xóa phân công ca làm việc khỏi lịch');
     await ensureSyncedNotifications(ctx);
     await ctx.audit.record(auditContext(request), { action: body.action === 'DELETE' ? 'schedule.delete' : 'schedule.publish', entity: 'SHIFT_ASSIGNMENTS', entityId: `bulk-${processedIds.length}`, after: { action: body.action, processedIds } });

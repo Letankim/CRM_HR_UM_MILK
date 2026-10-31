@@ -100,7 +100,6 @@ export const TABLES = {
   shiftAssignments: { key: 'SCHEDULE', tab: 'SHIFT_ASSIGNMENTS', schema: S.zShiftAssignment },
   leaveRequests: { key: 'SCHEDULE', tab: 'LEAVE_REQUESTS', schema: S.zLeaveRequest },
   shiftSwaps: { key: 'SCHEDULE', tab: 'SHIFT_SWAPS', schema: S.zShiftSwap },
-  emergencyLeaves: { key: 'SCHEDULE', tab: 'EMERGENCY_LEAVES', schema: S.zEmergencyLeave },
   attendanceEvents: { key: 'ATTENDANCE', tab: 'ATTENDANCE_EVENTS', schema: S.zAttendanceEvent },
   attendanceAdjustments: { key: 'ATTENDANCE', tab: 'ATTENDANCE_ADJUSTMENTS', schema: S.zAttendanceAdjustment },
   payRates: { key: 'PAYROLL', tab: 'PAY_RATES', schema: S.zPayRate },
@@ -114,7 +113,7 @@ export type TableKey = keyof typeof TABLES;
  */
 export const WRITE_ORDER: TableKey[] = [
   'shiftTemplates', 'staffingRules', 'users', 'employees', 'payRates', 'employeeStageHistory', 'testAssignments',
-  'candidates', 'interviews', 'attendanceEvents', 'attendanceAdjustments', 'leaveRequests', 'shiftSwaps', 'emergencyLeaves',
+  'candidates', 'interviews', 'attendanceEvents', 'attendanceAdjustments', 'leaveRequests', 'shiftSwaps',
   'shiftAssignments',
 ];
 

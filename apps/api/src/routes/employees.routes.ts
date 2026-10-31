@@ -72,7 +72,7 @@ const zCreateEmployeeBody = z.object({
   create_account: z.boolean().optional().default(true),
   link_user_id: z.string().trim().max(64).optional().default(''),
   username: z.string().trim().max(32).optional().default(''),
-  initial_pin: z.string().trim().min(6, 'Mật khẩu tối thiểu 6 ký tự').or(z.literal('')).optional().default(DEMO_PIN),
+  initial_pin: z.string().trim().regex(/^\d{6}$/, 'Mã PIN đăng nhập phải gồm đúng 6 chữ số').or(z.literal('')).optional().default(DEMO_PIN),
 });
 
 export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
@@ -148,7 +148,7 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
             if (body.link_user_id) {
               const existingUser = ctx.db.users.get(body.link_user_id);
               if (existingUser) {
-                const pinPatch = body.initial_pin && body.initial_pin.length >= 6 ? { password_hash: pinHash, failed_login_count: 0, locked_until: '' } : undefined;
+                const pinPatch = body.initial_pin && body.initial_pin.length >= 6 ? { password_hash: pinHash, failed_login_count: 0, locked_until: '', must_change_pin: true } : undefined;
                 s.userId = await syncAccountFromEmployee(ctx, {
                   empId: '', employeeCode: empCode, targetUser: existingUser,
                   fullName: body.full_name, phone, email: body.email || undefined,
@@ -163,7 +163,7 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
                 username: targetUsername, phone, display_name: body.full_name, password_hash: pinHash,
                 role: body.stage === 'OFFICIAL' ? 'CHINH_THUC' : 'THU_VIEC', permissions_json: '[]', branch_scope: body.branch_id,
                 employee_id: empCode, status: 'PENDING_ACTIVATION', session_version: 1, failed_login_count: 0, locked_until: '',
-                last_login_at: '', activated_by: '', activated_at: '', revoked_at: '', email: body.email, revoked_by: '', revoke_reason: '',
+                last_login_at: '', activated_by: '', activated_at: '', revoked_at: '', email: body.email, revoked_by: '', revoke_reason: '', must_change_pin: true, pin_changed_at: '',
               },
               actorId,
             );

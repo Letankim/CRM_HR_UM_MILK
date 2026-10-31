@@ -14,6 +14,9 @@ import type { EmployeeRowItem } from './employee-table-columns';
 
 export type EmployeeAccountMode = 'AUTO_CREATE' | 'LINK_EXISTING' | 'NONE';
 
+/** Mã PIN đăng nhập của nhân viên bắt buộc đúng 6 chữ số */
+const PIN_RULE = { pattern: /^\d{6}$/, message: 'Mã PIN đăng nhập phải gồm đúng 6 chữ số' };
+
 export interface EmployeeAccountLinkFieldsProps {
   form: FormInstance;
   editing?: EmployeeRowItem | null;
@@ -114,22 +117,25 @@ export function EmployeeAccountLinkFields({ form, editing }: EmployeeAccountLink
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="Mật khẩu" required>
+              <Form.Item label="Mã PIN đăng nhập (6 chữ số)" required>
                 <Space.Compact style={{ width: '100%' }}>
-                  <Form.Item name="initial_pin" noStyle rules={[{ required: true, min: 6, message: 'Mật khẩu tối thiểu 6 ký tự' }]}>
+                  <Form.Item name="initial_pin" noStyle rules={[{ required: true, message: 'Vui lòng nhập mã PIN đăng nhập' }, PIN_RULE]}>
                     <Input.Password
                       prefix={<KeyOutlined />}
+                      inputMode="numeric"
+                      maxLength={6}
                       visibilityToggle={{ visible: showPin, onVisibleChange: setShowPin }}
-                      placeholder="Nhập mật khẩu đăng nhập"
+                      placeholder="Nhập 6 chữ số"
                     />
                   </Form.Item>
                   <Button icon={<ThunderboltOutlined />} onClick={handleGenPin}>
-                    Tự sinh MK
+                    Tự sinh PIN
                   </Button>
                 </Space.Compact>
               </Form.Item>
             </Col>
           </Row>
+          <Alert type="info" showIcon style={{ borderRadius: 4 }} message="Nhân viên sẽ bắt buộc đổi mã PIN ngay ở lần đăng nhập đầu tiên" />
         </div>
       )}
 
@@ -153,17 +159,19 @@ export function EmployeeAccountLinkFields({ form, editing }: EmployeeAccountLink
               </Form.Item>
             </Col>
             <Col span={10}>
-              <Form.Item label="Đặt lại mật khẩu mới">
+              <Form.Item label="Đặt lại mã PIN (6 chữ số)">
                 <Space.Compact style={{ width: '100%' }}>
-                  <Form.Item name="initial_pin" noStyle>
+                  <Form.Item name="initial_pin" noStyle rules={[PIN_RULE]}>
                     <Input.Password
                       prefix={<KeyOutlined />}
+                      inputMode="numeric"
+                      maxLength={6}
                       visibilityToggle={{ visible: showPin, onVisibleChange: setShowPin }}
                       placeholder="Để trống nếu giữ nguyên"
                     />
                   </Form.Item>
                   <Button icon={<ThunderboltOutlined />} onClick={handleGenPin}>
-                    Tự sinh MK
+                    Tự sinh PIN
                   </Button>
                 </Space.Compact>
               </Form.Item>

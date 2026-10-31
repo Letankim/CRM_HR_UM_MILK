@@ -11,7 +11,7 @@ import type { Realtime } from './realtime/realtime.js';
 export interface GoogleStatus {
   mode: 'google' | 'memory';
   check: () => Promise<{ ok: boolean; detail: string }>;
-  uploadAttendancePhoto?: (params: { fileName: string; mimeType: string; data: Buffer; monthFolder: string }) => Promise<{ fileId: string }>;
+  uploadAttendancePhoto?: (params: { fileName: string; mimeType: string; data: Buffer; monthFolder: string; folderSegments?: string[]; rootFolder?: 'ATTENDANCE' | 'EVIDENCE' }) => Promise<{ fileId: string }>;
   uploadMktMedia?: (params: { fileName: string; mimeType: string; data: Buffer; monthFolder: string }) => Promise<{ fileId: string }>;
   getDriveFileMeta?: (fileId: string) => Promise<{ name: string; mimeType: string; sizeBytes: number } | null>;
   downloadDriveFile?: (fileId: string) => Promise<Buffer | null>;

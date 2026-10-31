@@ -1,81 +1,63 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Alert, App, Button, Flex, Segmented, Space, Tabs, Tag } from 'antd';
-import {
-  AppstoreOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined,
-  DeleteOutlined, DownloadOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, ReloadOutlined, SwapOutlined, TableOutlined,
-} from '@ant-design/icons';
-import { useMutation } from '@tanstack/react-query';
-import dayjs from 'dayjs';
-import { SYSTEM_CONFIG } from '@umbm/shared';
-import { api, ApiClientError } from '@/lib/api';
-import { StatusTag } from '../StatusTag';
-import { useClientPagination } from '../hooks/useClientPagination';
-import { SelectableTable } from './BulkActionBar';
+import { Alert, Button, Flex, Segmented, Space, Tabs } from 'antd';
+import { AppstoreOutlined, CalendarOutlined, PlusOutlined, ReloadOutlined, SwapOutlined, TableOutlined } from '@ant-design/icons';
+import { DEFAULT_OPERATION_SETTINGS } from '@umbm/shared';
+import { EmployeeLeavesTable } from './EmployeeLeavesTable';
 import { LeaveRequestModal, MyShiftRegisterModal, ShiftSwapRequestModal } from './EmployeePortalModals';
-import { isAbsentShiftRecord } from './QuickAbsentAdjustmentModal';
-import { RowActionButtons } from './RowActionButtons';
+import { EmployeeShiftsTable } from './EmployeeShiftsTable';
+import { EmployeeSwapsTable } from './EmployeeSwapsTable';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
 import { ScheduleViewsPanel } from './ScheduleViewsPanel';
-import { canViewShiftAttendanceDetail, ShiftAttendanceDetailModal } from './ShiftAttendanceDetailModal';
-import { renderSwapAllowanceTag } from './ShiftSwapApproveModal';
-import { buildPortalShiftsBulkActions, exportEmergencyExcel, exportLeavesExcel, exportSwapsExcel } from './workflow-bulk-helpers';
-import { confirmWorkflowShiftOverride, renderWorkflowShiftStateTag } from './workflow-shift-warning';
+import { useMyAttendanceExtras, useOffWindow, type BranchPeerItem } from './self-attendance-shared';
+import { ShiftAttendanceDetailModal } from './ShiftAttendanceDetailModal';
 
 type ScheduleViewMode = 'WEEK_MATRIX' | 'CALENDAR' | 'TABLE';
+type CenterTab = 'shifts' | 'leaves' | 'swaps';
+
+export const OFFICIAL_SCHEDULE_INFO = 'Lịch làm việc được HR tự động sắp theo ca mặc định — bạn chỉ cần đăng ký nghỉ OFF trong thời gian mở cổng.';
 
 export interface EmployeeScheduleAndLeaveCenterProps {
-  todayDate: string; empId: string; empCode: string; stage?: string; mode?: 'all' | 'shifts' | 'leaves' | 'swaps'; initialTab?: 'shifts' | 'leaves' | 'swaps';
-  shifts: Record<string, unknown>[]; leaves: Record<string, unknown>[]; emergencyLeaves?: Record<string, unknown>[]; swaps: Record<string, unknown>[];
-  branchPeers: { id: string; employeeCode: string; fullName: string; positionTitle?: string; branchName?: string; busyShiftsByDate?: Record<string, string> }[];
+  todayDate: string; empId: string; empCode: string; stage?: string; mode?: 'all' | CenterTab; initialTab?: CenterTab;
+  shifts: Record<string, unknown>[]; leaves: Record<string, unknown>[]; swaps: Record<string, unknown>[];
+  branchPeers: BranchPeerItem[];
+  /** Ghi đè quyền đăng ký làm thêm ca (mặc định lấy `canRegisterShift` từ `GET /my-attendance`). */
+  canRegisterShift?: boolean;
   refreshing?: boolean; onRefresh: () => void;
 }
 
-const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
-const fmtShiftTime = (r: Record<string, unknown>) => `${String(r.startAt || r.start_at || '07:00')} – ${String(r.endAt || r.end_at || '12:00')}${r.scheduledHours || r.scheduled_hours ? ` (${r.scheduledHours || r.scheduled_hours}h)` : ''}`;
-
 export function EmployeeScheduleAndLeaveCenter({
-  todayDate, empId, empCode, stage, mode = 'all', initialTab = 'shifts', shifts, leaves, emergencyLeaves = [], swaps, branchPeers, refreshing = false, onRefresh,
+  todayDate, empId, empCode, stage, mode = 'all', initialTab = 'shifts', shifts, leaves, swaps, branchPeers, canRegisterShift, refreshing = false, onRefresh,
 }: EmployeeScheduleAndLeaveCenterProps) {
-  const { message, modal } = App.useApp();
-  const [activeTab, setActiveTab] = useState<'shifts' | 'leaves' | 'swaps'>(initialTab);
+  const [activeTab, setActiveTab] = useState<CenterTab>(initialTab);
   const [viewMode, setViewMode] = useState<ScheduleViewMode>('WEEK_MATRIX');
   useEffect(() => { setActiveTab(initialTab); }, [initialTab]);
   const [addShiftOpen, setAddShiftOpen] = useState(false), [leaveOpen, setLeaveOpen] = useState(false), [swapOpen, setSwapOpen] = useState(false);
   const [detailTarget, setDetailTarget] = useState<ScheduleDetailTarget | null>(null), [attShiftId, setAttShiftId] = useState<string | null>(null);
-  const shiftsPag = useClientPagination(10, 'ca'), leavesPag = useClientPagination(10, 'đơn'), emgPag = useClientPagination(10, 'báo cáo'), swapsPag = useClientPagination(10, 'yêu cầu');
+  const extras = useMyAttendanceExtras().data;
 
-  const peerRespondMut = useMutation({
-    mutationFn: async (items: { id: string; version: number; accept: boolean }[]) => {
-      for (const it of items) await api.post(`/admin/shift-swaps/${it.id}/peer-respond`, { version: it.version, accept: it.accept, peer_note: it.accept ? 'Đồng ý nhận ca' : 'Bận lịch cá nhân, không thể nhận ca' });
-      return items[0]?.accept;
-    },
-    onSuccess: (accept) => { message.success(accept ? 'Đã xác nhận đồng ý nhận ca (Bước 2/3: Chờ Quản lý duyệt)' : 'Đã từ chối yêu cầu đổi ca'); onRefresh(); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại'),
-  });
-
-  const cancelShiftMut = useMutation({
-    mutationFn: async (ids: string[]) => { for (const id of ids) await api.delete(`/my-attendance/shifts/${id}`); },
-    onSuccess: () => { message.success('Đã hủy đăng ký ca làm việc'); onRefresh(); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Không thể hủy ca'),
-  });
-
-  const usedOffCount = leaves.filter((l) => l.status !== 'REJECTED' && l.status !== 'CANCELLED').length;
-  const offQuotaLimit = stage === 'PROBATION' ? SYSTEM_CONFIG.defaults.probationOffDays : 4;
+  const isProbation = stage === 'PROBATION';
+  const offWin = useOffWindow(!isProbation && (mode === 'all' || mode === 'leaves')).data;
+  const canRegister = canRegisterShift ?? extras?.canRegisterShift ?? isProbation;
+  const cycle = extras?.probationCycle;
+  const quotaText = isProbation
+    ? (cycle ? `Đã đăng ký ${cycle.offCount}/${cycle.offLimit} ngày OFF trong chu kỳ thử việc` : undefined)
+    : `Tối đa ${offWin?.officialWeeklyOffLimit ?? DEFAULT_OPERATION_SETTINGS.officialWeeklyOffLimit} ngày OFF / tuần${offWin?.message ? ` · ${offWin.message}` : ''}`;
   const effectiveTab = mode === 'all' ? activeTab : mode;
+  const showShiftsActions = mode === 'all' || mode === 'shifts';
 
   return (
     <>
       <Tabs
         activeKey={effectiveTab}
-        onChange={(k) => setActiveTab(k as 'shifts' | 'leaves' | 'swaps')}
+        onChange={(k) => setActiveTab(k as CenterTab)}
         tabBarExtraContent={
           <Space size={6} wrap>
             <Button size="small" icon={<ReloadOutlined />} loading={refreshing} onClick={onRefresh}>Làm mới</Button>
-            {(mode === 'all' || mode === 'shifts') && <Button size="small" type={mode === 'shifts' ? 'primary' : 'default'} icon={<PlusOutlined />} onClick={() => setAddShiftOpen(true)}>Đăng ký ca</Button>}
-            {(mode === 'all' || mode === 'swaps') && <Button size="small" type={mode === 'swaps' ? 'primary' : 'default'} icon={<SwapOutlined />} onClick={() => setSwapOpen(true)}>{mode === 'swaps' ? 'Tạo yêu cầu đổi ca' : 'Đổi ca'}</Button>}
+            {showShiftsActions && canRegister && <Button size="small" type={mode === 'shifts' ? 'primary' : 'default'} icon={<PlusOutlined />} onClick={() => setAddShiftOpen(true)}>Đăng ký làm thêm ca</Button>}
+            {(mode === 'all' || mode === 'swaps') && <Button size="small" type={mode === 'swaps' ? 'primary' : 'default'} icon={<SwapOutlined />} onClick={() => setSwapOpen(true)}>Nhường / Đổi ca</Button>}
             {(mode === 'all' || mode === 'leaves') && <Button size="small" type="primary" icon={<CalendarOutlined />} onClick={() => setLeaveOpen(true)}>Đăng ký nghỉ OFF</Button>}
           </Space>
         }
@@ -85,135 +67,42 @@ export function EmployeeScheduleAndLeaveCenter({
             label: <span><CalendarOutlined /> Lịch làm việc ({shifts.length})</span>,
             children: (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                {!canRegister && <Alert type="info" showIcon message={OFFICIAL_SCHEDULE_INFO} />}
                 {shifts.some((s) => s.status === 'DRAFT') && (
-                  <Alert type="warning" showIcon message="Bạn có ca đăng ký đang Chờ Quản lý cửa hàng / HR duyệt phân ca. Chỉ những ca đã được phê duyệt sang Đã phân ca chính thức mới được phép chấm công Vào/Ra ca và Đổi ca." />
+                  <Alert type="warning" showIcon message="Bạn có ca đăng ký làm thêm đang chờ HR duyệt. Chỉ những ca đã được phê duyệt sang Đã phân ca chính thức mới được phép chấm công Vào/Ra ca và Nhường / Đổi ca." />
                 )}
                 {shifts.some((s) => s.status === 'ABSENT' || Boolean(s.isAbsentShift)) && (
-                  <Alert type="error" showIcon message="Bạn có ca làm việc ở trạng thái Vắng mặt (do quá giờ kết thúc ca chưa điểm danh). Để bù công cho ca vắng mặt, vui lòng gửi Phiếu bổ sung công." />
+                  <Alert type="error" showIcon message="Bạn có ca làm việc ở trạng thái Vắng mặt (quá giờ kết thúc ca chưa điểm danh). Để bù công, vui lòng gửi phiếu bổ sung công kèm ảnh minh chứng." />
                 )}
                 <Flex justify="flex-end" align="center" wrap gap={8}>
                   <Segmented value={viewMode} onChange={(v) => setViewMode(v as ScheduleViewMode)} options={[{ value: 'WEEK_MATRIX', icon: <AppstoreOutlined />, label: 'Lưới Lịch Tuần' }, { value: 'CALENDAR', icon: <CalendarOutlined />, label: 'Lịch Tháng' }, { value: 'TABLE', icon: <TableOutlined />, label: 'Bảng Danh Sách' }]} />
                 </Flex>
-
                 {viewMode !== 'TABLE' ? (
-                  <ScheduleViewsPanel mode={viewMode} todayDate={todayDate} assignments={shifts as unknown as ScheduleAssignmentItem[]} canEdit={false} loading={refreshing} hideStaffingBadge onAddAtCell={() => setAddShiftOpen(true)} onEditItem={(item) => setDetailTarget({ kind: 'shift', record: item as unknown as Record<string, unknown> })} />
+                  <ScheduleViewsPanel mode={viewMode} todayDate={todayDate} assignments={shifts as unknown as ScheduleAssignmentItem[]} canEdit={false} loading={refreshing} hideStaffingBadge onAddAtCell={() => { if (canRegister) setAddShiftOpen(true); }} onEditItem={(item) => setDetailTarget({ kind: 'shift', record: item as unknown as Record<string, unknown> })} />
                 ) : (
-                  <SelectableTable<Record<string, unknown>>
-                    size="small" rowKey="id" loading={refreshing} pagination={shiftsPag} dataSource={shifts}
-                    bulkActions={buildPortalShiftsBulkActions({ loading: cancelShiftMut.isPending, onCancelDrafts: (rows) => cancelShiftMut.mutate(rows.map((r) => String(r.id))), onCreateAbsentAdj: (row) => setDetailTarget({ kind: 'shift', record: { ...row, employeeId: empId } }) })}
-                    locale={{ emptyText: 'Bạn chưa có ca làm việc nào được phân công trong kỳ này.' }}
-                    columns={[
-                      { title: 'Ngày & Phân loại', dataIndex: 'workDate', width: 175, render: (v: string, r) => <Space size={4} wrap><span className="num" style={{ fontWeight: 600 }}>{dayjs(v).format('DD/MM/YYYY')}</span><Tag color={r.dayType === 'OFF' || r.status === 'ON_LEAVE' ? 'gold' : 'blue'} style={{ margin: 0 }}>{r.dayType === 'OFF' || r.status === 'ON_LEAVE' ? 'Nghỉ OFF' : 'Làm việc'}</Tag></Space> },
-                      { title: 'Khung ca & Giờ ca', width: 230, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag></Space> },
-                      { title: 'Chi nhánh', dataIndex: 'branchName', width: 185, ellipsis: true },
-                      { title: 'Điểm danh', width: 185, render: (_, r) => <Tag color={String(r.attendanceStatusColor || 'default')} style={{ margin: 0 }}>{String(r.attendanceStatusLabel || 'Chưa điểm danh')}</Tag> },
-                      { title: 'Trạng thái lịch', dataIndex: 'status', width: 150, render: (v: string, r) => <StatusTag value={v} label={String(r.statusLabel || '') || undefined} /> },
-                      {
-                        title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
-                        render: (_, r) => (
-                          <RowActionButtons
-                            detailTooltip="Xem chi tiết ca làm việc" onViewDetail={() => setDetailTarget({ kind: 'shift', record: { ...r, employeeId: empId } })} loading={cancelShiftMut.isPending}
-                            menuItems={[
-                              ...(canViewShiftAttendanceDetail(r as { status?: string; attendanceStatusLabel?: string; checkInEvent?: unknown; checkOutEvent?: unknown }) ? [{ key: 'view-att', icon: <EyeOutlined style={{ color: '#16A34A' }} />, label: 'Xem chi tiết điểm danh', onClick: () => setAttShiftId(String(r.id)) }] : []),
-                              ...(isAbsentShiftRecord(r) ? [{ key: 'adj', icon: <FileAddOutlined style={{ color: '#DC2626' }} />, label: 'Tạo phiếu bổ sung công', onClick: () => setDetailTarget({ kind: 'shift', record: { ...r, employeeId: empId } }) }] : []),
-                              ...(r.status === 'DRAFT' && !r.checkInEvent ? [{ key: 'cancel', icon: <DeleteOutlined />, danger: true, label: 'Hủy đăng ký ca chờ duyệt', onClick: () => cancelShiftMut.mutate([String(r.id)]) }] : []),
-                            ]}
-                          />
-                        ),
-                      },
-                    ]}
-                  />
+                  <EmployeeShiftsTable shifts={shifts} empId={empId} refreshing={refreshing} onViewDetail={(record) => setDetailTarget({ kind: 'shift', record })} onViewAttendance={setAttShiftId} onRefresh={onRefresh} />
                 )}
               </Space>
             ),
           },
           {
             key: 'leaves',
-            label: <span><CalendarOutlined /> Đơn nghỉ OFF ({leaves.length + emergencyLeaves.length})</span>,
-            children: (
-              <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                <Space size={8} wrap>
-                  <Tag color="blue" style={{ margin: 0, fontWeight: 600 }}>Định mức nghỉ OFF đã đăng ký: {usedOffCount} / {offQuotaLimit} ngày trong chu kỳ</Tag>
-                </Space>
-                <SelectableTable<Record<string, unknown>>
-                  size="small" rowKey="id" loading={refreshing} pagination={leavesPag} dataSource={leaves}
-                  bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportLeavesExcel(rows) }]}
-                  locale={{ emptyText: 'Bạn chưa có đơn đăng ký nghỉ phép (OFF) nào trong kỳ.' }}
-                  columns={[
-                    { title: 'Mã đơn', dataIndex: 'request_code', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
-                    { title: 'Ngày xin nghỉ', dataIndex: 'leave_date', width: 120, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 235, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
-                    { title: 'Lý do & Phản hồi / Từ chối', render: (_, r) => <div><div>{String(r.reason || '—')}</div>{Boolean(r.decision_reason) && <div style={{ fontSize: 11, color: r.status === 'REJECTED' ? '#DC2626' : '#15803D', marginTop: 2 }}>{r.status === 'REJECTED' ? 'Lý do từ chối: ' : 'Phản hồi: '}{String(r.decision_reason)}</div>}</div> },
-                    { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (v: string) => <StatusTag value={v} /> },
-                    { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết đơn nghỉ OFF" onViewDetail={() => setDetailTarget({ kind: 'leave', record: r })} /> },
-                  ]}
-                />
-                {emergencyLeaves.length > 0 && (
-                  <SelectableTable<Record<string, unknown>>
-                    size="small" rowKey="id" loading={refreshing} pagination={emgPag} dataSource={emergencyLeaves}
-                    bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportEmergencyExcel(rows) }]}
-                    title={() => <span style={{ fontWeight: 600, fontSize: 13 }}>Báo cáo nghỉ khẩn cấp sát giờ ca (&lt;12h)</span>}
-                    columns={[
-                      { title: 'Mã báo cáo', dataIndex: 'emergency_code', width: 110, render: (v: string) => <Tag color="volcano" style={{ margin: 0 }}>{v}</Tag> },
-                      { title: 'Ngày nghỉ', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
-                      { title: 'Khung ca & Giờ ca', width: 235, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
-                      { title: 'Người thay / Tình trạng phủ ca', render: (_, r) => <Tag color={r.shift_coverage_status === 'COVERED' || r.status === 'RESOLVED' ? 'green' : 'volcano'} style={{ margin: 0 }}>{r.replacementName ? `Người thay: ${String(r.replacementName)}` : r.shift_coverage_status === 'COVERED' || r.status === 'RESOLVED' ? 'Đã có người thay ca' : 'Ca chưa được phủ — Đang tìm người thay'}</Tag> },
-                      { title: 'Trạng thái', dataIndex: 'status', width: 145, render: (v: string) => <StatusTag value={v} /> },
-                      { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết báo nghỉ khẩn" onViewDetail={() => setDetailTarget({ kind: 'emergency', record: r })} /> },
-                    ]}
-                  />
-                )}
-              </Space>
-            ),
+            label: <span><CalendarOutlined /> Đơn nghỉ OFF ({leaves.length})</span>,
+            children: <EmployeeLeavesTable leaves={leaves} quotaText={quotaText} refreshing={refreshing} onViewDetail={(record) => setDetailTarget({ kind: 'leave', record })} onRefresh={onRefresh} />,
           },
           {
             key: 'swaps',
-            label: <span><SwapOutlined /> Yêu cầu đổi ca ({swaps.length})</span>,
-            children: (
-              <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                <SelectableTable<Record<string, unknown>>
-                  size="small" rowKey="id" loading={refreshing} pagination={swapsPag} dataSource={swaps}
-                  bulkActions={[
-                    { key: 'accept', label: 'Đồng ý nhận ca đã chọn', type: 'primary', icon: <CheckCircleOutlined />, loading: peerRespondMut.isPending, eligibleFilter: (r) => r.status === 'PENDING_PEER' && (r.peer_id === empId || r.peerCode === empCode), onClick: (rows) => confirmWorkflowShiftOverride(modal, 'swap', rows, () => peerRespondMut.mutate(rows.map((r) => ({ id: String(r.id), version: Number(r.version), accept: true })))) },
-                    { key: 'reject', label: 'Từ chối nhận ca đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: peerRespondMut.isPending, eligibleFilter: (r) => r.status === 'PENDING_PEER' && (r.peer_id === empId || r.peerCode === empCode), onClick: (rows) => peerRespondMut.mutate(rows.map((r) => ({ id: String(r.id), version: Number(r.version), accept: false }))) },
-                    { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportSwapsExcel(rows) },
-                  ]}
-                  locale={{ emptyText: 'Bạn chưa có yêu cầu đổi ca nội bộ nào. Bấm nút "Đổi ca" phía trên để gửi đề nghị đổi ca với đồng nghiệp.' }}
-                  columns={[
-                    { title: 'Mã đơn', dataIndex: 'swap_code', width: 115, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
-                    { title: 'Ngày ca', dataIndex: 'from_work_date', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> },
-                    { title: 'Khung ca & Giờ ca', width: 255, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
-                    { title: 'Người xin đổi', width: 195, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.requesterName || '')}</span>{(r.requester_id === empId || r.requesterCode === empCode) && <Tag color="blue" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
-                    { title: 'Người nhận ca', width: 185, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.peerName || '')}</span>{(r.peer_id === empId || r.peerCode === empCode) && <Tag color="cyan" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
-                    { title: 'Tiến trình & Trạng thái', dataIndex: 'status', width: 255, render: (v: string, r) => <Space size={4} wrap><StatusTag value={v} /><Tag color={v === 'APPROVED' ? 'green' : v === 'PEER_ACCEPTED' ? 'blue' : v === 'REJECTED' ? 'red' : 'gold'} style={{ margin: 0 }}>{v === 'APPROVED' ? 'Bước 3/3: Đã cập nhật lịch' : v === 'PEER_ACCEPTED' ? 'Bước 2/3: Chờ CH/HR duyệt' : v === 'REJECTED' ? 'Đã từ chối' : 'Bước 1/3: Chờ NV B xác nhận'}</Tag>{renderSwapAllowanceTag(r, true)}</Space> },
-                    {
-                      title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
-                      render: (_, r) => {
-                        const isPeer = r.peer_id === empId || r.peerCode === empCode;
-                        return (
-                          <RowActionButtons
-                            detailTooltip="Xem chi tiết yêu cầu đổi ca" onViewDetail={() => setDetailTarget({ kind: 'swap', record: r })} loading={peerRespondMut.isPending}
-                            menuItems={r.status === 'PENDING_PEER' && isPeer ? [
-                              { key: 'accept', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Đồng ý nhận ca thay', onClick: () => confirmWorkflowShiftOverride(modal, 'swap', [r], () => peerRespondMut.mutate([{ id: String(r.id), version: Number(r.version), accept: true }])) },
-                              { key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối nhận ca thay', onClick: () => peerRespondMut.mutate([{ id: String(r.id), version: Number(r.version), accept: false }]) },
-                            ] : []}
-                          />
-                        );
-                      },
-                    },
-                  ]}
-                />
-              </Space>
-            ),
+            label: <span><SwapOutlined /> Nhường / Đổi ca ({swaps.length})</span>,
+            children: <EmployeeSwapsTable swaps={swaps} empId={empId} empCode={empCode} refreshing={refreshing} onViewDetail={(record) => setDetailTarget({ kind: 'swap', record })} onRefresh={onRefresh} />,
           },
         ].filter((it) => mode === 'all' || it.key === mode)}
       />
 
       <ScheduleRequestDetailModal target={detailTarget} onClose={() => setDetailTarget(null)} />
       <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
-      <MyShiftRegisterModal open={addShiftOpen} todayDate={todayDate} onClose={() => setAddShiftOpen(false)} onCreated={onRefresh} />
-      <LeaveRequestModal open={leaveOpen} employeeId={empId} onClose={() => setLeaveOpen(false)} onSuccess={onRefresh} />
-      <ShiftSwapRequestModal open={swapOpen} employeeId={empId} shifts={shifts} peers={branchPeers} onClose={() => setSwapOpen(false)} onSuccess={onRefresh} />
+      {canRegister && <MyShiftRegisterModal open={addShiftOpen} todayDate={todayDate} onClose={() => setAddShiftOpen(false)} onCreated={onRefresh} />}
+      <LeaveRequestModal open={leaveOpen} employeeId={empId} stage={stage} onClose={() => setLeaveOpen(false)} onSuccess={onRefresh} />
+      <ShiftSwapRequestModal open={swapOpen} employeeId={empId} stage={stage} shifts={shifts} peers={branchPeers} onClose={() => setSwapOpen(false)} onSuccess={onRefresh} />
     </>
   );
 }

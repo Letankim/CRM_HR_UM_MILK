@@ -1,4 +1,4 @@
-import { DEFAULT_SHIFT_LABELS, type Employee, type ShiftAssignment, type StaffingRule } from '@umbm/shared';
+import { DEFAULT_SHIFT_LABELS, type Employee, type StaffingRule } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs } from '../lib/time.js';
@@ -6,27 +6,9 @@ import { findBranchShiftTemplate, resolveEmployeeBranchId } from '../routes/acco
 import { parseHm } from '../routes/attendance-helpers.js';
 import { getVnNowDateAndHm } from './shift-absent-scanner.js';
 
-export const CHECKOUT_GRACE_MINUTES = 60;
-
-export function assertApprovedShiftNoteOnlyPatch(
-  before: ShiftAssignment,
-  body: { employee_id?: string; work_date?: string; shift_code?: string; status?: string; day_type?: string; scheduled_hours?: number },
-  origEmpId?: string,
-  origEmpCode?: string,
-): void {
-  if (before.status === 'DRAFT') return;
-  const allowedEmpIds = new Set([before.employee_id, origEmpId, origEmpCode].filter(Boolean) as string[]);
-  const changedCore =
-    (body.employee_id !== undefined && !allowedEmpIds.has(body.employee_id)) ||
-    (body.work_date !== undefined && body.work_date !== before.work_date) ||
-    (body.shift_code !== undefined && body.shift_code !== before.shift_code) ||
-    (body.day_type !== undefined && body.day_type !== before.day_type) ||
-    (body.scheduled_hours !== undefined && Number(body.scheduled_hours) !== Number(before.scheduled_hours)) ||
-    (body.status !== undefined && body.status !== before.status);
-  if (changedCore) {
-    throw Errors.badRequest('Ca làm việc này đã được phê duyệt nên chỉ được phép chỉnh sửa Ghi chú phân ca hoặc xóa phân ca; không thể thay đổi nhân sự, ngày, khung ca, giờ công hay trạng thái.');
-  }
-}
+import { getCheckoutGraceMinutes } from './checkout-grace.js';
+export { formatGraceLabel, getCheckoutGraceMinutes, setCheckoutGraceMinutes } from './checkout-grace.js';
+export { assertApprovedShiftNoteOnlyPatch } from './schedule-rules.js';
 
 export interface ShiftCheckoutWindow {
   isPastEnd: boolean;
@@ -50,7 +32,7 @@ export function getShiftCheckoutWindow(
   const startDt = dayjs(`${workDate}T${safeStart}:00`);
   const rawEndDt = dayjs(`${workDate}T${safeEnd}:00`);
   const endDt = parseHm(safeEnd) <= parseHm(safeStart) ? rawEndDt.add(1, 'day') : rawEndDt;
-  const graceEndDt = endDt.add(CHECKOUT_GRACE_MINUTES, 'minute');
+  const graceEndDt = endDt.add(getCheckoutGraceMinutes(), 'minute');
   const nowDt = dayjs(`${vn.todayStr}T${vn.nowHm}:00`);
 
   const isPastEnd = nowDt.isAfter(endDt);

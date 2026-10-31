@@ -21,9 +21,22 @@ export class TableStore<T extends BaseRecord> {
   private insertBuffer: PendingInsert<T>[] = [];
   private flushScheduled = false;
 
-  constructor(private readonly gateway: SheetsGateway, private readonly queue: WriteQueue, private readonly opts: TableStoreOptions<T>) {}
+  constructor(private readonly gateway: SheetsGateway, private readonly queue: WriteQueue, private opts: TableStoreOptions<T>) {}
 
   get name(): string { return `${this.opts.spreadsheetKey}.${this.opts.tab}`; }
+  get tab(): string { return this.opts.tab; }
+  get spreadsheetId(): string { return this.opts.spreadsheetId; }
+
+  /** Chuyển bảng sang tab khác (phân vùng tháng): tự tạo tab + header, chờ hàng đợi ghi rồi nạp lại cache. */
+  async switchTab(tab: string): Promise<void> {
+    if (tab === this.opts.tab && this.loadedAt) return;
+    await this.queue.enqueue(this.opts.spreadsheetId, async () => {
+      await this.gateway.ensureTab(this.opts.spreadsheetId, tab, this.opts.headers);
+      this.opts = { ...this.opts, tab };
+      this.entries = new Map(); this.pendingEntries = new Map(); this.loadedAt = null; this.lastLoadedMs = 0;
+    });
+    await this.load();
+  }
 
   async load(): Promise<void> {
     if (this.loadInFlight) return this.loadInFlight;
@@ -76,8 +89,7 @@ export class TableStore<T extends BaseRecord> {
   async refreshIfIdle(cooldownMs = 12_000): Promise<boolean> {
     if (this.opts.cacheRows === false || !this.queue.isIdle(this.opts.spreadsheetId)) return false;
     if (this.lastLoadedMs > 0 && Date.now() - this.lastLoadedMs < cooldownMs) return false;
-    await this.load();
-    return true;
+    await this.load(); return true;
   }
 
   all(includeDeleted = false): T[] {
@@ -87,10 +99,7 @@ export class TableStore<T extends BaseRecord> {
     return out;
   }
 
-  get(id: string): T | undefined {
-    const d = this.entries.get(id)?.data ?? this.pendingEntries.get(id);
-    return d && !d.is_deleted ? d : undefined;
-  }
+  get(id: string): T | undefined { const d = this.entries.get(id)?.data ?? this.pendingEntries.get(id); return d && !d.is_deleted ? d : undefined; }
 
   find(predicate: (row: T) => boolean): T | undefined {
     for (const e of this.entries.values()) if (!e.data.is_deleted && predicate(e.data)) return e.data;
@@ -98,9 +107,7 @@ export class TableStore<T extends BaseRecord> {
     return undefined;
   }
 
-  filter(predicate: (row: T) => boolean): T[] {
-    return this.all().filter(predicate);
-  }
+  filter(predicate: (row: T) => boolean): T[] { return this.all().filter(predicate); }
 
   async insert(input: InsertInput<T>, actorId: string): Promise<T> {
     const now = nowIso(), createdAt = input.created_at || now, updatedAt = input.updated_at || createdAt;
@@ -193,13 +200,8 @@ export class TableStore<T extends BaseRecord> {
     });
   }
 
-  async softDelete(id: string, expectedVersion: number, actorId: string): Promise<T> {
-    return this.update(id, expectedVersion, { is_deleted: true } as unknown as UpdatePatch<T>, actorId);
-  }
-
-  async restore(id: string, expectedVersion: number, actorId: string): Promise<T> {
-    return this.update(id, expectedVersion, { is_deleted: false } as unknown as UpdatePatch<T>, actorId);
-  }
+  async softDelete(id: string, expectedVersion: number, actorId: string): Promise<T> { return this.update(id, expectedVersion, { is_deleted: true } as unknown as UpdatePatch<T>, actorId); }
+  async restore(id: string, expectedVersion: number, actorId: string): Promise<T> { return this.update(id, expectedVersion, { is_deleted: false } as unknown as UpdatePatch<T>, actorId); }
 
   stats() {
     return { table: this.name, rows: this.entries.size, invalidRows: this.invalid.length, invalid: this.invalid.slice(0, 20), loadedAt: this.loadedAt };

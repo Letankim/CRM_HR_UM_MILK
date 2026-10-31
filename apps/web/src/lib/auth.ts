@@ -136,3 +136,8 @@ export function useLogout(app: AppKind) {
 export function isUnauthorized(error: unknown) {
   return error instanceof ApiClientError && error.status === 401;
 }
+
+/** Lỗi 403 do tài khoản đang bị bắt buộc đổi mã PIN / mật khẩu trước khi dùng tiếp hệ thống */
+export function isPinChangeRequired(error: unknown) {
+  return error instanceof ApiClientError && error.status === 403 && error.code === 'PIN_CHANGE_REQUIRED';
+}

@@ -94,10 +94,12 @@ async function main() {
       },
       async uploadAttendancePhoto(params) {
         if (!env.DRIVE_ROOT_FOLDER_ID) throw new Error('Thiếu cấu hình DRIVE_ROOT_FOLDER_ID');
-        const cacheKey = `att:${params.monthFolder}`;
+        const rootName = params.rootFolder === 'EVIDENCE' ? DRIVE_FOLDERS.ADJUSTMENT_EVIDENCE : DRIVE_FOLDERS.ATTENDANCE_PHOTOS;
+        const segments = params.folderSegments?.length ? params.folderSegments : [params.monthFolder];
+        const cacheKey = `att:${rootName}/${segments.join('/')}`;
         let folderId = driveFolderCache.get(cacheKey);
         if (!folderId) {
-          folderId = await ensureFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, [DRIVE_FOLDERS.ATTENDANCE_PHOTOS, params.monthFolder]);
+          folderId = await ensureFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, [rootName, ...segments]);
           driveFolderCache.set(cacheKey, folderId);
         }
         const uploaded = await uploadFile(clients.drive, { name: params.fileName, mimeType: params.mimeType, parentId: folderId, data: params.data });

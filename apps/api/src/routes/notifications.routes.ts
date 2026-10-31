@@ -98,8 +98,7 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
       if (n.entity_type === 'LEAVE_ROLE') { const l = ctx.db.leaveRequests.get(rawId); return checkEmp(l?.employee_id, l?.branch_id, l?.created_by); }
       if (n.entity_type === 'SHIFT_DRAFT_ROLE') { const a = ctx.db.shiftAssignments.get(rawId); return checkEmp(a?.employee_id, a?.branch_id, a?.created_by); }
       if (n.entity_type === 'SWAP_STORE') { const s = ctx.db.shiftSwaps.get(rawId); return checkEmp(s?.requester_id, s?.branch_id, s?.created_by); }
-      if (n.entity_type === 'EMG_STORE') { const e = ctx.db.emergencyLeaves.get(rawId); return checkEmp(e?.employee_id, e?.branch_id, e?.created_by); }
-      return { branchId: n.branch_id || 'ALL', isBoOrHr: false };
+        return { branchId: n.branch_id || 'ALL', isBoOrHr: false };
     };
     const allRows = ctx.db.notifications.all();
     const dedupNewest: { row: NotificationRow; sheetIdx: number; eventTime: string; eventMs: number }[] = [];

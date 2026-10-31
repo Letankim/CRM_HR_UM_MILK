@@ -1,36 +1,26 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { normalizePhone, ROLE_LABELS, zLoginRequest } from '@umbm/shared';
+import { isEmployeeRole, normalizePhone, PIN_REGEX, zLoginRequest } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { toPublicUser } from '../auth/auth.service.js';
 import { hashSecret, verifySecret } from '../auth/password.js';
 import { ACCESS_COOKIE, ACCESS_TTL_SECONDS, REFRESH_COOKIE, REFRESH_TTL_SECONDS, SESSION_MARKER_COOKIE, type TokenClaims } from '../auth/tokens.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
+import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth } from '../plugins/auth-context.js';
-import { assertUniquePersonalIdentifiers } from './employee-mapper.js';
-
-const zUpdateProfileBody = z.object({
-  display_name: z.string().trim().min(2, 'Họ và tên hiển thị tối thiểu 2 ký tự').max(100),
-  phone: z.string().trim().optional().default(''),
-  email: z.string().trim().optional().default(''),
-  current_address: z.string().trim().max(300).optional().default(''),
-  emergency_contact_name: z.string().trim().max(100).optional().default(''),
-  emergency_contact_phone: z.string().trim().max(20).optional().default(''),
-  bank_name: z.string().trim().max(100).optional().default(''),
-  bank_account_number: z.string().trim().max(50).optional().default(''),
-  bank_account_holder: z.string().trim().max(100).optional().default(''),
-});
+import { registerAuthProfileRoutes } from './auth-profile.routes.js';
 
 const zChangePasswordBody = z.object({
   current_secret: z.string().min(1, 'Vui lòng nhập mật khẩu hoặc mã PIN hiện tại'),
-  new_secret: z.string().min(6, 'Mật khẩu / Mã PIN mới tối thiểu 6 ký tự').max(128),
+  new_secret: z.string().min(6, 'Mật khẩu / Mã PIN mới tối thiểu 6 ký tự').max(128, 'Mật khẩu tối đa 128 ký tự'),
   confirm_secret: z.string().min(6, 'Vui lòng xác nhận lại mật khẩu / mã PIN mới').max(128),
 });
 
 export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
   const cookieBase = { httpOnly: true, secure: ctx.env.COOKIE_SECURE, sameSite: 'lax' as const, path: '/' };
-  const toResolvedPublicUser = (u: Parameters<typeof toPublicUser>[0]) => ({ ...toPublicUser(u), branchScope: ctx.auth.resolveEffectiveBranchScope(u) });
+  const toResolvedPublicUser = (u: Parameters<typeof toPublicUser>[0]) => ({ ...toPublicUser(u, ctx.auth.resolvePinState(u)), branchScope: ctx.auth.resolveEffectiveBranchScope(u) });
+  const maskName = (name: string) => name.split(' ').map((w, i, arr) => (i === arr.length - 1 ? w : `${w.charAt(0)}.`)).join(' ');
 
   async function issueSession(reply: FastifyReply, claims: TokenClaims): Promise<string> {
     const [access, refresh] = await Promise.all([ctx.tokens.signAccess(claims), ctx.tokens.signRefresh(claims)]);
@@ -58,6 +48,23 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
         { action: 'auth.login', entity: 'USERS', entityId: user.id, after: { app: appKind } },
       );
       return sendSuccess(request, 'Đăng nhập hệ thống thành công', { user: toResolvedPublicUser(user), socketToken });
+    },
+  );
+
+  app.post(
+    '/api/auth/employee/lookup',
+    { config: { rateLimit: { max: ctx.env.NODE_ENV === 'test' ? 200 : 15, timeWindow: '1 minute' } } },
+    async (request) => {
+      const { phone } = z.object({ phone: z.string().trim().min(1, 'Vui lòng nhập số điện thoại đăng nhập') }).parse(request.body ?? {});
+      const normalized = normalizePhone(phone);
+      if (!normalized) throw Errors.fieldValidation('phone', 'INVALID_PHONE', 'Số điện thoại phải gồm 10 chữ số và bắt đầu bằng số 0', phone);
+      const user = ctx.auth.findEmployeePortalUserByPhone(normalized);
+      if (!user || user.role === 'MKT') throw Errors.fieldValidation('phone', 'INVALID_VALUE', 'Số điện thoại chưa được cấp tài khoản Cổng Nhân viên. Vui lòng liên hệ Phòng Nhân sự.', phone);
+      if (user.status === 'PENDING_ACTIVATION') throw Errors.forbidden('Tài khoản đang chờ Quản trị viên kích hoạt, vui lòng thử lại sau');
+      if (user.status !== 'ACTIVE') throw Errors.forbidden('Tài khoản đã bị khóa hoặc thu hồi, vui lòng liên hệ Phòng Nhân sự');
+      return sendSuccess(request, 'Số điện thoại hợp lệ, vui lòng nhập mã PIN 6 số', {
+        phone: normalized, maskedPhone: `${normalized.slice(0, 4)}***${normalized.slice(-3)}`, displayName: maskName(user.display_name), pinLength: 6,
+      });
     },
   );
 
@@ -103,97 +110,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
     });
   });
 
-  app.get('/api/auth/profile', { preHandler: requireAuth() }, async (request) => {
-    const user = request.auth!.user;
-    const emp = ctx.db.employees.find(
-      (e) => e.user_id === user.id || Boolean(user.employee_id && (e.employee_code === user.employee_id || e.id === user.employee_id)),
-    );
-    const branch = emp ? ctx.db.branches.get(emp.branch_id) : undefined;
-    return sendSuccess(request, 'Lấy thông tin hồ sơ cá nhân thành công', {
-      id: user.id,
-      version: user.version,
-      username: user.username,
-      displayName: user.display_name,
-      phone: user.phone || emp?.phone || '',
-      email: user.email || emp?.email || '',
-      role: user.role,
-      roleLabel: ROLE_LABELS[user.role],
-      employeeId: emp?.id ?? null,
-      employeeCode: emp?.employee_code ?? (user.employee_id || null),
-      branchName: branch?.name ?? 'Toàn hệ thống',
-      currentAddress: emp?.current_address ?? '',
-      emergencyContactName: emp?.emergency_contact_name ?? '',
-      emergencyContactPhone: emp?.emergency_contact_phone ?? '',
-      bankName: emp?.bank_name ?? 'Techcombank',
-      bankAccountNumber: emp?.bank_account_number ?? '',
-      bankAccountHolder: emp?.bank_account_holder ?? user.display_name.toUpperCase(),
-    });
-  });
-
-  app.put('/api/auth/profile', { preHandler: requireAuth() }, async (request) => {
-    const user = request.auth!.user;
-    const body = zUpdateProfileBody.parse(request.body);
-    const emp = ctx.db.employees.find(
-      (e) => e.user_id === user.id || Boolean(user.employee_id && (e.employee_code === user.employee_id || e.id === user.employee_id)),
-    );
-    let normalizedPhone = '';
-    if (body.phone) {
-      const p = normalizePhone(body.phone);
-      if (!p) throw Errors.fieldValidation('phone', 'INVALID_PHONE', 'Định dạng số điện thoại không hợp lệ (gồm 10 chữ số bắt đầu bằng số 0)', body.phone);
-      normalizedPhone = p;
-    }
-    if (body.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
-      throw Errors.fieldValidation('email', 'INVALID_EMAIL', 'Định dạng địa chỉ email không hợp lệ', body.email);
-    }
-    assertUniquePersonalIdentifiers(ctx, {
-      phone: normalizedPhone || undefined,
-      phoneField: 'phone',
-      email: body.email || undefined,
-      bank_account_number: body.bank_account_number || undefined,
-      excludeUserId: user.id,
-      excludeEmployeeId: emp?.id ?? null,
-    });
-
-    const updatedUser = await ctx.db.users.update(
-      user.id,
-      user.version,
-      {
-        display_name: body.display_name,
-        phone: normalizedPhone || user.phone,
-        email: body.email || user.email,
-      },
-      user.id,
-    );
-
-    if (emp) {
-      await ctx.db.employees.update(
-        emp.id,
-        emp.version,
-        {
-          full_name: body.display_name,
-          phone: normalizedPhone || emp.phone,
-          email: body.email || emp.email,
-          current_address: body.current_address || emp.current_address,
-          emergency_contact_name: body.emergency_contact_name,
-          emergency_contact_phone: body.emergency_contact_phone ? normalizePhone(body.emergency_contact_phone) || body.emergency_contact_phone : '',
-          bank_name: body.bank_name || emp.bank_name,
-          bank_account_number: body.bank_account_number,
-          bank_account_holder: body.bank_account_holder || body.display_name.toUpperCase(),
-        },
-        user.id,
-      );
-    }
-
-    await ctx.audit.record(auditContext(request), {
-      action: 'auth.profile.update',
-      entity: 'USERS',
-      entityId: user.id,
-      before: { display_name: user.display_name, phone: user.phone, email: user.email },
-      after: { display_name: updatedUser.display_name, phone: updatedUser.phone, email: updatedUser.email },
-    });
-
-    return sendSuccess(request, 'Đã cập nhật thông tin cá nhân thành công', { user: toResolvedPublicUser(updatedUser) });
-  });
+  registerAuthProfileRoutes(app, ctx, toResolvedPublicUser);
 
   app.put('/api/auth/password', { preHandler: requireAuth() }, async (request) => {
     const user = request.auth!.user;
@@ -205,14 +122,15 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!ok) {
       throw Errors.fieldValidation('current_secret', 'INVALID_VALUE', 'Mật khẩu / Mã PIN hiện tại không chính xác', '***');
     }
+    if (isEmployeeRole(user.role) && !PIN_REGEX.test(body.new_secret)) {
+      throw Errors.fieldValidation('new_secret', 'INVALID_FORMAT', 'Mã PIN mới phải gồm đúng 6 chữ số', '******');
+    }
+    if (await verifySecret(user.password_hash, body.new_secret)) {
+      throw Errors.fieldValidation('new_secret', 'INVALID_VALUE', 'Mã PIN / mật khẩu mới phải khác mã hiện tại', '******');
+    }
     const nextHash = await hashSecret(body.new_secret);
-    await ctx.db.users.update(
-      user.id,
-      user.version,
-      { password_hash: nextHash, ...( /^\d{6}$/.test(body.new_secret) ? { pin_hash: nextHash } : {} ) },
-      user.id,
-    );
+    const updated = await ctx.db.users.update(user.id, user.version, { password_hash: nextHash, must_change_pin: false, pin_changed_at: nowIso() }, user.id);
     await ctx.audit.record(auditContext(request), { action: 'auth.password.change', entity: 'USERS', entityId: user.id });
-    return sendSuccess(request, 'Đã đổi mật khẩu / mã PIN bảo mật thành công', { ok: true });
+    return sendSuccess(request, 'Đã đổi mật khẩu / mã PIN bảo mật thành công', { ok: true, user: toResolvedPublicUser(updated) });
   });
 }

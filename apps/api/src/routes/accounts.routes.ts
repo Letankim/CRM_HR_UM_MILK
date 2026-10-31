@@ -9,8 +9,10 @@ import {
   PERMISSION_LABELS,
   ROLES,
   ROLE_LABELS,
+  isEmployeeRole,
   isPermissionForbiddenForRole,
   normalizePhone,
+  PIN_REGEX,
   zListQueryBase,
   type Permission,
   type Role,
@@ -160,6 +162,7 @@ export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
       if (!norm) throw Errors.fieldValidation('phone_number', 'INVALID_PHONE', 'Định dạng số điện thoại không hợp lệ', body.phone_number);
       normalizedPhone = norm;
     }
+    if (isEmployeeRole(body.role) && !PIN_REGEX.test(body.secret)) throw Errors.fieldValidation('secret', 'INVALID_FORMAT', 'Mã PIN đăng nhập của nhân viên phải gồm đúng 6 chữ số', '******');
     const extraPerms = sanitizeExtraPermissions(body.role, body.extra_permissions);
     const targetEmp = body.employee_id
       ? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === body.employee_id.trim().toUpperCase() || e.id === body.employee_id)
@@ -188,7 +191,7 @@ export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
         branch_scope: effectiveBranchScope, employee_id: resolvedEmployeeCode || '',
         status: 'PENDING_ACTIVATION', session_version: 1, failed_login_count: 0, locked_until: '',
         last_login_at: '', activated_by: '', activated_at: '', revoked_at: '',
-        email: body.email || targetEmp?.email || '', revoked_by: '', revoke_reason: '',
+        email: body.email || targetEmp?.email || '', revoked_by: '', revoke_reason: '', must_change_pin: true, pin_changed_at: '',
       },
       actorId,
     );

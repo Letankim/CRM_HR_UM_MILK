@@ -7,15 +7,14 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
-import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
-import { getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
-import { queueAttendanceAdjustmentCreatedEmail, queueAttendanceAdjustmentDecidedEmails } from '../services/action-email-dispatcher.js';
-import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
-import { applyApprovedAdjustmentToShift, assertNoDuplicateAdjustment, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
-import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
-import { buildPaginatedAttendanceSessions, calculateHaversineMeters, describePunctuality, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto } from './attendance-helpers.js';
+import { formatGraceLabel, getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
+import { getOperationSettings } from '../services/operations-settings.service.js';
+import { getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
+import { healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
+import { buildPaginatedAttendanceSessions, buildShiftFolderName, calculateHaversineMeters, describePunctuality, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto } from './attendance-helpers.js';
 import { registerShiftAttendanceDetailRoute } from './attendance-shift-detail.js';
+import { registerAttendanceAdjustmentRoutes } from './attendance-adjustments.routes.js';
 export { calculateHaversineMeters } from './attendance-helpers.js';
 
 const zCheckInOutBody = z.object({
@@ -29,17 +28,9 @@ const zUpdateAttendanceEventBody = z.object({
   version: z.coerce.number().int().min(1), type: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(), work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   shift_code: z.string().trim().optional(), check_time_hm: z.string().regex(/^\d{2}:\d{2}$/).optional(), distance_m: z.coerce.number().int().min(0).max(5000).optional(), note: z.string().trim().max(300).optional(),
 });
-const zCreateAdjustmentBody = z.object({
-  employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'), assignment_id: z.string().trim().optional().default(''), event_id: z.string().trim().optional().default(''),
-  work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng ngày YYYY-MM-DD'), shift_code: z.string().default('CA_SANG'),
-  kind: z.enum(['FORGOT_CHECK_IN', 'FORGOT_CHECK_OUT', 'GPS_ERROR', 'CAMERA_ERROR', 'OTHER']).default('FORGOT_CHECK_OUT'),
-  requested_check_in_at: z.string().default('07:00'), requested_check_out_at: z.string().default('12:00'), requested_hours: z.coerce.number().min(0.5).max(24).default(5),
-  reason: z.string().trim().min(3, 'Vui lòng nhập lý do bổ sung / điều chỉnh công').max(300),
-});
-const zDecideAdjustmentBody = z.object({ version: z.coerce.number().int().min(1), action: z.enum(['STORE_CONFIRM', 'HR_APPROVE', 'HR_REJECT']), decision_reason: z.string().trim().max(300).optional().default('') });
-
 export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   registerShiftAttendanceDetailRoute(app, ctx);
+  registerAttendanceAdjustmentRoutes(app, ctx);
   app.get('/api/attendance/photos/:fileId', async (request, reply) => {
     const { fileId } = request.params as { fileId: string }, buf = await loadAttendancePhotoBuffer(ctx, fileId);
     if (!buf) throw Errors.notFound('Ảnh điểm danh trên Google Drive', fileId);
@@ -76,6 +67,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   app.post('/api/attendance/check', { preHandler: requireAuth() }, async (request, reply) => {
     if (request.auth!.user.role === 'MKT') throw Errors.forbidden('Tài khoản Truyền thông (MKT) không được phép truy cập chức năng điểm danh GPS');
     const body = zCheckInOutBody.parse(request.body);
+    getOperationSettings(ctx.db);
     const checkType = body.type ?? body.kind ?? 'CHECK_IN';
     const assign = ctx.db.shiftAssignments.get(body.assignment_id);
     if (!assign) throw Errors.fieldValidation('assignment_id', 'INVALID_VALUE', 'Không tìm thấy ca phân công', body.assignment_id);
@@ -103,7 +95,10 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
         throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'}) đã qua giờ kết thúc ca (hiện tại ${nowHm}) mà chưa vào ca nên hệ thống đã khóa điểm danh và chuyển sang Vắng mặt. Vui lòng làm Phiếu bổ sung công để bù ca.`);
       }
       if (checkType === 'CHECK_OUT' && hasIn && !hasOut && win.isCheckoutLocked) {
-        throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'}) đã quá thời hạn 1 giờ cho phép điểm danh Ra ca sau khi hết ca (hạn chót ${win.graceDeadlineHm}, hiện tại ${nowHm}). Vui lòng gửi Phiếu bổ sung công để xác nhận giờ ra ca.`);
+        throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'}) đã quá thời hạn ${formatGraceLabel()} cho phép chấm công Ra ca sau khi hết ca (hạn chót ${win.graceDeadlineHm}, hiện tại ${nowHm}). Vui lòng gửi Phiếu lỗi chấm công Ra ca kèm ảnh minh chứng để HR duyệt.`);
+      }
+      if (checkType === 'CHECK_OUT' && hasIn && !hasOut && !win.isPastEnd && (assign.work_date > todayStr || nowHm < (assign.end_at || '12:00'))) {
+        throw Errors.badRequest(`Chưa đến giờ kết thúc ca (${assign.end_at || '12:00'}). Theo quy định không được Ra ca sớm — chỉ được chấm công Ra ca từ ${assign.end_at || '12:00'} đến ${win.graceDeadlineHm}.`);
       }
       if (assign.work_date !== todayStr && !(checkType === 'CHECK_OUT' && hasIn && !hasOut && win.isWithinCheckoutGrace)) {
         throw Errors.fieldValidation('assignment_id', 'OUT_OF_RANGE', `Chỉ được phép điểm danh đúng ngày đăng ký ca (${dayjs(assign.work_date).format('DD/MM/YYYY')}). Hôm nay là ngày ${dayjs(todayStr).format('DD/MM/YYYY')}.`, assign.work_date);
@@ -124,7 +119,8 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const lateMinutes = checkType === 'CHECK_IN' ? (body.enforce_shift_state ? checkWin.lateCheckInMinutes : Math.max(0, parseHm(serverDt.format('HH:mm')) - parseHm(schedTime))) : 0;
     const earlyLeaveMinutes = checkType === 'CHECK_OUT' ? checkWin.earlyLeaveMinutes : 0;
     const punc = describePunctuality(checkType, lateMinutes, earlyLeaveMinutes);
-    const uploadedPhoto = await persistAttendancePhoto(ctx, { base64: body.photo_base64, employeeCode: empRecord.employee_code, checkType, workDate: assign.work_date });
+    const shiftMeta = resolveShiftTimeDetails(ctx, assign.shift_code, assign.id, branch.id);
+    const uploadedPhoto = await persistAttendancePhoto(ctx, { base64: body.photo_base64, employeeCode: empRecord.employee_code, checkType, workDate: assign.work_date, shiftFolder: buildShiftFolderName(shiftMeta.shiftLabel, assign.shift_code, assign.start_at, assign.end_at) });
 
     const created = await ctx.db.attendanceEvents.insert({
       idempotency_key: body.idempotency_key || `chk_${assign.id}_${checkType}_${Date.now()}`, employee_id: assign.employee_id, assignment_id: assign.id, branch_id: branch.id, type: checkType, server_time: serverNow,
@@ -164,57 +160,5 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     await ctx.db.attendanceEvents.softDelete(id, body.version ?? before.version, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'attendance.event.delete', entity: 'ATTENDANCE_EVENTS', entityId: id, before: { type: before.type, work_date: before.work_date } });
     return sendSuccess(request, 'Đã xóa bản ghi điểm danh', { id });
-  });
-  const handleGetAdjustments = async (request: Parameters<typeof sendPaginated>[0]) => {
-    const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), status: z.string().trim().optional() }).parse(request.query ?? {});
-    const scoped = filterByBranch(request, ctx.db.attendanceAdjustments.all(), (a) => resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id));
-    const mapped = scoped.map((a) => {
-      const emp = ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === a.employee_id), branch = (emp ? ctx.db.branches.get(emp.branch_id) : undefined) ?? ctx.db.branches.get(a.branch_id);
-      return { ...a, ...resolveShiftTimeDetails(ctx, a.shift_code, a.assignment_id), branch_id: branch?.id ?? a.branch_id, employeeCode: emp?.employee_code ?? a.employee_id, employeeName: emp ? `${emp.full_name} (${emp.employee_code})` : a.employee_id, branchName: branch?.name ?? 'Chi nhánh' };
-    }).filter((a) => (!query.branch_id || query.branch_id === 'ALL' || a.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || a.status === query.status));
-    return sendPaginated(request, 'Lấy danh sách phiếu bổ sung và điều chỉnh công thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'work_date', 'status'], q: query.q, searchExtractor: (i) => [i.adjustment_code, i.employeeCode, i.employeeName, i.reason, i.work_date], filters: { branch_id: query.branch_id, status: query.status } }));
-  };
-  app.get('/api/admin/attendance/adjustments', { preHandler: requirePermission('attendance.read', 'adjustment.approve', 'attendance.confirm', 'self.adjustment') }, handleGetAdjustments);
-  app.get('/api/admin/attendance-adjustments', { preHandler: requirePermission('attendance.read', 'adjustment.approve', 'attendance.confirm', 'self.adjustment') }, handleGetAdjustments);
-  app.post('/api/admin/attendance/adjustments', { preHandler: requireAuth() }, async (request, reply) => {
-    const body = zCreateAdjustmentBody.parse(request.body), emp = ctx.db.employees.get(body.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === body.employee_id);
-    if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy nhân sự', body.employee_id);
-    const caller = request.auth!.user, perms = request.auth!.permissions;
-    const isSelfEmp = emp.user_id === caller.id || Boolean(caller.employee_id && (emp.id === caller.employee_id || emp.employee_code === caller.employee_id));
-    if (!isSelfEmp && !perms.has('attendance.confirm') && !perms.has('adjustment.approve')) {
-      throw Errors.forbidden('Vai trò của bạn chỉ có quyền xem lịch và điểm danh, không được phép tạo phiếu bổ sung công cho nhân sự khác');
-    }
-    const matchedShift = (body.assignment_id ? ctx.db.shiftAssignments.get(body.assignment_id) : undefined) ?? ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.shift_code === body.shift_code);
-    const effectiveBranchId = resolveEmployeeBranchId(ctx, emp.id, matchedShift?.branch_id || emp.branch_id);
-    assertBranchAccess(request, effectiveBranchId);
-    assertDateNotLockedByPayroll(ctx.db, matchedShift?.work_date ?? body.work_date, 'tạo phiếu bổ sung công');
-    assertNoDuplicateAdjustment(ctx.db, emp, matchedShift?.id ?? body.assignment_id, matchedShift?.work_date ?? body.work_date, matchedShift?.shift_code ?? body.shift_code);
-    const shiftStart = matchedShift?.start_at || body.requested_check_in_at, shiftEnd = matchedShift?.end_at || body.requested_check_out_at, shiftHours = matchedShift?.scheduled_hours || body.requested_hours;
-    const created = await ctx.db.attendanceAdjustments.insert({
-      adjustment_code: `ADJ-${String(ctx.db.attendanceAdjustments.all(true).length + 1).padStart(4, '0')}`, event_id: body.event_id, assignment_id: matchedShift?.id ?? body.assignment_id, employee_id: emp.id, branch_id: effectiveBranchId,
-      work_date: matchedShift?.work_date ?? body.work_date, shift_code: matchedShift?.shift_code ?? body.shift_code, kind: body.kind, requested_time: shiftEnd, requested_check_in_at: shiftStart, requested_check_out_at: shiftEnd, requested_hours: shiftHours,
-      reason: body.reason, evidence_file_id: '', exception_source: 'EMPLOYEE', status: 'PENDING', store_confirmed_by: '', store_confirmed_at: '', store_note: '', hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
-    }, caller.id);
-    queueAttendanceAdjustmentCreatedEmail(ctx, created, caller.id);
-    await ensureSyncedNotifications(ctx);
-    await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.create', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: created.id, after: { adjustment_code: created.adjustment_code, assignment_id: created.assignment_id, requested_hours: created.requested_hours } });
-    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: effectiveBranchId, employeeIds: [emp.id], kind: 'ADJUSTMENT_CREATED', message: `${emp.full_name} (${emp.employee_code}) vừa gửi phiếu bổ sung công ${created.adjustment_code} ngày ${created.work_date} chờ duyệt`, actorId: caller.id });
-    return reply.code(201), sendSuccess(request, 'Đã tạo phiếu bổ sung / điều chỉnh công', created);
-  });
-
-  app.post('/api/admin/attendance/adjustments/:id/decide', { preHandler: requirePermission('attendance.confirm', 'adjustment.approve') }, async (request) => {
-    const { id } = request.params as { id: string }, body = zDecideAdjustmentBody.parse(request.body), before = ctx.db.attendanceAdjustments.get(id);
-    if (!before) throw Errors.notFound('Phiếu bổ sung công', id);
-    assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
-    assertDateNotLockedByPayroll(ctx.db, before.work_date, 'xử lý phiếu bổ sung công');
-    const actorId = request.auth!.user.id;
-    const patch = body.action === 'STORE_CONFIRM' ? { status: 'STORE_CONFIRMED' as const, store_confirmed_by: actorId, store_confirmed_at: nowIso(), store_note: body.decision_reason } : body.action === 'HR_APPROVE' ? { status: 'APPROVED' as const, hr_decision: 'APPROVED', decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), applied_to_record: true } : { status: 'REJECTED' as const, hr_decision: 'REJECTED', decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), applied_to_record: false };
-    const updated = await ctx.db.attendanceAdjustments.update(id, body.version, patch, actorId);
-    if (body.action === 'HR_APPROVE') await applyApprovedAdjustmentToShift(ctx.db, id, actorId);
-    queueAttendanceAdjustmentDecidedEmails(ctx, updated, body.action, actorId);
-    await ensureSyncedNotifications(ctx);
-    await ctx.audit.record(auditContext(request), { action: 'attendance.adjustment.decide', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: id, before: { status: before.status }, after: { status: updated.status, hr_decision: updated.hr_decision } });
-    emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: body.action === 'STORE_CONFIRM' ? 'ADJUSTMENT_STORE_CONFIRMED' : 'ADJUSTMENT_DECIDED', message: `Phiếu bổ sung công ${updated.adjustment_code} ngày ${updated.work_date} đã ${body.action === 'STORE_CONFIRM' ? 'được Cửa hàng xác nhận' : body.action === 'HR_APPROVE' ? 'được HR phê duyệt' : 'bị từ chối'}`, actorId });
-    return sendSuccess(request, body.action === 'STORE_CONFIRM' ? 'Cửa hàng đã xác nhận phiếu bổ sung công để chuyển HR duyệt' : body.action === 'HR_APPROVE' ? 'Đã phê duyệt phiếu bổ sung công và cập nhật trạng thái hoàn thành ca làm việc' : 'Đã từ chối phiếu bổ sung công', updated);
   });
 }

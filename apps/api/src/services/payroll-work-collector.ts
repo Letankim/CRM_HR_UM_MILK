@@ -14,7 +14,7 @@ export interface ShiftPayrollLog {
   shiftLabel: string;
   shiftTime: string;
   branchName?: string;
-  status: 'ATTENDANCE_FULL' | 'ATTENDANCE_CHECKIN' | 'ADJUSTMENT_APPROVED' | 'SCHEDULE_PUBLISHED' | 'LEAVE_OFF' | 'SWAPPED_OUT' | 'EMERGENCY_LEAVE' | 'ABSENT';
+  status: 'ATTENDANCE_FULL' | 'ATTENDANCE_CHECKIN' | 'ADJUSTMENT_APPROVED' | 'SCHEDULE_PUBLISHED' | 'LEAVE_OFF' | 'SWAPPED_OUT' | 'ABSENT';
   statusLabel: string;
   hours: number;
   otHours: number;
@@ -37,7 +37,6 @@ export interface CollectedWorkSummary {
   adjustedShiftsCount: number;
   scheduledOnlyShiftsCount: number;
   leaveOffCount: number;
-  emergencyLeaveCount: number;
   swappedOutCount: number;
   shiftLogs: ShiftPayrollLog[];
   source: keyof typeof PAYROLL_WORK_SOURCE_LABELS;
@@ -51,7 +50,7 @@ const cleanShiftLabel = (code: string) =>
  * 1. Lịch phân ca chính thức (SHIFT_ASSIGNMENTS)
  * 2. Sự kiện chấm công GPS Vào/Ra ca thực tế (ATTENDANCE_EVENTS)
  * 3. Phiếu bổ sung / điều chỉnh công đã duyệt (ATTENDANCE_ADJUSTMENTS)
- * 4. Đơn xin nghỉ phép OFF đã duyệt (LEAVE_REQUESTS) & Báo nghỉ đột xuất (EMERGENCY_LEAVES)
+ * 4. Đơn xin nghỉ phép OFF đã duyệt (LEAVE_REQUESTS)
  * 5. Yêu cầu đổi ca 3 bước đã duyệt (SHIFT_SWAPS)
  */
 export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, from: string, to: string): CollectedWorkSummary {
@@ -77,8 +76,6 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
   const swapsGivenOut = ctx.db.shiftSwaps.filter((s) => isEmp(s.requester_id) && !isEmp(s.peer_id) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && !isDeletedRef(s.from_assignment_id, s.from_work_date, s.from_shift_code));
   const swapsReceived = ctx.db.shiftSwaps.filter((s) => isEmp(s.peer_id) && !isEmp(s.requester_id) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && !isDeletedRef(s.from_assignment_id, s.from_work_date, s.from_shift_code));
   const receivedSwapAssignIds = new Set(swapsReceived.map((s) => s.from_assignment_id).filter(Boolean));
-  const myEmergencyLeaves = ctx.db.emergencyLeaves.filter((el) => isEmp(el.employee_id) && el.work_date >= from && el.work_date <= to && !isDeletedRef(el.assignment_id, el.work_date, el.shift_code));
-  const replacedEmergencies = ctx.db.emergencyLeaves.filter((el) => isEmp(el.replacement_id) && !isEmp(el.employee_id) && el.work_date >= from && el.work_date <= to && (el.status === 'REPLACEMENT_FOUND' || el.status === 'RESOLVED'));
 
   const empEvents = ctx.db.attendanceEvents.filter((e) => isEmp(e.employee_id) && e.work_date >= from && e.work_date <= to && !isDeletedRef(e.assignment_id, e.work_date, e.shift_code));
   const empAdjsAll = ctx.db.attendanceAdjustments.filter((a) => isEmp(a.employee_id) && a.work_date >= from && a.work_date <= to && !isDeletedRef(a.assignment_id, a.work_date, a.shift_code));
@@ -92,7 +89,7 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
   const entries: WorkEntry[] = [];
   const shiftLogs: ShiftPayrollLog[] = [];
   const usedAdjIds = new Set<string>(), usedLeaveDates = new Set<string>(), usedSwapOutIds = new Set<string>(), usedSwapInIds = new Set<string>();
-  let absentCount = 0, lateCount = 0, lateMinutesTotal = 0, checkedInShiftsCount = 0, adjustedShiftsCount = 0, scheduledOnlyShiftsCount = 0, emergencyLeaveCount = 0;
+  let absentCount = 0, lateCount = 0, lateMinutesTotal = 0, checkedInShiftsCount = 0, adjustedShiftsCount = 0, scheduledOnlyShiftsCount = 0;
   const { todayStr, nowHm } = getVnNowDateAndHm();
   const isVitest = Boolean(process.env.VITEST);
 
@@ -120,13 +117,6 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
       continue;
     }
 
-    const emg = myEmergencyLeaves.find((el) => el.assignment_id === a.id || (el.work_date === a.work_date && el.shift_code === a.shift_code));
-    if (emg && (emg.status === 'REPLACEMENT_FOUND' || emg.status === 'RESOLVED' || Boolean(emg.replacement_id)) && !checkIn && !checkOut && !adj) {
-      emergencyLeaveCount += 1;
-      shiftLogs.push({ assignmentId: a.id, date: a.work_date, shiftCode: a.shift_code, shiftLabel, shiftTime, branchName, status: 'EMERGENCY_LEAVE', statusLabel: `Nghỉ đột xuất (${emg.emergency_code})`, hours: 0, otHours: 0, isSwapIn: false, lateMinutes: 0, checkInHm: '', checkOutHm: '', note: emg.reason });
-      continue;
-    }
-
     if ((a.status === 'ABSENT' || isExpiredUnpunched) && !checkIn && !checkOut && !adj) {
       absentCount += 1;
       const absLabel = pendAdj ? `Vắng mặt · Chờ duyệt bù công (${pendAdj.adjustment_code})` : 'Vắng mặt không phép (Chưa chấm công Vào/Ra)';
@@ -138,8 +128,8 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
 
     const swapIn = swapsReceived.find((s) => s.from_assignment_id === a.id || (s.from_work_date === a.work_date && s.from_shift_code === a.shift_code));
     if (swapIn) usedSwapInIds.add(swapIn.id);
-    const isEmgRep = Boolean(a.replacement_for_employee_id || replacedEmergencies.some((el) => el.work_date === a.work_date && el.shift_code === a.shift_code));
-    const matchedSwap = swapIn ?? (a.swapped_from_employee_id ? ctx.db.shiftSwaps.find((s) => s.status === 'APPROVED' && (s.from_assignment_id === a.id || (s.from_work_date === a.work_date && s.from_shift_code === a.shift_code && isEmp(s.peer_id)))) : undefined);
+    const isEmgRep = Boolean(a.replacement_for_employee_id);
+    const matchedSwap = swapIn ?? (a.swapped_from_employee_id ? ctx.db.shiftSwaps.find((s) => s.status === 'APPROVED' && (s.from_assignment_id === a.id || s.to_assignment_id === a.id || (s.from_work_date === a.work_date && s.from_shift_code === a.shift_code && isEmp(s.peer_id)))) : undefined);
     const isSwap = Boolean(matchedSwap || a.swapped_from_employee_id || isEmgRep);
     const swapAllowanceVnd = !isSwap ? 0 : matchedSwap ? (matchedSwap.allowance_eligible ? Math.max(0, Math.round(Number(matchedSwap.allowance_amount_vnd ?? 0))) : 0) : SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd;
 
@@ -204,7 +194,7 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
   return {
     entries, absentCount, lateCount, lateMinutesTotal,
     checkedInShiftsCount, adjustedShiftsCount, scheduledOnlyShiftsCount,
-    leaveOffCount: approvedLeaves.length, emergencyLeaveCount, swappedOutCount: swapsGivenOut.length,
+    leaveOffCount: approvedLeaves.length, swappedOutCount: swapsGivenOut.length,
     shiftLogs, source,
   };
 }

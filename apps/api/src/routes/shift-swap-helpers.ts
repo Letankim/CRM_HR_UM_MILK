@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { SHIFT_SWAP_STATUS_LABELS, SYSTEM_CONFIG, type Branch, type ShiftSwap } from '@umbm/shared';
+import { SHIFT_SWAP_KIND_LABELS, SHIFT_SWAP_STATUS_LABELS, SYSTEM_CONFIG, type Branch, type ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
@@ -60,7 +60,7 @@ export function formatSwapAllowanceSummary(s: Pick<ShiftSwap, 'status' | 'allowa
     const amt = s.allowance_eligible ? Math.max(0, Math.round(Number(s.allowance_amount_vnd ?? 0))) : 0;
     return s.allowance_eligible && amt > 0 ? `+${amt.toLocaleString('vi-VN')} đ` : 'Không phụ cấp (0 đ)';
   }
-  if (s.status === 'REJECTED' || s.status === 'PEER_DECLINED') return 'Không áp dụng';
+  if (s.status === 'REJECTED' || s.status === 'PEER_DECLINED' || s.status === 'CANCELLED') return 'Không áp dụng';
   return `Chờ duyệt (MĐ ${SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd.toLocaleString('vi-VN')} đ)`;
 }
 
@@ -86,7 +86,10 @@ export function mapShiftSwapRecord(ctx: AppContext, s: ShiftSwap, fallbackBranch
     peerCode: peerEmp?.employee_code ?? s.peer_id,
     requesterName: reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id,
     peerName: peerEmp ? `${peerEmp.full_name} (${peerEmp.employee_code})` : s.peer_id,
-    statusLabel: SHIFT_SWAP_STATUS_LABELS[s.status],
+    statusLabel: s.status === 'PENDING_PEER' && s.kind === 'GIVE' ? 'Chờ người nhận xác nhận' : SHIFT_SWAP_STATUS_LABELS[s.status],
+    kindLabel: SHIFT_SWAP_KIND_LABELS[s.kind],
+    requiresHrApproval: s.requires_hr_approval,
+    toShiftDetails: s.kind === 'SWAP' && s.to_assignment_id ? resolveShiftTimeDetails(ctx, s.to_shift_code, s.to_assignment_id, branchId, s.peer_id, s.to_work_date) : null,
     allowanceEligible: effEligible,
     allowanceAmountVnd: isApproved ? effAmt : 0,
     allowanceLabel: formatSwapAllowanceSummary({ status: s.status, allowance_eligible: effEligible, allowance_amount_vnd: effAmt }),
@@ -99,7 +102,7 @@ export function registerShiftSwapAllowanceRoute(app: FastifyInstance, ctx: AppCo
     if (!before) throw Errors.notFound('Yêu cầu đổi ca', id);
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.requester_id, before.branch_id));
     assertDateNotLockedByPayroll(ctx.db, before.from_work_date, 'cập nhật phụ cấp đổi ca');
-    if (before.status !== 'APPROVED') throw Errors.badRequest('Chỉ được phép cập nhật phụ cấp đổi ca đối với đơn đổi ca đã được phê duyệt');
+    if (before.status !== 'APPROVED') throw Errors.badRequest('Chỉ được phép cập nhật phụ cấp đối với yêu cầu đổi / nhường ca đã cập nhật lịch');
     const actorId = request.auth!.user.id;
     const patch = resolveSwapAllowance({ decision: 'APPROVED', allowance_eligible: body.allowance_eligible, allowance_amount_vnd: body.allowance_amount_vnd });
     const updated = await ctx.db.shiftSwaps.update(id, body.version, { ...patch, ...(body.decision_reason !== undefined ? { decision_reason: body.decision_reason } : {}) }, actorId);

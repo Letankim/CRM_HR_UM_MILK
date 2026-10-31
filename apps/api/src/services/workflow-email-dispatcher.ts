@@ -1,4 +1,4 @@
-import { DEFAULT_SHIFT_LABELS, isEmployeeRole, ROLE_LABELS, SYSTEM_CONFIG, type AttendanceAdjustment, type EmergencyLeave, type LeaveRequest, type Role, type ShiftAssignment, type ShiftSwap } from '@umbm/shared';
+import { DEFAULT_SHIFT_LABELS, isEmployeeRole, ROLE_LABELS, SYSTEM_CONFIG, type AttendanceAdjustment, type LeaveRequest, type Role, type ShiftAssignment, type ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { findLinkedEmployeeForUser, findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 import { resolveEmployeeRole, resolveRolePortalPath, resolveSystemHrMailbox, resolveUserPersonalRealEmail, webOrigin } from './account-email-dispatcher.js';

@@ -137,7 +137,10 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
     <>
       <Modal
         title={editing ? `Chỉnh sửa Hồ sơ Nhân sự — ${editing.fullName} (${editing.employeeCode})` : 'Tiếp nhận Hồ sơ Nhân sự mới'}
-        open={open} onOk={async () => saveMutation.mutate(await form.validateFields())} onCancel={onClose}
+        open={open} onCancel={onClose}
+        onOk={() => form.validateFields().then((v) => saveMutation.mutate(v)).catch((e: { errorFields?: { name: (string | number)[] }[] }) => {
+          if (['initial_pin', 'username', 'link_user_id'].includes(String(e?.errorFields?.[0]?.name[0] ?? ''))) setActiveTab('account');
+        })}
         okText={editing ? 'Lưu cập nhật' : 'Lưu hồ sơ & Liên kết TK'} cancelText="Hủy bỏ"
         okButtonProps={{ icon: editing ? <SaveOutlined /> : <PlusOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
         confirmLoading={saveMutation.isPending} width="70vw" forceRender

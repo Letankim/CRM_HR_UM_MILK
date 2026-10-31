@@ -13,6 +13,8 @@ export interface SheetsGateway {
   updateRow(spreadsheetId: string, tab: string, row: number, values: string[]): Promise<void>;
   batchUpdateRows(spreadsheetId: string, tab: string, items: { row: number; values: string[] }[]): Promise<void>;
   ensureTab(spreadsheetId: string, tab: string, headers: readonly string[]): Promise<void>;
+  /** Liệt kê toàn bộ tên tab hiện có trong spreadsheet (dùng cho phân vùng dữ liệu theo tháng). */
+  listTabs(spreadsheetId: string): Promise<string[]>;
 }
 
 const quoteTab = (tab: string) => `'${tab.replace(/'/g, "''")}'`;
@@ -93,6 +95,11 @@ export class GoogleSheetsGateway implements SheetsGateway {
     const updated = res.data.updates?.updatedRange;
     if (!updated) throw new Error(`Append không trả về updatedRange (${tab})`);
     return rowFromRange(updated);
+  }
+
+  async listTabs(spreadsheetId: string): Promise<string[]> {
+    this.sheetTitlesCache.delete(spreadsheetId);
+    return Array.from(await this.getSheetTitles(spreadsheetId));
   }
 
   async ensureTab(spreadsheetId: string, tab: string, headers: readonly string[]): Promise<void> {
@@ -180,6 +187,11 @@ export class InMemorySheetsGateway implements SheetsGateway {
   async ensureTab(spreadsheetId: string, tab: string, headers: readonly string[]) {
     const key = `${spreadsheetId}::${tab}`;
     if (!this.data.has(key)) this.data.set(key, [[...headers]]);
+  }
+
+  async listTabs(spreadsheetId: string): Promise<string[]> {
+    const prefix = `${spreadsheetId}::`;
+    return Array.from(this.data.keys()).filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length));
   }
 
   hasTab(spreadsheetId: string, tab: string): boolean {

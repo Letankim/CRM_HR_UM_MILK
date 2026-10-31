@@ -56,7 +56,7 @@ async function runSweep(
 
   const approvedAdjMap = new Map<string, (typeof allAdjustments)[number]>();
   for (const adj of allAdjustments) {
-    if (adj.status !== 'APPROVED') continue;
+    if (adj.status !== 'APPROVED' || adj.punch_type === 'CHECK_IN') continue;
     if (adj.assignment_id) approvedAdjMap.set(`asg:${adj.assignment_id}`, adj);
     const eid = resolveCanonicalEmpId(adj.employee_id);
     approvedAdjMap.set(`emp:${eid}:${adj.work_date}:${adj.shift_code}`, adj);
@@ -113,6 +113,12 @@ async function runSweep(
   return { markedAbsent, restoredCompleted };
 }
 
+/**
+ * Áp dụng phiếu bổ sung công đã được HR phê duyệt (kèm ảnh minh chứng):
+ * - CHECK_IN: ghi nhận lượt Vào ca thành công (ca tiếp tục chờ Ra ca),
+ * - CHECK_OUT: ghi nhận lượt Ra ca → ca Hoàn thành,
+ * - FULL_SHIFT: xác nhận hoàn thành cả ca với số giờ đề nghị.
+ */
 export async function applyApprovedAdjustmentToShift(db: Database, adjustmentId: string, actorId: string): Promise<string> {
   const adj = db.attendanceAdjustments.get(adjustmentId);
   if (!adj) return '';
@@ -120,33 +126,49 @@ export async function applyApprovedAdjustmentToShift(db: Database, adjustmentId:
   const matchEmp = (eid: string) => eid === adj.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
   const targetShift = (adj.assignment_id ? db.shiftAssignments.get(adj.assignment_id) : undefined) ?? db.shiftAssignments.find((a) => matchEmp(a.employee_id) && a.work_date === adj.work_date && a.shift_code === adj.shift_code);
   if (!targetShift) return '';
+  if (adj.punch_type === 'CHECK_IN' || adj.punch_type === 'CHECK_OUT') {
+    const type = adj.punch_type, hm = type === 'CHECK_IN' ? (adj.requested_check_in_at || targetShift.start_at) : (adj.requested_check_out_at || targetShift.end_at);
+    const exists = db.attendanceEvents.find((e) => e.assignment_id === targetShift.id && e.type === type);
+    const branch = db.branches.get(targetShift.branch_id) ?? (emp ? db.branches.get(emp.branch_id) : undefined);
+    if (!exists) {
+      await db.attendanceEvents.insert({
+        idempotency_key: `adj_${adj.id}_${type}`, employee_id: targetShift.employee_id, assignment_id: targetShift.id, branch_id: targetShift.branch_id, type,
+        server_time: `${targetShift.work_date}T${hm || '07:00'}:00+07:00`, lat: branch?.lat ?? 0, lng: branch?.lng ?? 0, accuracy_m: 0, distance_m: 0, within_radius: true,
+        photo_id: adj.evidence_file_id ? `evidence_${adj.id}` : '', photo_sha256: '', device_info: 'Phiếu bổ sung công (HR phê duyệt minh chứng)', result: 'VALID',
+        work_date: targetShift.work_date, shift_code: targetShift.shift_code, scheduled_time: type === 'CHECK_IN' ? targetShift.start_at : targetShift.end_at,
+        late_minutes: 0, early_leave_minutes: 0, allowed_radius_m: branch?.radius_m ?? 100, gps_status: 'OK', photo_drive_file_id: adj.evidence_file_id,
+        ip_address: '', anomaly_flags_json: JSON.stringify(['HR_APPROVED_EVIDENCE']), note: `${type === 'CHECK_IN' ? 'Vào ca' : 'Ra ca'} thành công theo phiếu ${adj.adjustment_code} (HR duyệt minh chứng)`,
+      }, actorId);
+    }
+    const fresh = db.shiftAssignments.get(targetShift.id) ?? targetShift;
+    if (type === 'CHECK_OUT') await db.shiftAssignments.update(fresh.id, fresh.version, { status: 'COMPLETED', note: `Hoàn thành ca theo phiếu ${adj.adjustment_code}` }, actorId);
+    else if (fresh.status === 'ABSENT') await db.shiftAssignments.update(fresh.id, fresh.version, { status: 'PUBLISHED', note: `Đã xác nhận Vào ca theo phiếu ${adj.adjustment_code}` }, actorId);
+    return targetShift.id;
+  }
   await db.shiftAssignments.update(targetShift.id, targetShift.version, { status: 'COMPLETED', scheduled_hours: adj.requested_hours || targetShift.scheduled_hours, note: `Đã bù công theo phiếu bổ sung ${adj.adjustment_code}` }, actorId);
   return targetShift.id;
 }
-
 export function resolveShiftActiveRequests(db: Database, shift: ShiftAssignment, emp?: Employee) {
   const matchEmp = (eid: string) => eid === shift.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
-  const approvedAdj = db.attendanceAdjustments.find((a) => a.status === 'APPROVED' && ((shift.id && a.assignment_id === shift.id) || (matchEmp(a.employee_id) && a.work_date === shift.work_date && a.shift_code === shift.shift_code)));
+  const approvedAdj = db.attendanceAdjustments.find((a) => a.status === 'APPROVED' && a.punch_type !== 'CHECK_IN' && ((shift.id && a.assignment_id === shift.id) || (matchEmp(a.employee_id) && a.work_date === shift.work_date && a.shift_code === shift.shift_code)));
   const pendingAdj = db.attendanceAdjustments.find((a) => (a.status === 'PENDING' || a.status === 'STORE_CONFIRMED') && ((shift.id && a.assignment_id === shift.id) || (matchEmp(a.employee_id) && a.work_date === shift.work_date && a.shift_code === shift.shift_code)));
-  const pendingSwap = db.shiftSwaps.find((s) => (s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED') && (s.from_assignment_id === shift.id || (matchEmp(s.requester_id) && s.from_work_date === shift.work_date && s.from_shift_code === shift.shift_code)));
+  const pendingSwap = db.shiftSwaps.find((s) => (s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED') && (s.from_assignment_id === shift.id || s.to_assignment_id === shift.id || (matchEmp(s.requester_id) && s.from_work_date === shift.work_date && s.from_shift_code === shift.shift_code)));
   const pendingLeave = db.leaveRequests.find((l) => (l.status === 'PENDING' || l.status === 'DRAFT') && ((shift.id && l.assignment_id === shift.id) || (matchEmp(l.employee_id) && l.leave_date === shift.work_date)));
-  const pendingEmg = db.emergencyLeaves.find((e) => (e.status === 'REPORTED' || e.status === 'ESCALATED') && ((shift.id && e.assignment_id === shift.id) || (matchEmp(e.employee_id) && e.work_date === shift.work_date && e.shift_code === shift.shift_code)));
   return {
     hasApprovedAdjustment: Boolean(approvedAdj),
     pendingAdjustmentCode: pendingAdj?.adjustment_code ?? null, pendingAdjustmentStatus: pendingAdj?.status ?? null,
-    pendingSwapCode: pendingSwap?.swap_code ?? null, pendingLeaveCode: pendingLeave?.request_code ?? null, pendingEmergencyCode: pendingEmg?.emergency_code ?? null,
+    pendingSwapCode: pendingSwap?.swap_code ?? null, pendingLeaveCode: pendingLeave?.request_code ?? null,
   };
 }
 
-export function assertNoDuplicateAdjustment(db: Database, emp: Employee, assignmentId: string, workDate: string, shiftCode: string): void {
-  const dup = db.attendanceAdjustments.find((a) => a.status !== 'REJECTED' && (Boolean(assignmentId && a.assignment_id === assignmentId) || ((a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === workDate && a.shift_code === shiftCode)));
+export function assertNoDuplicateAdjustment(db: Database, emp: Employee, assignmentId: string, workDate: string, shiftCode: string, punchType: 'CHECK_IN' | 'CHECK_OUT' | 'FULL_SHIFT' = 'FULL_SHIFT'): void {
+  const samePunch = (p: string) => p === punchType || p === 'FULL_SHIFT' || punchType === 'FULL_SHIFT';
+  const dup = db.attendanceAdjustments.find((a) => a.status !== 'REJECTED' && samePunch(a.punch_type) && (Boolean(assignmentId && a.assignment_id === assignmentId) || ((a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === workDate && a.shift_code === shiftCode)));
   if (dup) throw Errors.fieldValidation('assignment_id', 'DUPLICATE_VALUE', `Ca làm việc ngày ${workDate} đã gửi Phiếu bổ sung công (${dup.adjustment_code}) và đang chờ duyệt hoặc đã được phê duyệt. Không được phép gửi trùng yêu cầu.`, assignmentId || workDate);
 }
 
 export function assertNoDuplicateShiftWorkflow(db: Database, emp: Employee, field: string, assignmentId: string, workDate: string, shiftCode: string): void {
   const isEmp = (eid: string) => eid === emp.id || eid === emp.employee_code;
-  const dupEmg = db.emergencyLeaves.find((e) => !(Boolean(process.env.VITEST) && e.created_by === 'seed') && (Boolean(assignmentId && e.assignment_id === assignmentId) || (isEmp(e.employee_id) && e.work_date === workDate && e.shift_code === shiftCode)));
-  if (dupEmg) throw Errors.fieldValidation(field, 'DUPLICATE_VALUE', `Ca làm việc ngày ${workDate} đã gửi Báo nghỉ khẩn cấp (${dupEmg.emergency_code}) đang chờ xử lý, không được phép gửi trùng yêu cầu.`, assignmentId || workDate);
   const dupLeave = db.leaveRequests.find((l) => isEmp(l.employee_id) && l.leave_date === workDate && l.status !== 'REJECTED' && l.status !== 'CANCELLED');
   if (dupLeave) throw Errors.fieldValidation(field, 'DUPLICATE_VALUE', `Ngày ${workDate} đã có Đơn xin nghỉ OFF (${dupLeave.request_code}) đang chờ duyệt hoặc đã được duyệt, không được phép gửi thêm yêu cầu.`, workDate);
   const dupSwap = db.shiftSwaps.find((s) => (s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED') && (Boolean(assignmentId && s.from_assignment_id === assignmentId) || (isEmp(s.requester_id) && s.from_work_date === workDate && s.from_shift_code === shiftCode)));
@@ -166,7 +188,7 @@ export function resolveWorkflowShiftStatus(db: Database, shiftCode: string, assi
   const matchAEmp = (eid: string) => eid === assign.employee_id || Boolean(aEmp && (eid === aEmp.id || eid === aEmp.employee_code));
   const evs = db.attendanceEvents.filter((ev) => ev.assignment_id === assign.id || (matchAEmp(ev.employee_id) && ev.work_date === assign.work_date && ev.shift_code === assign.shift_code));
   const hasIn = evs.some((ev) => ev.type === 'CHECK_IN'), hasOut = evs.some((ev) => ev.type === 'CHECK_OUT');
-  const hasApprovedAdj = Boolean(db.attendanceAdjustments.find((a) => a.status === 'APPROVED' && (a.assignment_id === assign.id || (matchAEmp(a.employee_id) && a.work_date === assign.work_date && a.shift_code === assign.shift_code))));
+  const hasApprovedAdj = Boolean(db.attendanceAdjustments.find((a) => a.status === 'APPROVED' && a.punch_type !== 'CHECK_IN' && (a.assignment_id === assign.id || (matchAEmp(a.employee_id) && a.work_date === assign.work_date && a.shift_code === assign.shift_code))));
   if (assign.status === 'COMPLETED' || (hasIn && hasOut) || hasApprovedAdj) return { shiftAssignmentId: assign.id, shiftStatus: 'COMPLETED', shiftStatusLabel: 'Đã hoàn thành ca', isShiftOfficialPublished: false };
   if (assign.status === 'ABSENT') return { shiftAssignmentId: assign.id, shiftStatus: 'ABSENT', shiftStatusLabel: 'Vắng mặt', isShiftOfficialPublished: false };
   if (assign.status === 'DRAFT') return { shiftAssignmentId: assign.id, shiftStatus: 'DRAFT', shiftStatusLabel: 'Chờ duyệt phân ca', isShiftOfficialPublished: false };

@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { canAccessPath, isUnauthorized, loginPath, resolveLandingRoute, useLogout, useMe } from '@/lib/auth';
 import { useRealtime } from '@/lib/realtime';
 import { AhrBrandLockup } from './components/AhrBrandLogo';
+import { ForcePinChangeModal } from './components/ForcePinChangeModal';
 import { SiderFooterHelpAndVersion } from './components/SiderFooterHelpAndVersion';
 import { TopHeaderBar } from './components/TopHeaderBar';
 import { BACKOFFICE_NAV } from './nav-config';
@@ -195,6 +196,7 @@ export function BackofficeShell({ children }: { children: ReactNode }) {
           {children}
         </Layout.Content>
       </Layout>
+      <ForcePinChangeModal app="backoffice" />
     </Layout>
   );
 }

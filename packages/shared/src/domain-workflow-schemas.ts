@@ -64,6 +64,7 @@ export const zScheduleWeek = zSystemColumns.extend({
   locked_at: z.string().default(''),
   note: z.string().default(''),
 });
+export type ScheduleWeek = z.infer<typeof zScheduleWeek>;
 
 export const zLeaveRequest = zSystemColumns.extend({
   employee_id: z.string(),
@@ -113,32 +114,13 @@ export const zShiftSwap = zSystemColumns.extend({
   peer_note: z.string().default(''),
   decided_at: z.string().default(''),
   allowance_amount_vnd: z.coerce.number().int().default(30000),
+  /** SWAP = đổi 2 ca giữa 2 người (đồng nghiệp đồng ý là đổi ngay); GIVE = nhường ca cho người khác */
+  kind: enumOrDefault(['SWAP', 'GIVE'] as const, 'GIVE'),
+  /** true khi người nhận ca sẽ vượt quá 2 ca/ngày — bắt buộc HR phê duyệt */
+  requires_hr_approval: zBool.default(false),
 });
 export type ShiftSwap = z.infer<typeof zShiftSwap>;
-
-export const zEmergencyLeave = zSystemColumns.extend({
-  employee_id: z.string(),
-  assignment_id: z.string().default(''),
-  reason: z.string(),
-  replacement_id: z.string().default(''),
-  status: z.enum(['REPORTED', 'REPLACEMENT_FOUND', 'ESCALATED', 'RESOLVED']).default('REPORTED'),
-  escalated: zBool.default(false),
-  handled_by: z.string().default(''),
-  emergency_code: z.string().default(''),
-  branch_id: z.string().default(''),
-  work_date: z.string().default(''),
-  shift_code: z.string().default('CA_SANG'),
-  reported_at: z.string().default(''),
-  minutes_before_shift: z.coerce.number().int().default(60),
-  evidence_file_id: z.string().default(''),
-  replacement_confirmed_at: z.string().default(''),
-  shift_coverage_status: z.string().default('UNCOVERED'),
-  escalated_at: z.string().default(''),
-  escalated_to_role: z.string().default(''),
-  handled_at: z.string().default(''),
-  resolution_note: z.string().default(''),
-});
-export type EmergencyLeave = z.infer<typeof zEmergencyLeave>;
+export type ShiftSwapKind = ShiftSwap['kind'];
 
 export const zAttendanceEvent = zSystemColumns.extend({
   idempotency_key: z.string(),
@@ -196,5 +178,8 @@ export const zAttendanceAdjustment = zSystemColumns.extend({
   store_note: z.string().default(''),
   decided_at: z.string().default(''),
   applied_to_record: zBool.default(false),
+  /** CHECK_IN = lỗi Vào ca, CHECK_OUT = lỗi Ra ca (kể cả quá hạn 3 giờ), FULL_SHIFT = bù công cả ca */
+  punch_type: enumOrDefault(['CHECK_IN', 'CHECK_OUT', 'FULL_SHIFT'] as const, 'FULL_SHIFT'),
 });
 export type AttendanceAdjustment = z.infer<typeof zAttendanceAdjustment>;
+export type AdjustmentPunchType = AttendanceAdjustment['punch_type'];

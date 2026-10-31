@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Button, Col, Form, Input, Modal, Row, Select, Space, Tabs } from 'antd';
-import { CloseOutlined, KeyOutlined, SafetyCertificateOutlined, SaveOutlined, SettingOutlined, TeamOutlined, ThunderboltOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
+import { CloseOutlined, SafetyCertificateOutlined, SaveOutlined, SettingOutlined, TeamOutlined, ThunderboltOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { ROLE_OPTIONS, getAllowedExtraPermissionsForRole, type Permission, type Role } from '@umbm/shared';
@@ -9,6 +9,7 @@ import { api, ApiClientError } from '@/lib/api';
 import { generateAccountSecret, generateUsername } from '@/lib/auto-generate';
 import type { AccountRowItem } from './AccountDetailDrawer';
 import { AccountPermissionsFormSection } from './AccountPermissionsTab';
+import { AccountSecretField } from './AccountSecretField';
 import type { EmployeeRowItem } from './employee-table-columns';
 
 interface AccountFormValues {
@@ -35,7 +36,6 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
   const { message } = App.useApp();
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState('login');
-  const [showSecret, setShowSecret] = useState(true);
   const currentRole: Role = Form.useWatch('role', form) ?? editing?.role ?? 'THU_VIEC';
 
   const employeesQuery = useQuery({ queryKey: ['employees', 'select-for-account'], queryFn: () => api.list<EmployeeRowItem>('/admin/employees?per_page=100'), enabled: open });
@@ -63,7 +63,6 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
     if (!open) return;
     setActiveTab('login');
     if (editing) {
-      setShowSecret(false);
       const initialScope =
         editing.branchScope === 'ALL'
           ? editing.primaryBranchId && ['THU_VIEC', 'CHINH_THUC', 'STORE'].includes(editing.role)
@@ -76,7 +75,6 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
         branch_scope: initialScope, secret: '', extra_permissions: editing.extraPermissions ?? [], reason: '',
       });
     } else {
-      setShowSecret(true);
       form.resetFields();
       form.setFieldsValue({ role: 'THU_VIEC', branch_scope: 'ALL', secret: generateAccountSecret('THU_VIEC'), extra_permissions: [], reason: '' });
     }
@@ -157,23 +155,13 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
                             const allowed = new Set(getAllowedExtraPermissionsForRole(nextRole));
                             const cur: Permission[] = form.getFieldValue('extra_permissions') ?? [];
                             form.setFieldValue('extra_permissions', cur.filter((p) => allowed.has(p)));
+                            if (!editing) form.setFieldValue('secret', generateAccountSecret(nextRole));
                           }}
                         />
                       </Form.Item>
                     </Col>
                   </Row>
-                  <Form.Item label={editing ? 'Mật khẩu mới' : 'Mật khẩu / Mã PIN'} required={!editing}>
-                    <Space.Compact style={{ width: '100%' }}>
-                      <Form.Item name="secret" noStyle rules={editing ? [] : [{ required: true, min: 6, message: 'Mật khẩu tối thiểu 6 ký tự' }]}>
-                        <Input.Password
-                          prefix={<KeyOutlined />}
-                          visibilityToggle={{ visible: showSecret, onVisibleChange: setShowSecret }}
-                          placeholder={editing ? 'Để trống nếu giữ nguyên mật khẩu hiện tại' : 'Nhập mật khẩu hoặc nhấn nút Tự sinh bên cạnh'}
-                        />
-                      </Form.Item>
-                      <Button icon={<ThunderboltOutlined />} onClick={() => { setShowSecret(true); form.setFieldsValue({ secret: generateAccountSecret(form.getFieldValue('role')) }); }}>Tự sinh MK</Button>
-                    </Space.Compact>
-                  </Form.Item>
+                  <AccountSecretField form={form} open={open} editing={!!editing} role={currentRole} />
                 </>
               ),
             },

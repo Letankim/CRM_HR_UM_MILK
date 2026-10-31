@@ -72,10 +72,6 @@ export function verifyIntegrity(ctx: SeedCtx): string[] {
     const a = out.shiftAssignments.find((x) => x.id === sw.from_assignment_id);
     if (!a || a.employee_id !== sw.peer_id || a.swapped_from_employee_id !== sw.requester_id) fail(`Đổi ca đã duyệt chưa chuyển ca sang người nhận: ${s(sw.swap_code)}`);
   }
-  for (const em of out.emergencyLeaves.filter((x) => x.replacement_id)) {
-    const a = out.shiftAssignments.find((x) => x.id === em.assignment_id);
-    if (!a || a.employee_id !== em.replacement_id) fail(`Báo nghỉ đột xuất đã có người thay nhưng ca chưa chuyển: ${s(em.emergency_code)}`);
-  }
 
   for (const [table, rows] of Object.entries(out)) {
     for (const r of rows) {

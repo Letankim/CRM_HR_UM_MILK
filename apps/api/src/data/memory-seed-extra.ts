@@ -62,8 +62,6 @@ export function seedExtraTables(gw: InMemorySheetsGateway, ctx: { cn1: string; e
   const swH = SPREADSHEETS.SCHEDULE.tabs.SHIFT_SWAPS;
   gw.seed(MEMORY_IDS.SCHEDULE, 'SHIFT_SWAPS', [[...swH], row(swH, { ...sys(), swap_code: 'SWP-0001', requester_id: ctx.emp2Id, peer_id: ctx.emp1Id, from_assignment_id: ctx.assign2Id, to_assignment_id: '', branch_id: ctx.cn1, from_work_date: '2026-10-26', from_shift_code: 'CA_CHIEU', to_work_date: '2026-10-26', to_shift_code: 'CA_CHIEU', reason: 'Bận lịch học buổi chiều tại trường', status: 'PEER_ACCEPTED', has_conflict: false, staffing_valid: true, requested_at: now, peer_responded_at: now, peer_note: 'Đồng ý hỗ trợ đổi ca', decided_by: '', decision_reason: '', decided_at: '', allowance_eligible: true, allowance_amount_vnd: 30000 })]);
 
-  const emH = SPREADSHEETS.SCHEDULE.tabs.EMERGENCY_LEAVES;
-  gw.seed(MEMORY_IDS.SCHEDULE, 'EMERGENCY_LEAVES', [[...emH], row(emH, { ...sys(), emergency_code: 'EMG-0001', employee_id: ctx.emp1Id, assignment_id: ctx.assign1Id, branch_id: ctx.cn1, work_date: '2026-10-24', shift_code: 'CA_SANG', reason: 'Sốt cao đột xuất cần đi khám bác sĩ', replacement_id: '', status: 'REPORTED', escalated: false, handled_by: '', reported_at: now, minutes_before_shift: 90, evidence_file_id: '', replacement_confirmed_at: '', shift_coverage_status: 'UNCOVERED', escalated_at: '', escalated_to_role: '', handled_at: '', resolution_note: '' })]);
 
   const evId = newId();
   const attEvH = SPREADSHEETS.ATTENDANCE.tabs.ATTENDANCE_EVENTS;

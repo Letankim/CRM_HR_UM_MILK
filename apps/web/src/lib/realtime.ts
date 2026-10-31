@@ -104,9 +104,10 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       if (scheduleTimer) clearTimeout(scheduleTimer);
       scheduleTimer = setTimeout(() => {
         [
-          'notifications', 'schedules', 'my-attendance', 'leave-requests', 'shift-swaps', 'emergency-leaves',
+          'notifications', 'schedules', 'my-attendance', 'leave-requests', 'shift-swaps', 'shift-registrations',
+          'schedule-planner-week', 'schedule-planner-probation',
           'attendance-adjustments', 'attendance-sessions', 'attendance-sessions-count', 'nv-schedules', 'nv-swaps',
-          'dashboard-schedules', 'dashboard-leaves', 'dashboard-leaves-full', 'dashboard-swaps', 'dashboard-emergencies', 'dashboard-attendance-adjustments',
+          'dashboard-schedules', 'dashboard-leaves', 'dashboard-leaves-full', 'dashboard-swaps', 'dashboard-attendance-adjustments',
           'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile',
         ].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
       }, 250);
@@ -124,10 +125,6 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     };
     const onSchedule = (payload?: { actorId?: string; branchId?: string; kind?: string; message?: string }) => {
       if (isOutOfBranchOrDup('sched', payload)) return;
-      triggerScheduleSync();
-    };
-    const onEmergency = (payload?: { actorId?: string; branchId?: string; message?: string }) => {
-      if (isOutOfBranchOrDup('emg', payload)) return;
       triggerScheduleSync();
     };
     const onAccountPending = () => {
@@ -150,7 +147,6 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     s.on('attendance:event', onAttendance);
     s.on('schedule:published', onSchedule);
     s.on('swap:updated', onSchedule);
-    s.on('emergency:new', onEmergency);
     s.on('account:pending', onAccountPending);
     s.on('payroll:updated', onPayrollUpdated);
     s.on('ticket:updated', onTicketUpdated);
@@ -163,7 +159,6 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       s.off('attendance:event', onAttendance);
       s.off('schedule:published', onSchedule);
       s.off('swap:updated', onSchedule);
-      s.off('emergency:new', onEmergency);
       s.off('account:pending', onAccountPending);
       s.off('payroll:updated', onPayrollUpdated);
       s.off('ticket:updated', onTicketUpdated);

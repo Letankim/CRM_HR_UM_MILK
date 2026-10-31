@@ -2,15 +2,16 @@
 
 import { useMemo } from 'react';
 import { Col, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
-import { AlertOutlined, CloseOutlined, FileAddOutlined, PlusOutlined, SwapOutlined } from '@ant-design/icons';
+import { CloseOutlined, FileAddOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { DateStringPicker, TimeStringPicker } from './DateTimePickers';
+import { WorkflowSwapCreateModal } from './WorkflowSwapCreateModal';
 
 export interface WorkflowAssignmentOption {
   id: string; employeeId: string; employeeName: string; workDate: string; shiftCode: string; shiftLabel: string;
   startAt?: string; endAt?: string; scheduledHours?: number; status?: string; statusLabel?: string; attendanceStatusLabel?: string;
-  pendingAdjustmentCode?: string | null; pendingSwapCode?: string | null; pendingLeaveCode?: string | null; pendingEmergencyCode?: string | null;
+  pendingAdjustmentCode?: string | null; pendingSwapCode?: string | null; pendingLeaveCode?: string | null;
 }
 
 interface Props {
@@ -18,12 +19,10 @@ interface Props {
   assignments: WorkflowAssignmentOption[];
   leaveModal: boolean;
   swapModal: boolean;
-  emgModal: boolean;
   adjModal: boolean;
   submitting?: boolean;
   onCloseLeave: () => void;
   onCloseSwap: () => void;
-  onCloseEmg: () => void;
   onCloseAdj: () => void;
   onSubmitAction: (url: string, body: unknown) => void;
 }
@@ -39,29 +38,14 @@ const KIND_OPTIONS = [
 const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
 
 export function ScheduleWorkflowModals({
-  employees, assignments, leaveModal, swapModal, emgModal, adjModal, submitting = false,
-  onCloseLeave, onCloseSwap, onCloseEmg, onCloseAdj, onSubmitAction,
+  employees, assignments, leaveModal, swapModal, adjModal, submitting = false,
+  onCloseLeave, onCloseSwap, onCloseAdj, onSubmitAction,
 }: Props) {
   const [leaveForm] = Form.useForm();
-  const [swapForm] = Form.useForm();
-  const [emgForm] = Form.useForm();
   const [adjForm] = Form.useForm();
   const watchedLeaveEmpId = Form.useWatch('employee_id', leaveForm);
-  const watchedEmgEmpId = Form.useWatch('employee_id', emgForm);
   const { options: leaveShiftOptions } = useShiftTemplates(employees.find((e) => e.value === watchedLeaveEmpId)?.branchId);
-  const { options: emgShiftOptions } = useShiftTemplates(employees.find((e) => e.value === watchedEmgEmpId)?.branchId);
   const { options: allShiftOptions } = useShiftTemplates();
-  const watchedSwapAssignId = Form.useWatch('from_assignment_id', swapForm);
-  const selectedSwapAssign = assignments.find((a) => a.id === watchedSwapAssignId);
-  const swapPeerOptions = employees.map((e) => {
-    const isRequester = selectedSwapAssign && e.value === selectedSwapAssign.employeeId;
-    const busyOnDate = selectedSwapAssign && assignments.find((a) => a.employeeId === e.value && a.workDate === selectedSwapAssign.workDate);
-    return {
-      value: e.value,
-      disabled: Boolean(isRequester || busyOnDate),
-      label: isRequester ? `${e.label} — Người xin đổi ca` : busyOnDate ? `${e.label} — Đã có ${busyOnDate.shiftLabel} ngày ${selectedSwapAssign.workDate} (Không thể nhận ca)` : e.label,
-    };
-  });
 
   const isAbsentAssign = (a: WorkflowAssignmentOption) =>
     !a.pendingAdjustmentCode &&
@@ -115,22 +99,7 @@ export function ScheduleWorkflowModals({
         </Form>
       </Modal>
 
-      <Modal width="min(760px, 94vw)" open={swapModal} forceRender title="Tạo yêu cầu đổi ca" okText="Tạo yêu cầu đổi ca" cancelText="Hủy bỏ" confirmLoading={submitting} okButtonProps={{ icon: <SwapOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseSwap} onOk={() => !submitting && swapForm.submit()}>
-        <Form form={swapForm} layout="vertical" onFinish={(v) => { if (submitting) return; onSubmitAction('/admin/shift-swaps', v); onCloseSwap(); }}>
-          <Form.Item name="from_assignment_id" label="Ca làm việc cần đổi" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" placeholder="Chọn ca làm việc cần đổi" onChange={(id) => { const found = assignments.find((a) => a.id === id); if (found) { swapForm.setFieldValue('requester_id', found.employeeId); swapForm.setFieldValue('peer_id', undefined); } }} options={assignments.filter((a) => a.status === 'PUBLISHED').map((a) => { const pCode = a.pendingSwapCode || a.pendingLeaveCode || a.pendingEmergencyCode; return { value: a.id, disabled: Boolean(pCode), label: `${a.workDate} — ${a.shiftLabel} (${a.employeeName})${pCode ? ` [Đang chờ duyệt ${pCode}]` : ''}` }; })} /></Form.Item>
-          <Form.Item name="requester_id" label="Người xin đổi ca" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" placeholder="Chọn người xin đổi ca" options={employees} disabled /></Form.Item>
-          <Form.Item name="peer_id" label="Đồng nghiệp nhận ca thay" rules={[{ required: true, message: 'Vui lòng chọn đồng nghiệp trống lịch trong ngày đó' }]}><Select showSearch optionFilterProp="label" placeholder="Chọn đồng nghiệp chưa có ca trong ngày đó" options={swapPeerOptions} /></Form.Item>
-          <Form.Item name="reason" label="Lý do đổi ca" rules={[{ required: true }]}><Input.TextArea rows={2} /></Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal width="min(760px, 94vw)" open={emgModal} forceRender title="Báo nghỉ đột xuất / Khẩn cấp" okText="Gửi báo nghỉ khẩn" cancelText="Hủy bỏ" confirmLoading={submitting} okButtonProps={{ danger: true, icon: <AlertOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseEmg} onOk={() => !submitting && emgForm.submit()}>
-        <Form form={emgForm} layout="vertical" initialValues={{ work_date: dayjs().format('YYYY-MM-DD'), shift_code: 'CA_TOI' }} onFinish={(v) => { if (submitting) return; onSubmitAction('/admin/emergency-leaves', v); onCloseEmg(); }}>
-          <Form.Item name="employee_id" label="Nhân sự" rules={[{ required: true }]}><Select showSearch optionFilterProp="label" placeholder="Chọn nhân sự" options={employees} /></Form.Item>
-          <Row gutter={12}><Col span={12}><Form.Item name="work_date" label="Ngày ca làm việc" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col><Col span={12}><Form.Item name="shift_code" label="Khung ca"><Select options={emgShiftOptions} /></Form.Item></Col></Row>
-          <Form.Item name="reason" label="Lý do khẩn cấp" rules={[{ required: true }]}><Input.TextArea rows={2} /></Form.Item>
-        </Form>
-      </Modal>
+      <WorkflowSwapCreateModal open={swapModal} employees={employees} assignments={assignments} submitting={submitting} onClose={onCloseSwap} onSubmit={(body) => onSubmitAction('/admin/shift-swaps', body)} />
 
       <Modal width="min(840px, 94vw)" open={adjModal} forceRender title="Tạo phiếu bổ sung công" okText="Tạo phiếu bổ sung" cancelText="Hủy bỏ" confirmLoading={submitting} okButtonProps={{ icon: <FileAddOutlined />, disabled: !isAdjShiftLocked || submitting }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseAdj} onOk={() => !submitting && adjForm.submit()}>
         <Form

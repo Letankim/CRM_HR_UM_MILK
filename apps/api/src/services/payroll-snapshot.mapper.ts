@@ -27,7 +27,6 @@ interface SnapshotAdjustmentsDetail {
   adjustedShiftsCount?: number;
   scheduledOnlyShiftsCount?: number;
   leaveOffCount?: number;
-  emergencyLeaveCount?: number;
   swappedOutCount?: number;
   absentCount?: number;
   lateCount?: number;
@@ -161,7 +160,6 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
     adjustedShiftsCount: liveWork?.adjustedShiftsCount ?? detail.adjustedShiftsCount ?? 0,
     scheduledOnlyShiftsCount: liveWork?.scheduledOnlyShiftsCount ?? detail.scheduledOnlyShiftsCount ?? 0,
     leaveOffCount: liveWork?.leaveOffCount ?? detail.leaveOffCount ?? 0,
-    emergencyLeaveCount: liveWork?.emergencyLeaveCount ?? detail.emergencyLeaveCount ?? 0,
     swappedOutCount: liveWork?.swappedOutCount ?? detail.swappedOutCount ?? 0,
     absentCount: liveWork?.absentCount ?? detail.absentCount ?? 0,
     lateCount: liveWork?.lateCount ?? detail.lateCount ?? s.late_count ?? 0,

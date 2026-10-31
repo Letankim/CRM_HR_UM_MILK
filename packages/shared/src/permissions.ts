@@ -8,7 +8,7 @@ export const PERMISSIONS = [
   'account.read', 'account.manage', 'account.activate',
   'system.config', 'system.maintenance', 'system.audit.read', 'system.backup', 'integration.read',
   'candidate.manage', 'interview.manage', 'employee.read', 'employee.manage', 'employee.promote',
-  'schedule.read', 'schedule.propose', 'schedule.publish', 'leave.approve', 'swap.approve', 'emergency.handle',
+  'schedule.read', 'schedule.propose', 'schedule.publish', 'leave.approve', 'swap.approve',
   'attendance.read', 'attendance.media.read', 'attendance.confirm', 'adjustment.approve',
   'test.manage', 'test.read',
   'payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay',
@@ -37,8 +37,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'schedule.propose': 'Đề xuất & xếp lịch phân ca',
   'schedule.publish': 'Duyệt & phát hành lịch làm việc chính thức',
   'leave.approve': 'Duyệt đơn xin nghỉ phép OFF',
-  'swap.approve': 'Duyệt yêu cầu đổi ca làm việc',
-  'emergency.handle': 'Xử lý báo nghỉ đột xuất & bố trí người thay',
+  'swap.approve': 'Duyệt yêu cầu nhường ca vượt 2 ca/ngày',
   'attendance.read': 'Xem dữ liệu điểm danh vào/ra ca',
   'attendance.media.read': 'Xem ảnh selfie & tọa độ GPS điểm danh',
   'attendance.confirm': 'Xác nhận công thực tế cấp cửa hàng',
@@ -67,7 +66,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
 export const PERMISSION_GROUPS: { key: string; label: string; permissions: Permission[] }[] = [
   { key: 'system', label: 'Tài khoản & Quản trị hệ thống', permissions: ['account.read', 'account.manage', 'account.activate', 'system.config', 'system.maintenance', 'system.audit.read', 'system.backup', 'integration.read'] },
   { key: 'hr', label: 'Tuyển dụng, Hồ sơ Nhân sự & Đào tạo TEST', permissions: ['candidate.manage', 'interview.manage', 'employee.read', 'employee.manage', 'employee.promote', 'test.manage', 'test.read'] },
-  { key: 'schedule', label: 'Lịch làm việc, Nghỉ phép & Đổi ca', permissions: ['schedule.read', 'schedule.propose', 'schedule.publish', 'leave.approve', 'swap.approve', 'emergency.handle'] },
+  { key: 'schedule', label: 'Lịch làm việc, Nghỉ phép & Đổi ca', permissions: ['schedule.read', 'schedule.propose', 'schedule.publish', 'leave.approve', 'swap.approve'] },
   { key: 'attendance', label: 'Điểm danh GPS & Điều chỉnh công', permissions: ['attendance.read', 'attendance.media.read', 'attendance.confirm', 'adjustment.approve'] },
   { key: 'payroll', label: 'Kế toán Tiền lương & Phiếu lương', permissions: ['payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay'] },
   { key: 'comms_report', label: 'Truyền thông & Báo cáo thống kê', permissions: ['comms.manage', 'notification.send', 'report.hr', 'report.store', 'report.finance'] },
@@ -90,11 +89,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ],
   HR: [
     'account.read', 'candidate.manage', 'interview.manage', 'employee.read', 'employee.manage', 'employee.promote',
-    'schedule.read', 'schedule.propose', 'schedule.publish', 'leave.approve', 'swap.approve', 'emergency.handle',
+    'schedule.read', 'schedule.propose', 'schedule.publish', 'leave.approve', 'swap.approve',
     'attendance.read', 'attendance.media.read', 'adjustment.approve', 'test.manage', 'test.read', 'report.hr', 'notification.send',
   ],
   STORE: [
-    'employee.read', 'schedule.read', 'schedule.propose', 'leave.approve', 'swap.approve', 'emergency.handle',
+    'employee.read', 'schedule.read', 'schedule.propose', 'leave.approve',
     'attendance.read', 'attendance.media.read', 'attendance.confirm', 'report.store', 'notification.send',
   ],
   FINANCE: [
@@ -113,7 +112,7 @@ export const FORBIDDEN_ROLE_PERMISSIONS: Partial<Record<Role, Permission[]>> = {
   ADMIN: ['candidate.manage', 'interview.manage', 'test.manage', 'payroll.manage', 'payroll.publish', 'payroll.pay', 'schedule.propose', 'schedule.publish', 'attendance.confirm', 'adjustment.approve'],
   HR: ['payroll.manage', 'payroll.publish', 'payroll.pay', 'system.config', 'system.maintenance', 'system.backup', 'system.audit.read', 'account.activate'],
   STORE: [' payroll.read' as Permission, 'payroll.manage', 'payroll.publish', 'payroll.pay', 'system.config', 'system.maintenance', 'system.backup', 'account.read', 'account.manage', 'account.activate'],
-  FINANCE: ['candidate.manage', 'interview.manage', 'test.manage', 'employee.manage', 'employee.promote', 'schedule.propose', 'schedule.publish', 'leave.approve', 'swap.approve', 'emergency.handle', 'attendance.confirm', 'adjustment.approve', 'system.config', 'account.manage', 'account.activate'],
+  FINANCE: ['candidate.manage', 'interview.manage', 'test.manage', 'employee.manage', 'employee.promote', 'schedule.propose', 'schedule.publish', 'leave.approve', 'swap.approve', 'attendance.confirm', 'adjustment.approve', 'system.config', 'account.manage', 'account.activate'],
   MKT: ['account.read', 'account.manage', 'account.activate', 'candidate.manage', 'interview.manage', 'employee.read', 'employee.manage', 'employee.promote', 'schedule.read', 'schedule.propose', 'schedule.publish', 'attendance.read', 'attendance.media.read', 'attendance.confirm', 'adjustment.approve', 'payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay', 'test.manage', 'test.read'],
 };
 // Fix typo in STORE forbidden list:

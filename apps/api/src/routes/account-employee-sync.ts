@@ -54,7 +54,6 @@ export async function cascadeEmployeeBranchChange(ctx: AppContext, emp: Employee
     moveBatch(ctx.db.shiftAssignments, ctx.db.shiftAssignments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)),
     moveBatch(ctx.db.leaveRequests, ctx.db.leaveRequests.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)),
     moveBatch(ctx.db.shiftSwaps, ctx.db.shiftSwaps.filter((x) => matchEmp(x.requester_id) && x.branch_id !== newBranchId)),
-    moveBatch(ctx.db.emergencyLeaves, ctx.db.emergencyLeaves.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)),
     moveBatch(ctx.db.attendanceEvents, ctx.db.attendanceEvents.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)),
     moveBatch(ctx.db.attendanceAdjustments, ctx.db.attendanceAdjustments.filter((x) => matchEmp(x.employee_id) && x.branch_id !== newBranchId)),
   ]);

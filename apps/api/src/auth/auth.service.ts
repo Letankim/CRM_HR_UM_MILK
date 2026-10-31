@@ -4,6 +4,7 @@ import {
   isPermissionForbiddenForRole,
   normalizePhone,
   PERMISSIONS,
+  PIN_REGEX,
   resolvePermissions,
   type BranchScope,
   type Permission,
@@ -11,6 +12,7 @@ import {
   type User,
 } from '@umbm/shared';
 import type { Database } from '../data/database.js';
+import { getOperationSettings } from '../services/operations-settings.service.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { getDummyHash, verifySecret } from './password.js';
@@ -38,7 +40,10 @@ export function parseExtraPermissions(raw: string): Permission[] {
   }
 }
 
-export function toPublicUser(user: User): PublicUser {
+export type PinChangeReason = 'FIRST_LOGIN' | 'RESET' | 'EXPIRED';
+export interface PinChangeState { required: boolean; reason: PinChangeReason | null }
+
+export function toPublicUser(user: User, pinState?: PinChangeState): PublicUser {
   const extraPermissions = parseExtraPermissions(user.permissions_json).filter(
     (p) => !isPermissionForbiddenForRole(user.role, p),
   );
@@ -52,6 +57,8 @@ export function toPublicUser(user: User): PublicUser {
     branchScope: parseBranchScope(user.branch_scope),
     employeeId: user.employee_id || null,
     status: user.status,
+    mustChangePin: pinState?.required ?? user.must_change_pin,
+    pinChangeReason: pinState?.reason ?? null,
   };
 }
 
@@ -63,8 +70,14 @@ export class AuthService {
    * Thông báo lỗi chung chung để không lộ tài khoản nào tồn tại.
    */
   async login(identifier: string, secret: string, app: 'backoffice' | 'employee'): Promise<User> {
-    const invalid = Errors.unauthorized('Thông tin đăng nhập không đúng');
+    const invalid = Errors.unauthorized(app === 'employee' ? 'Số điện thoại hoặc mã PIN không đúng' : 'Thông tin đăng nhập không đúng');
+    if (app === 'employee' && !normalizePhone(identifier)) {
+      throw Errors.fieldValidation('identifier', 'INVALID_PHONE', 'Vui lòng nhập số điện thoại đăng nhập gồm 10 chữ số bắt đầu bằng số 0', identifier);
+    }
     const user = this.findByIdentifier(identifier, app);
+    if (user && app === 'employee' && isEmployeeRole(user.role) && !PIN_REGEX.test(secret)) {
+      throw Errors.fieldValidation('secret', 'INVALID_FORMAT', 'Mã PIN đăng nhập phải gồm đúng 6 chữ số', '******');
+    }
 
     if (!user) {
       await verifySecret(await getDummyHash(), secret);
@@ -106,6 +119,23 @@ export class AuthService {
       { failed_login_count: 0, locked_until: '', last_login_at: nowIso() },
       user.id,
     );
+  }
+
+  /**
+   * Trạng thái bắt buộc đổi mã PIN: vừa được cấp / đặt lại tài khoản, hoặc đã quá chu kỳ đổi PIN định kỳ
+   * do Quản trị viên cấu hình (AUTH_PIN_ROTATION_DAYS, 0 = không áp dụng).
+   */
+  resolvePinState(user: User): PinChangeState {
+    if (user.must_change_pin) return { required: true, reason: user.pin_changed_at ? 'RESET' : 'FIRST_LOGIN' };
+    const days = getOperationSettings(this.db).pinRotationDays;
+    const base = user.pin_changed_at || user.activated_at || user.created_at;
+    if (days > 0 && base && dayjs().diff(dayjs(base), 'day') >= days) return { required: true, reason: 'EXPIRED' };
+    return { required: false, reason: null };
+  }
+
+  /** Tìm tài khoản Cổng Nhân viên theo số điện thoại (bước 1 đăng nhập 2 bước). */
+  findEmployeePortalUserByPhone(phone: string): User | undefined {
+    return normalizePhone(phone) ? this.findByIdentifier(phone, 'employee') : undefined;
   }
 
   /** Xác thực lại mỗi request: tài khoản phải còn ACTIVE và session_version khớp. */

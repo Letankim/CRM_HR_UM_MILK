@@ -63,7 +63,7 @@ export interface SeedCtx {
   pwHash: string;
   testId: string;
   testMaxAttempts: number;
-  counters: { emp: number; off: number; swp: number; emg: number; adj: number; uv: number };
+  counters: { emp: number; off: number; swp: number; adj: number; uv: number };
   branches: BranchPlan[];
   assignments: AssignPlan[];
   /** Ngày nghỉ OFF đã duyệt theo nhân sự: empId -> tập ngày (không được xếp ca). */

@@ -1,7 +1,7 @@
 'use client';
 
-import { Button, Form, Input, Skeleton, Typography, Alert, Divider } from 'antd';
-import { LockOutlined, LoginOutlined, UserOutlined, PhoneOutlined, SwapOutlined } from '@ant-design/icons';
+import { Alert, Button, Divider, Form, Input, Segmented, Skeleton, Typography } from 'antd';
+import { LockOutlined, LoginOutlined, MobileOutlined, SafetyCertificateOutlined, SwapOutlined, UserOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -10,6 +10,7 @@ import { SYSTEM_CONFIG, type PublicUser } from '@umbm/shared';
 import { api, ApiClientError, hasSessionFlag, markSessionActive } from '@/lib/api';
 import { resolveLandingRoute, useMe, type AppKind } from '@/lib/auth';
 import { AhrBrandMark, AhrWordmarkSvg, AutoStackBadge } from './components/AhrBrandLogo';
+import { EmployeePhonePinLogin } from './components/EmployeePhonePinLogin';
 import { BRAND } from './theme';
 
 interface Props {
@@ -24,7 +25,10 @@ export function LoginForm({ app }: Props) {
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [checkExisting, setCheckExisting] = useState(false);
-  const isEmployee = app === 'employee';
+  const [mode, setMode] = useState<AppKind>(app);
+  const isEmployee = mode === 'employee';
+
+  useEffect(() => { setMode(app); }, [app]);
 
   useEffect(() => {
     setMounted(true);
@@ -40,24 +44,30 @@ export function LoginForm({ app }: Props) {
     }
   }, [activeSession, params, router]);
 
+  /** Đăng nhập & chuyển hướng theo quyền; ném lỗi để nơi gọi tự hiển thị */
+  async function performLogin(identifier: string, secret: string, effectiveApp: AppKind) {
+    const res = await api.post<{ user: PublicUser; socketToken?: string | null }>('/auth/login', {
+      identifier,
+      secret,
+      app: effectiveApp,
+    });
+    markSessionActive(true);
+    qc.clear();
+    qc.setQueryData(['me'], { user: res.user, app: effectiveApp, socketToken: res.socketToken ?? null });
+    router.replace(resolveLandingRoute(res.user, effectiveApp, params.get('next')));
+  }
+
   async function onFinish(values: { identifier: string; secret: string }) {
+    const cleanId = values.identifier.trim();
+    if (/^(\+?84|0)\d{8,10}$/.test(cleanId.replace(/\s+/g, ''))) {
+      setError('Nhân viên vui lòng chọn mục Nhân viên để đăng nhập bằng Số điện thoại và mã PIN 6 chữ số');
+      setMode('employee');
+      return;
+    }
     setLoading(true);
     setError(null);
-    const cleanId = values.identifier.trim();
-    const looksLikePhone = /^(\+?84|0)\d{8,10}$/.test(cleanId.replace(/\s+/g, ''));
-    const effectiveApp: AppKind = isEmployee ? 'employee' : looksLikePhone ? 'employee' : 'backoffice';
-
     try {
-      const res = await api.post<{ user: PublicUser; socketToken?: string | null }>('/auth/login', {
-        identifier: cleanId,
-        secret: values.secret,
-        app: effectiveApp,
-      });
-      markSessionActive(true);
-      qc.clear();
-      qc.setQueryData(['me'], { user: res.user, app: effectiveApp, socketToken: res.socketToken ?? null });
-      const target = resolveLandingRoute(res.user, effectiveApp, params.get('next'));
-      router.replace(target);
+      await performLogin(cleanId, values.secret, 'backoffice');
     } catch (e) {
       setError(e instanceof ApiClientError ? e.message : 'Không kết nối được máy chủ');
     } finally {
@@ -114,26 +124,35 @@ export function LoginForm({ app }: Props) {
             {isEmployee ? 'Đăng nhập Cổng Nhân viên' : 'Đăng nhập Hệ thống Quản trị'}
           </Typography.Title>
           <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-            {isEmployee ? 'Đăng nhập bằng số điện thoại và mật khẩu cá nhân' : 'Đăng nhập bằng tài khoản quản trị hoặc số điện thoại'}
+            {isEmployee ? 'Bước 1 nhập số điện thoại, Bước 2 nhập mã PIN 6 chữ số' : 'Dành cho tài khoản Quản trị, Nhân sự, Kế toán, Cửa hàng & Truyền thông'}
           </Typography.Text>
+          <Segmented<AppKind>
+            block value={mode} onChange={(v) => { setError(null); setMode(v); }} style={{ marginTop: 12 }}
+            options={[
+              { value: 'employee', icon: <MobileOutlined />, label: 'Nhân viên (Số ĐT + PIN)' },
+              { value: 'backoffice', icon: <SafetyCertificateOutlined />, label: 'Quản trị (Tài khoản)' },
+            ]}
+          />
         </div>
 
-        {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
+        {error && !isEmployee && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
 
         {!mounted ? (
           <Skeleton active title={false} paragraph={{ rows: 4 }} />
+        ) : isEmployee ? (
+          <EmployeePhonePinLogin onLogin={(phone, pin) => performLogin(phone, pin, 'employee')} />
         ) : (
           <Form layout="vertical" requiredMark={false} onFinish={onFinish} disabled={loading} size="large">
             <Form.Item
               name="identifier"
-              label={isEmployee ? 'Số điện thoại' : 'Tên đăng nhập hoặc Số điện thoại'}
-              rules={[{ required: true, message: isEmployee ? 'Vui lòng nhập số điện thoại' : 'Vui lòng nhập tên đăng nhập hoặc số điện thoại' }]}
+              label="Tên đăng nhập quản trị"
+              rules={[{ required: true, message: 'Vui lòng nhập tên đăng nhập quản trị' }]}
             >
               <Input
-                prefix={isEmployee ? <PhoneOutlined /> : <UserOutlined />}
+                prefix={<UserOutlined />}
                 autoComplete="username"
                 inputMode="text"
-                placeholder={isEmployee ? 'Ví dụ: 0901000001' : 'Ví dụ: admin, hr, store1 hoặc 0901000001'}
+                placeholder="Ví dụ: admin, hr, finance, store1"
                 autoFocus
               />
             </Form.Item>
@@ -161,7 +180,7 @@ export function LoginForm({ app }: Props) {
         <Divider style={{ margin: '18px 0 12px' }} />
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
-          <Typography.Text type="secondary">Quên mật khẩu? Liên hệ Nhân sự</Typography.Text>
+          <Typography.Text type="secondary">{isEmployee ? 'Quên mã PIN? Liên hệ Nhân sự' : 'Quên mật khẩu? Liên hệ Nhân sự'}</Typography.Text>
           <Link href={isEmployee ? '/login' : '/nv/login'} style={{ fontWeight: 600 }}>
             <SwapOutlined /> {isEmployee ? 'Cổng Quản trị' : 'Cổng Nhân viên'}
           </Link>

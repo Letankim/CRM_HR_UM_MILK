@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashSecret } from '../auth/password.js';
 import { DEMO_PASSWORD, DEMO_PIN } from '../data/memory-seed.js';
+import { dayjs } from '../lib/time.js';
 import { buildTestApp, type TestAppContext } from '../test-utils/build-test-app.js';
 
 let t: TestAppContext;
@@ -15,6 +16,7 @@ const STORE1_EMAIL = 'qlch.q1.real@gmail.com';
 const STORE2_EMAIL = 'qlch.q2.real@gmail.com';
 const NV1_EMAIL = 'nv1.real@gmail.com';
 const NV2_EMAIL = 'nv2.real@gmail.com';
+const EVIDENCE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
 beforeAll(async () => {
   t = await buildTestApp('wf');
@@ -59,7 +61,7 @@ describe('Luồng Chuông Thông Báo & Email Phân Vai Chuẩn Xác (HR / Cửa
 
     const createRes = await t.app.inject({
       method: 'POST', url: '/api/admin/attendance/adjustments', headers: nv1Headers,
-      payload: { employee_id: emp1.id, work_date: '2026-10-20', shift_code: 'CA_SANG', kind: 'FORGOT_CHECK_OUT', reason: 'Quên bấm ra ca do đông khách' },
+      payload: { employee_id: emp1.id, work_date: '2026-10-20', shift_code: 'CA_SANG', kind: 'FORGOT_CHECK_OUT', reason: 'Quên bấm ra ca do đông khách', evidence_photo_base64: EVIDENCE },
     });
     expect(createRes.statusCode).toBe(201);
     const adj1 = createRes.json().data;
@@ -113,7 +115,7 @@ describe('Luồng Chuông Thông Báo & Email Phân Vai Chuẩn Xác (HR / Cửa
 
     const createRes = await t.app.inject({
       method: 'POST', url: '/api/admin/attendance/adjustments', headers: nv2Headers,
-      payload: { employee_id: emp2.id, work_date: '2026-10-21', shift_code: 'CA_CHIEU', kind: 'GPS_ERROR', reason: 'Điện thoại mất sóng GPS tại quầy' },
+      payload: { employee_id: emp2.id, work_date: '2026-10-21', shift_code: 'CA_CHIEU', kind: 'GPS_ERROR', reason: 'Điện thoại mất sóng GPS tại quầy', evidence_photo_base64: EVIDENCE },
     });
     expect(createRes.statusCode).toBe(201);
     const adj2 = createRes.json().data;
@@ -144,73 +146,59 @@ describe('Luồng Chuông Thông Báo & Email Phân Vai Chuẩn Xác (HR / Cửa
     expect(finalMails[0]!.html.includes('/nv/cong')).toBe(true);
   });
 
-  it('Đơn nghỉ OFF, Đăng ký ca, Đổi ca 3 bước & Báo nghỉ khẩn cấp chuyển HR đều phân tuyến đúng Chuông + Email từng vai trò', async () => {
+  it('Đơn nghỉ OFF theo cổng tuần, Thử việc đăng ký thêm ca, Nhường ca vượt 2 ca/ngày chuyển HR đều phân tuyến đúng Chuông + Email', async () => {
     const emp1 = t.db.employees.find((e) => e.employee_code === 'NV0001')!;
     const emp2 = t.db.employees.find((e) => e.employee_code === 'NV0002')!;
+    const adminHeaders = await t.loginHeaders('admin');
+    await t.app.inject({ method: 'PUT', url: '/api/admin/operations-config', headers: adminHeaders, payload: { off_window_open_weekday: 1, off_window_open_time: '00:00', off_window_close_weekday: 7, off_window_close_time: '23:59' } });
+    const win = (await t.app.inject({ method: 'GET', url: '/api/schedule/off-window', headers: nv2Headers })).json().data;
+    expect(win.isOpen).toBe(true);
+    const outside = await t.app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: nv2Headers, payload: { employee_id: emp2.id, leave_date: dayjs(win.targetWeekEnd).add(3, 'day').format('YYYY-MM-DD'), reason: 'Ngoài tuần đăng ký' } });
+    expect(outside.statusCode).toBe(400);
 
-    const lvRes = await t.app.inject({
-      method: 'POST', url: '/api/admin/leave-requests', headers: nv2Headers,
-      payload: { employee_id: emp2.id, leave_date: '2026-11-20', shift_code: 'CA_SANG', reason: 'Xin nghỉ giải quyết việc gia đình' },
-    });
+    const lvRes = await t.app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: nv2Headers, payload: { employee_id: emp2.id, leave_date: win.targetWeekEnd, shift_code: 'CA_SANG', reason: 'Xin nghỉ giải quyết việc gia đình' } });
     expect(lvRes.statusCode).toBe(201);
     const lv = lvRes.json().data;
     expect((await getNotifs(hrHeaders)).some((n) => n.entity_id === lv.id)).toBe(true);
-    const lvDecide = await t.app.inject({
-      method: 'POST', url: `/api/admin/leave-requests/${lv.id}/decide`, headers: hrHeaders,
-      payload: { version: lv.version, decision: 'APPROVED', decision_reason: 'Đồng ý lịch nghỉ' },
-    });
+    const lvDecide = await t.app.inject({ method: 'POST', url: `/api/admin/leave-requests/${lv.id}/decide`, headers: hrHeaders, payload: { version: lv.version, decision: 'APPROVED', decision_reason: 'Đồng ý lịch nghỉ' } });
     expect(lvDecide.statusCode).toBe(200);
     expect((await getNotifs(nv2Headers)).some((n) => n.entity_id.includes(lv.id) && n.link === '/nv/nghi-phep')).toBe(true);
 
-    const regShift = await t.app.inject({
-      method: 'POST', url: '/api/my-attendance/shifts', headers: nv2Headers,
-      payload: { work_date: '2026-11-22', shift_code: 'CA_SANG', note: 'Đăng ký ca sáng cuối tuần' },
-    });
+    const officialReg = await t.app.inject({ method: 'POST', url: '/api/my-attendance/shifts', headers: nv2Headers, payload: { work_date: win.targetWeekEnd, shift_code: 'CA_SANG' } });
+    expect(officialReg.statusCode).toBe(403);
+    const today = dayjs().format('YYYY-MM-DD'), workDate = dayjs().add(2, 'day').format('YYYY-MM-DD');
+    await t.db.employees.update(emp1.id, t.db.employees.get(emp1.id)!.version, { probation_start: today }, 'test');
+    const regShift = await t.app.inject({ method: 'POST', url: '/api/my-attendance/shifts', headers: nv1Headers, payload: { work_date: workDate, shift_code: 'CA_SANG', note: 'Đăng ký làm thêm ca sáng' } });
     expect(regShift.statusCode).toBe(201);
     const draftShift = regShift.json().data;
+    expect(draftShift.source).toBe('PROBATION_EXTRA');
     expect((await getNotifs(hrHeaders)).some((n) => n.entity_id === draftShift.id)).toBe(true);
-
-    const pubShift = await t.app.inject({
-      method: 'PUT', url: `/api/admin/schedules/${draftShift.id}`, headers: hrHeaders,
-      payload: { version: draftShift.version, status: 'PUBLISHED' },
-    });
+    const pubShift = await t.app.inject({ method: 'PUT', url: `/api/admin/schedules/${draftShift.id}`, headers: hrHeaders, payload: { version: draftShift.version, status: 'PUBLISHED' } });
     expect(pubShift.statusCode).toBe(200);
 
-    const swCreate = await t.app.inject({
-      method: 'POST', url: '/api/admin/shift-swaps', headers: nv2Headers,
-      payload: { requester_id: emp2.id, peer_id: emp1.id, from_assignment_id: draftShift.id, reason: 'Nhờ đồng nghiệp trực thay ca sáng' },
-    });
+    for (const code of ['CA_CHIEU', 'CA_TOI']) {
+      const r = await t.app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hrHeaders, payload: { employee_id: emp2.id, work_date: workDate, shift_code: code, status: 'PUBLISHED' } });
+      expect(r.statusCode).toBe(201);
+    }
+    const third = await t.app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hrHeaders, payload: { employee_id: emp2.id, work_date: workDate, shift_code: 'CA_HANH_CHINH', status: 'PUBLISHED' } });
+    expect(third.statusCode).toBe(400);
+
+    const swCreate = await t.app.inject({ method: 'POST', url: '/api/admin/shift-swaps', headers: nv1Headers, payload: { kind: 'GIVE', requester_id: emp1.id, peer_id: emp2.id, from_assignment_id: draftShift.id, reason: 'Có việc gấp, nhờ đồng nghiệp nhận ca sáng' } });
     expect(swCreate.statusCode).toBe(201);
     const sw = swCreate.json().data;
-    expect((await getNotifs(nv1Headers)).some((n) => n.entity_id.includes(sw.id))).toBe(true);
+    expect(sw.requires_hr_approval).toBe(true);
+    expect((await getNotifs(nv2Headers)).some((n) => n.entity_id.includes(sw.id))).toBe(true);
     expect((await getNotifs(hrHeaders)).some((n) => n.entity_id.includes(sw.id))).toBe(false);
 
-    const swPeer = await t.app.inject({
-      method: 'POST', url: `/api/admin/shift-swaps/${sw.id}/peer-respond`, headers: nv1Headers,
-      payload: { version: sw.version, accept: true, peer_note: 'Đồng ý nhận ca thay' },
-    });
+    const swPeer = await t.app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${sw.id}/peer-respond`, headers: nv2Headers, payload: { version: sw.version, accept: true, peer_note: 'Đồng ý nhận ca' } });
     expect(swPeer.statusCode).toBe(200);
+    expect(swPeer.json().data.status).toBe('PEER_ACCEPTED');
+    expect(t.db.shiftAssignments.get(draftShift.id)?.employee_id).toBe(emp1.id);
     expect((await getNotifs(hrHeaders)).some((n) => n.entity_id === `${sw.id}_PEER_ACCEPTED`)).toBe(true);
-    expect((await getNotifs(store1Headers)).some((n) => n.entity_id === `${sw.id}_PEER_ACCEPTED`)).toBe(true);
+    expect((await getNotifs(store1Headers)).some((n) => n.entity_id === `${sw.id}_PEER_ACCEPTED`)).toBe(false);
 
-    const emgCreate = await t.app.inject({
-      method: 'POST', url: '/api/admin/emergency-leaves', headers: nv2Headers,
-      payload: { employee_id: emp2.id, work_date: '2026-11-25', shift_code: 'CA_CHIEU', reason: 'Sốt cao đột xuất cần nhập viện' },
-    });
-    expect(emgCreate.statusCode).toBe(201);
-    const emg = emgCreate.json().data;
-    await t.email.processQueueBatch(10);
-    const knownBeforeEscalate = new Set(t.email.recent(100).map((m) => m.id));
-    const emgEscalate = await t.app.inject({
-      method: 'POST', url: `/api/admin/emergency-leaves/${emg.id}/handle`, headers: store1Headers,
-      payload: { version: emg.version, action: 'ESCALATE', resolution_note: 'Cửa hàng thiếu người, chuyển HR điều phối liên chi nhánh' },
-    });
-    expect(emgEscalate.statusCode).toBe(200);
-    await t.email.processQueueBatch(10);
-    const escMails = t.email.recent(100).filter((m) => !knownBeforeEscalate.has(m.id));
-    expect(escMails.some((m) => m.to === HR_EMAIL && m.html.includes('/admin/schedules?section=workflows'))).toBe(true);
-    expect(escMails.some((m) => m.to === STORE1_EMAIL)).toBe(false);
-    expect((await getNotifs(hrHeaders)).some((n) => n.entity_id === `${emg.id}_ESCALATED`)).toBe(true);
-    expect((await getNotifs(store1Headers)).some((n) => n.entity_id.includes(emg.id))).toBe(false);
+    const hrDecide = await t.app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${sw.id}/decide`, headers: hrHeaders, payload: { version: swPeer.json().data.version, decision: 'APPROVED', decision_reason: 'Đồng ý cho làm 3 ca' } });
+    expect(hrDecide.statusCode).toBe(200);
+    expect(t.db.shiftAssignments.get(draftShift.id)?.employee_id).toBe(emp2.id);
   });
 });

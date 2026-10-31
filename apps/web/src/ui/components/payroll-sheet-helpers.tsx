@@ -19,7 +19,6 @@ export const LOG_STATUS_COLORS: Record<ShiftPayrollLog['status'], string> = {
   SCHEDULE_PUBLISHED: 'blue',
   LEAVE_OFF: 'gold',
   SWAPPED_OUT: 'purple',
-  EMERGENCY_LEAVE: 'volcano',
   ABSENT: 'red',
 };
 

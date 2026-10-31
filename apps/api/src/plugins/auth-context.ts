@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { BranchScope, Permission, PublicUser, User } from '@umbm/shared';
-import { Errors } from '../lib/errors.js';
+import { AppError, Errors } from '../lib/errors.js';
 import { toPublicUser, type AuthService } from '../auth/auth.service.js';
 import { ACCESS_COOKIE, type TokenService } from '../auth/tokens.js';
 
@@ -10,6 +10,8 @@ export interface AuthContext {
   permissions: Set<Permission>;
   branchScope: BranchScope;
   app: 'backoffice' | 'employee';
+  /** true khi tài khoản bắt buộc đổi mã PIN trước khi được dùng các chức năng khác */
+  pinChangeRequired: boolean;
 }
 
 declare module 'fastify' {
@@ -38,13 +40,15 @@ export function registerAuthContext(app: FastifyInstance, tokens: TokenService, 
       const claims = await tokens.verifyAccess(token);
       const user = auth.resolveSession(claims);
       const branchScope = auth.resolveEffectiveBranchScope(user);
-      const publicUser = { ...toPublicUser(user), branchScope };
+      const pinState = auth.resolvePinState(user);
+      const publicUser = { ...toPublicUser(user, pinState), branchScope };
       request.auth = {
         user,
         publicUser,
         permissions: new Set(publicUser.permissions),
         branchScope,
         app: claims.app,
+        pinChangeRequired: pinState.required,
       };
     } catch {
       request.auth = null;
@@ -54,12 +58,21 @@ export function registerAuthContext(app: FastifyInstance, tokens: TokenService, 
 
 type Guard = (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
 
+/** Chặn mọi API nghiệp vụ khi tài khoản chưa đổi mã PIN bắt buộc (chỉ cho phép nhóm /api/auth/*). */
+function assertPinChanged(request: FastifyRequest): void {
+  if (!request.auth?.pinChangeRequired) return;
+  const path = (request.routeOptions?.url ?? request.url).split('?')[0] ?? '';
+  if (path.startsWith('/api/auth/')) return;
+  throw new AppError(403, 'PIN_CHANGE_REQUIRED', 'Bạn cần đổi mã PIN / mật khẩu đăng nhập trước khi tiếp tục sử dụng hệ thống');
+}
+
 export function requireAuth(): Guard {
   return async (request, reply) => {
     if (!request.auth) {
       if (request.cookies[ACCESS_COOKIE]) reply.clearCookie(ACCESS_COOKIE, { path: '/' });
       throw Errors.unauthorized();
     }
+    assertPinChanged(request);
   };
 }
 
@@ -70,6 +83,7 @@ export function requirePermission(...perms: Permission[]): Guard {
       if (request.cookies[ACCESS_COOKIE]) reply.clearCookie(ACCESS_COOKIE, { path: '/' });
       throw Errors.unauthorized();
     }
+    assertPinChanged(request);
     if (!perms.some((p) => request.auth!.permissions.has(p))) throw Errors.forbidden();
   };
 }

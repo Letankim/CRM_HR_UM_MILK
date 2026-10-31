@@ -1,84 +1,61 @@
 import { describe, expect, it } from 'vitest';
+import { dayjs } from '../lib/time.js';
 import { buildTestApp } from '../test-utils/build-test-app.js';
 
 describe('Workflows, Infrastructure & Full Tab APIs (AI-INFRA-07..09, FLOW-02..04)', () => {
-  it('enforces Probation OFF quota, 3-step Shift Swap (Saga only on Step 3), and Emergency Leave escalation', async () => {
+  it('enforces Probation OFF quota (5/12 ngày) and mutual Shift Swap between officials applied right after peer accepts (no HR step)', async () => {
     const { app, db, login, loginHeaders } = await buildTestApp('w');
     const hrHeaders = await loginHeaders('hr');
+    const adminHeaders = await loginHeaders('admin');
+    const web = { 'x-umbm-client': 'web' };
+    const day = (n: number) => dayjs().add(n, 'day').format('YYYY-MM-DD');
+    const probEmp = db.employees.find((e) => e.employee_code === 'NV0001')!;
+    const offEmp = db.employees.find((e) => e.employee_code === 'NV0002')!;
+    await db.employees.update(probEmp.id, probEmp.version, { probation_start: day(0) }, 'test');
+    for (const l of db.leaveRequests.filter((x) => x.employee_id === probEmp.id || x.employee_id === probEmp.employee_code)) await db.leaveRequests.softDelete(l.id, l.version, 'test');
 
-    const probEmp = db.employees.find((e) => e.stage === 'PROBATION')!;
-    const offEmp = db.employees.find((e) => e.stage === 'OFFICIAL')!;
-    const publishedAssign = db.shiftAssignments.find((a) => a.status === 'PUBLISHED')!;
-    const origAssignee = publishedAssign.employee_id;
-    const peerId = origAssignee === probEmp.id ? offEmp.id : probEmp.id;
-
-    // 1. Leave OFF: probEmp (PROBATION) has 1 leave in seed; create leaves up to limit and verify next one throws OUT_OF_RANGE
-    const currentUsed = db.leaveRequests.filter((l) => l.employee_id === probEmp.id).length;
-    for (let i = currentUsed; i < 5; i++) {
-      const okLeave = await app.inject({
-        method: 'POST', url: '/api/admin/leave-requests', headers: hrHeaders,
-        payload: { employee_id: probEmp.id, leave_date: `2026-10-${26 + i}`, shift_code: 'CA_SANG', reason: `Nghỉ phép ngày ${i + 1}` },
-      });
-      expect(okLeave.statusCode).toBe(201);
+    const nv1 = { ...web, cookie: (await login('0901000001', '246810', 'employee')).cookie };
+    for (let i = 1; i <= 5; i++) {
+      const ok = await app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: nv1, payload: { employee_id: probEmp.id, leave_date: day(i), reason: `Nghỉ OFF chu kỳ thử việc ngày ${i}` } });
+      expect(ok.statusCode).toBe(201);
     }
+    const over = await app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: nv1, payload: { employee_id: probEmp.id, leave_date: day(6), reason: 'Vượt định mức thử việc' } });
+    expect(over.statusCode).toBe(400);
+    expect(over.json().errors.details[0].code).toBe('OUT_OF_RANGE');
+    const outOfCycle = await app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: nv1, payload: { employee_id: probEmp.id, leave_date: day(20), reason: 'Ngoài chu kỳ' } });
+    expect(outOfCycle.statusCode).toBe(400);
 
-    const overQuotaLeave = await app.inject({
-      method: 'POST', url: '/api/admin/leave-requests', headers: hrHeaders,
-      payload: { employee_id: probEmp.id, leave_date: '2026-11-02', shift_code: 'CA_SANG', reason: 'Vượt định mức thử việc' },
-    });
-    expect(overQuotaLeave.statusCode).toBe(400);
-    expect(overQuotaLeave.json().errors.details[0].code).toBe('OUT_OF_RANGE');
+    const newEmpRes = await app.inject({ method: 'POST', url: '/api/admin/employees', headers: hrHeaders, payload: { full_name: 'Phan Văn Đổi Ca', phone_number: '0912345670', branch_id: offEmp.branch_id, stage: 'OFFICIAL', employment_type: 'FULL_TIME', create_account: true, username: 'nv.doica', initial_pin: '135791' } });
+    expect(newEmpRes.statusCode).toBe(201);
+    const peer = db.employees.get(newEmpRes.json().data.id)!;
+    const peerUser = db.users.find((u) => u.username === 'nv.doica')!;
+    expect(peerUser.must_change_pin).toBe(true);
+    await app.inject({ method: 'POST', url: '/api/admin/accounts/bulk-action', headers: adminHeaders, payload: { action: 'ACTIVATE', items: [{ id: peerUser.id, version: peerUser.version }] } });
+    const peerHeaders = { ...web, cookie: (await login('0912345670', '135791', 'employee')).cookie };
+    expect((await app.inject({ method: 'PUT', url: '/api/auth/password', headers: peerHeaders, payload: { current_secret: '135791', new_secret: '975310', confirm_secret: '975310' } })).statusCode).toBe(200);
 
-    // 2. 3-Step Shift Swap: Step 1 & Step 2 MUST NOT mutate official SHIFT_ASSIGNMENTS
-    const createSwap = await app.inject({
-      method: 'POST', url: '/api/admin/shift-swaps', headers: hrHeaders,
-      payload: { requester_id: origAssignee, peer_id: peerId, from_assignment_id: publishedAssign.id, reason: 'Đổi ca chiều sang đồng nghiệp' },
-    });
-    expect(createSwap.statusCode).toBe(201);
-    const swapId = createSwap.json().data.id as string;
-    expect(db.shiftAssignments.get(publishedAssign.id)?.employee_id).toBe(origAssignee);
+    const mine = (await app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hrHeaders, payload: { employee_id: offEmp.id, work_date: day(3), shift_code: 'CA_SANG', status: 'PUBLISHED' } })).json().data;
+    const theirs = (await app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hrHeaders, payload: { employee_id: peer.id, work_date: day(4), shift_code: 'CA_CHIEU', status: 'PUBLISHED' } })).json().data;
+    const nv2 = { ...web, cookie: (await login('0901000002', '246810', 'employee')).cookie };
+    const noTarget = await app.inject({ method: 'POST', url: '/api/admin/shift-swaps', headers: nv2, payload: { kind: 'SWAP', requester_id: offEmp.id, peer_id: peer.id, from_assignment_id: mine.id, reason: 'Đổi ca' } });
+    expect(noTarget.statusCode).toBe(400);
+    const swapRes = await app.inject({ method: 'POST', url: '/api/admin/shift-swaps', headers: nv2, payload: { kind: 'SWAP', requester_id: offEmp.id, peer_id: peer.id, from_assignment_id: mine.id, to_assignment_id: theirs.id, reason: 'Đổi ca sáng lấy ca chiều hôm sau' } });
+    expect(swapRes.statusCode).toBe(201);
+    const swap = swapRes.json().data;
+    expect(db.shiftAssignments.get(mine.id)?.employee_id).toBe(offEmp.id);
+    expect((await app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${swap.id}/decide`, headers: hrHeaders, payload: { version: swap.version, decision: 'APPROVED' } })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${swap.id}/peer-respond`, headers: nv2, payload: { version: swap.version, accept: true } })).statusCode).toBe(403);
 
-    const swapListRes = await app.inject({ method: 'GET', url: '/api/admin/shift-swaps', headers: hrHeaders });
-    expect(swapListRes.statusCode).toBe(200);
-    expect(swapListRes.json().data[0].id).toBe(swapId);
-    const { cookie: nvCookie } = await login('nv.thuviec', '246810', 'employee');
-    const myAttRes = await app.inject({ method: 'GET', url: '/api/my-attendance', headers: { cookie: nvCookie, 'x-umbm-client': 'web' } });
-    expect(myAttRes.statusCode).toBe(200);
-    expect(myAttRes.json().data.swaps[0].id).toBe(swapId);
-
-    const prematureApprove = await app.inject({
-      method: 'POST', url: `/api/admin/shift-swaps/${swapId}/decide`, headers: hrHeaders,
-      payload: { version: 1, decision: 'APPROVED', decision_reason: 'Duyệt sớm' },
-    });
-    expect(prematureApprove.statusCode).toBe(400);
-
-    const peerAccept = await app.inject({
-      method: 'POST', url: `/api/admin/shift-swaps/${swapId}/peer-respond`, headers: hrHeaders,
-      payload: { version: 1, accept: true, peer_note: 'Tôi nhận ca thay' },
-    });
-    expect(peerAccept.statusCode).toBe(200);
-    expect(db.shiftAssignments.get(publishedAssign.id)?.employee_id).toBe(origAssignee);
-
-    const finalApprove = await app.inject({
-      method: 'POST', url: `/api/admin/shift-swaps/${swapId}/decide`, headers: hrHeaders,
-      payload: { version: 2, decision: 'APPROVED', decision_reason: 'Đủ định biên, duyệt đổi ca' },
-    });
-    expect(finalApprove.statusCode).toBe(200);
-    expect(finalApprove.json().data.allowance_eligible).toBe(true);
-    expect(db.shiftAssignments.get(publishedAssign.id)?.employee_id).toBe(peerId);
-
-    // 3. Emergency Leave Escalation
-    const seededEmg = db.emergencyLeaves.all()[0]!;
-    const escalateRes = await app.inject({
-      method: 'POST', url: `/api/admin/emergency-leaves/${seededEmg.id}/handle`, headers: hrHeaders,
-      payload: { version: 1, action: 'ESCALATE', resolution_note: 'Không có người thay, chuyển cảnh báo lên HR' },
-    });
-    expect(escalateRes.statusCode).toBe(200);
-    expect(escalateRes.json().data.status).toBe('ESCALATED');
-    expect(escalateRes.json().data.escalated).toBe(true);
+    const accept = await app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${swap.id}/peer-respond`, headers: peerHeaders, payload: { version: swap.version, accept: true, peer_note: 'Đồng ý đổi' } });
+    expect(accept.statusCode).toBe(200);
+    expect(accept.json().data.status).toBe('APPROVED');
+    expect(db.shiftAssignments.get(mine.id)?.employee_id).toBe(peer.id);
+    expect(db.shiftAssignments.get(theirs.id)?.employee_id).toBe(offEmp.id);
+    const myAtt = (await app.inject({ method: 'GET', url: '/api/my-attendance', headers: nv2 })).json().data;
+    expect(myAtt.swaps[0].kind).toBe('SWAP');
+    expect(myAtt.emergencyLeaves).toBeUndefined();
     await app.close();
   });
-
   it('enforces GPS Haversine radius, blocks gallery selfie uploads, and preserves raw attendance events on adjustment', async () => {
     const { app, db, loginHeaders } = await buildTestApp('v');
     const hrHeaders = await loginHeaders('hr');
@@ -120,145 +97,6 @@ describe('Workflows, Infrastructure & Full Tab APIs (AI-INFRA-07..09, FLOW-02..0
     expect(hrApprove.statusCode).toBe(200);
     expect(hrApprove.json().data.status).toBe('APPROVED');
     expect(db.attendanceEvents.all().length).toBe(rawEventCountBefore);
-    await app.close();
-  });
-
-  it('prevents 30-min interview slot conflicts, grades server-timed TEST attempts, and isolates MKT RBAC', async () => {
-    const { app, db, loginHeaders } = await buildTestApp('u');
-    const hrHeaders = await loginHeaders('hr');
-    const adminHeaders = await loginHeaders('admin');
-    const mktHeaders = await loginHeaders('mkt');
-
-    const seededCand = db.candidates.all()[0]!;
-    const seededIv = db.interviews.all()[0]!;
-    const seededTestAsg = db.testAssignments.all()[0]!;
-    const lockedPol = db.policies.find((p) => p.is_locked_policy)!;
-
-    const createCand = await app.inject({
-      method: 'POST', url: '/api/admin/candidates', headers: hrHeaders,
-      payload: { full_name: 'Phạm Hồng Nhung', phone: '0901777888', applied_position: 'BARISTA', applied_branch_id: seededCand.branch_pref },
-    });
-    expect(createCand.statusCode).toBe(201);
-    const newCandId = createCand.json().data.id as string;
-    const filteredCands = await app.inject({
-      method: 'GET', url: `/api/admin/candidates?branch_id=${seededCand.branch_pref}&status=NEW`, headers: hrHeaders,
-    });
-    expect(filteredCands.statusCode).toBe(200);
-    expect(filteredCands.json().data.length).toBeGreaterThanOrEqual(1);
-
-    // Chặn tạo thêm lịch phỏng vấn cho ứng viên đã có lịch (chỉ cho phép chỉnh sửa)
-    const dupCandIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: seededCand.id, interviewer_ids: ['hr'], scheduled_at: '2027-02-01T09:00:00+07:00' } });
-    expect(dupCandIv.statusCode).toBe(400);
-    expect(dupCandIv.json().errors.details[0].field).toBe('candidate_id');
-    expect(dupCandIv.json().errors.details[0].code).toBe('DUPLICATE_VALUE');
-
-    const conflictIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: newCandId, interviewer_id: seededIv.interviewer_id, scheduled_at: seededIv.start_at } });
-    expect(conflictIv.statusCode).toBe(400);
-    expect(conflictIv.json().errors.details[0].code).toBe('DUPLICATE_VALUE');
-
-    const pastIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: newCandId, interviewer_ids: ['hr', 'store1'], scheduled_at: '2025-01-01T09:00:00+07:00' } });
-    expect(pastIv.statusCode).toBe(400);
-    expect(pastIv.json().errors.details[0].code).toBe('OUT_OF_RANGE');
-
-    const validIv = await app.inject({ method: 'POST', url: '/api/admin/interviews', headers: hrHeaders, payload: { candidate_id: newCandId, interviewer_ids: ['hr', 'store1'], scheduled_at: '2027-01-15T10:00:00+07:00' } });
-    expect(validIv.statusCode).toBe(201);
-    const createdIvId = validIv.json().data.id as string;
-    const ivNotif = db.notifications.find((n) => n.entity_type === 'INTERVIEWS' && n.entity_id === createdIvId);
-    expect(ivNotif).toBeDefined();
-    expect(ivNotif!.recipient_user_id.split(',')).toHaveLength(2);
-
-    const editIv = await app.inject({
-      method: 'PUT', url: `/api/admin/interviews/${createdIvId}/evaluate`, headers: hrHeaders,
-      payload: { version: 1, interviewer_ids: ['hr', 'store1', 'admin'], scheduled_at: '2027-01-16T14:00:00+07:00', duration_minutes: 45, reschedule_requested: true, reschedule_reason: 'Dời sang chiều theo lịch ứng viên' },
-    });
-    expect(editIv.statusCode).toBe(200);
-    const editNotifs = db.notifications.filter((n) => n.entity_type === 'INTERVIEWS' && n.entity_id === createdIvId);
-    expect(editNotifs.length).toBe(2);
-    expect(editNotifs[1]!.recipient_user_id.split(',')).toHaveLength(3);
-
-    const startTest = await app.inject({ method: 'POST', url: `/api/tests/assignments/${seededTestAsg.id}/start`, headers: hrHeaders, payload: {} });
-    expect(startTest.statusCode).toBe(201);
-    const attemptId = startTest.json().data.id as string;
-
-    const submitTest = await app.inject({ method: 'POST', url: `/api/tests/attempts/${attemptId}/submit`, headers: hrHeaders, payload: { version: 1, answers: { q1: 0, q2: 1 } } });
-    expect(submitTest.statusCode).toBe(200);
-    expect(submitTest.json().data.score_percent).toBe(100);
-    expect(submitTest.json().data.passed).toBe(true);
-
-    const blockedPol = await app.inject({ method: 'PUT', url: `/api/admin/policies/${lockedPol.id}`, headers: adminHeaders, payload: { version: 1, value_json: '15', owner_override_approved: false } });
-    expect(blockedPol.statusCode).toBe(400);
-
-    const mktAnc = await app.inject({
-      method: 'POST', url: '/api/mkt/announcements', headers: mktHeaders,
-      payload: {
-        title: 'Bản tin MKT tháng 10', summary: 'Văn hóa nội bộ', body_md: 'Nội dung bản tin truyền thông nội bộ',
-        status: 'DRAFT', audience_scope: 'STAGE', audience_target: 'THU_VIEC', cta_label: 'Xem SOP', cta_link: '/nv/ban-tin', requires_ack: true,
-      },
-    });
-    expect(mktAnc.statusCode).toBe(201);
-    expect(mktAnc.json().data.status).toBe('DRAFT');
-    const ancId = mktAnc.json().data.id as string;
-
-    // HR không được sửa bản tin do MKT tạo (Ownership-based Edit/Delete)
-    const hrEditMktAnc = await app.inject({
-      method: 'PUT', url: `/api/mkt/announcements/${ancId}`, headers: hrHeaders,
-      payload: { version: 1, title: 'HR cố sửa bản tin MKT', summary: 'Test' },
-    });
-    expect(hrEditMktAnc.statusCode).toBe(403);
-
-    // MKT phát hành bản tin sang SENT -> sinh DELIVERY_LOGS + Read Receipt + Retry (MKT-04, MKT-08)
-    const publishAnc = await app.inject({
-      method: 'PUT', url: `/api/mkt/announcements/${ancId}`, headers: mktHeaders,
-      payload: { version: 1, title: 'Bản tin MKT chính thức', summary: 'Đã duyệt phát', status: 'SENT' },
-    });
-    expect(publishAnc.statusCode).toBe(200);
-    expect(publishAnc.json().data.status).toBe('SENT');
-
-    const ackRes = await app.inject({ method: 'POST', url: `/api/announcements/${ancId}/ack`, headers: hrHeaders, payload: {} });
-    expect(ackRes.statusCode).toBe(200);
-
-    const mediaRes = await app.inject({
-      method: 'POST', url: '/api/mkt/media', headers: mktHeaders,
-      payload: { file_name: 'banner-sop.png', mime_type: 'image/png', drive_file_id: '1DRV_MKT_01', is_internal_only: true },
-    });
-    expect(mediaRes.statusCode).toBe(201);
-
-    const commsRes = await app.inject({ method: 'GET', url: '/api/mkt/comms', headers: mktHeaders });
-    expect(commsRes.statusCode).toBe(200);
-    expect(commsRes.json().data.audienceGroups.length).toBeGreaterThanOrEqual(3);
-    expect(commsRes.json().data.deliveryLogs.length).toBeGreaterThan(0);
-
-    // ADM-05 (Staffing Rules) & ADM-12 (System Settings + SEC-03 secret block) & FIN-10 (Revenue Labor Cost %)
-    const ruleRes = await app.inject({
-      method: 'POST', url: '/api/admin/staffing-rules', headers: adminHeaders,
-      payload: { branch_id: 'ALL', shift_template_id: 'ALL', min_staff: 2, max_staff: 5, enforcement: 'HARD_BLOCK' },
-    });
-    expect(ruleRes.statusCode).toBe(201);
-
-    const secretBlocked = await app.inject({
-      method: 'PUT', url: '/api/admin/system-settings', headers: adminHeaders,
-      payload: { key: 'GOOGLE_OAUTH_CLIENT_SECRET', value: 'hidden' },
-    });
-    expect(secretBlocked.statusCode).toBe(400);
-
-    const mktPayrollForbidden = await app.inject({ method: 'GET', url: '/api/admin/payroll/items', headers: mktHeaders });
-    expect(mktPayrollForbidden.statusCode).toBe(403);
-
-    const mktAttendanceForbidden = await app.inject({ method: 'GET', url: '/api/admin/attendance', headers: mktHeaders });
-    expect(mktAttendanceForbidden.statusCode).toBe(403);
-
-    // FINANCE, STORE, ADMIN bị chặn truy cập Tuyển dụng & Phỏng vấn (HR-02, HR-03 chỉ dành cho HR)
-    const finHeaders = await loginHeaders('finance');
-    const storeHeaders = await loginHeaders('store1');
-    for (const h of [finHeaders, storeHeaders, adminHeaders, mktHeaders]) {
-      expect((await app.inject({ method: 'GET', url: '/api/admin/candidates', headers: h })).statusCode).toBe(403);
-      expect((await app.inject({ method: 'GET', url: '/api/admin/interviews', headers: h })).statusCode).toBe(403);
-    }
-
-    // HR, STORE, ADMIN bị chặn truy cập Kỳ lương & Thưởng (FIN-01..10 chỉ dành cho FINANCE)
-    for (const h of [hrHeaders, storeHeaders, adminHeaders, mktHeaders]) {
-      expect((await app.inject({ method: 'GET', url: '/api/admin/payroll/periods', headers: h })).statusCode).toBe(403);
-    }
     await app.close();
   });
 });

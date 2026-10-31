@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { App, Button, Col, Descriptions, Form, Input, Modal, Row, Space, Tabs, Tag } from 'antd';
+import { Alert, App, Button, Col, Descriptions, Form, Input, Modal, Row, Space, Tabs, Tag } from 'antd';
 import {
-  BankOutlined, CloseOutlined, IdcardOutlined, KeyOutlined, LockOutlined,
+  BankOutlined, CloseOutlined, IdcardOutlined, KeyOutlined,
   MailOutlined, PhoneOutlined, SafetyCertificateOutlined, SaveOutlined, UserOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { isEmployeeRole, type Role } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
+import { ChangeSecretFields } from './ChangeSecretFields';
 
 interface SelfProfileData {
   id: string;
@@ -51,6 +53,14 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
     queryFn: () => api.get<SelfProfileData>('/auth/profile'),
     enabled: open,
   });
+  const p = profileQ.data;
+  const isEmployee = p ? isEmployeeRole(p.role as Role) : false;
+  const opsConfigQ = useQuery({
+    queryKey: ['operations-config'],
+    queryFn: () => api.get<{ settings?: { pinRotationDays?: number } }>('/admin/operations-config'),
+    enabled: open && activeTab === 'password',
+    retry: false,
+  });
 
   useEffect(() => {
     if (!open || !profileQ.data) return;
@@ -86,8 +96,9 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
   const changePwdMut = useMutation({
     mutationFn: (body: unknown) => api.put('/auth/password', body),
     onSuccess: () => {
-      message.success('Đã đổi mật khẩu / mã PIN bảo mật thành công');
+      message.success(isEmployee ? 'Đã đổi mã PIN đăng nhập thành công' : 'Đã đổi mật khẩu đăng nhập thành công');
       pwdForm.resetFields();
+      void qc.invalidateQueries({ queryKey: ['me'] });
       onClose();
     },
     onError: (e) => {
@@ -98,7 +109,7 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
     },
   });
 
-  const p = profileQ.data;
+  const pinRotationDays = Number(opsConfigQ.data?.settings?.pinRotationDays ?? 0);
 
   return (
     <Modal
@@ -116,7 +127,7 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
             </Button>
           ) : (
             <Button type="primary" icon={<KeyOutlined />} loading={changePwdMut.isPending} onClick={() => pwdForm.submit()}>
-              Xác nhận đổi mật khẩu
+              {isEmployee ? 'Xác nhận đổi mã PIN' : 'Xác nhận đổi mật khẩu'}
             </Button>
           )}
         </Space>
@@ -175,33 +186,13 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
             label: <span><SafetyCertificateOutlined /> Đổi mật khẩu / Mã PIN bảo mật</span>,
             children: (
               <Form form={pwdForm} layout="vertical" onFinish={(v) => changePwdMut.mutate(v)} style={{ marginTop: 4 }}>
-                <Form.Item name="current_secret" label="Mật khẩu / Mã PIN hiện tại" rules={[{ required: true, message: 'Vui lòng nhập mật khẩu hoặc mã PIN hiện tại' }]}>
-                  <Input.Password prefix={<LockOutlined />} placeholder="Nhập mật khẩu hoặc mã PIN đang sử dụng" />
-                </Form.Item>
-                <Row gutter={12}>
-                  <Col xs={24} sm={12}>
-                    <Form.Item name="new_secret" label="Mật khẩu / Mã PIN mới" rules={[{ required: true, min: 6, message: 'Mật khẩu mới tối thiểu 6 ký tự' }]}>
-                      <Input.Password prefix={<KeyOutlined />} placeholder="Nhập mật khẩu / mã PIN mới" />
-                    </Form.Item>
-                  </Col>
-                  <Col xs={24} sm={12}>
-                    <Form.Item
-                      name="confirm_secret" label="Xác nhận mật khẩu / Mã PIN mới"
-                      dependencies={['new_secret']}
-                      rules={[
-                        { required: true, message: 'Vui lòng nhập lại mật khẩu mới' },
-                        ({ getFieldValue }) => ({
-                          validator(_, value) {
-                            if (!value || getFieldValue('new_secret') === value) return Promise.resolve();
-                            return Promise.reject(new Error('Mật khẩu xác nhận không khớp với mật khẩu mới'));
-                          },
-                        }),
-                      ]}
-                    >
-                      <Input.Password prefix={<KeyOutlined />} placeholder="Nhập lại chính xác mật khẩu mới" />
-                    </Form.Item>
-                  </Col>
-                </Row>
+                {pinRotationDays > 0 && (
+                  <Alert
+                    type="info" showIcon style={{ marginBottom: 12, borderRadius: 4 }}
+                    message={`Theo quy định bảo mật, ${isEmployee ? 'mã PIN' : 'mật khẩu'} cần được đổi định kỳ mỗi ${pinRotationDays} ngày`}
+                  />
+                )}
+                <ChangeSecretFields isEmployee={isEmployee} />
               </Form>
             ),
           },

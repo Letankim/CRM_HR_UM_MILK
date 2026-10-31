@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { notFound, useParams, useRouter } from 'next/navigation';
 import { Alert, App, Button, Card, Col, Empty, Grid, List, Row, Select, Space, Spin, Tabs, Tag, Tooltip, Typography } from 'antd';
 import {
-  BookOutlined, CameraOutlined, CheckCircleOutlined, ClockCircleOutlined, DownloadOutlined,
+  BookOutlined, CheckCircleOutlined, ClockCircleOutlined, DownloadOutlined,
   EyeOutlined, FileAddOutlined, FileProtectOutlined, FileTextOutlined, KeyOutlined, NotificationOutlined, PaperClipOutlined, ReloadOutlined, RightOutlined, UserOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -25,21 +25,21 @@ import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from '@/ui/comp
 import { ShiftAttendanceDetailModal } from '@/ui/components/ShiftAttendanceDetailModal';
 import { EmployeeTestCenterView } from '@/ui/components/ExamTestCenter';
 import { GovernanceDetailDrawer, POLICY_CATEGORY_LABELS } from '@/ui/components/GovernanceAndCommsModals';
+import { MyAdjustmentsTable } from '@/ui/components/MyAdjustmentsTable';
 import { NotificationsCenterView } from '@/ui/components/NotificationsCenterView';
+import { SelfShiftActionPanel } from '@/ui/components/SelfShiftActionPanel';
+import { buildSelfShiftOptions, cleanShiftName, pickActiveSelfShift, useCheckoutLateHours, useNowHm, type BranchPeerItem, type SelfAttendanceExtras } from '@/ui/components/self-attendance-shared';
 import { UserProfileModal } from '@/ui/components/UserProfileModal';
 import { exportAdjustmentsExcel } from '@/ui/components/workflow-bulk-helpers';
 
-const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
-
-interface MyAttendanceData {
+interface MyAttendanceData extends SelfAttendanceExtras {
   todayDate: string; profile: { employeeId: string; employeeCode: string; fullName: string; stage?: string };
   shifts: Record<string, unknown>[]; events: AttendanceEventRow[]; leaves: Record<string, unknown>[];
-  emergencyLeaves?: Record<string, unknown>[]; swaps?: Record<string, unknown>[]; adjustments: Record<string, unknown>[];
-  branchPeers?: { id: string; employeeCode: string; fullName: string; positionTitle?: string; branchName?: string }[];
+  swaps?: Record<string, unknown>[]; adjustments: Record<string, unknown>[]; branchPeers?: BranchPeerItem[];
 }
 const SECTIONS: Record<string, string> = {
-  lich: 'Lịch làm việc & Đăng ký ca của bạn', 'nghi-phep': 'Đăng ký Nghỉ phép OFF & Báo nghỉ khẩn cấp',
-  'doi-ca': 'Yêu cầu Đổi ca nội bộ (Quy trình 3 bước)', 'diem-danh': 'Điểm danh GPS & Camera trực tiếp của bạn',
+  lich: 'Lịch làm việc của bạn', 'nghi-phep': 'Đăng ký Nghỉ OFF',
+  'doi-ca': 'Nhường ca / Đổi ca nội bộ', 'diem-danh': 'Điểm danh GPS & Camera trực tiếp của bạn',
   cong: 'Bảng công cá nhân & Phiếu bổ sung công', 'bai-kiem-tra': 'Bài kiểm tra Nghiệp vụ (TEST)',
   'ban-tin': 'Bản tin Nội bộ & Chính sách Quy định Công ty', 'thong-bao': 'Trung tâm Thông báo & Hộp thư Cá nhân', them: 'Tiện ích mở rộng của bạn',
 };
@@ -62,7 +62,8 @@ export default function EmployeeSection() {
   const [detailEvent, setDetailEvent] = useState<AttendanceEventRow | null>(null), [detailReq, setDetailReq] = useState<ScheduleDetailTarget | null>(null);
   const [attShiftId, setAttShiftId] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<{ kind: 'policy' | 'announcement'; record: Record<string, unknown> } | null>(null);
-  const attPag = useClientPagination(10, 'ca'), adjPag = useClientPagination(10, 'phiếu');
+  const attPag = useClientPagination(10, 'ca');
+  const nowHm = useNowHm(), lateHours = useCheckoutLateHours();
 
   const myQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<MyAttendanceData>('/my-attendance'), enabled: !!session.data });
   const testsQ = useQuery({ queryKey: ['nv-tests'], queryFn: () => api.get<{ tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts: Record<string, unknown>[] }>('/admin/tests/bank'), enabled: section === 'bai-kiem-tra' });
@@ -78,14 +79,9 @@ export default function EmployeeSection() {
   useEffect(() => { if (section === 'diem-danh') setSelectedShiftId(''); }, [section, todayDate]);
   const empId = myQ.data?.profile.employeeId || session.data?.user.employeeId || '', empCode = myQ.data?.profile.employeeCode || session.data?.user.employeeId || '';
   const publishedShifts = myQ.data?.shifts ?? [], allEvents = myQ.data?.events ?? [];
-  const activeShift = publishedShifts.find((s) => String(s.id) === selectedShiftId) ?? publishedShifts.find((s) => Boolean(s.canCheckOutNow)) ?? publishedShifts.find((s) => String(s.workDate) === todayDate && s.status === 'PUBLISHED' && !s.isAbsentShift && !s.isExpiredToday && !(s.checkInEvent && s.checkOutEvent)) ?? publishedShifts.find((s) => String(s.workDate) === todayDate && s.status === 'PUBLISHED') ?? publishedShifts.find((s) => String(s.workDate) === todayDate) ?? publishedShifts[0] ?? null;
-  const isSelectedToday = Boolean(activeShift && String(activeShift.workDate) === todayDate), isSelectedApproved = Boolean(activeShift && activeShift.status !== 'DRAFT');
-  const shiftEvents = allEvents.filter((e) => activeShift && String(e.assignment_id) === String(activeShift.id));
-  const checkInEvent = shiftEvents.find((e) => e.type === 'CHECK_IN'), checkOutEvent = shiftEvents.find((e) => e.type === 'CHECK_OUT');
-  const isSelectedDone = Boolean(activeShift && (activeShift.status === 'COMPLETED' || (checkInEvent && checkOutEvent)));
-  const isSelectedAbsent = Boolean(activeShift && (activeShift.status === 'ABSENT' || activeShift.isAbsentShift || (!checkInEvent && activeShift.status === 'PUBLISHED' && (String(activeShift.workDate) < todayDate || Boolean(activeShift.isExpiredToday)))));
-  const isSelectedForgotOut = Boolean(activeShift && !isSelectedDone && checkInEvent && !checkOutEvent && Boolean(activeShift.isForgotCheckout));
-  const canSelectedCheckOut = Boolean(activeShift && !isSelectedDone && checkInEvent && !checkOutEvent && !isSelectedForgotOut && (Boolean(activeShift.canCheckOutNow) || isSelectedToday));
+  const activeShift = pickActiveSelfShift(publishedShifts, selectedShiftId, todayDate);
+  const checkInEvent = activeShift?.checkInEvent as AttendanceEventRow | null | undefined, checkOutEvent = activeShift?.checkOutEvent as AttendanceEventRow | null | undefined;
+  const openAdjust = (shiftId?: string) => { setPresetAdjShiftId(shiftId); setAdjOpen(true); };
   const myAdjustments = myQ.data?.adjustments ?? [], mySwaps = myQ.data?.swaps ?? [];
   const filteredCongShifts = publishedShifts.filter((s) => { const wd = String(s.workDate || ''); return congPeriod === 'TODAY' ? wd === todayDate : congPeriod === 'WEEK' ? dayjs(wd).isAfter(dayjs(todayDate).subtract(7, 'day')) && dayjs(wd).isBefore(dayjs(todayDate).add(7, 'day')) : congPeriod === 'MONTH' ? wd.slice(0, 7) === todayDate.slice(0, 7) : true; });
   const totalCongHours = filteredCongShifts.reduce((acc, s) => acc + Number(s.workedHours ?? s.scheduledHours ?? 0), 0), totalOtHours = filteredCongShifts.reduce((acc, s) => acc + Number(s.otHours ?? 0), 0);
@@ -104,7 +100,7 @@ export default function EmployeeSection() {
   const isRefreshing = myQ.isFetching || testsQ.isFetching || commsQ.isFetching;
   const isSchedSection = section === 'lich' || section === 'nghi-phep' || section === 'doi-ca';
   const schedMode = section === 'nghi-phep' ? 'leaves' : section === 'doi-ca' ? 'swaps' : 'shifts';
-  const schedCenter = <EmployeeScheduleAndLeaveCenter todayDate={todayDate} empId={empId} empCode={empCode} stage={myQ.data?.profile.stage} mode={schedMode} initialTab={schedMode} shifts={publishedShifts} leaves={myQ.data?.leaves ?? []} emergencyLeaves={myQ.data?.emergencyLeaves ?? []} swaps={mySwaps} branchPeers={myQ.data?.branchPeers ?? []} refreshing={myQ.isFetching} onRefresh={refreshSection} />;
+  const schedCenter = <EmployeeScheduleAndLeaveCenter todayDate={todayDate} empId={empId} empCode={empCode} stage={myQ.data?.profile.stage} canRegisterShift={myQ.data?.canRegisterShift} mode={schedMode} initialTab={schedMode} shifts={publishedShifts} leaves={myQ.data?.leaves ?? []} swaps={mySwaps} branchPeers={myQ.data?.branchPeers ?? []} refreshing={myQ.isFetching} onRefresh={refreshSection} />;
 
   return (
     <div style={{ padding: isDesktop ? 0 : '8px 6px', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
@@ -118,24 +114,19 @@ export default function EmployeeSection() {
                 <div style={{ fontSize: 12, fontWeight: 600, color: BRAND.textSecondary, marginBottom: 6 }}>Chọn ca làm việc của bạn để điểm danh</div>
                 {publishedShifts.length === 0 ? <Alert type="info" showIcon message="Bạn chưa có ca làm việc nào được phân công trong kỳ này để điểm danh." /> : (
                   <>
-                    <Select style={{ width: '100%', marginBottom: 10 }} value={String(activeShift?.id ?? '')} onChange={setSelectedShiftId} options={publishedShifts.map((s) => { const sEvs = allEvents.filter((e) => String(e.assignment_id) === String(s.id)); const isAbs = s.status === 'ABSENT' || Boolean(s.isAbsentShift); const isT = String(s.workDate) === todayDate; const hasIn = sEvs.some((e) => e.type === 'CHECK_IN'), hasOut = sEvs.some((e) => e.type === 'CHECK_OUT'); const stateTag = s.status === 'DRAFT' ? 'Chờ CH / HR duyệt ca' : (s.status === 'COMPLETED' || (hasIn && hasOut)) ? 'Hoàn thành' : isAbs ? 'Vắng mặt (Cần bù công)' : (hasIn && !hasOut && Boolean(s.isForgotCheckout)) ? 'Quên Ra ca (Quá 1h — Cần bù công)' : (hasIn && !hasOut && Boolean(s.isWithinCheckoutGrace)) ? `Đã vào ca (Còn hạn Ra ca đến ${String(s.checkoutGraceDeadlineHm || '')})` : hasIn ? 'Đã vào ca (Chờ Ra ca)' : isT ? 'Hôm nay · Chưa vào ca' : 'Đã duyệt · Chưa tới ngày'; return { value: String(s.id), label: `${isT ? '[HÔM NAY] ' : ''}${dayjs(String(s.workDate)).format('DD/MM/YYYY')} · ${cleanShiftName(s.shiftLabel)} (${s.startAt || '07:00'}–${s.endAt || '12:00'}) · ${stateTag}` }; })} />
+                    <Select style={{ width: '100%', marginBottom: 10 }} value={String(activeShift?.id ?? '')} onChange={setSelectedShiftId} options={buildSelfShiftOptions(publishedShifts, todayDate, nowHm, lateHours)} />
                     {activeShift && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                         <span style={{ fontSize: 13, fontWeight: 600 }}>{cleanShiftName(activeShift.shiftLabel)} ({String(activeShift.startAt || '07:00')} – {String(activeShift.endAt || '12:00')})</span>
                         <Space size={4} wrap>
-                          <StatusTag value={String(isSelectedAbsent ? 'ABSENT' : isSelectedDone ? 'COMPLETED' : activeShift.status)} label={isSelectedAbsent ? 'Vắng mặt' : isSelectedDone ? 'Đã hoàn thành' : String(activeShift.statusLabel || '') || undefined} />
-                          {isSelectedApproved && !isSelectedAbsent && !checkInEvent && <Tag style={{ margin: 0 }}>Chưa vào ca</Tag>}
+                          <StatusTag value={String(activeShift.status || 'PUBLISHED')} label={String(activeShift.statusLabel || '') || undefined} />
+                          <Tag color={String(activeShift.attendanceStatusColor || 'default')} style={{ margin: 0 }}>{String(activeShift.attendanceStatusLabel || 'Chưa điểm danh')}</Tag>
                           {checkInEvent && <Tag color={checkInEvent.punctualityStatus === 'LATE' ? 'volcano' : 'green'} style={{ margin: 0 }}>Vào: {String(checkInEvent.checkTimeFormatted || '').slice(0, 5)} ({String(checkInEvent.punctualityLabel)})</Tag>}
                           {checkOutEvent && <Tag color={checkOutEvent.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} style={{ margin: 0 }}>Ra: {String(checkOutEvent.checkTimeFormatted || '').slice(0, 5)} ({String(checkOutEvent.punctualityLabel)})</Tag>}
                         </Space>
                       </div>
                     )}
-                    {!isSelectedApproved ? <Alert type="warning" showIcon message="Ca đăng ký này đang chờ Quản lý cửa hàng hoặc HR duyệt phân ca. Chỉ được phép chấm công Vào/Ra ca sau khi ca đã chuyển sang Đã phân ca chính thức." /> : isSelectedDone ? <Alert type="success" showIcon message="Đã hoàn thành đầy đủ ca làm việc này." action={activeShift ? <Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setAttShiftId(String(activeShift.id))}>Chi tiết điểm danh</Button> : undefined} /> : (isSelectedAbsent || isSelectedForgotOut) ? (
-                      <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                        {activeShift?.pendingAdjustmentCode ? <Alert type="warning" showIcon message={`Ca làm việc này đã gửi Phiếu bổ sung công (${String(activeShift.pendingAdjustmentCode)}) và đang chờ Cửa hàng / HR phê duyệt.`} /> : isSelectedForgotOut ? <><Alert type="error" showIcon message={`Ca làm việc ngày ${dayjs(String(activeShift?.workDate)).format('DD/MM/YYYY')} đã quá thời hạn 60 phút sau giờ kết thúc ca mà chưa Ra ca. Vui lòng gửi Phiếu bổ sung công để bù giờ Ra ca.`} /><Button type="primary" danger block icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(String(activeShift?.id)); setAdjOpen(true); }}>Làm phiếu bổ sung công (Quên chấm công Ra ca)</Button></> : <><Alert type="error" showIcon message={`Ca làm việc (${String(activeShift?.startAt || '07:00')} – ${String(activeShift?.endAt || '12:00')}) đã qua giờ kết thúc ca mà chưa điểm danh nên đã khóa Vào ca và chuyển sang Vắng mặt.`} /><Button type="primary" danger block icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(String(activeShift?.id)); setAdjOpen(true); }}>Làm phiếu bổ sung công bù ca vắng mặt này</Button></>}
-                      </Space>
-                    ) : canSelectedCheckOut ? <Space direction="vertical" size={8} style={{ width: '100%' }}>{Boolean(activeShift?.isWithinCheckoutGrace) && <Alert type="info" showIcon message={`Ca đã qua giờ kết thúc (${String(activeShift?.endAt || '12:00')}) nhưng vẫn trong 60 phút cho phép — Bạn có thể chấm công Ra ca đến ${String(activeShift?.checkoutGraceDeadlineHm || '')}.`} />}<Button type="primary" block icon={<CameraOutlined />} onClick={() => setCameraModalKind('CHECK_OUT')}>Ra ca (Chụp ảnh Camera &amp; GPS)</Button></Space> : !isSelectedToday ? <Alert type="warning" showIcon message={`Ca đang chọn thuộc ngày ${dayjs(String(activeShift?.workDate)).format('DD/MM/YYYY')}. Chỉ được điểm danh đúng ngày đăng ký ca (Hôm nay: ${dayjs(todayDate).format('DD/MM/YYYY')}).`} /> : !checkInEvent ? <Button type="primary" block icon={<CameraOutlined />} disabled={!activeShift} onClick={() => setCameraModalKind('CHECK_IN')}>Vào ca (Chụp ảnh Camera &amp; GPS)</Button> : <Alert type="success" showIcon message="Đã hoàn thành đầy đủ Vào ca & Ra ca cho ca làm việc này." />}
-                    {activeShift && !activeShift.pendingAdjustmentCode && <Button size="small" block icon={<FileAddOutlined />} style={{ marginTop: 8 }} onClick={() => { setPresetAdjShiftId(String(activeShift.id)); setAdjOpen(true); }}>Báo sự cố GPS / Camera hoặc Quên chấm công</Button>}
+                    <SelfShiftActionPanel shift={activeShift} todayDate={todayDate} size="middle" showIncidentButton onCamera={setCameraModalKind} onAdjust={openAdjust} onViewAttendance={setAttShiftId} />
                   </>
                 )}
               </div>
@@ -158,7 +149,7 @@ export default function EmployeeSection() {
                       <Select size="small" style={{ width: 190 }} value={congPeriod} onChange={setCongPeriod} options={[{ value: 'ALL', label: 'Kỳ xem: Toàn bộ kỳ' }, { value: 'TODAY', label: 'Kỳ xem: Hôm nay' }, { value: 'WEEK', label: 'Kỳ xem: Theo tuần (±7 ngày)' }, { value: 'MONTH', label: 'Kỳ xem: Theo tháng hiện tại' }]} />
                       <Tag color="blue" style={{ margin: 0 }}>Tổng giờ ca: <strong>{totalCongHours}h</strong> · Tăng ca (OT): <strong>{totalOtHours}h</strong></Tag>
                     </Space>
-                    <Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(undefined); setAdjOpen(true); }}>Yêu cầu bổ sung công</Button>
+                    <Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => openAdjust(undefined)}>Yêu cầu bổ sung công</Button>
                   </div>
                   <SelectableTable<Record<string, unknown>> size="small" rowKey="id" pagination={attPag} dataSource={filteredCongShifts} bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAdjustmentsExcel(rows) }]} columns={[{ title: 'Ngày làm', dataIndex: 'workDate', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> }, { title: 'Ca & Tổng giờ / OT', width: 225, render: (_, r) => <Space size={4} wrap><strong>{cleanShiftName(r.shiftLabel)}</strong><Tag color="blue" style={{ margin: 0 }}>{String(r.startAt || '07:00')}–{String(r.endAt || '12:00')} ({String(r.scheduledHours || 5)}h{Number(r.otHours || 0) > 0 ? ` + OT ${r.otHours}h` : ''})</Tag></Space> }, { title: 'Check-in / Check-out & Cờ sự cố', render: (_, r) => { const inEv = r.checkInEvent as Record<string, unknown> | null; const outEv = r.checkOutEvent as Record<string, unknown> | null; return <Space size={4} wrap>{inEv ? <Tag color={inEv.punctualityStatus === 'LATE' ? 'volcano' : 'green'} style={{ margin: 0 }}>Vào: {String(inEv.checkTimeFormatted || '').slice(0, 5)} ({String(inEv.punctualityLabel)})</Tag> : <Tag style={{ margin: 0 }}>Chưa Check-in</Tag>}{outEv ? <Tag color={outEv.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} style={{ margin: 0 }}>Ra: {String(outEv.checkTimeFormatted || '').slice(0, 5)} ({String(outEv.punctualityLabel)})</Tag> : inEv ? <Tag color="orange" style={{ margin: 0 }}>Thiếu Check-out</Tag> : null}</Space>; } }, { title: 'Trạng thái công', width: 195, render: (_, r) => <Tag color={String(r.attendanceStatusColor || 'default')} style={{ margin: 0 }}>{String(r.attendanceStatusLabel || 'Chưa điểm danh')}</Tag> }, { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết ca công" onViewDetail={() => setDetailReq({ kind: 'shift', record: { ...r, employeeId: empId } })} /> }]} />
                 </>
@@ -169,9 +160,9 @@ export default function EmployeeSection() {
               children: (
                 <>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 10 }}>
-                    <Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => { setPresetAdjShiftId(undefined); setAdjOpen(true); }}>Gửi phiếu bổ sung công</Button>
+                    <Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => openAdjust(undefined)}>Gửi phiếu bổ sung công</Button>
                   </div>
-                  <SelectableTable<Record<string, unknown>> size="small" rowKey="id" pagination={adjPag} dataSource={myAdjustments} bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAdjustmentsExcel(rows) }]} columns={[{ title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 115, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> }, { title: 'Ngày công', dataIndex: 'work_date', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> }, { title: 'Khung ca & Giờ ca', width: 220, render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.shift_code)}</span><Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{String(r.shiftTimeRange || '07:00 – 12:00')}</Tag></Space> }, { title: 'Loại sự cố, Lý do & Quyết định xử lý', render: (_, r) => <div><Tag color="orange" style={{ margin: '0 6px 0 0' }}>{r.kind === 'FORGOT_CHECK_IN' ? 'Quên Check-in' : r.kind === 'FORGOT_CHECK_OUT' ? 'Quên Check-out' : r.kind === 'GPS_ERROR' ? 'Lỗi GPS' : r.kind === 'CAMERA_ERROR' ? 'Lỗi Camera' : 'Sự cố khác'}</Tag><span>{String(r.reason || '')}</span>{Boolean(r.decision_reason) && <div style={{ fontSize: 11, color: r.status === 'REJECTED' ? '#DC2626' : '#15803D', marginTop: 2 }}>{r.status === 'REJECTED' ? 'Lý do từ chối: ' : 'Quyết định xử lý: '}{String(r.decision_reason)}</div>}</div> }, { title: 'Giờ đề nghị', dataIndex: 'requested_hours', width: 105, render: (v: number) => <strong>{v} giờ</strong> }, { title: 'Trạng thái xử lý', dataIndex: 'status', width: 155, render: (v: string) => <StatusTag value={v} /> }, { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết phiếu bổ sung" onViewDetail={() => setDetailReq({ kind: 'adjustment', record: r })} /> }]} />
+                  <MyAdjustmentsTable adjustments={myAdjustments} onViewDetail={(r) => setDetailReq({ kind: 'adjustment', record: r })} />
                 </>
               ),
             },
@@ -208,7 +199,7 @@ export default function EmployeeSection() {
         </Spin>
       </Card>
 
-      <AttendanceCameraModal open={Boolean(cameraModalKind)} kind={cameraModalKind ?? 'CHECK_IN'} shift={activeShift} loading={postMut.isPending} onClose={() => setCameraModalKind(null)} onConfirm={(payload) => postMut.mutate({ url: '/attendance/check', body: payload })} />
+      <AttendanceCameraModal open={Boolean(cameraModalKind)} kind={cameraModalKind ?? 'CHECK_IN'} shift={activeShift} loading={postMut.isPending} onClose={() => setCameraModalKind(null)} onConfirm={(payload) => postMut.mutate({ url: '/attendance/check', body: { ...payload, enforce_shift_state: true } })} />
       <AttendanceEventDetailModal event={detailEvent} onClose={() => setDetailEvent(null)} />
       <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
       <ScheduleRequestDetailModal target={detailReq} onClose={() => setDetailReq(null)} />

@@ -108,8 +108,15 @@ export const zUser = zSystemColumns.extend({
   email: z.string().default(''),
   revoked_by: z.string().default(''),
   revoke_reason: z.string().default(''),
+  /** Bắt buộc đổi mã PIN / mật khẩu ngay lần đăng nhập kế tiếp (khi vừa được cấp hoặc bị đặt lại). */
+  must_change_pin: zBool.default(false),
+  /** Thời điểm đổi mã PIN gần nhất — dùng để tính chu kỳ bắt buộc đổi PIN định kỳ. */
+  pin_changed_at: z.string().default(''),
 });
 export type User = z.infer<typeof zUser>;
+
+/** Mã PIN đăng nhập của nhân viên: đúng 6 chữ số. */
+export const PIN_REGEX = /^\d{6}$/;
 
 /** Dạng an toàn để trả về client — không bao giờ chứa password_hash */
 export const zPublicUser = z.object({
@@ -122,6 +129,10 @@ export const zPublicUser = z.object({
   branchScope: z.union([z.literal('ALL'), z.array(z.string())]),
   employeeId: z.string().nullable(),
   status: z.enum(ACCOUNT_STATUSES),
+  /** true khi hệ thống yêu cầu đổi mã PIN trước khi tiếp tục sử dụng */
+  mustChangePin: z.boolean().optional(),
+  /** Lý do yêu cầu đổi PIN: lần đầu cấp tài khoản / đặt lại / hết chu kỳ định kỳ */
+  pinChangeReason: z.enum(['FIRST_LOGIN', 'RESET', 'EXPIRED']).nullable().optional(),
 });
 export type PublicUser = z.infer<typeof zPublicUser>;
 

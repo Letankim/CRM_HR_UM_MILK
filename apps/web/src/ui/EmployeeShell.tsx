@@ -18,6 +18,7 @@ import { isUnauthorized, loginPath, useLogout, useMe } from '@/lib/auth';
 import { useNotificationSound } from '@/lib/notification-sound';
 import { useRealtime } from '@/lib/realtime';
 import { AhrBrandLockup } from './components/AhrBrandLogo';
+import { ForcePinChangeModal } from './components/ForcePinChangeModal';
 import { HeaderNotificationBell } from './components/HeaderNotificationBell';
 import { SiderFooterHelpAndVersion, USER_GUIDE_HTML_URL } from './components/SiderFooterHelpAndVersion';
 import { UserProfileModal } from './components/UserProfileModal';
@@ -150,6 +151,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
           </Layout.Content>
         </Layout>
         <UserProfileModal open={profileTab !== null} initialTab={profileTab ?? 'info'} onClose={() => setProfileTab(null)} />
+        <ForcePinChangeModal app="employee" />
       </Layout>
     );
   }
@@ -174,6 +176,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
           </Popover>
         </nav>
         <UserProfileModal open={profileTab !== null} initialTab={profileTab ?? 'info'} onClose={() => setProfileTab(null)} />
+        <ForcePinChangeModal app="employee" />
       </div>
     </div>
   );

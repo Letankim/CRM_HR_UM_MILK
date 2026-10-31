@@ -7,14 +7,14 @@ import { CheckOutlined, CloseOutlined, ExclamationCircleOutlined } from '@ant-de
 import dayjs from 'dayjs';
 
 type RowRec = Record<string, unknown>;
-export type WorkflowConfirmKind = 'leave' | 'swap' | 'emergency';
+export type WorkflowConfirmKind = 'leave' | 'swap';
 
 const cleanShift = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
 const fmtDate = (raw: unknown) => (raw ? dayjs(String(raw)).format('DD/MM/YYYY') : '—');
 const shiftColor = (st: unknown) => (st === 'COMPLETED' ? 'green' : st === 'ABSENT' ? 'red' : st === 'PUBLISHED' ? 'blue' : 'volcano');
 
 export function isWorkflowPending(r: RowRec): boolean {
-  return ['PENDING', 'PENDING_PEER', 'PEER_ACCEPTED', 'REPORTED', 'ESCALATED'].includes(String(r.status || ''));
+  return ['PENDING', 'PENDING_PEER', 'PEER_ACCEPTED'].includes(String(r.status || ''));
 }
 
 export function isShiftNonOfficialPublished(r: RowRec): boolean {
@@ -32,7 +32,7 @@ export function renderWorkflowShiftStateTag(r: RowRec): ReactNode {
 }
 
 export function renderDetailShiftStateAlert(kind: string, r: RowRec): ReactNode {
-  if (!['leave', 'swap', 'emergency'].includes(kind) || !isWorkflowPending(r) || !isShiftNonOfficialPublished(r)) return null;
+  if (!['leave', 'swap'].includes(kind) || !isWorkflowPending(r) || !isShiftNonOfficialPublished(r)) return null;
   const statusLabel = String(r.shiftStatusLabel || 'Đã hoàn thành ca');
   const actionNote =
     kind === 'swap'
@@ -68,10 +68,8 @@ export function confirmWorkflowShiftOverride(
     const empName = String(r.employeeName || r.requesterName || 'Nhân sự');
     const consequence =
       kind === 'swap'
-        ? `Nếu bạn xác nhận chấp nhận yêu cầu đổi ca này, ca làm việc (${statusLabel}) của ${empName} sẽ bị xóa trạng thái cũ và chuyển sang trạng thái "Đã phân ca chính thức" cho người nhận ca thay (${String(r.peerName || 'đồng nghiệp')}).`
-        : kind === 'emergency'
-          ? `Nếu bạn xác nhận chấp nhận xử lý báo nghỉ khẩn này, ca làm việc (${statusLabel}) trên bảng lịch phân ca sẽ bị xóa do nghỉ đột xuất (OFF).`
-          : `Nếu bạn xác nhận chấp nhận đơn xin nghỉ OFF này, ca làm việc (${statusLabel}) trên bảng lịch phân ca sẽ bị xóa do nghỉ OFF.`;
+        ? `Nếu bạn xác nhận chấp nhận yêu cầu này, ca làm việc (${statusLabel}) của ${empName} sẽ bị xóa trạng thái cũ và chuyển sang trạng thái "Đã phân ca chính thức" cho người nhận ca (${String(r.peerName || 'đồng nghiệp')}).`
+        : `Nếu bạn xác nhận chấp nhận đơn xin nghỉ OFF này, ca làm việc (${statusLabel}) trên bảng lịch phân ca sẽ bị xóa do nghỉ OFF.`;
 
     modal.confirm({
       width: 560,

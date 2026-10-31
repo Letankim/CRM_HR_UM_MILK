@@ -12,7 +12,7 @@ const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1
 beforeAll(async () => { t = await buildTestApp('audit10'); app = t.app; db = t.db; });
 afterAll(async () => { await app.close(); });
 
-describe('Audit 10 Business Fixes (MKT, HR, Schedules, Staffing, Attendance 1h Grace, Policies)', () => {
+describe('Audit 10 Business Fixes (MKT, HR, Schedules, Staffing, Attendance 3h Grace, Policies)', () => {
   it('1 & 2. MKT Media & Campaign delete support cascade checkbox and never leak deleted media', async () => {
     const headers = await loginHeaders('mkt');
 
@@ -137,7 +137,7 @@ describe('Audit 10 Business Fixes (MKT, HR, Schedules, Staffing, Attendance 1h G
     expect(delApprovedRes.statusCode).toBe(200);
   });
 
-  it('7 & 10. Shift registration blocks when branch max_staff is reached, and Check-out allows 1h grace after end_at', async () => {
+  it('7 & 10. Shift registration blocks when branch max_staff is reached, and Check-out allows 3h grace after end_at', async () => {
     const adminHeaders = await loginHeaders('admin');
     const empUser = db.users.find((u) => u.status === 'ACTIVE' && (u.role === 'CHINH_THUC' || u.role === 'THU_VIEC'))!;
     const nvLogin = await t.login(empUser.phone || empUser.username, DEMO_PIN, 'employee');
@@ -168,19 +168,15 @@ describe('Audit 10 Business Fixes (MKT, HR, Schedules, Staffing, Attendance 1h G
     const regBlocked = await app.inject({ method: 'POST', url: '/api/my-attendance/shifts', headers: nvHeaders, payload: { work_date: futureDate, shift_code: 'CA_TOI', note: 'Đăng ký vượt định biên' } });
     expect(regBlocked.statusCode).toBe(400);
 
-    // Item 7: 1-hour Check-out grace window test
+    // Item 7: 3-hour Check-out grace window test (configurable)
     const { todayStr, nowHm } = getVnNowDateAndHm();
     const nowDt = dayjs(`${todayStr}T${nowHm}:00`);
     const branch = db.branches.get(nvEmp.branch_id) ?? db.branches.all()[0]!;
 
-    // Shift A ended 25 minutes ago (within 60m grace) -> CHECK_OUT must SUCCEED
-    const endA = nowDt.subtract(25, 'minute'), startA = endA.subtract(4, 'hour');
-    const shiftA = await db.shiftAssignments.insert({
-      schedule_week_id: 'WK-GRACE', employee_id: nvEmp.id, branch_id: branch.id, work_date: startA.format('YYYY-MM-DD'),
-      shift_template_id: '', start_at: startA.format('HH:mm'), end_at: endA.format('HH:mm'), status: 'PUBLISHED',
-      source: 'HR_ASSIGN', employee_stage: nvEmp.stage, day_type: 'WORK', shift_code: 'CA_LINH_HOAT_A', scheduled_hours: 4,
-      swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: '', note: '',
-    }, 'admin');
+    // Shift A ended 150 minutes ago (within 3h grace) -> CHECK_OUT must SUCCEED
+    const endA = nowDt.subtract(150, 'minute'), startA = endA.subtract(4, 'hour');
+    const flexShift = (code: string, s: ReturnType<typeof dayjs>, e: ReturnType<typeof dayjs>) => db.shiftAssignments.insert({ schedule_week_id: 'WK-GRACE', employee_id: nvEmp.id, branch_id: branch.id, work_date: s.format('YYYY-MM-DD'), shift_template_id: '', start_at: s.format('HH:mm'), end_at: e.format('HH:mm'), status: 'PUBLISHED', source: 'HR_ASSIGN', employee_stage: nvEmp.stage, day_type: 'WORK', shift_code: code, scheduled_hours: 4, swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: '', note: '' }, 'admin');
+    const shiftA = await flexShift('CA_LINH_HOAT_A', startA, endA);
     await app.inject({
       method: 'POST', url: '/api/attendance/check', headers: nvHeaders,
       payload: { assignment_id: shiftA.id, kind: 'CHECK_IN', lat: branch.lat, lng: branch.lng, accuracy_m: 10, selfie_source: 'LIVE_CAMERA', photo_base64: TINY_PNG, enforce_shift_state: false },
@@ -192,14 +188,9 @@ describe('Audit 10 Business Fixes (MKT, HR, Schedules, Staffing, Attendance 1h G
     });
     expect(outOk.statusCode).toBe(201);
 
-    // Shift B ended 85 minutes ago (> 60m grace) -> CHECK_OUT must be LOCKED (400)
-    const endB = nowDt.subtract(85, 'minute'), startB = endB.subtract(4, 'hour');
-    const shiftB = await db.shiftAssignments.insert({
-      schedule_week_id: 'WK-GRACE', employee_id: nvEmp.id, branch_id: branch.id, work_date: startB.format('YYYY-MM-DD'),
-      shift_template_id: '', start_at: startB.format('HH:mm'), end_at: endB.format('HH:mm'), status: 'PUBLISHED',
-      source: 'HR_ASSIGN', employee_stage: nvEmp.stage, day_type: 'WORK', shift_code: 'CA_LINH_HOAT_B', scheduled_hours: 4,
-      swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: '', note: '',
-    }, 'admin');
+    // Shift B ended 200 minutes ago (> 3h grace) -> CHECK_OUT must be LOCKED (400)
+    const endB = nowDt.subtract(200, 'minute'), startB = endB.subtract(4, 'hour');
+    const shiftB = await flexShift('CA_LINH_HOAT_B', startB, endB);
     await app.inject({
       method: 'POST', url: '/api/attendance/check', headers: nvHeaders,
       payload: { assignment_id: shiftB.id, kind: 'CHECK_IN', lat: branch.lat, lng: branch.lng, accuracy_m: 10, selfie_source: 'LIVE_CAMERA', photo_base64: TINY_PNG, enforce_shift_state: false },
@@ -210,5 +201,15 @@ describe('Audit 10 Business Fixes (MKT, HR, Schedules, Staffing, Attendance 1h G
       payload: { assignment_id: shiftB.id, kind: 'CHECK_OUT', lat: branch.lat, lng: branch.lng, accuracy_m: 10, selfie_source: 'LIVE_CAMERA', photo_base64: TINY_PNG, enforce_shift_state: true },
     });
     expect(outLocked.statusCode).toBe(400);
+
+    // No early check-out: shift C started 1h ago and ends in 2h -> CHECK_OUT must be rejected (400)
+    const startC = nowDt.subtract(60, 'minute'), endC = nowDt.add(120, 'minute');
+    if (startC.format('YYYY-MM-DD') === endC.format('YYYY-MM-DD')) {
+      const shiftC = await flexShift('CA_LINH_HOAT_C', startC, endC);
+      await app.inject({ method: 'POST', url: '/api/attendance/check', headers: nvHeaders, payload: { assignment_id: shiftC.id, kind: 'CHECK_IN', lat: branch.lat, lng: branch.lng, accuracy_m: 10, selfie_source: 'LIVE_CAMERA', photo_base64: TINY_PNG, enforce_shift_state: true } });
+      const outEarly = await app.inject({ method: 'POST', url: '/api/attendance/check', headers: nvHeaders, payload: { assignment_id: shiftC.id, kind: 'CHECK_OUT', lat: branch.lat, lng: branch.lng, accuracy_m: 10, selfie_source: 'LIVE_CAMERA', photo_base64: TINY_PNG, enforce_shift_state: true } });
+      expect(outEarly.statusCode).toBe(400);
+      expect(outEarly.json().message).toContain('không được Ra ca sớm');
+    }
   });
 });

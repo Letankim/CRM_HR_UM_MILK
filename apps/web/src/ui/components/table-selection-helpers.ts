@@ -20,7 +20,7 @@ export interface SelectionGroupSummary<TRecord = unknown> {
 }
 
 const ACTIONABLE_STATUSES = new Set([
-  'PENDING', 'STORE_CONFIRMED', 'PENDING_PEER', 'PEER_ACCEPTED', 'REPORTED',
+  'PENDING', 'STORE_CONFIRMED', 'PENDING_PEER', 'PEER_ACCEPTED',
   'DRAFT', 'PENDING_ACTIVATION', 'LOCKED', 'NEW', 'INTERVIEW_SCHEDULED', 'UNREAD', 'MISSING',
 ]);
 
@@ -45,10 +45,7 @@ export function getRowStateLabel(row: unknown): string {
     return r.status === 'PENDING' ? 'Chờ duyệt nghỉ OFF' : r.status === 'APPROVED' ? 'Đã phê duyệt nghỉ OFF' : 'Đã từ chối';
   }
   if ('swap_code' in r || 'from_work_date' in r) {
-    return r.status === 'PENDING_PEER' ? 'Chờ đồng nghiệp nhận' : r.status === 'PEER_ACCEPTED' ? 'Đồng nghiệp đã nhận' : r.status === 'APPROVED' ? 'Đã duyệt đổi ca' : 'Đã từ chối';
-  }
-  if ('emergency_code' in r) {
-    return r.status === 'REPORTED' ? 'Mới báo nghỉ khẩn' : r.status === 'RESOLVED' ? 'Đã có người thay ca' : 'Thiếu ca (Cảnh báo HR)';
+    return r.status === 'PENDING_PEER' ? 'Chờ đồng nghiệp xác nhận' : r.status === 'PEER_ACCEPTED' ? 'Chờ HR duyệt' : r.status === 'APPROVED' ? 'Đã cập nhật lịch' : r.status === 'CANCELLED' ? 'Đã hủy' : 'Đã từ chối';
   }
   if (('checkInEvent' in r || 'checkTimeHm' in r || 'punctualityStatus' in r) && !('workDate' in r)) {
     const inEv = (r.checkInEvent as RowObj | null) ?? (r.type === 'CHECK_IN' ? r : null);
@@ -94,10 +91,9 @@ type PresetTuple = [key: string, label: string, fn: (r: RowObj) => boolean];
 const TABLE_PRESET_RULES: { match: (s: RowObj) => boolean; items: PresetTuple[] }[] = [
   { match: (s) => 'adjustment_code' in s || 'requested_hours' in s, items: [['adj-p', 'Chỉ chọn: Chờ duyệt', (r) => r.status === 'PENDING'], ['adj-s', 'Chỉ chọn: CH đã xác nhận', (r) => r.status === 'STORE_CONFIRMED'], ['adj-a', 'Chỉ chọn: Đã phê duyệt', (r) => r.status === 'APPROVED'], ['adj-r', 'Chỉ chọn: Đã từ chối', (r) => r.status === 'REJECTED']] },
   { match: (s) => 'request_code' in s || 'leave_date' in s, items: [['lv-p', 'Chỉ chọn: Chờ duyệt nghỉ OFF', (r) => r.status === 'PENDING'], ['lv-a', 'Chỉ chọn: Đã phê duyệt nghỉ OFF', (r) => r.status === 'APPROVED'], ['lv-r', 'Chỉ chọn: Đã từ chối', (r) => r.status === 'REJECTED']] },
-  { match: (s) => 'swap_code' in s || 'from_work_date' in s, items: [['sw-1', 'Chỉ chọn: Chờ đồng nghiệp nhận ca', (r) => r.status === 'PENDING_PEER'], ['sw-2', 'Chỉ chọn: Đồng nghiệp đã nhận (Chờ QL duyệt)', (r) => r.status === 'PEER_ACCEPTED'], ['sw-3', 'Chỉ chọn: Đã phê duyệt đổi ca', (r) => r.status === 'APPROVED'], ['sw-4', 'Chỉ chọn: Đã từ chối', (r) => r.status === 'REJECTED']] },
-  { match: (s) => 'emergency_code' in s, items: [['em-1', 'Chỉ chọn: Mới báo nghỉ khẩn (Chờ xử lý)', (r) => r.status === 'REPORTED'], ['em-2', 'Chỉ chọn: Đã bố trí người thay ca', (r) => r.status === 'RESOLVED'], ['em-3', 'Chỉ chọn: Thiếu ca (Cảnh báo HR)', (r) => r.status === 'ESCALATED']] },
+  { match: (s) => 'swap_code' in s || 'from_work_date' in s, items: [['sw-1', 'Chỉ chọn: Chờ đồng nghiệp xác nhận', (r) => r.status === 'PENDING_PEER'], ['sw-2', 'Chỉ chọn: Chờ HR duyệt (vượt 2 ca/ngày)', (r) => r.status === 'PEER_ACCEPTED'], ['sw-3', 'Chỉ chọn: Đã cập nhật lịch', (r) => r.status === 'APPROVED'], ['sw-4', 'Chỉ chọn: Đã từ chối / Đã hủy', (r) => r.status === 'REJECTED' || r.status === 'PEER_DECLINED' || r.status === 'CANCELLED']] },
   { match: (s) => ('checkInEvent' in s || 'checkTimeHm' in s || 'punctualityStatus' in s) && !('workDate' in s), items: [['at-1', 'Chỉ chọn: Hoàn thành Vào & Ra ca', (r) => Boolean(r.checkInEvent && r.checkOutEvent)], ['at-2', 'Chỉ chọn: Đang trong ca (Chưa ra ca)', (r) => Boolean(r.checkInEvent && !r.checkOutEvent)], ['at-3', 'Chỉ chọn: Vào trễ / Ra sớm', (r) => (r.checkInEvent as RowObj | undefined)?.punctualityStatus === 'LATE' || (r.checkOutEvent as RowObj | undefined)?.punctualityStatus === 'EARLY_LEAVE' || r.punctualityStatus === 'LATE']] },
-  { match: (s) => 'workDate' in s && ('shiftCode' in s || 'shiftLabel' in s), items: [['sc-1', 'Chỉ chọn: Chờ duyệt phân ca', (r) => r.status === 'DRAFT'], ['sc-2', 'Chỉ chọn: Đã phân ca chính thức', (r) => r.status === 'PUBLISHED' && !isAbsentShiftRecord(r)], ['sc-3', 'Chỉ chọn: Vắng mặt — Cần bổ sung công', (r) => r.status === 'ABSENT' || isAbsentShiftRecord(r)], ['sc-4', 'Chỉ chọn: Đã hoàn thành ca', (r) => r.status === 'COMPLETED' || Boolean(r.checkInEvent && r.checkOutEvent)]] },
+  { match: (s) => 'workDate' in s && ('shiftCode' in s || 'shiftLabel' in s), items: [['sc-1', 'Chỉ chọn: Chờ duyệt phân ca', (r) => r.status === 'DRAFT'], ['sc-2', 'Chỉ chọn: Đã phân ca chính thức', (r) => r.status === 'PUBLISHED' && !isAbsentShiftRecord(r)], ['sc-3', 'Chỉ chọn: Vắng mặt — Cần bổ sung công', (r) => r.status === 'ABSENT' || isAbsentShiftRecord(r)], ['sc-4', 'Chỉ chọn: Đã hoàn thành ca', (r) => r.status === 'COMPLETED' || Boolean(r.checkInEvent && r.checkOutEvent)], ['sc-5', 'Chỉ chọn: Thử việc đăng ký thêm ca', (r) => r.source === 'PROBATION_EXTRA']] },
   { match: (s) => 'username' in s && 'roleLabel' in s, items: [['ac-1', 'Chỉ chọn: Chờ kích hoạt', (r) => r.status === 'PENDING_ACTIVATION'], ['ac-2', 'Chỉ chọn: Đang hoạt động', (r) => r.status === 'ACTIVE'], ['ac-3', 'Chỉ chọn: Đang khóa / Đăng nhập sai', (r) => r.status === 'LOCKED' || Number(r.failedLoginCount ?? 0) > 0], ['ac-4', 'Chỉ chọn: Đã thu hồi', (r) => r.status === 'REVOKED']] },
   { match: (s) => 'profileStatus' in s && 'historyCount' in s, items: [['sp-1', 'Chỉ chọn: Đang áp dụng mức lương', (r) => r.profileStatus === 'ACTIVE'], ['sp-2', 'Chỉ chọn: Chưa thiết lập lương', (r) => r.profileStatus === 'MISSING' || !r.profile], ['sp-3', 'Chỉ chọn: Lương theo giờ', (r) => (r.profile as RowObj | undefined)?.rateType === 'HOURLY'], ['sp-4', 'Chỉ chọn: Lương theo tháng', (r) => (r.profile as RowObj | undefined)?.rateType === 'MONTHLY']] },
   { match: (s) => 'probationHours' in s && 'officialHours' in s, items: [['py-1', 'Chỉ chọn: Cần đối soát / Đơn bù công chờ duyệt', (r) => Boolean(r.hasAnomaly) || Number(r.pendingAdjCount ?? 0) > 0 || Number(r.missingCheckoutCount ?? 0) > 0], ['py-2', 'Chỉ chọn: Đã khớp công hợp lệ', (r) => !r.hasAnomaly], ['py-3', 'Chỉ chọn: Có giờ công Chính thức', (r) => Number(r.officialHours ?? 0) > 0], ['py-4', 'Chỉ chọn: Có giờ công Thử việc', (r) => Number(r.probationHours ?? 0) > 0]] },

@@ -42,7 +42,7 @@ export function renderSwapAllowanceTag(r: Record<string, unknown>, compact = fal
     }
     return <Tag style={{ margin: 0 }}>{compact ? 'Không PC (0 đ)' : 'Không phụ cấp (0 đ)'}</Tag>;
   }
-  if (st === 'REJECTED' || st === 'PEER_DECLINED') {
+  if (st === 'REJECTED' || st === 'PEER_DECLINED' || st === 'CANCELLED' || r.kind === 'SWAP') {
     return compact ? null : <Tag style={{ margin: 0 }}>Không áp dụng</Tag>;
   }
   return compact ? null : <Tag color="geekblue" style={{ margin: 0 }}>MĐ +{fmtVnd(DEFAULT_ALLOWANCE)}</Tag>;
@@ -93,8 +93,8 @@ export function ShiftSwapApproveModal({
     <Modal
       width="min(640px, 94vw)"
       open={Boolean(target)}
-      title={isEdit ? 'Điều Chỉnh Phụ Cấp Nhận Đổi Ca' : rows.length > 1 ? `Phê Duyệt Yêu Cầu Đổi Ca (${rows.length} đơn)` : 'Phê Duyệt Yêu Cầu Đổi Ca (Bước 3/3)'}
-      okText={isEdit ? 'Lưu phụ cấp đổi ca' : rows.length > 1 ? `Phê duyệt (${rows.length} đơn)` : 'Phê duyệt đổi ca'}
+      title={isEdit ? 'Điều Chỉnh Phụ Cấp Nhận Ca' : rows.length > 1 ? `HR Phê Duyệt Yêu Cầu Nhường Ca (${rows.length} đơn)` : 'HR Phê Duyệt Yêu Cầu Nhường Ca'}
+      okText={isEdit ? 'Lưu phụ cấp' : rows.length > 1 ? `Phê duyệt (${rows.length} đơn)` : 'Phê duyệt & cập nhật lịch'}
       cancelText="Hủy bỏ"
       confirmLoading={loading}
       okButtonProps={{ icon: isEdit ? <SaveOutlined /> : <CheckCircleOutlined /> }}
@@ -108,16 +108,25 @@ export function ShiftSwapApproveModal({
           <Descriptions.Item label="Mã đơn & Ngày ca">
             <Space size={6} wrap>
               <Tag color="purple" style={{ margin: 0 }}>{String(first.swap_code || first.id)}</Tag>
+              {Boolean(first.kindLabel) && <Tag color={first.kind === 'SWAP' ? 'geekblue' : 'cyan'} style={{ margin: 0 }}>{String(first.kindLabel)}</Tag>}
               <strong className="num">{first.from_work_date ? dayjs(String(first.from_work_date)).format('DD/MM/YYYY') : '—'}</strong>
               <span>· {cleanShiftName(first.shiftLabel || first.from_shift_code)}</span>
             </Space>
           </Descriptions.Item>
-          <Descriptions.Item label="Người xin đổi ca">{String(first.requesterName || first.requester_id || '—')}</Descriptions.Item>
-          <Descriptions.Item label="Người nhận ca thay"><strong>{String(first.peerName || first.peer_id || '—')}</strong></Descriptions.Item>
+          <Descriptions.Item label="Người gửi yêu cầu">{String(first.requesterName || first.requester_id || '—')}</Descriptions.Item>
+          <Descriptions.Item label="Người nhận ca">
+            <Space size={6} wrap>
+              <strong>{String(first.peerName || first.peer_id || '—')}</strong>
+              {Boolean(first.requiresHrApproval) && <Tag color="volcano" style={{ margin: 0 }}>Vượt 2 ca/ngày — cần HR duyệt</Tag>}
+            </Space>
+          </Descriptions.Item>
         </Descriptions>
       )}
       {rows.length > 1 && (
-        <Alert type="info" showIcon style={{ marginBottom: 12 }} message={`Đang phê duyệt ${rows.length} yêu cầu đổi ca đã được đồng nghiệp xác nhận nhận thay.`} />
+        <Alert type="info" showIcon style={{ marginBottom: 12 }} message={`Đang phê duyệt ${rows.length} yêu cầu nhường ca đã được đồng nghiệp đồng ý nhận (người nhận vượt 2 ca/ngày nên cần HR duyệt).`} />
+      )}
+      {!isEdit && rows.length === 1 && (
+        <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Đồng nghiệp đã đồng ý nhận ca. Khi HR phê duyệt, lịch làm việc sẽ được cập nhật ngay sang người nhận ca." />
       )}
       {warnRows.length > 0 && (
         <Alert

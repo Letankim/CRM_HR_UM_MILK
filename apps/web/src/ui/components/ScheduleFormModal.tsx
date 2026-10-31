@@ -22,7 +22,8 @@ export interface ScheduleAssignmentItem {
   scheduledHours: number; dayType: 'WORK' | 'OFF' | 'OT'; status: string; statusLabel: string;
   publishedAt: string | null; note: string; version: number; created_at: string;
   attendanceStatusLabel?: string; attendanceStatusColor?: string;
-  pendingAdjustmentCode?: string | null; pendingSwapCode?: string | null; pendingLeaveCode?: string | null; pendingEmergencyCode?: string | null;
+  pendingAdjustmentCode?: string | null; pendingSwapCode?: string | null; pendingLeaveCode?: string | null;
+  source?: string; linkedAssignmentId?: string | null;
   isLockedByPayroll?: boolean; lockedByPeriodCode?: string | null;
 }
 

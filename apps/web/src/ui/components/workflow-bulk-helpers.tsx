@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertOutlined, CheckCircleOutlined, CloseCircleOutlined, DeleteOutlined, DownloadOutlined, FileAddOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, CloseCircleOutlined, DeleteOutlined, DownloadOutlined, FileAddOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { exportToExcel } from '@/lib/export-excel';
 import type { BulkActionItem } from './BulkActionBar';
@@ -17,7 +17,9 @@ export function exportAdjustmentsExcel(rows: RowRec[]) {
     columns: [
       { header: 'Mã phiếu', key: 'adjustment_code' }, { header: 'Nhân sự', key: 'employeeName' },
       { header: 'Ngày công', key: 'work_date' }, { header: 'Khung ca', render: (r) => String(r.shiftLabel || r.shift_code || '') },
+      { header: 'Loại lỗi chấm công', render: (r) => String(r.punchTypeLabel || '') },
       { header: 'Giờ đề nghị', key: 'requested_hours', align: 'right' }, { header: 'Lý do giải trình', key: 'reason' },
+      { header: 'Ảnh minh chứng', render: (r) => (r.evidencePhotoUrl ? 'Có' : 'Không') },
       { header: 'Trạng thái', render: (r) => String(r.statusLabel || r.status || '') },
     ],
     rows,
@@ -40,26 +42,16 @@ export function exportLeavesExcel(rows: RowRec[]) {
 export function exportSwapsExcel(rows: RowRec[]) {
   exportToExcel({
     fileName: `Yeu_Cau_Doi_Ca_UmBoMilk_${tsSuffix()}.xls`,
-    sheetTitle: 'Danh Sách Yêu Cầu Đổi Ca Nội Bộ (Quy Trình 3 Bước)',
+    sheetTitle: 'Danh Sách Yêu Cầu Đổi Ca / Nhường Ca Nội Bộ',
     columns: [
-      { header: 'Mã đơn', key: 'swap_code' }, { header: 'Ngày ca', key: 'from_work_date' },
+      { header: 'Mã đơn', key: 'swap_code' }, { header: 'Loại yêu cầu', render: (r) => String(r.kindLabel || (r.kind === 'SWAP' ? 'Đổi ca 2 chiều' : 'Nhường ca')) },
+      { header: 'Ngày ca', key: 'from_work_date' },
       { header: 'Khung ca', render: (r) => String(r.shiftLabel || r.from_shift_code || '') },
-      { header: 'Người xin đổi', key: 'requesterName' }, { header: 'Người nhận thay', key: 'peerName' },
+      { header: 'Ca nhận lại (đổi 2 chiều)', render: (r) => (r.kind === 'SWAP' ? `${String(r.to_work_date || '')} ${String((r.toShiftDetails as RowRec | null)?.shiftLabel || r.to_shift_code || '')}`.trim() : '') },
+      { header: 'Người gửi', key: 'requesterName' }, { header: 'Người nhận', key: 'peerName' },
+      { header: 'Cần HR duyệt', render: (r) => (r.requiresHrApproval ? 'Có (vượt 2 ca/ngày)' : 'Không') },
       { header: 'Phụ cấp đổi ca (VNĐ)', render: (r) => (r.status === 'APPROVED' && Boolean(r.allowance_eligible ?? r.allowanceEligible) ? Number(r.allowance_amount_vnd ?? r.allowanceAmountVnd ?? 0) : 0), isCurrency: true },
       { header: 'Lý do đổi ca', key: 'reason' }, { header: 'Trạng thái', render: (r) => String(r.statusLabel || r.status || '') },
-    ],
-    rows,
-  });
-}
-
-export function exportEmergencyExcel(rows: RowRec[]) {
-  exportToExcel({
-    fileName: `Bao_Nghi_Khan_Cap_UmBoMilk_${tsSuffix()}.xls`,
-    sheetTitle: 'Danh Sách Báo Nghỉ Đột Xuất / Khẩn Cấp (<12h)',
-    columns: [
-      { header: 'Mã báo cáo', key: 'emergency_code' }, { header: 'Nhân sự', key: 'employeeName' },
-      { header: 'Ngày ca', key: 'work_date' }, { header: 'Khung ca', render: (r) => String(r.shiftLabel || r.shift_code || '') },
-      { header: 'Lý do khẩn cấp', key: 'reason' }, { header: 'Trạng thái', render: (r) => String(r.statusLabel || r.status || '') },
     ],
     rows,
   });
@@ -85,7 +77,6 @@ export interface WorkflowBulkRunnerOptions {
   canApproveAdj?: boolean;
   canApproveLeave?: boolean;
   canApproveSwap?: boolean;
-  canHandleEmg?: boolean;
   loading?: boolean;
   onOpenApproveSwaps?: (rows: RowRec[]) => void;
   runBatch: (items: RowRec[], buildCall: (r: RowRec) => { url: string; body: unknown } | null, successMsg: string, confirmKind?: WorkflowConfirmKind) => void;
@@ -136,41 +127,17 @@ export function buildSwapsBulkActions(opts: WorkflowBulkRunnerOptions): BulkActi
   return [
     ...(opts.canApproveSwap ? [
       {
-        key: 'peer-accept', label: 'Đồng nghiệp nhận đã chọn', icon: <CheckCircleOutlined />, loading: opts.loading,
-        eligibleFilter: (r: RowRec) => r.status === 'PENDING_PEER',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/shift-swaps/${r.id}/peer-respond`, body: { version: r.version, accept: true, peer_note: 'Đồng ý nhận ca thay' } }), 'Đã xác nhận đồng nghiệp nhận ca cho các đơn hợp lệ', 'swap'),
-      },
-      {
-        key: 'approve', label: 'Duyệt đổi ca đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: opts.loading,
+        key: 'approve', label: 'HR duyệt đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'PEER_ACCEPTED',
-        onClick: (rows: RowRec[]) => opts.onOpenApproveSwaps ? opts.onOpenApproveSwaps(rows) : opts.runBatch(rows, (r) => ({ url: `/admin/shift-swaps/${r.id}/decide`, body: { version: r.version, decision: 'APPROVED', decision_reason: 'Duyệt đổi ca hàng loạt', allowance_eligible: true } }), 'Đã phê duyệt đổi ca cho các đơn hợp lệ', 'swap'),
+        onClick: (rows: RowRec[]) => opts.onOpenApproveSwaps ? opts.onOpenApproveSwaps(rows) : opts.runBatch(rows, (r) => ({ url: `/admin/shift-swaps/${r.id}/decide`, body: { version: r.version, decision: 'APPROVED', decision_reason: 'HR duyệt nhường ca hàng loạt', allowance_eligible: true } }), 'Đã phê duyệt các yêu cầu nhường ca hợp lệ', 'swap'),
       },
       {
-        key: 'reject', label: 'Từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: opts.loading,
-        eligibleFilter: (r: RowRec) => r.status === 'PENDING_PEER' || r.status === 'PEER_ACCEPTED',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/shift-swaps/${r.id}/decide`, body: { version: r.version, decision: 'REJECTED', decision_reason: 'Từ chối yêu cầu đổi ca hàng loạt' } }), 'Đã từ chối các yêu cầu đổi ca hợp lệ'),
+        key: 'reject', label: 'HR từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: opts.loading,
+        eligibleFilter: (r: RowRec) => r.status === 'PEER_ACCEPTED',
+        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/shift-swaps/${r.id}/decide`, body: { version: r.version, decision: 'REJECTED', decision_reason: 'HR từ chối yêu cầu nhường ca hàng loạt' } }), 'Đã từ chối các yêu cầu nhường ca hợp lệ'),
       },
     ] : []),
     { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportSwapsExcel(rows) },
-  ];
-}
-
-export function buildEmergencyBulkActions(opts: WorkflowBulkRunnerOptions): BulkActionItem<RowRec>[] {
-  const isStoreOnly = Boolean(opts.canConfirmAtt && !opts.canApproveAdj);
-  return [
-    ...(opts.canHandleEmg ? [
-      {
-        key: 'resolve', label: 'Đã có người thay đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: opts.loading,
-        eligibleFilter: (r: RowRec) => r.status === 'REPORTED' || r.status === 'ESCALATED',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/emergency-leaves/${r.id}/handle`, body: { version: r.version, action: 'RESOLVE', resolution_note: isStoreOnly ? 'Cửa hàng đã bố trí nhân sự thay ca' : 'Đã điều phối nhân sự thay ca' } }), 'Đã cập nhật trạng thái có người thay ca cho các báo cáo hợp lệ', 'emergency'),
-      },
-      {
-        key: 'escalate', label: isStoreOnly ? 'Báo thiếu ca lên HR đã chọn' : 'Xác nhận thiếu ca đã chọn', danger: true, icon: <AlertOutlined />, loading: opts.loading,
-        eligibleFilter: (r: RowRec) => r.status === 'REPORTED',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/emergency-leaves/${r.id}/handle`, body: { version: r.version, action: 'ESCALATE', resolution_note: isStoreOnly ? 'Cửa hàng không có người thay, chuyển cảnh báo lên HR' : 'Xác nhận ca đang thiếu nhân sự cần điều phối' } }), isStoreOnly ? 'Đã chuyển cảnh báo thiếu ca lên HR cho các báo cáo hợp lệ' : 'Đã ghi nhận cảnh báo thiếu nhân sự ca cho các báo cáo hợp lệ', 'emergency'),
-      },
-    ] : []),
-    { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportEmergencyExcel(rows) },
   ];
 }
 
