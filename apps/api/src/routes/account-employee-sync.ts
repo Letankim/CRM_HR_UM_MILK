@@ -157,8 +157,9 @@ export async function syncAccountFromEmployee(ctx: AppContext, params: SyncAccou
   if (prevUser && prevUser.id !== targetUser?.id) await ctx.db.users.update(prevUser.id, prevUser.version, { employee_id: '' }, actorId);
   if (!targetUser) return '';
   const otherEmp = findLinkedEmployeeForUser(targetUser, ctx);
-  if (otherEmp && otherEmp.id !== empId && otherEmp.user_id === targetUser.id) {
-    await ctx.db.employees.update(otherEmp.id, otherEmp.version, { user_id: '' }, actorId);
+  if (otherEmp && otherEmp.id !== empId) {
+    if (otherEmp.note === 'Hồ sơ nhân sự liên kết tài khoản hệ thống') await ctx.db.employees.softDelete(otherEmp.id, otherEmp.version, actorId);
+    else if (otherEmp.user_id === targetUser.id) await ctx.db.employees.update(otherEmp.id, otherEmp.version, { user_id: '' }, actorId);
   }
   const isBranchScopedRole = targetUser.role === 'THU_VIEC' || targetUser.role === 'CHINH_THUC' || targetUser.role === 'STORE';
   const userPatch: Record<string, unknown> = { employee_id: employeeCode, ...(pinPatch ?? {}) };

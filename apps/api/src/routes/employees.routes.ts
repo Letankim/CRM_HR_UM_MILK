@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { DEFAULT_SHIFT_CODES, EMPLOYEE_STAGES, EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, PIN_REGEX, STAFF_GROUPS, STAFF_GROUP_LABELS, SYSTEM_CONFIG, isEmployeeRole, normalizePhone, zListQueryBase, type Employee } from '@umbm/shared';
+import { EMPLOYEE_STAGES, EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, PIN_REGEX, SYSTEM_CONFIG, isEmployeeRole, normalizePhone, zListQueryBase, type Employee } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { hashSecret } from '../auth/password.js';
 import { DEMO_PIN } from '../data/memory-seed.js';
@@ -52,7 +52,6 @@ const zCreateEmployeeBody = z.object({
   default_shift_code: z.string().trim().min(1).max(40).default('CA_SANG'),
   probation_start: z.string().trim().optional().default(''),
   probation_end: z.string().trim().optional().default(''),
-  /** Hồ sơ lương cá nhân ban đầu (tùy chọn) — Theo giờ / Theo tháng / Theo ca + % lương thử việc */
   salary: zSalaryProfileFields.optional(),
   bank_name: z.string().trim().max(60).optional().default(''),
   bank_account_number: z.string().trim().max(40).optional().default(''),
@@ -61,24 +60,32 @@ const zCreateEmployeeBody = z.object({
   create_account: z.boolean().optional().default(true),
   link_user_id: z.string().trim().max(64).optional().default(''),
   username: z.string().trim().max(32).optional().default(''),
-  initial_pin: z.string().trim().min(6, 'Mã PIN đăng nhập phải gồm đúng 6 chữ số').max(128).or(z.literal('')).optional().default(DEMO_PIN),
+  initial_pin: z.string().trim().min(6, 'Mã PIN đăng nhập phải gồm đúng 6 chữ số').max(128).or(z.literal('')).optional().default(''),
 });
 
+function maskEmployeeRow(row: ReturnType<typeof mapEmployeeRecord>, canSeeSalary: boolean, canSeePersonal: boolean) {
+  return {
+    ...row,
+    ...(canSeeSalary ? {} : { salaryOfficialAmountVnd: 0, salaryEffectiveAmountVnd: 0, salaryProbationPercent: null, salaryProfile: null, bankName: '', bankAccountNumber: '', bankAccountHolder: '', taxCode: '' }),
+    ...(canSeePersonal ? {} : { citizenId: '' }),
+  };
+}
+
 export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
-  app.get('/api/admin/employees', { preHandler: requirePermission('employee.read', 'employee.manage', 'schedule.read', 'schedule.propose', 'schedule.publish', 'payroll.read', 'payroll.manage', 'candidate.manage', 'interview.manage', 'test.manage') }, async (request) => {
+  const READ_PERMS = ['employee.read', 'employee.manage', 'account.read', 'account.manage', 'schedule.read', 'schedule.propose', 'schedule.publish', 'payroll.read', 'payroll.manage', 'candidate.manage', 'interview.manage', 'test.manage'] as const;
+
+  app.get('/api/admin/employees', { preHandler: requirePermission(...READ_PERMS) }, async (request) => {
     const query = zEmployeeListQuery.parse(request.query);
     if (query.branch_id && query.branch_id !== 'ALL') assertBranchAccess(request, query.branch_id);
     if (query.refresh === '1' || query.refresh === 'true') {
       await Promise.all([ctx.db.employees.refreshIfIdle(), ctx.db.users.refreshIfIdle(), ctx.db.branches.refreshIfIdle(), ctx.db.payRates.refreshIfIdle()]);
     }
     await healBranchConsistency(ctx);
-    const canSeeSalary = request.auth!.permissions.has('payroll.read') || request.auth!.permissions.has('employee.manage') || request.auth!.permissions.has('system.config');
-    const canSeePersonal = request.auth!.permissions.has('employee.manage') || request.auth!.permissions.has('system.config');
+    const perms = request.auth!.permissions;
+    const canSeeSalary = perms.has('payroll.read') || perms.has('employee.manage') || perms.has('system.config');
+    const canSeePersonal = perms.has('employee.manage') || perms.has('system.config');
     const scoped = filterByBranch(request, ctx.db.employees.all(), (e) => e.branch_id);
-    const mapped = scoped.map((e) => {
-      const row = mapEmployeeRecord(e, ctx);
-      return { ...row, ...(canSeeSalary ? {} : { salaryOfficialAmountVnd: 0, salaryEffectiveAmountVnd: 0, salaryProbationPercent: null, salaryProfile: null, bankName: '', bankAccountNumber: '', bankAccountHolder: '', taxCode: '' }), ...(canSeePersonal ? {} : { citizenId: '' }) };
-    });
+    const mapped = scoped.map((e) => maskEmployeeRow(mapEmployeeRecord(e, ctx), canSeeSalary, canSeePersonal));
     const result = paginateAndSort(mapped, {
       page: query.page, perPage: query.per_page, maxPerPage: 500, sortBy: query.sort_by, sortOrder: query.sort_order,
       defaultSortBy: 'created_at', defaultSortOrder: 'desc',
@@ -91,96 +98,90 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendPaginated(request, 'Lấy danh sách hồ sơ nhân sự thành công', result);
   });
 
+  app.get<{ Params: { id: string } }>('/api/admin/employees/:id', { preHandler: requirePermission(...READ_PERMS) }, async (request) => {
+    const rawId = request.params.id.trim();
+    const emp = ctx.db.employees.get(rawId) ?? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === rawId.toUpperCase());
+    if (!emp) throw Errors.notFound('Hồ sơ nhân sự', rawId);
+    assertBranchAccess(request, emp.branch_id);
+    const perms = request.auth!.permissions;
+    const canSeeSalary = perms.has('payroll.read') || perms.has('employee.manage') || perms.has('system.config');
+    const canSeePersonal = perms.has('employee.manage') || perms.has('system.config');
+    return sendSuccess(request, 'Lấy thông tin hồ sơ nhân sự thành công', maskEmployeeRow(mapEmployeeRecord(emp, ctx), canSeeSalary, canSeePersonal));
+  });
+
   app.post('/api/admin/employees', { preHandler: requirePermission('employee.manage') }, async (request, reply) => {
     const body = zCreateEmployeeBody.parse(request.body);
     assertBranchAccess(request, body.branch_id);
-    if (!ctx.db.branches.get(body.branch_id)) {
-      throw Errors.fieldValidation('branch_id', 'INVALID_VALUE', 'Chi nhánh được chọn không tồn tại', body.branch_id);
-    }
+    if (!ctx.db.branches.get(body.branch_id)) throw Errors.fieldValidation('branch_id', 'INVALID_VALUE', 'Chi nhánh được chọn không tồn tại', body.branch_id);
     const rawPhone = body.phone_number ?? body.phone ?? '';
     const phone = normalizePhone(rawPhone);
     if (!phone) throw Errors.fieldValidation('phone_number', 'INVALID_PHONE', 'Số điện thoại phải gồm 10 chữ số bắt đầu bằng số 0', rawPhone);
+    const linkedExisting = body.link_user_id ? ctx.db.users.get(body.link_user_id) : undefined;
+    if (body.link_user_id && !linkedExisting) throw Errors.fieldValidation('link_user_id', 'INVALID_VALUE', 'Tài khoản người dùng được chọn không tồn tại', body.link_user_id);
+
     const empCode = (body.employee_code || `NV${String(ctx.db.employees.all(true).length + 1).padStart(4, '0')}`).toUpperCase();
     const targetUsername = (body.username || `nv.${empCode.toLowerCase()}`).toLowerCase();
     assertUniquePersonalIdentifiers(ctx, {
-      employee_code: empCode,
-      phone,
-      phoneField: 'phone_number',
-      email: body.email || undefined,
-      citizen_id: body.citizen_id || undefined,
-      tax_code: body.tax_code || undefined,
-      bank_account_number: body.bank_account_number || undefined,
-      username: !body.link_user_id && body.create_account ? targetUsername : undefined,
-      excludeUserId: body.link_user_id || null,
+      employee_code: empCode, phone, phoneField: 'phone_number', email: body.email || undefined,
+      citizen_id: body.citizen_id || undefined, tax_code: body.tax_code || undefined, bank_account_number: body.bank_account_number || undefined,
+      username: !body.link_user_id && body.create_account ? targetUsername : undefined, excludeUserId: body.link_user_id || null,
     });
     if (body.salary) {
-      try {
-        assertAmountInRange(body.salary.rate_type, body.salary.amount_vnd);
-      } catch {
+      try { assertAmountInRange(body.salary.rate_type, body.salary.amount_vnd); } catch {
         throw Errors.fieldValidation('salary.amount_vnd', 'OUT_OF_RANGE', 'Mức lương không phù hợp với hình thức tính lương đã chọn (giờ / tháng / ca)', body.salary.amount_vnd);
       }
     }
 
-    const linkedExisting = body.link_user_id ? ctx.db.users.get(body.link_user_id) : undefined;
-    if (body.initial_pin && (!linkedExisting || isEmployeeRole(linkedExisting.role)) && !PIN_REGEX.test(body.initial_pin)) throw Errors.fieldValidation('initial_pin', 'INVALID_FORMAT', 'Mã PIN đăng nhập phải gồm đúng 6 chữ số', '******');
+    if (body.initial_pin && (!linkedExisting || isEmployeeRole(linkedExisting.role)) && !PIN_REGEX.test(body.initial_pin)) {
+      throw Errors.fieldValidation('initial_pin', 'INVALID_FORMAT', 'Mã PIN đăng nhập phải gồm đúng 6 chữ số', '******');
+    }
     const actorId = request.auth!.user.id;
-    const pinHash = await hashSecret(body.initial_pin || DEMO_PIN);
+    const effectiveCreatePin = body.initial_pin || DEMO_PIN;
+    const pinHash = await hashSecret(body.link_user_id ? (body.initial_pin || DEMO_PIN) : effectiveCreatePin);
     const startDate = body.probation_start || today();
 
     const created = await ctx.reconciliation.executeSaga({
-      sagaKey: `emp-onboard-${empCode}-${Date.now()}`,
-      operation: 'HR_ONBOARD_EMPLOYEE',
-      actorId,
+      sagaKey: `emp-onboard-${empCode}-${Date.now()}`, operation: 'HR_ONBOARD_EMPLOYEE', actorId,
       initialContext: { emp: null as Employee | null, userId: '' },
       steps: [
         {
           name: 'CREATE_OR_LINK_ACCOUNT',
           run: async (s) => {
-            if (body.link_user_id) {
-              const existingUser = ctx.db.users.get(body.link_user_id);
-              if (existingUser) {
-                const pinPatch = body.initial_pin && body.initial_pin.length >= 6 ? { password_hash: pinHash, failed_login_count: 0, locked_until: '', must_change_pin: true } : undefined;
-                s.userId = await syncAccountFromEmployee(ctx, {
-                  empId: '', employeeCode: empCode, targetUser: existingUser,
-                  fullName: body.full_name, phone, email: body.email || undefined,
-                  branchId: body.branch_id, stage: body.stage, pinPatch, actorId,
-                });
-                return;
-              }
+            if (body.link_user_id && linkedExisting) {
+              const pinPatch = body.initial_pin && body.initial_pin.length >= 6 ? { password_hash: pinHash, failed_login_count: 0, locked_until: '', must_change_pin: true } : undefined;
+              s.userId = await syncAccountFromEmployee(ctx, {
+                empId: '', employeeCode: empCode, targetUser: linkedExisting, fullName: body.full_name, phone,
+                email: body.email || undefined, branchId: body.branch_id, stage: body.stage, pinPatch, actorId,
+              });
+              return;
             }
             if (!body.create_account) return;
-            const u = await ctx.db.users.insert(
-              {
-                username: targetUsername, phone, display_name: body.full_name, password_hash: pinHash,
-                role: body.stage === 'OFFICIAL' ? 'CHINH_THUC' : 'THU_VIEC', permissions_json: '[]', branch_scope: body.branch_id,
-                employee_id: empCode, status: 'PENDING_ACTIVATION', session_version: 1, failed_login_count: 0, locked_until: '',
-                last_login_at: '', activated_by: '', activated_at: '', revoked_at: '', email: body.email, revoked_by: '', revoke_reason: '', must_change_pin: true, pin_changed_at: '',
-              },
-              actorId,
-            );
+            const u = await ctx.db.users.insert({
+              username: targetUsername, phone, display_name: body.full_name, password_hash: pinHash,
+              role: body.stage === 'OFFICIAL' ? 'CHINH_THUC' : 'THU_VIEC', permissions_json: '[]', branch_scope: body.branch_id,
+              employee_id: empCode, status: 'PENDING_ACTIVATION', session_version: 1, failed_login_count: 0, locked_until: '',
+              last_login_at: '', activated_by: '', activated_at: '', revoked_at: '', email: body.email, revoked_by: '', revoke_reason: '', must_change_pin: true, pin_changed_at: '',
+            }, actorId);
             s.userId = u.id;
           },
         },
         {
           name: 'INSERT_EMPLOYEE_RECORD',
           run: async (s) => {
-            s.emp = await ctx.db.employees.insert(
-              {
-                employee_code: empCode, full_name: body.full_name, phone, branch_id: body.branch_id, staff_group: body.staff_group,
-                stage: body.stage, probation_start: body.probation_start, probation_end: body.probation_end,
-                official_from: body.stage === 'OFFICIAL' ? startDate : '', status: 'ACTIVE', user_id: s.userId, candidate_id: '',
-                email: body.email, date_of_birth: body.date_of_birth, gender: body.gender, citizen_id: body.citizen_id,
-                citizen_issue_date: body.citizen_issue_date, permanent_address: body.permanent_address, current_address: body.current_address,
-                emergency_contact_name: body.emergency_contact_name, emergency_contact_phone: body.emergency_contact_phone,
-                position_title: body.position_title || resolveStaffGroupLabel(ctx, body.staff_group),
-                employment_type: body.employment_type, default_shift_code: body.default_shift_code,
-                probation_cycle_days: SYSTEM_CONFIG.defaults.probationCycleDays, probation_work_days: SYSTEM_CONFIG.defaults.probationWorkDays,
-                probation_off_days: SYSTEM_CONFIG.defaults.probationOffDays, resigned_at: '', resign_reason: '', bank_name: body.bank_name,
-                bank_account_number: body.bank_account_number, bank_account_holder: body.bank_account_holder || body.full_name.toUpperCase(),
-                tax_code: body.tax_code, base_hourly_rate_vnd: body.salary?.amount_vnd ?? 0, note: body.note,
-              },
-              actorId,
-            );
+            s.emp = await ctx.db.employees.insert({
+              employee_code: empCode, full_name: body.full_name, phone, branch_id: body.branch_id, staff_group: body.staff_group,
+              stage: body.stage, probation_start: body.probation_start, probation_end: body.probation_end,
+              official_from: body.stage === 'OFFICIAL' ? startDate : '', status: 'ACTIVE', user_id: s.userId, candidate_id: '',
+              email: body.email, date_of_birth: body.date_of_birth, gender: body.gender, citizen_id: body.citizen_id,
+              citizen_issue_date: body.citizen_issue_date, permanent_address: body.permanent_address, current_address: body.current_address,
+              emergency_contact_name: body.emergency_contact_name, emergency_contact_phone: body.emergency_contact_phone,
+              position_title: body.position_title || resolveStaffGroupLabel(ctx, body.staff_group),
+              employment_type: body.employment_type, default_shift_code: body.default_shift_code,
+              probation_cycle_days: SYSTEM_CONFIG.defaults.probationCycleDays, probation_work_days: SYSTEM_CONFIG.defaults.probationWorkDays,
+              probation_off_days: SYSTEM_CONFIG.defaults.probationOffDays, resigned_at: '', resign_reason: '', bank_name: body.bank_name,
+              bank_account_number: body.bank_account_number, bank_account_holder: body.bank_account_holder || body.full_name.toUpperCase(),
+              tax_code: body.tax_code, base_hourly_rate_vnd: body.salary?.amount_vnd ?? 0, note: body.note,
+            }, actorId);
           },
         },
         {
@@ -199,7 +200,7 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
       action: 'employee.create', entity: 'EMPLOYEES', entityId: created.id,
       after: { employee_code: created.employee_code, stage: created.stage, user_id: created.user_id, salary_rate_type: body.salary?.rate_type ?? null },
     });
-    const onboardSecret = created.user_id ? (body.link_user_id ? (body.initial_pin && body.initial_pin.length >= 6 ? body.initial_pin : undefined) : (body.create_account ? (body.initial_pin || DEMO_PIN) : undefined)) : undefined;
+    const onboardSecret = created.user_id ? (body.link_user_id ? (body.initial_pin && body.initial_pin.length >= 6 ? body.initial_pin : undefined) : (body.create_account ? effectiveCreatePin : undefined)) : undefined;
     queueEmployeeOnboardedEmail(ctx, created, request.auth?.user.email, onboardSecret);
     reply.code(201);
     return sendSuccess(request, 'Đã tạo hồ sơ nhân sự mới và đề xuất tài khoản ở trạng thái Chờ Quản trị viên kích hoạt', mapEmployeeRecord(created, ctx));

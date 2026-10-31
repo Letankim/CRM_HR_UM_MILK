@@ -33,6 +33,8 @@ export interface UniquePersonalCheckInput {
 /** Kiểm tra chống trùng lặp toàn bộ các trường định danh cá nhân duy nhất trên cả bảng USERS và EMPLOYEES */
 export function assertUniquePersonalIdentifiers(ctx: AppContext, input: UniquePersonalCheckInput): void {
   const { excludeUserId, excludeEmployeeId, phoneField = 'phone_number' } = input;
+  const isSameEmp = (e: Employee) =>
+    e.id === excludeEmployeeId || Boolean(excludeUserId && e.user_id === excludeUserId && e.note === 'Hồ sơ nhân sự liên kết tài khoản hệ thống');
 
   if (input.username) {
     const uname = input.username.trim().toLowerCase();
@@ -42,7 +44,7 @@ export function assertUniquePersonalIdentifiers(ctx: AppContext, input: UniquePe
 
   if (input.employee_code) {
     const code = input.employee_code.trim().toUpperCase();
-    const dupE = ctx.db.employees.find((e) => e.id !== excludeEmployeeId && e.employee_code.trim().toUpperCase() === code);
+    const dupE = ctx.db.employees.find((e) => !isSameEmp(e) && e.employee_code.trim().toUpperCase() === code);
     if (dupE) throw Errors.fieldValidation('employee_code', 'DUPLICATE_VALUE', `Mã nhân sự ${code} đã được cấp cho ${dupE.full_name}`, input.employee_code);
   }
 
@@ -50,14 +52,14 @@ export function assertUniquePersonalIdentifiers(ctx: AppContext, input: UniquePe
     const p = input.phone.trim();
     const dupUser = ctx.db.users.find((u) => u.id !== excludeUserId && Boolean(u.phone && u.phone.trim() === p));
     if (dupUser) throw Errors.fieldValidation(phoneField, 'DUPLICATE_VALUE', `Số điện thoại ${p} đã được sử dụng bởi tài khoản ${dupUser.display_name} (@${dupUser.username})`, p);
-    const dupEmp = ctx.db.employees.find((e) => e.id !== excludeEmployeeId && Boolean(e.phone && e.phone.trim() === p));
+    const dupEmp = ctx.db.employees.find((e) => !isSameEmp(e) && Boolean(e.phone && e.phone.trim() === p));
     if (dupEmp) throw Errors.fieldValidation(phoneField, 'DUPLICATE_VALUE', `Số điện thoại ${p} đã được đăng ký cho nhân sự ${dupEmp.full_name} (${dupEmp.employee_code})`, p);
   }
   if (input.email) {
     const em = input.email.trim().toLowerCase();
     const dupUser = ctx.db.users.find((u) => u.id !== excludeUserId && Boolean(u.email && u.email.trim().toLowerCase() === em));
     if (dupUser) throw Errors.fieldValidation('email', 'DUPLICATE_VALUE', `Địa chỉ email ${input.email.trim()} đã được sử dụng bởi tài khoản ${dupUser.display_name} (@${dupUser.username})`, input.email);
-    const dupEmp = ctx.db.employees.find((e) => e.id !== excludeEmployeeId && Boolean(e.email && e.email.trim().toLowerCase() === em));
+    const dupEmp = ctx.db.employees.find((e) => !isSameEmp(e) && Boolean(e.email && e.email.trim().toLowerCase() === em));
     if (dupEmp) throw Errors.fieldValidation('email', 'DUPLICATE_VALUE', `Địa chỉ email ${input.email.trim()} đã được đăng ký cho nhân sự ${dupEmp.full_name} (${dupEmp.employee_code})`, input.email);
   }
   if (input.citizen_id) {

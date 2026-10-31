@@ -25,6 +25,8 @@ export interface AccountRowItem {
   phone: string;
   email?: string;
   employeeId: string | null;
+  isPlaceholderEmployee?: boolean;
+  placeholderEmployeeCode?: string | null;
   employeeRecordId?: string | null;
   employeeName?: string | null;
   employeePosition?: string | null;

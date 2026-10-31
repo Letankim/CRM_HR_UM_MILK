@@ -204,7 +204,7 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
                   </>
                 ),
               },
-              { key: 'account', forceRender: true, label: <span><UserSwitchOutlined /> Tài khoản Liên kết</span>, children: <EmployeeAccountLinkFields form={form} editing={editing} /> },
+              { key: 'account', forceRender: true, label: <span><UserSwitchOutlined /> Tài khoản Liên kết</span>, children: <EmployeeAccountLinkFields form={form} editing={editing} branches={branches} /> },
             ]}
           />
         </Form>

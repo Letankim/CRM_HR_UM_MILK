@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { ACCOUNT_STATUSES, ACCOUNT_STATUS_LABELS, DEFAULT_ROLE_PERMISSIONS, EMPLOYEE_STAGE_LABELS, PERMISSIONS, PERMISSION_LABELS, PIN_REGEX, ROLES, ROLE_LABELS, isEmployeeRole, isPermissionForbiddenForRole, normalizePhone, zListQueryBase, type Permission, type Role } from '@umbm/shared';
+import { ACCOUNT_STATUSES, ACCOUNT_STATUS_LABELS, DEFAULT_ROLE_PERMISSIONS, EMPLOYEE_STAGE_LABELS, PERMISSIONS, PERMISSION_LABELS, PIN_REGEX, ROLES, ROLE_LABELS, isEmployeeRole, isPermissionForbiddenForRole, normalizePhone, zListQueryBase, type Branch, type Permission, type Role, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { toPublicUser } from '../auth/auth.service.js';
 import { hashSecret } from '../auth/password.js';
@@ -9,7 +9,7 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { queueAccountCreatedEmail } from '../services/action-email-dispatcher.js';
-import { healBranchConsistency, syncEmployeeFromAccount } from './account-employee-sync.js';
+import { healBranchConsistency, resolveSingleBranchId, syncEmployeeFromAccount } from './account-employee-sync.js';
 import { accountActionRoutes } from './accounts-actions.routes.js';
 import { assertUniquePersonalIdentifiers, findLinkedEmployeeForUser, resolveStaffGroupLabel } from './employee-mapper.js';
 
@@ -18,18 +18,55 @@ export function sanitizeExtraPermissions(role: Role, rawPerms: readonly Permissi
   const unique = [...new Set(rawPerms)];
   for (const p of unique) {
     if (isPermissionForbiddenForRole(role, p)) {
-      throw Errors.fieldValidation(
-        'extra_permissions',
-        'INVALID_VALUE',
-        `Quyền "${PERMISSION_LABELS[p] ?? p}" bị cấm cấp cho vai trò ${ROLE_LABELS[role]} (Quy tắc bảo mật SEC-01/SEC-02)`,
-        p,
-      );
+      throw Errors.fieldValidation('extra_permissions', 'INVALID_VALUE', `Quyền "${PERMISSION_LABELS[p] ?? p}" bị cấm cấp cho vai trò ${ROLE_LABELS[role]} (Quy tắc bảo mật SEC-01/SEC-02)`, p);
     }
   }
   return unique.filter((p) => !defaults.has(p));
 }
 
+export function mapAccountRecord(u: User, ctx: AppContext, branchMap: Map<string, Branch>) {
+  const pub = toPublicUser(u);
+  const linkedEmp = findLinkedEmployeeForUser(u, ctx);
+  const isPlaceholderEmployee = linkedEmp?.note === 'Hồ sơ nhân sự liên kết tài khoản hệ thống';
+  const singleScopedBranchId = resolveSingleBranchId(ctx, u.branch_scope) ?? null;
+  const primaryBranchId = (!isPlaceholderEmployee ? linkedEmp?.branch_id : undefined) ?? singleScopedBranchId ?? linkedEmp?.branch_id ?? null;
+  const branchNames = pub.branchScope === 'ALL' ? 'Toàn hệ thống (4 chi nhánh)' : pub.branchScope.map((bid) => branchMap.get(bid)?.name ?? bid).join(', ');
+
+  return {
+    ...pub,
+    employeeId: isPlaceholderEmployee ? null : (linkedEmp?.employee_code ?? pub.employeeId),
+    placeholderEmployeeCode: isPlaceholderEmployee ? linkedEmp?.employee_code ?? null : null,
+    isPlaceholderEmployee,
+    employeeRecordId: isPlaceholderEmployee ? null : (linkedEmp?.id ?? null),
+    employeeName: isPlaceholderEmployee ? null : (linkedEmp?.full_name ?? null),
+    employeePosition: !isPlaceholderEmployee && linkedEmp ? resolveStaffGroupLabel(ctx, linkedEmp.staff_group, linkedEmp.position_title) : null,
+    employeeStage: !isPlaceholderEmployee && linkedEmp ? linkedEmp.stage : null,
+    employeeStageLabel: !isPlaceholderEmployee && linkedEmp ? EMPLOYEE_STAGE_LABELS[linkedEmp.stage] : null,
+    roleLabel: ROLE_LABELS[u.role],
+    statusLabel: ACCOUNT_STATUS_LABELS[u.status],
+    phone: u.phone || linkedEmp?.phone || '',
+    phone_number: u.phone || linkedEmp?.phone || '',
+    email: u.email || linkedEmp?.email || '',
+    branchNames,
+    primaryBranchId,
+    employeeBranchName: primaryBranchId ? branchMap.get(primaryBranchId)?.name ?? null : null,
+    version: u.version,
+    failedLoginCount: u.failed_login_count,
+    lockedUntil: u.locked_until || null,
+    lastLoginAt: u.last_login_at || null,
+    activatedAt: u.activated_at || null,
+    activatedBy: u.activated_by || null,
+    revokedAt: u.revoked_at || null,
+    revokedBy: u.revoked_by || null,
+    revokeReason: u.revoke_reason || null,
+    createdAt: u.created_at,
+    created_at: u.created_at,
+    updated_at: u.updated_at,
+  };
+}
+
 const zAccountListQuery = zListQueryBase.extend({
+  per_page: z.coerce.number().int().min(1).max(500).default(12),
   status: z.enum([...ACCOUNT_STATUSES, 'ALL'] as const).optional(),
   role: z.enum([...ROLES, 'ALL'] as const).optional(),
   branch_id: z.string().max(64).optional(),
@@ -37,85 +74,31 @@ const zAccountListQuery = zListQueryBase.extend({
 });
 
 const zCreateAccountBody = z.object({
-  username: z
-    .string({ required_error: 'Tên đăng nhập là bắt buộc' })
-    .trim()
-    .min(3, 'Tên đăng nhập tối thiểu 3 ký tự')
-    .max(32, 'Tên đăng nhập tối đa 32 ký tự')
-    .regex(/^[a-zA-Z0-9._-]+$/, 'Tên đăng nhập chỉ gồm chữ cái không dấu, số và dấu chấm/gạch ngang'),
-  display_name: z
-    .string({ required_error: 'Họ và tên hiển thị là bắt buộc' })
-    .trim()
-    .min(2, 'Họ và tên tối thiểu 2 ký tự')
-    .max(80, 'Họ và tên tối đa 80 ký tự'),
+  username: z.string({ required_error: 'Tên đăng nhập là bắt buộc' }).trim().min(3, 'Tên đăng nhập tối thiểu 3 ký tự').max(32, 'Tên đăng nhập tối đa 32 ký tự').regex(/^[a-zA-Z0-9._-]+$/, 'Tên đăng nhập chỉ gồm chữ cái không dấu, số và dấu chấm/gạch ngang'),
+  display_name: z.string({ required_error: 'Họ và tên hiển thị là bắt buộc' }).trim().min(2, 'Họ và tên tối thiểu 2 ký tự').max(80, 'Họ và tên tối đa 80 ký tự'),
   phone_number: z.string().trim().optional().default(''),
   email: z.string().trim().email('Định dạng địa chỉ email không hợp lệ').or(z.literal('')).optional().default(''),
   role: z.enum(ROLES, { errorMap: () => ({ message: 'Vai trò phân quyền không hợp lệ' }) }),
-  secret: z
-    .string({ required_error: 'Mật khẩu hoặc mã PIN là bắt buộc' })
-    .min(6, 'Mật khẩu hoặc mã PIN tối thiểu 6 ký tự')
-    .max(128, 'Mật khẩu tối đa 128 ký tự'),
+  secret: z.string({ required_error: 'Mật khẩu hoặc mã PIN là bắt buộc' }).min(6, 'Mật khẩu hoặc mã PIN tối thiểu 6 ký tự').max(128, 'Mật khẩu tối đa 128 ký tự'),
   employee_id: z.string().trim().max(32).optional().default(''),
   branch_scope: z.string().trim().max(200).optional().default('ALL'),
   extra_permissions: z.array(z.enum(PERMISSIONS)).optional().default([]),
 });
 
-/**
- * ADM-02 (Danh sách & Tạo mới tài khoản + Phân quyền bổ sung) và đăng ký ADM-03 (Kích hoạt / Khóa / Mở khóa / Thu hồi / Lịch sử quyền).
- */
 export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/accounts', { preHandler: requirePermission('account.read', 'account.manage', 'account.activate') }, async (request) => {
     const query = zAccountListQuery.parse(request.query);
-
     if (query.refresh === '1' || query.refresh === 'true') {
       await Promise.all([ctx.db.users.refreshIfIdle(), ctx.db.employees.refreshIfIdle(), ctx.db.branches.refreshIfIdle()]);
     }
     await healBranchConsistency(ctx);
-
     const branchMap = new Map(ctx.db.branches.all().map((b) => [b.id, b]));
-
-    const mapped = ctx.db.users.all().map((u) => {
-      const pub = toPublicUser(u);
-      const linkedEmp = findLinkedEmployeeForUser(u, ctx);
-      const branchNames =
-        pub.branchScope === 'ALL'
-          ? 'Toàn hệ thống (4 chi nhánh)'
-          : pub.branchScope.map((bid) => branchMap.get(bid)?.name ?? bid).join(', ');
-
-      return {
-        ...pub,
-        employeeId: linkedEmp?.employee_code ?? pub.employeeId,
-        employeeRecordId: linkedEmp?.id ?? null,
-        employeeName: linkedEmp?.full_name ?? null,
-        employeePosition: linkedEmp ? resolveStaffGroupLabel(ctx, linkedEmp.staff_group, linkedEmp.position_title) : null,
-        employeeStage: linkedEmp?.stage ?? null,
-        employeeStageLabel: linkedEmp ? EMPLOYEE_STAGE_LABELS[linkedEmp.stage] : null,
-        roleLabel: ROLE_LABELS[u.role],
-        statusLabel: ACCOUNT_STATUS_LABELS[u.status],
-        phone: u.phone || linkedEmp?.phone || '',
-        phone_number: u.phone || linkedEmp?.phone || '',
-        email: u.email || linkedEmp?.email || '',
-        branchNames,
-        primaryBranchId: linkedEmp?.branch_id ?? null,
-        employeeBranchName: linkedEmp ? branchMap.get(linkedEmp.branch_id)?.name ?? null : null,
-        version: u.version,
-        failedLoginCount: u.failed_login_count,
-        lockedUntil: u.locked_until || null,
-        lastLoginAt: u.last_login_at || null,
-        activatedAt: u.activated_at || null,
-        activatedBy: u.activated_by || null,
-        revokedAt: u.revoked_at || null,
-        revokedBy: u.revoked_by || null,
-        revokeReason: u.revoke_reason || null,
-        createdAt: u.created_at,
-        created_at: u.created_at,
-        updated_at: u.updated_at,
-      };
-    });
+    const mapped = ctx.db.users.all().map((u) => mapAccountRecord(u, ctx, branchMap));
 
     const result = paginateAndSort(mapped, {
       page: query.page,
       perPage: query.per_page,
+      maxPerPage: 500,
       sortBy: query.sort_by,
       sortOrder: query.sort_order,
       defaultSortBy: 'created_at',
@@ -123,20 +106,25 @@ export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
       allowedSortFields: ['created_at', 'updated_at', 'username', 'displayName', 'role', 'status', 'lastLoginAt'],
       q: query.q,
       searchExtractor: (item) => [item.username, item.displayName, item.phone, item.email, item.employeeId, item.roleLabel],
-      filters: {
-        status: query.status,
-        role: query.role,
-        branch_id: query.branch_id,
-      },
+      filters: { status: query.status, role: query.role, branch_id: query.branch_id },
       filterPredicates: {
-        branch_id: (item, branchId) =>
-          item.primaryBranchId === branchId ||
-          (Array.isArray(item.branchScope) && item.branchScope.includes(branchId)),
+        branch_id: (item, branchId) => item.primaryBranchId === branchId || (Array.isArray(item.branchScope) && item.branchScope.includes(branchId)),
       },
     });
-
     return sendPaginated(request, 'Lấy danh sách tài khoản thành công', result);
   });
+
+  app.get<{ Params: { id: string } }>(
+    '/api/admin/accounts/:id',
+    { preHandler: requirePermission('account.read', 'account.manage', 'account.activate', 'employee.manage') },
+    async (request) => {
+      const rawId = request.params.id.trim();
+      const user = ctx.db.users.get(rawId) ?? ctx.db.users.find((u) => u.username.trim().toLowerCase() === rawId.toLowerCase());
+      if (!user) throw Errors.notFound('Tài khoản', rawId);
+      const branchMap = new Map(ctx.db.branches.all().map((b) => [b.id, b]));
+      return sendSuccess(request, 'Lấy thông tin tài khoản thành công', mapAccountRecord(user, ctx, branchMap));
+    },
+  );
 
   app.post('/api/admin/accounts', { preHandler: requirePermission('account.manage', 'employee.manage') }, async (request, reply) => {
     const body = zCreateAccountBody.parse(request.body);
@@ -163,9 +151,7 @@ export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
     const actorId = request.auth!.user.id;
     const passwordHash = await hashSecret(body.secret);
     const effectiveBranchScope =
-      (!body.branch_scope || body.branch_scope === 'ALL') &&
-      targetEmp &&
-      (body.role === 'THU_VIEC' || body.role === 'CHINH_THUC' || body.role === 'STORE')
+      (!body.branch_scope || body.branch_scope === 'ALL') && targetEmp && (body.role === 'THU_VIEC' || body.role === 'CHINH_THUC' || body.role === 'STORE')
         ? targetEmp.branch_id
         : body.branch_scope || targetEmp?.branch_id || 'ALL';
     const created = await ctx.db.users.insert(
