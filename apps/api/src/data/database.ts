@@ -1,4 +1,5 @@
 import * as S from '@umbm/shared';
+import { Errors } from '../lib/errors.js';
 import type { SheetsGateway } from '../sheets/gateway.js';
 import { TableStore } from '../sheets/table-store.js';
 import type { WriteQueue } from '../sheets/write-queue.js';
@@ -157,6 +158,7 @@ export class Database {
       this.partitionMonth = S.PARTITION_MONTH_REGEX.test(month) ? month : '';
       await Promise.all(this.monthlyStores().map((m) => (this.partitionMonth ? m.store.switchTab(S.partitionTabName(m.base, this.partitionMonth)) : m.store.load())));
       await this.audit();
+      this.lastRefreshError = null;
       this.ready = true;
     })();
     try {
@@ -167,13 +169,12 @@ export class Database {
     }
   }
 
+  setBootError(msg: string | null): void { this.lastRefreshError = msg; }
+  isReady(): boolean { return this.ready; }
   async waitReady(): Promise<void> {
     if (this.ready) return;
     if (this.readyPromise) await this.readyPromise;
-  }
-
-  isReady(): boolean {
-    return this.ready;
+    if (!this.ready && this.lastRefreshError) throw Errors.syncPending(this.lastRefreshError);
   }
 
   startAutoRefresh(intervalSeconds: number, log: Logger): void {

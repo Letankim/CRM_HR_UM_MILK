@@ -104,7 +104,7 @@ export function SiderFooterHelpAndVersion({
       >
         {!collapsed && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#64748B' }}>
-            <AutoStackBadge height={13} showWordmark />
+            {/* <AutoStackBadge height={13} showWordmark /> */}
           </span>
         )}
         <Tooltip placement="right" title={collapsed ? `AHr ${versionLabel} · Vận hành bởi Auto stack` : 'Phiên bản nền tảng AHr'}>

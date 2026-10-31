@@ -1,7 +1,7 @@
 'use client';
 
-import { Alert, Button, Divider, Form, Input, Segmented, Skeleton, Typography } from 'antd';
-import { LockOutlined, LoginOutlined, MobileOutlined, SafetyCertificateOutlined, SwapOutlined, UserOutlined } from '@ant-design/icons';
+import { Alert, Button, Divider, Form, Input, Skeleton, Typography } from 'antd';
+import { LockOutlined, LoginOutlined, SwapOutlined, UserOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -25,10 +25,7 @@ export function LoginForm({ app }: Props) {
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [checkExisting, setCheckExisting] = useState(false);
-  const [mode, setMode] = useState<AppKind>(app);
-  const isEmployee = mode === 'employee';
-
-  useEffect(() => { setMode(app); }, [app]);
+  const isEmployee = app === 'employee';
 
   useEffect(() => {
     setMounted(true);
@@ -60,8 +57,7 @@ export function LoginForm({ app }: Props) {
   async function onFinish(values: { identifier: string; secret: string }) {
     const cleanId = values.identifier.trim();
     if (/^(\+?84|0)\d{8,10}$/.test(cleanId.replace(/\s+/g, ''))) {
-      setError('Nhân viên vui lòng chọn mục Nhân viên để đăng nhập bằng Số điện thoại và mã PIN 6 chữ số');
-      setMode('employee');
+      router.push('/nv/login');
       return;
     }
     setLoading(true);
@@ -126,13 +122,6 @@ export function LoginForm({ app }: Props) {
           <Typography.Text type="secondary" style={{ fontSize: 13 }}>
             {isEmployee ? 'Bước 1 nhập số điện thoại, Bước 2 nhập mã PIN 6 chữ số' : 'Dành cho tài khoản Quản trị, Nhân sự, Kế toán, Cửa hàng & Truyền thông'}
           </Typography.Text>
-          <Segmented<AppKind>
-            block value={mode} onChange={(v) => { setError(null); setMode(v); }} style={{ marginTop: 12 }}
-            options={[
-              { value: 'employee', icon: <MobileOutlined />, label: 'Nhân viên (Số ĐT + PIN)' },
-              { value: 'backoffice', icon: <SafetyCertificateOutlined />, label: 'Quản trị (Tài khoản)' },
-            ]}
-          />
         </div>
 
         {error && !isEmployee && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}

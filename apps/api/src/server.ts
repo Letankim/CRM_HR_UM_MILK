@@ -171,17 +171,26 @@ async function main() {
   app = await buildApp(ctx);
   realtime = new Realtime(app, tokens, auth, env.API_PUBLIC_ORIGIN);
 
-  const loadPromise = db.loadAll();
   await app.listen({ port: env.API_PORT, host: '0.0.0.0' });
-  await loadPromise;
-  email.hydrateFromDatabase();
-  await reconciliation.scanAndRepair({ autoFix: true, actorId: 'startup-sync' }).catch(() => undefined);
-  await ensurePublishedPeriodPayslips(ctx, 'startup-sync', { skipEmail: env.NODE_ENV === 'production' && !hasSmtpRelayOrigin() }).catch(() => undefined);
-  await sweepDueScheduledAnnouncements(ctx, 'startup-sync').catch(() => undefined);
-  await ensureSyncedNotifications(ctx).catch(() => undefined);
-  db.startAutoRefresh(env.CACHE_REFRESH_SECONDS, app.log);
-  backup.startEmbeddedScheduler(app.log);
-  const stopAnnouncementScheduler = startAnnouncementScheduler(ctx, app.log);
+  let stopAnnouncementScheduler = () => {};
+  try {
+    await db.loadAll();
+    email.hydrateFromDatabase();
+    await reconciliation.scanAndRepair({ autoFix: true, actorId: 'startup-sync' }).catch(() => undefined);
+    await ensurePublishedPeriodPayslips(ctx, 'startup-sync', { skipEmail: env.NODE_ENV === 'production' && !hasSmtpRelayOrigin() }).catch(() => undefined);
+    await sweepDueScheduledAnnouncements(ctx, 'startup-sync').catch(() => undefined);
+    await ensureSyncedNotifications(ctx).catch(() => undefined);
+    db.startAutoRefresh(env.CACHE_REFRESH_SECONDS, app.log);
+    backup.startEmbeddedScheduler(app.log);
+    stopAnnouncementScheduler = startAnnouncementScheduler(ctx, app.log);
+  } catch (err) {
+    const revoked = isAuthRevokedError(err);
+    const msg = revoked
+      ? 'Kết nối Google OAuth tạm ngưng: GOOGLE_OAUTH_REFRESH_TOKEN đã hết hạn hoặc bị thu hồi (invalid_grant). Quản trị viên vui lòng chuyển OAuth Consent Screen sang In Production, chạy "pnpm google:auth" và cập nhật GOOGLE_OAUTH_REFRESH_TOKEN trên Render.'
+      : `Không thể nạp dữ liệu Google Sheets khi khởi động: ${(err as Error).message}`;
+    db.setBootError(msg);
+    app.log.error({ err: revoked ? { code: 'invalid_grant' } : err }, msg);
+  }
 
   app.log.info(`UMBM API v${version} — dữ liệu: ${google.mode}`);
   if (google.mode === 'memory') {
