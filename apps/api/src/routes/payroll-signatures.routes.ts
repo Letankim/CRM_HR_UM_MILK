@@ -64,6 +64,15 @@ const zExportZipBody = z.object({
 export async function payrollSignatureRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/payroll/media/:fileId', async (request, reply) => {
     const { fileId } = request.params as { fileId: string };
+    const isBankQr = fileId.includes('_bankqr_') || ctx.db.employees.all(true).some((e) => e.bank_qr_file_id === fileId);
+    if (isBankQr) {
+      if (!request.auth) throw Errors.unauthorized();
+      const actor = request.auth.user;
+      const isOwnQr = findAllLinkedEmployeesForUser(actor, ctx).some((e) => e.bank_qr_file_id === fileId);
+      if (!isOwnQr && actor.role !== 'FINANCE') {
+        throw Errors.forbidden('Chỉ vai trò Kế toán mới được phép xem và quét Mã QR Ngân hàng của nhân sự');
+      }
+    }
     const media = await loadPayrollMediaBuffer(ctx, fileId);
     if (!media) throw Errors.notFound('Hình ảnh chữ ký / mã QR trên Google Drive', fileId);
     return reply.header('Content-Type', media.mimeType).header('Cache-Control', 'private, max-age=86400').send(media.buffer);
@@ -125,7 +134,10 @@ export async function payrollSignatureRoutes(app: FastifyInstance, ctx: AppConte
     return sendSuccess(request, 'Đã ký tay xác nhận phiếu lương thành công. Bộ phận Kế toán đã nhận thông báo để chuyển khoản thanh toán.', mapPayslipWithTicket(ctx, updated));
   });
 
-  app.post('/api/admin/payroll/payslips/:id/pay', { preHandler: requirePermission('payroll.pay', 'payroll.manage', 'system.config') }, async (request) => {
+  app.post('/api/admin/payroll/payslips/:id/pay', { preHandler: requirePermission('payroll.pay', 'payroll.manage') }, async (request) => {
+    if (request.auth!.user.role !== 'FINANCE') {
+      throw Errors.forbidden('Chỉ vai trò Kế toán mới được phép quét Mã QR và xác nhận thanh toán phiếu lương');
+    }
     const { id } = request.params as { id: string };
     const body = zPaySingleBody.parse(request.body ?? {});
     const paid = await markPayslipsPaid(ctx, [id], body.payment_reference, request.auth!.user);
@@ -133,7 +145,10 @@ export async function payrollSignatureRoutes(app: FastifyInstance, ctx: AppConte
     return sendSuccess(request, 'Đã đánh dấu phiếu lương Đã thanh toán và ghi nhận sổ chi lương thành công', paid[0] ?? null);
   });
 
-  app.post('/api/admin/payroll/payslips/bulk-pay', { preHandler: requirePermission('payroll.pay', 'payroll.manage', 'system.config') }, async (request) => {
+  app.post('/api/admin/payroll/payslips/bulk-pay', { preHandler: requirePermission('payroll.pay', 'payroll.manage') }, async (request) => {
+    if (request.auth!.user.role !== 'FINANCE') {
+      throw Errors.forbidden('Chỉ vai trò Kế toán mới được phép xác nhận thanh toán phiếu lương');
+    }
     const body = zBulkPayBody.parse(request.body ?? {});
     const paid = await markPayslipsPaid(ctx, body.ids, body.payment_reference, request.auth!.user);
     await ctx.audit.record(auditContext(request), { action: 'payslip.bulk_pay', entity: 'PAYSLIPS', entityId: paid[0]?.id ?? 'bulk', after: { count: paid.length } });

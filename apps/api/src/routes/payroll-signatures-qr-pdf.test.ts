@@ -49,9 +49,12 @@ describe('Luồng 3 chữ ký lương (Kế toán -> Quản trị -> Kế toán 
     const prof = putRes.json().data;
     expect(prof.bankQrDriveFolder).toBe('08_EMPLOYEE_BANK_QR');
     expect(prof.bankQrUrl).toMatch(/^\/api\/payroll\/media\//);
-    const mediaRes = await t.app.inject({ method: 'GET', url: prof.bankQrUrl });
+    expect((await t.app.inject({ method: 'GET', url: prof.bankQrUrl })).statusCode).toBe(401);
+    expect((await t.app.inject({ method: 'GET', url: prof.bankQrUrl, headers: adminH })).statusCode).toBe(403);
+    const mediaRes = await t.app.inject({ method: 'GET', url: prof.bankQrUrl, headers: empH });
     expect(mediaRes.statusCode).toBe(200);
     expect(mediaRes.headers['content-type']).toContain('image/png');
+    expect((await t.app.inject({ method: 'GET', url: prof.bankQrUrl, headers: finH })).statusCode).toBe(200);
   });
 
   it('2. Kế toán tạo kỳ lương & gửi trình Quản trị phê duyệt (DRAFT -> RECONCILE)', async () => {
@@ -109,7 +112,7 @@ describe('Luồng 3 chữ ký lương (Kế toán -> Quản trị -> Kế toán 
     expect(pubRes.json().data.status).toBe('PUBLISHED');
     expect(pubRes.json().data.financeSignedBy).toBe('Lê Thị Kế Toán Trưởng');
 
-    const snapsRes = await t.app.inject({ method: 'GET', url: `/api/admin/payroll/periods/${periodId}/snapshots`, headers: adminH });
+    const snapsRes = await t.app.inject({ method: 'GET', url: `/api/admin/payroll/periods/${periodId}/snapshots`, headers: finH });
     expect(snapsRes.statusCode).toBe(200);
     const nv2 = snapsRes.json().data.snapshots.find((s: { employeeCode: string }) => s.employeeCode === 'NV0002');
     expect(nv2.hasEmployeeBankQr).toBe(true);
@@ -141,7 +144,7 @@ describe('Luồng 3 chữ ký lương (Kế toán -> Quản trị -> Kế toán 
     nv2PayslipId = deductRes.json().data.id;
   });
 
-  it('6. Nhân viên bị chặn upload ảnh, bắt buộc ký tay trực tiếp (DIRECT_CANVAS) -> Hiện Mã QR bên Quản trị', async () => {
+  it('6. Nhân viên bị chặn upload ảnh, bắt buộc ký tay trực tiếp (DIRECT_CANVAS) -> Chỉ Kế toán xem được Mã QR, Quản trị bị ẩn hoàn toàn', async () => {
     const uploadBlocked = await t.app.inject({
       method: 'POST', url: `/api/me/payslips/${nv2PayslipId}/sign`, headers: empH,
       payload: { signature_base64: EMP_SIG_PNG, signature_source: 'FILE_UPLOAD' },
@@ -162,15 +165,21 @@ describe('Luồng 3 chữ ký lương (Kế toán -> Quản trị -> Kế toán 
     });
     expect(lockedAdj.statusCode).toBe(409);
 
-    const snapsAfter = await t.app.inject({ method: 'GET', url: `/api/admin/payroll/periods/${periodId}/snapshots`, headers: adminH });
-    const nv2 = snapsAfter.json().data.snapshots.find((s: { employeeCode: string }) => s.employeeCode === 'NV0002');
-    expect(nv2.bankQrUrl).toMatch(/^\/api\/payroll\/media\//);
-    expect(nv2.employeeSignatureUrl).toMatch(/^\/api\/payroll\/media\//);
+    const adminSnaps = await t.app.inject({ method: 'GET', url: `/api/admin/payroll/periods/${periodId}/snapshots`, headers: adminH });
+    const nv2Admin = adminSnaps.json().data.snapshots.find((s: { employeeCode: string }) => s.employeeCode === 'NV0002');
+    expect(nv2Admin.hasEmployeeBankQr).toBe(false);
+    expect(nv2Admin.bankQrUrl).toBeNull();
+
+    const finSnaps = await t.app.inject({ method: 'GET', url: `/api/admin/payroll/periods/${periodId}/snapshots`, headers: finH });
+    const nv2Fin = finSnaps.json().data.snapshots.find((s: { employeeCode: string }) => s.employeeCode === 'NV0002');
+    expect(nv2Fin.bankQrUrl).toMatch(/^\/api\/payroll\/media\//);
+    expect(nv2Fin.employeeSignatureUrl).toMatch(/^\/api\/payroll\/media\//);
   });
 
-  it('7. Đánh dấu Đã thanh toán từng phiếu lương & Xuất PDF đủ 3 chữ ký nén ZIP chuẩn tên file', async () => {
+  it('7. Chỉ Kế toán được quét QR & Đánh dấu Đã thanh toán từng phiếu lương; Xuất PDF đủ 3 chữ ký nén ZIP chuẩn tên file', async () => {
+    expect((await t.app.inject({ method: 'POST', url: `/api/admin/payroll/payslips/${nv2PayslipId}/pay`, headers: adminH, payload: { payment_reference: 'ADMIN-TRY' } })).statusCode).toBe(403);
     const payRes = await t.app.inject({
-      method: 'POST', url: `/api/admin/payroll/payslips/${nv2PayslipId}/pay`, headers: adminH,
+      method: 'POST', url: `/api/admin/payroll/payslips/${nv2PayslipId}/pay`, headers: finH,
       payload: { payment_reference: 'VCB-QR-202612-NV0002' },
     });
     expect(payRes.statusCode).toBe(200);

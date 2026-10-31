@@ -85,7 +85,7 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
     } else if (period.status === 'PUBLISHED' || period.status === 'PAID') {
       await ensurePublishedPeriodPayslips(ctx, actorId, { skipEmail: true });
     }
-    const allSnaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === id).map((s) => mapSnapshot(s, ctx)).sort((a, b) => a.employeeCode.localeCompare(b.employeeCode));
+    const allSnaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === id).map((s) => mapSnapshot(s, ctx, request.auth?.user.role)).sort((a, b) => a.employeeCode.localeCompare(b.employeeCode));
     const branchFilter = q.branch_id && q.branch_id !== 'ALL' ? q.branch_id : '', rateFilter = q.rate_type && q.rate_type !== 'ALL' ? q.rate_type : '';
     const anomalyFilter = q.anomaly && q.anomaly !== 'ALL' ? q.anomaly : '', confirmFilter = q.confirm_status && q.confirm_status !== 'ALL' ? q.confirm_status : '';
     const keyword = (q.q ?? '').trim().toLowerCase();

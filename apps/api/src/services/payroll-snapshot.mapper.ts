@@ -38,7 +38,7 @@ interface SnapshotAdjustmentsDetail {
 }
 
 /** Chuyển Snapshot lương sang dạng hiển thị (kèm chi tiết phân đoạn lương & đối soát chấm công/nghỉ OFF/đổi ca) */
-export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
+export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext, viewerRole?: string) {
   const period = ctx.db.payPeriods.get(s.period_id);
   const fromDate = period?.from_date || '2000-01-01';
   const toDate = period?.to_date || '2099-12-31';
@@ -179,8 +179,8 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext) {
     advanceDeductionVnd: s.advance_deduction_vnd, grossVnd: s.gross_vnd, netVnd: s.net_vnd,
     bankName: emp?.bank_name || s.bank_name, bankAccountNumber: emp?.bank_account_number || s.bank_account_number,
     bankAccountHolder: emp?.bank_account_holder || s.bank_account_holder || s.full_name,
-    hasEmployeeBankQr: Boolean(emp?.bank_qr_file_id),
-    bankQrUrl: isConfirmed ? resolvePayrollMediaUrl(emp?.bank_qr_file_id) : null,
+    hasEmployeeBankQr: viewerRole === 'FINANCE' ? Boolean(emp?.bank_qr_file_id) : false,
+    bankQrUrl: viewerRole === 'FINANCE' && isConfirmed ? resolvePayrollMediaUrl(emp?.bank_qr_file_id) : null,
     adminSignatureUrl: resolvePayrollMediaUrl(slip?.admin_signature_file_id || period?.admin_signature_file_id),
     adminSignedBy: period?.admin_signed_by || '', adminSignedAt: period?.admin_signed_at || null,
     financeSignatureUrl: resolvePayrollMediaUrl(slip?.finance_signature_file_id || period?.finance_signature_file_id),

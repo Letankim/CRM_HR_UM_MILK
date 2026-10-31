@@ -6,7 +6,7 @@ import { CheckCircleOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileP
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api, ApiClientError } from '@/lib/api';
-import { useCan } from '@/lib/auth';
+import { useCan, useMe } from '@/lib/auth';
 import { downloadBase64File, type ExportFilePayload } from '@/lib/payroll-file-helpers';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { SelectableTable } from './BulkActionBar';
@@ -24,9 +24,11 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
   const qc = useQueryClient();
   const router = useRouter();
   const can = useCan();
+  const me = useMe().data?.user;
+  const isFinance = me?.role === 'FINANCE';
   const { message } = App.useApp();
   const canManage = can('payroll.manage');
-  const canPay = can('payroll.pay', 'payroll.manage', 'system.config');
+  const canPay = isFinance && can('payroll.pay', 'payroll.manage');
   const [searchInput, setSearchInput] = useState('');
   const debouncedQ = useDebouncedValue(searchInput, 400);
   const [branchFilter, setBranchFilter] = useState('ALL');
@@ -170,8 +172,8 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
           { title: 'Khấu trừ', key: 'ded', align: 'right', render: (_, r) => <span className="num" style={{ color: '#DC2626' }}>{fmtVnd(deductionsOf(r))}</span> },
           { title: 'Thực lĩnh', dataIndex: 'netVnd', align: 'right', render: (v: number) => <span className="num" style={{ color: '#2563EB', fontWeight: 800 }}>{fmtVnd(v)}</span> },
           {
-            title: 'Ký NV & Mã QR TT', key: 'confirm', width: 185,
-            render: (_, r) => <PayrollConfirmationCell row={r} periodStatus={period.status} onOpenTickets={((e?: { stopPropagation?: () => void }) => { e?.stopPropagation?.(); router.push('/admin/tickets'); }) as () => void} onOpenQrPay={setQrPayTarget} />,
+            title: isFinance ? 'Ký NV & Mã QR TT' : 'Ký xác nhận & TT', key: 'confirm', width: 185,
+            render: (_, r) => <PayrollConfirmationCell row={r} periodStatus={period.status} onOpenTickets={((e?: { stopPropagation?: () => void }) => { e?.stopPropagation?.(); router.push('/admin/tickets'); }) as () => void} onOpenQrPay={isFinance ? setQrPayTarget : undefined} />,
           },
           {
             title: 'Thao tác', key: 'act', width: 92, align: 'right', fixed: 'right',
@@ -182,7 +184,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
                   detailTooltip="Xem chi tiết phiếu lương" onViewDetail={() => onOpenPayslip(r)}
                   menuItems={[
                     { key: 'pdf', icon: <FilePdfOutlined />, label: 'Xuất phiếu lương', onClick: () => void downloadSinglePdf(r) },
-                    ...(r.employeeConfirmedAt ? [{ key: 'qr', icon: <QrcodeOutlined />, label: 'Mã QR Ngân hàng & Đánh dấu Đã TT', onClick: () => setQrPayTarget(r) }] : []),
+                    ...(isFinance && r.employeeConfirmedAt ? [{ key: 'qr', icon: <QrcodeOutlined />, label: 'Mã QR Ngân hàng & Đánh dấu Đã TT', onClick: () => setQrPayTarget(r) }] : []),
                     ...(canAdj ? [{ key: 'adjust', icon: <EditOutlined />, label: 'Điều chỉnh phiếu lương (+ / -)', onClick: () => onOpenPayslip(r) }] : []),
                   ]}
                 />
@@ -208,7 +210,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
         }
       />
       <PayrollMissingShiftsModal open={missingModalOpen} period={period} selectedEmployee={inspectEmp} allMissingShifts={allMissingShifts} onClose={() => setMissingModalOpen(false)} onShowAll={() => setInspectEmp(null)} onOpenPayslip={onOpenPayslip} />
-      <PayrollBankQrPayModal row={qrPayTarget} onClose={() => setQrPayTarget(null)} />
+      {isFinance && <PayrollBankQrPayModal row={qrPayTarget} onClose={() => setQrPayTarget(null)} />}
     </Card>
   );
 }

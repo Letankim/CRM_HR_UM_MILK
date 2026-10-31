@@ -67,8 +67,9 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
 
   const editable = period.status === 'DRAFT' || period.status === 'RECONCILE';
   const isPublishedOrPaid = period.status === 'PUBLISHED' || period.status === 'PAID';
+  const isFinance = me?.role === 'FINANCE';
   const canPublish = can('payroll.publish', 'payroll.manage');
-  const canPay = can('payroll.pay', 'payroll.manage');
+  const canPay = isFinance && can('payroll.pay', 'payroll.manage');
   const back = BACK[period.status];
   const totalIssued = period.issued_payslips_count || period.total_employees;
 

@@ -175,7 +175,7 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
             {isPaid ? (
               <Alert type="success" showIcon style={{ marginBottom: 12 }} message={`Phiếu lương này ĐÃ THANH TOÁN chuyển khoản${open.paidAt ? ` lúc ${dayjs(open.paidAt).format('HH:mm DD/MM/YYYY')}` : ''}${open.paymentReference ? ` (${open.paymentReference})` : ''}.`} />
             ) : isConfirmed ? (
-              <Alert type="success" showIcon style={{ marginBottom: 12 }} message={`Bạn đã ký tay xác nhận phiếu lương lúc ${dayjs(open.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')} — Đã gửi chữ ký & Mã QR Ngân hàng tới Ban Quản trị và Kế toán để chi trả.`} />
+              <Alert type="success" showIcon style={{ marginBottom: 12 }} message={`Bạn đã ký tay xác nhận phiếu lương lúc ${dayjs(open.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')} — Đã gửi chữ ký & Mã QR Ngân hàng tới Bộ phận Kế toán để chi trả.`} />
             ) : (open.disputeStatus === 'OPEN' || open.disputeStatus === 'RESOLVED') ? (
               <Alert type={open.disputeStatus === 'RESOLVED' ? 'success' : 'warning'} showIcon style={{ marginBottom: 12 }} message={open.linkedTicket ? `Phiếu hỗ trợ ${open.linkedTicket.ticketCode} — ${open.linkedTicket.departmentLabel} · ${open.linkedTicket.statusLabel}` : 'Đã gửi thắc mắc đối chiếu'} description={open.disputeReason} action={open.linkedTicket ? <Button size="small" type="primary" ghost icon={<CustomerServiceOutlined />} onClick={() => setTicketDrawerId(open.linkedTicket!.id)}>Xem phản hồi ({open.linkedTicket.messageCount})</Button> : undefined} />
             ) : (

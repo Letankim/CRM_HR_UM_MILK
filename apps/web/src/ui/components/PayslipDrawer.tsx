@@ -7,7 +7,7 @@ import type { PayPeriodStatus } from '@umbm/shared';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
-import { useCan } from '@/lib/auth';
+import { useCan, useMe } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
 import { downloadBase64File, type ExportFilePayload } from '@/lib/payroll-file-helpers';
 import { useClientPagination } from '../hooks/useClientPagination';
@@ -28,7 +28,7 @@ export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { s
   const [qrModalOpen, setQrModalOpen] = useState(false), [downloadingPdf, setDownloadingPdf] = useState(false);
   const [attShiftId, setAttShiftId] = useState<string | null>(null);
   const logPag = useClientPagination(10, 'ca'), revPag = useClientPagination(10, 'lần điều chỉnh');
-  const qc = useQueryClient(), can = useCan(), canManage = can('payroll.manage'), { message } = App.useApp(), showDetail = useQuickDetail();
+  const qc = useQueryClient(), can = useCan(), isFinance = useMe().data?.user.role === 'FINANCE', canManage = can('payroll.manage'), { message } = App.useApp(), showDetail = useQuickDetail();
 
   useEffect(() => { setS(propSnap); if (!propSnap) { setAttShiftId(null); setQrModalOpen(false); } }, [propSnap]);
 
@@ -77,7 +77,7 @@ export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { s
       open={!!s} onClose={onClose}
       extra={
         <Space size={6} wrap>
-          {s && isConfirmed && (
+          {s && isFinance && isConfirmed && (
             <Button size="small" type={isPaid ? 'default' : 'primary'} icon={<QrcodeOutlined />} onClick={() => setQrModalOpen(true)}>
               {isPaid ? 'Xem QR & Đã TT' : 'Mã QR & Thanh toán'}
             </Button>
@@ -114,7 +114,7 @@ export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { s
           {isPaid ? (
             <Alert type="success" showIcon style={{ marginBottom: 10 }} message={`Phiếu lương ĐÃ THANH TOÁN${s.paidAt ? ` lúc ${dayjs(s.paidAt).format('HH:mm DD/MM/YYYY')}` : ''}${s.paymentReference ? ` · Mã tham chiếu: ${s.paymentReference}` : ''}.`} />
           ) : isConfirmed ? (
-            <Alert type="success" showIcon style={{ marginBottom: 10 }} message={`Nhân sự đã ký tay trực tiếp phiếu lương lúc ${dayjs(s.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')} — Mã QR Ngân hàng đã mở khóa để chuyển khoản thanh toán.`} />
+            <Alert type="success" showIcon style={{ marginBottom: 10 }} message={`Nhân sự đã ký tay trực tiếp phiếu lương lúc ${dayjs(s.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')} — ${isFinance ? 'Mã QR Ngân hàng đã mở khóa để chuyển khoản thanh toán.' : 'Đang chờ Kế toán chuyển khoản thanh toán.'}`} />
           ) : s.disputeStatus === 'OPEN' ? (
             <Alert type="warning" showIcon style={{ marginBottom: 10 }} message={`Nhân sự đang gửi thắc mắc${s.disputeTicketCode ? ` (${s.disputeTicketCode})` : ''} — Kế toán vẫn có thể điều chỉnh (+ / -).`} description={s.disputeReason || undefined} />
           ) : effStatus === 'PUBLISHED' ? (
@@ -207,7 +207,7 @@ export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { s
             ]}
           />
           <PayslipAdjustModal open={revModal} employeeLabel={`${s.fullName} (${s.employeeCode})`} currentNetVnd={s.netVnd} loading={revMut.isPending} onClose={() => setRevModal(false)} onSubmit={(payload) => revMut.mutate(payload)} />
-          <PayrollBankQrPayModal row={qrModalOpen ? s : null} onClose={() => setQrModalOpen(false)} onPaidSuccess={(_id, ref) => setS((prev) => prev ? { ...prev, payslipStatus: 'PAID', paidAt: new Date().toISOString(), paymentReference: ref } : prev)} />
+          {isFinance && <PayrollBankQrPayModal row={qrModalOpen ? s : null} onClose={() => setQrModalOpen(false)} onPaidSuccess={(_id, ref) => setS((prev) => prev ? { ...prev, payslipStatus: 'PAID', paidAt: new Date().toISOString(), paymentReference: ref } : prev)} />}
           <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
         </>
       )}

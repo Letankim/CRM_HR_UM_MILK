@@ -6,7 +6,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
-import { useCan } from '@/lib/auth';
+import { useCan, useMe } from '@/lib/auth';
 import { fmtVnd, type PayrollSnapshotItem } from './payroll-types';
 
 export function PayrollBankQrPayModal({
@@ -20,7 +20,8 @@ export function PayrollBankQrPayModal({
 }) {
   const qc = useQueryClient();
   const can = useCan();
-  const canPay = can('payroll.pay', 'payroll.manage', 'system.config');
+  const isFinance = useMe().data?.user.role === 'FINANCE';
+  const canPay = isFinance && can('payroll.pay', 'payroll.manage');
   const { message } = App.useApp();
   const [reference, setReference] = useState('');
 
@@ -58,6 +59,7 @@ export function PayrollBankQrPayModal({
   };
 
   const isPaid = row?.payslipStatus === 'PAID' || row?.periodStatus === 'PAID';
+  if (!isFinance) return null;
 
   return (
     <Modal
