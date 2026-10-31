@@ -73,7 +73,7 @@ export default function EmployeeSection() {
   const postMut = useMutation({
     mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body),
     onSuccess: () => { message.success('Đã ghi nhận điểm danh thành công'); setCameraModalKind(null); ['my-attendance', 'my-earnings', 'nv-schedules', 'nv-swaps', 'nv-attendance', 'nv-tests', 'attendance-all'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại'),
+    onError: (e) => { void qc.invalidateQueries({ queryKey: ['my-attendance'] }); message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại'); },
   });
 
   const todayDate = myQ.data?.todayDate || dayjs().format('YYYY-MM-DD');

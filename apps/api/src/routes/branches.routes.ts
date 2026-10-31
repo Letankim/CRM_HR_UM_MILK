@@ -7,6 +7,7 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
+import { SocketEvents } from '../realtime/realtime.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { normalizeOnePersonPerShiftAndDefaults } from '../services/staffing-one-per-shift.service.js';
 
@@ -68,6 +69,7 @@ export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
     if (ctx.db.branches.find((b) => b.code.toUpperCase() === code)) throw Errors.fieldValidation('code', 'DUPLICATE_VALUE', 'Mã chi nhánh đã tồn tại', body.code);
     const created = await ctx.db.branches.insert({ ...body, code, timezone: 'Asia/Ho_Chi_Minh', manager_employee_id: '', effective_from: body.effective_from || dayjs().format('YYYY-MM-DD') }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'branch.create', entity: 'BRANCHES', entityId: created.id, after: { code: created.code, name: created.name } });
+    ctx.realtime()?.broadcast(SocketEvents.SCHEDULE_PUBLISHED, { kind: 'BRANCH_UPDATED', branchId: 'ALL', entityId: created.id });
     return reply.code(201), sendSuccess(request, 'Thêm mới chi nhánh thành công', mapBranch(created, ctx));
   });
 
@@ -79,6 +81,7 @@ export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
     const { version, ...patch } = body;
     const updated = await ctx.db.branches.update(id, version, patch, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'branch.update', entity: 'BRANCHES', entityId: id, before: { lat: before.lat, lng: before.lng }, after: { lat: updated.lat, lng: updated.lng } });
+    ctx.realtime()?.broadcast(SocketEvents.SCHEDULE_PUBLISHED, { kind: 'BRANCH_UPDATED', branchId: 'ALL', entityId: id });
     return sendSuccess(request, 'Cập nhật cấu hình chi nhánh và GPS thành công', mapBranch(updated, ctx));
   });
 
@@ -89,6 +92,7 @@ export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!before) throw Errors.notFound('Không tìm thấy chi nhánh');
     await ctx.db.branches.softDelete(id, body.version ?? before.version, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'branch.delete', entity: 'BRANCHES', entityId: id, before: { code: before.code, name: before.name } });
+    ctx.realtime()?.broadcast(SocketEvents.SCHEDULE_PUBLISHED, { kind: 'BRANCH_DELETED', branchId: 'ALL', entityId: id });
     return sendSuccess(request, `Đã xóa chi nhánh ${before.name}`, { id });
   });
 
@@ -134,6 +138,7 @@ export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
     if (shiftGroup && shiftGroup !== 'STORE') assertBranchAccess(request, shiftGroup);
     const updated = await ctx.db.shiftTemplates.update(id, version, { ...patch, ...(shiftGroup ? { shift_group: shiftGroup } : {}) }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'shift_template.update', entity: 'SHIFT_TEMPLATES', entityId: id, before: { name: before.name, start_time: before.start_time, end_time: before.end_time }, after: { name: updated.name, start_time: updated.start_time, end_time: updated.end_time } });
+    ctx.realtime()?.broadcast(SocketEvents.SCHEDULE_PUBLISHED, { kind: 'SHIFT_TEMPLATE_UPDATED', branchId: 'ALL', entityId: id });
     return sendSuccess(request, 'Cập nhật mẫu ca làm việc thành công', mapShift(updated, ctx));
   });
 

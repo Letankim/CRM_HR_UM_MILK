@@ -52,7 +52,7 @@ export default function MyAttendancePage() {
   const checkMut = useMutation({
     mutationFn: (payload: unknown) => api.post('/attendance/check', payload),
     onSuccess: () => { message.success('Đã ghi nhận điểm danh cá nhân của bạn thành công'); setCameraKind(null); refreshAll(); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Điểm danh thất bại'),
+    onError: (e) => { void qc.invalidateQueries({ queryKey: ['my-attendance'] }); message.error(e instanceof ApiClientError ? e.message : 'Điểm danh thất bại'); },
   });
 
   const todayDate = myQ.data?.todayDate || dayjs().format('YYYY-MM-DD');

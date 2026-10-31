@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Col, Descriptions, Modal, Row, Space, Tag, Typography } from 'antd';
 import { CameraOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, CloseOutlined, EnvironmentOutlined, ReloadOutlined } from '@ant-design/icons';
+import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api } from '@/lib/api';
-import { getAccurateDeviceLocation } from '@/lib/geolocation';
+import { getAccurateDeviceLocation, type AccurateCoords } from '@/lib/geolocation';
 import { FancyboxImage } from './FancyboxPreview';
 
 export interface AttendanceCheckPayload {
@@ -53,13 +54,14 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
   const streamRef = useRef<MediaStream | null>(null);
   const [photoDataUrl, setPhotoDataUrl] = useState<string>('');
   const [cameraReady, setCameraReady] = useState(false);
-  const [coords, setCoords] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
-  const [freshShift, setFreshShift] = useState<Record<string, unknown> | null>(null);
+  const [coords, setCoords] = useState<AccurateCoords | null>(null);
   const [locating, setLocating] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [nowStr, setNowStr] = useState(() => dayjs().format('HH:mm:ss'));
 
-  const activeShift = freshShift ?? shift;
+  const liveQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<{ shifts: Record<string, unknown>[] }>('/my-attendance'), enabled: open });
+  const liveMatchedShift = liveQ.data?.shifts?.find((s) => String(s.id) === String(shift?.id));
+  const activeShift = liveMatchedShift ?? shift;
   const branchName = String(activeShift?.branchName || 'Chi nhánh làm việc');
   const branchLat = activeShift?.branchLat !== undefined && activeShift?.branchLat !== null ? Number(activeShift.branchLat) : null;
   const branchLng = activeShift?.branchLng !== undefined && activeShift?.branchLng !== null ? Number(activeShift.branchLng) : null;
@@ -95,7 +97,7 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
       const pos = await getAccurateDeviceLocation({
         targetBranch: !branchMismatch ? { lat: bLat ?? branchLat, lng: bLng ?? branchLng, radiusM: bRad ?? branchRadiusM } : undefined,
       });
-      setCoords({ lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy });
+      setCoords(pos);
     } catch {
       setCoords(null);
       setGpsError('Không lấy được vị trí hiện tại. Vui lòng cấp quyền truy cập Vị trí (GPS) trên trình duyệt rồi bấm "Lấy vị trí hiện tại".');
@@ -105,16 +107,19 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
   }, [branchLat, branchLng, branchRadiusM, branchMismatch]);
 
   useEffect(() => {
-    if (!open) { stopStream(); setFreshShift(null); return; }
+    if (!open) { stopStream(); return; }
     setPhotoDataUrl('');
     void startCamera();
     void locateGps();
-    void api.get<{ shifts: Record<string, unknown>[] }>('/my-attendance')
-      .then((res) => { const m = res.shifts?.find((s) => String(s.id) === String(shift?.id)); if (m) setFreshShift(m); })
-      .catch(() => undefined);
+    void liveQ.refetch();
     const timer = setInterval(() => setNowStr(dayjs().format('HH:mm:ss')), 1000);
     return () => { clearInterval(timer); stopStream(); };
-  }, [open, shift?.id, startCamera, stopStream, locateGps]);
+  }, [open, shift?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!open || !coords || coords.source !== 'ANCHOR_CACHE' || branchLat === null || branchLng === null) return;
+    if (calculateHaversineMeters(coords.lat, coords.lng, branchLat, branchLng) > branchRadiusM) void locateGps(branchLat, branchLng, branchRadiusM);
+  }, [open, branchLat, branchLng, branchRadiusM, coords, locateGps]);
 
   const handleCapture = () => {
     const canvas = document.createElement('canvas');

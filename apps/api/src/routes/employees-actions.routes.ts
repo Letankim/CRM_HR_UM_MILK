@@ -8,6 +8,7 @@ import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { dayjs } from '../lib/time.js';
 import { assertBranchAccess, auditContext, requirePermission } from '../plugins/auth-context.js';
+import { SocketEvents } from '../realtime/realtime.js';
 import { queueAccountCreatedEmail, queueAccountUpdatedEmail, queuePromotionOfficialEmail } from '../services/action-email-dispatcher.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { currentProfile, isProfileLocked, profilesOf, today } from '../services/salary-profile.service.js';
@@ -117,11 +118,8 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
       }
     }
     await recalculateOpenPeriods(ctx, actorId);
-    await ctx.audit.record(auditContext(request), {
-      action: 'employee.update', entity: 'EMPLOYEES', entityId: id,
-      before: { full_name: before.full_name, branch_id: before.branch_id, status: before.status, user_id: before.user_id },
-      after: { full_name: updated.full_name, branch_id: updated.branch_id, status: updated.status, user_id: updated.user_id },
-    });
+    await ctx.audit.record(auditContext(request), { action: 'employee.update', entity: 'EMPLOYEES', entityId: id, before: { full_name: before.full_name, branch_id: before.branch_id, status: before.status, user_id: before.user_id }, after: { full_name: updated.full_name, branch_id: updated.branch_id, status: updated.status, user_id: updated.user_id } });
+    if (before.branch_id !== updated.branch_id || before.status !== updated.status) ctx.realtime()?.broadcast(SocketEvents.SCHEDULE_PUBLISHED, { kind: 'EMPLOYEE_BRANCH_UPDATED', branchId: 'ALL', entityId: id });
     return sendSuccess(request, 'Cập nhật hồ sơ nhân sự thành công', mapEmployeeRecord(updated, ctx));
   });
 

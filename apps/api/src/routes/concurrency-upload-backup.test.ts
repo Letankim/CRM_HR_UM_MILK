@@ -100,6 +100,17 @@ describe('Tối ưu tốc độ Upload Drive, Chịu tải đa nhân viên & Sao
     expect(retryCheck.json().data.id).toBe(firstId);
     expect(t.db.attendanceEvents.filter((e) => e.idempotency_key === idemKey)).toHaveLength(1);
 
+    // Khi Quản trị sửa tọa độ chi nhánh trong lúc nhân viên đang mở sẵn modal điểm danh cũ, Backend bắt buộc đối chiếu theo tọa độ MỚI
+    const origLat = branch.lat, movedLat = Number((origLat + 0.02).toFixed(6));
+    const updBranch = await t.app.inject({ method: 'PUT', url: `/api/admin/branches/${branch.id}`, headers: admin, payload: { version: branch.version, lat: movedLat } });
+    expect(updBranch.statusCode).toBe(200);
+    const staleSubmit = await t.app.inject({ method: 'POST', url: '/api/attendance/check', headers: admin, payload: { assignment_id: publishedAssign!.id, type: 'CHECK_OUT', lat: origLat, lng: branch.lng, accuracy_m: 10 } });
+    expect(staleSubmit.statusCode).toBe(400);
+    expect(staleSubmit.json().errors.details[0].code).toBe('OUT_OF_RANGE');
+    const freshSubmit = await t.app.inject({ method: 'POST', url: '/api/attendance/check', headers: admin, payload: { assignment_id: publishedAssign!.id, type: 'CHECK_OUT', lat: movedLat, lng: branch.lng, accuracy_m: 10 } });
+    expect(freshSubmit.statusCode).toBe(201);
+    await t.app.inject({ method: 'PUT', url: `/api/admin/branches/${branch.id}`, headers: admin, payload: { version: updBranch.json().data.version, lat: origLat } });
+
     // Gộp nhiều ID ảnh Google Drive từ nhiều nhân viên vào đúng 1 lệnh batchUpdate duy nhất (0 Read + 1 Write)
     const extraEvents = await Promise.all(
       [1, 2, 3, 4].map((idx) =>
