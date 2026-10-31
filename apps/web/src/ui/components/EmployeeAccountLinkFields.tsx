@@ -4,10 +4,11 @@ import { Alert, Button, Col, Form, Input, Radio, Row, Select, Space, Tag } from 
 import type { FormInstance } from 'antd';
 import { KeyOutlined, LinkOutlined, ThunderboltOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { isEmployeeRole, PIN_REGEX, type Role } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { useCan } from '@/lib/auth';
-import { generatePin6, generateUsername } from '@/lib/auto-generate';
+import { generateAccountSecret, generatePin6, generateUsername } from '@/lib/auto-generate';
 import { StatusTag } from '../StatusTag';
 import type { AccountRowItem } from './AccountDetailDrawer';
 import type { EmployeeRowItem } from './employee-table-columns';
@@ -15,7 +16,8 @@ import type { EmployeeRowItem } from './employee-table-columns';
 export type EmployeeAccountMode = 'AUTO_CREATE' | 'LINK_EXISTING' | 'NONE';
 
 /** Mã PIN đăng nhập của nhân viên bắt buộc đúng 6 chữ số */
-const PIN_RULE = { pattern: /^\d{6}$/, message: 'Mã PIN đăng nhập phải gồm đúng 6 chữ số' };
+const PIN_RULE = { pattern: PIN_REGEX, message: 'Mã PIN đăng nhập phải gồm đúng 6 chữ số' };
+const PWD_RULE = { min: 6, message: 'Mật khẩu tối thiểu 6 ký tự' };
 
 export interface EmployeeAccountLinkFieldsProps {
   form: FormInstance;
@@ -28,6 +30,7 @@ export interface EmployeeAccountLinkFieldsProps {
  */
 export function EmployeeAccountLinkFields({ form, editing }: EmployeeAccountLinkFieldsProps) {
   const mode = (Form.useWatch('account_mode', form) as EmployeeAccountMode | undefined) ?? 'AUTO_CREATE';
+  const linkUserId = Form.useWatch('link_user_id', form) as string | undefined;
   const fullName = Form.useWatch('full_name', form) as string | undefined;
   const empCode = Form.useWatch('employee_code', form) as string | undefined;
   const [showPin, setShowPin] = useState(true);
@@ -57,6 +60,26 @@ export function EmployeeAccountLinkFields({ form, editing }: EmployeeAccountLink
     return mapped;
   }, [accountsQuery.data, editing]);
 
+  const linkedRole = useMemo(() => {
+    const targetId = linkUserId ?? editing?.userId;
+    if (!targetId) return undefined;
+    const found = (accountsQuery.data?.data ?? []).find((u) => u.id === targetId);
+    if (found) return found.role;
+    if (editing?.userId === targetId && editing.userRole) return editing.userRole as Role;
+    return undefined;
+  }, [linkUserId, accountsQuery.data, editing]);
+  const isLinkedEmployee = !linkedRole || isEmployeeRole(linkedRole);
+
+  useEffect(() => {
+    if (mode !== 'LINK_EXISTING') return;
+    const cur = String(form.getFieldValue('initial_pin') ?? '');
+    if (!cur) return;
+    if ((isLinkedEmployee && !PIN_REGEX.test(cur)) || (!isLinkedEmployee && PIN_REGEX.test(cur))) {
+      form.setFieldsValue({ initial_pin: isLinkedEmployee ? generatePin6() : generateAccountSecret(linkedRole) });
+      void form.validateFields(['initial_pin']).catch(() => undefined);
+    }
+  }, [mode, isLinkedEmployee, linkedRole, form]);
+
   const handleGenUsername = () => {
     const cur = form.getFieldValue('username') as string | undefined;
     form.setFieldsValue({ username: generateUsername(fullName, empCode, cur) });
@@ -64,7 +87,8 @@ export function EmployeeAccountLinkFields({ form, editing }: EmployeeAccountLink
 
   const handleGenPin = () => {
     setShowPin(true);
-    form.setFieldsValue({ initial_pin: generatePin6() });
+    form.setFieldsValue({ initial_pin: mode === 'LINK_EXISTING' && !isLinkedEmployee ? generateAccountSecret(linkedRole) : generatePin6() });
+    void form.validateFields(['initial_pin']).catch(() => undefined);
   };
 
   return (
@@ -104,7 +128,7 @@ export function EmployeeAccountLinkFields({ form, editing }: EmployeeAccountLink
       {mode === 'AUTO_CREATE' && !editing?.userId && (
         <div style={{ border: '1px solid #E5E7EB', borderRadius: 4, padding: 12, background: '#F8FAFC' }}>
           <Row gutter={12}>
-            <Col span={12}>
+            <Col xs={24} md={12}>
               <Form.Item label="Tên đăng nhập">
                 <Space.Compact style={{ width: '100%' }}>
                   <Form.Item name="username" noStyle>
@@ -116,10 +140,15 @@ export function EmployeeAccountLinkFields({ form, editing }: EmployeeAccountLink
                 </Space.Compact>
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} md={12}>
               <Form.Item label="Mã PIN đăng nhập (6 chữ số)" required>
                 <Space.Compact style={{ width: '100%' }}>
-                  <Form.Item name="initial_pin" noStyle rules={[{ required: true, message: 'Vui lòng nhập mã PIN đăng nhập' }, PIN_RULE]}>
+                  <Form.Item
+                    name="initial_pin"
+                    noStyle
+                    rules={[{ required: true, message: 'Vui lòng nhập mã PIN đăng nhập' }, PIN_RULE]}
+                    normalize={(v) => (typeof v === 'string' ? v.replace(/\D/g, '').slice(0, 6) : v)}
+                  >
                     <Input.Password
                       prefix={<KeyOutlined />}
                       inputMode="numeric"
@@ -142,7 +171,7 @@ export function EmployeeAccountLinkFields({ form, editing }: EmployeeAccountLink
       {mode === 'LINK_EXISTING' && (
         <div style={{ border: '1px solid #E5E7EB', borderRadius: 4, padding: 12, background: '#F8FAFC' }}>
           <Row gutter={12}>
-            <Col span={14}>
+            <Col xs={24} md={14}>
               <Form.Item
                 name="link_user_id"
                 label="Tài khoản liên kết"
@@ -158,20 +187,25 @@ export function EmployeeAccountLinkFields({ form, editing }: EmployeeAccountLink
                 />
               </Form.Item>
             </Col>
-            <Col span={10}>
-              <Form.Item label="Đặt lại mã PIN (6 chữ số)">
+            <Col xs={24} md={10}>
+              <Form.Item label={isLinkedEmployee ? 'Đặt lại mã PIN (6 chữ số)' : 'Đặt lại mật khẩu'}>
                 <Space.Compact style={{ width: '100%' }}>
-                  <Form.Item name="initial_pin" noStyle rules={[PIN_RULE]}>
+                  <Form.Item
+                    name="initial_pin"
+                    noStyle
+                    rules={[isLinkedEmployee ? PIN_RULE : PWD_RULE]}
+                    normalize={(v) => (isLinkedEmployee && typeof v === 'string' ? v.replace(/\D/g, '').slice(0, 6) : v)}
+                  >
                     <Input.Password
                       prefix={<KeyOutlined />}
-                      inputMode="numeric"
-                      maxLength={6}
+                      inputMode={isLinkedEmployee ? 'numeric' : 'text'}
+                      maxLength={isLinkedEmployee ? 6 : undefined}
                       visibilityToggle={{ visible: showPin, onVisibleChange: setShowPin }}
                       placeholder="Để trống nếu giữ nguyên"
                     />
                   </Form.Item>
                   <Button icon={<ThunderboltOutlined />} onClick={handleGenPin}>
-                    Tự sinh PIN
+                    {isLinkedEmployee ? 'Tự sinh PIN' : 'Tự sinh MK'}
                   </Button>
                 </Space.Compact>
               </Form.Item>

@@ -62,8 +62,9 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
       if (!user || user.role === 'MKT') throw Errors.fieldValidation('phone', 'INVALID_VALUE', 'Số điện thoại chưa được cấp tài khoản Cổng Nhân viên. Vui lòng liên hệ Phòng Nhân sự.', phone);
       if (user.status === 'PENDING_ACTIVATION') throw Errors.forbidden('Tài khoản đang chờ Quản trị viên kích hoạt, vui lòng thử lại sau');
       if (user.status !== 'ACTIVE') throw Errors.forbidden('Tài khoản đã bị khóa hoặc thu hồi, vui lòng liên hệ Phòng Nhân sự');
-      return sendSuccess(request, 'Số điện thoại hợp lệ, vui lòng nhập mã PIN 6 số', {
-        phone: normalized, maskedPhone: `${normalized.slice(0, 4)}***${normalized.slice(-3)}`, displayName: maskName(user.display_name), pinLength: 6,
+      const isEmp = isEmployeeRole(user.role);
+      return sendSuccess(request, isEmp ? 'Số điện thoại hợp lệ, vui lòng nhập mã PIN 6 số' : 'Số điện thoại hợp lệ, vui lòng nhập mật khẩu đăng nhập', {
+        phone: normalized, maskedPhone: `${normalized.slice(0, 4)}***${normalized.slice(-3)}`, displayName: maskName(user.display_name), pinLength: 6, authKind: isEmp ? 'PIN' : 'PASSWORD',
       });
     },
   );
@@ -114,23 +115,24 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.put('/api/auth/password', { preHandler: requireAuth() }, async (request) => {
     const user = request.auth!.user;
+    const isEmp = isEmployeeRole(user.role);
     const body = zChangePasswordBody.parse(request.body);
     if (body.new_secret !== body.confirm_secret) {
-      throw Errors.fieldValidation('confirm_secret', 'INVALID_VALUE', 'Mật khẩu / Mã PIN xác nhận không khớp với mật khẩu mới', '***');
+      throw Errors.fieldValidation('confirm_secret', 'INVALID_VALUE', isEmp ? 'Mã PIN xác nhận không khớp với mã PIN mới' : 'Mật khẩu xác nhận không khớp với mật khẩu mới', '***');
     }
     const ok = await verifySecret(user.password_hash, body.current_secret);
     if (!ok) {
-      throw Errors.fieldValidation('current_secret', 'INVALID_VALUE', 'Mật khẩu / Mã PIN hiện tại không chính xác', '***');
+      throw Errors.fieldValidation('current_secret', 'INVALID_VALUE', isEmp ? 'Mã PIN hiện tại không chính xác' : 'Mật khẩu hiện tại không chính xác', '***');
     }
-    if (isEmployeeRole(user.role) && !PIN_REGEX.test(body.new_secret)) {
+    if (isEmp && !PIN_REGEX.test(body.new_secret)) {
       throw Errors.fieldValidation('new_secret', 'INVALID_FORMAT', 'Mã PIN mới phải gồm đúng 6 chữ số', '******');
     }
     if (await verifySecret(user.password_hash, body.new_secret)) {
-      throw Errors.fieldValidation('new_secret', 'INVALID_VALUE', 'Mã PIN / mật khẩu mới phải khác mã hiện tại', '******');
+      throw Errors.fieldValidation('new_secret', 'INVALID_VALUE', isEmp ? 'Mã PIN mới phải khác mã PIN hiện tại' : 'Mật khẩu mới phải khác mật khẩu hiện tại', '******');
     }
     const nextHash = await hashSecret(body.new_secret);
     const updated = await ctx.db.users.update(user.id, user.version, { password_hash: nextHash, must_change_pin: false, pin_changed_at: nowIso() }, user.id);
     await ctx.audit.record(auditContext(request), { action: 'auth.password.change', entity: 'USERS', entityId: user.id });
-    return sendSuccess(request, 'Đã đổi mật khẩu / mã PIN bảo mật thành công', { ok: true, user: toResolvedPublicUser(updated) });
+    return sendSuccess(request, isEmp ? 'Đã đổi mã PIN bảo mật thành công' : 'Đã đổi mật khẩu bảo mật thành công', { ok: true, user: toResolvedPublicUser(updated) });
   });
 }

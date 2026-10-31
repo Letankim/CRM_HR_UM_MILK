@@ -20,6 +20,7 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
   const can = useCan(), canPublish = can('schedule.publish'), canDecide = can('leave.approve');
   const [weekStart, setWeekStart] = useState<string | null>(null);
   const [branchId, setBranchId] = useState('ALL');
+  const [issuesOpen, setIssuesOpen] = useState(false);
   const invalidate = useInvalidatePlanner();
   const decision = usePlannerOffDecision();
 
@@ -33,7 +34,7 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
     onSuccess: (res) => {
       const summary = `Đã chốt lịch tuần ${fmtDm(res.weekStart)}: duyệt ${res.approvedOffCount} đơn OFF và tự động sắp ${res.createdCount} ca theo ca mặc định.`;
       if (res.issues.length > 0) {
-        modal.warning({ width: 680, title: 'Đã chốt lịch nhưng còn trường hợp chưa xếp được', content: <Space direction="vertical" size={10} style={{ width: '100%' }}><span>{summary}</span><PlannerIssuesAlert issues={res.issues} maxHeight={320} /></Space>, okText: 'Đã hiểu' });
+        modal.warning({ width: 680, title: 'Đã chốt lịch nhưng còn trường hợp chưa xếp được', content: <Space direction="vertical" size={10} style={{ width: '100%' }}><span>{summary}</span><PlannerIssuesAlert issues={res.issues} maxHeight={320} collapsible={false} /></Space>, okText: 'Đã hiểu' });
       } else message.success(summary);
       invalidate();
     },
@@ -73,10 +74,25 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
         <Col xs={12} md={6}><Card size="small"><Statistic title="Ca dự kiến sắp" value={data?.summary.plannedCount ?? 0} prefix={<ScheduleOutlined style={{ color: '#2563EB' }} />} /></Card></Col>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Đơn nghỉ OFF trong tuần" value={data?.summary.offCount ?? 0} prefix={<CalendarOutlined style={{ color: '#16A34A' }} />} /></Card></Col>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Đơn OFF chờ duyệt" value={data?.summary.pendingOffCount ?? 0} prefix={<CalendarOutlined style={{ color: '#D97706' }} />} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title="Cảnh báo / Không xếp được" value={data?.summary.issueCount ?? 0} prefix={<WarningOutlined style={{ color: '#DC2626' }} />} /></Card></Col>
+        <Col xs={12} md={6}>
+          <Card
+            size="small"
+            onClick={() => (data?.issues.length ?? 0) > 0 && setIssuesOpen((v) => !v)}
+            style={{
+              cursor: (data?.issues.length ?? 0) > 0 ? 'pointer' : 'default',
+              borderColor: issuesOpen && (data?.issues.length ?? 0) > 0 ? '#FCA5A5' : undefined,
+            }}
+          >
+            <Statistic
+              title={(data?.issues.length ?? 0) > 0 ? `Cảnh báo / Không xếp được (${issuesOpen ? 'Ẩn' : 'Xem'})` : 'Cảnh báo / Không xếp được'}
+              value={data?.summary.issueCount ?? 0}
+              prefix={<WarningOutlined style={{ color: '#DC2626' }} />}
+            />
+          </Card>
+        </Col>
       </Row>
 
-      <PlannerIssuesAlert issues={data?.issues ?? []} />
+      <PlannerIssuesAlert issues={data?.issues ?? []} expanded={issuesOpen} onExpandedChange={setIssuesOpen} />
 
       <Card size="small" title={`Đơn nghỉ OFF tuần ${data ? `${fmtYmd(data.weekStart)} – ${fmtYmd(data.weekEnd)}` : ''}`}>
         <PlannerOffTable

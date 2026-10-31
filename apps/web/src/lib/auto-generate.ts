@@ -3,6 +3,8 @@
  * phục vụ các nút "Tự sinh" trên các biểu mẫu Quản trị.
  */
 
+import { isEmployeeRole, type Role } from '@umbm/shared';
+
 function stripVietnamese(str: string): string {
   return str
     .normalize('NFD')
@@ -58,9 +60,10 @@ export function generatePin6(): string {
   return `${first}${rest}`;
 }
 
-/** Tự sinh mật khẩu mạnh hoặc mã PIN tùy theo vai trò */
-export function generateAccountSecret(role?: string): string {
-  if (!role || role === 'THU_VIEC' || role === 'CHINH_THUC') {
+/** Tự sinh mật khẩu mạnh hoặc mã PIN 6 chữ số tùy theo vai trò */
+export function generateAccountSecret(role?: Role | string): string {
+  const cleanRole = typeof role === 'string' ? role.trim() : '';
+  if (!cleanRole || isEmployeeRole(cleanRole as Role)) {
     return generatePin6();
   }
   const num = Math.floor(1000 + Math.random() * 9000);

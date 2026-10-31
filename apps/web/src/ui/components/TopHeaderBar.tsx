@@ -19,7 +19,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { ROLE_LABELS, ROLE_SHORT_LABELS, type PublicUser } from '@umbm/shared';
+import { isEmployeeRole, ROLE_LABELS, ROLE_SHORT_LABELS, type PublicUser } from '@umbm/shared';
 import { useCan } from '@/lib/auth';
 import { useNotificationSound } from '@/lib/notification-sound';
 import { BRAND } from '../theme';
@@ -146,7 +146,7 @@ export function TopHeaderBar({
               },
               { type: 'divider' },
               { key: 'profile', icon: <UserOutlined />, label: 'Hồ sơ cá nhân & Cập nhật thông tin', onClick: () => setProfileTab('info') },
-              { key: 'password', icon: <KeyOutlined />, label: 'Đổi mật khẩu / Mã PIN bảo mật', onClick: () => setProfileTab('password') },
+              { key: 'password', icon: <KeyOutlined />, label: isEmployeeRole(user.role) ? 'Đổi mã PIN bảo mật (6 số)' : 'Đổi mật khẩu bảo mật', onClick: () => setProfileTab('password') },
               {
                 key: 'sound',
                 icon: soundEnabled ? <SoundOutlined /> : <MutedOutlined />,

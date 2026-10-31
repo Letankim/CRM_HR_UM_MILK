@@ -11,7 +11,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ROLE_LABELS, ROLE_SHORT_LABELS, SYSTEM_CONFIG } from '@umbm/shared';
+import { isEmployeeRole, ROLE_LABELS, ROLE_SHORT_LABELS, SYSTEM_CONFIG } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { useLogout, useMe } from '@/lib/auth';
 import { StatusTag } from '@/ui/StatusTag';
@@ -160,7 +160,7 @@ export default function EmployeeHome() {
             <Typography.Title level={5} style={{ margin: 0, fontWeight: 700, fontSize: 15, lineHeight: 1.25 }}>{u.displayName}</Typography.Title>
           </div>
         </div>
-        <Dropdown trigger={['click']} placement="bottomRight" menu={{ items: [{ key: 'role', icon: <UserSwitchOutlined />, label: `${u.displayName} (${ROLE_LABELS[u.role]})`, disabled: true }, { type: 'divider' }, { key: 'profile', icon: <UserOutlined />, label: 'Hồ sơ cá nhân & Cập nhật thông tin', onClick: () => setProfileTab('info') }, { key: 'password', icon: <KeyOutlined />, label: 'Đổi mật khẩu / Mã PIN bảo mật', onClick: () => setProfileTab('password') }, ...(isInternal ? [{ key: 'admin', icon: <UserSwitchOutlined />, label: 'Về trang Quản trị', onClick: () => router.push('/admin/my-attendance') }] : []), { type: 'divider' }, { key: 'logout', icon: <LogoutOutlined />, danger: true, label: 'Đăng xuất hệ thống', onClick: logout }] }}>
+        <Dropdown trigger={['click']} placement="bottomRight" menu={{ items: [{ key: 'role', icon: <UserSwitchOutlined />, label: `${u.displayName} (${ROLE_LABELS[u.role]})`, disabled: true }, { type: 'divider' }, { key: 'profile', icon: <UserOutlined />, label: 'Hồ sơ cá nhân & Cập nhật thông tin', onClick: () => setProfileTab('info') }, { key: 'password', icon: <KeyOutlined />, label: isEmployeeRole(u.role) ? 'Đổi mã PIN bảo mật (6 số)' : 'Đổi mật khẩu bảo mật', onClick: () => setProfileTab('password') }, ...(isInternal ? [{ key: 'admin', icon: <UserSwitchOutlined />, label: 'Về trang Quản trị', onClick: () => router.push('/admin/my-attendance') }] : []), { type: 'divider' }, { key: 'logout', icon: <LogoutOutlined />, danger: true, label: 'Đăng xuất hệ thống', onClick: logout }] }}>
           <div className="umbm-header-pill" style={{ height: 34, display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px 0 6px', border: `1px solid ${BRAND.headerControlBorder}`, borderRadius: 8, cursor: 'pointer', background: '#F8FAFC', flexShrink: 0 }}>
             <Avatar size={22} style={{ background: BRAND.primaryBg, color: BRAND.primary, border: '1px solid #93C5FD', fontWeight: 700, fontSize: 11 }}>{(u.displayName || u.username).charAt(0).toUpperCase()}</Avatar>
             <Tag color="blue" style={{ margin: 0, borderRadius: 4, fontSize: 11, lineHeight: '18px', paddingInline: 6, fontWeight: 600 }}>{ROLE_SHORT_LABELS[u.role]}</Tag>

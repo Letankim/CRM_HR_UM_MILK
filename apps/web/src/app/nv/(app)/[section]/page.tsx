@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { isEmployeeRole } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useMe } from '@/lib/auth';
 import { useClientPagination } from '@/ui/hooks/useClientPagination';
@@ -88,12 +89,13 @@ export default function EmployeeSection() {
   const myTests = (testsQ.data?.assignments ?? []).filter((a) => Boolean(a.isMine) || Boolean(empId && (a.employee_id === empId || a.employeeCode === empCode)));
   const myAttempts = (testsQ.data?.attempts ?? []).filter((att) => Boolean(att.isMine) || Boolean(empId && (att.employee_id === empId || att.employeeCode === empCode)));
 
+  const isEmpRole = session.data ? isEmployeeRole(session.data.user.role) : true;
   const moreOptionCards = [
     { title: 'Phiếu lương cá nhân', desc: 'Xem chi tiết bảng lương & xác nhận thực lĩnh', icon: <FileTextOutlined />, action: () => router.push('/nv/phieu-luong') },
     { title: 'Bài kiểm tra Nghiệp vụ', desc: 'Làm bài kiểm tra quy chuẩn pha chế SOP & nội quy', icon: <BookOutlined />, action: () => router.push('/nv/bai-kiem-tra') },
     { title: 'Bản tin truyền thông nội bộ', desc: 'Xem thông báo vận hành & chiến dịch mới', icon: <NotificationOutlined />, action: () => router.push('/nv/ban-tin') },
     { title: 'Hồ sơ cá nhân & Ngân hàng', desc: 'Cập nhật họ tên, SĐT, Email, địa chỉ và tài khoản nhận lương', icon: <UserOutlined />, action: () => setProfileTab('info') },
-    { title: 'Đổi mật khẩu / Mã PIN bảo mật', desc: 'Thay đổi mật khẩu hoặc mã PIN 6 chữ số của bạn', icon: <KeyOutlined />, action: () => setProfileTab('password') },
+    { title: isEmpRole ? 'Đổi mã PIN bảo mật (6 số)' : 'Đổi mật khẩu bảo mật', desc: isEmpRole ? 'Thay đổi mã PIN 6 chữ số của bạn' : 'Thay đổi mật khẩu đăng nhập tài khoản của bạn', icon: <KeyOutlined />, action: () => setProfileTab('password') },
   ];
 
   const refreshSection = () => ['my-attendance', 'schedules', 'nv-swaps', 'nv-tests', 'nv-comms', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));

@@ -256,7 +256,6 @@ body {
 .ant-modal-footer,
 .ant-modal-footer > .ant-space,
 .ant-drawer-extra > .ant-space,
-.ant-alert,
 .ant-alert-action {
   display: flex;
   flex-wrap: wrap !important;
@@ -316,7 +315,68 @@ body {
   overflow-y: visible !important;
 }
 
+.ant-alert-content {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
+/* Ô nhập mã PIN 6 chữ số căn đều 6 cột cân đối trên cả Mobile & Laptop */
+.umbm-pin-otp-wrap {
+  width: 100%;
+}
+
+.umbm-pin-otp-wrap .ant-otp {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  width: 100% !important;
+}
+
+.umbm-pin-otp-wrap .ant-otp .ant-otp-input {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 42px !important;
+  padding: 0 !important;
+  text-align: center !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  border-radius: 4px !important;
+}
+
+/* Hộp thoại bắt buộc đổi mã PIN / mật khẩu cân đối đồng đều trên Mobile & Laptop */
+.umbm-force-secret-modal .ant-modal {
+  width: min(440px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px) !important;
+  margin: 12px auto !important;
+  padding-bottom: 0 !important;
+}
+
+.umbm-force-secret-modal .ant-modal-content {
+  padding: 20px !important;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px !important;
+}
+
+.umbm-force-secret-modal .ant-modal-footer {
+  display: block !important;
+  width: 100% !important;
+  text-align: initial !important;
+}
+
 @media (max-width: 767px) {
+  .umbm-force-secret-modal .ant-modal {
+    width: calc(100vw - 24px) !important;
+    max-width: 420px !important;
+    margin: 12px auto !important;
+    top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  .umbm-force-secret-modal .ant-modal-content {
+    padding: 16px !important;
+  }
+  .umbm-pin-otp-wrap .ant-otp {
+    gap: 6px !important;
+  }
   .ant-modal {
     width: 98vw !important;
     max-width: 98vw !important;

@@ -115,25 +115,22 @@ function enqueueAccountOrAuditEmail(
 }
 
 export function queueAccountCreatedEmail(ctx: AppContext, user: User, _actorEmail?: string, initialSecret?: string): QueuedAccountEmailResult {
-  const isEmp = isEmployeeRole(user.role), ref = `ACC-${user.id.slice(0, 8).toUpperCase()}`, isActive = user.status === 'ACTIVE';
-  const loginUrl = `${webOrigin(ctx)}${resolveRolePortalPath(user.role, 'login')}`;
+  const isEmp = isEmployeeRole(user.role), secretNoun = isEmp ? 'mã PIN đăng nhập (6 số)' : 'mật khẩu đăng nhập';
+  const ref = `ACC-${user.id.slice(0, 8).toUpperCase()}`, isActive = user.status === 'ACTIVE', loginUrl = `${webOrigin(ctx)}${resolveRolePortalPath(user.role, 'login')}`;
   const statusNote = isActive ? 'Đang hoạt động (Có thể đăng nhập ngay)' : `${ACCOUNT_STATUS_LABELS[user.status]} (Đăng nhập sau khi Quản trị viên kích hoạt)`;
   return enqueueAccountOrAuditEmail(ctx, user, {
     template: 'ACCOUNT_ACTIVATED', ref,
-    subject: isActive ? `${SYSTEM_CONFIG.emailSubjectPrefix} Cấp tài khoản và mật khẩu đăng nhập @${user.username} (${ref})` : `${SYSTEM_CONFIG.emailSubjectPrefix} Thông tin tài khoản và mật khẩu khởi tạo @${user.username} (${ref})`,
+    subject: isActive ? `${SYSTEM_CONFIG.emailSubjectPrefix} Cấp tài khoản và ${secretNoun} @${user.username} (${ref})` : `${SYSTEM_CONFIG.emailSubjectPrefix} Thông tin tài khoản và ${secretNoun} @${user.username} (${ref})`,
     personalSummary: initialSecret
-      ? `Tài khoản hệ thống ${SYSTEM_CONFIG.brandName} của bạn (@${user.username}) đã được cấp phát kèm mật khẩu đăng nhập bên dưới. Vui lòng bảo mật thông tin và đổi mật khẩu sau lần đăng nhập đầu tiên.`
+      ? `Tài khoản hệ thống ${SYSTEM_CONFIG.brandName} của bạn (@${user.username}) đã được cấp phát kèm ${secretNoun} bên dưới. Vui lòng bảo mật thông tin và đổi ${isEmp ? 'mã PIN' : 'mật khẩu'} ngay trong lần đăng nhập đầu tiên.`
       : (isActive ? `Tài khoản hệ thống ${SYSTEM_CONFIG.brandName} của bạn (@${user.username}) đã được khởi tạo và kích hoạt chính thức.` : `Tài khoản hệ thống ${SYSTEM_CONFIG.brandName} của bạn (@${user.username}) đã được khởi tạo ở trạng thái Chờ Quản trị viên kích hoạt.`),
     auditSummary: `Biên bản khởi tạo tài khoản @${user.username} (${user.display_name} — ${ROLE_LABELS[user.role]}).`,
     metadata: [{ label: 'Tên đăng nhập', value: user.username }, { label: 'Họ tên hiển thị', value: user.display_name }, { label: 'Vai trò hệ thống', value: ROLE_LABELS[user.role] }, { label: 'Trạng thái', value: ACCOUNT_STATUS_LABELS[user.status] }],
     personalMetadata: [
-      { label: 'Họ và tên', value: user.display_name },
-      { label: 'Tên đăng nhập', value: user.username },
+      { label: 'Họ và tên', value: user.display_name }, { label: 'Tên đăng nhập', value: user.username },
       ...(user.phone ? [{ label: 'Số điện thoại đăng nhập', value: user.phone }] : []),
-      ...(initialSecret ? [{ label: 'Mật khẩu / Mã PIN đăng nhập', value: initialSecret }] : []),
-      { label: 'Vai trò hệ thống', value: ROLE_LABELS[user.role] },
-      { label: 'Trạng thái tài khoản', value: statusNote },
-      { label: 'Cổng đăng nhập', value: loginUrl },
+      ...(initialSecret ? [{ label: isEmp ? 'Mã PIN đăng nhập (6 chữ số)' : 'Mật khẩu đăng nhập', value: initialSecret }] : []),
+      { label: 'Vai trò hệ thống', value: ROLE_LABELS[user.role] }, { label: 'Trạng thái tài khoản', value: statusNote }, { label: 'Cổng đăng nhập', value: loginUrl },
     ],
     personalActionLabel: isEmp ? 'Đăng nhập Cổng Nhân viên' : 'Đăng nhập Quản trị hệ thống', personalTarget: 'login',
     dedupeKey: `acc_create:${user.id}:v${user.version}`,
@@ -187,13 +184,13 @@ export function queueAccountRevokedEmail(ctx: AppContext, user: User, reason?: s
 }
 
 export function queueAccountUpdatedEmail(ctx: AppContext, user: User, changeNote: string, _actorEmail?: string, newSecret?: string): QueuedAccountEmailResult {
-  const ref = `UPD-${user.id.slice(0, 8).toUpperCase()}`, isEmp = isEmployeeRole(user.role), loginUrl = `${webOrigin(ctx)}${resolveRolePortalPath(user.role, 'login')}`;
+  const ref = `UPD-${user.id.slice(0, 8).toUpperCase()}`, isEmp = isEmployeeRole(user.role), secretNoun = isEmp ? 'mã PIN (6 số)' : 'mật khẩu', loginUrl = `${webOrigin(ctx)}${resolveRolePortalPath(user.role, 'login')}`;
   return enqueueAccountOrAuditEmail(ctx, user, {
-    template: 'ACCOUNT_ACTIVATED', ref, subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Cập nhật tài khoản${newSecret ? ' và mật khẩu' : ''} @${user.username} (${ref})`,
-    personalSummary: newSecret ? `Tài khoản @${user.username} của bạn vừa được Quản trị viên cập nhật kèm mật khẩu đăng nhập mới bên dưới.` : `Thông tin hoặc phân quyền tài khoản @${user.username} của bạn vừa được Quản trị viên cập nhật.`,
+    template: 'ACCOUNT_ACTIVATED', ref, subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Cập nhật tài khoản${newSecret ? ` và ${secretNoun}` : ''} @${user.username} (${ref})`,
+    personalSummary: newSecret ? `Tài khoản @${user.username} của bạn vừa được Quản trị viên cập nhật kèm ${secretNoun} đăng nhập mới bên dưới.` : `Thông tin hoặc phân quyền tài khoản @${user.username} của bạn vừa được Quản trị viên cập nhật.`,
     auditSummary: `Biên bản cập nhật phân quyền tài khoản @${user.username} (${user.display_name}).`,
     metadata: [{ label: 'Tên tài khoản', value: user.username }, { label: 'Vai trò hiện tại', value: ROLE_LABELS[user.role] }, { label: 'Trạng thái', value: ACCOUNT_STATUS_LABELS[user.status] }, { label: 'Nội dung cập nhật', value: changeNote }],
-    personalMetadata: [{ label: 'Tên đăng nhập', value: user.username }, ...(user.phone ? [{ label: 'Số điện thoại đăng nhập', value: user.phone }] : []), ...(newSecret ? [{ label: 'Mật khẩu / Mã PIN mới', value: newSecret }, { label: 'Cổng đăng nhập', value: loginUrl }] : []), { label: 'Vai trò hiện tại', value: ROLE_LABELS[user.role] }, { label: 'Trạng thái', value: ACCOUNT_STATUS_LABELS[user.status] }, { label: 'Nội dung cập nhật', value: changeNote }],
+    personalMetadata: [{ label: 'Tên đăng nhập', value: user.username }, ...(user.phone ? [{ label: 'Số điện thoại đăng nhập', value: user.phone }] : []), ...(newSecret ? [{ label: isEmp ? 'Mã PIN mới (6 chữ số)' : 'Mật khẩu mới', value: newSecret }, { label: 'Cổng đăng nhập', value: loginUrl }] : []), { label: 'Vai trò hiện tại', value: ROLE_LABELS[user.role] }, { label: 'Trạng thái', value: ACCOUNT_STATUS_LABELS[user.status] }, { label: 'Nội dung cập nhật', value: changeNote }],
     personalActionLabel: newSecret ? (isEmp ? 'Đăng nhập Cổng Nhân viên' : 'Đăng nhập Quản trị hệ thống') : (isEmp ? 'Mở Cổng Nhân viên' : 'Kiểm tra trên Hệ thống Quản trị'), personalTarget: newSecret ? 'login' : 'home',
     dedupeKey: `acc_update:${user.id}:v${user.version}`,
   });
@@ -203,13 +200,13 @@ export function queueEmployeeOnboardedEmail(ctx: AppContext, emp: Employee, _act
   const linkedUser = findLinkedUserForEmployee(emp, ctx);
   const personalEmail = (emp.email && !isSyntheticDemoEmail(emp.email) ? emp.email : linkedUser?.email && !isSyntheticDemoEmail(linkedUser.email) ? linkedUser.email : '').trim().toLowerCase();
   if (!personalEmail) return;
-  const branchName = ctx.db.branches.get(emp.branch_id)?.name || 'Ụm Bò Milk', role = resolveEmployeeRole(ctx, emp, linkedUser), loginUrl = `${webOrigin(ctx)}${resolveRolePortalPath(role, 'login')}`;
+  const branchName = ctx.db.branches.get(emp.branch_id)?.name || 'Ụm Bò Milk', role = resolveEmployeeRole(ctx, emp, linkedUser), isEmp = isEmployeeRole(role), loginUrl = `${webOrigin(ctx)}${resolveRolePortalPath(role, 'login')}`;
   ctx.email.enqueue({
     to: personalEmail, template: 'ACCOUNT_ACTIVATED', subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Tiếp nhận nhân sự & cấp tài khoản @${linkedUser?.username || emp.employee_code} (${emp.employee_code})`,
     recipientName: emp.full_name, referenceCode: emp.employee_code,
     summary: `Chào mừng ${emp.full_name} (${emp.employee_code}) gia nhập hệ thống ${SYSTEM_CONFIG.brandName}. Hồ sơ nhân sự${linkedUser ? ` và tài khoản đăng nhập (@${linkedUser.username})` : ''} của bạn đã được khởi tạo.`,
-    metadata: [{ label: 'Mã & Họ tên nhân sự', value: `${emp.full_name} (${emp.employee_code})` }, { label: 'Chi nhánh làm việc', value: branchName }, { label: 'Vị trí công việc', value: emp.position_title || STAFF_GROUP_LABELS[emp.staff_group as StaffGroup] || emp.staff_group }, ...(linkedUser ? [{ label: 'Tên đăng nhập', value: linkedUser.username }, { label: 'Số điện thoại đăng nhập', value: emp.phone }, ...(initialSecret ? [{ label: 'Mật khẩu / Mã PIN đăng nhập', value: initialSecret }] : []), { label: 'Trạng thái tài khoản', value: ACCOUNT_STATUS_LABELS[linkedUser.status] }, { label: 'Cổng đăng nhập', value: loginUrl }] : [])],
-    actionLabel: isEmployeeRole(role) ? 'Đăng nhập Cổng Nhân viên' : 'Xem hồ sơ nhân sự', actionUrl: linkedUser ? loginUrl : `${webOrigin(ctx)}${resolveRolePortalPath(role, 'home')}`,
+    metadata: [{ label: 'Mã & Họ tên nhân sự', value: `${emp.full_name} (${emp.employee_code})` }, { label: 'Chi nhánh làm việc', value: branchName }, { label: 'Vị trí công việc', value: emp.position_title || STAFF_GROUP_LABELS[emp.staff_group as StaffGroup] || emp.staff_group }, ...(linkedUser ? [{ label: 'Tên đăng nhập', value: linkedUser.username }, { label: 'Số điện thoại đăng nhập', value: emp.phone }, ...(initialSecret ? [{ label: isEmp ? 'Mã PIN đăng nhập (6 chữ số)' : 'Mật khẩu đăng nhập', value: initialSecret }] : []), { label: 'Trạng thái tài khoản', value: ACCOUNT_STATUS_LABELS[linkedUser.status] }, { label: 'Cổng đăng nhập', value: loginUrl }] : [])],
+    actionLabel: isEmp ? 'Đăng nhập Cổng Nhân viên' : 'Xem hồ sơ nhân sự', actionUrl: linkedUser ? loginUrl : `${webOrigin(ctx)}${resolveRolePortalPath(role, 'home')}`,
   }, { dedupeKey: `emp_onboard:${emp.id}` });
   void ctx.email.processQueueBatch(3);
 }

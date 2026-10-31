@@ -48,7 +48,7 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
     onSuccess: (res, row) => {
       const summary = `Đã chốt lịch chu kỳ ${fmtDm(res.cycleStart)} – ${fmtDm(res.cycleEnd)} của ${row.employeeName}: duyệt ${res.approvedOffCount} ngày OFF, xếp ${res.createdCount} ca.`;
       if (res.issues.length > 0) {
-        modal.warning({ width: 680, title: 'Đã chốt lịch chu kỳ nhưng còn trường hợp chưa xếp được', content: <Space direction="vertical" size={10} style={{ width: '100%' }}><span>{summary}</span><PlannerIssuesAlert issues={res.issues} maxHeight={320} /></Space>, okText: 'Đã hiểu' });
+        modal.warning({ width: 680, title: 'Đã chốt lịch chu kỳ nhưng còn trường hợp chưa xếp được', content: <Space direction="vertical" size={10} style={{ width: '100%' }}><span>{summary}</span><PlannerIssuesAlert issues={res.issues} maxHeight={320} collapsible={false} /></Space>, okText: 'Đã hiểu' });
       } else message.success(summary);
       invalidate();
     },
@@ -75,7 +75,7 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
         </Flex>
       </div>
       <Table<PlannerProbationItem>
-        size="small" rowKey="employeeId" loading={q.isLoading} dataSource={rows} scroll={{ x: 1100 }}
+        size="small" rowKey="employeeId" loading={q.isLoading} dataSource={rows} scroll={{ x: 1340 }}
         pagination={rows.length > 10 ? { pageSize: 10, showTotal: (t) => `Tổng ${t} nhân viên thử việc` } : false}
         locale={{ emptyText: 'Không có nhân viên thử việc nào đang hoạt động' }}
         expandable={{
@@ -106,9 +106,9 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
           { title: 'Đăng ký thêm ca', width: 130, render: (_, r) => r.pendingExtraShifts > 0 ? <Tag color="gold" style={{ margin: 0 }}>{r.pendingExtraShifts} ca chờ duyệt</Tag> : <span style={{ color: '#64748B' }}>Không có</span> },
           { title: 'Trạng thái chốt', width: 185, render: (_, r) => <Tag color={r.isLocked ? 'green' : 'default'} icon={r.isLocked ? <LockOutlined /> : <UnlockOutlined />} style={{ margin: 0 }}>{r.isLocked ? `Đã chốt lúc ${fmtTs(r.lockedAt)}` : 'Chưa chốt'}</Tag> },
           {
-            title: 'Thao tác', width: 280, fixed: 'right', align: 'right',
+            title: 'Thao tác', width: 320, fixed: 'right', align: 'right',
             render: (_, r) => (
-              <Space size={6} wrap>
+              <Flex justify="flex-end" align="center" gap={6} wrap={false} style={{ width: '100%', whiteSpace: 'nowrap' }}>
                 {r.readyForOfficial && (
                   <Popconfirm
                     title="Duyệt chuyển Nhân viên chính thức"
@@ -127,7 +127,7 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
                 >
                   <Button size="small" type="primary" ghost icon={<ScheduleOutlined />} disabled={!canPublish} loading={busyId === r.employeeId}>Chốt lịch chu kỳ</Button>
                 </Popconfirm>
-              </Space>
+              </Flex>
             ),
           },
         ]}

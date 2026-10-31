@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Alert, Avatar, Button, Flex, Form, Input, Typography } from 'antd';
-import { ArrowLeftOutlined, ArrowRightOutlined, LoginOutlined, PhoneOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ArrowRightOutlined, LockOutlined, LoginOutlined, PhoneOutlined } from '@ant-design/icons';
 import { PIN_REGEX } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { PinOtpInput } from './PinOtpInput';
@@ -14,6 +14,7 @@ interface LookupResult {
   maskedPhone: string;
   displayName: string;
   pinLength?: number;
+  authKind?: 'PIN' | 'PASSWORD';
 }
 
 export interface EmployeePhonePinLoginProps {
@@ -120,16 +121,26 @@ export function EmployeePhonePinLogin({ onLogin }: EmployeePhonePinLoginProps) {
               Đổi số điện thoại
             </Button>
           </Flex>
-          <Form.Item
-            name="pin"
-            label="Mã PIN đăng nhập (6 chữ số)"
-            rules={[
-              { required: true, message: 'Vui lòng nhập mã PIN đăng nhập' },
-              { pattern: PIN_REGEX, message: 'Mã PIN đăng nhập phải gồm đúng 6 chữ số' },
-            ]}
-          >
-            <PinOtpInput autoFocus onComplete={(pin) => void submitPin({ pin })} />
-          </Form.Item>
+          {account.authKind === 'PASSWORD' ? (
+            <Form.Item
+              name="pin"
+              label="Mật khẩu đăng nhập"
+              rules={[{ required: true, message: 'Vui lòng nhập mật khẩu đăng nhập' }]}
+            >
+              <Input.Password prefix={<LockOutlined />} autoFocus autoComplete="current-password" placeholder="Nhập mật khẩu tài khoản" />
+            </Form.Item>
+          ) : (
+            <Form.Item
+              name="pin"
+              label="Mã PIN đăng nhập (6 chữ số)"
+              rules={[
+                { required: true, message: 'Vui lòng nhập mã PIN đăng nhập' },
+                { pattern: PIN_REGEX, message: 'Mã PIN đăng nhập phải gồm đúng 6 chữ số' },
+              ]}
+            >
+              <PinOtpInput autoFocus onComplete={(pin) => void submitPin({ pin })} />
+            </Form.Item>
+          )}
           <Button type="primary" htmlType="submit" icon={<LoginOutlined />} block loading={loading} style={{ marginTop: 4 }}>
             Đăng nhập
           </Button>

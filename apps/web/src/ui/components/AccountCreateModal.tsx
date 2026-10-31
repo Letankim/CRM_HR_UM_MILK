@@ -4,7 +4,7 @@ import { App, Button, Col, Form, Input, Modal, Row, Select, Space, Tabs } from '
 import { CloseOutlined, SafetyCertificateOutlined, SaveOutlined, SettingOutlined, TeamOutlined, ThunderboltOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { ROLE_OPTIONS, getAllowedExtraPermissionsForRole, type Permission, type Role } from '@umbm/shared';
+import { ROLE_OPTIONS, getAllowedExtraPermissionsForRole, isEmployeeRole, type Permission, type Role } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { generateAccountSecret, generateUsername } from '@/lib/auto-generate';
 import type { AccountRowItem } from './AccountDetailDrawer';
@@ -36,7 +36,9 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
   const { message } = App.useApp();
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState('login');
-  const currentRole: Role = Form.useWatch('role', form) ?? editing?.role ?? 'THU_VIEC';
+  const watchedRole = Form.useWatch('role', form);
+  const currentRole: Role = watchedRole ?? editing?.role ?? 'THU_VIEC';
+  const isEmpRole = isEmployeeRole(currentRole);
 
   const employeesQuery = useQuery({ queryKey: ['employees', 'select-for-account'], queryFn: () => api.list<EmployeeRowItem>('/admin/employees?per_page=100'), enabled: open });
   const branchesQuery = useQuery({ queryKey: ['branches', 'select-for-account'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'), enabled: open });
@@ -89,8 +91,9 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
           })
         : api.post<{ emailQueued?: boolean; queuedToEmail?: string | null }>('/admin/accounts', { ...values, extra_permissions: values.extra_permissions ?? [] }),
     onSuccess: (res, vars) => {
+      const secretNoun = isEmployeeRole(vars.role) ? 'mã PIN 6 số' : 'mật khẩu';
       const queuedMsg = res?.emailQueued && res?.queuedToEmail
-        ? (editing ? (vars.secret ? ` — Đã đưa email mật khẩu mới vào hàng đợi gửi tới ${res.queuedToEmail}` : '') : ` — Đã đưa email cấp tài khoản & mật khẩu vào hàng đợi gửi tới ${res.queuedToEmail}`)
+        ? (editing ? (vars.secret ? ` — Đã đưa email ${secretNoun} mới vào hàng đợi gửi tới ${res.queuedToEmail}` : '') : ` — Đã đưa email cấp tài khoản & ${secretNoun} vào hàng đợi gửi tới ${res.queuedToEmail}`)
         : '';
       message.success((editing ? 'Đã cập nhật tài khoản, phân quyền và đồng bộ hồ sơ thành công' : 'Đã tạo tài khoản mới (Trạng thái: Chờ Quản trị viên kích hoạt)') + queuedMsg);
       ['accounts', 'account-audit-history', 'employees', 'branches', 'schedules', 'me', 'integrations'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
@@ -146,7 +149,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
                   </Row>
                   <Row gutter={12}>
                     <Col span={8}><Form.Item name="phone_number" label="Số điện thoại"><Input placeholder="Ví dụ: 0901000001" /></Form.Item></Col>
-                    <Col span={8}><Form.Item name="email" label="Email (Nhận TK & mật khẩu)"><Input placeholder="Ví dụ: nguyenvanan@gmail.com" /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="email" label={isEmpRole ? 'Email (Nhận TK & mã PIN)' : 'Email (Nhận TK & mật khẩu)'}><Input placeholder="Ví dụ: nguyenvanan@gmail.com" /></Form.Item></Col>
                     <Col span={8}>
                       <Form.Item name="role" label="Vai trò chính" rules={[{ required: true }]}>
                         <Select
@@ -155,7 +158,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
                             const allowed = new Set(getAllowedExtraPermissionsForRole(nextRole));
                             const cur: Permission[] = form.getFieldValue('extra_permissions') ?? [];
                             form.setFieldValue('extra_permissions', cur.filter((p) => allowed.has(p)));
-                            if (!editing) form.setFieldValue('secret', generateAccountSecret(nextRole));
+                            if (!editing || form.getFieldValue('secret')) form.setFieldValue('secret', generateAccountSecret(nextRole));
                           }}
                         />
                       </Form.Item>
@@ -189,6 +192,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
                           if (!form.getFieldValue('email') && found.email) form.setFieldValue('email', found.email);
                           if (found.branchId) form.setFieldValue('branch_scope', found.branchId);
                           if (!editing && !form.getFieldValue('username')) form.setFieldValue('username', `nv.${found.employeeCode.toLowerCase()}`);
+                          if (!editing && isEmployeeRole(form.getFieldValue('role'))) form.setFieldValue('role', found.stage === 'OFFICIAL' ? 'CHINH_THUC' : 'THU_VIEC');
                         }
                       }}
                     />

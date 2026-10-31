@@ -1,17 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import {
-  DEFAULT_SHIFT_CODES,
-  EMPLOYEE_STAGES,
-  EMPLOYEE_STATUSES,
-  EMPLOYMENT_TYPES,
-  STAFF_GROUPS,
-  STAFF_GROUP_LABELS,
-  SYSTEM_CONFIG,
-  normalizePhone,
-  zListQueryBase,
-  type Employee,
-} from '@umbm/shared';
+import { DEFAULT_SHIFT_CODES, EMPLOYEE_STAGES, EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, PIN_REGEX, STAFF_GROUPS, STAFF_GROUP_LABELS, SYSTEM_CONFIG, isEmployeeRole, normalizePhone, zListQueryBase, type Employee } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { hashSecret } from '../auth/password.js';
 import { DEMO_PIN } from '../data/memory-seed.js';
@@ -72,7 +61,7 @@ const zCreateEmployeeBody = z.object({
   create_account: z.boolean().optional().default(true),
   link_user_id: z.string().trim().max(64).optional().default(''),
   username: z.string().trim().max(32).optional().default(''),
-  initial_pin: z.string().trim().regex(/^\d{6}$/, 'Mã PIN đăng nhập phải gồm đúng 6 chữ số').or(z.literal('')).optional().default(DEMO_PIN),
+  initial_pin: z.string().trim().min(6, 'Mã PIN đăng nhập phải gồm đúng 6 chữ số').max(128).or(z.literal('')).optional().default(DEMO_PIN),
 });
 
 export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
@@ -132,6 +121,8 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
       }
     }
 
+    const linkedExisting = body.link_user_id ? ctx.db.users.get(body.link_user_id) : undefined;
+    if (body.initial_pin && (!linkedExisting || isEmployeeRole(linkedExisting.role)) && !PIN_REGEX.test(body.initial_pin)) throw Errors.fieldValidation('initial_pin', 'INVALID_FORMAT', 'Mã PIN đăng nhập phải gồm đúng 6 chữ số', '******');
     const actorId = request.auth!.user.id;
     const pinHash = await hashSecret(body.initial_pin || DEMO_PIN);
     const startDate = body.probation_start || today();

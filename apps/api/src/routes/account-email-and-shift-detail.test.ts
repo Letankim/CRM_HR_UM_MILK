@@ -40,13 +40,13 @@ describe('Account Credential Email Queue & Completed Shift Attendance Detail', (
     expect(queuedMail).toBeTruthy();
     expect(queuedMail!.html).toContain('nv.letankim');
     expect(queuedMail!.html).toContain('0919888777');
-    expect(queuedMail!.html).toContain('Mật khẩu / Mã PIN đăng nhập');
+    expect(queuedMail!.html).toContain('Mã PIN đăng nhập (6 chữ số)');
     expect(queuedMail!.html).toContain('163609');
 
     const auditRes = await t.app.inject({ method: 'GET', url: '/api/admin/audit-logs?per_page=20', headers });
     expect(JSON.stringify(auditRes.json())).not.toContain('163609');
 
-    // Resetting password via PUT /api/admin/accounts/:id also queues new password email
+    // Resetting PIN via PUT /api/admin/accounts/:id also queues new PIN email
     const putRes = await t.app.inject({
       method: 'PUT',
       url: `/api/admin/accounts/${body.data.user.id}`,
@@ -60,8 +60,9 @@ describe('Account Credential Email Queue & Completed Shift Attendance Detail', (
     expect(putRes.statusCode).toBe(200);
     const putBody = putRes.json();
     expect(putBody.data.emailQueued).toBe(true);
-    const resetMail = t.email.recent(20).find((m) => m.to === 'letankim2003@gmail.com' && m.subject.includes('Cập nhật tài khoản và mật khẩu @nv.letankim'));
+    const resetMail = t.email.recent(20).find((m) => m.to === 'letankim2003@gmail.com' && m.subject.includes('Cập nhật tài khoản và mã PIN (6 số) @nv.letankim'));
     expect(resetMail).toBeTruthy();
+    expect(resetMail!.html).toContain('Mã PIN mới (6 chữ số)');
     expect(resetMail!.html).toContain('654321');
   });
 
@@ -113,6 +114,7 @@ describe('Account Credential Email Queue & Completed Shift Attendance Detail', (
     const onboardMail = t.email.recent(20).find((m) => m.to === 'tranhoangminh2002@gmail.com');
     expect(onboardMail).toBeTruthy();
     expect(onboardMail!.html).toContain('nv.minh2002');
+    expect(onboardMail!.html).toContain('Mã PIN đăng nhập (6 chữ số)');
     expect(onboardMail!.html).toContain('246810');
   });
 

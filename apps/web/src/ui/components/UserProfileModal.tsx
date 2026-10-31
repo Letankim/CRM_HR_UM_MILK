@@ -105,7 +105,7 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
       if (e instanceof ApiClientError && e.details.length > 0) {
         pwdForm.setFields(e.details.map((d) => ({ name: d.field, errors: [d.message] })));
       }
-      message.error(e instanceof ApiClientError ? e.message : 'Đổi mật khẩu thất bại');
+      message.error(e instanceof ApiClientError ? e.message : (isEmployee ? 'Đổi mã PIN thất bại' : 'Đổi mật khẩu thất bại'));
     },
   });
 
@@ -183,7 +183,7 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
           {
             key: 'password',
             forceRender: true,
-            label: <span><SafetyCertificateOutlined /> Đổi mật khẩu / Mã PIN bảo mật</span>,
+            label: <span><SafetyCertificateOutlined /> {isEmployee ? 'Đổi mã PIN bảo mật (6 số)' : 'Đổi mật khẩu bảo mật'}</span>,
             children: (
               <Form form={pwdForm} layout="vertical" onFinish={(v) => changePwdMut.mutate(v)} style={{ marginTop: 4 }}>
                 {pinRotationDays > 0 && (

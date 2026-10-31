@@ -1,28 +1,83 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Alert, Form, Input, Modal, Space, Table, Tag } from 'antd';
-import { CloseCircleOutlined, CloseOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { Alert, Button, Flex, Form, Input, Modal, Space, Table, Tag } from 'antd';
+import { CloseCircleOutlined, CloseOutlined, DownOutlined, ExclamationCircleOutlined, UpOutlined } from '@ant-design/icons';
 import { StatusTag } from '../StatusTag';
 import { cleanShiftLabel, fmtYmd, issueSeverity, type PlannerIssue, type PlannerOffItem, type PlannerShift } from './schedule-planner-types';
 
-/** Danh sách vướng mắc khi tự động sắp ca (không xếp được / cảnh báo định biên). */
-export function PlannerIssuesAlert({ issues, maxHeight = 220 }: { issues: PlannerIssue[]; maxHeight?: number }) {
+export interface PlannerIssuesAlertProps {
+  issues: PlannerIssue[];
+  maxHeight?: number;
+  collapsible?: boolean;
+  defaultExpanded?: boolean;
+  expanded?: boolean;
+  onExpandedChange?: (next: boolean) => void;
+}
+
+/** Danh sách vướng mắc khi tự động sắp ca (hỗ trợ đóng/mở thu gọn để không chiếm diện tích trang). */
+export function PlannerIssuesAlert({
+  issues,
+  maxHeight = 220,
+  collapsible = true,
+  defaultExpanded = false,
+  expanded,
+  onExpandedChange,
+}: PlannerIssuesAlertProps) {
+  const [internalOpen, setInternalOpen] = useState(defaultExpanded);
   if (issues.length === 0) return null;
+  const isOpen = !collapsible ? true : (expanded ?? internalOpen);
+  const toggle = () => {
+    const next = !isOpen;
+    if (expanded === undefined) setInternalOpen(next);
+    onExpandedChange?.(next);
+  };
   const errorCount = issues.filter((i) => issueSeverity(i) === 'error').length;
   return (
     <Alert
-      type={errorCount > 0 ? 'error' : 'warning'} showIcon icon={<ExclamationCircleOutlined />}
-      message={`Không thể xếp được / Cảnh báo định biên (${issues.length} trường hợp)`}
+      type={errorCount > 0 ? 'error' : 'warning'}
+      showIcon
+      icon={<ExclamationCircleOutlined />}
+      style={{ padding: isOpen ? '10px 12px' : '7px 12px' }}
+      message={
+        <Flex
+          justify="space-between"
+          align="center"
+          gap={8}
+          wrap={false}
+          onClick={collapsible ? toggle : undefined}
+          style={{ width: '100%', cursor: collapsible ? 'pointer' : 'default', userSelect: 'none' }}
+        >
+          <span style={{ fontWeight: 600, minWidth: 0 }}>
+            Không thể xếp được / Cảnh báo định biên ({issues.length} trường hợp)
+          </span>
+          {collapsible && (
+            <Button
+              size="small"
+              type="text"
+              icon={isOpen ? <UpOutlined /> : <DownOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggle();
+              }}
+              style={{ flexShrink: 0, fontWeight: 600, color: errorCount > 0 ? '#DC2626' : '#D97706', paddingInline: 8, height: 24 }}
+            >
+              {isOpen ? 'Thu gọn' : `Xem chi tiết (${issues.length})`}
+            </Button>
+          )}
+        </Flex>
+      }
       description={
-        <div style={{ maxHeight, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-          {issues.map((i, idx) => (
-            <Space key={`${i.kind}-${i.employeeId}-${i.workDate}-${i.shiftCode}-${idx}`} size={6} align="start">
-              <Tag color={issueSeverity(i) === 'error' ? 'red' : 'gold'} style={{ margin: 0 }}>{issueSeverity(i) === 'error' ? 'Không xếp được' : 'Cảnh báo'}</Tag>
-              <span style={{ fontSize: 13 }}>{i.message}</span>
-            </Space>
-          ))}
-        </div>
+        isOpen ? (
+          <div style={{ maxHeight, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(220, 38, 38, 0.16)' }}>
+            {issues.map((i, idx) => (
+              <Space key={`${i.kind}-${i.employeeId}-${i.workDate}-${i.shiftCode}-${idx}`} size={6} align="start">
+                <Tag color={issueSeverity(i) === 'error' ? 'red' : 'gold'} style={{ margin: 0 }}>{issueSeverity(i) === 'error' ? 'Không xếp được' : 'Cảnh báo'}</Tag>
+                <span style={{ fontSize: 13 }}>{i.message}</span>
+              </Space>
+            ))}
+          </div>
+        ) : undefined
       }
     />
   );

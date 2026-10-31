@@ -29,6 +29,19 @@ export function AccountSecretField({ form, open, editing, role }: AccountSecretF
     if (open) setShowSecret(!editing);
   }, [open, editing]);
 
+  useEffect(() => {
+    if (!open) return;
+    const cur = String(form.getFieldValue('secret') ?? '');
+    if (!editing && !cur) {
+      form.setFieldsValue({ secret: generateAccountSecret(role) });
+      return;
+    }
+    if (cur && ((isEmployee && !PIN_REGEX.test(cur)) || (!isEmployee && PIN_REGEX.test(cur)))) {
+      form.setFieldsValue({ secret: generateAccountSecret(role) });
+      void form.validateFields(['secret']).catch(() => undefined);
+    }
+  }, [open, editing, role, isEmployee, form]);
+
   const rules: Rule[] = [
     ...(editing ? [] : [{ required: true, message: isEmployee ? 'Vui lòng nhập mã PIN đăng nhập' : 'Vui lòng nhập mật khẩu đăng nhập' }]),
     isEmployee
@@ -44,7 +57,13 @@ export function AccountSecretField({ form, open, editing, role }: AccountSecretF
     <>
       <Form.Item label={label} required={!editing}>
         <Space.Compact style={{ width: '100%' }}>
-          <Form.Item name="secret" noStyle rules={rules} dependencies={['role']}>
+          <Form.Item
+            name="secret"
+            noStyle
+            rules={rules}
+            dependencies={['role']}
+            normalize={(v) => (isEmployee && typeof v === 'string' ? v.replace(/\D/g, '').slice(0, 6) : v)}
+          >
             <Input.Password
               prefix={<KeyOutlined />}
               inputMode={isEmployee ? 'numeric' : 'text'}
@@ -57,7 +76,7 @@ export function AccountSecretField({ form, open, editing, role }: AccountSecretF
             icon={<ThunderboltOutlined />}
             onClick={() => {
               setShowSecret(true);
-              form.setFieldsValue({ secret: generateAccountSecret(form.getFieldValue('role')) });
+              form.setFieldsValue({ secret: generateAccountSecret(role) });
               void form.validateFields(['secret']).catch(() => undefined);
             }}
           >

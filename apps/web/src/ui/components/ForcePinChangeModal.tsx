@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Alert, App, Button, Flex, Form, Modal, Typography } from 'antd';
+import { Alert, App, Avatar, Button, Flex, Form, Modal, Tag, Typography } from 'antd';
 import { KeyOutlined, LogoutOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { isEmployeeRole, type PublicUser } from '@umbm/shared';
+import { isEmployeeRole, ROLE_SHORT_LABELS, type PublicUser } from '@umbm/shared';
 import { api, ApiClientError, PIN_CHANGE_REQUIRED_EVENT } from '@/lib/api';
 import { useLogout, useMe, type AppKind } from '@/lib/auth';
 import { ChangeSecretFields, type ChangeSecretFormValues } from './ChangeSecretFields';
@@ -70,37 +70,110 @@ export function ForcePinChangeModal({ app }: ForcePinChangeModalProps) {
 
   return (
     <Modal
+      rootClassName="umbm-force-secret-modal"
       open={open}
       closable={false}
       maskClosable={false}
       keyboard={false}
       centered
       destroyOnHidden
-      width={460}
+      width={440}
       zIndex={1100}
+      styles={{
+        header: { paddingBottom: 12, marginBottom: 14, borderBottom: '1px solid #E5E7EB' },
+        body: { paddingTop: 0 },
+        footer: { marginTop: 16, paddingTop: 14, borderTop: '1px solid #E5E7EB' },
+      }}
       title={
         <Flex align="center" gap={8}>
-          <SafetyCertificateOutlined style={{ color: '#2563EB' }} />
-          <span>{isEmployee ? 'Bắt buộc đổi mã PIN đăng nhập' : 'Bắt buộc đổi mật khẩu đăng nhập'}</span>
+          <span
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 4,
+              background: '#EFF6FF',
+              border: '1px solid #BFDBFE',
+              color: '#2563EB',
+              display: 'inline-grid',
+              placeItems: 'center',
+              fontSize: 15,
+              flexShrink: 0,
+            }}
+          >
+            <SafetyCertificateOutlined />
+          </span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#0F172A' }}>
+            {isEmployee ? 'Bắt buộc đổi mã PIN đăng nhập' : 'Bắt buộc đổi mật khẩu đăng nhập'}
+          </span>
         </Flex>
       }
       footer={
-        <Flex justify="space-between" align="center">
-          <Button type="link" icon={<LogoutOutlined />} onClick={() => void logout()} style={{ paddingInline: 0 }} disabled={changeMut.isPending}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, width: '100%' }}>
+          <Button
+            size="large"
+            block
+            icon={<LogoutOutlined />}
+            onClick={() => void logout()}
+            disabled={changeMut.isPending}
+            style={{ height: 40, fontWeight: 500 }}
+          >
             Đăng xuất
           </Button>
-          <Button type="primary" icon={<KeyOutlined />} loading={changeMut.isPending} onClick={() => form.submit()}>
-            {isEmployee ? 'Xác nhận đổi mã PIN' : 'Xác nhận đổi mật khẩu'}
+          <Button
+            type="primary"
+            size="large"
+            block
+            icon={<KeyOutlined />}
+            loading={changeMut.isPending}
+            onClick={() => form.submit()}
+            style={{ height: 40, fontWeight: 600 }}
+          >
+            {isEmployee ? 'Đổi mã PIN' : 'Đổi mật khẩu'}
           </Button>
-        </Flex>
+        </div>
       }
     >
-      <Alert type="warning" showIcon style={{ marginBottom: 14, borderRadius: 4 }} message={reasonText(reason, noun)} />
+      <Alert type="warning" showIcon style={{ marginBottom: 12, borderRadius: 4 }} message={reasonText(reason, noun)} />
       {user && (
-        <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 12 }}>
-          Tài khoản <Typography.Text strong>{user.displayName || user.username}</Typography.Text> cần đổi {noun} trước khi tiếp tục sử dụng hệ thống.
-          {isEmployee ? ' Mã PIN mới gồm đúng 6 chữ số và phải khác mã PIN hiện tại.' : ' Mật khẩu mới tối thiểu 6 ký tự và phải khác mật khẩu hiện tại.'}
-        </Typography.Paragraph>
+        <Flex
+          align="center"
+          justify="space-between"
+          gap={10}
+          style={{
+            border: '1px solid #E5E7EB',
+            borderRadius: 4,
+            background: '#F8FAFC',
+            padding: '8px 12px',
+            marginBottom: 14,
+          }}
+        >
+          <Flex align="center" gap={10} style={{ minWidth: 0, flex: 1 }}>
+            <Avatar
+              size={32}
+              style={{
+                background: '#EFF6FF',
+                color: '#2563EB',
+                border: '1px solid #93C5FD',
+                fontWeight: 700,
+                fontSize: 13,
+                flexShrink: 0,
+              }}
+            >
+              {(user.displayName || user.username).charAt(0).toUpperCase()}
+            </Avatar>
+            <div style={{ minWidth: 0, flex: 1, lineHeight: 1.3 }}>
+              <Typography.Text strong ellipsis style={{ display: 'block', fontSize: 13, color: '#0F172A' }}>
+                {user.displayName || user.username}
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {isEmployee ? 'Mã PIN mới gồm đúng 6 chữ số, khác mã cũ' : 'Mật khẩu mới từ 6 ký tự, khác mật khẩu cũ'}
+              </Typography.Text>
+            </div>
+          </Flex>
+          <Tag color="blue" style={{ margin: 0, borderRadius: 4, fontWeight: 600, flexShrink: 0 }}>
+            {ROLE_SHORT_LABELS[user.role]}
+          </Tag>
+        </Flex>
       )}
       <Form<ChangeSecretFormValues> form={form} layout="vertical" requiredMark={false} disabled={changeMut.isPending} onFinish={(v) => changeMut.mutate(v)}>
         <ChangeSecretFields isEmployee={isEmployee} issuedSecret={reason === 'FIRST_LOGIN' || reason === 'RESET'} autoFocus />

@@ -12,7 +12,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
-import { ROLE_LABELS, ROLE_SHORT_LABELS, SYSTEM_CONFIG } from '@umbm/shared';
+import { isEmployeeRole, ROLE_LABELS, ROLE_SHORT_LABELS, SYSTEM_CONFIG } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { isUnauthorized, loginPath, useLogout, useMe } from '@/lib/auth';
 import { useNotificationSound } from '@/lib/notification-sound';
@@ -64,7 +64,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   }, [data, error, isLoading, pathname, router]);
   if (isLoading || !data) return <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center' }}><Spin /></div>;
 
-  const u = data.user, isInternal = !['THU_VIEC', 'CHINH_THUC'].includes(u.role);
+  const u = data.user, isEmp = isEmployeeRole(u.role), isInternal = !isEmp;
   const isMoreActive = ['/nv/them', '/nv/nghi-phep', '/nv/cong', '/nv/ho-tro', '/nv/phieu-luong', '/nv/bai-kiem-tra', '/nv/ban-tin'].some((p) => pathname.startsWith(p));
   const versionLabel = SYSTEM_CONFIG.version.startsWith('v') ? SYSTEM_CONFIG.version : `v${SYSTEM_CONFIG.version}`;
   const activeDesktopItem = (() => {
@@ -88,7 +88,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
         { label: 'Bản tin truyền thông nội bộ', desc: 'Thông báo & chiến dịch mới', icon: <NotificationOutlined />, onClick: () => router.push('/nv/ban-tin') },
         { label: `Âm thanh thông báo: ${soundEnabled ? 'Đang bật' : 'Đang tắt'}`, desc: 'Bấm để Bật / Tắt chuông báo thông báo mới', icon: soundEnabled ? <SoundOutlined /> : <MutedOutlined />, onClick: toggleSound },
         { label: 'Hồ sơ cá nhân & Ngân hàng', desc: 'Cập nhật SĐT, Email, STK', icon: <UserOutlined />, onClick: () => setProfileTab('info') },
-        { label: 'Đổi mật khẩu / Mã PIN', desc: 'Cập nhật mã bảo mật cá nhân', icon: <KeyOutlined />, onClick: () => setProfileTab('password') },
+        { label: isEmp ? 'Đổi mã PIN bảo mật (6 số)' : 'Đổi mật khẩu bảo mật', desc: isEmp ? 'Thay đổi mã PIN 6 chữ số của bạn' : 'Cập nhật mật khẩu bảo mật cá nhân', icon: <KeyOutlined />, onClick: () => setProfileTab('password') },
         { label: 'Hướng dẫn sử dụng hệ thống', desc: 'Cẩm nang thao tác toàn bộ chức năng', icon: <QuestionCircleOutlined />, onClick: () => window.open(USER_GUIDE_HTML_URL, '_blank', 'noopener,noreferrer') },
       ].map((item) => (
         <div key={item.label} onClick={() => { setMoreOpen(false); item.onClick(); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${BRAND.border}`, background: '#F8FAFC' }}>
@@ -128,7 +128,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
                     { key: 'role', icon: <UserSwitchOutlined />, label: `${u.displayName} (${ROLE_LABELS[u.role]})`, disabled: true },
                     { type: 'divider' },
                     { key: 'profile', icon: <UserOutlined />, label: 'Hồ sơ cá nhân & Cập nhật thông tin', onClick: () => setProfileTab('info') },
-                    { key: 'password', icon: <KeyOutlined />, label: 'Đổi mật khẩu / Mã PIN bảo mật', onClick: () => setProfileTab('password') },
+                    { key: 'password', icon: <KeyOutlined />, label: isEmp ? 'Đổi mã PIN bảo mật (6 số)' : 'Đổi mật khẩu bảo mật', onClick: () => setProfileTab('password') },
                     { key: 'sound', icon: soundEnabled ? <SoundOutlined /> : <MutedOutlined />, label: `Âm thanh thông báo: ${soundEnabled ? 'Đang bật (Bấm để tắt)' : 'Đang tắt (Bấm để bật)'}`, onClick: toggleSound },
                     { key: 'sync', icon: <ReloadOutlined />, label: 'Làm mới toàn bộ dữ liệu trang', onClick: () => qc.invalidateQueries() },
                     { type: 'divider' },

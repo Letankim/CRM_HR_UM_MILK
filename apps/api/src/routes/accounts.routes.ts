@@ -1,22 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import {
-  ACCOUNT_STATUSES,
-  ACCOUNT_STATUS_LABELS,
-  DEFAULT_ROLE_PERMISSIONS,
-  EMPLOYEE_STAGE_LABELS,
-  PERMISSIONS,
-  PERMISSION_LABELS,
-  ROLES,
-  ROLE_LABELS,
-  isEmployeeRole,
-  isPermissionForbiddenForRole,
-  normalizePhone,
-  PIN_REGEX,
-  zListQueryBase,
-  type Permission,
-  type Role,
-} from '@umbm/shared';
+import { ACCOUNT_STATUSES, ACCOUNT_STATUS_LABELS, DEFAULT_ROLE_PERMISSIONS, EMPLOYEE_STAGE_LABELS, PERMISSIONS, PERMISSION_LABELS, PIN_REGEX, ROLES, ROLE_LABELS, isEmployeeRole, isPermissionForbiddenForRole, normalizePhone, zListQueryBase, type Permission, type Role } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { toPublicUser } from '../auth/auth.service.js';
 import { hashSecret } from '../auth/password.js';
@@ -211,7 +195,8 @@ export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
     const mailInfo = queueAccountCreatedEmail(ctx, created, request.auth?.user.email, body.secret);
     ctx.realtime()?.toRole('ADMIN', 'account:pending', { id: created.id, username: created.username });
     reply.code(201);
-    const msg = mailInfo.emailQueued ? `Tạo tài khoản mới thành công (Chờ kích hoạt) — Đã đưa email cấp tài khoản và mật khẩu vào hàng đợi gửi tới ${mailInfo.queuedToEmail}` : 'Tạo tài khoản mới thành công, đang chờ Quản trị viên kích hoạt';
+    const secretNoun = isEmployeeRole(created.role) ? 'mã PIN 6 số' : 'mật khẩu';
+    const msg = mailInfo.emailQueued ? `Tạo tài khoản mới thành công (Chờ kích hoạt) — Đã đưa email cấp tài khoản và ${secretNoun} vào hàng đợi gửi tới ${mailInfo.queuedToEmail}` : 'Tạo tài khoản mới thành công, đang chờ Quản trị viên kích hoạt';
     return sendSuccess(request, msg, { user: toPublicUser(created), version: created.version, ...mailInfo });
   });
 

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { DEFAULT_SHIFT_CODES, EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, STAFF_GROUPS, normalizePhone, type Employee, type User } from '@umbm/shared';
+import { DEFAULT_SHIFT_CODES, EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, PIN_REGEX, STAFF_GROUPS, isEmployeeRole, normalizePhone, type Employee, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { hashSecret } from '../auth/password.js';
 import { DEMO_PIN } from '../data/memory-seed.js';
@@ -33,7 +33,7 @@ const zUpdateEmployeeBody = z.object({
   bank_account_number: z.string().trim().max(40).optional(), bank_account_holder: z.string().trim().max(80).optional(),
   note: z.string().trim().max(300).optional(), link_user_id: z.string().trim().optional(),
   create_account: z.boolean().optional(), username: z.string().trim().max(32).optional(),
-  initial_pin: z.string().trim().regex(/^\d{6}$/, 'Mã PIN đăng nhập phải gồm đúng 6 chữ số').or(z.literal('')).optional(),
+  initial_pin: z.string().trim().min(6, 'Mã PIN đăng nhập phải gồm đúng 6 chữ số').max(128).or(z.literal('')).optional(),
 });
 
 const zPromoteOfficialBody = z.object({
@@ -76,6 +76,8 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
       username: create_account && !prevLinkedUser ? (username || `nv.${before.employee_code.toLowerCase()}`).toLowerCase() : undefined,
       excludeEmployeeId: id, excludeUserId: link_user_id || prevLinkedUser?.id || null,
     });
+    const targetAccForPin = create_account && !prevLinkedUser ? undefined : (link_user_id === '' ? undefined : link_user_id ? ctx.db.users.get(link_user_id) : prevLinkedUser);
+    if (initial_pin && (!targetAccForPin || isEmployeeRole(targetAccForPin.role)) && !PIN_REGEX.test(initial_pin)) throw Errors.fieldValidation('initial_pin', 'INVALID_FORMAT', 'Mã PIN đăng nhập phải gồm đúng 6 chữ số', '******');
     const pinHash = initial_pin && initial_pin.length >= 6 ? await hashSecret(initial_pin) : null;
     const pinPatch = pinHash ? { password_hash: pinHash, failed_login_count: 0, locked_until: '', must_change_pin: true } : {};
 

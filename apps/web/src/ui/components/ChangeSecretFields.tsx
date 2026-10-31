@@ -60,13 +60,13 @@ export function ChangeSecretFields({ isEmployee, issuedSecret, autoFocus }: Chan
   if (isEmployee) {
     return (
       <>
-        <Form.Item name="current_secret" label={currentLabel} rules={currentRules}>
+        <Form.Item name="current_secret" label={currentLabel} rules={currentRules} style={{ marginBottom: 14 }}>
           <PinOtpInput autoFocus={autoFocus} />
         </Form.Item>
-        <Form.Item name="new_secret" label="Mã PIN mới (6 chữ số)" rules={newRules} dependencies={['current_secret']}>
+        <Form.Item name="new_secret" label="Mã PIN mới (6 chữ số)" rules={newRules} dependencies={['current_secret']} style={{ marginBottom: 14 }}>
           <PinOtpInput />
         </Form.Item>
-        <Form.Item name="confirm_secret" label="Nhập lại mã PIN mới" rules={confirmRules} dependencies={['new_secret']}>
+        <Form.Item name="confirm_secret" label="Nhập lại mã PIN mới" rules={confirmRules} dependencies={['new_secret']} style={{ marginBottom: 4 }}>
           <PinOtpInput />
         </Form.Item>
       </>
@@ -75,14 +75,14 @@ export function ChangeSecretFields({ isEmployee, issuedSecret, autoFocus }: Chan
 
   return (
     <>
-      <Form.Item name="current_secret" label={currentLabel} rules={currentRules}>
-        <Input.Password prefix={<LockOutlined />} autoFocus={autoFocus} autoComplete="current-password" placeholder="Nhập mật khẩu đang sử dụng" />
+      <Form.Item name="current_secret" label={currentLabel} rules={currentRules} style={{ marginBottom: 14 }}>
+        <Input.Password size="large" prefix={<LockOutlined />} autoFocus={autoFocus} autoComplete="current-password" placeholder="Nhập mật khẩu đang sử dụng" />
       </Form.Item>
-      <Form.Item name="new_secret" label="Mật khẩu mới" rules={newRules} dependencies={['current_secret']}>
-        <Input.Password prefix={<KeyOutlined />} autoComplete="new-password" placeholder="Tối thiểu 6 ký tự" />
+      <Form.Item name="new_secret" label="Mật khẩu mới" rules={newRules} dependencies={['current_secret']} style={{ marginBottom: 14 }}>
+        <Input.Password size="large" prefix={<KeyOutlined />} autoComplete="new-password" placeholder="Tối thiểu 6 ký tự" />
       </Form.Item>
-      <Form.Item name="confirm_secret" label="Nhập lại mật khẩu mới" rules={confirmRules} dependencies={['new_secret']}>
-        <Input.Password prefix={<KeyOutlined />} autoComplete="new-password" placeholder="Nhập lại chính xác mật khẩu mới" />
+      <Form.Item name="confirm_secret" label="Nhập lại mật khẩu mới" rules={confirmRules} dependencies={['new_secret']} style={{ marginBottom: 4 }}>
+        <Input.Password size="large" prefix={<KeyOutlined />} autoComplete="new-password" placeholder="Nhập lại chính xác mật khẩu mới" />
       </Form.Item>
     </>
   );
