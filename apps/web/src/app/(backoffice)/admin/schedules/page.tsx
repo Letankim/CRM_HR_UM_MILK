@@ -174,7 +174,7 @@ function SchedulesView() {
                 <Flex justify="space-between" align="center" wrap="wrap" gap={8}>
                   <span>Có <strong>{totalDraftCount} ca làm việc</strong> đang ở trạng thái <strong>Chờ duyệt phân ca</strong>. {canPublish ? 'Nhấn Duyệt & Phát hành để lịch có hiệu lực chấm công.' : 'Quản lý cửa hàng kiểm tra định biên, đề xuất điều chỉnh và xác nhận dữ liệu vận hành.'}</span>
                   <Space wrap size={8}>
-                    <Button size="small" onClick={() => { setStatus('DRAFT'); setViewMode('TABLE'); }}>Xem danh sách chờ duyệt</Button>
+                    <Button size="small" icon={<TableOutlined />} onClick={() => { setStatus('DRAFT'); setViewMode('TABLE'); }}>Xem danh sách chờ duyệt</Button>
                     {draftItems.length > 0 && <Button size="small" type="primary" icon={<CheckOutlined />} loading={approveBulkMut.isPending} onClick={() => approveBulkMut.mutate(draftItems)}>{canPublish ? `Duyệt & Phát hành (${draftItems.length} ca)` : `Xác nhận vận hành & Duyệt (${draftItems.length} ca)`}</Button>}
                   </Space>
                 </Flex>

@@ -168,7 +168,7 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
                 type={open.disputeStatus === 'RESOLVED' ? 'success' : 'warning'} showIcon style={{ marginBottom: 12 }}
                 message={open.linkedTicket ? `Phiếu hỗ trợ ${open.linkedTicket.ticketCode} — ${open.linkedTicket.departmentLabel} (${open.linkedTicket.assigneeName}) · ${open.linkedTicket.statusLabel}` : 'Đã gửi thắc mắc đối chiếu'}
                 description={open.disputeReason}
-                action={open.linkedTicket ? <Button size="small" type="primary" ghost onClick={() => setTicketDrawerId(open.linkedTicket!.id)}>Xem phản hồi ({open.linkedTicket.messageCount})</Button> : undefined}
+                action={open.linkedTicket ? <Button size="small" type="primary" ghost icon={<CustomerServiceOutlined />} onClick={() => setTicketDrawerId(open.linkedTicket!.id)}>Xem phản hồi ({open.linkedTicket.messageCount})</Button> : undefined}
               />
             ) : null}
             <Descriptions column={1} size="small" bordered style={{ marginBottom: 12 }}>

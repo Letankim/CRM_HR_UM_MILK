@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Space, Tag } from 'antd';
-import { ClockCircleOutlined, CloseCircleOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, CloseCircleOutlined, CloseOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
@@ -33,7 +33,7 @@ export function EmployeeLeavesTable({ leaves, quotaText, refreshing = false, onV
   const confirmCancel = (rows: Row[]) => modal.confirm({
     title: 'Hủy đơn nghỉ OFF',
     content: `Bạn chắc chắn muốn hủy ${rows.length} đơn nghỉ OFF đang chờ duyệt?`,
-    okText: 'Hủy đơn', okButtonProps: { danger: true }, cancelText: 'Đóng',
+    okText: 'Hủy đơn', okButtonProps: { danger: true, icon: <CloseCircleOutlined /> }, cancelText: 'Đóng', cancelButtonProps: { icon: <CloseOutlined /> },
     onOk: () => cancelMut.mutateAsync(rows.map((r) => String(r.id))),
   });
 

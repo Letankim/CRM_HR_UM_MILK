@@ -34,7 +34,7 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
     onSuccess: (res) => {
       const summary = `Đã chốt lịch tuần ${fmtDm(res.weekStart)}: duyệt ${res.approvedOffCount} đơn OFF và tự động sắp ${res.createdCount} ca (đúng 1 người/ca).`;
       if (res.issues.length > 0) {
-        modal.warning({ width: 680, title: 'Đã chốt lịch nhưng còn ca chưa đủ định biên 1 người/ca', content: <Space direction="vertical" size={10} style={{ width: '100%' }}><span>{summary}</span><PlannerIssuesAlert issues={res.issues} maxHeight={320} collapsible={false} /></Space>, okText: 'Đã hiểu' });
+        modal.warning({ width: 680, title: 'Đã chốt lịch nhưng còn ca chưa đủ định biên 1 người/ca', content: <Space direction="vertical" size={10} style={{ width: '100%' }}><span>{summary}</span><PlannerIssuesAlert issues={res.issues} maxHeight={320} collapsible={false} /></Space>, okText: 'Đã hiểu', okButtonProps: { icon: <CheckCircleOutlined /> } });
       } else message.success(summary);
       invalidate();
     },

@@ -48,7 +48,7 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
     onSuccess: (res, row) => {
       const summary = `Đã chốt lịch chu kỳ ${fmtDm(res.cycleStart)} – ${fmtDm(res.cycleEnd)} của ${row.employeeName}: duyệt ${res.approvedOffCount} ngày OFF, xếp ${res.createdCount} ca.`;
       if (res.issues.length > 0) {
-        modal.warning({ width: 680, title: 'Đã chốt lịch chu kỳ nhưng còn trường hợp chưa xếp được', content: <Space direction="vertical" size={10} style={{ width: '100%' }}><span>{summary}</span><PlannerIssuesAlert issues={res.issues} maxHeight={320} collapsible={false} /></Space>, okText: 'Đã hiểu' });
+        modal.warning({ width: 680, title: 'Đã chốt lịch chu kỳ nhưng còn trường hợp chưa xếp được', content: <Space direction="vertical" size={10} style={{ width: '100%' }}><span>{summary}</span><PlannerIssuesAlert issues={res.issues} maxHeight={320} collapsible={false} /></Space>, okText: 'Đã hiểu', okButtonProps: { icon: <CheckCircleOutlined /> } });
       } else message.success(summary);
       invalidate();
     },

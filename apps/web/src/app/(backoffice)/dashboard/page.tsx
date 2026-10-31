@@ -116,7 +116,7 @@ export default function DashboardPage() {
             />
           </Space>
           {(branchFilter !== 'ALL' || positionFilter !== 'ALL' || stageFilter !== 'ALL' || periodFilter !== 'ALL') && (
-            <Button size="small" onClick={() => { setBranchFilter('ALL'); setPositionFilter('ALL'); setStageFilter('ALL'); setPeriodFilter('ALL'); }}>Đặt lại bộ lọc</Button>
+            <Button size="small" icon={<ReloadOutlined />} onClick={() => { setBranchFilter('ALL'); setPositionFilter('ALL'); setStageFilter('ALL'); setPeriodFilter('ALL'); }}>Đặt lại bộ lọc</Button>
           )}
         </Flex>
       </Card>

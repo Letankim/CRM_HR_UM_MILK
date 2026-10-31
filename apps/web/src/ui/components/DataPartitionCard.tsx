@@ -2,7 +2,7 @@
 
 import { Alert, App, Button, Card, Flex, Popconfirm, Select, Skeleton, Space, Table, Tag, Typography } from 'antd';
 import {
-  CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, DatabaseOutlined,
+  CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DatabaseOutlined,
   EnvironmentOutlined, ExportOutlined, FileExcelOutlined, FileTextOutlined, FolderOpenOutlined,
   PlusOutlined, ReloadOutlined, SwapOutlined,
 } from '@ant-design/icons';
@@ -61,7 +61,7 @@ export function DataPartitionCard() {
     modal.confirm({
       title: `Chuyển hệ thống sang ${targetLabel}?`,
       content: 'Toàn bộ thao tác đọc/ghi Lịch phân ca, Nghỉ OFF, Đổi ca và Chấm công sẽ áp dụng trên tệp Google Sheets này. Quản trị viên có thể chuyển lại tháng khác bất kỳ lúc nào.',
-      okText: 'Xác nhận chuyển', cancelText: 'Hủy bỏ',
+      okText: 'Xác nhận chuyển', cancelText: 'Hủy bỏ', okButtonProps: { icon: <SwapOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> },
       onOk: () => switchMut.mutateAsync(targetKey),
     });
   };
@@ -191,7 +191,7 @@ export function DataPartitionCard() {
                         <Popconfirm
                           title={`Chuyển hệ thống sang ${r.label || monthKeyLabel(r.monthKey)}?`}
                           description={<div style={{ maxWidth: 300 }}>Hệ thống sẽ đọc và ghi lịch ca, nghỉ OFF, đổi ca và chấm công trên tệp này. Có thể chuyển lại bất kỳ lúc nào.</div>}
-                          okText="Chuyển sang dùng" cancelText="Hủy bỏ"
+                          okText="Chuyển sang dùng" cancelText="Hủy bỏ" okButtonProps={{ icon: <SwapOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
                           onConfirm={() => switchMut.mutateAsync(r.monthKey).catch(() => undefined)}
                         >
                           <Button size="small" type="primary" ghost icon={<SwapOutlined />} loading={switchingKey === r.monthKey}>Chuyển sang dùng</Button>

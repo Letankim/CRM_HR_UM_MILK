@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Space, Tag } from 'antd';
-import { CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, DownloadOutlined, StopOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, CloseOutlined, DownloadOutlined, StopOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
@@ -47,7 +47,7 @@ export function EmployeeSwapsTable({ swaps, empId, empCode, refreshing = false, 
   const accept = (rows: Row[]) => confirmWorkflowShiftOverride(modal, 'swap', rows, () => respond(rows, true));
   const confirmCancel = (rows: Row[]) => modal.confirm({
     title: 'Hủy yêu cầu', content: `Bạn chắc chắn muốn hủy ${rows.length} yêu cầu nhường / đổi ca đang chờ?`,
-    okText: 'Hủy yêu cầu', okButtonProps: { danger: true }, cancelText: 'Đóng',
+    okText: 'Hủy yêu cầu', okButtonProps: { danger: true, icon: <StopOutlined /> }, cancelText: 'Đóng', cancelButtonProps: { icon: <CloseOutlined /> },
     onOk: () => cancelMut.mutateAsync(rows.map((r) => String(r.id))),
   });
   const busy = peerRespondMut.isPending || cancelMut.isPending;

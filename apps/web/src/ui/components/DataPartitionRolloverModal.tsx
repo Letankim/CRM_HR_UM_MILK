@@ -185,7 +185,7 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
               ].map((preset) => {
                 const active = month?.format('YYYY_MM') === preset.val.format('YYYY_MM');
                 return (
-                  <Button key={preset.label} size="small" type={active ? 'primary' : 'default'} ghost={active} onClick={() => { setMonth(preset.val); setFieldError(null); }}>
+                  <Button key={preset.label} size="small" icon={<CalendarOutlined />} type={active ? 'primary' : 'default'} ghost={active} onClick={() => { setMonth(preset.val); setFieldError(null); }}>
                     {preset.label}
                   </Button>
                 );

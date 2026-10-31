@@ -193,7 +193,7 @@ export function EmployeeTestCenterView({
     <Space direction="vertical" size={10} style={{ width: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <Select showSearch optionFilterProp="label" value={filterTestId} onChange={setFilterTestId} style={{ width: 320 }} options={[{ value: 'ALL', label: 'Tất cả bài kiểm tra của bạn' }, ...assignments.map((a) => ({ value: String(a.test_id), label: `${a.assignment_code} — ${a.testTitle}` }))]} />
-        {filterTestId !== 'ALL' && <Button size="small" onClick={() => setFilterTestId('ALL')}>Xem tất cả lượt thi</Button>}
+        {filterTestId !== 'ALL' && <Button size="small" icon={<EyeOutlined />} onClick={() => setFilterTestId('ALL')}>Xem tất cả lượt thi</Button>}
       </div>
       <AttemptHistoryTable attempts={visibleAttempts} onViewAttempt={(att) => setReviewingAttempt(att)} />
     </Space>
