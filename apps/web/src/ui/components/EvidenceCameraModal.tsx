@@ -43,7 +43,7 @@ export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 960 } },
+          video: { facingMode: { ideal: mode }, width: { ideal: 1600 }, height: { ideal: 1200 } },
           audio: false,
         });
       } catch {
@@ -75,9 +75,9 @@ export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }
   const handleSnap = () => {
     const video = videoRef.current;
     if (!video || !cameraReady) return;
-    const rawW = video.videoWidth || 960;
-    const rawH = video.videoHeight || 720;
-    const scale = Math.min(1, 1024 / Math.max(rawW, rawH));
+    const rawW = video.videoWidth || 1280;
+    const rawH = video.videoHeight || 960;
+    const scale = Math.min(1, 1600 / Math.max(rawW, rawH));
     const w = Math.max(1, Math.round(rawW * scale));
     const h = Math.max(1, Math.round(rawH * scale));
     const canvas = document.createElement('canvas');
@@ -85,8 +85,10 @@ export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }
     canvas.height = h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(video, 0, 0, w, h);
-    setPreviewUrl(canvas.toDataURL('image/jpeg', 0.76));
+    setPreviewUrl(canvas.toDataURL('image/jpeg', 0.89));
   };
 
   return (

@@ -80,7 +80,7 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
     stopStream();
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 720 } }, audio: false });
       streamRef.current = stream;
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play().catch(() => undefined); }
       setCameraReady(true);
@@ -118,9 +118,10 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
 
   const handleCapture = () => {
     const canvas = document.createElement('canvas');
-    canvas.width = 360; canvas.height = 270;
+    canvas.width = 720; canvas.height = 540;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     if (videoRef.current && cameraReady && videoRef.current.videoWidth > 0) {
       const vw = videoRef.current.videoWidth, vh = videoRef.current.videoHeight;
       const targetRatio = canvas.width / canvas.height, videoRatio = vw / vh;
@@ -129,21 +130,19 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
       ctx.drawImage(videoRef.current, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, canvas.width, canvas.height);
     } else {
       ctx.fillStyle = '#0F172A'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#1E293B'; ctx.beginPath(); ctx.arc(180, 108, 42, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#94A3B8'; ctx.font = '600 13px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText(String(activeShift?.employeeName ?? 'Nhân sự Ụm Bò Milk'), 180, 175);
-      ctx.font = '11px sans-serif'; ctx.fillText('Ảnh xác thực Camera trực tiếp', 180, 194);
+      ctx.fillStyle = '#1E293B'; ctx.beginPath(); ctx.arc(360, 212, 76, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#94A3B8'; ctx.font = '600 22px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(String(activeShift?.employeeName ?? 'Nhân sự Ụm Bò Milk'), 360, 336);
+      ctx.font = '16px sans-serif'; ctx.fillText('Ảnh xác thực Camera trực tiếp', 360, 368);
     }
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.82)'; ctx.fillRect(0, 224, canvas.width, 46);
-    ctx.fillStyle = '#FFFFFF'; ctx.textAlign = 'left'; ctx.font = '600 11px sans-serif';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.84)'; ctx.fillRect(0, 456, canvas.width, 84);
+    ctx.fillStyle = '#FFFFFF'; ctx.textAlign = 'left'; ctx.font = '600 18px sans-serif';
     const cleanShift = String(activeShift?.shiftLabel ?? 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
-    ctx.fillText(`${kind === 'CHECK_IN' ? 'VÀO CA' : 'RA CA'} · ${cleanShift} · ${branchName}`, 10, 242);
-    ctx.fillStyle = '#CBD5E1'; ctx.font = '10px monospace';
+    ctx.fillText(`${kind === 'CHECK_IN' ? 'VÀO CA' : 'RA CA'} · ${cleanShift} · ${branchName}`, 18, 488);
+    ctx.fillStyle = '#CBD5E1'; ctx.font = '15px monospace';
     const gpsText = coords ? `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)} (${distanceM !== null ? formatDistanceVi(distanceM) : '?'})` : 'Chưa có GPS';
-    ctx.fillText(`${dayjs().format('DD/MM/YYYY HH:mm:ss')} · GPS: ${gpsText}`, 10, 259);
-    let dataUrl = canvas.toDataURL('image/jpeg', 0.52);
-    if (dataUrl.length > 14000) dataUrl = canvas.toDataURL('image/jpeg', 0.42);
-    setPhotoDataUrl(dataUrl);
+    ctx.fillText(`${dayjs().format('DD/MM/YYYY HH:mm:ss')} · GPS: ${gpsText}`, 18, 518);
+    setPhotoDataUrl(canvas.toDataURL('image/jpeg', 0.86));
     stopStream();
   };
 

@@ -26,7 +26,12 @@ export function ProfileBankQrUploader({
     e.target.value = '';
     if (!file) return;
     try {
-      const qrDataUrl = await normalizeImageFileToPngDataUrl(file, 540, { preferJpeg: true, quality: 0.84 });
+      const qrDataUrl = await normalizeImageFileToPngDataUrl(file, 2400, {
+        preferJpeg: true,
+        maxShortEdge: 1280,
+        passthroughMaxBytes: 750 * 1024,
+        quality: 0.91,
+      });
       onToggleRemove(false);
       onChangeDraft(qrDataUrl);
     } catch (err) {

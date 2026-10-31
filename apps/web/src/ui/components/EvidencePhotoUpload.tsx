@@ -3,14 +3,16 @@
 import { useState, type ClipboardEvent, type DragEvent } from 'react';
 import { App, Button, Flex, Space, Tag, Typography, Upload } from 'antd';
 import { CameraOutlined, CheckCircleOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons';
+import { computeCrispDimensions } from '@/lib/payroll-file-helpers';
 import { EvidenceCameraModal } from './EvidenceCameraModal';
 import { FancyboxImage } from './FancyboxPreview';
 
 const IMAGE_EXT_REGEX = /\.(jpe?g|png|webp|gif|bmp)$/i;
 const MAX_RAW_BYTES = 15 * 1024 * 1024;
+const DIRECT_PASSTHROUGH_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg']);
 
-/** Nén ảnh người dùng tải lên hoặc chụp thành JPEG data URL (cạnh dài tối đa `maxSize`px, chất lượng `quality`). */
-export async function compressImageToJpegDataUrl(file: File, maxSize = 960, quality = 0.75): Promise<string> {
+/** Nén ảnh thông minh giữ độ nét cao: giữ nguyên bản gốc nếu ảnh <= 750KB, hoặc thu phóng khử răng cưa chuẩn Full-HD+ (quality 0.90). */
+export async function compressImageToJpegDataUrl(file: File, maxSize = 2400, quality = 0.9): Promise<string> {
   const srcUrl = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -19,14 +21,24 @@ export async function compressImageToJpegDataUrl(file: File, maxSize = 960, qual
       el.onerror = () => reject(new Error('Không giải mã được tệp ảnh, vui lòng chọn ảnh JPG, PNG hoặc WEBP chuẩn'));
       el.src = srcUrl;
     });
-    const scale = Math.min(1, maxSize / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
-    const w = Math.max(1, Math.round(img.naturalWidth * scale));
-    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const mime = (file.type || '').toLowerCase();
+    const origLong = Math.max(img.naturalWidth || 1, img.naturalHeight || 1);
+    if (DIRECT_PASSTHROUGH_MIMES.has(mime) && file.size <= 750 * 1024 && origLong <= Math.max(maxSize, 2600)) {
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => (typeof reader.result === 'string' && reader.result ? resolve(reader.result) : reject(new Error('Không đọc được tệp ảnh')));
+        reader.onerror = () => reject(new Error('Không đọc được tệp ảnh'));
+        reader.readAsDataURL(file);
+      });
+    }
+    const { width: w, height: h } = computeCrispDimensions(img.naturalWidth, img.naturalHeight, Math.min(1280, maxSize), maxSize);
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Trình duyệt không hỗ trợ xử lý ảnh');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, w, h);
     ctx.drawImage(img, 0, 0, w, h);

@@ -35,7 +35,7 @@ export function EmployeeSignaturePadModal({
   const resetCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dpr = Math.min(1.25, window.devicePixelRatio || 1);
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
     canvas.width = CANVAS_CSS_W * dpr;
     canvas.height = CANVAS_CSS_H * dpr;
     const ctx = canvas.getContext('2d');

@@ -36,7 +36,8 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/attendance/photos/:fileId', async (request, reply) => {
     const { fileId } = request.params as { fileId: string }, buf = await loadAttendancePhotoBuffer(ctx, fileId);
     if (!buf) throw Errors.notFound('Ảnh điểm danh trên Google Drive', fileId);
-    return reply.header('Content-Type', 'image/jpeg').header('Cache-Control', 'public, max-age=31536000, immutable').send(buf);
+    const mime = buf[0] === 0x89 && buf[1] === 0x50 ? 'image/png' : buf[0] === 0x52 && buf[1] === 0x49 ? 'image/webp' : 'image/jpeg';
+    return reply.header('Content-Type', mime).header('Cache-Control', 'public, max-age=31536000, immutable').send(buf);
   });
   app.get('/api/admin/attendance', { preHandler: requirePermission('attendance.read', 'self.attendance') }, async (request) => {
     void migrateLegacyBase64Photos(ctx); await runBackgroundSideEffect(() => healBranchConsistency(ctx));
