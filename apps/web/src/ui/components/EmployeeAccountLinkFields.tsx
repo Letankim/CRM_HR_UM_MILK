@@ -22,9 +22,10 @@ export interface EmployeeAccountLinkFieldsProps {
   form: FormInstance;
   editing?: EmployeeRowItem | null;
   branches?: { label: string; value: string }[];
+  modalOpen?: boolean;
 }
 
-export function EmployeeAccountLinkFields({ form, editing, branches = [] }: EmployeeAccountLinkFieldsProps) {
+export function EmployeeAccountLinkFields({ form, editing, branches = [], modalOpen = true }: EmployeeAccountLinkFieldsProps) {
   const { modal, message } = App.useApp();
   const watchedAll = (Form.useWatch([], form) as Record<string, unknown> | undefined) ?? {};
   const mode = (watchedAll.account_mode as EmployeeAccountMode | undefined) ?? 'AUTO_CREATE';
@@ -37,12 +38,12 @@ export function EmployeeAccountLinkFields({ form, editing, branches = [] }: Empl
   const accountsQuery = useQuery({
     queryKey: ['accounts', 'select-for-employee'],
     queryFn: () => api.list<AccountRowItem>('/admin/accounts?per_page=200'),
-    enabled: canReadAccounts,
+    enabled: modalOpen && canReadAccounts,
   });
 
   const matchAcc = useCallback((u: AccountRowItem, key: string) => u.id === key, []);
   const { entity: fetchedAccount, loading: fetchingDetail, fetchFresh } = useLinkedEntityDetail<AccountRowItem>({
-    enabled: mode === 'LINK_EXISTING' && canReadAccounts,
+    enabled: modalOpen && mode === 'LINK_EXISTING' && canReadAccounts,
     selectedKey: linkUserId,
     endpointPrefix: '/admin/accounts',
     matchItem: matchAcc,

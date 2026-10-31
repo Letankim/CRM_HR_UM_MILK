@@ -42,7 +42,7 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
   const [posManagerOpen, setPosManagerOpen] = useState(false);
   const { options: jobPositionOptions } = useJobPositions();
   const watchedBranchId = Form.useWatch('branch_id', form);
-  const { options: shiftOptions } = useShiftTemplates(watchedBranchId);
+  const { options: shiftOptions } = useShiftTemplates(watchedBranchId, open);
 
   useEffect(() => {
     if (!open || shiftOptions.length === 0) return;
@@ -204,7 +204,7 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
                   </>
                 ),
               },
-              { key: 'account', forceRender: true, label: <span><UserSwitchOutlined /> Tài khoản Liên kết</span>, children: <EmployeeAccountLinkFields form={form} editing={editing} branches={branches} /> },
+              { key: 'account', forceRender: true, label: <span><UserSwitchOutlined /> Tài khoản Liên kết</span>, children: <EmployeeAccountLinkFields form={form} editing={editing} branches={branches} modalOpen={open} /> },
             ]}
           />
         </Form>

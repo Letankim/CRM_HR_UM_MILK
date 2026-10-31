@@ -169,11 +169,11 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.delete('/api/admin/schedules/:id', { preHandler: requirePermission('schedule.propose', 'schedule.publish') }, async (request) => {
-    const { id } = request.params as { id: string }, body = z.object({ version: z.coerce.number().int().min(1).optional() }).parse(request.body ?? {}), before = ctx.db.shiftAssignments.get(id);
+    const { id } = request.params as { id: string }, before = ctx.db.shiftAssignments.get(id);
     if (!before) throw Errors.notFound('Không tìm thấy bản ghi phân ca');
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
     assertDateNotLockedByPayroll(ctx.db, before.work_date, 'xóa ca làm việc');
-    await ctx.db.shiftAssignments.softDelete(id, body.version ?? before.version, request.auth!.user.id);
+    await ctx.db.shiftAssignments.softDelete(id, before.version, request.auth!.user.id);
     await clearShiftAttendanceOnWorkflowOverride(ctx.db, before, request.auth!.user.id, 'Đã xóa phân công ca làm việc khỏi lịch');
     await ensureSyncedNotifications(ctx);
     await ctx.audit.record(auditContext(request), { action: 'schedule.delete', entity: 'SHIFT_ASSIGNMENTS', entityId: id, before: { work_date: before.work_date, shift_code: before.shift_code } });

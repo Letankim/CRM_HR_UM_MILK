@@ -64,14 +64,13 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
 
   const canViewRec = can('candidate.manage', 'interview.manage');
   const canViewTests = can('test.manage', 'employee.read', 'system.config');
-  const empSelect = useEmployeeSearchSelect({ initialOptions: employees, enabled: canViewRec || canViewTests });
-  const candQ = useQuery({ queryKey: ['candidates'], queryFn: () => api.list<Record<string, unknown>>('/admin/candidates?per_page=100'), enabled: canViewRec });
-  const ivQ = useQuery({ queryKey: ['interviews'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/interviews'), enabled: canViewRec });
-  const testsQ = useQuery({ queryKey: ['tests-bank'], queryFn: () => api.get<{ tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts: Record<string, unknown>[] }>('/admin/tests/bank'), enabled: canViewTests });
-  const recipientsQ = useQuery({
-    queryKey: ['notification-recipients'],
-    queryFn: () => api.get<{ id: string; username: string; displayName: string; roleLabel: string }[]>('/notifications/recipients'),
-  });
+  const isRecActive = !activeTab || activeTab === 'recruitment';
+  const isTestsActive = !activeTab || activeTab === 'tests';
+  const empSelect = useEmployeeSearchSelect({ initialOptions: employees, enabled: (canViewRec && ivModal) || (canViewTests && isTestsActive) });
+  const candQ = useQuery({ queryKey: ['candidates'], queryFn: () => api.list<Record<string, unknown>>('/admin/candidates?per_page=100'), enabled: canViewRec && isRecActive });
+  const ivQ = useQuery({ queryKey: ['interviews'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/interviews'), enabled: canViewRec && isRecActive });
+  const testsQ = useQuery({ queryKey: ['tests-bank'], queryFn: () => api.get<{ tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts: Record<string, unknown>[] }>('/admin/tests/bank'), enabled: canViewTests && isTestsActive });
+  const recipientsQ = useQuery({ queryKey: ['notifications', 'recipients'], queryFn: () => api.get<{ id: string; username: string; displayName: string; roleLabel: string }[]>('/notifications/recipients'), enabled: ivModal });
 
   const interviewerOptions = useMemo(() => {
     const map = new Map<string, string>();

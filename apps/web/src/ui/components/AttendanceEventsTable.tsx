@@ -112,7 +112,7 @@ export function AttendanceEventsTable({ externalFilters }: Props) {
   const { options: shiftOptions } = useShiftTemplates(effBranch);
   useEffect(() => { setPage(1); }, [effQ, effBranch, effShift, effState]);
 
-  const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'), enabled: !externalFilters });
+  const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'), enabled: !externalFilters });
   const sessionsUrl = useMemo(() => {
     const sp = new URLSearchParams({ page: String(page), per_page: String(perPage) });
     if (effBranch && effBranch !== 'ALL') sp.set('branch_id', effBranch);

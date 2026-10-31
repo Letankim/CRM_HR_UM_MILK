@@ -2,10 +2,11 @@
 
 import { App } from 'antd';
 import { useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { io, type Socket } from 'socket.io-client';
 import { loginPath, type AppKind } from './auth';
+import { isInSelfActionWindow } from './notification-sound';
 
 let socket: Socket | null = null;
 let currentToken: string | null = null;
@@ -66,7 +67,6 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     };
     const onMaintenance = (payload: { enabled?: boolean; message?: string }) => {
       qc.setQueryData(['maintenance'], [payload]);
-      qc.invalidateQueries({ queryKey: ['maintenance'] });
       if (payload?.enabled) {
         message.warning(payload.message || 'Hệ thống đang chuyển sang chế độ bảo trì');
       } else {
@@ -94,53 +94,62 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
         return isDup;
       };
     })();
-    const onNotification = (payload?: { actorId?: string; kind?: string; title?: string; summary?: string; code?: string }) => {
-      if (isOutOfBranchOrDup('ntf', payload)) return;
-      ['notifications', 'mkt-comms', 'nv-comms'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-      qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
-    };
-    let scheduleTimer: ReturnType<typeof setTimeout> | null = null;
-    const triggerScheduleSync = () => {
-      if (scheduleTimer) clearTimeout(scheduleTimer);
-      scheduleTimer = setTimeout(() => {
-        [
-          'notifications', 'schedules', 'my-attendance', 'leave-requests', 'shift-swaps', 'shift-registrations',
-          'schedule-planner-week', 'schedule-planner-probation',
-          'attendance-adjustments', 'attendance-sessions', 'attendance-sessions-count', 'nv-schedules', 'nv-swaps',
-          'dashboard-schedules', 'dashboard-leaves', 'dashboard-leaves-full', 'dashboard-swaps', 'dashboard-attendance-adjustments',
-          'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile',
-        ].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+
+    const pendingKeys = new Map<string, QueryKey>();
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const queueInvalidate = (keys: QueryKey[]) => {
+      for (const k of keys) pendingKeys.set(JSON.stringify(k), k);
+      if (flushTimer) clearTimeout(flushTimer);
+      flushTimer = setTimeout(() => {
+        const batch = Array.from(pendingKeys.values());
+        pendingKeys.clear();
+        const selfAction = isInSelfActionWindow();
+        const now = Date.now();
+        for (const queryKey of batch) {
+          if (selfAction) {
+            const matched = qc.getQueryCache().findAll({ queryKey });
+            const activeMatched = matched.filter((q) => q.getObserversCount() > 0);
+            if (activeMatched.length > 0 && activeMatched.every((q) => q.state.fetchStatus === 'fetching' || now - q.state.dataUpdatedAt < 1200)) {
+              qc.invalidateQueries({ queryKey, refetchType: 'none' });
+              continue;
+            }
+          }
+          qc.invalidateQueries({ queryKey });
+        }
       }, 250);
     };
 
+    const onNotification = (payload?: { actorId?: string; kind?: string; title?: string; summary?: string; code?: string }) => {
+      if (isOutOfBranchOrDup('ntf', payload)) return;
+      queueInvalidate([['notifications'], ['mkt-comms'], ['nv-comms'], ['me', 'payslips']]);
+    };
     const onAttendance = (payload?: { actorId?: string; branchId?: string; kind?: string; message?: string }) => {
       if (isOutOfBranchOrDup('att', payload)) return;
-      [
-        'notifications', 'my-attendance', 'attendance-all', 'nv-attendance', 'attendance-sessions', 'attendance-sessions-count',
-        'attendance-adjustments', 'dashboard-attendance-adjustments', 'schedules', 'dashboard-shifts-full',
-        'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile',
-      ].forEach((k) =>
-        qc.invalidateQueries({ queryKey: [k] }),
-      );
+      queueInvalidate([
+        ['notifications'], ['my-attendance'], ['attendance-all'], ['nv-attendance'], ['attendance-sessions'], ['attendance-sessions-count'],
+        ['attendance-adjustments'], ['dashboard-attendance-adjustments'], ['schedules'], ['dashboard-schedules'], ['dashboard-shifts-full'],
+        ['payroll-periods'], ['payroll-periods-report'], ['payroll-snapshots'], ['payroll-reconcile'],
+      ]);
     };
     const onSchedule = (payload?: { actorId?: string; branchId?: string; kind?: string; message?: string }) => {
       if (isOutOfBranchOrDup('sched', payload)) return;
-      triggerScheduleSync();
+      queueInvalidate([
+        ['notifications'], ['schedules'], ['my-attendance'], ['leave-requests'], ['shift-swaps'], ['shift-registrations'],
+        ['schedule-planner-week'], ['schedule-planner-probation'], ['attendance-adjustments'], ['attendance-sessions'], ['attendance-sessions-count'],
+        ['nv-schedules'], ['nv-swaps'], ['dashboard-schedules'], ['dashboard-leaves'], ['dashboard-swaps'], ['dashboard-attendance-adjustments'],
+        ['payroll-periods'], ['payroll-periods-report'], ['payroll-snapshots'], ['payroll-reconcile'],
+      ]);
     };
-    const onAccountPending = () => {
-      ['accounts', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-    };
-    const onPayrollUpdated = () => {
-      ['salary-profiles', 'salary-history', 'employees', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items', 'notifications', 'tickets'].forEach((k) =>
-        qc.invalidateQueries({ queryKey: [k] }),
-      );
-      qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
-    };
+    const onAccountPending = () => queueInvalidate([['accounts'], ['notifications']]);
+    const onPayrollUpdated = () => queueInvalidate([
+      ['salary-profiles'], ['salary-history'], ['employees'], ['payroll-periods'], ['payroll-periods-report'],
+      ['payroll-snapshots'], ['payroll-reconcile'], ['payroll-items'], ['notifications'], ['tickets'], ['me', 'payslips'],
+    ]);
     const onTicketUpdated = (payload?: { actorId?: string; branchId?: string; entityId?: string; kind?: string }) => {
       if (isOutOfBranchOrDup('tck', payload)) return;
-      ['tickets', 'ticket-detail', 'notifications', 'payroll-snapshots'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-      qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
+      queueInvalidate([['tickets'], ['ticket-detail'], ['notifications'], ['payroll-snapshots'], ['me', 'payslips']]);
     };
+
     s.on('auth:forceLogout', onForceLogout);
     s.on('system:maintenance', onMaintenance);
     s.on('notification:new', onNotification);
@@ -152,7 +161,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     s.on('ticket:updated', onTicketUpdated);
     if (!s.connected) s.connect();
     return () => {
-      if (scheduleTimer) clearTimeout(scheduleTimer);
+      if (flushTimer) clearTimeout(flushTimer);
       s.off('auth:forceLogout', onForceLogout);
       s.off('system:maintenance', onMaintenance);
       s.off('notification:new', onNotification);

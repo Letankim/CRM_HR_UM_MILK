@@ -29,7 +29,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
   const empSelect = useEmployeeSearchSelect({ initialOptions: employees, enabled: subTab === 'history' || asgModal });
   const bankPag = useClientPagination(10, 'bộ đề'), asgPag = useClientPagination(10, 'đợt giao');
   const refresh = () => ['tests-bank', 'nv-tests'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-  const handleManualRefresh = async () => { setRefreshing(true); try { await api.get('/admin/tests/bank?refresh=1'); refresh(); message.success('Đã đồng bộ dữ liệu bộ đề, đợt giao bài & lịch sử thi mới nhất'); } finally { setRefreshing(false); } };
+  const handleManualRefresh = async () => { setRefreshing(true); try { const fresh = await api.get('/admin/tests/bank?refresh=1'); qc.setQueryData(['tests-bank'], fresh); qc.invalidateQueries({ queryKey: ['nv-tests'], refetchType: 'none' }); message.success('Đã đồng bộ dữ liệu bộ đề, đợt giao bài & lịch sử thi mới nhất'); } finally { setRefreshing(false); } };
 
   const openCreateBank = () => {
     setEditingTest(null); setQuestions(DEFAULT_QUESTIONS); setModalTab('config'); bankForm.resetFields();

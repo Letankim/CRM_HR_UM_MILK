@@ -36,10 +36,11 @@ const FALLBACK_SHIFTS: ShiftSelectOption[] = DEFAULT_SHIFT_OPTIONS.map((o) => {
  * Hook tải động Danh mục Khung ca mẫu từ `/api/admin/shift-templates`
  * và lọc tự động theo Chi nhánh (`branchId`) đang chọn.
  */
-export function useShiftTemplates(branchId?: string) {
+export function useShiftTemplates(branchId?: string, enabled = true) {
   const q = useQuery({
     queryKey: ['shift-templates'],
     queryFn: () => api.get<ShiftTemplateItem[]>('/admin/shift-templates'),
+    enabled,
     staleTime: 30_000,
   });
 

@@ -34,12 +34,12 @@ export function HrDashboardActionPanel() {
   });
   const schedQ = useQuery({
     queryKey: ['dashboard-schedules'],
-    queryFn: () => api.list<{ id: string; work_date: string; status: string }>('/admin/schedules?per_page=100'),
+    queryFn: () => api.list<{ id: string; work_date: string; status: string }>('/admin/schedules?per_page=300'),
     enabled: can('schedule.read'),
   });
   const leaveQ = useQuery({
     queryKey: ['dashboard-leaves'],
-    queryFn: () => api.list<{ id: string; leave_date: string; status: string }>('/admin/leave-requests?per_page=50'),
+    queryFn: () => api.list<{ id: string; leave_date: string; status: string }>('/admin/leave-requests?per_page=100'),
     enabled: can('schedule.read'),
   });
   const swapQ = useQuery({
@@ -49,7 +49,7 @@ export function HrDashboardActionPanel() {
   });
   const adjQ = useQuery({
     queryKey: ['dashboard-attendance-adjustments'],
-    queryFn: () => api.list<{ id: string; status: string }>('/admin/attendance/adjustments?per_page=50'),
+    queryFn: () => api.list<{ id: string; status: string }>('/admin/attendance/adjustments?per_page=100'),
     enabled: can('attendance.read', 'schedule.read'),
   });
   const probPlanQ = useQuery({

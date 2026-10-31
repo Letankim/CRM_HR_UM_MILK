@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { App, Button, Card, Col, Descriptions, Empty, Modal, Row, Select, Space, Tabs, Tag, Typography } from 'antd';
 import { BookOutlined, CheckCircleOutlined, CloseCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EyeOutlined, HistoryOutlined, PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -128,6 +129,7 @@ export function EmployeeTestCenterView({
   assignments, attempts, tests, onRefresh,
 }: { assignments: Record<string, unknown>[]; attempts: Record<string, unknown>[]; tests: Record<string, unknown>[]; onRefresh: () => void }) {
   const { message } = App.useApp();
+  const qc = useQueryClient();
   const [subTab, setSubTab] = useState<'assignments' | 'history'>('assignments');
   const [filterTestId, setFilterTestId] = useState<string>('ALL');
   const [activeAttempt, setActiveAttempt] = useState<Record<string, unknown> | null>(null);
@@ -138,7 +140,7 @@ export function EmployeeTestCenterView({
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    try { await api.get('/admin/tests/bank?refresh=1'); onRefresh(); message.success('Đã làm mới danh sách bài kiểm tra & lịch sử làm bài'); } finally { setRefreshing(false); }
+    try { const fresh = await api.get('/admin/tests/bank?refresh=1'); qc.setQueryData(['nv-tests'], fresh); qc.invalidateQueries({ queryKey: ['tests-bank'], refetchType: 'none' }); message.success('Đã làm mới danh sách bài kiểm tra & lịch sử làm bài'); } finally { setRefreshing(false); }
   };
 
   const handleStartExam = async (assignment: Record<string, unknown>) => {

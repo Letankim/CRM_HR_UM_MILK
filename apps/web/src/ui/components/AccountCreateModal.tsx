@@ -38,7 +38,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
   const isEmpRole = isEmployeeRole(currentRole);
 
   const employeesQuery = useQuery({ queryKey: ['employees', 'select-for-account'], queryFn: () => api.list<EmployeeRowItem>('/admin/employees?per_page=200'), enabled: open });
-  const branchesQuery = useQuery({ queryKey: ['branches', 'select-for-account'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'), enabled: open });
+  const branchesQuery = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'), enabled: open });
 
   const matchEmp = useCallback((e: EmployeeRowItem, key: string) => e.employeeCode === key || e.id === key, []);
   const { entity: fetchedEmp, loading: fetchingEmp, fetchFresh } = useLinkedEntityDetail<EmployeeRowItem>({

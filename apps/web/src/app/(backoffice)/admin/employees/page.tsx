@@ -49,7 +49,7 @@ function EmployeesView() {
 
   const branchesQuery = useQuery({
     queryKey: ['branches', 'select'],
-    queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'),
+    queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'),
   });
 
   const buildQueryUrl = (forceRefresh = false) => {
@@ -74,7 +74,7 @@ function EmployeesView() {
     try {
       const fresh = await api.list<EmployeeRowItem>(buildQueryUrl(true));
       qc.setQueryData(['employees', branchId, stage, staffGroup, status, q, page, perPage], fresh);
-      await qc.invalidateQueries({ queryKey: ['employees'] });
+      await qc.invalidateQueries({ queryKey: ['employees'], refetchType: 'none' });
       message.success('Đã cập nhật hồ sơ nhân sự mới nhất');
     } catch (e) {
       message.error(e instanceof ApiClientError ? e.message : 'Làm mới thất bại');

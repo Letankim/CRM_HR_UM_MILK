@@ -65,7 +65,7 @@ function IntegrationsView() {
     try {
       const fresh = await api.get<HealthDetail>('/admin/integrations/health?refresh=1');
       qc.setQueryData(['integrations', 'health'], fresh);
-      await qc.invalidateQueries({ queryKey: ['integrations'] });
+      await qc.invalidateQueries({ queryKey: ['integrations'], predicate: (item) => item.queryKey[1] !== 'health' });
       message.success('Đã cập nhật trạng thái tích hợp mới nhất');
     } finally {
       hide();

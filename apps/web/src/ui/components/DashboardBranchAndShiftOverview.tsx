@@ -37,11 +37,11 @@ export function DashboardBranchAndShiftOverview({
   const monthEndStr = dayjs().endOf('month').add(7, 'day').format('YYYY-MM-DD');
 
   const branchesQ = useQuery({
-    queryKey: ['dashboard-branches'],
-    queryFn: () => api.list<{ id: string; code: string; name: string; status: string }>('/admin/branches?per_page=50'),
+    queryKey: ['branches', 'select'],
+    queryFn: () => api.list<{ id: string; code: string; name: string; status: string }>('/admin/branches?per_page=100'),
   });
   const employeesQ = useQuery({
-    queryKey: ['dashboard-employees-full'],
+    queryKey: ['dashboard-employees'],
     queryFn: () => api.list<Record<string, unknown>>('/admin/employees?per_page=100'),
     enabled: can('employee.read'),
   });
@@ -56,13 +56,13 @@ export function DashboardBranchAndShiftOverview({
     enabled: canSchedule,
   });
   const leavesQ = useQuery({
-    queryKey: ['dashboard-leaves-full'],
+    queryKey: ['dashboard-leaves'],
     queryFn: () => api.list<Record<string, unknown>>('/admin/leave-requests?per_page=100'),
     enabled: canSchedule,
   });
   const payrollQ = useQuery({
-    queryKey: ['dashboard-payroll-periods'],
-    queryFn: () => api.get<PayPeriodRow[]>('/admin/payroll/periods'),
+    queryKey: ['payroll-periods'],
+    queryFn: () => api.get<PayPeriodRow[]>('/admin/payroll/periods?per_page=100'),
     enabled: canPayroll,
   });
 

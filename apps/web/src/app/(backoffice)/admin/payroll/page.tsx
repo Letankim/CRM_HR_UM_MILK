@@ -56,14 +56,8 @@ function PayrollView() {
     queryFn: () => api.list<PayPeriodRow>(`/admin/payroll/periods?page=${perPageNum}&per_page=${perPageSize}`),
     enabled: tab === 'REPORTS' && reportSubTab === 'periods',
   });
-  const branchesQuery = useQuery({
-    queryKey: ['branches-select'],
-    queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'),
-  });
-  const employeesQuery = useQuery({
-    queryKey: ['employees', 'payroll-select'],
-    queryFn: () => api.list<{ id: string; employeeCode: string; fullName: string }>('/admin/employees?per_page=100&sort_by=employeeCode&sort_order=asc'),
-  });
+  const branchesQuery = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100') });
+  const employeesQuery = useQuery({ queryKey: ['employees', 'payroll-select'], queryFn: () => api.list<{ id: string; employeeCode: string; fullName: string }>('/admin/employees?per_page=100&sort_by=employeeCode&sort_order=asc'), enabled: tab === 'ITEMS' });
   const empOptions = useMemo(() => (employeesQuery.data?.data ?? []).map((e) => ({ value: e.id, label: `${e.employeeCode} — ${e.fullName}` })), [employeesQuery.data]);
   const branchOptions = useMemo(() => [{ value: 'ALL', label: 'Toàn chuỗi Ụm Bò Milk' }, ...(branchesQuery.data?.data ?? []).map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))], [branchesQuery.data]);
 

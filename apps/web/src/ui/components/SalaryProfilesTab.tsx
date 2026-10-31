@@ -53,7 +53,7 @@ export function SalaryProfilesTab({ canManage, employeeOptions }: { canManage: b
   const [detailProfile, setDetailProfile] = useState<SalaryProfile | null>(null);
 
   const branchesQuery = useQuery({
-    queryKey: ['branches-select'],
+    queryKey: ['branches', 'select'],
     queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'),
   });
   const branchOptions = useMemo(
@@ -130,8 +130,10 @@ export function SalaryProfilesTab({ canManage, employeeOptions }: { canManage: b
           { key: 'status', value: status, width: 190, options: [{ label: 'Mọi trạng thái', value: 'ALL' }, { label: 'Đang áp dụng', value: 'ACTIVE' }, { label: 'Chờ hiệu lực', value: 'SCHEDULED' }, { label: 'Chưa thiết lập lương', value: 'MISSING' }], onChange: (v) => { setStatus(v); reset(); } },
         ]}
         onRefresh={async () => {
-          await api.list('/admin/payroll/salary-profiles?per_page=1&refresh=1').catch(() => null);
-          ['salary-profiles', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+          const fresh = await api.list<SalaryProfileRow>(`/admin/payroll/salary-profiles?${params.toString()}&refresh=1`).catch(() => null);
+          if (fresh) qc.setQueryData(['salary-profiles', params.toString()], fresh);
+          void qc.invalidateQueries({ queryKey: ['salary-profiles'], refetchType: fresh ? 'none' : 'active' });
+          ['payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
         }}
         refreshing={listQuery.isFetching}
         onExportExcel={() => exportSalaryExcel(rows)}

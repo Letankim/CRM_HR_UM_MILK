@@ -35,22 +35,22 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
   const { options: shiftOptions } = useShiftTemplates(branchFilter);
 
   const branchesQ = useQuery({
-    queryKey: ['report-branches'],
-    queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'),
+    queryKey: ['branches', 'select'],
+    queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'),
     enabled: canViewReport,
   });
   const employeesQ = useQuery({
-    queryKey: ['report-employees'],
+    queryKey: ['dashboard-employees'],
     queryFn: () => api.list<Record<string, unknown>>('/admin/employees?per_page=100'),
     enabled: canViewReport && can('employee.read'),
   });
   const candidatesQ = useQuery({
-    queryKey: ['report-candidates'],
+    queryKey: ['dashboard-candidates'],
     queryFn: () => api.list<Record<string, unknown>>('/admin/candidates?per_page=100'),
     enabled: canViewReport && canRecruit,
   });
   const shiftsQ = useQuery({
-    queryKey: ['report-shifts'],
+    queryKey: ['dashboard-schedules'],
     queryFn: () => api.list<Record<string, unknown>>('/admin/schedules?per_page=300'),
     enabled: canViewReport,
   });

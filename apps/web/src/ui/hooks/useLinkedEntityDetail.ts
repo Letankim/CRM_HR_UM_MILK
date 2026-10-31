@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 
 export interface UseLinkedEntityDetailOptions<T> {
@@ -11,8 +12,11 @@ export interface UseLinkedEntityDetailOptions<T> {
   fallbackList?: T[];
 }
 
+const DETAIL_STALE_MS = 15_000;
+
 /**
  * Hook tải thông tin chi tiết mới nhất từ API của Tài khoản hoặc Hồ sơ Nhân sự khi người dùng chọn liên kết.
+ * Sử dụng chung cache & in-flight Promise của React Query để tuyệt đối không gọi trùng API 2 lần.
  */
 export function useLinkedEntityDetail<T>({
   enabled,
@@ -21,50 +25,47 @@ export function useLinkedEntityDetail<T>({
   matchItem,
   fallbackList = [],
 }: UseLinkedEntityDetailOptions<T>) {
-  const [entity, setEntity] = useState<T | null>(null);
-  const [loading, setLoading] = useState(false);
+  const qc = useQueryClient();
+  const [fetchingFresh, setFetchingFresh] = useState(false);
+  const matchRef = useRef(matchItem);
+  matchRef.current = matchItem;
+  const fallbackRef = useRef(fallbackList);
+  fallbackRef.current = fallbackList;
 
-  useEffect(() => {
-    if (!enabled || !selectedKey) {
-      setEntity(null);
-      return;
-    }
-    if (entity && matchItem(entity, selectedKey)) return;
-    let cancelled = false;
-    setLoading(true);
-    api
-      .get<T>(`${endpointPrefix}/${encodeURIComponent(selectedKey)}`)
-      .then((res) => {
-        if (!cancelled) setEntity(res);
-      })
-      .catch(() => {
-        const fb = fallbackList.find((x) => matchItem(x, selectedKey)) ?? null;
-        if (!cancelled) setEntity(fb);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, selectedKey, endpointPrefix, entity, matchItem, fallbackList]);
+  const loadEntity = useCallback(
+    (key: string) =>
+      api
+        .get<T>(`${endpointPrefix}/${encodeURIComponent(key)}`)
+        .catch(() => fallbackRef.current.find((x) => matchRef.current(x, key)) ?? null),
+    [endpointPrefix],
+  );
+
+  const detailQuery = useQuery({
+    queryKey: ['linked-entity-detail', endpointPrefix, selectedKey ?? ''],
+    queryFn: () => loadEntity(selectedKey!),
+    enabled: Boolean(enabled && selectedKey),
+    staleTime: DETAIL_STALE_MS,
+  });
 
   const fetchFresh = useCallback(
     async (nextKey?: string): Promise<T | null> => {
-      if (!nextKey) {
-        setEntity(null);
-        return null;
+      if (!nextKey) return null;
+      setFetchingFresh(true);
+      try {
+        return await qc.fetchQuery({
+          queryKey: ['linked-entity-detail', endpointPrefix, nextKey],
+          queryFn: () => loadEntity(nextKey),
+          staleTime: DETAIL_STALE_MS,
+        });
+      } finally {
+        setFetchingFresh(false);
       }
-      setLoading(true);
-      const res = await api
-        .get<T>(`${endpointPrefix}/${encodeURIComponent(nextKey)}`)
-        .catch(() => fallbackList.find((x) => matchItem(x, nextKey)) ?? null);
-      setLoading(false);
-      setEntity(res);
-      return res;
     },
-    [endpointPrefix, fallbackList, matchItem],
+    [qc, endpointPrefix, loadEntity],
   );
 
-  return { entity, loading, fetchFresh, clearEntity: () => setEntity(null) };
+  const entity = enabled && selectedKey ? (detailQuery.data ?? null) : null;
+  const loading = fetchingFresh || detailQuery.isFetching;
+
+  return { entity, loading, fetchFresh };
 }

@@ -50,6 +50,7 @@ const BASE = process.env.NEXT_PUBLIC_API_BASE ?? '/api';
 let refreshing: Promise<boolean> | null = null;
 let redirectingToLogin = false;
 const latestVersionByPath = new Map<string, number>();
+const inflightGets = new Map<string, Promise<ApiSuccessEnvelope<unknown, unknown>>>();
 
 export type VersionConflictPrompter = (latestVersion: number) => Promise<boolean>;
 let versionConflictPrompter: VersionConflictPrompter | null = null;
@@ -88,13 +89,12 @@ function handleUnauthorizedRedirect(): void {
     .finally(() => {
       const isEmployee = pathname === '/nv' || pathname.startsWith('/nv/');
       const loginUrl = isEmployee ? '/nv/login' : '/login';
-      const nextParam =
-        pathname !== '/' && pathname !== '/nv' ? `?next=${encodeURIComponent(pathname)}` : '';
+      const nextParam = pathname !== '/' && pathname !== '/nv' ? `?next=${encodeURIComponent(pathname)}` : '';
       window.location.replace(`${loginUrl}${nextParam}`);
     });
 }
 
-async function requestEnvelope<TData, TMeta = Record<string, unknown> | null>(
+async function executeRequestEnvelope<TData, TMeta = Record<string, unknown> | null>(
   method: string,
   path: string,
   body?: unknown,
@@ -102,12 +102,7 @@ async function requestEnvelope<TData, TMeta = Record<string, unknown> | null>(
   versionRetryCount = 0,
 ): Promise<ApiSuccessEnvelope<TData, TMeta>> {
   let effectiveBody = body;
-  if (
-    effectiveBody &&
-    typeof effectiveBody === 'object' &&
-    !Array.isArray(effectiveBody) &&
-    typeof (effectiveBody as Record<string, unknown>).version === 'number'
-  ) {
+  if (effectiveBody && typeof effectiveBody === 'object' && !Array.isArray(effectiveBody) && typeof (effectiveBody as Record<string, unknown>).version === 'number') {
     const knownVersion = latestVersionByPath.get(path);
     const currentVersion = (effectiveBody as Record<string, unknown>).version as number;
     if (knownVersion && knownVersion > currentVersion) {
@@ -133,13 +128,10 @@ async function requestEnvelope<TData, TMeta = Record<string, unknown> | null>(
   if (isUserMutation) markSelfAction();
 
   if (res.status === 401 && !retried && !isAuthEndpoint) {
-    if (await refreshSession()) return requestEnvelope<TData, TMeta>(method, path, effectiveBody, true, versionRetryCount);
+    if (await refreshSession()) return executeRequestEnvelope<TData, TMeta>(method, path, effectiveBody, true, versionRetryCount);
   }
 
-  const payload = (await res.json().catch(() => null)) as
-    | ApiSuccessEnvelope<TData, TMeta>
-    | ApiErrorEnvelope
-    | null;
+  const payload = (await res.json().catch(() => null)) as ApiSuccessEnvelope<TData, TMeta> | ApiErrorEnvelope | null;
 
   if (!res.ok || !payload || payload.success === false) {
     const errPayload = payload as ApiErrorEnvelope | null;
@@ -149,35 +141,20 @@ async function requestEnvelope<TData, TMeta = Record<string, unknown> | null>(
     const reqId = errPayload?.request_id ?? '';
 
     if (res.status === 401 && !isAuthEndpoint) handleUnauthorizedRedirect();
-    // Bắt buộc đổi mã PIN: không đăng xuất, chỉ báo cho giao diện mở hộp thoại đổi mã PIN
     if (res.status === 403 && code === 'PIN_CHANGE_REQUIRED' && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(PIN_CHANGE_REQUIRED_EVENT));
     }
 
-    if (
-      res.status === 409 &&
-      code === 'VERSION_CONFLICT' &&
-      versionRetryCount < 2 &&
-      effectiveBody &&
-      typeof effectiveBody === 'object' &&
-      !Array.isArray(effectiveBody) &&
-      'version' in effectiveBody
-    ) {
+    if (res.status === 409 && code === 'VERSION_CONFLICT' && versionRetryCount < 2 && effectiveBody && typeof effectiveBody === 'object' && !Array.isArray(effectiveBody) && 'version' in effectiveBody) {
       const latestVersion = Number(details.find((d) => d.field === 'version')?.rejected_value);
       if (Number.isInteger(latestVersion) && latestVersion > 0) {
         latestVersionByPath.set(path, latestVersion);
         const shouldApply = versionConflictPrompter ? await versionConflictPrompter(latestVersion) : true;
         if (shouldApply) {
           const nextBody = { ...(effectiveBody as Record<string, unknown>), version: latestVersion };
-          return requestEnvelope<TData, TMeta>(method, path, nextBody, retried, versionRetryCount + 1);
+          return executeRequestEnvelope<TData, TMeta>(method, path, nextBody, retried, versionRetryCount + 1);
         }
-        throw new ApiClientError(
-          409,
-          code,
-          'Đã giữ nguyên nội dung bạn đang nhập trên biểu mẫu. Bấm Lưu lần nữa khi bạn sẵn sàng áp dụng.',
-          [],
-          reqId,
-        );
+        throw new ApiClientError(409, code, 'Đã giữ nguyên nội dung bạn đang nhập trên biểu mẫu. Bấm Lưu lần nữa khi bạn sẵn sàng áp dụng.', [], reqId);
       }
     }
 
@@ -186,34 +163,33 @@ async function requestEnvelope<TData, TMeta = Record<string, unknown> | null>(
 
   latestVersionByPath.delete(path);
   redirectingToLogin = false;
-  if (path === '/auth/me' || path === '/auth/login') {
-    markSessionActive(true);
-  }
+  if (path === '/auth/me' || path === '/auth/login') markSessionActive(true);
   return payload;
 }
 
+function requestEnvelope<TData, TMeta = Record<string, unknown> | null>(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<ApiSuccessEnvelope<TData, TMeta>> {
+  if (method === 'GET') {
+    const existing = inflightGets.get(path);
+    if (existing) return existing as Promise<ApiSuccessEnvelope<TData, TMeta>>;
+    const pending = executeRequestEnvelope<TData, TMeta>('GET', path).finally(() => {
+      inflightGets.delete(path);
+    });
+    inflightGets.set(path, pending as Promise<ApiSuccessEnvelope<unknown, unknown>>);
+    return pending;
+  }
+  inflightGets.clear();
+  return executeRequestEnvelope<TData, TMeta>(method, path, body);
+}
+
 export const api = {
-  get: async <T>(path: string): Promise<T> => {
-    const env = await requestEnvelope<T>('GET', path);
-    return env.data;
-  },
-  list: async <TItem>(path: string): Promise<ApiSuccessEnvelope<TItem[], ListMeta>> => {
-    return requestEnvelope<TItem[], ListMeta>('GET', path);
-  },
-  post: async <T = unknown>(path: string, body?: unknown): Promise<T> => {
-    const env = await requestEnvelope<T>('POST', path, body ?? {});
-    return env.data;
-  },
-  put: async <T = unknown>(path: string, body?: unknown): Promise<T> => {
-    const env = await requestEnvelope<T>('PUT', path, body ?? {});
-    return env.data;
-  },
-  del: async <T = unknown>(path: string, body?: unknown): Promise<T> => {
-    const env = await requestEnvelope<T>('DELETE', path, body);
-    return env.data;
-  },
-  delete: async <T = unknown>(path: string, body?: unknown): Promise<T> => {
-    const env = await requestEnvelope<T>('DELETE', path, body);
-    return env.data;
-  },
+  get: async <T>(path: string): Promise<T> => (await requestEnvelope<T>('GET', path)).data,
+  list: async <TItem>(path: string): Promise<ApiSuccessEnvelope<TItem[], ListMeta>> => requestEnvelope<TItem[], ListMeta>('GET', path),
+  post: async <T = unknown>(path: string, body?: unknown): Promise<T> => (await requestEnvelope<T>('POST', path, body ?? {})).data,
+  put: async <T = unknown>(path: string, body?: unknown): Promise<T> => (await requestEnvelope<T>('PUT', path, body ?? {})).data,
+  del: async <T = unknown>(path: string, body?: unknown): Promise<T> => (await requestEnvelope<T>('DELETE', path, body)).data,
+  delete: async <T = unknown>(path: string, body?: unknown): Promise<T> => (await requestEnvelope<T>('DELETE', path, body)).data,
 };

@@ -48,7 +48,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
     return p.toString();
   };
 
-  const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
+  const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100') });
   const adjParams = mkParams('adjustments'), leaveParams = mkParams('leave'), swapParams = mkParams('swap');
   const adjQ = useQuery({ queryKey: ['attendance-adjustments', adjParams], queryFn: () => api.list<RowRec>(`/admin/attendance/adjustments?${adjParams}`) });
   const leavesQ = useQuery({ queryKey: ['leave-requests', leaveParams], queryFn: () => api.list<RowRec>(`/admin/leave-requests?${leaveParams}`) });

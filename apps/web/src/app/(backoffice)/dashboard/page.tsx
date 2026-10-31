@@ -36,12 +36,12 @@ export default function DashboardPage() {
   const [stageFilter, setStageFilter] = useState('ALL');
   const [periodFilter, setPeriodFilter] = useState<'TODAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'ALL'>('ALL');
 
-  const branches = useQuery({ queryKey: ['dashboard-branches'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
+  const branches = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100') });
   const accounts = useQuery({ queryKey: ['accounts', 'all'], queryFn: () => api.list<{ id: string; status: string }>('/admin/accounts?per_page=100'), enabled: can('account.manage', 'account.activate') });
   const employees = useQuery({ queryKey: ['dashboard-employees'], queryFn: () => api.list<{ id: string; stage: string; status: string; staffGroup?: string; staff_group?: string; branchId?: string; branch_id?: string }>('/admin/employees?per_page=100'), enabled: can('employee.read') });
-  const schedules = useQuery({ queryKey: ['dashboard-schedules'], queryFn: () => api.list<{ id: string; status: string; branchId?: string; branch_id?: string }>('/admin/schedules?per_page=100'), enabled: can('schedule.read') });
-  const leaves = useQuery({ queryKey: ['dashboard-leaves'], queryFn: () => api.list<{ id: string; status: string; branch_id?: string }>('/admin/leave-requests?per_page=50'), enabled: can('schedule.read') });
-  const payroll = useQuery({ queryKey: ['dashboard-payroll'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/payroll/periods'), enabled: can('payroll.read') });
+  const schedules = useQuery({ queryKey: ['dashboard-schedules'], queryFn: () => api.list<{ id: string; status: string; branchId?: string; branch_id?: string }>('/admin/schedules?per_page=300'), enabled: can('schedule.read') });
+  const leaves = useQuery({ queryKey: ['dashboard-leaves'], queryFn: () => api.list<{ id: string; status: string; branch_id?: string }>('/admin/leave-requests?per_page=100'), enabled: can('schedule.read') });
+  const payroll = useQuery({ queryKey: ['payroll-periods'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/payroll/periods?per_page=100'), enabled: can('payroll.read') });
   const comms = useQuery({ queryKey: ['mkt-comms'], queryFn: () => api.get<{ dashboard?: Record<string, number>; audienceGroups?: unknown[]; announcements: Record<string, unknown>[] }>('/admin/comms'), enabled: can('comms.manage') });
   const health = useQuery({ queryKey: ['integrations', 'health'], queryFn: () => api.get<Health>('/admin/integrations/health'), enabled: can('integration.read') });
 
@@ -49,17 +49,17 @@ export default function DashboardPage() {
     setRefreshing(true);
     const hide = message.loading('Đang cập nhật số liệu tổng quan mới nhất...', 0);
     try {
-      await Promise.all([
-        can('account.manage', 'account.activate') ? api.list('/admin/accounts?per_page=100&refresh=1') : Promise.resolve(),
-        can('employee.read') ? api.list('/admin/employees?per_page=100&refresh=1') : Promise.resolve(),
-        can('integration.read') ? api.get('/admin/integrations/health?refresh=1') : Promise.resolve(),
+      const [accFresh, empFresh, healthFresh] = await Promise.all([
+        can('account.manage', 'account.activate') ? api.list<{ id: string; status: string }>('/admin/accounts?per_page=100&refresh=1') : Promise.resolve(null),
+        can('employee.read') ? api.list('/admin/employees?per_page=100&refresh=1') : Promise.resolve(null),
+        can('integration.read') ? api.get<Health>('/admin/integrations/health?refresh=1') : Promise.resolve(null),
       ]);
-      await qc.invalidateQueries();
+      if (accFresh) qc.setQueryData(['accounts', 'all'], accFresh);
+      if (empFresh) qc.setQueryData(['dashboard-employees'], empFresh);
+      if (healthFresh) qc.setQueryData(['integrations', 'health'], healthFresh);
+      await qc.invalidateQueries({ predicate: (q) => !['dashboard-employees'].includes(String(q.queryKey[0])) && !(q.queryKey[0] === 'accounts' && q.queryKey[1] === 'all') && !(q.queryKey[0] === 'integrations' && q.queryKey[1] === 'health') });
       message.success('Đã cập nhật số liệu tổng quan mới nhất');
-    } finally {
-      hide();
-      setRefreshing(false);
-    }
+    } finally { hide(); setRefreshing(false); }
   };
 
   const countAcc = (s: string) => accounts.data?.data.filter((a) => a.status === s).length ?? 0;

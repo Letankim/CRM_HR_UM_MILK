@@ -46,7 +46,7 @@ export function MktCommsCenter() {
   const ancPag = useClientPagination(10, 'bản tin'), audPag = useClientPagination(10, 'nhóm'), cmpPag = useClientPagination(10, 'chiến dịch'), medPag = useClientPagination(10, 'tệp'), dlvPag = useClientPagination(10, 'lượt gửi');
 
   const { options: jobPositionOptions } = useJobPositions();
-  const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
+  const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100') });
   const branchOptions = useMemo(() => (branchesQ.data?.data ?? []).map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` })), [branchesQ.data]);
   const mktQ = useQuery({ queryKey: ['mkt-comms'], queryFn: () => api.get<MktCommsPayload>('/admin/comms'), retry: false });
   const data = mktQ.data;

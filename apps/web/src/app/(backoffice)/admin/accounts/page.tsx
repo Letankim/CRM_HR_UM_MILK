@@ -37,7 +37,7 @@ function AccountsView() {
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
   const branchesQuery = useQuery({
-    queryKey: ['branches-select'],
+    queryKey: ['branches', 'select'],
     queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'),
   });
   const branchOptions = useMemo(
@@ -65,8 +65,8 @@ function AccountsView() {
     const hide = message.loading('Đang làm mới danh sách tài khoản...', 0);
     try {
       const fresh = await api.list<AccountRowItem>(buildQueryUrl(true));
-      qc.setQueryData(['accounts', status, role, q, page, perPage], fresh);
-      await qc.invalidateQueries({ queryKey: ['accounts'] });
+      qc.setQueryData(['accounts', status, role, branchId, q, page, perPage], fresh);
+      await qc.invalidateQueries({ queryKey: ['accounts'], refetchType: 'none' });
       message.success('Đã cập nhật dữ liệu mới nhất');
     } catch (e) {
       message.error(e instanceof ApiClientError ? e.message : 'Làm mới dữ liệu thất bại');

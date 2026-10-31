@@ -40,7 +40,7 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
   useEffect(() => { setPage(1); }, [period.id, branchFilter, anomalyFilter, debouncedQ]);
 
   const branchesQ = useQuery({
-    queryKey: ['branches-select'],
+    queryKey: ['branches', 'select'],
     queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'),
   });
   const branches = useMemo(

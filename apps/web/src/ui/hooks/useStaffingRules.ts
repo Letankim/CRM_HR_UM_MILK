@@ -201,8 +201,8 @@ export function evaluateBranchShiftSurplusPreview(params: {
 }
 
 export function useStaffingRules(enabled = true) {
-  const rulesQ = useQuery({ queryKey: ['staffing-rules', 'schedule-matrix'], queryFn: () => api.get<StaffingRuleItem[]>('/admin/staffing-rules'), enabled, retry: false });
-  const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50'), enabled });
+  const rulesQ = useQuery({ queryKey: ['staffing-rules'], queryFn: () => api.get<StaffingRuleItem[]>('/admin/staffing-rules'), enabled, retry: false });
+  const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'), enabled });
   const branchCodeById = new Map((branchesQ.data?.data ?? []).map((b) => [b.id, b.code]));
   const branchNameById = new Map((branchesQ.data?.data ?? []).map((b) => [b.id, `${b.code} — ${b.name}`]));
   return { rules: rulesQ.data ?? [], branchCodeById, branchNameById };

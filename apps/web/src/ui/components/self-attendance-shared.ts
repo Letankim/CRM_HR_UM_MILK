@@ -93,7 +93,7 @@ export function useOffWindow(enabled = true) {
 /** Số giờ tối đa được Ra ca sau giờ kết thúc ca (cấu hình vận hành, mặc định 3 giờ). */
 export function useCheckoutLateHours(): number {
   const q = useQuery({
-    queryKey: ['operations-config', 'self'],
+    queryKey: ['operations-config'],
     queryFn: () => api.get<{ settings?: OperationSettings }>('/admin/operations-config'),
     staleTime: 5 * 60_000,
     retry: false,

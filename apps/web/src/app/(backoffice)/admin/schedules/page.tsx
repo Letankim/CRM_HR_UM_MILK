@@ -45,11 +45,11 @@ function SchedulesView() {
   const [presetDate, setPresetDate] = useState<string | undefined>(), [presetShift, setPresetShift] = useState<string | undefined>();
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
-  const branchesQuery = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
+  const branchesQuery = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100') });
   const employeesQuery = useQuery({ queryKey: ['employees', 'select-all'], queryFn: () => api.list<{ id: string; employeeCode: string; fullName: string; branchId: string; branchName: string; canSwapShift?: boolean }>('/admin/employees?per_page=100') });
   const { options: shiftFilterOptions } = useShiftTemplates(branchId);
 
-  const attCountQ = useQuery({ queryKey: ['attendance-sessions-count', branchId], queryFn: () => api.list<AttendanceEventRow>(`/admin/attendance/sessions?page=1&per_page=1${branchId !== 'ALL' ? `&branch_id=${branchId}` : ''}`) });
+  const attCountQ = useQuery({ queryKey: ['attendance-sessions-count', branchId], queryFn: () => api.list<AttendanceEventRow>(`/admin/attendance/sessions?page=1&per_page=1${branchId !== 'ALL' ? `&branch_id=${branchId}` : ''}`), enabled: section === 'schedules' });
 
   const dateRangeParams = useMemo(() => {
     if (viewMode === 'WEEK_MATRIX') return { from: weekStart.format('YYYY-MM-DD'), to: weekStart.add(6, 'day').format('YYYY-MM-DD'), limit: 1000 };
@@ -90,6 +90,7 @@ function SchedulesView() {
       } else {
         const fresh = await api.list<ScheduleAssignmentItem>(buildUrl(true));
         qc.setQueryData(['schedules', viewMode, branchId, shiftCode, status, q, page, dateRangeParams.from, dateRangeParams.to, dateRangeParams.limit], fresh);
+        void qc.invalidateQueries({ queryKey: ['schedules'], refetchType: 'none' });
       }
       await Promise.all([qc.invalidateQueries({ queryKey: ['attendance-sessions'] }), qc.invalidateQueries({ queryKey: ['attendance-sessions-count'] }), qc.invalidateQueries({ queryKey: ['staffing-rules'] }), qc.invalidateQueries({ queryKey: ['shift-templates'] })]);
       message.success('Đã cập nhật lịch làm việc và dữ liệu điểm danh mới nhất');

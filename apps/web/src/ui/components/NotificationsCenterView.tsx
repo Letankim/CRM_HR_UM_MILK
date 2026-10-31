@@ -58,7 +58,11 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
   const usersQ = useQuery({ queryKey: ['notifications', 'recipients'], queryFn: () => api.get<{ id: string; username: string; displayName: string; roleLabel: string }[]>('/notifications/recipients'), enabled: canSend });
 
   const refreshAll = () => qc.invalidateQueries({ queryKey: ['notifications'] });
-  const handleManualRefresh = () => { void api.list('/notifications?refresh=1&per_page=12').finally(() => { void refreshAll(); }); };
+  const handleManualRefresh = async () => {
+    const fresh = await api.list<NotificationItem>(`/notifications?${queryParams}&refresh=1`);
+    qc.setQueryData(['notifications', 'list', queryParams], fresh);
+    await qc.invalidateQueries({ queryKey: ['notifications'], predicate: (item) => !(item.queryKey[1] === 'list' && item.queryKey[2] === queryParams) });
+  };
   const readMut = useMutation({ mutationFn: (id: string) => api.post(`/notifications/${id}/read`, {}), onSuccess: refreshAll });
   const markAllMut = useMutation({ mutationFn: (ids?: string[]) => api.post('/notifications/mark-all-read', { ids }), onSuccess: () => { message.success('Đã đánh dấu đã đọc các thông báo'); refreshAll(); } });
   const delMut = useMutation({ mutationFn: (id: string) => api.delete(`/notifications/${id}`), onSuccess: () => { message.success('Đã xóa thông báo thành công'); refreshAll(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa thông báo thất bại') });

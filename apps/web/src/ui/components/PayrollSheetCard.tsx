@@ -36,7 +36,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
   useEffect(() => { setPage(1); }, [period.id, branchFilter, rateFilter, confirmFilter, debouncedQ]);
 
   const branchesQ = useQuery({
-    queryKey: ['branches-select'],
+    queryKey: ['branches', 'select'],
     queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'),
   });
   const branchOptions = useMemo(

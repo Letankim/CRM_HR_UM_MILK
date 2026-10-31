@@ -38,7 +38,7 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
   const shiftsPag = useClientPagination(10, 'khung ca');
   const rulesPag = useClientPagination(12, 'định biên');
 
-  const branchesQuery = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=50') });
+  const branchesQuery = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100') });
   const shiftsQuery = useQuery({ queryKey: ['shift-templates'], queryFn: () => api.get<ShiftTemplateItem[]>('/admin/shift-templates') });
   const rulesQuery = useQuery({ queryKey: ['staffing-rules'], queryFn: () => api.get<StaffingRuleItem[]>('/admin/staffing-rules') });
   const branches = branchesQuery.data?.data ?? [];
