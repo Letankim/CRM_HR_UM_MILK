@@ -160,12 +160,12 @@ export async function getAccurateDeviceLocation(opts?: {
   }
 
   const anchor = loadDeviceGpsAnchor();
-  let best = await getSinglePosition({ enableHighAccuracy: true, timeout: 4000, maximumAge: 600_000 });
+  let best = await getSinglePosition({ enableHighAccuracy: true, timeout: 2400, maximumAge: 20_000 });
 
   if (!best || isKnownCoarseIpFallback(best.latitude, best.longitude, best.accuracy)) {
     const [osCached, watched] = await Promise.all([
-      getSinglePosition({ enableHighAccuracy: false, timeout: 2000, maximumAge: 3_600_000 }),
-      sampleWatchPosition(2200),
+      getSinglePosition({ enableHighAccuracy: false, timeout: 1600, maximumAge: 600_000 }),
+      sampleWatchPosition(1800),
     ]);
     best = pickMoreAccurate(best, pickMoreAccurate(osCached, watched));
   }

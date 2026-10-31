@@ -108,15 +108,10 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
     if (!open) { stopStream(); setFreshShift(null); return; }
     setPhotoDataUrl('');
     void startCamera();
-    void (async () => {
-      let latestB: { lat?: number | null; lng?: number | null; radiusM?: number } = {};
-      try {
-        const res = await api.get<{ shifts: Record<string, unknown>[] }>('/my-attendance');
-        const matched = res.shifts?.find((s) => String(s.id) === String(shift?.id));
-        if (matched) { setFreshShift(matched); latestB = { lat: Number(matched.branchLat), lng: Number(matched.branchLng), radiusM: Number(matched.branchRadiusM || 100) }; }
-      } catch { /* ignore */ }
-      await locateGps(latestB.lat, latestB.lng, latestB.radiusM);
-    })();
+    void locateGps();
+    void api.get<{ shifts: Record<string, unknown>[] }>('/my-attendance')
+      .then((res) => { const m = res.shifts?.find((s) => String(s.id) === String(shift?.id)); if (m) setFreshShift(m); })
+      .catch(() => undefined);
     const timer = setInterval(() => setNowStr(dayjs().format('HH:mm:ss')), 1000);
     return () => { clearInterval(timer); stopStream(); };
   }, [open, shift?.id, startCamera, stopStream, locateGps]);

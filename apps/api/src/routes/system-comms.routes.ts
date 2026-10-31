@@ -8,6 +8,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { listRegisteredMonthlySpreadsheets } from '../services/backup-targets.helper.js';
 import { mktCommsRoutes } from './mkt-comms.routes.js';
 
 const zCreatePolicyBody = z.object({
@@ -175,9 +176,10 @@ export async function systemCommsRoutes(app: FastifyInstance, ctx: AppContext) {
     let created;
     if (body.action === 'RESTORE_VERIFY') {
       const report = await ctx.reconciliation.scanAndRepair({ autoFix: true, actorId: request.auth!.user.id });
+      const monthlyCount = listRegisteredMonthlySpreadsheets(ctx.db).length;
       created = await ctx.db.backupLog.insert({
-        kind: body.kind, drive_folder_id: ctx.env.DRIVE_ROOT_FOLDER_ID || 'memory://restore-verify', files_count: 7,
-        rows_json: JSON.stringify({ status: 'VERIFIED', issuesFound: report.summary.issuesFound, autoRepaired: report.summary.autoRepaired }),
+        kind: body.kind, drive_folder_id: ctx.env.DRIVE_ROOT_FOLDER_ID || 'memory://restore-verify', files_count: 7 + monthlyCount,
+        rows_json: JSON.stringify({ status: 'VERIFIED', activePartitionMonth: ctx.db.partitionMonth || 'ROOT', monthlySpreadsheetsCount: monthlyCount, issuesFound: report.summary.issuesFound, autoRepaired: report.summary.autoRepaired }),
         started_at: nowIso(), finished_at: nowIso(), status: 'SUCCESS', error: '',
       }, request.auth!.user.id);
     } else {

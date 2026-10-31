@@ -57,8 +57,8 @@ export function AdminPayrollSignatureCard() {
     e.target.value = '';
     if (!file) return;
     try {
-      const pngDataUrl = await normalizeImageFileToPngDataUrl(file, 900);
-      setDraftBase64(pngDataUrl);
+      const sigDataUrl = await normalizeImageFileToPngDataUrl(file, 560);
+      setDraftBase64(sigDataUrl);
     } catch (err) {
       message.error(err instanceof Error ? err.message : 'Không thể đọc tệp ảnh chữ ký');
     }

@@ -29,6 +29,7 @@ const zTransitionBody = z.object({ version: z.coerce.number().int().min(1), targ
 const ALLOWED: Record<PayPeriodStatus, PayPeriodStatus[]> = {
   DRAFT: ['RECONCILE'], RECONCILE: ['APPROVED', 'DRAFT'], APPROVED: ['PUBLISHED', 'RECONCILE'], PUBLISHED: ['PAID'], PAID: [],
 };
+const lastPeriodsListSyncAt = new WeakMap<AppContext, number>();
 
 export const withPeriodLabel = (ctx: AppContext, p: PayPeriod) => {
   const slips = ctx.db.payslips.filter((x) => x.period_id === p.id && x.status !== 'REVISED');
@@ -54,13 +55,17 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
 
   app.get('/api/admin/payroll/periods', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const q = (request.query ?? {}) as Record<string, string | undefined>;
-    const force = q.refresh === '1' || q.refresh === 'true';
-    if (force) await Promise.all([ctx.db.payRates.load(), ctx.db.employees.load(), ctx.db.payPeriods.load(), ctx.db.payrollItems.load(), ctx.db.payrollSnapshots.load(), ctx.db.payslips.load()]);
-    const actorId = request.auth?.user.id ?? 'system';
+    const force = q.refresh === '1' || q.refresh === 'true', actorId = request.auth?.user.id ?? 'system';
+    if (force) await Promise.all([ctx.db.payRates, ctx.db.employees, ctx.db.payPeriods, ctx.db.payrollItems, ctx.db.payrollSnapshots, ctx.db.payslips].map((s) => s.refreshIfIdle(10_000)));
+    const throttle = !force && !process.env.VITEST && ctx.google.mode === 'google';
+    const allowBgSync = !throttle || (Date.now() - (lastPeriodsListSyncAt.get(ctx) ?? 0) >= 45_000 && ctx.db.queue.isIdle(ctx.db.attendanceEvents.spreadsheetId));
+    if (allowBgSync) lastPeriodsListSyncAt.set(ctx, Date.now());
     for (const p of ctx.db.payPeriods.all()) {
-      if (p.status === 'DRAFT' || p.status === 'RECONCILE') await recalculatePeriodSnapshots(ctx, p, actorId, force);
+      if ((p.status === 'DRAFT' || p.status === 'RECONCILE') && (allowBgSync || !ctx.db.payrollSnapshots.find((s) => s.period_id === p.id))) {
+        await recalculatePeriodSnapshots(ctx, p, actorId, force);
+      }
     }
-    await ensurePublishedPeriodPayslips(ctx, actorId);
+    if (allowBgSync) await ensurePublishedPeriodPayslips(ctx, actorId);
     const allItems = ctx.db.payPeriods.all().map((p) => withLabel(ctx, p));
     const result = paginateAndSort(allItems, {
       page: Number(q.page) || 1, perPage: Number(q.per_page) || 50, maxPerPage: 200,
@@ -74,12 +79,7 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
     const { id } = request.params as { id: string }, q = (request.query ?? {}) as Record<string, string | undefined>;
     const forceRefresh = q.refresh === '1' || q.refresh === 'true', actorId = request.auth?.user.id ?? 'system';
     if (forceRefresh) {
-      await Promise.all([
-        ctx.db.payRates.load(), ctx.db.employees.load(), ctx.db.payPeriods.load(), ctx.db.payrollItems.load(),
-        ctx.db.payrollSnapshots.load(), ctx.db.payslips.load(), ctx.db.supportTickets.load(),
-        ctx.db.shiftAssignments.load(), ctx.db.attendanceEvents.load(), ctx.db.attendanceAdjustments.load(),
-        ctx.db.leaveRequests.load(), ctx.db.shiftSwaps.load(),
-      ]);
+      await Promise.all([ctx.db.payRates, ctx.db.employees, ctx.db.payPeriods, ctx.db.payrollItems, ctx.db.payrollSnapshots, ctx.db.payslips, ctx.db.supportTickets, ctx.db.shiftAssignments, ctx.db.attendanceEvents, ctx.db.attendanceAdjustments, ctx.db.leaveRequests, ctx.db.shiftSwaps].map((s) => s.refreshIfIdle(10_000)));
     }
     let period = ctx.db.payPeriods.get(id);
     if (!period) throw Errors.notFound('Không tìm thấy kỳ lương');

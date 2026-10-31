@@ -14,7 +14,7 @@ import { ensureSyncedNotifications } from '../services/notification-sync.service
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { applyApprovedAdjustmentToShift, assertNoDuplicateAdjustment } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
-import { buildShiftFolderName, persistAttendancePhoto } from './attendance-photo-storage.js';
+import { buildShiftFolderName, persistAttendancePhoto, queueAdjustmentPhotoDrivePatch } from './attendance-photo-storage.js';
 
 const zCreateAdjustmentBody = z.object({
   employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'), assignment_id: z.string().trim().optional().default(''), event_id: z.string().trim().optional().default(''),
@@ -73,10 +73,7 @@ export function registerAttendanceAdjustmentRoutes(app: FastifyInstance, ctx: Ap
       requested_check_in_at: punchType === 'CHECK_OUT' ? shiftStart : (body.requested_check_in_at || shiftStart), requested_check_out_at: punchType === 'CHECK_IN' ? shiftEnd : (body.requested_check_out_at || shiftEnd), requested_hours: shiftHours,
       reason: body.reason, evidence_file_id: evidence?.fileId ?? '', exception_source: isSelfEmp ? 'EMPLOYEE' : 'MANAGER', status: 'PENDING', store_confirmed_by: '', store_confirmed_at: '', store_note: '', hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
     }, caller.id);
-    evidence?.syncDrive?.(async (driveFileId) => {
-      const cur = ctx.db.attendanceAdjustments.get(created.id);
-      if (cur) await ctx.db.attendanceAdjustments.update(cur.id, cur.version, { evidence_file_id: driveFileId }, 'system-drive-sync');
-    });
+    evidence?.syncDrive?.(async (driveFileId) => { queueAdjustmentPhotoDrivePatch(ctx, created.id, driveFileId); });
     queueAttendanceAdjustmentCreatedEmail(ctx, created, caller.id);
     const reqAuditCtx = auditContext(request);
     emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: effectiveBranchId, employeeIds: [emp.id], kind: 'ADJUSTMENT_CREATED', message: `${emp.full_name} (${emp.employee_code}) vừa gửi ${ADJUSTMENT_PUNCH_TYPE_LABELS[punchType].toLowerCase()} ${created.adjustment_code} chờ duyệt`, actorId: caller.id });

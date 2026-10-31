@@ -32,6 +32,11 @@ export class TableStore<T extends BaseRecord> {
   get tab(): string { return this.opts.tab; }
   get spreadsheetId(): string { return this.opts.spreadsheetId; }
 
+  async flushPending(): Promise<void> {
+    if (this.insertBuffer.length === 0) return;
+    await this.queue.enqueue(this.opts.spreadsheetId, async () => { while (this.insertBuffer.length > 0) await this.flushInserts(); });
+  }
+
   /** Xả sạch buffer ghi cũ và đọc/kiểm tra trước dữ liệu bảng đích mà chưa thay đổi bộ nhớ đang phục vụ đọc. */
   async prepareTarget(target: { spreadsheetId: string; tab: string }): Promise<PreparedTableTarget<T>> {
     if (this.loadInFlight) await this.loadInFlight.catch(() => undefined);

@@ -6,6 +6,7 @@ import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { runBackgroundSideEffect } from '../services/background-write.js';
 import { listPartitions, monthKeyLabel, rolloverToMonth, switchPartition } from '../services/data-partition.service.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { describeOperationSettings, getOperationSettings, saveOperationSettings } from '../services/operations-settings.service.js';
@@ -55,7 +56,7 @@ export async function operationsConfigRoutes(app: FastifyInstance, ctx: AppConte
   app.get('/api/admin/data-partitions', { preHandler: requirePermission('system.config', 'integration.read') }, async (request) => {
     const q = (request.query ?? {}) as { refresh?: string };
     if (q.refresh === '1' || q.refresh === 'true') {
-      await Promise.all([ctx.db.systemSettings.load(), ...ctx.db.monthlyStores().map((m) => m.store.load())]);
+      await Promise.all([ctx.db.systemSettings.refreshIfIdle(10_000), ...ctx.db.monthlyStores().map((m) => m.store.refreshIfIdle(10_000))]);
     }
     return sendSuccess(request, 'Lấy danh sách dữ liệu theo tháng thành công', await listPartitions(ctx.db));
   });
@@ -64,8 +65,12 @@ export async function operationsConfigRoutes(app: FastifyInstance, ctx: AppConte
     const body = z.object({ month_key: zMonthKey.refine((v) => v !== '', 'Vui lòng chọn tháng cần tạo tệp Google Sheets mới'), carry_forward: z.boolean().optional().default(true) }).parse(request.body ?? {});
     const actor = request.auth!.user, before = ctx.db.partitionMonth;
     const result = await rolloverToMonth(ctx.db, body.month_key, actor.id, body.carry_forward);
-    await ensureSyncedNotifications(ctx);
-    await ctx.audit.record(auditContext(request), { action: 'system.partition.rollover', entity: 'SYSTEM_SETTINGS', entityId: body.month_key, before: { month: before }, after: result });
+    const reqAudit = auditContext(request);
+    await runBackgroundSideEffect(async () => {
+      await ensureSyncedNotifications(ctx);
+      await ctx.audit.record(reqAudit, { action: 'system.partition.rollover', entity: 'SYSTEM_SETTINGS', entityId: body.month_key, before: { month: before }, after: result });
+      await ctx.backup.runBackup('PRE_OPERATION', actor.id).catch(() => undefined);
+    });
     const listing = await listPartitions(ctx.db);
     const carriedTotal = Object.values(result.carried).reduce((a, b) => a + b, 0);
     ctx.realtime()?.broadcast(SocketEvents.DATA_PARTITION_CHANGED, {

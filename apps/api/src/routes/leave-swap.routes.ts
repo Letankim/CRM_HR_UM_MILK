@@ -9,6 +9,7 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { queueLeaveCreatedEmail, queueLeaveDecisionEmail } from '../services/action-email-dispatcher.js';
+import { runBackgroundSideEffect } from '../services/background-write.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
@@ -81,9 +82,12 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     assertNoDuplicateShiftWorkflow(ctx.db, emp, 'leave_date', existingShift?.id ?? '', body.leave_date, shiftCode);
     const created = await ctx.db.leaveRequests.insert({ request_code: `OFF-${String(ctx.db.leaveRequests.all(true).length + 1).padStart(4, '0')}`, employee_id: emp.id, branch_id: emp.branch_id, leave_date: body.leave_date, kind: emp.stage === 'PROBATION' ? 'PROBATION_OFF' : body.kind, shift_code: shiftCode, reason: body.reason, status: body.status, employee_stage: emp.stage, schedule_week_id: weekLockCode(emp.branch_id, mondayOfWeek(body.leave_date), ctx.db.partitionMonth), assignment_id: existingShift?.id ?? '', quota_cycle_used: quota.used + 1, quota_cycle_limit: quota.limit, ...computeLeaveStaffing(emp.branch_id, body.leave_date, shiftCode, emp.id), submitted_at: nowIso(), store_reviewed_by: '', store_reviewed_at: '', decided_by: '', decision_reason: '', decided_at: '' }, actor.id);
     queueLeaveCreatedEmail(ctx, created, actor.id);
-    await ensureSyncedNotifications(ctx);
-    await ctx.audit.record(auditContext(request), { action: 'leave.create', entity: 'LEAVE_REQUESTS', entityId: created.id, after: { request_code: created.request_code, leave_date: created.leave_date, status: created.status } });
+    const reqAudit = auditContext(request);
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'LEAVE_CREATED', message: `${emp.full_name} gửi đơn nghỉ OFF ngày ${vi(created.leave_date)}`, actorId: actor.id });
+    await runBackgroundSideEffect(async () => {
+      await ensureSyncedNotifications(ctx);
+      await ctx.audit.record(reqAudit, { action: 'leave.create', entity: 'LEAVE_REQUESTS', entityId: created.id, after: { request_code: created.request_code, leave_date: created.leave_date, status: created.status } });
+    });
     return reply.code(201), sendSuccess(request, `Đã đăng ký nghỉ OFF ngày ${vi(created.leave_date)} — chờ HR chốt lịch`, created);
   });
 
@@ -94,7 +98,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!emp || !matchEmp(emp)(before.employee_id)) throw Errors.forbidden('Bạn chỉ được hủy đơn nghỉ OFF của chính mình');
     if (before.status !== 'PENDING' && before.status !== 'DRAFT') throw Errors.badRequest('Đơn nghỉ OFF đã được xử lý / chốt lịch, không thể hủy');
     const updated = await ctx.db.leaveRequests.update(id, before.version, { status: 'CANCELLED', decided_at: nowIso(), decision_reason: 'Nhân viên tự hủy đơn trước khi HR chốt lịch' }, actor.id);
-    await ensureSyncedNotifications(ctx);
+    await runBackgroundSideEffect(() => ensureSyncedNotifications(ctx));
     return sendSuccess(request, 'Đã hủy đơn đăng ký nghỉ OFF', updated);
   });
 
@@ -124,9 +128,12 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       resultSelector: (s) => s.leave,
     });
     queueLeaveDecisionEmail(ctx, updated, actorId);
-    await ensureSyncedNotifications(ctx);
-    await ctx.audit.record(auditContext(request), { action: 'leave.decide', entity: 'LEAVE_REQUESTS', entityId: id, before: { status: before.status }, after: { status: updated.status, decision_reason: updated.decision_reason } });
+    const reqAudit = auditContext(request);
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: 'LEAVE_DECIDED', message: `Đơn nghỉ OFF ngày ${vi(before.leave_date)} đã ${body.decision === 'APPROVED' ? 'được phê duyệt' : 'bị từ chối'}`, actorId });
+    await runBackgroundSideEffect(async () => {
+      await ensureSyncedNotifications(ctx);
+      await ctx.audit.record(reqAudit, { action: 'leave.decide', entity: 'LEAVE_REQUESTS', entityId: id, before: { status: before.status }, after: { status: updated.status, decision_reason: updated.decision_reason } });
+    });
     return sendSuccess(request, body.decision === 'APPROVED' ? 'Đã phê duyệt đơn nghỉ OFF và tự động gỡ ca làm việc trùng ngày' : 'Đã từ chối đơn nghỉ OFF', updated);
   });
 }

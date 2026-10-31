@@ -47,12 +47,12 @@ export async function myEarningsRoutes(app: FastifyInstance, ctx: AppContext) {
 
     if (q.refresh === '1' || q.refresh === 'true') {
       await Promise.all([
-        ...ctx.db.monthlyStores().map((m) => m.store.refreshIfIdle(0)),
-        ctx.db.employees.refreshIfIdle(0),
-        ctx.db.payRates.refreshIfIdle(0),
-        ctx.db.payrollItems.refreshIfIdle(0),
-        ctx.db.payPeriods.refreshIfIdle(0),
-        ctx.db.payrollSnapshots.refreshIfIdle(0),
+        ...ctx.db.monthlyStores().map((m) => m.store.refreshIfIdle(10_000)),
+        ctx.db.employees.refreshIfIdle(10_000),
+        ctx.db.payRates.refreshIfIdle(10_000),
+        ctx.db.payrollItems.refreshIfIdle(10_000),
+        ctx.db.payPeriods.refreshIfIdle(10_000),
+        ctx.db.payrollSnapshots.refreshIfIdle(10_000),
       ]);
     }
 

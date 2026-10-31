@@ -4,26 +4,29 @@ import { join } from 'node:path';
 import type { MediaAsset } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { dayjs } from '../lib/time.js';
+import { tolerantWrite } from './background-write.js';
 
 const ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/i, SAFE_KEY_RE = /^[a-zA-Z0-9_-]{6,64}$/, MAX_MEDIA_RAM_CACHE = 40;
 export interface CachedMktMediaMeta { fileName: string; mimeType: string; sizeBytes: number; }
 const mktMediaRamCache = new Map<string, Buffer>(), mktMediaMetaRamCache = new Map<string, CachedMktMediaMeta>();
-
-const CATEGORY_VI: Record<string, string> = {
-  BANNER: 'Banner truyền thông', SOP_DOC: 'Tài liệu quy trình (SOP)',
-  EVENT_PHOTO: 'Hình ảnh sự kiện', POLICY_PDF: 'Văn bản chính sách',
-  ARCHIVE_PACKAGE: 'Gói tệp nén / Tư liệu', OFFICE_SHEET: 'Biểu mẫu Word / Excel / Trình chiếu',
-  VIDEO_AUDIO: 'Video / Âm thanh đào tạo',
-};
-
+const mktLocalToDriveAlias = new Map<string, string>(), mktDriveQueue: Array<() => Promise<void>> = [];
+let mktDriveInFlight = 0;
+function enqueueMktDrive(job: () => Promise<void>): void {
+  mktDriveQueue.push(job);
+  const pump = () => {
+    while (mktDriveInFlight < 2 && mktDriveQueue.length > 0) {
+      const next = mktDriveQueue.shift()!; mktDriveInFlight++;
+      void next().catch(() => undefined).finally(() => { mktDriveInFlight--; pump(); });
+    }
+  };
+  pump();
+}
+const CATEGORY_VI: Record<string, string> = { BANNER: 'Banner truyền thông', SOP_DOC: 'Tài liệu quy trình (SOP)', EVENT_PHOTO: 'Hình ảnh sự kiện', POLICY_PDF: 'Văn bản chính sách', ARCHIVE_PACKAGE: 'Gói tệp nén / Tư liệu', OFFICE_SHEET: 'Biểu mẫu Word / Excel / Trình chiếu', VIDEO_AUDIO: 'Video / Âm thanh đào tạo' };
 const EXT_TO_MIME: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', svg: 'image/svg+xml', bmp: 'image/bmp',
   pdf: 'application/pdf', zip: 'application/zip', rar: 'application/vnd.rar', '7z': 'application/x-7z-compressed', gz: 'application/gzip', tgz: 'application/gzip',
-  doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', csv: 'text/csv',
-  ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  txt: 'text/plain', json: 'application/json', md: 'text/markdown',
-  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', mp3: 'audio/mpeg', wav: 'audio/wav',
+  doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  csv: 'text/csv', ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', txt: 'text/plain', json: 'application/json', md: 'text/markdown', mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', mp3: 'audio/mpeg', wav: 'audio/wav',
 };
 
 export function guessMimeByExtension(fileName = ''): string {
@@ -35,8 +38,7 @@ export function resolveUploadExtension(mime: string, originalName = ''): string 
   const origMatch = originalName.trim().toLowerCase().match(/\.([a-z0-9]{2,5})$/);
   if (origMatch?.[1] && EXT_TO_MIME[origMatch[1]]) return origMatch[1];
   const baseMime = String(mime || '').split(';')[0]!.trim().toLowerCase();
-  const found = Object.entries(EXT_TO_MIME).find(([, m]) => baseMime === m || baseMime.startsWith(m));
-  return found?.[0] ?? 'bin';
+  return Object.entries(EXT_TO_MIME).find(([, m]) => baseMime === m || baseMime.startsWith(m))?.[0] ?? 'bin';
 }
 
 function getLocalMktMediaDir(ctx: AppContext): string {
@@ -46,9 +48,8 @@ function getLocalMktMediaDir(ctx: AppContext): string {
 }
 
 export function toMktCacheKey(raw: string): string {
-  const trimmed = String(raw || '').trim();
-  if (!trimmed) return '';
-  return SAFE_KEY_RE.test(trimmed) ? trimmed : `h_${createHash('sha256').update(trimmed).digest('hex').slice(0, 28)}`;
+  const t = String(raw || '').trim();
+  return !t ? '' : (SAFE_KEY_RE.test(t) ? t : `h_${createHash('sha256').update(t).digest('hex').slice(0, 28)}`);
 }
 
 function putMediaRamCache(key: string, buf: Buffer): void {
@@ -70,10 +71,7 @@ export function readMediaMetaCache(ctx: AppContext, key: string): CachedMktMedia
   if (ramHit) return ramHit;
   try {
     const metaPath = join(getLocalMktMediaDir(ctx), `${key}.meta.json`);
-    if (existsSync(metaPath)) {
-      const parsed = JSON.parse(readFileSync(metaPath, 'utf8')) as CachedMktMediaMeta;
-      if (parsed && typeof parsed === 'object') { mktMediaMetaRamCache.set(key, parsed); return parsed; }
-    }
+    if (existsSync(metaPath)) { const p = JSON.parse(readFileSync(metaPath, 'utf8')) as CachedMktMediaMeta; if (p && typeof p === 'object') { mktMediaMetaRamCache.set(key, p); return p; } }
   } catch { /* ignore corrupt meta */ }
   return null;
 }
@@ -82,9 +80,7 @@ export function saveMediaCache(ctx: AppContext, key: string, buf: Buffer, meta?:
   if (!key || buf.length === 0) return;
   putMediaRamCache(key, buf);
   try { writeFileSync(join(getLocalMktMediaDir(ctx), `${key}.bin`), buf); } catch { /* ignore ephemeral disk */ }
-  if (meta?.fileName || meta?.mimeType) {
-    saveMediaMetaCache(ctx, key, { fileName: meta.fileName || '', mimeType: meta.mimeType || 'application/octet-stream', sizeBytes: meta.sizeBytes || buf.length });
-  }
+  if (meta?.fileName || meta?.mimeType) saveMediaMetaCache(ctx, key, { fileName: meta.fileName || '', mimeType: meta.mimeType || 'application/octet-stream', sizeBytes: meta.sizeBytes || buf.length });
 }
 
 export function readMediaCache(ctx: AppContext, key: string): Buffer | null {
@@ -93,10 +89,7 @@ export function readMediaCache(ctx: AppContext, key: string): Buffer | null {
   if (ramHit) { putMediaRamCache(key, ramHit); return ramHit; }
   try {
     const diskPath = join(getLocalMktMediaDir(ctx), `${key}.bin`);
-    if (existsSync(diskPath)) {
-      const buf = readFileSync(diskPath);
-      if (buf.length > 0) { putMediaRamCache(key, buf); return buf; }
-    }
+    if (existsSync(diskPath)) { const buf = readFileSync(diskPath); if (buf.length > 0) { putMediaRamCache(key, buf); return buf; } }
   } catch { /* fallback drive */ }
   return null;
 }
@@ -107,10 +100,8 @@ export function extractGoogleDriveFileId(rawInput: string): string | null {
   const pathMatch = raw.match(/(?:drive|docs)\.google\.com\/(?:file|document|presentation|spreadsheets)\/d\/([a-zA-Z0-9_-]{8,})/i);
   if (pathMatch?.[1]) return pathMatch[1];
   const queryMatch = raw.match(/(?:drive\.google\.com\/(?:open|uc|thumbnail)|drive\.usercontent\.google\.com\/download)\?([^#]+)/i);
-  if (queryMatch?.[1]) {
-    const idParam = new URLSearchParams(queryMatch[1]).get('id');
-    if (idParam && idParam.trim().length >= 8) return idParam.trim();
-  }
+  const qId = queryMatch?.[1] ? new URLSearchParams(queryMatch[1]).get('id')?.trim() : '';
+  if (qId && qId.length >= 8) return qId;
   const lhMatch = raw.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]{8,})/i);
   if (lhMatch?.[1]) return lhMatch[1];
   return (!/^https?:\/\//i.test(raw) && /^[a-zA-Z0-9_-]{8,80}$/.test(raw)) ? raw : null;
@@ -150,22 +141,30 @@ export function detectBufferMimeType(buf: Buffer, fallbackMime = 'application/oc
 
 export async function persistMktMediaUpload(
   ctx: AppContext,
-  params: { base64: string; fileName: string; mimeType?: string },
-): Promise<{ fileId: string; mimeType: string; sizeBytes: number }> {
+  params: { base64: string; fileName: string; mimeType?: string; asyncDrive?: boolean },
+): Promise<{ fileId: string; mimeType: string; sizeBytes: number; syncDrive?: (onDriveFileId: (driveId: string) => Promise<unknown>) => void }> {
   const match = params.base64.match(/^data:([a-zA-Z0-9.+/-]+);base64,([\s\S]+)$/);
   const declaredMime = match?.[1] || params.mimeType || 'application/octet-stream';
   const buffer = Buffer.from((match?.[2] ?? params.base64).trim(), 'base64');
   const actualMime = detectBufferMimeType(buffer, declaredMime, params.fileName).split(';')[0]!.trim();
   const sha = createHash('sha256').update(buffer).digest('hex').slice(0, 12), ext = resolveUploadExtension(actualMime, params.fileName);
   const baseSlug = (params.fileName || 'mkt-media').replace(/\.[a-zA-Z0-9]{2,5}$/, '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 48) || 'mkt_media';
-  let fileId = `local_mkt_${Date.now()}_${sha}`;
-  if (ctx.google.uploadMktMedia && buffer.length > 0) {
-    try {
-      const uploaded = await ctx.google.uploadMktMedia({ fileName: `${baseSlug}_${Date.now()}.${ext}`, mimeType: actualMime, data: buffer, monthFolder: dayjs().format('YYYY-MM') });
-      if (uploaded.fileId) fileId = uploaded.fileId;
-    } catch { /* fallback local disk cache */ }
+  const localId = `local_mkt_${Date.now()}_${sha}`, meta = { fileName: params.fileName, mimeType: actualMime, sizeBytes: buffer.length };
+  saveMediaCache(ctx, toMktCacheKey(localId), buffer, meta);
+  const uploadArgs = { fileName: `${baseSlug}_${Date.now()}.${ext}`, mimeType: actualMime, data: buffer, monthFolder: dayjs().format('YYYY-MM') };
+  if (params.asyncDrive && !process.env.VITEST && ctx.google.mode === 'google' && ctx.google.uploadMktMedia && buffer.length > 0) {
+    return {
+      fileId: localId, mimeType: actualMime, sizeBytes: buffer.length,
+      syncDrive: (onDriveFileId) => enqueueMktDrive(async () => {
+        const up = await ctx.google.uploadMktMedia!(uploadArgs);
+        if (up.fileId) { mktLocalToDriveAlias.set(localId, up.fileId); saveMediaCache(ctx, toMktCacheKey(up.fileId), buffer, meta); await tolerantWrite(() => onDriveFileId(up.fileId)); }
+      }),
+    };
   }
-  saveMediaCache(ctx, toMktCacheKey(fileId), buffer, { fileName: params.fileName, mimeType: actualMime, sizeBytes: buffer.length });
+  let fileId = localId;
+  if (ctx.google.uploadMktMedia && buffer.length > 0) {
+    try { const up = await ctx.google.uploadMktMedia(uploadArgs); if (up.fileId) { fileId = up.fileId; saveMediaCache(ctx, toMktCacheKey(fileId), buffer, meta); } } catch { /* fallback local disk cache */ }
+  }
   return { fileId, mimeType: actualMime, sizeBytes: buffer.length };
 }
 
@@ -183,7 +182,7 @@ export async function loadMktMediaFile(ctx: AppContext, idOrFileId: string): Pro
     const deletedMatch = ctx.db.mediaAssets.all(true).find((m) => m.is_deleted && (m.id === idOrFileId || m.code === idOrFileId || m.drive_file_id === idOrFileId));
     if (deletedMatch || ULID_RE.test(idOrFileId)) return null;
   }
-  const rawSource = String(asset ? asset.drive_file_id : idOrFileId).trim();
+  const rawSource0 = String(asset ? asset.drive_file_id : idOrFileId).trim(), rawSource = mktLocalToDriveAlias.get(rawSource0) ?? rawSource0;
   const driveId = extractGoogleDriveFileId(rawSource), cacheKey = toMktCacheKey(driveId ?? rawSource);
   const cachedMeta = cacheKey ? readMediaMetaCache(ctx, cacheKey) : null;
   const fileName = asset?.file_name || cachedMeta?.fileName || 'mkt-media-file';

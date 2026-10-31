@@ -5,7 +5,8 @@ import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { auditContext, requireAuth } from '../plugins/auth-context.js';
-import { persistPayrollMedia, resolvePayrollMediaUrl, toCleanDriveSlug } from '../services/payroll-media-storage.js';
+import { runBackgroundSideEffect } from '../services/background-write.js';
+import { persistPayrollMedia, resolvePayrollMediaUrl, toCleanDriveSlug, type PersistedPayrollMedia } from '../services/payroll-media-storage.js';
 import { assertUniquePersonalIdentifiers } from './employee-mapper.js';
 
 const zUpdateProfileBody = z.object({
@@ -78,28 +79,26 @@ export function registerAuthProfileRoutes(app: FastifyInstance, ctx: AppContext,
       excludeEmployeeId: emp?.id ?? null,
     });
 
-    const updatedUser = await ctx.db.users.update(
-      user.id,
-      user.version,
-      {
-        display_name: body.display_name,
-        phone: normalizedPhone || user.phone,
-        email: body.email || user.email,
-      },
-      user.id,
-    );
+    const nextUserPhone = normalizedPhone || user.phone;
+    const nextUserEmail = body.email || user.email;
+    const userChanged = body.display_name !== user.display_name || nextUserPhone !== user.phone || nextUserEmail !== user.email;
+    const updatedUser = userChanged
+      ? await ctx.db.users.update(user.id, user.version, { display_name: body.display_name, phone: nextUserPhone, email: nextUserEmail }, user.id)
+      : user;
 
     let nextBankQrFileId = emp?.bank_qr_file_id ?? '';
+    let savedQr: PersistedPayrollMedia | null = null;
     if (body.remove_bank_qr) nextBankQrFileId = '';
     if (body.bank_qr_base64) {
       if (!emp) throw Errors.badRequest('Tài khoản chưa liên kết hồ sơ nhân sự nên không thể lưu Mã QR ngân hàng nhận lương');
       const bankLabel = body.bank_name || emp.bank_name || 'Bank';
-      const savedQr = await persistPayrollMedia(ctx, {
+      savedQr = await persistPayrollMedia(ctx, {
         base64: body.bank_qr_base64,
         rootFolder: DRIVE_FOLDERS.EMPLOYEE_BANK_QR,
         fileBaseName: `${emp.employee_code}_${toCleanDriveSlug(body.display_name || emp.full_name)}_${toCleanDriveSlug(bankLabel)}_QR`,
         fieldName: 'bank_qr_base64',
         labelVi: 'Ảnh Mã QR ngân hàng',
+        asyncDrive: true,
       });
       nextBankQrFileId = savedQr.fileId;
     }
@@ -122,15 +121,22 @@ export function registerAuthProfileRoutes(app: FastifyInstance, ctx: AppContext,
         },
         user.id,
       );
+      savedQr?.syncDrive?.(async (driveFileId) => {
+        const curEmp = ctx.db.employees.get(emp.id);
+        if (curEmp && curEmp.bank_qr_file_id === nextBankQrFileId) {
+          await ctx.db.employees.update(curEmp.id, curEmp.version, { bank_qr_file_id: driveFileId }, 'system-drive-sync');
+        }
+      });
     }
 
-    await ctx.audit.record(auditContext(request), {
+    const reqAudit = auditContext(request);
+    await runBackgroundSideEffect(() => ctx.audit.record(reqAudit, {
       action: 'auth.profile.update',
       entity: 'USERS',
       entityId: user.id,
       before: { display_name: user.display_name, phone: user.phone, email: user.email },
       after: { display_name: updatedUser.display_name, phone: updatedUser.phone, email: updatedUser.email },
-    });
+    }));
 
     return sendSuccess(request, 'Đã cập nhật thông tin cá nhân thành công', {
       user: toResolvedPublicUser(updatedUser),

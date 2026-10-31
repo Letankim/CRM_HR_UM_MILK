@@ -104,9 +104,11 @@ export function BackupDetailDrawer({ record, onClose }: { record: Record<string,
   const parsed = (() => { try { return JSON.parse(String(record?.rows_json || '{}')) as Record<string, unknown>; } catch { return {}; } })();
   const isVerifyOnly = parsed.status === 'VERIFIED' && typeof parsed.issuesFound === 'number';
   const tableRows = Object.entries(parsed)
-    .filter(([, v]) => typeof v === 'number')
+    .filter(([k, v]) => typeof v === 'number' && k.includes('.'))
     .map(([key, v]) => ({ key, moduleLabel: MODULE_GROUP_LABELS[key.split('.')[0] || 'SYSTEM'] ?? 'Hệ thống', tableLabel: TABLE_DISPLAY_LABELS[key] ?? 'Bảng dữ liệu nghiệp vụ', count: Number(v) }))
     .sort((a, b) => b.count - a.count || a.moduleLabel.localeCompare(b.moduleLabel));
+  const rawMonthFiles = Array.isArray(parsed.monthlySpreadsheets) ? (parsed.monthlySpreadsheets as string[]) : [];
+  const monthLabels = rawMonthFiles.map((f) => { const m = String(f).match(/(\d{4})_(\d{2})/); return m ? `Tháng ${m[2]}/${m[1]}` : 'Tệp dữ liệu tháng'; });
   const totalRecords = tableRows.reduce((s, r) => s + r.count, 0), activeTables = tableRows.filter((r) => r.count > 0).length;
   const durSec = record?.started_at && record?.finished_at ? Math.max(1, dayjs(String(record.finished_at)).diff(dayjs(String(record.started_at)), 'second')) : 1;
   const actorLabel = String(record?.actorName || (!record?.created_by || record?.created_by === 'embedded-cron' ? 'Tự động theo lịch hệ thống' : 'Quản trị hệ thống'));
@@ -127,6 +129,7 @@ export function BackupDetailDrawer({ record, onClose }: { record: Record<string,
             <Descriptions.Item label="Thời điểm hoàn tất"><span className="num">{record.finished_at ? `${dayjs(String(record.finished_at)).format('HH:mm:ss DD/MM/YYYY')} (${durSec} giây)` : '—'}</span></Descriptions.Item>
             <Descriptions.Item label="Số tệp bảng tính sao lưu"><Tag color="geekblue">{Number(record.files_count ?? 0)} tệp dữ liệu</Tag></Descriptions.Item>
             <Descriptions.Item label="Tổng khối lượng bản ghi">{isVerifyOnly ? <Tag color="green">Kiểm chứng toàn vẹn hệ thống</Tag> : <Space size={6}><Tag color="blue">{totalRecords} bản ghi</Tag><Tag>{activeTables}/{tableRows.length} bảng có dữ liệu</Tag></Space>}</Descriptions.Item>
+            <Descriptions.Item label="Tệp dữ liệu tháng đi kèm" span={2}>{monthLabels.length > 0 ? <Space size={6} wrap>{monthLabels.map((lbl) => <Tag key={lbl} color="blue">{lbl}</Tag>)}</Space> : <Tag>7 tệp dữ liệu gốc chuẩn</Tag>}</Descriptions.Item>
             <Descriptions.Item label="Kiểm tra toàn vẹn dữ liệu" span={2}>{record.error ? <Tag color="red">{String(record.error)}</Tag> : <Tag color="green">Nguyên vẹn 100% — Không có lỗi phát sinh</Tag>}</Descriptions.Item>
           </Descriptions>
           {isVerifyOnly ? (

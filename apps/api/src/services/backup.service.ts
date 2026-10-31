@@ -1,25 +1,26 @@
 import { copyFile, ensureFolderPath, exportSpreadsheetXlsx, listChildFolders, trashFile, uploadFile, withRetry, type GoogleClients } from '@umbm/google';
 import { DRIVE_FOLDERS, SPREADSHEETS, type SpreadsheetKey } from '@umbm/shared';
+import type { Dayjs } from 'dayjs';
 import type { Env } from '../config/env.js';
 import { sheetIds } from '../config/env.js';
 import type { Database } from '../data/database.js';
-import type { BackupLogRow } from '../data/system-schemas.js';
 import { APP_TZ, dayjs, nowIso } from '../lib/time.js';
+import { detectDueCatchUpBackup, resolveBackupTargets, type BackupTargetFile } from './backup-targets.helper.js';
 import type { ReconciliationService } from './reconciliation.service.js';
 import { sweepExpiredShiftsAndMarkAbsent } from './shift-absent-scanner.js';
 
 export type BackupKind = 'DAILY' | 'CRITICAL' | 'WEEKLY' | 'MONTHLY' | 'PRE_OPERATION';
-interface BackupPlan { kind: BackupKind; folder: string[]; keys: SpreadsheetKey[]; exportXlsx: boolean }
+interface BackupPlan { kind: BackupKind; folder: string[]; keys: SpreadsheetKey[]; exportXlsx: boolean; at: Dayjs }
 const CRITICAL_KEYS: SpreadsheetKey[] = ['CORE', 'ATTENDANCE', 'PAYROLL'];
 const ALL_KEYS = Object.keys(SPREADSHEETS) as SpreadsheetKey[];
 
-function planFor(kind: BackupKind, at = dayjs()): BackupPlan {
+function planFor(kind: BackupKind, at = dayjs().tz(APP_TZ)): BackupPlan {
   switch (kind) {
-    case 'DAILY': return { kind, folder: ['daily', at.format('YYYY-MM-DD')], keys: ALL_KEYS, exportXlsx: true };
-    case 'CRITICAL': return { kind, folder: ['critical', at.format('YYYY-MM-DD_HHmm')], keys: CRITICAL_KEYS, exportXlsx: false };
-    case 'WEEKLY': return { kind, folder: ['weekly', at.format('YYYY-[W]WW')], keys: ALL_KEYS, exportXlsx: true };
-    case 'MONTHLY': return { kind, folder: ['monthly', at.format('YYYY-MM')], keys: ALL_KEYS, exportXlsx: true };
-    case 'PRE_OPERATION': return { kind, folder: ['pre-operation', at.format('YYYY-MM-DD_HHmmss')], keys: ALL_KEYS, exportXlsx: false };
+    case 'DAILY': return { kind, folder: ['daily', at.format('YYYY-MM-DD')], keys: ALL_KEYS, exportXlsx: true, at };
+    case 'CRITICAL': return { kind, folder: ['critical', at.format('YYYY-MM-DD_HHmm')], keys: CRITICAL_KEYS, exportXlsx: false, at };
+    case 'WEEKLY': return { kind, folder: ['weekly', at.format('YYYY-[W]WW')], keys: ALL_KEYS, exportXlsx: true, at };
+    case 'MONTHLY': return { kind, folder: ['monthly', at.format('YYYY-MM')], keys: ALL_KEYS, exportXlsx: true, at };
+    case 'PRE_OPERATION': return { kind, folder: ['pre-operation', at.format('YYYY-MM-DD_HHmmss')], keys: ALL_KEYS, exportXlsx: false, at };
   }
 }
 
@@ -33,24 +34,27 @@ export class BackupService {
 
   constructor(private readonly env: Env, private readonly db: Database, private readonly reconciliation: ReconciliationService, private readonly googleClients?: GoogleClients) {}
 
-  private collectRowCounts(): Record<string, number> {
-    const rows: Record<string, number> = {};
+  private collectRowCounts(targets?: BackupTargetFile[]): Record<string, unknown> {
+    const rows: Record<string, unknown> = { activePartitionMonth: this.db.partitionMonth || 'ROOT' };
+    if (targets) rows.monthlySpreadsheets = targets.filter((t) => t.sourceKind === 'MONTHLY_FILE').map((t) => t.title);
     for (const [spKey, spDef] of Object.entries(SPREADSHEETS)) {
       for (const tabKey of Object.keys(spDef.tabs)) rows[`${spKey}.${tabKey}`] = 0;
     }
     for (const t of this.db.stats().tables) {
       const normalized = t.table.replace(/_\d{4}_\d{2}$/, '');
-      rows[normalized] = (rows[normalized] ?? 0) + t.rows;
+      rows[normalized] = Number(rows[normalized] ?? 0) + t.rows;
     }
     return rows;
   }
 
-  private async syncDriveFilesForPlan(plan: BackupPlan, reuseExisting = false): Promise<{ folderId: string; filesCount: number }> {
+  private async syncDriveFilesForPlan(plan: BackupPlan, reuseExisting = false): Promise<{ folderId: string; filesCount: number; targets: BackupTargetFile[] }> {
+    await this.db.flushAllWrites();
+    const ids = sheetIds(this.env);
+    const targets = resolveBackupTargets(this.db, ids, plan.kind, plan.keys, plan.at);
     if (!this.googleClients || this.env.DATA_BACKEND !== 'google' || !this.env.DRIVE_ROOT_FOLDER_ID) {
-      return { folderId: `memory://${plan.folder.join('/')}`, filesCount: plan.keys.length * (plan.exportXlsx ? 2 : 1) };
+      return { folderId: `memory://${plan.folder.join('/')}`, filesCount: targets.length * (plan.exportXlsx ? 2 : 1), targets };
     }
     const drive = this.googleClients.drive;
-    const ids = sheetIds(this.env);
     const folderId = await ensureFolderPath(drive, this.env.DRIVE_ROOT_FOLDER_ID, [DRIVE_FOLDERS.BACKUPS, ...plan.folder]);
     const stamp = plan.folder[plan.folder.length - 1]!;
 
@@ -60,15 +64,6 @@ export class BackupService {
     const existingByName = new Map<string, string[]>();
     for (const f of existingRes?.data.files ?? []) {
       if (f.id && f.name) existingByName.set(f.name, [...(existingByName.get(f.name) ?? []), f.id]);
-    }
-
-    const targets: { fileId: string; title: string }[] = [];
-    for (const key of plan.keys) {
-      if (ids[key]) targets.push({ fileId: ids[key], title: SPREADSHEETS[key].title });
-    }
-    const activeMonthlyId = this.db.shiftAssignments.spreadsheetId;
-    if (this.db.partitionMonth && activeMonthlyId && activeMonthlyId !== ids.SCHEDULE && plan.keys.includes('ATTENDANCE')) {
-      targets.push({ fileId: activeMonthlyId, title: `UMBM_MONTHLY_${this.db.partitionMonth}` });
     }
 
     let filesCount = 0;
@@ -95,23 +90,23 @@ export class BackupService {
         }
       }
     }
-    return { folderId, filesCount };
+    return { folderId, filesCount, targets };
   }
 
   async runBackup(kind: BackupKind, actorId = 'embedded-worker') {
     const task = (async () => {
-      const startedAt = nowIso(), plan = planFor(kind, dayjs(startedAt)), rows = this.collectRowCounts();
+      const startedAt = nowIso(), plan = planFor(kind, dayjs(startedAt).tz(APP_TZ)), rows = this.collectRowCounts();
       const logRow = await this.db.backupLog.insert(
         { kind, started_at: startedAt, finished_at: '', status: 'RUNNING', drive_folder_id: '', files_count: 0, rows_json: JSON.stringify(rows), error: '' },
         actorId,
       );
       this.activeLogIds.add(logRow.id);
       try {
-        const { folderId, filesCount } = await this.syncDriveFilesForPlan(plan, false);
+        const { folderId, filesCount, targets } = await this.syncDriveFilesForPlan(plan, false);
         const cur = this.db.backupLog.get(logRow.id) ?? logRow;
         return await this.db.backupLog.update(
           logRow.id, cur.version,
-          { status: 'SUCCESS', finished_at: nowIso(), drive_folder_id: folderId, files_count: filesCount, rows_json: JSON.stringify(this.collectRowCounts()), error: '' },
+          { status: 'SUCCESS', finished_at: nowIso(), drive_folder_id: folderId, files_count: filesCount, rows_json: JSON.stringify(this.collectRowCounts(targets)), error: '' },
           actorId,
         );
       } catch (err) {
@@ -175,6 +170,7 @@ export class BackupService {
 
   startEmbeddedScheduler(log: { info: (msg: string) => void; error: (obj: unknown, msg: string) => void }) {
     if (this.timer) return;
+    const bootAtMs = Date.now();
     void this.healInterruptedBackups().catch((err) => log.error({ err }, 'Lỗi tự động khôi phục bản sao lưu bị ngắt'));
     this.timer = setInterval(async () => {
       if (this.running) return;
@@ -182,14 +178,16 @@ export class BackupService {
       try {
         await sweepExpiredShiftsAndMarkAbsent(this.db, 'embedded-absent-scanner');
         await this.healInterruptedBackups();
-        const now = dayjs().tz(APP_TZ), todayStr = now.format('YYYY-MM-DD'), hhmm = now.format('HH:mm');
-        const hasDailyToday = this.db.backupLog.all().some((b: BackupLogRow) => b.kind === 'DAILY' && String(b.started_at).startsWith(todayStr) && b.status === 'SUCCESS');
-        if (!hasDailyToday && hhmm >= '01:00') {
-          this.lastTriggeredSlot = `${todayStr} 01:00`;
-          await this.runBackup('DAILY', 'embedded-cron');
-          return;
+        const now = dayjs().tz(APP_TZ), hhmm = now.format('HH:mm'), slot = now.format('YYYY-MM-DD HH:mm');
+        const bootSettled = Date.now() - bootAtMs >= 90_000 && this.db.queue.stats().pending === 0;
+        if (bootSettled) {
+          const catchUpKind = detectDueCatchUpBackup(this.db, now);
+          if (catchUpKind) {
+            this.lastTriggeredSlot = slot;
+            await this.runBackup(catchUpKind, 'embedded-cron');
+            return;
+          }
         }
-        const slot = now.format('YYYY-MM-DD HH:mm');
         if (slot !== this.lastTriggeredSlot) {
           if (hhmm === '01:00') { this.lastTriggeredSlot = slot; await this.runBackup('DAILY', 'embedded-cron'); }
           else if (['06:00', '10:00', '14:00', '18:00', '22:00'].includes(hhmm)) { this.lastTriggeredSlot = slot; await this.runBackup('CRITICAL', 'embedded-cron'); }

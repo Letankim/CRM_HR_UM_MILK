@@ -4,26 +4,69 @@ import { withRetry } from './retry.js';
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
+interface DriveFolderCacheState {
+  resolved: Map<string, string>;
+  inflight: Map<string, Promise<string>>;
+}
+
+const folderCacheByClient = new WeakMap<drive_v3.Drive, DriveFolderCacheState>();
+
+function getFolderCache(drive: drive_v3.Drive): DriveFolderCacheState {
+  let state = folderCacheByClient.get(drive);
+  if (!state) {
+    state = { resolved: new Map(), inflight: new Map() };
+    folderCacheByClient.set(drive, state);
+  }
+  return state;
+}
+
+/** Xóa bộ nhớ đệm ID thư mục Drive (dùng khi phát hiện thư mục bị xóa thủ công trên Google Drive). */
+export function clearDriveFolderCache(drive: drive_v3.Drive): void {
+  const state = folderCacheByClient.get(drive);
+  if (state) {
+    state.resolved.clear();
+    state.inflight.clear();
+  }
+}
+
 function escapeQuery(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-/** Tìm thư mục con theo tên; tạo mới nếu chưa có. Trả về folder id. */
+/** Tìm thư mục con theo tên; tạo mới nếu chưa có. Có cache theo từng cấp (parentId, name) & gộp truy vấn đồng thời (single-flight). */
 export async function ensureFolder(drive: drive_v3.Drive, name: string, parentId?: string): Promise<string> {
-  const parentClause = parentId ? ` and '${escapeQuery(parentId)}' in parents` : '';
-  const q = `mimeType='${FOLDER_MIME}' and name='${escapeQuery(name)}' and trashed=false${parentClause}`;
-  const found = await withRetry(() => drive.files.list({ q, fields: 'files(id,name)', pageSize: 1 }));
-  const existing = found.data.files?.[0]?.id;
-  if (existing) return existing;
+  const cache = getFolderCache(drive);
+  const cacheKey = `${parentId ?? 'ROOT'}::${name}`;
+  const hit = cache.resolved.get(cacheKey);
+  if (hit) return hit;
+  const pending = cache.inflight.get(cacheKey);
+  if (pending) return pending;
 
-  const created = await withRetry(() =>
-    drive.files.create({
-      requestBody: { name, mimeType: FOLDER_MIME, parents: parentId ? [parentId] : undefined },
-      fields: 'id',
-    }),
-  );
-  if (!created.data.id) throw new Error(`Không tạo được thư mục ${name}`);
-  return created.data.id;
+  const task = (async () => {
+    const parentClause = parentId ? ` and '${escapeQuery(parentId)}' in parents` : '';
+    const q = `mimeType='${FOLDER_MIME}' and name='${escapeQuery(name)}' and trashed=false${parentClause}`;
+    const found = await withRetry(() => drive.files.list({ q, fields: 'files(id,name)', pageSize: 1 }));
+    const existing = found.data.files?.[0]?.id;
+    if (existing) {
+      cache.resolved.set(cacheKey, existing);
+      return existing;
+    }
+
+    const created = await withRetry(() =>
+      drive.files.create({
+        requestBody: { name, mimeType: FOLDER_MIME, parents: parentId ? [parentId] : undefined },
+        fields: 'id',
+      }),
+    );
+    if (!created.data.id) throw new Error(`Không tạo được thư mục ${name}`);
+    cache.resolved.set(cacheKey, created.data.id);
+    return created.data.id;
+  })().finally(() => {
+    cache.inflight.delete(cacheKey);
+  });
+
+  cache.inflight.set(cacheKey, task);
+  return task;
 }
 
 /** Đảm bảo một đường dẫn thư mục lồng nhau, ví dụ ['90_BACKUPS','daily','2026-10-23']. */

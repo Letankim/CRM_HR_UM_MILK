@@ -6,27 +6,17 @@ import { CameraOutlined, CheckCircleOutlined, DeleteOutlined, UploadOutlined } f
 import { EvidenceCameraModal } from './EvidenceCameraModal';
 import { FancyboxImage } from './FancyboxPreview';
 
-const IMAGE_EXT_REGEX = /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i;
+const IMAGE_EXT_REGEX = /\.(jpe?g|png|webp|gif|bmp)$/i;
 const MAX_RAW_BYTES = 15 * 1024 * 1024;
-const MAX_FALLBACK_BYTES = 6 * 1024 * 1024;
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => (typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Không đọc được tệp ảnh')));
-    reader.onerror = () => reject(new Error('Không đọc được tệp ảnh'));
-    reader.readAsDataURL(file);
-  });
-}
 
 /** Nén ảnh người dùng tải lên hoặc chụp thành JPEG data URL (cạnh dài tối đa `maxSize`px, chất lượng `quality`). */
-export async function compressImageToJpegDataUrl(file: File, maxSize = 1024, quality = 0.76): Promise<string> {
+export async function compressImageToJpegDataUrl(file: File, maxSize = 960, quality = 0.75): Promise<string> {
   const srcUrl = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
       el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error('Không giải mã được ảnh'));
+      el.onerror = () => reject(new Error('Không giải mã được tệp ảnh, vui lòng chọn ảnh JPG, PNG hoặc WEBP chuẩn'));
       el.src = srcUrl;
     });
     const scale = Math.min(1, maxSize / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
@@ -41,12 +31,6 @@ export async function compressImageToJpegDataUrl(file: File, maxSize = 1024, qua
     ctx.fillRect(0, 0, w, h);
     ctx.drawImage(img, 0, 0, w, h);
     return canvas.toDataURL('image/jpeg', quality);
-  } catch (err) {
-    if (file.type.startsWith('image/') && file.size <= MAX_FALLBACK_BYTES) {
-      const raw = await readFileAsDataUrl(file);
-      if (raw.startsWith('data:image/')) return raw;
-    }
-    throw err;
   } finally {
     URL.revokeObjectURL(srcUrl);
   }

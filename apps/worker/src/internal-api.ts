@@ -16,7 +16,11 @@ export class InternalApi {
   }
 
   spreadsheets() {
-    return this.call<{ spreadsheets: Record<string, string> }>('GET', '/api/internal/spreadsheets');
+    return this.call<{
+      spreadsheets: Record<string, string>;
+      activePartitionMonth?: string;
+      monthlySpreadsheets?: { monthKey: string; title: string; spreadsheetId: string; isActive: boolean }[];
+    }>('GET', '/api/internal/spreadsheets');
   }
 
   startBackup(kind: string, startedAt: string) {

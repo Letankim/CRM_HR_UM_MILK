@@ -8,6 +8,7 @@ import { dayjs } from '../lib/time.js';
 import { auditContext, requireAuth } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { queueShiftRegisteredEmail } from '../services/action-email-dispatcher.js';
+import { runBackgroundSideEffect } from '../services/background-write.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
@@ -72,9 +73,12 @@ export function registerMyShiftRegisterRoute(app: FastifyInstance, ctx: AppConte
       swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: '', note: `${body.note}${pullNote}`.slice(0, 300), linked_assignment_id: lastLater?.id ?? '',
     }, user.id);
     queueShiftRegisteredEmail(ctx, created, user.id);
-    await ensureSyncedNotifications(ctx);
-    await ctx.audit.record(auditContext(request), { action: 'schedule.create', entity: 'SHIFT_ASSIGNMENTS', entityId: created.id, after: { employee_id: emp.employee_code, work_date: created.work_date, shift_code: created.shift_code, status: created.status, linked_assignment_id: created.linked_assignment_id } });
+    const reqAudit = auditContext(request);
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'SHIFT_REGISTERED', message: `${emp.full_name} đăng ký làm thêm ca ngày ${vi(created.work_date)} chờ HR duyệt`, actorId: user.id });
+    await runBackgroundSideEffect(async () => {
+      await ensureSyncedNotifications(ctx);
+      await ctx.audit.record(reqAudit, { action: 'schedule.create', entity: 'SHIFT_ASSIGNMENTS', entityId: created.id, after: { employee_id: emp.employee_code, work_date: created.work_date, shift_code: created.shift_code, status: created.status, linked_assignment_id: created.linked_assignment_id } });
+    });
     reply.code(201);
     return sendSuccess(request, `Đã gửi đăng ký làm thêm ca ngày ${vi(created.work_date)} — chờ HR duyệt${pullNote}.`, mapShiftAssignment(created, ctx));
   });

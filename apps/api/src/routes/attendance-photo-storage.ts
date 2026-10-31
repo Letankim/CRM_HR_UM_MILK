@@ -17,11 +17,55 @@ function getLocalPhotosDir(ctx: AppContext): string {
   return dir;
 }
 const sanitizeFileId = (fileId: string) => fileId.replace(/[^a-zA-Z0-9_-]/g, '');
-const MAX_PHOTO_RAM_CACHE = 80;
-const photoRamCache = new Map<string, Buffer>();
+const MAX_PHOTO_RAM_CACHE = 100;
+const photoRamCache = new Map<string, Buffer>(), localToDrivePhotoAlias = new Map<string, string>();
 const driveUploadQueue: Array<() => Promise<void>> = [];
-let driveUploadsInFlight = 0;
-let migratingPhotos = false;
+let driveUploadsInFlight = 0, migratingPhotos = false;
+const lastLegacyMigrateAt = new WeakMap<AppContext, number>();
+interface PendingDrivePatches { events: Map<string, string>; adjustments: Map<string, string>; timer: NodeJS.Timeout | null }
+const pendingPatchesByCtx = new WeakMap<AppContext, PendingDrivePatches>();
+
+function getPatchBucket(ctx: AppContext): PendingDrivePatches {
+  let b = pendingPatchesByCtx.get(ctx);
+  if (!b) { b = { events: new Map(), adjustments: new Map(), timer: null }; pendingPatchesByCtx.set(ctx, b); }
+  return b;
+}
+
+export async function flushCoalescedPhotoPatches(ctx: AppContext): Promise<void> {
+  const b = pendingPatchesByCtx.get(ctx);
+  if (!b) return;
+  if (b.timer) { clearTimeout(b.timer); b.timer = null; }
+  if (b.events.size > 0) {
+    const entries = [...b.events.entries()]; b.events.clear();
+    const items = entries.flatMap(([id, fid]) => { const c = ctx.db.attendanceEvents.get(id); return c ? [{ id, expectedVersion: c.version, patch: { photo_drive_file_id: fid } }] : []; });
+    if (items.length > 0) {
+      const ok = await tolerantWrite(() => ctx.db.attendanceEvents.batchUpdate(items, 'system-drive-sync'));
+      if (!ok) for (const [id, fid] of entries) await tolerantWrite(async () => { const c = ctx.db.attendanceEvents.get(id); if (c) await ctx.db.attendanceEvents.update(id, c.version, { photo_drive_file_id: fid }, 'system-drive-sync'); });
+    }
+  }
+  if (b.adjustments.size > 0) {
+    const entries = [...b.adjustments.entries()]; b.adjustments.clear();
+    const items = entries.flatMap(([id, fid]) => { const c = ctx.db.attendanceAdjustments.get(id); return c ? [{ id, expectedVersion: c.version, patch: { evidence_file_id: fid } }] : []; });
+    if (items.length > 0) {
+      const ok = await tolerantWrite(() => ctx.db.attendanceAdjustments.batchUpdate(items, 'system-drive-sync'));
+      if (!ok) for (const [id, fid] of entries) await tolerantWrite(async () => { const c = ctx.db.attendanceAdjustments.get(id); if (c) await ctx.db.attendanceAdjustments.update(id, c.version, { evidence_file_id: fid }, 'system-drive-sync'); });
+    }
+  }
+}
+
+function schedulePatchFlush(ctx: AppContext, b: PendingDrivePatches): void {
+  if (b.timer) return;
+  b.timer = setTimeout(() => { b.timer = null; void flushCoalescedPhotoPatches(ctx).catch(() => undefined); }, 1500);
+  b.timer.unref?.();
+}
+
+export function queueAttendancePhotoDrivePatch(ctx: AppContext, eventId: string, driveFileId: string): void {
+  const b = getPatchBucket(ctx); b.events.set(eventId, driveFileId); schedulePatchFlush(ctx, b);
+}
+
+export function queueAdjustmentPhotoDrivePatch(ctx: AppContext, adjustmentId: string, driveFileId: string): void {
+  const b = getPatchBucket(ctx); b.adjustments.set(adjustmentId, driveFileId); schedulePatchFlush(ctx, b);
+}
 
 function putPhotoCache(key: string, buf: Buffer): void {
   if (!key) return;
@@ -43,13 +87,10 @@ function savePhotoLocally(ctx: AppContext, fileId: string, buf: Buffer): void {
 function enqueueDriveUpload(job: () => Promise<void>): void {
   driveUploadQueue.push(job);
   const pump = () => {
-    while (driveUploadsInFlight < 2 && driveUploadQueue.length > 0) {
+    while (driveUploadsInFlight < 4 && driveUploadQueue.length > 0) {
       const next = driveUploadQueue.shift()!;
       driveUploadsInFlight++;
-      void next().catch(() => undefined).finally(() => {
-        driveUploadsInFlight--;
-        pump();
-      });
+      void next().catch(() => undefined).finally(() => { driveUploadsInFlight--; pump(); });
     }
   };
   pump();
@@ -118,6 +159,7 @@ export async function persistAttendancePhoto(
       enqueueDriveUpload(async () => {
         const uploaded = await ctx.google.uploadAttendancePhoto!(uploadArgs);
         if (uploaded.fileId) {
+          localToDrivePhotoAlias.set(localId, uploaded.fileId);
           savePhotoLocally(ctx, uploaded.fileId, buffer);
           await tolerantWrite(() => onDriveFileId(uploaded.fileId));
         }
@@ -127,9 +169,10 @@ export async function persistAttendancePhoto(
 }
 
 export async function loadAttendancePhotoBuffer(ctx: AppContext, fileId: string): Promise<Buffer | null> {
-  const safeId = sanitizeFileId(fileId);
+  const resolvedId = localToDrivePhotoAlias.get(fileId) ?? fileId;
+  const safeId = sanitizeFileId(resolvedId);
   if (!safeId) return null;
-  const ramHit = photoRamCache.get(safeId);
+  const ramHit = photoRamCache.get(safeId) ?? photoRamCache.get(sanitizeFileId(fileId));
   if (ramHit) { putPhotoCache(safeId, ramHit); return ramHit; }
   const cachePath = join(getLocalPhotosDir(ctx), `${safeId}.jpg`);
   if (existsSync(cachePath)) {
@@ -143,7 +186,10 @@ export async function loadAttendancePhotoBuffer(ctx: AppContext, fileId: string)
 }
 
 export async function migrateLegacyBase64Photos(ctx: AppContext): Promise<void> {
-  if (migratingPhotos || !ctx.google.uploadAttendancePhoto) return;
+  if (migratingPhotos || !ctx.google.uploadAttendancePhoto || !ctx.db.queue.isIdle(ctx.db.attendanceEvents.spreadsheetId)) return;
+  const now = Date.now();
+  if (now - (lastLegacyMigrateAt.get(ctx) ?? 0) < 5 * 60_000) return;
+  lastLegacyMigrateAt.set(ctx, now);
   const legacyRows = ctx.db.attendanceEvents.all().filter((e) => e.photo_drive_file_id?.startsWith('data:image/')).slice(0, 5);
   if (legacyRows.length === 0) return;
   migratingPhotos = true;

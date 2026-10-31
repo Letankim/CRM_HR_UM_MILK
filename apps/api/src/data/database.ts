@@ -69,7 +69,6 @@ export class Database {
     this.policies = new TableStore(gateway, queue, { spreadsheetKey: 'CORE', spreadsheetId: ids.CORE, tab: 'POLICIES', headers: core.POLICIES, schema: S.zPolicy });
     this.systemSettings = new TableStore(gateway, queue, { spreadsheetKey: 'CORE', spreadsheetId: ids.CORE, tab: 'SYSTEM_SETTINGS', headers: core.SYSTEM_SETTINGS, schema: S.zSystemSetting });
     this.maintenance = new TableStore(gateway, queue, { spreadsheetKey: 'CORE', spreadsheetId: ids.CORE, tab: 'MAINTENANCE', headers: core.MAINTENANCE, schema: S.zMaintenance });
-
     this.candidates = new TableStore(gateway, queue, { spreadsheetKey: 'HR', spreadsheetId: ids.HR, tab: 'CANDIDATES', headers: hr.CANDIDATES, schema: S.zCandidate });
     this.interviews = new TableStore(gateway, queue, { spreadsheetKey: 'HR', spreadsheetId: ids.HR, tab: 'INTERVIEWS', headers: hr.INTERVIEWS, schema: S.zInterview });
     this.employees = new TableStore(gateway, queue, { spreadsheetKey: 'HR', spreadsheetId: ids.HR, tab: 'EMPLOYEES', headers: hr.EMPLOYEES, schema: S.zEmployee });
@@ -77,12 +76,10 @@ export class Database {
     this.testBank = new TableStore(gateway, queue, { spreadsheetKey: 'HR', spreadsheetId: ids.HR, tab: 'TEST_BANK', headers: hr.TEST_BANK, schema: S.zTestBank });
     this.testAssignments = new TableStore(gateway, queue, { spreadsheetKey: 'HR', spreadsheetId: ids.HR, tab: 'TEST_ASSIGNMENTS', headers: hr.TEST_ASSIGNMENTS, schema: S.zTestAssignment });
     this.testAttempts = new TableStore(gateway, queue, { spreadsheetKey: 'HR', spreadsheetId: ids.HR, tab: 'TEST_ATTEMPTS', headers: hr.TEST_ATTEMPTS, schema: S.zTestAttempt });
-
     this.shiftAssignments = new TableStore(gateway, queue, { spreadsheetKey: 'SCHEDULE', spreadsheetId: ids.SCHEDULE, tab: 'SHIFT_ASSIGNMENTS', headers: sched.SHIFT_ASSIGNMENTS, schema: S.zShiftAssignment });
     this.leaveRequests = new TableStore(gateway, queue, { spreadsheetKey: 'SCHEDULE', spreadsheetId: ids.SCHEDULE, tab: 'LEAVE_REQUESTS', headers: sched.LEAVE_REQUESTS, schema: S.zLeaveRequest });
     this.shiftSwaps = new TableStore(gateway, queue, { spreadsheetKey: 'SCHEDULE', spreadsheetId: ids.SCHEDULE, tab: 'SHIFT_SWAPS', headers: sched.SHIFT_SWAPS, schema: S.zShiftSwap });
     this.scheduleWeeks = new TableStore(gateway, queue, { spreadsheetKey: 'SCHEDULE', spreadsheetId: ids.SCHEDULE, tab: 'SCHEDULE_WEEKS', headers: sched.SCHEDULE_WEEKS, schema: S.zScheduleWeek });
-
     this.attendanceEvents = new TableStore(gateway, queue, { spreadsheetKey: 'ATTENDANCE', spreadsheetId: ids.ATTENDANCE, tab: 'ATTENDANCE_EVENTS', headers: att.ATTENDANCE_EVENTS, schema: S.zAttendanceEvent });
     this.attendanceAdjustments = new TableStore(gateway, queue, { spreadsheetKey: 'ATTENDANCE', spreadsheetId: ids.ATTENDANCE, tab: 'ATTENDANCE_ADJUSTMENTS', headers: att.ATTENDANCE_ADJUSTMENTS, schema: S.zAttendanceAdjustment });
     this.payRates = new TableStore(gateway, queue, { spreadsheetKey: 'PAYROLL', spreadsheetId: ids.PAYROLL, tab: 'PAY_RATES', headers: payroll.PAY_RATES, schema: S.zPayRate });
@@ -212,6 +209,7 @@ export class Database {
   }
 
   stopAutoRefresh(): void { if (this.timer) clearInterval(this.timer); this.timer = null; }
+  async flushAllWrites(): Promise<void> { await Promise.all(this.stores.map((s) => s.flushPending())); await this.queue.drain(); }
 
   stats() {
     return { ready: this.ready, lastRefreshError: this.lastRefreshError, queue: this.queue.stats(), tables: this.stores.map((s) => s.stats()), unresolvedDeadLetters: this.deadLetters.filter((d) => !d.resolved_at).length };

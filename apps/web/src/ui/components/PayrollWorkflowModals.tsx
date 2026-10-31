@@ -36,7 +36,7 @@ export function AdminApprovePeriodModal({ open, period, onClose, onSuccess }: { 
     e.target.value = '';
     if (!file) return;
     try {
-      setCustomSigBase64(await normalizeImageFileToPngDataUrl(file, 900));
+      setCustomSigBase64(await normalizeImageFileToPngDataUrl(file, 560));
     } catch (err) {
       message.error(err instanceof Error ? err.message : 'Không thể đọc tệp ảnh chữ ký');
     }
@@ -146,7 +146,7 @@ export function FinancePublishPeriodModal({
     e.target.value = '';
     if (!file) return;
     try {
-      setSigBase64(await normalizeImageFileToPngDataUrl(file, 900));
+      setSigBase64(await normalizeImageFileToPngDataUrl(file, 560));
     } catch (err) {
       message.error(err instanceof Error ? err.message : 'Không thể đọc tệp ảnh chữ ký Kế toán');
     }

@@ -4,6 +4,7 @@ import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
+import { runBackgroundSideEffect } from '../services/background-write.js';
 import {
   getConfiguredAdminSignature,
   loadPayrollMediaBuffer,
@@ -79,7 +80,8 @@ export async function payrollSignatureRoutes(app: FastifyInstance, ctx: AppConte
     const body = zAdminSigConfigBody.parse(request.body);
     const signerName = body.signer_name?.trim() || request.auth!.user.display_name || request.auth!.user.username;
     const saved = await saveConfiguredAdminSignature(ctx, { base64: body.signature_base64, signerName, actorId: request.auth!.user.id });
-    await ctx.audit.record(auditContext(request), { action: 'payroll.admin_signature_config', entity: 'SYSTEM_SETTINGS', entityId: 'payroll.admin_signature', after: { signerName: saved.signerName, fileId: saved.fileId } });
+    const reqAudit = auditContext(request);
+    await runBackgroundSideEffect(() => ctx.audit.record(reqAudit, { action: 'payroll.admin_signature_config', entity: 'SYSTEM_SETTINGS', entityId: 'payroll.admin_signature', after: { signerName: saved.signerName, fileId: saved.fileId } }));
     return sendSuccess(request, 'Đã lưu cấu hình chữ ký số Ban Quản trị trên Google Drive thành công', saved);
   });
 
@@ -87,7 +89,8 @@ export async function payrollSignatureRoutes(app: FastifyInstance, ctx: AppConte
     const { id } = request.params as { id: string };
     const body = zSubmitAdminBody.parse(request.body ?? {});
     const updated = await submitPeriodToAdmin(ctx, id, body.note, request.auth!.user);
-    await ctx.audit.record(auditContext(request), { action: 'payroll_period.submit_admin', entity: 'PAY_PERIODS', entityId: id, after: { status: updated.status } });
+    const reqAudit = auditContext(request);
+    await runBackgroundSideEffect(() => ctx.audit.record(reqAudit, { action: 'payroll_period.submit_admin', entity: 'PAY_PERIODS', entityId: id, after: { status: updated.status } }));
     return sendSuccess(request, `Đã gửi bảng lương "${updated.name}" trình Ban Quản trị ký phê duyệt`, withPeriodLabel(ctx, updated));
   });
 
@@ -95,7 +98,8 @@ export async function payrollSignatureRoutes(app: FastifyInstance, ctx: AppConte
     const { id } = request.params as { id: string };
     const body = zAdminApproveBody.parse(request.body ?? {});
     const updated = await adminApproveAndSignPeriod(ctx, id, { signatureBase64: body.signature_base64, signerName: body.signer_name, note: body.note }, request.auth!.user);
-    await ctx.audit.record(auditContext(request), { action: 'payroll_period.admin_approve', entity: 'PAY_PERIODS', entityId: id, after: { status: updated.status, admin_signed_by: updated.admin_signed_by } });
+    const reqAudit = auditContext(request);
+    await runBackgroundSideEffect(() => ctx.audit.record(reqAudit, { action: 'payroll_period.admin_approve', entity: 'PAY_PERIODS', entityId: id, after: { status: updated.status, admin_signed_by: updated.admin_signed_by } }));
     return sendSuccess(request, `Ban Quản trị đã ký phê duyệt kỳ lương "${updated.name}" và chuyển phiếu về Kế toán`, withPeriodLabel(ctx, updated));
   });
 
@@ -103,7 +107,8 @@ export async function payrollSignatureRoutes(app: FastifyInstance, ctx: AppConte
     const { id } = request.params as { id: string };
     const body = zFinancePublishBody.parse(request.body ?? {});
     const updated = await financeSignAndPublishPeriod(ctx, id, { signatureBase64: body.signature_base64, signerName: body.signer_name, note: body.note }, request.auth!.user);
-    await ctx.audit.record(auditContext(request), { action: 'payroll_period.finance_publish', entity: 'PAY_PERIODS', entityId: id, after: { status: updated.status, finance_signed_by: updated.finance_signed_by } });
+    const reqAudit = auditContext(request);
+    await runBackgroundSideEffect(() => ctx.audit.record(reqAudit, { action: 'payroll_period.finance_publish', entity: 'PAY_PERIODS', entityId: id, after: { status: updated.status, finance_signed_by: updated.finance_signed_by } }));
     return sendSuccess(request, `Kế toán đã ký và phát hành phiếu lương kỳ "${updated.name}" xuống toàn bộ nhân viên`, withPeriodLabel(ctx, updated));
   });
 
@@ -115,7 +120,8 @@ export async function payrollSignatureRoutes(app: FastifyInstance, ctx: AppConte
     if (!slip) throw Errors.notFound('Không tìm thấy phiếu lương');
     if (!isOwnPayslip(slip, emps, user)) throw Errors.forbidden('Bạn chỉ được ký xác nhận phiếu lương của chính mình');
     const updated = await employeeDirectSignPayslip(ctx, slip, { signatureBase64: body.signature_base64, signatureSource: body.signature_source }, user);
-    await ctx.audit.record(auditContext(request), { action: 'payslip.employee_sign', entity: 'PAYSLIPS', entityId: updated.id, after: { payslip_code: updated.payslip_code, employee_confirmed_at: updated.employee_confirmed_at } });
+    const reqAudit = auditContext(request);
+    await runBackgroundSideEffect(() => ctx.audit.record(reqAudit, { action: 'payslip.employee_sign', entity: 'PAYSLIPS', entityId: updated.id, after: { payslip_code: updated.payslip_code, employee_confirmed_at: updated.employee_confirmed_at } }));
     return sendSuccess(request, 'Đã ký tay xác nhận phiếu lương thành công. Quản trị & Kế toán đã nhận thông báo chuyển khoản.', mapPayslipWithTicket(ctx, updated));
   });
 

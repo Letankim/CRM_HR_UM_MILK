@@ -4,7 +4,7 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { dayjs } from '../lib/time.js';
 import { findBranchShiftTemplate } from './account-employee-sync.js';
 import { resolveShiftLabel } from './employee-mapper.js';
-export { buildAttendanceFolderSegments, buildShiftFolderName, loadAttendancePhotoBuffer, migrateLegacyBase64Photos, persistAttendancePhoto } from './attendance-photo-storage.js';
+export { buildAttendanceFolderSegments, buildShiftFolderName, flushCoalescedPhotoPatches, loadAttendancePhotoBuffer, migrateLegacyBase64Photos, persistAttendancePhoto, queueAdjustmentPhotoDrivePatch, queueAttendancePhotoDrivePatch } from './attendance-photo-storage.js';
 
 export function parseHm(hm: string): number {
   const [h, m] = (hm || '00:00').split(':').map((x) => Number(x) || 0);

@@ -67,35 +67,59 @@ async function countRows(google: GoogleClients, spreadsheetId: string, key: Spre
   return out;
 }
 
+const MONTHLY_FILE_TABS = ['SHIFT_ASSIGNMENTS', 'LEAVE_REQUESTS', 'SHIFT_SWAPS', 'ATTENDANCE_EVENTS', 'ATTENDANCE_ADJUSTMENTS'] as const;
+
+async function countMonthlyFileRows(google: GoogleClients, spreadsheetId: string, monthKey: string): Promise<Record<string, number>> {
+  const ranges = MONTHLY_FILE_TABS.map((t) => `'${t}'!A:A`);
+  const out: Record<string, number> = {};
+  for (const t of MONTHLY_FILE_TABS) out[`MONTHLY_${monthKey}.${t}`] = 0;
+  const res = await withRetry(() => google.sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges })).catch(() => null);
+  res?.data.valueRanges?.forEach((vr, i) => { out[`MONTHLY_${monthKey}.${MONTHLY_FILE_TABS[i]}`] = Math.max(0, (vr.values?.length ?? 0) - 1); });
+  return out;
+}
+
 export async function runBackup(env: WorkerEnv, google: GoogleClients, api: InternalApi, kind: BackupKind): Promise<void> {
-  const plan = planFor(kind);
+  const at = now(), plan = planFor(kind, at);
   const { id: logId } = await api.startBackup(kind, iso());
   const rows: Record<string, number> = {};
   let files = 0;
   let folderId = '';
 
   try {
-    const { spreadsheets } = await api.spreadsheets();
+    const { spreadsheets, activePartitionMonth = '', monthlySpreadsheets = [] } = await api.spreadsheets();
     folderId = await ensureFolderPath(google.drive, env.DRIVE_ROOT_FOLDER_ID, [DRIVE_FOLDERS.BACKUPS, ...plan.folder]);
     const stamp = plan.folder[plan.folder.length - 1];
+    const seenIds = new Set<string>();
 
     for (const key of plan.keys) {
       const fileId = spreadsheets[key];
       if (!fileId) throw new Error(`Thiếu spreadsheet ${key}`);
+      seenIds.add(fileId);
       Object.assign(rows, await countRows(google, fileId, key));
-
       await copyFile(google.drive, fileId, { name: `${SPREADSHEETS[key].title}__${stamp}`, parentId: folderId });
       files++;
-
       if (plan.exportXlsx) {
         const xlsx = await exportSpreadsheetXlsx(google.drive, fileId);
-        await uploadFile(google.drive, {
-          name: `${SPREADSHEETS[key].title}__${stamp}.xlsx`,
-          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          parentId: folderId,
-          data: xlsx,
-        });
+        await uploadFile(google.drive, { name: `${SPREADSHEETS[key].title}__${stamp}.xlsx`, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', parentId: folderId, data: xlsx });
         files++;
+      }
+    }
+
+    if (plan.keys.includes('ATTENDANCE') || plan.keys.includes('SCHEDULE')) {
+      const includeAll = kind === 'WEEKLY' || kind === 'MONTHLY' || kind === 'PRE_OPERATION';
+      const hotMonths = new Set([activePartitionMonth, at.format('YYYY_MM'), at.subtract(1, 'month').format('YYYY_MM')].filter(Boolean));
+      for (const m of monthlySpreadsheets) {
+        if (!m.spreadsheetId || seenIds.has(m.spreadsheetId)) continue;
+        if (!includeAll && !m.isActive && !hotMonths.has(m.monthKey)) continue;
+        seenIds.add(m.spreadsheetId);
+        Object.assign(rows, await countMonthlyFileRows(google, m.spreadsheetId, m.monthKey));
+        await copyFile(google.drive, m.spreadsheetId, { name: `${m.title}__${stamp}`, parentId: folderId });
+        files++;
+        if (plan.exportXlsx) {
+          const xlsx = await exportSpreadsheetXlsx(google.drive, m.spreadsheetId);
+          await uploadFile(google.drive, { name: `${m.title}__${stamp}.xlsx`, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', parentId: folderId, data: xlsx });
+          files++;
+        }
       }
     }
 

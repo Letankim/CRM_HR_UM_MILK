@@ -8,6 +8,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { runBackgroundSideEffect, tolerantWrite } from '../services/background-write.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { employeeDirectSignPayslip } from '../services/payslip-sign-payment.service.js';
 import { applyPayslipAdjustment, ensurePublishedPeriodPayslips, generatePayslips, mapPayslip } from '../services/payslip.service.js';
@@ -88,7 +89,7 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/me/payslips', { preHandler: requireAuth() }, async (request) => {
     const q = (request.query ?? {}) as Record<string, string | undefined>;
     if (q.refresh === '1' || q.refresh === 'true') {
-      await Promise.all([ctx.db.payPeriods.load(), ctx.db.payrollSnapshots.load(), ctx.db.payslips.load(), ctx.db.employees.load(), ctx.db.users.load()]);
+      await Promise.all([ctx.db.payPeriods, ctx.db.payrollSnapshots, ctx.db.payslips, ctx.db.employees, ctx.db.users].map((s) => s.refreshIfIdle(10_000)));
     }
     const user = request.auth!.user;
     await ensurePublishedPeriodPayslips(ctx, user.id);
@@ -111,7 +112,14 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!isOwnPayslip(slip, emps, user)) throw Errors.forbidden('Bạn chỉ được xem phiếu lương của chính mình');
     const period = ctx.db.payPeriods.get(slip.period_id);
     if (!period || (period.status !== 'PUBLISHED' && period.status !== 'PAID')) throw Errors.forbidden('Phiếu lương chưa được phát hành');
-    if (!slip.viewed_by_employee_at) slip = await ctx.db.payslips.update(slip.id, slip.version, { viewed_by_employee_at: nowIso() }, user.id);
+    if (!slip.viewed_by_employee_at) {
+      const viewedAt = nowIso(), targetId = slip.id, targetVer = slip.version;
+      slip = { ...slip, viewed_by_employee_at: viewedAt };
+      await runBackgroundSideEffect(async () => {
+        const saved = await tolerantWrite(() => ctx.db.payslips.update(targetId, targetVer, { viewed_by_employee_at: viewedAt }, user.id));
+        if (saved) slip = saved;
+      });
+    }
     return sendSuccess(request, 'Lấy chi tiết phiếu lương thành công', mapPayslipWithTicket(ctx, slip));
   });
 
@@ -124,7 +132,8 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
     const rawBody = (request.body ?? {}) as Record<string, unknown>;
     if (typeof rawBody.signature_base64 === 'string' || typeof rawBody.signature_source === 'string') {
       const signed = await employeeDirectSignPayslip(ctx, slip, { signatureBase64: String(rawBody.signature_base64 ?? ''), signatureSource: String(rawBody.signature_source ?? 'DIRECT_CANVAS') }, user);
-      await ctx.audit.record(auditContext(request), { action: 'payslip.sign', entity: 'PAYSLIPS', entityId: signed.id, after: { payslip_code: signed.payslip_code } });
+      const reqAudit = auditContext(request);
+      await runBackgroundSideEffect(() => ctx.audit.record(reqAudit, { action: 'payslip.sign', entity: 'PAYSLIPS', entityId: signed.id, after: { payslip_code: signed.payslip_code } }));
       return sendSuccess(request, 'Đã ký xác nhận trực tiếp phiếu lương thành công', mapPayslipWithTicket(ctx, signed));
     }
     const period = ctx.db.payPeriods.get(slip.period_id);
@@ -137,14 +146,13 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
     if (openTck) {
       await ctx.db.supportTickets.update(openTck.id, openTck.version, { status: 'CLOSED', closed_at: now, resolved_by: openTck.resolved_by || user.id, resolved_at: openTck.resolved_at || now }, user.id);
     }
-    await ensureSyncedNotifications(ctx);
-    const rt = ctx.realtime();
-    rt?.broadcast(SocketEvents.PAYROLL_UPDATED, { periodId: slip.period_id, payslipId: updated.id, action: 'CONFIRMED' });
-    rt?.toTargets({ roles: ['FINANCE', 'ADMIN'], excludeUserId: user.id }, SocketEvents.NOTIFICATION, {
-      kind: 'PAYROLL_CONFIRMED', entityId: updated.id, code: updated.payslip_code,
-      title: `Nhân sự ${updated.full_name} (${updated.employee_code}) đã xác nhận phiếu lương`,
+    const rt = ctx.realtime(), reqAudit = auditContext(request);
+    rt?.toTargets({ roles: ['FINANCE', 'ADMIN'], userIds: [user.id] }, SocketEvents.PAYROLL_UPDATED, { periodId: slip.period_id, payslipId: updated.id, action: 'CONFIRMED' });
+    rt?.toTargets({ roles: ['FINANCE', 'ADMIN'], excludeUserId: user.id }, SocketEvents.NOTIFICATION, { kind: 'PAYROLL_CONFIRMED', entityId: updated.id, code: updated.payslip_code, title: `Nhân sự ${updated.full_name} (${updated.employee_code}) đã xác nhận phiếu lương` });
+    await runBackgroundSideEffect(async () => {
+      await ensureSyncedNotifications(ctx);
+      await ctx.audit.record(reqAudit, { action: 'payslip.confirm', entity: 'PAYSLIPS', entityId: updated.id, after: { payslip_code: updated.payslip_code, employee_confirmed_at: now } });
     });
-    await ctx.audit.record(auditContext(request), { action: 'payslip.confirm', entity: 'PAYSLIPS', entityId: updated.id, after: { payslip_code: updated.payslip_code, employee_confirmed_at: now } });
     return sendSuccess(request, 'Đã xác nhận đồng ý phiếu lương thành công', mapPayslipWithTicket(ctx, updated));
   });
 
@@ -174,31 +182,19 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/payroll/revenue-inputs', { preHandler: requirePermission('payroll.read') }, async (request) => {
     const q = (request.query ?? {}) as Record<string, string | undefined>;
     const items = ctx.db.revenueInputs.all().map((r) => ({
-      ...r,
-      branchName: ctx.db.branches.get(r.branch_id)?.name ?? (r.branch_id === 'ALL' ? 'Toàn chuỗi Ụm Bò Milk' : r.branch_id),
+      ...r, branchName: ctx.db.branches.get(r.branch_id)?.name ?? (r.branch_id === 'ALL' ? 'Toàn chuỗi Ụm Bò Milk' : r.branch_id),
       periodName: ctx.db.payPeriods.get(r.period_id)?.name ?? (r.period_id || 'Kỳ lương hiện hành'),
     }));
     const result = paginateAndSort(items, {
-      page: Number(q.page) || 1,
-      perPage: Number(q.per_page) || 12,
-      maxPerPage: 200,
-      defaultSortBy: 'created_at',
-      defaultSortOrder: 'desc',
-      q: q.q,
-      searchExtractor: (r) => [r.periodName, r.branchName, r.note],
-      filters: { period_id: q.period_id, branch_id: q.branch_id },
+      page: Number(q.page) || 1, perPage: Number(q.per_page) || 12, maxPerPage: 200,
+      defaultSortBy: 'created_at', defaultSortOrder: 'desc', q: q.q,
+      searchExtractor: (r) => [r.periodName, r.branchName, r.note], filters: { period_id: q.period_id, branch_id: q.branch_id },
     });
     return sendPaginated(request, 'Lấy báo cáo doanh thu đối chiếu & tỷ lệ chi phí lương thành công', result);
   });
 
   app.post('/api/admin/payroll/revenue-inputs', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request, reply) => {
-    const body = z.object({
-      period_id: z.string().optional().default(''),
-      branch_id: z.string().default('ALL'),
-      revenue_vnd: z.coerce.number().min(1, 'Doanh thu phải lớn hơn 0'),
-      payroll_cost_vnd: z.coerce.number().min(0).optional(),
-      note: z.string().default(''),
-    }).parse(request.body);
+    const body = z.object({ period_id: z.string().optional().default(''), branch_id: z.string().default('ALL'), revenue_vnd: z.coerce.number().min(1, 'Doanh thu phải lớn hơn 0'), payroll_cost_vnd: z.coerce.number().min(0).optional(), note: z.string().default('') }).parse(request.body);
     const period = (body.period_id ? ctx.db.payPeriods.get(body.period_id) : undefined) ?? ctx.db.payPeriods.all()[0];
     const targetPeriodId = period?.id || body.period_id || 'CURRENT';
     const snaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === targetPeriodId && (body.branch_id === 'ALL' || s.branch_id === body.branch_id));
@@ -209,7 +205,6 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
       from_date: period?.from_date || '', to_date: period?.to_date || '', payroll_cost_vnd: payrollCost,
       labor_cost_percent: laborPct, verified_by: request.auth!.user.display_name || request.auth!.user.username, verified_at: nowIso(), note: body.note,
     }, request.auth!.user.id);
-    reply.code(201);
-    return sendSuccess(request, `Đã lưu doanh thu đối chiếu — Tỷ lệ chi phí lương/doanh thu: ${laborPct}%`, created);
+    return reply.code(201), sendSuccess(request, `Đã lưu doanh thu đối chiếu — Tỷ lệ chi phí lương/doanh thu: ${laborPct}%`, created);
   });
 }

@@ -5,6 +5,7 @@ import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { sweepDueScheduledAnnouncements } from '../services/announcement-scheduler.service.js';
+import { listRegisteredMonthlySpreadsheets } from '../services/backup-targets.helper.js';
 
 const zBackupStart = z.object({
   kind: z.enum(['DAILY', 'CRITICAL', 'PRE_OPERATION', 'WEEKLY', 'MONTHLY']),
@@ -36,14 +37,16 @@ export async function internalRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/internal/spreadsheets', async (request) =>
     sendSuccess(request, 'Lấy danh sách Spreadsheet ID thành công', {
       spreadsheets: {
-        CORE: ctx.env.SHEET_ID_CORE,
-        HR: ctx.env.SHEET_ID_HR,
-        SCHEDULE: ctx.env.SHEET_ID_SCHEDULE,
-        ATTENDANCE: ctx.env.SHEET_ID_ATTENDANCE,
-        PAYROLL: ctx.env.SHEET_ID_PAYROLL,
-        COMMS: ctx.env.SHEET_ID_COMMS,
-        SYSTEM: ctx.env.SHEET_ID_SYSTEM,
+        CORE: ctx.env.SHEET_ID_CORE || ctx.db.ids.CORE,
+        HR: ctx.env.SHEET_ID_HR || ctx.db.ids.HR,
+        SCHEDULE: ctx.env.SHEET_ID_SCHEDULE || ctx.db.ids.SCHEDULE,
+        ATTENDANCE: ctx.env.SHEET_ID_ATTENDANCE || ctx.db.ids.ATTENDANCE,
+        PAYROLL: ctx.env.SHEET_ID_PAYROLL || ctx.db.ids.PAYROLL,
+        COMMS: ctx.env.SHEET_ID_COMMS || ctx.db.ids.COMMS,
+        SYSTEM: ctx.env.SHEET_ID_SYSTEM || ctx.db.ids.SYSTEM,
       },
+      activePartitionMonth: ctx.db.partitionMonth,
+      monthlySpreadsheets: listRegisteredMonthlySpreadsheets(ctx.db, ctx.env.SHEET_ID_SCHEDULE || ctx.db.ids.SCHEDULE),
     }),
   );
 

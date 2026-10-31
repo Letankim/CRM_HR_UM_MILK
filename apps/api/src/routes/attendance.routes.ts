@@ -13,10 +13,11 @@ import { formatGraceLabel, getShiftCheckoutWindow } from '../services/schedule-s
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
-import { buildPaginatedAttendanceSessions, buildShiftFolderName, calculateHaversineMeters, describePunctuality, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto } from './attendance-helpers.js';
+import { buildPaginatedAttendanceSessions, buildShiftFolderName, calculateHaversineMeters, describePunctuality, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto, queueAttendancePhotoDrivePatch } from './attendance-helpers.js';
 import { registerShiftAttendanceDetailRoute } from './attendance-shift-detail.js';
 import { registerAttendanceAdjustmentRoutes } from './attendance-adjustments.routes.js';
 export { calculateHaversineMeters } from './attendance-helpers.js';
+const inFlightChecksByCtx = new WeakMap<AppContext, Set<string>>();
 
 const zCheckInOutBody = z.object({
   assignment_id: z.string({ required_error: 'Vui lòng chọn ca làm việc đã phát hành' }).trim().min(1), type: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(), kind: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(),
@@ -69,8 +70,20 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   app.post('/api/attendance/check', { preHandler: requireAuth() }, async (request, reply) => {
     if (request.auth!.user.role === 'MKT') throw Errors.forbidden('Tài khoản Truyền thông (MKT) không được phép truy cập chức năng điểm danh GPS');
     const body = zCheckInOutBody.parse(request.body);
+    if (body.idempotency_key) {
+      const existingByKey = ctx.db.attendanceEvents.find((e) => e.idempotency_key === body.idempotency_key);
+      if (existingByKey) return sendSuccess(request, `Điểm danh ${existingByKey.type === 'CHECK_IN' ? 'vào ca' : 'ra ca'} đã được ghi nhận trước đó`, mapAttendanceEvent(existingByKey, ctx));
+    }
     getOperationSettings(ctx.db);
     const checkType = body.type ?? body.kind ?? 'CHECK_IN';
+    let inFlightSet = inFlightChecksByCtx.get(ctx);
+    if (!inFlightSet) { inFlightSet = new Set(); inFlightChecksByCtx.set(ctx, inFlightSet); }
+    const lockKey = body.enforce_shift_state ? `${body.assignment_id}:${checkType}` : (body.idempotency_key ? `idem:${body.idempotency_key}` : '');
+    if (lockKey) {
+      if (inFlightSet.has(lockKey)) throw Errors.conflict('Hệ thống đang xử lý lượt điểm danh của ca này, vui lòng không bấm lặp lại');
+      inFlightSet.add(lockKey);
+    }
+    try {
     const assign = ctx.db.shiftAssignments.get(body.assignment_id);
     if (!assign) throw Errors.fieldValidation('assignment_id', 'INVALID_VALUE', 'Không tìm thấy ca phân công', body.assignment_id);
     if (assign.status === 'ABSENT') throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'} ngày ${dayjs(assign.work_date).format('DD/MM/YYYY')}) đã quá giờ kết thúc ca mà chưa điểm danh vào ca nên đã bị khóa và chuyển sang trạng thái Vắng mặt. Nếu muốn bù công, vui lòng gửi Phiếu bổ sung công.`);
@@ -142,15 +155,15 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       work_date: assign.work_date, shift_code: assign.shift_code, scheduled_time: schedTime, late_minutes: lateMinutes, early_leave_minutes: earlyLeaveMinutes, allowed_radius_m: branch.radius_m, gps_status: accuracyOk ? 'OK' : 'WARNING',
       photo_drive_file_id: uploadedPhoto.fileId, ip_address: request.ip, anomaly_flags_json: '[]', note: `${punc.punctualityLabel} · Khoảng cách GPS ${distanceM}m`,
     }, request.auth!.user.id);
-    uploadedPhoto.syncDrive?.(async (driveFileId) => {
-      const cur = ctx.db.attendanceEvents.get(created.id);
-      if (cur) await ctx.db.attendanceEvents.update(cur.id, cur.version, { photo_drive_file_id: driveFileId }, 'system-drive-sync');
-    });
+    uploadedPhoto.syncDrive?.(async (driveFileId) => { queueAttendancePhotoDrivePatch(ctx, created.id, driveFileId); });
     if (checkType === 'CHECK_OUT' && assign.status !== 'COMPLETED') await ctx.db.shiftAssignments.update(assign.id, assign.version, { status: 'COMPLETED' }, request.auth!.user.id);
     const reqAuditCtx = auditContext(request);
     ctx.realtime()?.toBranch(branch.id, 'attendance:event', { id: created.id, type: created.type, result, distanceM, lateMinutes, earlyLeaveMinutes, message: '' });
     await runBackgroundSideEffect(() => ctx.audit.record(reqAuditCtx, { action: checkType === 'CHECK_IN' ? 'attendance.check_in' : 'attendance.check_out', entity: 'ATTENDANCE_EVENTS', entityId: created.id, after: { type: created.type, distance_m: distanceM, within_radius: withinRadius, result, late_minutes: lateMinutes, early_leave_minutes: earlyLeaveMinutes } }));
     return reply.code(201), sendSuccess(request, `Điểm danh ${checkType === 'CHECK_IN' ? 'vào ca' : 'ra ca'} thành công (${punc.punctualityLabel} · GPS ${distanceM}m)`, mapAttendanceEvent(created, ctx));
+    } finally {
+      if (lockKey) inFlightSet.delete(lockKey);
+    }
   });
 
   app.put('/api/admin/attendance/events/:id', { preHandler: requirePermission('system.config') }, async (request) => {

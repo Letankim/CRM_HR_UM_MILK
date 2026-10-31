@@ -121,8 +121,10 @@ async function assemblePdfInputForEmployee(
 async function resolveSharedPeriodSignatures(ctx: AppContext, period: PayPeriod) {
   const cfgAdmin = getConfiguredAdminSignature(ctx);
   const adminFileId = period.admin_signature_file_id || (period.approved_at ? cfgAdmin.fileId : '');
-  const adminMedia = adminFileId ? await loadPayrollMediaBuffer(ctx, adminFileId) : null;
-  const financeMedia = period.finance_signature_file_id ? await loadPayrollMediaBuffer(ctx, period.finance_signature_file_id) : null;
+  const [adminMedia, financeMedia] = await Promise.all([
+    adminFileId ? loadPayrollMediaBuffer(ctx, adminFileId) : Promise.resolve(null),
+    period.finance_signature_file_id ? loadPayrollMediaBuffer(ctx, period.finance_signature_file_id) : Promise.resolve(null),
+  ]);
   const finUser = period.published_by ? ctx.db.users.get(period.published_by) : undefined;
   const admUser = period.approved_by ? ctx.db.users.get(period.approved_by) : undefined;
   return {
@@ -176,17 +178,23 @@ export async function exportPeriodPayslipsZip(
   const usedNames = new Set<string>();
   const fileNames: string[] = [];
 
-  for (const snap of targetSnaps) {
-    const slip = activeSlips.find((p) => p.snapshot_id === snap.id || p.employee_id === snap.employee_id || (Boolean(snap.employee_code) && p.employee_code === snap.employee_code));
-    const pdfInput = await assemblePdfInputForEmployee(ctx, period, snap, slip, sharedSigs);
-    const pdfBuffer = await renderPayslipPdf(pdfInput);
-    if (pdfBuffer.length < 200 || pdfBuffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
-      throw Errors.badRequest(`Lỗi kiểm tra toàn vẹn tệp PDF của nhân sự ${snap.full_name} (${snap.employee_code})`);
-    }
+  const rendered: Array<{ snap: PayrollSnapshot; pdfBuffer: Buffer }> = [];
+  for (let i = 0; i < targetSnaps.length; i += 6) {
+    const chunk = targetSnaps.slice(i, i + 6);
+    const chunkOut = await Promise.all(chunk.map(async (snap) => {
+      const slip = activeSlips.find((p) => p.snapshot_id === snap.id || p.employee_id === snap.employee_id || (Boolean(snap.employee_code) && p.employee_code === snap.employee_code));
+      const pdfInput = await assemblePdfInputForEmployee(ctx, period, snap, slip, sharedSigs);
+      const pdfBuffer = await renderPayslipPdf(pdfInput);
+      if (pdfBuffer.length < 200 || pdfBuffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
+        throw Errors.badRequest(`Lỗi kiểm tra toàn vẹn tệp PDF của nhân sự ${snap.full_name} (${snap.employee_code})`);
+      }
+      return { snap, pdfBuffer };
+    }));
+    rendered.push(...chunkOut);
+  }
+  for (const { snap, pdfBuffer } of rendered) {
     let fileName = buildPayslipPdfFileName(period.period_code, snap.employee_code, snap.full_name);
-    if (usedNames.has(fileName)) {
-      fileName = fileName.replace(/\.pdf$/i, `_${snap.id.slice(-4)}.pdf`);
-    }
+    if (usedNames.has(fileName)) fileName = fileName.replace(/\.pdf$/i, `_${snap.id.slice(-4)}.pdf`);
     usedNames.add(fileName);
     fileNames.push(fileName);
     zip.file(fileName, pdfBuffer, { binary: true, compression: 'DEFLATE', compressionOptions: { level: 6 } });

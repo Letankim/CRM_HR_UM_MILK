@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
@@ -29,6 +29,13 @@ import { systemCommsRoutes } from './routes/system-comms.routes.js';
 import { notificationRoutes } from './routes/notifications.routes.js';
 import { ticketRoutes } from './routes/tickets.routes.js';
 import { registerSmtpRelayOrigin } from './services/smtp-sender.js';
+
+export function resolveRateLimitKey(req: { ip: string; headers: Record<string, unknown>; cookies?: Record<string, string | undefined> }): string {
+  const auth = req.headers.authorization;
+  const bearer = typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  const token = bearer || req.cookies?.umbm_at || '';
+  return token ? `usr_${createHash('sha256').update(token).digest('hex').slice(0, 16)}` : `ip_${req.ip}`;
+}
 
 export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
   registerSmtpRelayOrigin(ctx.env.API_PUBLIC_ORIGIN);
@@ -74,7 +81,7 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
 
   await app.register(cookie);
   await app.register(helmet, { contentSecurityPolicy: false });
-  await app.register(rateLimit, { global: true, max: 300, timeWindow: '1 minute' });
+  await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute', keyGenerator: (req) => resolveRateLimitKey(req) });
 
   registerAuthContext(app, ctx.tokens, ctx.auth);
 

@@ -26,9 +26,9 @@ export function ProfileBankQrUploader({
     e.target.value = '';
     if (!file) return;
     try {
-      const png = await normalizeImageFileToPngDataUrl(file, 900);
+      const qrDataUrl = await normalizeImageFileToPngDataUrl(file, 540, { preferJpeg: true, quality: 0.84 });
       onToggleRemove(false);
-      onChangeDraft(png);
+      onChangeDraft(qrDataUrl);
     } catch (err) {
       message.error(err instanceof Error ? err.message : 'Không thể đọc tệp ảnh Mã QR');
     }

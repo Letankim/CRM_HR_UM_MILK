@@ -5,6 +5,7 @@ import { App, Button, Col, Flex, Form, Grid, Input, InputNumber, Modal, Row, Sel
 import type { FormInstance } from 'antd';
 import { CheckCircleOutlined, CloseOutlined, CloudUploadOutlined, DeleteOutlined, InfoCircleOutlined, LoadingOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
 import { api } from '@/lib/api';
+import { readAndOptimizeMktMediaFile } from '@/lib/payroll-file-helpers';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { FancyboxImage } from './FancyboxPreview';
 import {
@@ -20,47 +21,28 @@ interface ProbedMediaInfo {
   mimeLabel: string; sizeBytes: number; sizeFormatted: string; isImage: boolean; previewUrl: string;
 }
 
-export function MktMediaModal({
-  open, editing, form, loading, onClose, onSubmit,
-}: {
+export function MktMediaModal({ open, editing, form, loading, onClose, onSubmit }: {
   open: boolean; editing: Record<string, unknown> | null; form: FormInstance;
   loading?: boolean; onClose: () => void; onSubmit: (values: Record<string, unknown>) => void;
 }) {
-  const { message } = App.useApp();
-  const isMobile = Grid.useBreakpoint().md === false;
-  const [uploadKey, setUploadKey] = useState(0);
-  const [probing, setProbing] = useState(false);
-  const [probedReachable, setProbedReachable] = useState(false);
-  const [probedPreviewUrl, setProbedPreviewUrl] = useState('');
-  const [probeStatusText, setProbeStatusText] = useState('');
-  const activeOpRef = useRef(0), lastProbedUrlRef = useRef(''), hasSourceRef = useRef(false), autoNameRef = useRef('');
+  const { message } = App.useApp(), isMobile = Grid.useBreakpoint().md === false;
+  const [uploadKey, setUploadKey] = useState(0), [probing, setProbing] = useState(false), [probedReachable, setProbedReachable] = useState(false);
+  const [probedPreviewUrl, setProbedPreviewUrl] = useState(''), [probeStatusText, setProbeStatusText] = useState('');
+  const [fileBase64, setFileBase64] = useState(''), [compressing, setCompressing] = useState(false);
+  const activeOpRef = useRef(0), lastProbedUrlRef = useRef(''), hasSourceRef = useRef(false), autoNameRef = useRef(''), fileBase64Ref = useRef('');
+  const syncPickedBase64 = (val: string) => { fileBase64Ref.current = val; setFileBase64(val); };
 
-  const fileBase64 = String(Form.useWatch('file_base64', form) || '');
-  const externalUrl = String(Form.useWatch('external_url', form) || '').trim();
-  const debouncedExternalUrl = useDebouncedValue(externalUrl, 400);
-  const watchedName = String(Form.useWatch('file_name', form) || '');
-  const watchedSize = Number(Form.useWatch('size_bytes', form) || 0);
-  const watchedMime = String(Form.useWatch('mime_type', form) || '').trim();
-  const existingNorm = editing ? normalizeClientMediaItem(editing) : null;
+  const externalUrl = String(Form.useWatch('external_url', form) || '').trim(), debouncedExternalUrl = useDebouncedValue(externalUrl, 400);
+  const watchedName = String(Form.useWatch('file_name', form) || ''), watchedSize = Number(Form.useWatch('size_bytes', form) || 0);
+  const watchedMime = String(Form.useWatch('mime_type', form) || '').trim(), existingNorm = editing ? normalizeClientMediaItem(editing) : null;
 
-  const resetProbeUi = () => {
-    lastProbedUrlRef.current = '';
-    setProbing(false); setProbedReachable(false); setProbedPreviewUrl(''); setProbeStatusText('');
-  };
+  const resetProbeUi = () => { lastProbedUrlRef.current = ''; setProbing(false); setProbedReachable(false); setProbedPreviewUrl(''); setProbeStatusText(''); };
 
   useEffect(() => {
-    activeOpRef.current += 1;
-    setUploadKey((k) => k + 1);
-    resetProbeUi();
+    activeOpRef.current += 1; setUploadKey((k) => k + 1); setCompressing(false); syncPickedBase64(''); resetProbeUi();
     if (!open) return;
-    if (editing) {
-      hasSourceRef.current = true;
-      autoNameRef.current = String(editing.file_name || '');
-    } else {
-      hasSourceRef.current = false;
-      autoNameRef.current = '';
-      form.setFieldsValue({ file_name: '', category: 'BANNER', mime_type: '', size_bytes: 0, is_internal_only: true, file_base64: '', external_url: '' });
-    }
+    if (editing) { hasSourceRef.current = true; autoNameRef.current = String(editing.file_name || ''); }
+    else { hasSourceRef.current = false; autoNameRef.current = ''; form.setFieldsValue({ file_name: '', category: 'BANNER', mime_type: '', size_bytes: 0, is_internal_only: true, external_url: '' }); }
   }, [open, editing, form]);
 
   useEffect(() => {
@@ -118,35 +100,39 @@ export function MktMediaModal({
     autoNameRef.current = file.name;
     hasSourceRef.current = true;
     form.setFieldsValue(basePatch);
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (opId !== activeOpRef.current || typeof reader.result !== 'string' || !reader.result) return;
-      form.setFieldsValue({ ...basePatch, file_base64: reader.result });
-      void form.validateFields(['external_url', 'file_name']).catch(() => undefined);
-    };
-    reader.readAsDataURL(file);
+    setCompressing(true);
+    void readAndOptimizeMktMediaFile(file, detectedMime)
+      .then((res) => {
+        if (opId !== activeOpRef.current) return;
+        syncPickedBase64(res.dataUrl);
+        form.setFieldsValue({ ...basePatch, mime_type: res.mimeType, size_bytes: res.sizeBytes });
+        void form.validateFields(['external_url', 'file_name']).catch(() => undefined);
+      })
+      .catch(() => { if (opId === activeOpRef.current) message.error('Không thể đọc tệp vừa chọn'); })
+      .finally(() => { if (opId === activeOpRef.current) setCompressing(false); });
     return false;
   };
 
   const handleClearPickedFile = () => {
     activeOpRef.current += 1;
     setUploadKey((k) => k + 1);
+    setCompressing(false);
+    syncPickedBase64('');
     hasSourceRef.current = Boolean(editing && editing.externalSourceUrl);
     autoNameRef.current = editing ? String(editing.file_name || '') : '';
-    form.setFieldsValue({ file_base64: '', file_name: editing ? String(editing.file_name || '') : '', mime_type: editing ? String(editing.mime_type || '') : '', size_bytes: editing ? Number(editing.size_bytes || 0) : 0, category: editing ? String(editing.category || 'BANNER') : 'BANNER' });
+    form.setFieldsValue({ file_name: editing ? String(editing.file_name || '') : '', mime_type: editing ? String(editing.mime_type || '') : '', size_bytes: editing ? Number(editing.size_bytes || 0) : 0, category: editing ? String(editing.category || 'BANNER') : 'BANNER' });
   };
 
   const handleExternalUrlChange = (_e: ChangeEvent<HTMLInputElement>) => {
     activeOpRef.current += 1;
     resetProbeUi();
     const curName = String(form.getFieldValue('file_name') || '').trim();
-    const hadPrevFile = Boolean(form.getFieldValue('file_base64'));
-    if (hadPrevFile) setUploadKey((k) => k + 1);
+    const hadPrevFile = Boolean(fileBase64Ref.current);
+    if (hadPrevFile) { setUploadKey((k) => k + 1); syncPickedBase64(''); }
     const shouldClearOldName = hasSourceRef.current || hadPrevFile || (Boolean(autoNameRef.current) && curName === autoNameRef.current);
     hasSourceRef.current = false;
     autoNameRef.current = '';
-    form.setFieldsValue({ file_base64: '', size_bytes: 0, mime_type: '', ...(shouldClearOldName ? { file_name: '' } : {}) });
+    form.setFieldsValue({ size_bytes: 0, mime_type: '', ...(shouldClearOldName ? { file_name: '' } : {}) });
   };
 
   const formatDisplayValue = probing ? 'Đang nhận diện định dạng...' : hasDetectedAsset ? resolveMediaMimeLabel(effectiveMime, watchedName || externalUrl) : 'Tự động nhận diện theo tệp';
@@ -157,15 +143,14 @@ export function MktMediaModal({
       open={open} forceRender width={isMobile ? '95vw' : '78vw'} style={{ top: 18, maxWidth: 1180 }}
       title={editing ? `Cập nhật Tệp Media — ${editing.file_name}` : 'Tải Tệp / Tài liệu lên Kho Media Hệ thống'}
       okText={editing ? 'Lưu cập nhật' : 'Tải lên & Lưu Kho Media'} cancelText="Hủy bỏ"
-      okButtonProps={{ icon: editing ? <SaveOutlined /> : <PlusOutlined />, loading: loading || probing }}
+      okButtonProps={{ icon: editing ? <SaveOutlined /> : <PlusOutlined />, loading: loading || probing || compressing }}
       cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onClose} onOk={() => form.submit()}
     >
       <Form
         form={form} layout="vertical"
-        initialValues={{ file_name: '', category: 'BANNER', mime_type: '', size_bytes: 0, is_internal_only: true, file_base64: '', external_url: '' }}
-        onFinish={(vals) => { const { external_url, ...rest } = vals; onSubmit({ ...rest, mime_type: effectiveMime, drive_url: String(external_url || '').trim() }); }}
+        initialValues={{ file_name: '', category: 'BANNER', mime_type: '', size_bytes: 0, is_internal_only: true, external_url: '' }}
+        onFinish={(vals) => { const { external_url, ...rest } = vals; onSubmit({ ...rest, file_base64: fileBase64Ref.current, mime_type: effectiveMime, drive_url: String(external_url || '').trim() }); }}
       >
-        <Form.Item name="file_base64" hidden><Input /></Form.Item>
         <Form.Item name="mime_type" hidden><Input /></Form.Item>
         <Form.Item name="size_bytes" hidden><InputNumber /></Form.Item>
         <Form.Item label="Tải tệp trực tiếp từ thiết bị (chọn tệp mới sẽ tự động thay thế tệp trước đó)">
@@ -205,7 +190,7 @@ export function MktMediaModal({
         <Form.Item
           name="external_url"
           label={<Flex justify="space-between" align="center" wrap gap={8} style={{ width: '100%' }}><span>Hoặc liên kết Google Drive / URL tệp</span>{probing ? <span style={{ fontSize: 12, color: '#2563EB', fontWeight: 500 }}><LoadingOutlined /> Đang kiểm tra tệp mới từ liên kết...</span> : probeStatusText ? <span style={{ fontSize: 12, color: probedReachable ? '#16A34A' : '#D97706', fontWeight: 500 }}>{probedReachable ? <CheckCircleOutlined /> : <InfoCircleOutlined />} {probeStatusText}</span> : null}</Flex>}
-          rules={[{ validator: async (_, val) => { if (editing || Boolean(form.getFieldValue('file_base64')) || Boolean(String(val || '').trim())) return; throw new Error('Vui lòng chọn tệp tải lên từ thiết bị hoặc nhập đường dẫn tệp'); } }]}
+          rules={[{ validator: async (_, val) => { if (editing || Boolean(fileBase64Ref.current) || Boolean(String(val || '').trim())) return; throw new Error('Vui lòng chọn tệp tải lên từ thiết bị hoặc nhập đường dẫn tệp'); } }]}
         >
           <Input allowClear onChange={handleExternalUrlChange} placeholder="Dán liên kết Google Drive (https://drive.google.com/file/d/...) hoặc đường dẫn trực tiếp của tệp..." suffix={probing ? <LoadingOutlined style={{ color: '#2563EB' }} /> : undefined} />
         </Form.Item>

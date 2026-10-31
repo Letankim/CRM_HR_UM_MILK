@@ -32,7 +32,7 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
     const query = zListQuery.parse(request.query);
     if (query.branch_id && query.branch_id !== 'ALL') assertBranchAccess(request, query.branch_id);
     if (query.refresh === '1' || query.refresh === 'true') {
-      await Promise.all([ctx.db.payRates.load(), ctx.db.employees.load()]);
+      await Promise.all([ctx.db.payRates.refreshIfIdle(10_000), ctx.db.employees.refreshIfIdle(10_000)]);
     }
     await ensureLegacySalaryProfiles(ctx.db, request.auth?.user.id ?? 'system');
     const scoped = filterByBranch(request, ctx.db.employees.all(), (e) => e.branch_id);

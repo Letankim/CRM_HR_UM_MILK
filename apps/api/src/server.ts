@@ -1,4 +1,4 @@
-import { createGoogleClients, downloadFile, ensureFolderPath, getFileMeta, isAuthRevokedError, uploadFile } from '@umbm/google';
+import { clearDriveFolderCache, createGoogleClients, downloadFile, ensureFolderPath, getFileMeta, isAuthRevokedError, uploadFile } from '@umbm/google';
 import { DRIVE_FOLDERS } from '@umbm/shared';
 import { readFileSync } from 'node:fs';
 import { AuthService } from './auth/auth.service.js';
@@ -64,18 +64,23 @@ async function main() {
         });
       };
     }
-    const driveFolderCache = new Map<string, string>();
     const uploadToDriveFolder = async (params: { rootFolder: string; folderSegments?: string[]; fileName: string; mimeType: string; data: Buffer }) => {
       if (!env.DRIVE_ROOT_FOLDER_ID) throw new Error('Thiếu cấu hình DRIVE_ROOT_FOLDER_ID');
-      const segments = (params.folderSegments ?? []).filter(Boolean);
-      const cacheKey = `${params.rootFolder}/${segments.join('/')}`;
-      let folderId = driveFolderCache.get(cacheKey);
-      if (!folderId) {
-        folderId = await ensureFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, [params.rootFolder, ...segments]);
-        driveFolderCache.set(cacheKey, folderId);
+      const pathSegments = [params.rootFolder, ...(params.folderSegments ?? []).filter(Boolean)];
+      let folderId = await ensureFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, pathSegments);
+      try {
+        const uploaded = await uploadFile(clients.drive, { name: params.fileName, mimeType: params.mimeType, parentId: folderId, data: params.data });
+        return { fileId: uploaded.id };
+      } catch (err) {
+        const status = Number((err as { code?: number; status?: number })?.code ?? (err as { status?: number })?.status ?? 0);
+        if (status === 404) {
+          clearDriveFolderCache(clients.drive);
+          folderId = await ensureFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, pathSegments);
+          const retried = await uploadFile(clients.drive, { name: params.fileName, mimeType: params.mimeType, parentId: folderId, data: params.data });
+          return { fileId: retried.id };
+        }
+        throw err;
       }
-      const uploaded = await uploadFile(clients.drive, { name: params.fileName, mimeType: params.mimeType, parentId: folderId, data: params.data });
-      return { fileId: uploaded.id };
     };
     google = {
       mode: 'google',
