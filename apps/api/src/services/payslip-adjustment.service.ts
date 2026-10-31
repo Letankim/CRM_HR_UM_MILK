@@ -3,6 +3,7 @@ import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { nowIso } from '../lib/time.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 import { queuePayslipPublishedEmails } from './action-email-dispatcher.js';
 import { ensureSyncedNotifications } from './notification-sync.service.js';
 import { mapSnapshot, recalculatePeriodSnapshots } from './payroll-snapshot.service.js';
@@ -69,7 +70,7 @@ export async function applyPayslipAdjustment(
       actorId,
     );
     await recalculatePeriodSnapshots(ctx, period, actorId, true);
-    ctx.realtime()?.broadcast(SocketEvents.PAYROLL_UPDATED, { periodId: period.id, action: 'ADJUSTED' });
+    ctx.realtime()?.toTargets({ roles: ['ADMIN', 'FINANCE', 'HR'] }, SocketEvents.PAYROLL_UPDATED, { periodId: period.id, action: 'ADJUSTED' });
     const updatedSnap = ctx.db.payrollSnapshots.get(snap.id) ?? snap;
     return {
       entity: 'PAYROLL_SNAPSHOTS' as const,
@@ -160,7 +161,15 @@ export async function applyPayslipAdjustment(
   });
   queuePayslipPublishedEmails(ctx, period, [result], { actorEmail });
   await ensureSyncedNotifications(ctx);
-  ctx.realtime()?.broadcast(SocketEvents.PAYROLL_UPDATED, { periodId: period.id, payslipId: result.id, action: 'REVISED' });
+  const emp = ctx.db.employees.get(result.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === result.employee_code);
+  const empUser = emp ? findLinkedUserForEmployee(emp, ctx) : undefined;
+  if (empUser && empUser.id !== actorId) {
+    ctx.realtime()?.toUser(empUser.id, SocketEvents.NOTIFICATION, {
+      kind: 'PAYROLL', entityId: result.id, code: result.payslip_code,
+      title: `Phiếu lương ${period.name} vừa có bản điều chỉnh mới (${result.payslip_code})`,
+    });
+  }
+  ctx.realtime()?.toTargets({ roles: ['ADMIN', 'FINANCE', 'HR'], userIds: empUser ? [empUser.id] : [] }, SocketEvents.PAYROLL_UPDATED, { periodId: period.id, payslipId: result.id, action: 'REVISED' });
   return {
     entity: 'PAYSLIPS' as const,
     entityId: result.id,

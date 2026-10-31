@@ -178,7 +178,7 @@ const BULK_KIND_LABELS: Record<string, (n: number) => string> = {
   ADJUSTMENT_DECIDED: (n) => `Đã xử lý hàng loạt ${n} phiếu bổ sung công`, ADJUSTMENT_STORE_CONFIRMED: (n) => `Cửa hàng đã xác nhận ${n} phiếu bổ sung công chờ HR duyệt`,
   ADJUSTMENT_CREATED: (n) => `Có ${n} phiếu bổ sung công mới vừa gửi chờ duyệt`, LEAVE_DECIDED: (n) => `Đã xử lý hàng loạt ${n} đơn xin nghỉ phép (OFF)`,
   LEAVE_CREATED: (n) => `Có ${n} đơn xin nghỉ phép (OFF) mới chờ duyệt`, SWAP_DECIDED: (n) => `Đã xử lý hàng loạt ${n} yêu cầu đổi ca`,
-  SWAP_PEER: (n) => `Đã cập nhật hàng loạt ${n} yêu cầu đổi ca`, EMERGENCY_HANDLED: (n) => `Đã xử lý hàng loạt ${n} báo cáo nghỉ đột xuất`, SHIFT_APPROVED: (n) => `Đã duyệt và phát hành chính thức ${n} ca làm việc`,
+  SWAP_PEER_ACCEPTED: (n) => `Có ${n} yêu cầu nhường ca vượt 2 ca/ngày chờ HR duyệt`, SWAP_PEER_DECLINED: (n) => `Có ${n} yêu cầu đổi ca bị từ chối`, EMERGENCY_HANDLED: (n) => `Đã xử lý hàng loạt ${n} báo cáo nghỉ đột xuất`, SHIFT_APPROVED: (n) => `Đã duyệt và phát hành chính thức ${n} ca làm việc`,
 };
 const MGR_CREATE_KINDS = new Set(['ADJUSTMENT_CREATED', 'LEAVE_CREATED', 'SHIFT_REGISTERED', 'EMERGENCY_REPORTED']);
 
@@ -205,7 +205,7 @@ export function emitScheduleRealtime(ctx: AppContext, event: string, opts: { bra
     const message = count > 1 ? (BULK_KIND_LABELS[kind]?.(count) ?? firstMsg) : firstMsg;
     const actorRole = actorId ? ctx.db.users.get(actorId)?.role : undefined;
     const skipStore = isTargetBoOrHr || actorRole === 'HR' || actorRole === 'ADMIN' || actorRole === 'FINANCE';
-    const alertRoles: Role[] = (kind === 'ADJUSTMENT_STORE_CONFIRMED' || kind === 'EMERGENCY_ESCALATED') ? ['HR'] : (MGR_CREATE_KINDS.has(kind) || kind === 'SWAP_PEER') ? (skipStore ? ['HR'] : ['HR', 'STORE']) : [];
+    const alertRoles: Role[] = (kind === 'ADJUSTMENT_STORE_CONFIRMED' || kind === 'EMERGENCY_ESCALATED' || kind === 'SWAP_PEER_ACCEPTED') ? ['HR'] : MGR_CREATE_KINDS.has(kind) ? (skipStore ? ['HR'] : ['HR', 'STORE']) : [];
     const alertUserIds = (MGR_CREATE_KINDS.has(kind) || kind === 'EMERGENCY_ESCALATED') ? [] : Array.from(userIds);
     if (message && (alertRoles.length > 0 || alertUserIds.length > 0)) {
       rt.toTargets({ branchId, roles: alertRoles, userIds: alertUserIds, excludeUserId: actorId }, event, { kind, branchId, message, actorId });

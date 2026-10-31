@@ -1,9 +1,10 @@
-import { DRIVE_FOLDERS, type PayPeriod, type User } from '@umbm/shared';
+import { DRIVE_FOLDERS, SYSTEM_CONFIG, type PayPeriod, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { SocketEvents } from '../realtime/realtime.js';
-import { isSyntheticDemoEmail } from './email.service.js';
+import { resolveSystemHrMailbox, resolveUserPersonalRealEmail, webOrigin } from './account-email-dispatcher.js';
+import { ensureSyncedNotifications } from './notification-sync.service.js';
 import {
   getConfiguredAdminSignature,
   persistPayrollMedia,
@@ -13,34 +14,45 @@ import {
 import { recalculatePeriodSnapshots } from './payroll-snapshot.service.js';
 import { generatePayslips } from './payslip.service.js';
 
-export { employeeDirectSignPayslip, markPayslipsPaid } from './payslip-sign-payment.service.js';
+export { employeeDirectSignPayslip, markPayslipsPaid, notifyFinancePayslipConfirmed } from './payslip-sign-payment.service.js';
 
-function notifyRoleWithEmail(
+export function notifyPayrollRoleWithEmail(
   ctx: AppContext,
   role: 'ADMIN' | 'FINANCE',
-  params: { title: string; body: string; entityId: string; refCode: string; actorId: string },
+  params: { title: string; body: string; entityId: string; refCode: string; actorId: string; version?: number },
 ) {
   ctx.realtime()?.toTargets({ roles: [role], excludeUserId: params.actorId }, SocketEvents.NOTIFICATION, {
     kind: 'PAYROLL_WORKFLOW', entityId: params.entityId, code: params.refCode, title: params.title,
   });
-  for (const u of ctx.db.users.filter((x) => x.role === role && x.status === 'ACTIVE')) {
-    if (u.email && !isSyntheticDemoEmail(u.email)) {
+  const actorUser = ctx.db.users.get(params.actorId);
+  const actorEmail = actorUser ? resolveUserPersonalRealEmail(ctx, actorUser) : '';
+  const seenEmails = new Set<string>(), origin = webOrigin(ctx);
+  for (const u of ctx.db.users.filter((x) => x.role === role && x.status === 'ACTIVE' && x.id !== params.actorId)) {
+    const to = resolveUserPersonalRealEmail(ctx, u);
+    if (!to || to === actorEmail || seenEmails.has(to)) continue;
+    seenEmails.add(to);
+    ctx.email.enqueue({
+      to, recipientName: u.display_name || u.username, template: 'PAYSLIP_PUBLISHED', referenceCode: params.refCode,
+      subject: `${SYSTEM_CONFIG.emailSubjectPrefix} ${params.title} (${params.refCode})`,
+      summary: params.body,
+      metadata: [{ label: 'Mã kỳ lương', value: params.refCode }, { label: 'Thời gian thực hiện', value: dayjs().format('HH:mm DD/MM/YYYY') }],
+      actionLabel: role === 'ADMIN' ? 'Mở Bảng lương & Ký phê duyệt' : 'Mở Bảng lương & Xử lý',
+      actionUrl: `${origin}/admin/payroll`,
+    }, { dedupeKey: `payroll_wf:${role}:${params.entityId}:v${params.version ?? 1}:${to}` });
+  }
+  if (seenEmails.size === 0) {
+    const fallback = resolveSystemHrMailbox(ctx);
+    if (fallback && fallback !== actorEmail) {
+      seenEmails.add(fallback);
       ctx.email.enqueue({
-        to: u.email,
-        recipientName: u.display_name || u.username,
-        template: 'PAYSLIP_PUBLISHED',
-        referenceCode: params.refCode,
-        subject: `[Ụm Bò Milk HR] ${params.title} (${params.refCode})`,
-        summary: params.body,
-        metadata: [
-          { label: 'Mã kỳ lương', value: params.refCode },
-          { label: 'Thời gian thực hiện', value: dayjs().format('HH:mm DD/MM/YYYY') },
-        ],
-        actionLabel: 'Mở Bảng lương & Phê duyệt',
-        actionUrl: `${ctx.env.API_PUBLIC_ORIGIN}/admin/payroll`,
-      });
+        to: fallback, recipientName: role === 'ADMIN' ? 'Ban Quản trị' : 'Bộ phận Kế toán', template: 'PAYSLIP_PUBLISHED', referenceCode: params.refCode,
+        subject: `${SYSTEM_CONFIG.emailSubjectPrefix} ${params.title} (${params.refCode})`, summary: params.body,
+        metadata: [{ label: 'Mã kỳ lương', value: params.refCode }, { label: 'Thời gian thực hiện', value: dayjs().format('HH:mm DD/MM/YYYY') }],
+        actionLabel: 'Mở Bảng lương & Phê duyệt', actionUrl: `${origin}/admin/payroll`,
+      }, { dedupeKey: `payroll_wf:${role}:${params.entityId}:v${params.version ?? 1}:${fallback}` });
     }
   }
+  if (seenEmails.size > 0) void ctx.email.processQueueBatch(Math.min(6, seenEmails.size));
 }
 
 /** Bước 1: Kế toán rà soát xong gửi bảng lương trình Quản trị phê duyệt (DRAFT -> RECONCILE) */
@@ -64,8 +76,9 @@ export async function submitPeriodToAdmin(ctx: AppContext, periodId: string, not
     recipient_user_id: '', recipient_role: 'ADMIN', branch_id: 'ALL', category: 'PAYROLL', severity: 'INFO',
     title, body, link: '/admin/payroll', read_at: '', entity_type: 'PAYROLL_SUBMIT_ADMIN', entity_id: updated.id,
   }, actor.id);
-  ctx.realtime()?.broadcast(SocketEvents.PAYROLL_UPDATED, { periodId: updated.id, status: updated.status });
-  notifyRoleWithEmail(ctx, 'ADMIN', { title, body, entityId: updated.id, refCode: updated.period_code, actorId: actor.id });
+  await ensureSyncedNotifications(ctx);
+  ctx.realtime()?.toTargets({ roles: ['ADMIN', 'FINANCE', 'HR'] }, SocketEvents.PAYROLL_UPDATED, { periodId: updated.id, status: updated.status });
+  notifyPayrollRoleWithEmail(ctx, 'ADMIN', { title, body, entityId: updated.id, refCode: updated.period_code, actorId: actor.id, version: updated.version });
   return updated;
 }
 
@@ -108,8 +121,9 @@ export async function adminApproveAndSignPeriod(
     recipient_user_id: '', recipient_role: 'FINANCE', branch_id: 'ALL', category: 'PAYROLL', severity: 'INFO',
     title, body, link: '/admin/payroll', read_at: '', entity_type: 'PAYROLL_ADMIN_APPROVED', entity_id: updated.id,
   }, actor.id);
-  ctx.realtime()?.broadcast(SocketEvents.PAYROLL_UPDATED, { periodId: updated.id, status: updated.status });
-  notifyRoleWithEmail(ctx, 'FINANCE', { title, body, entityId: updated.id, refCode: updated.period_code, actorId: actor.id });
+  await ensureSyncedNotifications(ctx);
+  ctx.realtime()?.toTargets({ roles: ['ADMIN', 'FINANCE', 'HR'] }, SocketEvents.PAYROLL_UPDATED, { periodId: updated.id, status: updated.status });
+  notifyPayrollRoleWithEmail(ctx, 'FINANCE', { title, body, entityId: updated.id, refCode: updated.period_code, actorId: actor.id, version: updated.version });
   return updated;
 }
 

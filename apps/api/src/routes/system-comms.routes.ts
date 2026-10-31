@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { BACKUP_KIND_LABELS, SYSTEM_CONFIG, zListQueryBase } from '@umbm/shared';
+import { BACKUP_KIND_LABELS, ROLES, SYSTEM_CONFIG, zListQueryBase } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
@@ -60,7 +60,7 @@ export async function systemCommsRoutes(app: FastifyInstance, ctx: AppContext) {
   const broadcastPolicy = async (pol: { id: string; key: string; title: string; value_json: string; policy_version: string; effective_from: string }, actorId: string) => {
     const notifTitle = `[Chính sách mới] ${pol.title}`, notifBody = `Áp dụng: ${pol.value_json} · Hiệu lực từ ${pol.effective_from}`;
     const notif = await ctx.db.notifications.insert({ recipient_user_id: 'ALL', category: 'ANNOUNCEMENT', title: notifTitle, body: notifBody, link: '/nv/ban-tin', severity: 'WARNING', read_at: '', recipient_role: 'ALL', branch_id: 'ALL', entity_type: 'POLICIES', entity_id: pol.id }, actorId);
-    ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, { kind: 'POLICY_PUBLISHED', id: pol.id, notificationId: notif.id, code: pol.key, title: notifTitle, summary: notifBody, priority: 'HIGH', sent_at: nowIso() });
+    ctx.realtime()?.toTargets({ roles: [...ROLES], excludeUserId: actorId }, SocketEvents.NOTIFICATION, { kind: 'POLICY_PUBLISHED', id: pol.id, notificationId: notif.id, code: pol.key, title: notifTitle, summary: notifBody, priority: 'HIGH', sent_at: nowIso() });
   };
 
   const mapPolicy = (p: ReturnType<typeof ctx.db.policies.all>[number], u?: { id: string; role: string; username: string; display_name?: string }) => ({

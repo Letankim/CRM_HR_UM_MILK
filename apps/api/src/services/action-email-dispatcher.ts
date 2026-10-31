@@ -1,6 +1,8 @@
-import { DEFAULT_SHIFT_LABELS, isEmployeeRole, STAFF_GROUP_LABELS, SYSTEM_CONFIG, type Candidate, type Employee, type Interview, type PayPeriod, type Payslip, type ShiftSwap, type StaffGroup } from '@umbm/shared';
+import { DEFAULT_SHIFT_LABELS, isEmployeeRole, ROLE_LABELS, STAFF_GROUP_LABELS, SYSTEM_CONFIG, type Candidate, type Employee, type Interview, type PayPeriod, type Payslip, type ShiftSwap, type StaffGroup } from '@umbm/shared';
 import type { AppContext } from '../context.js';
-import { resolveRolePortalPath, resolveSystemHrMailbox, webOrigin } from './account-email-dispatcher.js';
+import { SocketEvents } from '../realtime/realtime.js';
+import { resolveRolePortalPath, resolveSystemHrMailbox, resolveUserPersonalRealEmail, webOrigin } from './account-email-dispatcher.js';
+import { tolerantWrite } from './background-write.js';
 import { isSyntheticDemoEmail } from './email.service.js';
 import { resolveManagerReviewRecipients, resolveStrictEmployeeContact, type StrictEmployeeContact } from './workflow-email-dispatcher.js';
 
@@ -78,23 +80,49 @@ export function queueSwapEventEmail(ctx: AppContext, swap: ShiftSwap, stage: 'CR
   flushMail(ctx, queued);
 }
 
-export function queueInterviewEmails(ctx: AppContext, params: { candidate: Candidate; interview: Interview; isUpdate?: boolean }) {
-  const { candidate, interview, isUpdate } = params;
-  if (!candidate.email || isSyntheticDemoEmail(candidate.email)) return;
+export function queueInterviewEmails(ctx: AppContext, params: { candidate: Candidate; interview: Interview; isUpdate?: boolean; interviewerUserIds?: string[]; actorId?: string }) {
+  const { candidate, interview, isUpdate, interviewerUserIds, actorId } = params;
   const branchName = ctx.db.branches.get(interview.branch_id || candidate.branch_pref)?.name || 'Ụm Bò Milk';
-  const slot = interview.start_at.slice(0, 16).replace('T', ' ');
-  ctx.email.enqueue({
-    to: candidate.email.trim().toLowerCase(), template: 'INTERVIEW_INVITATION', recipientName: candidate.full_name, referenceCode: `INT-${candidate.candidate_code}`,
-    summary: isUpdate ? `Lịch phỏng vấn tuyển dụng của bạn tại ${SYSTEM_CONFIG.brandName} đã được cập nhật sang khung giờ mới.` : `Phòng Nhân sự ${SYSTEM_CONFIG.brandName} trân trọng mời bạn tham dự buổi phỏng vấn tuyển dụng.`,
-    metadata: [{ label: 'Ứng viên', value: `${candidate.full_name} (${candidate.candidate_code})` }, { label: 'Vị trí ứng tuyển', value: candidate.position || STAFF_GROUP_LABELS[candidate.staff_group as StaffGroup] || candidate.staff_group }, { label: 'Thời gian phỏng vấn', value: `${slot} (${interview.duration_minutes || 30} phút)` }, { label: 'Chi nhánh đăng ký', value: branchName }, { label: 'Đường dẫn phòng họp', value: interview.meet_link || 'Trực tiếp / Google Meet' }],
-    actionLabel: 'Truy cập phòng họp phỏng vấn', actionUrl: interview.meet_link || `${webOrigin(ctx)}/nv/login`,
-  });
-  flushMail(ctx, 1);
+  const slot = interview.start_at.slice(0, 16).replace('T', ' '), posLabel = candidate.position || STAFF_GROUP_LABELS[candidate.staff_group as StaffGroup] || candidate.staff_group;
+  let queued = 0;
+  const seen = new Set<string>();
+  if (candidate.email && !isSyntheticDemoEmail(candidate.email)) {
+    const to = candidate.email.trim().toLowerCase();
+    seen.add(to);
+    ctx.email.enqueue({
+      to, template: 'INTERVIEW_INVITATION', recipientName: candidate.full_name, referenceCode: `INT-${candidate.candidate_code}`,
+      summary: isUpdate ? `Lịch phỏng vấn tuyển dụng của bạn tại ${SYSTEM_CONFIG.brandName} đã được cập nhật sang khung giờ mới.` : `Phòng Nhân sự ${SYSTEM_CONFIG.brandName} trân trọng mời bạn tham dự buổi phỏng vấn tuyển dụng.`,
+      metadata: [{ label: 'Ứng viên', value: `${candidate.full_name} (${candidate.candidate_code})` }, { label: 'Vị trí ứng tuyển', value: posLabel }, { label: 'Thời gian phỏng vấn', value: `${slot} (${interview.duration_minutes || 30} phút)` }, { label: 'Chi nhánh đăng ký', value: branchName }, { label: 'Đường dẫn phòng họp', value: interview.meet_link || 'Trực tiếp / Google Meet' }],
+      actionLabel: 'Truy cập phòng họp phỏng vấn', actionUrl: interview.meet_link || `${webOrigin(ctx)}/nv/login`,
+    });
+    queued += 1;
+  }
+  for (const uid of interviewerUserIds ?? []) {
+    if (!uid || uid === actorId) continue;
+    const u = ctx.db.users.get(uid), to = u ? resolveUserPersonalRealEmail(ctx, u) : '';
+    if (!u || !to || seen.has(to)) continue;
+    seen.add(to);
+    ctx.email.enqueue({
+      to, template: 'INTERVIEW_INVITATION', recipientName: `${u.display_name || u.username} (${ROLE_LABELS[u.role]})`, referenceCode: `INT-PANEL-${candidate.candidate_code}`,
+      subject: `${SYSTEM_CONFIG.emailSubjectPrefix} ${isUpdate ? 'Cập nhật lịch tham gia phỏng vấn' : 'Thư mời tham gia hội đồng phỏng vấn'}: ${candidate.full_name} (${candidate.candidate_code})`,
+      summary: `Bạn được phân công tham gia phỏng vấn ứng viên ${candidate.full_name} (${posLabel}) vào lúc ${slot} (${interview.duration_minutes || 30} phút).`,
+      metadata: [{ label: 'Ứng viên', value: `${candidate.full_name} (${candidate.candidate_code})` }, { label: 'Vị trí & Chi nhánh', value: `${posLabel} · ${branchName}` }, { label: 'Thời gian phỏng vấn', value: `${slot} (${interview.duration_minutes || 30} phút)` }, { label: 'Đường dẫn phòng họp', value: interview.meet_link || 'Trực tiếp / Google Meet' }],
+      actionLabel: 'Mở Quản lý Lịch phỏng vấn', actionUrl: `${webOrigin(ctx)}/admin/employees?section=recruitment&sub=interviews`,
+    }, { dedupeKey: `iv_panel:${interview.id}:v${interview.version}:${to}` });
+    queued += 1;
+  }
+  flushMail(ctx, queued);
 }
 
-export function queuePromotionOfficialEmail(ctx: AppContext, emp: Employee) {
+export function queuePromotionOfficialEmail(ctx: AppContext, emp: Employee, actorId?: string) {
   const contact = resolveStrictEmployeeContact(ctx, emp.id);
-  if (!contact?.personalEmail) return;
+  if (contact?.userId) {
+    const title = `Chúc mừng bạn chính thức trở thành Nhân viên Chính thức (${emp.employee_code})`;
+    const body = `Bạn đã hoàn thành chu kỳ thử việc và chuyển sang Nhân viên chính thức tại ${contact.branchName} từ ngày ${emp.official_from || 'hôm nay'}.`;
+    void tolerantWrite(() => ctx.db.notifications.insert({ recipient_user_id: contact.userId, recipient_role: '', branch_id: emp.branch_id || 'ALL', category: 'HR', severity: 'INFO', title, body, link: resolveRolePortalPath(contact.role, 'home'), read_at: '', entity_type: 'PROMOTED_OFFICIAL_USER', entity_id: `${emp.id}_${emp.official_from || 'OFFICIAL'}` }, actorId || 'system-sync'));
+    if (contact.userId !== actorId) ctx.realtime()?.toUser(contact.userId, SocketEvents.NOTIFICATION, { kind: 'PROMOTED_OFFICIAL', entityId: emp.id, code: emp.employee_code, title });
+  }
+  if (!contact?.personalEmail || contact.userId === actorId) return;
   ctx.email.enqueue({
     to: contact.personalEmail, template: 'PROBATION_TO_OFFICIAL', recipientName: contact.name, referenceCode: `PRO-${emp.employee_code}`,
     summary: `Chúc mừng bạn đã hoàn thành chu kỳ thử việc và chính thức được bổ nhiệm làm Nhân viên Chính thức tại ${SYSTEM_CONFIG.brandName}.`,
@@ -104,9 +132,15 @@ export function queuePromotionOfficialEmail(ctx: AppContext, emp: Employee) {
   flushMail(ctx, 1);
 }
 
-export function queueTestAssignedEmail(ctx: AppContext, params: { empId: string; testTitle: string; durationMinutes: number; passScore: number; code: string }) {
+export function queueTestAssignedEmail(ctx: AppContext, params: { empId: string; testTitle: string; durationMinutes: number; passScore: number; code: string; assignmentId?: string; actorId?: string }) {
   const contact = resolveStrictEmployeeContact(ctx, params.empId);
-  if (!contact?.personalEmail) return;
+  if (contact?.userId) {
+    const title = `Bài kiểm tra nghiệp vụ mới: ${params.testTitle}`;
+    const body = `Phòng Nhân sự vừa giao cho bạn bài kiểm tra "${params.testTitle}" (${params.durationMinutes} phút · Điểm đạt tối thiểu ${params.passScore}/100).`;
+    void tolerantWrite(() => ctx.db.notifications.insert({ recipient_user_id: contact.userId, recipient_role: '', branch_id: contact.branchId || 'ALL', category: 'HR', severity: 'INFO', title, body, link: resolveRolePortalPath(contact.role, 'test'), read_at: '', entity_type: 'TEST_ASSIGNED_USER', entity_id: params.assignmentId || params.code }, params.actorId || 'system-sync'));
+    if (contact.userId !== params.actorId) ctx.realtime()?.toUser(contact.userId, SocketEvents.NOTIFICATION, { kind: 'TEST_ASSIGNED', entityId: params.assignmentId || params.code, code: params.code, title });
+  }
+  if (!contact?.personalEmail || contact.userId === params.actorId) return;
   ctx.email.enqueue({
     to: contact.personalEmail, template: 'TEST_ASSIGNED', recipientName: contact.name, referenceCode: params.code,
     summary: `Phòng Nhân sự vừa giao cho bạn bài kiểm tra nghiệp vụ "${params.testTitle}".`,

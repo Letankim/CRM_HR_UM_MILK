@@ -44,6 +44,10 @@ async function deduplicateAdjustmentsAndNotifications(ctx: AppContext): Promise<
     const rawAdjId = (n.entity_id || '').replace(/_(STORE_CONFIRMED|APPROVED|REJECTED)$/, '');
     const adj = n.entity_type.startsWith('ATT_ADJ_') && !n.entity_id.startsWith('BULK_') ? ctx.db.attendanceAdjustments.get(rawAdjId) : undefined;
     const isResolvedPending =
+      n.entity_type === 'PAYSLIP_SIGNED_ADMIN' || n.entity_type === 'PAYSLIP_PAID' ||
+      (n.entity_type === 'PAYROLL_SUBMIT_ADMIN' && ctx.db.payPeriods.get(n.entity_id)?.status !== 'RECONCILE') ||
+      (n.entity_type === 'PAYROLL_ADMIN_APPROVED' && ctx.db.payPeriods.get(n.entity_id)?.status !== 'APPROVED') ||
+      (n.entity_type === 'PAYSLIP_USER' && !n.entity_id.endsWith('_PAID') && ctx.db.payslips.get(n.entity_id)?.status === 'REVISED') ||
       (n.entity_type === 'ATT_ADJ_HR' && (!adj || (adj.status !== 'PENDING' && adj.status !== 'STORE_CONFIRMED') || (adj.status === 'STORE_CONFIRMED' && !n.entity_id.endsWith('_STORE_CONFIRMED')))) ||
       (n.entity_type === 'LEAVE_ROLE' && ctx.db.leaveRequests.get(n.entity_id)?.status !== 'PENDING') ||
       (n.entity_type === 'SHIFT_DRAFT_ROLE' && ctx.db.shiftAssignments.get(n.entity_id)?.status !== 'DRAFT') ||
@@ -191,8 +195,9 @@ export function isNotificationCreatedByOrSelfAction(ctx: AppContext, n: Notifica
   const isMyEmp = (eid?: string) => Boolean(eid && myEmp && (eid === myEmp.id || eid === myEmp.employee_code));
   const rawId = (n.entity_id || '').replace(/_(PUBLISHED|APPROVED|REJECTED|PENDING|STORE_CONFIRMED|PENDING_PEER|PEER_ACCEPTED|PEER_DECLINED|ESCALATED|RESOLVED|REPLACEMENT_FOUND)$/, '');
   const recipientUserIds = (n.recipient_user_id || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const explicitPersonalIds = recipientUserIds.filter((id) => id !== 'ALL' && id !== 'NONE');
   if (n.entity_type === 'PAYSLIP_CONFIRMED_FINANCE') { const ps = ctx.db.payslips.get(n.entity_id); return !ps || isMyEmp(ps.employee_id) || isMyEmp(ps.employee_code); }
-  if (n.entity_type === 'MANUAL' && n.created_by === userId && !recipientUserIds.includes(userId)) return true;
+  if (n.entity_type !== 'ANNOUNCEMENTS' && n.entity_type !== 'POLICIES' && explicitPersonalIds.length === 0 && n.created_by && n.created_by !== SYNC_ACTOR && n.created_by === userId) return true;
   if (n.entity_id.startsWith('BULK_')) return n.created_by === userId || !recipientUserIds.includes(userId);
   if (n.entity_type === 'USERS_PENDING') return n.entity_id === userId;
   if (n.entity_type === 'TICKET_ASSIGNEE' || n.entity_type === 'TICKET_REPLY_STAFF') { const tck = ctx.db.supportTickets.get((n.entity_id || '').split('::')[0] || ''); return !tck || (tck.requester_user_id === userId && tck.assignee_user_id !== userId); }

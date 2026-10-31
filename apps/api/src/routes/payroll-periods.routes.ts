@@ -7,28 +7,24 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
+import { SocketEvents } from '../realtime/realtime.js';
+import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { resolvePayrollMediaUrl } from '../services/payroll-media-storage.js';
+import { notifyPayrollRoleWithEmail } from '../services/payroll-signature-workflow.service.js';
 import { mapSnapshot, recalculatePeriodSnapshots } from '../services/payroll-snapshot.service.js';
 import { ensurePublishedPeriodPayslips, generatePayslips } from '../services/payslip.service.js';
 import { healBranchConsistency } from './account-employee-sync.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const zPeriodBody = z
-  .object({
-    period_code: z.string().trim().max(30).optional().default(''),
-    name: z.string({ required_error: 'Tên kỳ lương là bắt buộc' }).trim().min(3, 'Tên kỳ lương tối thiểu 3 ký tự').max(100),
-    from_date: z.string().regex(DATE_RE, 'Từ ngày phải theo định dạng YYYY-MM-DD'),
-    to_date: z.string().regex(DATE_RE, 'Đến ngày phải theo định dạng YYYY-MM-DD'),
-    note: z.string().trim().max(300).optional().default(''),
-  })
-  .refine((v) => v.from_date <= v.to_date, { path: ['to_date'], message: 'Đến ngày phải sau hoặc bằng Từ ngày' });
-
+const zPeriodBody = z.object({
+  period_code: z.string().trim().max(30).optional().default(''),
+  name: z.string({ required_error: 'Tên kỳ lương là bắt buộc' }).trim().min(3, 'Tên kỳ lương tối thiểu 3 ký tự').max(100),
+  from_date: z.string().regex(DATE_RE, 'Từ ngày phải theo định dạng YYYY-MM-DD'),
+  to_date: z.string().regex(DATE_RE, 'Đến ngày phải theo định dạng YYYY-MM-DD'),
+  note: z.string().trim().max(300).optional().default(''),
+}).refine((v) => v.from_date <= v.to_date, { path: ['to_date'], message: 'Đến ngày phải sau hoặc bằng Từ ngày' });
 const zTransitionBody = z.object({ version: z.coerce.number().int().min(1), target_status: z.enum(PAY_PERIOD_STATUSES), note: z.string().trim().max(300).optional().default('') });
-
-/** Máy trạng thái kỳ lương: chỉ đi đúng thứ tự, cho phép trả về bước trước khi chưa phát hành */
-const ALLOWED: Record<PayPeriodStatus, PayPeriodStatus[]> = {
-  DRAFT: ['RECONCILE'], RECONCILE: ['APPROVED', 'DRAFT'], APPROVED: ['PUBLISHED', 'RECONCILE'], PUBLISHED: ['PAID'], PAID: [],
-};
+const ALLOWED: Record<PayPeriodStatus, PayPeriodStatus[]> = { DRAFT: ['RECONCILE'], RECONCILE: ['APPROVED', 'DRAFT'], APPROVED: ['PUBLISHED', 'RECONCILE'], PUBLISHED: ['PAID'], PAID: [] };
 const lastPeriodsListSyncAt = new WeakMap<AppContext, number>();
 
 export const withPeriodLabel = (ctx: AppContext, p: PayPeriod) => {
@@ -209,6 +205,14 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
       ],
       resultSelector: (s) => s.period,
     });
+    const isReturningToFinance = (before.status === 'RECONCILE' && body.target_status === 'DRAFT') || (before.status === 'APPROVED' && body.target_status === 'RECONCILE');
+    if (isReturningToFinance && request.auth!.user.role !== 'FINANCE') {
+      const title = `Ban Quản trị yêu cầu rà soát lại bảng lương ${updated.name}`, msg = `${request.auth!.user.display_name || request.auth!.user.username} đã trả bảng lương ${updated.name} về bước "${PAY_PERIOD_STATUS_LABELS[updated.status]}"${body.note ? ` — Lý do: ${body.note}` : ''}.`;
+      await ctx.db.notifications.insert({ recipient_user_id: '', recipient_role: 'FINANCE', branch_id: 'ALL', category: 'PAYROLL', severity: 'WARNING', title, body: msg, link: '/admin/payroll', read_at: '', entity_type: 'PAYROLL_RETURNED_FINANCE', entity_id: `${updated.id}_${updated.version}` }, actorId);
+      notifyPayrollRoleWithEmail(ctx, 'FINANCE', { title, body: msg, entityId: updated.id, refCode: updated.period_code, actorId, version: updated.version });
+    }
+    await ensureSyncedNotifications(ctx);
+    if (body.target_status !== 'PUBLISHED' && body.target_status !== 'PAID') ctx.realtime()?.toTargets({ roles: ['ADMIN', 'FINANCE', 'HR'] }, SocketEvents.PAYROLL_UPDATED, { periodId: updated.id, status: updated.status });
     await ctx.audit.record(auditContext(request), { action: 'payroll_period.transition', entity: 'PAY_PERIODS', entityId: id, before: { status: before.status }, after: { status: updated.status } });
     return sendSuccess(request, `Đã chuyển trạng thái kỳ lương sang "${PAY_PERIOD_STATUS_LABELS[updated.status]}"`, withLabel(ctx, updated));
   });

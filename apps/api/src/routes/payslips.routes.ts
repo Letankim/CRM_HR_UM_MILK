@@ -7,10 +7,9 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
-import { SocketEvents } from '../realtime/realtime.js';
 import { runBackgroundSideEffect, tolerantWrite } from '../services/background-write.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
-import { employeeDirectSignPayslip } from '../services/payslip-sign-payment.service.js';
+import { employeeDirectSignPayslip, notifyFinancePayslipConfirmed } from '../services/payslip-sign-payment.service.js';
 import { applyPayslipAdjustment, ensurePublishedPeriodPayslips, generatePayslips, mapPayslip } from '../services/payslip.service.js';
 import { emitAndEmailTicketEvent, mapSupportTicket, upsertPayslipDisputeTicket } from '../services/ticket-notification.service.js';
 import { findAllLinkedEmployeesForUser } from './employee-mapper.js';
@@ -146,14 +145,10 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
     if (openTck) {
       await ctx.db.supportTickets.update(openTck.id, openTck.version, { status: 'CLOSED', closed_at: now, resolved_by: openTck.resolved_by || user.id, resolved_at: openTck.resolved_at || now }, user.id);
     }
-    const rt = ctx.realtime(), reqAudit = auditContext(request);
-    rt?.toTargets({ roles: ['FINANCE', 'ADMIN'], userIds: [user.id] }, SocketEvents.PAYROLL_UPDATED, { periodId: slip.period_id, payslipId: updated.id, action: 'CONFIRMED' });
-    rt?.toTargets({ roles: ['FINANCE', 'ADMIN'], excludeUserId: user.id }, SocketEvents.NOTIFICATION, { kind: 'PAYROLL_CONFIRMED', entityId: updated.id, code: updated.payslip_code, title: `Nhân sự ${updated.full_name} (${updated.employee_code}) đã xác nhận phiếu lương` });
-    await runBackgroundSideEffect(async () => {
-      await ensureSyncedNotifications(ctx);
-      await ctx.audit.record(reqAudit, { action: 'payslip.confirm', entity: 'PAYSLIPS', entityId: updated.id, after: { payslip_code: updated.payslip_code, employee_confirmed_at: now } });
-    });
-    return sendSuccess(request, 'Đã xác nhận đồng ý phiếu lương thành công', mapPayslipWithTicket(ctx, updated));
+    const reqAudit = auditContext(request);
+    await notifyFinancePayslipConfirmed(ctx, updated, user, false);
+    await runBackgroundSideEffect(() => ctx.audit.record(reqAudit, { action: 'payslip.confirm', entity: 'PAYSLIPS', entityId: updated.id, after: { payslip_code: updated.payslip_code, employee_confirmed_at: now } }));
+    return sendSuccess(request, 'Đã xác nhận đồng ý phiếu lương thành công. Bộ phận Kế toán đã nhận thông báo.', mapPayslipWithTicket(ctx, updated));
   });
 
   app.post('/api/me/payslips/:id/dispute', { preHandler: requireAuth() }, async (request) => {

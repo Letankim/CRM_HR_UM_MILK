@@ -124,7 +124,8 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
     await ctx.audit.record(auditContext(request), { action: 'schedule.create', entity: 'SHIFT_ASSIGNMENTS', entityId: created.id, after: { employee_id: emp.employee_code, work_date: created.work_date, shift_code: created.shift_code, status: created.status } });
     if (created.status === 'PUBLISHED') queueScheduleShiftEmail(ctx, { empId: emp.id, shiftLabel: tpl?.name ?? created.shift_code, workDate: created.work_date, startAt: created.start_at, endAt: created.end_at, branchId, code: `SHF-${created.id.slice(0, 6)}` }, request.auth!.user.id);
     await ensureSyncedNotifications(ctx);
-    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId, employeeIds: [emp.id], kind: 'SHIFT_ASSIGNED', message: `Đã phân ca ngày ${created.work_date} cho ${emp.full_name}`, actorId: request.auth!.user.id });
+    const isDraft = created.status === 'DRAFT';
+    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId, employeeIds: [emp.id], kind: isDraft ? 'SHIFT_REGISTERED' : 'SHIFT_ASSIGNED', message: isDraft ? `Ca dự thảo ngày ${created.work_date} (${emp.full_name}) chờ duyệt` : `Đã phân ca ngày ${created.work_date} cho ${emp.full_name}`, actorId: request.auth!.user.id });
     return reply.code(201), sendSuccess(request, 'Đã thêm phân công ca làm việc thành công', mapShiftAssignment(created, ctx));
   });
   app.put('/api/admin/schedules/:id', { preHandler: requirePermission('schedule.propose', 'schedule.publish') }, async (request) => {

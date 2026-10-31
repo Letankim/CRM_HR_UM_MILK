@@ -175,7 +175,7 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
       resultSelector: (s) => s.updatedEmp!,
     });
     await recalculateOpenPeriods(ctx, actorId);
-    queuePromotionOfficialEmail(ctx, promoted);
+    queuePromotionOfficialEmail(ctx, promoted, actorId);
     await ctx.audit.record(auditContext(request), { action: 'employee.promote_official', entity: 'EMPLOYEES', entityId: id, before: { employee_code: before.employee_code, stage: before.stage, official_from: before.official_from }, after: { employee_code: promoted.employee_code, stage: promoted.stage, official_from: promoted.official_from, probation_start: promoted.probation_start, probation_end: promoted.probation_end } });
     return sendSuccess(request, `Đã chuyển chính thức cho nhân sự ${promoted.full_name} (${promoted.employee_code}) từ ngày ${effectiveDate}`, mapEmployeeRecord(promoted, ctx));
   });
@@ -201,7 +201,7 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
     }
     const updatedEmps = empPatches.length > 0 ? await ctx.db.employees.batchUpdate(empPatches, actorId) : [];
     if (userPatches.length > 0) await ctx.db.users.batchUpdate(userPatches, actorId);
-    if (body.action === 'PROMOTE_OFFICIAL') updatedEmps.forEach((emp) => queuePromotionOfficialEmail(ctx, emp));
+    if (body.action === 'PROMOTE_OFFICIAL') updatedEmps.forEach((emp) => queuePromotionOfficialEmail(ctx, emp, actorId));
 
     await recalculateOpenPeriods(ctx, actorId);
     await ctx.audit.record(auditContext(request), {

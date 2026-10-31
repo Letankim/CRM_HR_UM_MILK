@@ -1,13 +1,61 @@
-import { DRIVE_FOLDERS, type Employee, type Payslip, type User } from '@umbm/shared';
+import { DRIVE_FOLDERS, SYSTEM_CONFIG, type Employee, type Payslip, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
-import { nowIso } from '../lib/time.js';
+import { dayjs, nowIso } from '../lib/time.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
+import { resolveSystemHrMailbox, resolveUserPersonalRealEmail, webOrigin } from './account-email-dispatcher.js';
+import { queuePayslipPublishedEmails } from './action-email-dispatcher.js';
 import { runBackgroundSideEffect } from './background-write.js';
 import { ensureSyncedNotifications } from './notification-sync.service.js';
 import { persistPayrollMedia, toCleanDriveSlug } from './payroll-media-storage.js';
 import { mapPayslip } from './payslip.service.js';
+
+/** Thông báo Chuông + Realtime + Email DUY NHẤT cho bộ phận Kế toán (FINANCE) khi nhân viên ký / xác nhận phiếu lương */
+export async function notifyFinancePayslipConfirmed(ctx: AppContext, slip: Payslip, actor: User, viaDirectSign: boolean) {
+  const rt = ctx.realtime();
+  rt?.toTargets({ roles: ['FINANCE', 'ADMIN'], userIds: [actor.id] }, SocketEvents.PAYROLL_UPDATED, {
+    periodId: slip.period_id, payslipId: slip.id, action: viaDirectSign ? 'SIGNED' : 'CONFIRMED',
+  });
+  const title = `Nhân sự ${slip.full_name} (${slip.employee_code}) đã ${viaDirectSign ? 'ký trực tiếp' : 'xác nhận'} phiếu lương`;
+  rt?.toTargets({ roles: ['FINANCE'], excludeUserId: actor.id }, SocketEvents.NOTIFICATION, {
+    kind: 'PAYROLL_CONFIRMED', entityId: slip.id, code: slip.payslip_code, title,
+  });
+  const financeUsers = ctx.db.users.filter((u) => u.role === 'FINANCE' && u.status === 'ACTIVE' && u.id !== actor.id);
+  const seenEmails = new Set<string>(), origin = webOrigin(ctx), actorEmail = resolveUserPersonalRealEmail(ctx, actor);
+  for (const u of financeUsers) {
+    const to = resolveUserPersonalRealEmail(ctx, u);
+    if (!to || to === actorEmail || seenEmails.has(to)) continue;
+    seenEmails.add(to);
+    ctx.email.enqueue({
+      to, recipientName: u.display_name || u.username, template: 'PAYSLIP_PUBLISHED', referenceCode: `${slip.payslip_code}-SIGNED`,
+      subject: `${SYSTEM_CONFIG.emailSubjectPrefix} ${title} (${slip.payslip_code})`,
+      summary: `${slip.full_name} (${slip.employee_code}) đã ${viaDirectSign ? 'ký tay trực tiếp' : 'xác nhận đồng ý'} phiếu lương ${slip.payslip_code} (${slip.period_name}) — Thực lĩnh ${Number(slip.net_vnd || 0).toLocaleString('vi-VN')} đ. Bộ phận Kế toán đã có thể đối chiếu mã QR để chuyển khoản thanh toán.`,
+      metadata: [
+        { label: 'Nhân sự xác nhận', value: `${slip.full_name} (${slip.employee_code})` },
+        { label: 'Mã phiếu & Kỳ lương', value: `${slip.payslip_code} · ${slip.period_name}` },
+        { label: 'Thực lĩnh (NET)', value: `${Number(slip.net_vnd || 0).toLocaleString('vi-VN')} đ` },
+        { label: 'Thời gian ký xác nhận', value: dayjs(slip.employee_confirmed_at || undefined).format('HH:mm DD/MM/YYYY') },
+      ],
+      actionLabel: 'Mở Bảng lương & Quét QR Thanh toán', actionUrl: `${origin}/admin/payroll`,
+    }, { dedupeKey: `payslip_confirm_fin:${slip.id}:${to}` });
+  }
+  if (seenEmails.size === 0) {
+    const fallback = resolveSystemHrMailbox(ctx);
+    if (fallback && fallback !== actorEmail) {
+      seenEmails.add(fallback);
+      ctx.email.enqueue({
+        to: fallback, recipientName: `Bộ phận Kế toán — ${SYSTEM_CONFIG.brandName}`, template: 'PAYSLIP_PUBLISHED', referenceCode: `${slip.payslip_code}-SIGNED`,
+        subject: `${SYSTEM_CONFIG.emailSubjectPrefix} ${title} (${slip.payslip_code})`,
+        summary: `${slip.full_name} (${slip.employee_code}) đã xác nhận phiếu lương ${slip.payslip_code} (${slip.period_name}) — Thực lĩnh ${Number(slip.net_vnd || 0).toLocaleString('vi-VN')} đ.`,
+        metadata: [{ label: 'Nhân sự', value: `${slip.full_name} (${slip.employee_code})` }, { label: 'Mã phiếu lương', value: slip.payslip_code }, { label: 'Thực lĩnh (NET)', value: `${Number(slip.net_vnd || 0).toLocaleString('vi-VN')} đ` }],
+        actionLabel: 'Mở Bảng lương & Quét QR Thanh toán', actionUrl: `${origin}/admin/payroll`,
+      }, { dedupeKey: `payslip_confirm_fin:${slip.id}:${fallback}` });
+    }
+  }
+  if (seenEmails.size > 0) void ctx.email.processQueueBatch(Math.min(6, seenEmails.size));
+  await runBackgroundSideEffect(() => ensureSyncedNotifications(ctx));
+}
 
 /** Bước 4: Nhân viên ký tay trực tiếp trên màn hình (CẤM tải ảnh lên) & xác nhận phiếu lương */
 export async function employeeDirectSignPayslip(
@@ -50,21 +98,7 @@ export async function employeeDirectSignPayslip(
   if (openTck) {
     await ctx.db.supportTickets.update(openTck.id, openTck.version, { status: 'CLOSED', closed_at: now, resolved_by: openTck.resolved_by || actor.id, resolved_at: openTck.resolved_at || now }, actor.id);
   }
-  const rt = ctx.realtime();
-  rt?.toTargets({ roles: ['ADMIN', 'FINANCE'], userIds: [actor.id] }, SocketEvents.PAYROLL_UPDATED, { periodId: slip.period_id, payslipId: updated.id, action: 'SIGNED' });
-  rt?.toTargets({ roles: ['FINANCE', 'ADMIN'], excludeUserId: actor.id }, SocketEvents.NOTIFICATION, {
-    kind: 'PAYROLL_CONFIRMED', entityId: updated.id, code: updated.payslip_code,
-    title: `Nhân sự ${updated.full_name} (${updated.employee_code}) đã ký trực tiếp phiếu lương — Sẵn sàng quét QR thanh toán`,
-  });
-  await runBackgroundSideEffect(async () => {
-    await ctx.db.notifications.insert({
-      recipient_user_id: '', recipient_role: 'ADMIN', branch_id: slip.branch_id || 'ALL', category: 'PAYROLL', severity: 'INFO',
-      title: `Nhân sự đã ký phiếu lương: ${updated.full_name} (${updated.employee_code})`,
-      body: `${updated.full_name} (${updated.employee_code}) đã ký xác nhận trực tiếp phiếu lương ${updated.payslip_code} — Mã QR ngân hàng đã hiển thị để chuyển khoản.`,
-      link: '/admin/payroll', read_at: '', entity_type: 'PAYSLIP_SIGNED_ADMIN', entity_id: updated.id,
-    }, actor.id);
-    await ensureSyncedNotifications(ctx);
-  });
+  await notifyFinancePayslipConfirmed(ctx, updated, actor, true);
   return updated;
 }
 
@@ -92,8 +126,9 @@ export async function markPayslipsPaid(ctx: AppContext, ids: string[], paymentRe
     toPay.push({ slip, periodCode: period.period_code, periodName: period.name, periodId: period.id, emp, ref: paymentReference.trim() || `QR-${period.period_code}-${slip.employee_code}` });
   }
 
+  const paidUserIds: string[] = [];
   if (toPay.length > 0) {
-    await ctx.db.payslips.batchUpdate(
+    const updatedSlips = await ctx.db.payslips.batchUpdate(
       toPay.map(({ slip, ref }) => ({ id: slip.id, expectedVersion: slip.version, patch: { status: 'PAID' as const, paid_at: now, paid_by: actor.id, payment_reference: ref } })),
       actor.id,
     );
@@ -107,29 +142,35 @@ export async function markPayslipsPaid(ctx: AppContext, ids: string[], paymentRe
         status: 'COMPLETED', note: paymentReference.trim(),
       }, actor.id),
     ));
-    await runBackgroundSideEffect(async () => {
-      await Promise.all(toPay.map(async ({ slip, periodName, emp, ref }) => {
-        const empUser = emp ? findLinkedUserForEmployee(emp, ctx) : undefined;
-        if (!empUser) return;
-        await ctx.db.notifications.insert({
-          recipient_user_id: empUser.id, recipient_role: empUser.role, branch_id: slip.branch_id || 'ALL', category: 'PAYROLL', severity: 'INFO',
-          title: `Đã chuyển khoản lương kỳ ${periodName}`,
-          body: `Phiếu lương ${slip.payslip_code} (${slip.net_vnd.toLocaleString('vi-VN')} đ) đã được xác nhận thanh toán chuyển khoản (${ref}).`,
-          link: '/nv/phieu-luong', read_at: '', entity_type: 'PAYSLIP_PAID', entity_id: slip.id,
-        }, actor.id);
-        ctx.realtime()?.toUser(empUser.id, SocketEvents.NOTIFICATION, { kind: 'PAYROLL_PAID', entityId: slip.id, code: slip.payslip_code, title: `Đã chuyển khoản lương kỳ ${periodName}` });
-      }));
-    });
+    const slipsByPeriod = new Map<string, Payslip[]>();
+    for (const item of toPay) {
+      const freshSlip = updatedSlips.find((u) => u.id === item.slip.id) ?? ctx.db.payslips.get(item.slip.id) ?? item.slip;
+      slipsByPeriod.set(item.periodId, [...(slipsByPeriod.get(item.periodId) ?? []), freshSlip]);
+      const empUser = item.emp ? findLinkedUserForEmployee(item.emp, ctx) : undefined;
+      if (empUser) {
+        paidUserIds.push(empUser.id);
+        if (empUser.id !== actor.id) {
+          ctx.realtime()?.toUser(empUser.id, SocketEvents.NOTIFICATION, { kind: 'PAYROLL_PAID', entityId: item.slip.id, code: item.slip.payslip_code, title: `Đã chuyển khoản lương kỳ ${item.periodName}` });
+        }
+      }
+    }
+    for (const [pid, periodSlips] of slipsByPeriod.entries()) {
+      const p = ctx.db.payPeriods.get(pid);
+      if (p) queuePayslipPublishedEmails(ctx, p, periodSlips, { actorEmail: actor.email, isPaid: true });
+    }
+    await runBackgroundSideEffect(() => ensureSyncedNotifications(ctx));
   }
 
   for (const pid of touchedPeriods) {
     const p = ctx.db.payPeriods.get(pid);
-    if (!p || p.status !== 'PUBLISHED') continue;
-    const activeSlips = ctx.db.payslips.filter((x) => x.period_id === pid && x.status !== 'REVISED');
-    if (activeSlips.length > 0 && activeSlips.every((x) => x.status === 'PAID')) {
-      await ctx.db.payPeriods.update(pid, p.version, { status: 'PAID', paid_at: now, paid_by: actor.id, ...(paymentReference.trim() ? { note: paymentReference.trim() } : {}) }, actor.id);
+    if (!p) continue;
+    if (p.status === 'PUBLISHED') {
+      const activeSlips = ctx.db.payslips.filter((x) => x.period_id === pid && x.status !== 'REVISED');
+      if (activeSlips.length > 0 && activeSlips.every((x) => x.status === 'PAID')) {
+        await ctx.db.payPeriods.update(pid, p.version, { status: 'PAID', paid_at: now, paid_by: actor.id, ...(paymentReference.trim() ? { note: paymentReference.trim() } : {}) }, actor.id);
+      }
     }
-    ctx.realtime()?.broadcast(SocketEvents.PAYROLL_UPDATED, { periodId: pid, action: 'PAID' });
+    ctx.realtime()?.toTargets({ roles: ['ADMIN', 'FINANCE', 'HR'], userIds: paidUserIds }, SocketEvents.PAYROLL_UPDATED, { periodId: pid, action: 'PAID' });
   }
   return orderedIds.map((id) => ctx.db.payslips.get(id)!).filter(Boolean).map((s) => mapPayslip(s, ctx));
 }

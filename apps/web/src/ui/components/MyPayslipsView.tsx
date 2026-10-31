@@ -59,7 +59,7 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
     mutationFn: (payload: { id: string; signature_base64: string }) =>
       api.post<MyPayslip>(`/me/payslips/${payload.id}/sign`, { signature_base64: payload.signature_base64, signature_source: 'DIRECT_CANVAS' }),
     onSuccess: () => {
-      message.success('Đã ký tay trực tiếp xác nhận phiếu lương thành công. Quản trị & Kế toán đã nhận thông báo chuyển khoản.');
+      message.success('Đã ký tay trực tiếp xác nhận phiếu lương thành công. Bộ phận Kế toán đã nhận thông báo để chuyển khoản thanh toán.');
       setSignModal(false);
       ['tickets', 'payroll-snapshots', 'payroll-periods', 'notifications'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
       void qc.invalidateQueries({ queryKey: ['me', 'payslips'] });

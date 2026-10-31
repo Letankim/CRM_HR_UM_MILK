@@ -37,7 +37,8 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
   };
   const notify = async (request: Parameters<typeof auditContext>[0], s: ShiftSwap, stage: 'CREATED' | 'PEER_RESPONDED' | 'DECIDED', message: string, ids: string[], auditFn?: () => Promise<unknown>) => {
     queueSwapEventEmail(ctx, s, stage, request.auth!.user.id);
-    emitScheduleRealtime(ctx, SocketEvents.SWAP_UPDATED, { branchId: s.branch_id, employeeIds: ids, kind: stage === 'DECIDED' ? 'SWAP_DECIDED' : stage === 'CREATED' ? 'SWAP_CREATED' : 'SWAP_PEER', message, actorId: request.auth!.user.id });
+    const kind = stage === 'DECIDED' ? 'SWAP_DECIDED' : stage === 'CREATED' ? 'SWAP_CREATED' : s.status === 'PEER_ACCEPTED' ? 'SWAP_PEER_ACCEPTED' : 'SWAP_PEER_DECLINED';
+    emitScheduleRealtime(ctx, SocketEvents.SWAP_UPDATED, { branchId: s.branch_id, employeeIds: ids, kind, message, actorId: request.auth!.user.id });
     await runBackgroundSideEffect(async () => { await ensureSyncedNotifications(ctx); if (auditFn) await auditFn(); });
   };
 

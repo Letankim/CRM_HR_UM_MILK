@@ -118,7 +118,7 @@ export async function testBankRoutes(app: FastifyInstance, ctx: AppContext) {
     });
     const now = nowIso(), closeAt = body.close_at || body.due_at || '2026-11-30T23:59:59+07:00', actorId = request.auth!.user.id;
     const createdList = await Promise.all(resolvedEmps.map((emp) => ctx.db.testAssignments.insert({ test_id: test.id, employee_id: emp.id, branch_id: emp.branch_id, open_at: now, close_at: closeAt, assigned_by: actorId, status: 'ASSIGNED', max_attempts: body.max_attempts ?? test.max_attempts, attempts_used: 0, best_score_percent: 0, passed: false, note: body.note ?? '' }, actorId)));
-    createdList.forEach((created, i) => queueTestAssignedEmail(ctx, { empId: resolvedEmps[i]!.id, testTitle: test.title, durationMinutes: test.duration_minutes, passScore: test.pass_percent, code: `ASG-${created.id.slice(0, 6)}` }));
+    createdList.forEach((created, i) => queueTestAssignedEmail(ctx, { empId: resolvedEmps[i]!.id, testTitle: test.title, durationMinutes: test.duration_minutes, passScore: test.pass_percent, code: `ASG-${created.id.slice(0, 6)}`, assignmentId: created.id, actorId }));
     return reply.code(201), sendSuccess(request, `Đã giao bài kiểm tra nghiệp vụ cho ${empIds.length} nhân sự thành công`, createdList[0] ?? null);
   });
 

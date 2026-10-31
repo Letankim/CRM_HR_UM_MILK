@@ -24,6 +24,8 @@ function resolveNotificationLinkForRole(n: NotificationRow, role: Role): string 
   if (n.entity_type === 'SWAP_USER') return resolveRolePortalPath(role, 'swap');
   if (n.entity_type === 'SHIFT_PUB_USER') return resolveRolePortalPath(role, 'schedule');
   if (n.entity_type === 'PAYSLIP_USER') return resolveRolePortalPath(role, 'payslip');
+  if (n.entity_type === 'TEST_ASSIGNED_USER') return resolveRolePortalPath(role, 'test');
+  if (n.entity_type === 'PROMOTED_OFFICIAL_USER') return resolveRolePortalPath(role, 'home');
   if (n.entity_type === 'TICKET_ASSIGNEE' || n.entity_type === 'TICKET_REPLY_STAFF' || n.entity_type === 'TICKET_USER') return resolveRolePortalPath(role, 'tickets');
   if (isEmp) {
     if (raw.startsWith('/nv')) return raw;
@@ -110,21 +112,19 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
       let matched = false;
       if (n.entity_type === 'ANNOUNCEMENTS' && n.entity_id) {
         const anc = ancsMap.get(n.entity_id);
-        if (anc) matched = user.role === 'ADMIN' || doesUserMatchAudience(ctx, user, anc.audience_scope || 'ALL', anc.audience_json);
+        if (anc) matched = doesUserMatchAudience(ctx, user, anc.audience_scope || 'ALL', anc.audience_json);
       } else {
         const userIds = splitCsv(n.recipient_user_id), roles = splitCsv(n.recipient_role);
         if (userIds.includes('NONE')) continue;
         if (userIds.length > 0 && !userIds.includes('ALL')) {
           matched = userIds.includes(user.id);
-        } else if (user.role === 'ADMIN') {
-          matched = (n.entity_type === 'TICKET_ASSIGNEE' || n.entity_type === 'TICKET_REPLY_STAFF') ? roles.includes('ADMIN') : !['ATT_ADJ_HR', 'LEAVE_ROLE', 'SHIFT_DRAFT_ROLE', 'SWAP_STORE', 'EMG_STORE'].includes(n.entity_type);
         } else {
           const { branchId: notifBranch, isBoOrHr } = resolveNotifMeta(n);
           const isWorkflowRoleNotif = ['ATT_ADJ_HR', 'LEAVE_ROLE', 'SHIFT_DRAFT_ROLE', 'SWAP_STORE', 'EMG_STORE'].includes(n.entity_type);
           if (user.role === 'STORE' && ((n.entity_type === 'ATT_ADJ_HR' && n.entity_id.endsWith('_STORE_CONFIRMED')) || (n.entity_type === 'EMG_STORE' && n.entity_id.endsWith('_ESCALATED')) || (isWorkflowRoleNotif && isBoOrHr))) continue;
           const inBranch = isGlobalBackofficeRole || (branchScope === 'ALL' && !isWorkflowRoleNotif) || (!isWorkflowRoleNotif && (!notifBranch || notifBranch === 'ALL')) || (Array.isArray(branchScope) && Boolean(notifBranch && notifBranch !== 'ALL') && branchScope.includes(notifBranch));
           if (!inBranch) continue;
-          matched = (roles.length > 0 && !roles.includes('ALL')) ? roles.includes(user.role) : (userIds.includes('ALL') || roles.includes('ALL'));
+          matched = (roles.length > 0 && !roles.includes('ALL')) ? roles.includes(user.role) : (userIds.includes('ALL') || roles.includes('ALL') || (userIds.length === 0 && roles.length === 0));
         }
       }
       if (!matched) continue;
@@ -178,9 +178,9 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
     const recipientRole = body.target_scope === 'ROLE' ? pickedRoles.join(',') : body.target_scope === 'ALL' ? 'ALL' : '';
     const created = await ctx.db.notifications.insert({ recipient_user_id: recipientUserId, recipient_role: recipientRole, branch_id: 'ALL', category: body.category, title: body.title, body: body.body, link: body.link || '/dashboard', severity: body.severity, read_at: '', entity_type: 'MANUAL', entity_id: '' }, actorId);
     const payload = { kind: 'ANNOUNCEMENT', id: created.id, code: 'NTF', title: created.title, summary: created.body, priority: created.severity === 'CRITICAL' ? 'URGENT' : 'NORMAL' };
-    if (body.target_scope === 'USER') pickedUsers.forEach((uid) => ctx.realtime()?.toUser(uid, SocketEvents.NOTIFICATION, payload));
-    else if (body.target_scope === 'ROLE') pickedRoles.forEach((r) => ctx.realtime()?.toRole(r, SocketEvents.NOTIFICATION, payload));
-    else ctx.realtime()?.broadcast(SocketEvents.NOTIFICATION, payload);
+    if (body.target_scope === 'USER') ctx.realtime()?.toTargets({ userIds: pickedUsers, excludeUserId: actorId }, SocketEvents.NOTIFICATION, payload);
+    else if (body.target_scope === 'ROLE') ctx.realtime()?.toTargets({ roles: pickedRoles as Role[], excludeUserId: actorId }, SocketEvents.NOTIFICATION, payload);
+    else ctx.realtime()?.toTargets({ roles: [...ROLES], excludeUserId: actorId }, SocketEvents.NOTIFICATION, payload);
     const mailUsers = ctx.db.users.filter((u) => u.status === 'ACTIVE' && u.id !== actorId && (body.target_scope === 'ALL' || (body.target_scope === 'USER' && pickedUsers.includes(u.id)) || (body.target_scope === 'ROLE' && pickedRoles.includes(u.role))));
     const seenEmails = new Set<string>(), origin = webOrigin(ctx);
     mailUsers.forEach((u) => {

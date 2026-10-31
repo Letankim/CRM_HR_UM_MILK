@@ -1,4 +1,4 @@
-import { isEmployeeRole, type Announcement, type Role } from '@umbm/shared';
+import { isEmployeeRole, ROLES, type Announcement, type Role } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { APP_TZ, dayjs, nowIso } from '../lib/time.js';
 import { SocketEvents } from '../realtime/realtime.js';
@@ -41,7 +41,7 @@ export function isScheduledAnnouncementDue(rawScheduledAt: string | undefined | 
   return dueMs !== null && dueMs <= nowEpochMs;
 }
 
-export async function dispatchAnnouncement(ctx: AppContext, anc: Announcement, actorId: string): Promise<void> {
+export async function dispatchAnnouncement(ctx: AppContext, anc: Announcement, actorId: string, opts?: { isScheduledRun?: boolean }): Promise<void> {
   let target = 'ALL';
   try {
     target = JSON.parse(anc.audience_json || '{}').target || 'ALL';
@@ -109,6 +109,7 @@ export async function dispatchAnnouncement(ctx: AppContext, anc: Announcement, a
         ack_at: '',
       }, actorId));
     }
+    if (!opts?.isScheduledRun && u.id === actorId) continue;
     const personalEmail = resolveUserPersonalRealEmail(ctx, u);
     if (!personalEmail || seenAncEmails.has(personalEmail)) continue;
     seenAncEmails.add(personalEmail);
@@ -139,16 +140,10 @@ export async function dispatchAnnouncement(ctx: AppContext, anc: Announcement, a
   const rt = ctx.realtime();
   if (rt) {
     if (isGlobal) {
-      rt.broadcast(SocketEvents.NOTIFICATION, payload);
+      rt.toTargets({ roles: [...ROLES], ...(opts?.isScheduledRun ? {} : { excludeUserId: actorId }) }, SocketEvents.NOTIFICATION, payload);
     } else {
-      const notifiedIds = new Set<string>();
-      for (const u of matchedUsers) {
-        notifiedIds.add(u.id);
-        rt.toUser(u.id, SocketEvents.NOTIFICATION, payload);
-      }
-      if (anc.created_by && !notifiedIds.has(anc.created_by)) rt.toUser(anc.created_by, SocketEvents.NOTIFICATION, payload);
-      rt.toRole('ADMIN', SocketEvents.NOTIFICATION, payload);
-      rt.toRole('MKT', SocketEvents.NOTIFICATION, payload);
+      const targetIds = matchedUsers.map((u) => u.id).filter((id) => Boolean(opts?.isScheduledRun || id !== actorId));
+      if (targetIds.length > 0) rt.toTargets({ userIds: targetIds }, SocketEvents.NOTIFICATION, payload);
     }
   }
 }
@@ -174,7 +169,7 @@ export async function sweepDueScheduledAnnouncements(ctx: AppContext, actorId = 
       const effectiveActor = fresh.created_by || actorId;
       const sentAt = fresh.sent_at || nowIso();
       const updated = await ctx.db.announcements.update(fresh.id, fresh.version, { status: 'SENT', sent_at: sentAt }, effectiveActor);
-      await dispatchAnnouncement(ctx, updated, effectiveActor);
+      await dispatchAnnouncement(ctx, updated, effectiveActor, { isScheduledRun: true });
       await ctx.audit.record(
         { actorUserId: effectiveActor, actorRole: 'MKT', ip: '127.0.0.1', userAgent: 'announcement-scheduler', requestId: `req_sched_${fresh.id.slice(-10)}` },
         { action: 'mkt.announcement.scheduled_publish', entity: 'ANNOUNCEMENTS', entityId: updated.id, after: { code: updated.code, scheduled_at: updated.scheduled_at, sent_at: sentAt } },

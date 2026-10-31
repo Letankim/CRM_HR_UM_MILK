@@ -122,7 +122,7 @@ export async function payrollSignatureRoutes(app: FastifyInstance, ctx: AppConte
     const updated = await employeeDirectSignPayslip(ctx, slip, { signatureBase64: body.signature_base64, signatureSource: body.signature_source }, user);
     const reqAudit = auditContext(request);
     await runBackgroundSideEffect(() => ctx.audit.record(reqAudit, { action: 'payslip.employee_sign', entity: 'PAYSLIPS', entityId: updated.id, after: { payslip_code: updated.payslip_code, employee_confirmed_at: updated.employee_confirmed_at } }));
-    return sendSuccess(request, 'Đã ký tay xác nhận phiếu lương thành công. Quản trị & Kế toán đã nhận thông báo chuyển khoản.', mapPayslipWithTicket(ctx, updated));
+    return sendSuccess(request, 'Đã ký tay xác nhận phiếu lương thành công. Bộ phận Kế toán đã nhận thông báo để chuyển khoản thanh toán.', mapPayslipWithTicket(ctx, updated));
   });
 
   app.post('/api/admin/payroll/payslips/:id/pay', { preHandler: requirePermission('payroll.pay', 'payroll.manage', 'system.config') }, async (request) => {

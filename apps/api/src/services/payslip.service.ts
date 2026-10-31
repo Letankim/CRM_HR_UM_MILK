@@ -17,19 +17,24 @@ function collectRealPayslipEmailRefs(ctx: AppContext): string {
   ].join(' | ');
 }
 
-function emitPayslipRealtime(ctx: AppContext, period: PayPeriod, slips: Payslip[], isPaid = false) {
-  ctx.realtime()?.broadcast(SocketEvents.PAYROLL_UPDATED, { periodId: period.id, status: period.status });
-  const notifiedUsers = new Set<string>();
+function resolvePayslipLinkedUsers(ctx: AppContext, slips: Payslip[]): Array<{ slip: Payslip; userId: string }> {
+  const out: Array<{ slip: Payslip; userId: string }> = [], seen = new Set<string>();
   for (const s of slips) {
     const emp = ctx.db.employees.get(s.employee_id) ?? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === s.employee_code.trim().toUpperCase());
     const u = emp ? findLinkedUserForEmployee(emp, ctx) : undefined;
-    if (u && !notifiedUsers.has(u.id)) {
-      notifiedUsers.add(u.id);
-      ctx.realtime()?.toUser(u.id, SocketEvents.NOTIFICATION, {
-        kind: 'PAYROLL', code: s.payslip_code,
-        title: isPaid ? `Đã thanh toán lương kỳ ${period.name}` : `Phiếu lương ${period.name} đã phát hành`,
-      });
-    }
+    if (u && !seen.has(u.id)) { seen.add(u.id); out.push({ slip: s, userId: u.id }); }
+  }
+  return out;
+}
+
+function emitPayslipRealtime(ctx: AppContext, period: PayPeriod, allActiveSlips: Payslip[], notifySlips: Payslip[], isPaid = false) {
+  const allUserIds = resolvePayslipLinkedUsers(ctx, allActiveSlips).map((x) => x.userId);
+  ctx.realtime()?.toTargets({ roles: ['ADMIN', 'FINANCE', 'HR'], userIds: allUserIds }, SocketEvents.PAYROLL_UPDATED, { periodId: period.id, status: period.status });
+  for (const { slip, userId } of resolvePayslipLinkedUsers(ctx, notifySlips)) {
+    ctx.realtime()?.toUser(userId, SocketEvents.NOTIFICATION, {
+      kind: 'PAYROLL', code: slip.payslip_code,
+      title: isPaid ? `Đã thanh toán lương kỳ ${period.name}` : `Phiếu lương ${period.name} đã phát hành`,
+    });
   }
 }
 
@@ -53,9 +58,9 @@ export async function generatePayslips(
   const created: Payslip[] = toCreate.length > 0
     ? await Promise.all(toCreate.map((s) => ctx.db.payslips.insert({ ...buildPayslipPayload(ctx, period, s, 1, s.net_vnd, s.gross_vnd), status: targetStatus }, actorId)))
     : [];
-  if (targetStatus === 'PAID') {
-    const unpaid = existingActive.filter((p) => p.status === 'PUBLISHED');
-    if (unpaid.length > 0) await ctx.db.payslips.batchUpdate(unpaid.map((p) => ({ id: p.id, expectedVersion: p.version, patch: { status: 'PAID' as const } })), actorId);
+  const unpaid = targetStatus === 'PAID' ? existingActive.filter((p) => p.status === 'PUBLISHED') : [];
+  if (unpaid.length > 0) {
+    await ctx.db.payslips.batchUpdate(unpaid.map((p) => ({ id: p.id, expectedVersion: p.version, patch: { status: 'PAID' as const } })), actorId);
   }
   const activeSlips = ctx.db.payslips.filter((p) => p.period_id === period.id && p.status !== 'REVISED');
   let slipsToEmail: Payslip[] = [];
@@ -68,11 +73,12 @@ export async function generatePayslips(
     if (slipsToEmail.length > 0) queuePayslipPublishedEmails(ctx, period, slipsToEmail, { actorEmail: opts?.actorEmail, isPaid: opts?.isPaid, force: opts?.forceEmail });
   }
   await ensureSyncedNotifications(ctx);
-  if (created.length > 0 || slipsToEmail.length > 0 || opts?.isPaid) emitPayslipRealtime(ctx, period, activeSlips, Boolean(opts?.isPaid));
+  const notifySlips = opts?.forceEmail || opts?.isPaid ? (unpaid.length > 0 || opts?.forceEmail ? activeSlips : created) : (created.length > 0 ? created : slipsToEmail);
+  if (notifySlips.length > 0) emitPayslipRealtime(ctx, period, activeSlips, notifySlips, Boolean(opts?.isPaid));
   return activeSlips;
 }
 
-/** Tự động kiểm tra & sinh bù phiếu lương + thông báo/email còn thiếu cho các kỳ đã PUBLISHED / PAID */
+/** Tự động kiểm tra & sinh bù phiếu lương còn thiếu cho các kỳ đã PUBLISHED / PAID (không phát lặp thông báo/email) */
 export async function ensurePublishedPeriodPayslips(ctx: AppContext, actorId = 'system-sync', opts?: { skipEmail?: boolean }): Promise<void> {
   const closedPeriods = ctx.db.payPeriods.filter((p) => p.status === 'PUBLISHED' || p.status === 'PAID');
   if (closedPeriods.length === 0) return;
@@ -81,9 +87,10 @@ export async function ensurePublishedPeriodPayslips(ctx: AppContext, actorId = '
     const snaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === p.id);
     const active = ctx.db.payslips.filter((x) => x.period_id === p.id && x.status !== 'REVISED');
     const needsPaidSync = p.status === 'PAID' && active.some((x) => x.status === 'PUBLISHED');
-    const missingEmail = !opts?.skipEmail && active.length > 0 && !sentRefs.includes(p.period_code) && active.some((x) => !sentRefs.includes(x.payslip_code));
-    if (snaps.length === 0 || active.length < snaps.length || needsPaidSync || missingEmail) {
-      await generatePayslips(ctx, p, actorId, { skipEmail: opts?.skipEmail });
+    const periodLogs = opts?.skipEmail ? [] : ctx.db.deliveryLogs.filter((l) => l.channel === 'EMAIL' && l.status !== 'FAILED' && l.announcement_id.includes(p.period_code));
+    const hasOnlySyntheticLog = !opts?.skipEmail && periodLogs.length > 0 && periodLogs.every((l) => isSyntheticDemoEmail(l.recipient_user_id)) && !sentRefs.includes(p.period_code);
+    if (snaps.length === 0 || active.length < snaps.length || needsPaidSync || hasOnlySyntheticLog) {
+      await generatePayslips(ctx, p, actorId, { skipEmail: opts?.skipEmail, isPaid: needsPaidSync });
     }
   }
 }

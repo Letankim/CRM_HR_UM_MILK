@@ -106,7 +106,7 @@ export async function syncSupportTicketBellNotifications(
     const lastStaffMsg = staffMsgs[staffMsgs.length - 1];
     const isResolvedByStaff = (t.status === 'RESOLVED' || t.status === 'CLOSED') && Boolean(t.resolved_by && t.resolved_by !== t.requester_user_id);
     if (t.requester_user_id && (staffMsgs.length > 0 || isResolvedByStaff)) {
-      const done = t.status === 'RESOLVED' || t.status === 'CLOSED';
+      const done = isResolvedByStaff;
       await ins({
         recipient_user_id: t.requester_user_id, recipient_role: '', branch_id: mapped.branch_id || 'ALL', category: cat, severity: 'INFO',
         title: done ? `Phiếu hỗ trợ (${t.ticket_code}) đã được phản hồi & giải quyết` : `Phản hồi mới cho phiếu hỗ trợ (${t.ticket_code})`,
@@ -135,7 +135,7 @@ export function emitAndEmailTicketEvent(
   const payload = { kind: `TICKET_${eventKind}`, entityId: ticket.id, code: ticket.ticket_code, branchId: mapped.branch_id, title, summary: latestMessage || ticket.description, actorId };
   rt?.toTargets(targets, SocketEvents.TICKET_UPDATED, payload);
   rt?.toTargets(targets, SocketEvents.NOTIFICATION, payload);
-  if (ticket.related_entity_type === 'PAYSLIP') rt?.broadcast(SocketEvents.PAYROLL_UPDATED, { periodId: '', ticketId: ticket.id });
+  if (ticket.related_entity_type === 'PAYSLIP') rt?.toTargets({ roles: ['ADMIN', 'FINANCE', 'HR'], userIds: [ticket.requester_user_id] }, SocketEvents.PAYROLL_UPDATED, { periodId: '', ticketId: ticket.id });
 
   const origin = webOrigin(ctx);
   if (notifyRequester) {

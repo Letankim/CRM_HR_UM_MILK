@@ -73,8 +73,8 @@ async function notifyInterviewParticipants(ctx: AppContext, actorId: string, par
     severity: 'INFO', read_at: '', entity_type: 'INTERVIEWS', entity_id: params.interviewId,
   }, actorId);
   const wsPayload = { kind: params.kind, id: notif.id, code: params.code, title: params.title, summary: params.body, priority: 'NORMAL' };
-  recipients.userIds.forEach((uid) => ctx.realtime()?.toUser(uid, SocketEvents.NOTIFICATION, wsPayload));
-  if (recipients.userIds.length === 0) recipients.roles.forEach((r) => ctx.realtime()?.toRole(r, SocketEvents.NOTIFICATION, wsPayload));
+  recipients.userIds.filter((uid) => uid !== actorId).forEach((uid) => ctx.realtime()?.toUser(uid, SocketEvents.NOTIFICATION, wsPayload));
+  if (recipients.userIds.length === 0 && recipients.roles.length > 0) ctx.realtime()?.toTargets({ roles: recipients.roles as Role[], excludeUserId: actorId }, SocketEvents.NOTIFICATION, wsPayload);
   return recipients.userIds;
 }
 
@@ -150,7 +150,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       title: `Lịch phỏng vấn mới: ${cand.full_name} (${cand.candidate_code})`,
       body: `Bạn được đính kèm tham gia phỏng vấn ứng viên ${cand.full_name} vào lúc ${slotLocal} (${body.duration_minutes} phút). Link họp: ${meetLink}`,
     });
-    queueInterviewEmails(ctx, { candidate: cand, interview: created });
+    queueInterviewEmails(ctx, { candidate: cand, interview: created, interviewerUserIds: notifiedUsers, actorId });
     await ctx.audit.record(auditContext(request), { action: 'interview.create', entity: 'INTERVIEWS', entityId: created.id, after: { candidate_id: created.candidate_id, start_at: created.start_at, interviewers: rawInterviewers, notified_users: notifiedUsers } });
     reply.code(201);
     return sendSuccess(request, 'Đã đặt lịch phỏng vấn và gửi thông báo tới tất cả người tham gia phỏng vấn thành công', created);
@@ -183,12 +183,12 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
         reschedule_reason: body.reschedule_reason ?? before.reschedule_reason, ...(body.comment ? { comment: body.comment } : {}),
       }, actorId);
       const allRelatedIds = Array.from(new Set([...before.interviewer_id.split(',').map((s) => s.trim()), ...nextInterviewers].filter(Boolean)));
-      await notifyInterviewParticipants(ctx, actorId, {
+      const updatedUserIds = await notifyInterviewParticipants(ctx, actorId, {
         rawIds: allRelatedIds, branchId: before.branch_id || cand?.branch_pref || 'ALL', interviewId: id, code: cand?.candidate_code || id, kind: 'INTERVIEW_UPDATED',
         title: `Cập nhật lịch phỏng vấn: ${cand?.full_name ?? before.candidate_id}${cand?.candidate_code ? ` (${cand.candidate_code})` : ''}`,
         body: `Lịch phỏng vấn ứng viên ${cand?.full_name ?? before.candidate_id} đã được chỉnh sửa sang ${slotLocal} (${nextDuration} phút)${updatedConfirm.reschedule_reason ? ` — Ghi chú: ${updatedConfirm.reschedule_reason}` : ''}. Link họp: ${nextMeet}`,
       });
-      if (cand) queueInterviewEmails(ctx, { candidate: cand, interview: updatedConfirm, isUpdate: true });
+      if (cand) queueInterviewEmails(ctx, { candidate: cand, interview: updatedConfirm, isUpdate: true, interviewerUserIds: updatedUserIds, actorId });
       await ctx.audit.record(auditContext(request), { action: 'interview.update_status', entity: 'INTERVIEWS', entityId: id, before: { start_at: before.start_at, interviewer_id: before.interviewer_id, status: before.status }, after: { start_at: updatedConfirm.start_at, interviewer_id: updatedConfirm.interviewer_id, status: updatedConfirm.status } });
       return sendSuccess(request, 'Đã cập nhật lịch phỏng vấn và gửi thông báo đến những người liên quan', updatedConfirm);
     }
