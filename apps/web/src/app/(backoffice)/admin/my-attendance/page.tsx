@@ -119,7 +119,7 @@ export default function MyAttendancePage() {
                 <>
                   <Flex justify="space-between" align="center" style={{ marginBottom: 10 }}><Typography.Text type="secondary">Danh sách điểm danh Vào ca &amp; Ra ca theo từng ca làm việc của riêng bạn.</Typography.Text><Button size="small" icon={<DownloadOutlined />} onClick={() => exportAttendanceEventsExcel(events)}>Xuất Excel Điểm danh của bạn</Button></Flex>
                   <SelectableTable<AttendanceEventRow>
-                    size="small" rowKey="id" loading={myQ.isLoading} pagination={myEventsPag} dataSource={groupAttendanceEventsByShift(events)} locale={{ emptyText: 'Bạn chưa có lượt điểm danh nào trong kỳ.' }}
+                    size="small" rowKey="id" loading={myQ.isLoading} pagination={myEventsPag} dataSource={groupAttendanceEventsByShift(events)} onRowClick={setDetailEvent} locale={{ emptyText: 'Bạn chưa có lượt điểm danh nào trong kỳ.' }}
                     bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAttendanceEventsExcel(rows) }]}
                     columns={[
                       { title: 'Ngày & Ca làm việc', width: 220, render: (_, r) => <div><div style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel)} ({r.shiftTimeRange || '07:00 – 12:00'})</div><div className="num" style={{ fontSize: 12, color: BRAND.textSecondary }}>Ngày: {r.work_date ? dayjs(r.work_date).format('DD/MM/YYYY') : '—'}</div></div> },

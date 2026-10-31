@@ -54,7 +54,7 @@ export function EmployeeSwapsTable({ swaps, empId, empCode, refreshing = false, 
 
   return (
     <SelectableTable<Row>
-      size="small" rowKey="id" loading={refreshing} pagination={pag} dataSource={swaps}
+      size="small" rowKey="id" loading={refreshing} pagination={pag} dataSource={swaps} onRowClick={onViewDetail}
       bulkActions={[
         { key: 'accept', label: 'Đồng ý đã chọn', type: 'primary', icon: <CheckCircleOutlined />, loading: peerRespondMut.isPending, eligibleFilter: canRespond, onClick: accept },
         { key: 'reject', label: 'Từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: peerRespondMut.isPending, eligibleFilter: canRespond, onClick: (rows) => respond(rows, false) },

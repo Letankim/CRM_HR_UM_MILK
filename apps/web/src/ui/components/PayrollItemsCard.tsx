@@ -112,7 +112,7 @@ export function PayrollItemsCard({
           </Flex>
         </div>
         <SelectableTable<PayrollItemRow>
-          size="small" rowKey="id" loading={itemsQ.isLoading || itemsQ.isFetching}
+          size="small" rowKey="id" loading={itemsQ.isLoading || itemsQ.isFetching} onRowClick={setViewing}
           bulkActions={[
             { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (sel) => exportToExcel({ fileName: 'Khoan_muc_thuong_phu_cap_khau_tru.xls', sheetTitle: 'Danh sách Khoản Mục Thưởng / Phụ Cấp / Khấu Trừ', rows: sel, columns: [{ header: 'Mã NV', key: 'employeeCode' }, { header: 'Nhân sự', key: 'employeeName' }, { header: 'Loại khoản mục', key: 'itemTypeLabel' }, { header: 'Nội dung', key: 'title' }, { header: 'Thành tiền', key: 'totalAmountVnd', isCurrency: true }] }) },
             ...(editable ? [{ key: 'del', label: 'Xóa khoản mục đã chọn', danger: true, icon: <DeleteOutlined />, loading: delItem.isPending, confirm: 'Xác nhận xóa các khoản mục đã chọn?', onClick: (sel: PayrollItemRow[]) => delItem.mutate(sel) }] : []),

@@ -7,7 +7,9 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { exportToExcel } from '@/lib/export-excel';
 import { useClientPagination } from '../hooks/useClientPagination';
+import { buildClickableRowProps } from './BulkActionBar';
 import type { MissingShiftDetailItem, PayPeriodRow, PayrollSnapshotItem } from './payroll-types';
+import { ShiftAttendanceDetailModal } from './ShiftAttendanceDetailModal';
 
 interface Props {
   open: boolean;
@@ -35,6 +37,7 @@ export function PayrollMissingShiftsModal({
 }: Props) {
   const [q, setQ] = useState('');
   const [issueFilter, setIssueFilter] = useState<string>('ALL');
+  const [attShiftId, setAttShiftId] = useState<string | null>(null);
   const pagination = useClientPagination(10, 'ca thiếu');
 
   const baseList = useMemo(() => {
@@ -80,6 +83,7 @@ export function PayrollMissingShiftsModal({
   };
 
   return (
+    <>
     <Modal
       open={open} onCancel={onClose} width="min(1180px, 96vw)" destroyOnHidden
       title={
@@ -129,6 +133,7 @@ export function PayrollMissingShiftsModal({
         </div>
         <Table<MissingShiftDetailItem>
           size="small" rowKey={(r, i) => `${r.assignmentId}-${r.date}-${r.shiftCode}-${i}`} pagination={pagination} dataSource={filtered} scroll={{ x: 1180 }}
+          onRow={(r) => r.assignmentId ? buildClickableRowProps(r, (item) => setAttShiftId(item.assignmentId)) : {}}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có ca thiếu chấm công Vào/Ra nào — Dữ liệu công đã khớp hợp lệ" /> }}
           columns={[
             { title: 'Nhân sự & Chi nhánh', width: 195, fixed: 'left', render: (_, r) => <div><strong>{r.fullName}</strong><div style={{ fontSize: 12, color: '#64748B' }}>{r.employeeCode} · {r.branchName}</div></div> },
@@ -154,5 +159,7 @@ export function PayrollMissingShiftsModal({
         />
       </Space>
     </Modal>
+    <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
+    </>
   );
 }

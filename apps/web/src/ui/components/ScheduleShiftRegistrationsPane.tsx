@@ -69,7 +69,7 @@ export function ScheduleShiftRegistrationsPane({ branchOptions, onDetail }: { br
         refreshing={q.isFetching && !q.isLoading} onRefresh={refresh} onExport={() => exportMyShiftsExcel(rows)}
       />
       <SelectableTable<RowRec>
-        size="small" rowKey="id" loading={q.isLoading} dataSource={rows} scroll={{ x: 1050 }}
+        size="small" rowKey="id" loading={q.isLoading} dataSource={rows} scroll={{ x: 1050 }} onRowClick={(r) => onDetail({ kind: 'shift', record: r })}
         pagination={{ current: page, pageSize: perPage, total: q.data?.meta.pagination.total ?? 0, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], showTotal: (t) => `Tổng ${t} ca chờ duyệt`, onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } }}
         bulkActions={[
           ...(canPublish ? [

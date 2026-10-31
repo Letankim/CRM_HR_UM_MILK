@@ -10,10 +10,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
+import { buildClickableRowProps } from './BulkActionBar';
 import {
   DataPartitionRolloverModal, monthKeyLabel, PARTITION_BASE_LABELS,
   PARTITION_MODE_LABELS, partitionBaseKey, partitionTabLabel, type MonthlyPartitionMode,
 } from './DataPartitionRolloverModal';
+import { useQuickDetail } from './RecordQuickDetailModal';
 
 interface PartitionItem {
   monthKey: string; label: string; isActive: boolean; mode?: MonthlyPartitionMode;
@@ -33,6 +35,7 @@ export function DataPartitionCard() {
   const can = useCan();
   const canEdit = can('system.config'), canRead = can('system.config', 'integration.read');
   const { message, modal } = App.useApp();
+  const showDetail = useQuickDetail();
   const [rolloverOpen, setRolloverOpen] = useState(false);
   const [switchingKey, setSwitchingKey] = useState<string | null>(null);
 
@@ -68,8 +71,7 @@ export function DataPartitionCard() {
 
   return (
     <Card
-      size="small"
-      title={<span><DatabaseOutlined /> Quản lý dữ liệu theo tháng (Google Sheets)</span>}
+      size="small" title={<span><DatabaseOutlined /> Quản lý dữ liệu theo tháng (Google Sheets)</span>}
       extra={
         <Space size={8} wrap>
           <Button size="small" icon={<ReloadOutlined />} loading={q.isFetching && !q.isLoading} onClick={() => q.refetch()}>Làm mới</Button>
@@ -77,9 +79,7 @@ export function DataPartitionCard() {
         </Space>
       }
     >
-      {q.isLoading ? (
-        <Skeleton active />
-      ) : q.isError || !d ? (
+      {q.isLoading ? <Skeleton active /> : q.isError || !d ? (
         <Alert type="error" showIcon message="Không thể tải thông tin dữ liệu tháng" description={q.error instanceof ApiClientError ? q.error.message : undefined} />
       ) : (
         <Space direction="vertical" size={14} style={{ width: '100%' }}>
@@ -149,6 +149,7 @@ export function DataPartitionCard() {
             </Space>
             <Table<PartitionItem>
               size="small" bordered rowKey={(r) => r.monthKey || 'ROOT'} pagination={false} dataSource={d.items} scroll={{ x: 820 }}
+              onRow={(r) => buildClickableRowProps(r, (item) => showDetail('partition', item))}
               columns={[
                 { title: 'NO', width: 52, align: 'center', render: (_v, _r, idx) => <span className="mono" style={{ color: '#64748B', fontWeight: 600 }}>{String(idx + 1).padStart(2, '0')}</span> },
                 {
@@ -208,11 +209,7 @@ export function DataPartitionCard() {
         </Space>
       )}
       {canEdit && (
-        <DataPartitionRolloverModal
-          open={rolloverOpen} activeMonth={d?.activeMonth ?? ''}
-          existingMonthKeys={(d?.items ?? []).map((i) => i.monthKey).filter(Boolean)}
-          onClose={() => setRolloverOpen(false)}
-        />
+        <DataPartitionRolloverModal open={rolloverOpen} activeMonth={d?.activeMonth ?? ''} existingMonthKeys={(d?.items ?? []).map((i) => i.monthKey).filter(Boolean)} onClose={() => setRolloverOpen(false)} />
       )}
     </Card>
   );

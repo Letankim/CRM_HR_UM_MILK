@@ -156,6 +156,7 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
         loading={listQ.isLoading}
         codeExtractor={(r) => r.code}
         onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }}
+        onRowClick={handleOpenDetail}
         bulkActions={[
           { key: 'bulk-read', label: 'Đánh dấu đã đọc đã chọn', type: 'primary', icon: <CheckCircleOutlined />, eligibleFilter: (r) => r.readStatus === 'UNREAD', onClick: (rows, clear) => { markAllMut.mutate(rows.map((r) => r.id)); clear(); } },
           { key: 'bulk-export', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: (rows) => { handleExport(rows); } },
@@ -167,7 +168,7 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
             dataIndex: 'title',
             width: 380,
             render: (_, r) => (
-              <div style={{ cursor: 'pointer', minWidth: 0 }} onClick={() => handleOpenDetail(r)}>
+              <div data-no-row-click style={{ cursor: 'pointer', minWidth: 0 }} onClick={() => handleOpenDetail(r)}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
                   {r.readStatus === 'UNREAD' && <Badge status="processing" color="#2563EB" style={{ marginTop: 4 }} />}
                   <Typography.Link strong={r.readStatus === 'UNREAD'} style={{ fontSize: 13, lineHeight: 1.4 }}>{r.title}</Typography.Link>

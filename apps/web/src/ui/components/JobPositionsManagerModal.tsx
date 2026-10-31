@@ -101,7 +101,7 @@ export function JobPositionsTableCard({ canManage = true }: { canManage?: boolea
         }
       >
         <SelectableTable<JobPositionItem>
-          size="small" rowKey="code" pagination={false} loading={isLoading} dataSource={positions}
+          size="small" rowKey="code" pagination={false} loading={isLoading} dataSource={positions} onRowClick={setViewing}
           bulkActions={[
             { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Danh_muc_vi_tri_cong_viec.xls', sheetTitle: 'Danh mục Vị trí Công việc & Phân nhóm Nhân sự', rows, columns: [{ header: 'Mã vị trí', key: 'code' }, { header: 'Tên vị trí công việc', key: 'label' }, { header: 'Bộ phận', key: 'department' }, { header: 'Nhân sự hiện có', key: 'employeeCount', align: 'right' }, { header: 'Mô tả', key: 'description' }] }) },
             ...(canEditPos ? [{ key: 'del', label: 'Xóa vị trí đã chọn', danger: true, icon: <DeleteOutlined />, loading: delMut.isPending, confirm: 'Xác nhận xóa các vị trí công việc đã chọn?', onClick: (rows: JobPositionItem[]) => delMut.mutate(rows.map((r) => r.code)) }] : []),

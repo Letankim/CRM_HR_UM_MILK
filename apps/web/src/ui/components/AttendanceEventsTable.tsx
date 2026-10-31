@@ -186,7 +186,7 @@ export function AttendanceEventsTable({ externalFilters }: Props) {
         </Flex>
       </div>
       <SelectableTable<AttendanceEventRow>
-        size="small" rowKey="id" loading={sessionsQ.isLoading || sessionsQ.isFetching}
+        size="small" rowKey="id" loading={sessionsQ.isLoading || sessionsQ.isFetching} onRowClick={setDetailRow}
         bulkActions={[
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (sel) => exportAttendanceEventsExcel(sel) },
           ...(canManageEvents ? [{ key: 'delete', label: 'Xóa điểm danh đã chọn', danger: true, icon: <DeleteOutlined />, loading: deleteMut.isPending, confirm: 'Xác nhận xóa các bản ghi điểm danh đã chọn?', onClick: (sel: AttendanceEventRow[]) => deleteMut.mutate(sel) }] : []),

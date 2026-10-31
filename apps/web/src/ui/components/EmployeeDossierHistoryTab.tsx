@@ -6,6 +6,7 @@ import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
+import { buildClickableRowProps } from './BulkActionBar';
 import { DateStringPicker } from './DateTimePickers';
 import type { EmployeeRowItem } from './employee-table-columns';
 import { usePermissionGuard } from './GuardButton';
@@ -58,6 +59,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
             scroll={{ x: 920 }}
             pagination={histPag}
             dataSource={historyRows}
+            onRow={(r) => buildClickableRowProps(r, setViewingStage)}
             columns={[
               { title: 'Chuyển đổi giai đoạn', key: 'transition', width: 240, render: (_, r) => <Space size={6} wrap><StatusTag value={r.fromStage} /><span style={{ color: '#94A3B8', fontWeight: 600 }}>→</span><StatusTag value={r.toStage} /></Space> },
               { title: 'Ngày hiệu lực', dataIndex: 'effectiveFrom', width: 125, render: (v: string) => <span className="num" style={{ fontWeight: 600 }}>{v}</span> },
@@ -89,6 +91,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
             scroll={{ x: 760 }}
             pagination={shiftPag}
             dataSource={shiftRows}
+            onRow={(r) => buildClickableRowProps(r, setViewingShift)}
             columns={[
               { title: 'Ngày làm việc', dataIndex: 'work_date', width: 115, render: (v: string) => <span className="num" style={{ fontWeight: 600 }}>{v}</span> },
               { title: 'Khung ca & Chi nhánh', key: 'shift', render: (_, r) => <div><div style={{ fontWeight: 600, fontSize: 13 }}>{r.shiftLabel}</div>{r.branchName && <div style={{ fontSize: 11, color: '#64748B' }}>{r.branchName}</div>}</div> },

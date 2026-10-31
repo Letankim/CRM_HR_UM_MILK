@@ -15,6 +15,8 @@ import {
 } from '@umbm/shared';
 import { api } from '@/lib/api';
 import type { AccountRowItem } from './AccountDetailDrawer';
+import { buildClickableRowProps } from './BulkActionBar';
+import { useQuickDetail } from './RecordQuickDetailModal';
 
 interface AccountAuditHistoryItem {
   id: string;
@@ -136,6 +138,7 @@ export function AccountPermissionsSummaryCard({ account }: { account: AccountRow
 }
 
 export function AccountAuditHistoryTab({ accountId }: { accountId: string }) {
+  const showDetail = useQuickDetail();
   const historyQuery = useQuery({
     queryKey: ['account-audit-history', accountId],
     queryFn: () => api.get<AccountAuditHistoryItem[]>(`/admin/accounts/${accountId}/history`),
@@ -155,6 +158,7 @@ export function AccountAuditHistoryTab({ accountId }: { accountId: string }) {
         pagination={{ pageSize: 8, hideOnSinglePage: true }}
         dataSource={rows}
         locale={{ emptyText: 'Chưa có lịch sử thay đổi quyền cho tài khoản này' }}
+        onRow={(r) => buildClickableRowProps(r, (item) => showDetail('accountAuditHistory', item))}
         columns={[
           {
             title: 'Thời điểm',

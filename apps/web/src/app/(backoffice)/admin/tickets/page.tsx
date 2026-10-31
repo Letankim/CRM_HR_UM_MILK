@@ -141,6 +141,7 @@ export default function AdminTicketsPage() {
         loading={listQ.isLoading}
         codeExtractor={(r) => r.ticket_code}
         onPageChange={(p, ps) => { setPage(p); setPerPage(ps); }}
+        onRowClick={(r) => setDetailId(r.id)}
         bulkActions={[
           { key: 'progress', label: 'Tiếp nhận xử lý', icon: <SyncOutlined />, eligibleFilter: (r) => isAssignedRow(r) && r.status === 'OPEN', onClick: (sel, clr) => bulkMut.mutate({ ids: sel.map((r) => r.id), action: 'IN_PROGRESS' }, { onSuccess: clr }) },
           { key: 'resolve', label: 'Đánh dấu Đã giải quyết', type: 'primary', icon: <CheckCircleOutlined />, eligibleFilter: (r) => isAssignedRow(r) && (r.status === 'OPEN' || r.status === 'IN_PROGRESS'), confirm: 'Đánh dấu hoàn tất giải quyết các phiếu đã chọn?', onClick: (sel, clr) => bulkMut.mutate({ ids: sel.map((r) => r.id), action: 'RESOLVE' }, { onSuccess: clr }) },
@@ -151,7 +152,7 @@ export default function AdminTicketsPage() {
           {
             title: 'Tiêu đề phiếu hỗ trợ', key: 'subject', width: 230, ellipsis: true,
             render: (_, r) => (
-              <div style={{ cursor: 'pointer', minWidth: 0 }} onClick={() => setDetailId(r.id)} title={r.subject}>
+              <div data-no-row-click style={{ cursor: 'pointer', minWidth: 0 }} onClick={() => setDetailId(r.id)} title={r.subject}>
                 <div style={{ ...oneLineStyle, fontWeight: 600, fontSize: 13, color: BRAND.primary }}>{r.subject}</div>
                 <div style={{ ...oneLineStyle, fontSize: 12, color: BRAND.textSecondary, marginTop: 2 }}>{r.categoryLabel}</div>
               </div>

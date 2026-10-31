@@ -9,6 +9,7 @@ import 'dayjs/locale/vi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
 import { theme } from './theme';
+import { QuickDetailProvider } from './components/RecordQuickDetailModal';
 import { ApiClientError, setVersionConflictPrompter } from '@/lib/api';
 
 dayjs.locale('vi');
@@ -57,7 +58,9 @@ export function Providers({ children }: { children: ReactNode }) {
     <ConfigProvider theme={theme} locale={viVN}>
       <AntApp>
         <QueryClientProvider client={queryClient}>
-          <VersionConflictBridge>{children}</VersionConflictBridge>
+          <VersionConflictBridge>
+            <QuickDetailProvider>{children}</QuickDetailProvider>
+          </VersionConflictBridge>
         </QueryClientProvider>
       </AntApp>
     </ConfigProvider>

@@ -6,7 +6,7 @@ import type { Key } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ListMeta } from '@umbm/shared';
 import { BRAND } from '../theme';
-import { BulkActionBar, type BulkActionItem, buildTableSelections, type TableSelectionPreset } from './BulkActionBar';
+import { BulkActionBar, type BulkActionItem, buildClickableRowProps, buildTableSelections, type TableSelectionPreset } from './BulkActionBar';
 
 export interface DataTableCardProps<TRecord extends { id: string }> {
   columns: ColumnsType<TRecord>;
@@ -15,6 +15,7 @@ export interface DataTableCardProps<TRecord extends { id: string }> {
   loading?: boolean;
   codeExtractor?: (record: TRecord) => string;
   onPageChange?: (page: number, perPage: number) => void;
+  onRowClick?: (record: TRecord) => void;
   emptyText?: string;
   selectable?: boolean;
   bulkActions?: BulkActionItem<TRecord>[];
@@ -34,6 +35,7 @@ export function DataTableCard<TRecord extends { id: string }>({
   loading,
   codeExtractor,
   onPageChange,
+  onRowClick,
   emptyText = 'Không có dữ liệu phù hợp với bộ lọc hiện tại',
   selectable = true,
   bulkActions = [],
@@ -170,6 +172,7 @@ export function DataTableCard<TRecord extends { id: string }>({
         pagination={pagination}
         locale={{ emptyText }}
         scroll={{ x: totalScrollX }}
+        onRow={onRowClick ? (record) => buildClickableRowProps(record, onRowClick) : undefined}
       />
     </div>
   );

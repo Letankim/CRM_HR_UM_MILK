@@ -39,16 +39,16 @@ export function RowActionButtons({
   ];
 
   return (
-    <Space size={4}>
+    <Space size={4} onClick={(e) => e.stopPropagation()}>
       {onViewDetail && (
         <Tooltip title={detailTooltip}>
-          <Button size="small" icon={<EyeOutlined />} onClick={onViewDetail} disabled={loading} aria-label={detailTooltip} />
+          <Button size="small" icon={<EyeOutlined />} onClick={(e) => { e.stopPropagation(); onViewDetail(); }} disabled={loading} aria-label={detailTooltip} />
         </Tooltip>
       )}
       {combinedItems.length > 0 && (
         <Dropdown menu={{ items: combinedItems }} trigger={['click']} placement="bottomRight" disabled={loading}>
           <Tooltip title="Mở danh sách thao tác">
-            <Button size="small" icon={<EllipsisOutlined />} loading={loading} aria-label="Thao tác" />
+            <Button size="small" icon={<EllipsisOutlined />} onClick={(e) => e.stopPropagation()} loading={loading} aria-label="Thao tác" />
           </Tooltip>
         </Dropdown>
       )}

@@ -9,6 +9,7 @@ import { exportToExcel } from '@/lib/export-excel';
 import { StatusTag } from '@/ui/StatusTag';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { SelectableTable } from './BulkActionBar';
+import { useQuickDetail } from './RecordQuickDetailModal';
 import { RowActionButtons } from './RowActionButtons';
 import { ShiftTemplateModals } from './ShiftTemplateModals';
 
@@ -27,6 +28,7 @@ export interface StaffingRuleItem {
 export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
   const qc = useQueryClient();
   const { message, modal } = App.useApp();
+  const showDetail = useQuickDetail();
   const [branchFilter, setBranchFilter] = useState<string>('ALL');
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
   const [ruleModalOpen, setRuleModalOpen] = useState(false);
@@ -94,6 +96,7 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
   const shiftPane = (
     <SelectableTable<ShiftTemplateItem>
       size="small" rowKey="id" scroll={{ x: 880 }} pagination={shiftsPag} loading={shiftsQuery.isLoading} dataSource={filteredShifts}
+      onRowClick={setViewingShift}
       bulkActions={[
         { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Danh_muc_khung_ca.xls', sheetTitle: 'Danh mục Mẫu Ca Làm Việc', rows, columns: [{ header: 'Mã ca', key: 'code' }, { header: 'Tên ca', key: 'name' }, { header: 'Chi nhánh', key: 'branchName' }, { header: 'Giờ bắt đầu', key: 'startTime' }, { header: 'Giờ kết thúc', key: 'endTime' }, { header: 'Giờ chuẩn', key: 'standardHours', align: 'right' }, { header: 'Trạng thái', key: 'statusLabel' }] }) },
         ...(canConfig ? [{ key: 'delete', label: 'Xóa mẫu ca đã chọn', danger: true, icon: <DeleteOutlined />, loading: deleteShift.isPending, confirm: 'Xác nhận xóa các mẫu ca đã chọn?', onClick: (rows: ShiftTemplateItem[]) => deleteShift.mutate(rows) }] : []),
@@ -124,6 +127,7 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
   const rulesPane = (
     <SelectableTable<StaffingRuleItem>
       size="small" rowKey="id" scroll={{ x: 1020 }} pagination={rulesPag} loading={rulesQuery.isLoading} dataSource={filteredRules}
+      onRowClick={(r) => showDetail('staffingRule', r)}
       bulkActions={[
         { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Dinh_bien_nhan_su_ca.xls', sheetTitle: 'Định Biên Nhân Sự Theo Ca', rows, columns: [{ header: 'Chi nhánh', key: 'branchName' }, { header: 'Khung ca', key: 'shiftName' }, { header: 'Tối thiểu', key: 'min_staff', align: 'right' }, { header: 'Tối đa', key: 'max_staff', align: 'right' }, { header: 'Kiểm soát', key: 'enforcement' }, { header: 'Ghi chú', key: 'note' }] }) },
         ...(canConfig ? [{ key: 'delete', label: 'Xóa định biên đã chọn', danger: true, icon: <DeleteOutlined />, loading: deleteRule.isPending, confirm: 'Xác nhận xóa các định biên đã chọn?', onClick: (rows: StaffingRuleItem[]) => deleteRule.mutate(rows.map((r) => String(r.id))) }] : []),
@@ -137,7 +141,19 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
         },
         { title: 'Chế độ kiểm soát', dataIndex: 'enforcement', width: 205, render: (v: string) => <Tag color={v === 'HARD_BLOCK' ? 'red' : 'orange'}>{v === 'HARD_BLOCK' ? 'Chặn cứng khi thiếu / vượt' : 'Cảnh báo mềm khi thiếu người'}</Tag> },
         { title: 'Ghi chú', dataIndex: 'note', ellipsis: true },
-        { title: 'Thao tác', width: 76, fixed: 'right', align: 'right', render: (_, r) => canConfig ? <RowActionButtons menuItems={[{ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa định biên', onClick: () => openEditRule(r) }, { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa định biên ca', onClick: () => modal.confirm({ title: `Xóa định biên của "${r.branchName}" (${r.shiftName})?`, okText: 'Xóa định biên', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => deleteRule.mutateAsync([String(r.id)]) }) }]} /> : null },
+        {
+          title: 'Thao tác', key: 'actions', width: 88, fixed: 'right', align: 'right',
+          render: (_, r) => (
+            <RowActionButtons
+              onViewDetail={() => showDetail('staffingRule', r)}
+              detailTooltip="Xem chi tiết định biên"
+              menuItems={canConfig ? [
+                { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa định biên', onClick: () => openEditRule(r) },
+                { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa định biên ca', onClick: () => modal.confirm({ title: `Xóa định biên của "${r.branchName}" (${r.shiftName})?`, okText: 'Xóa định biên', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => deleteRule.mutateAsync([String(r.id)]) }) },
+              ] : []}
+            />
+          ),
+        },
       ]}
     />
   );

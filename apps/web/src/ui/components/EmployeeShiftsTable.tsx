@@ -37,7 +37,7 @@ export function EmployeeShiftsTable({ shifts, empId, refreshing = false, onViewD
 
   return (
     <SelectableTable<Row>
-      size="small" rowKey="id" loading={refreshing} pagination={pag} dataSource={shifts}
+      size="small" rowKey="id" loading={refreshing} pagination={pag} dataSource={shifts} onRowClick={(r) => onViewDetail(withEmp(r))}
       bulkActions={buildPortalShiftsBulkActions({ loading: cancelShiftMut.isPending, onCancelDrafts: (rows) => cancelShiftMut.mutate(rows.map((r) => String(r.id))), onCreateAbsentAdj: (row) => onViewDetail(withEmp(row)) })}
       locale={{ emptyText: 'Bạn chưa có ca làm việc nào được phân công trong kỳ này.' }}
       columns={[

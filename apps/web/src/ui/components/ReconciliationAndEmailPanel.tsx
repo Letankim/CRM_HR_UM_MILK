@@ -9,16 +9,16 @@ import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { StatusTag } from '../StatusTag';
+import { buildClickableRowProps } from './BulkActionBar';
 import { EmailQueueDetailModal, expandEmailHtmlForPreview, formatEmailDateTime, renderEmailQueueStatusTag, type EmailLogItem } from './EmailQueueDetailModal';
+import { useQuickDetail } from './RecordQuickDetailModal';
 import { RowActionButtons } from './RowActionButtons';
 
 interface ReconciliationIssue {
   id: string; code: string; label: string; severity: 'warning' | 'error'; table: string; recordId: string; message: string; autoRepaired: boolean;
 }
-
 interface ReconciliationReport {
-  checkedAt: string;
-  status: 'ok' | 'degraded' | 'down';
+  checkedAt: string; status: 'ok' | 'degraded' | 'down';
   summary: { tablesScanned: number; rowsScanned: number; issuesFound: number; autoRepaired: number; unresolvedIssues: number };
   issues: ReconciliationIssue[];
 }
@@ -38,6 +38,7 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
   const { message } = App.useApp();
   const qc = useQueryClient();
   const can = useCan();
+  const showDetail = useQuickDetail();
   const canRead = can('integration.read');
   const [subTab, setSubTab] = useState<'reconcile' | 'email'>('reconcile');
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplateCode>('ACCOUNT_ACTIVATED');
@@ -119,6 +120,7 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
               ) : (
                 <Table<ReconciliationIssue>
                   size="small" rowKey="id" pagination={issuesPag} dataSource={report.issues}
+                  onRow={(r) => buildClickableRowProps(r, (item) => showDetail('reconcileIssue', item))}
                   columns={[
                     { title: 'Bảng dữ liệu', dataIndex: 'table', width: 240, render: (v: string) => <Typography.Text strong>{TABLE_DISPLAY_LABELS[v] ?? v}</Typography.Text> },
                     { title: 'Chi tiết kiểm tra', dataIndex: 'message', render: (v: string, r) => <div><div style={{ fontSize: 13, fontWeight: 600 }}>{r.label}</div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{v}</Typography.Text></div> },
@@ -186,7 +188,7 @@ export function ReconciliationAndEmailPanel({ mode }: { mode?: 'reconcile' | 'em
               <Table<EmailLogItem>
                 size="small" rowKey="id" pagination={emailsPag} dataSource={recentEmails}
                 locale={{ emptyText: 'Chưa có thư nào trong lịch sử hàng đợi Email' }}
-                onRow={(r) => ({ style: { cursor: 'pointer' }, onClick: (e) => { if (!(e.target as HTMLElement).closest('button, a, .ant-dropdown-trigger')) setViewingEmail(r); } })}
+                onRow={(r) => buildClickableRowProps(r, setViewingEmail)}
                 columns={[
                   { title: 'Người nhận', dataIndex: 'to', width: 205, render: (v: string, r) => <div><div style={{ fontWeight: 600, fontSize: 12 }}>{r.recipientName || 'Nhân sự Ụm Bò Milk'}</div><Typography.Text type="secondary" style={{ fontSize: 11 }}>{v}</Typography.Text></div> },
                   { title: 'Loại & Tiêu đề thông báo Email', dataIndex: 'template', render: (v: EmailTemplateCode, r) => <div><div style={{ fontSize: 12, fontWeight: 600 }}>{r.templateLabel || EMAIL_TEMPLATE_LABELS[v] || 'Thông báo hệ thống'}</div><div style={{ fontSize: 11.5, color: '#334155' }}>{r.subject}</div><Typography.Text type="secondary" style={{ fontSize: 11 }}>Mã: {r.referenceCode || '—'}</Typography.Text></div> },

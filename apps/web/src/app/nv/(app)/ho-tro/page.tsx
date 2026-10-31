@@ -90,6 +90,7 @@ export default function EmployeeSupportTicketsPage() {
           loading={listQ.isLoading}
           codeExtractor={(r) => r.ticket_code}
           onPageChange={(p, ps) => { setPage(p); setPerPage(ps); }}
+          onRowClick={(r) => setDetailId(r.id)}
           emptyText="Bạn chưa có phiếu hỗ trợ hoặc thắc mắc nào. Bấm Tạo phiếu hỗ trợ để gửi tới Kế toán, Nhân sự hoặc Quản lý Cửa hàng."
           columns={[
             {

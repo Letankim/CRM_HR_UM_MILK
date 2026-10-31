@@ -166,3 +166,31 @@ export function describeSelectionBreakdown<TRecord>(
     isActionable: rows.some((r) => (filterable.length > 0 ? filterable.some((a) => a.eligibleFilter!(r)) : isRowActionable(r))),
   }));
 }
+
+const INTERACTIVE_ROW_SELECTOR = [
+  'button', 'a', 'input', 'textarea', 'select', 'label',
+  '[role="button"]', '[data-fancybox]', '[data-no-row-click]',
+  '.ant-table-selection-column', '.ant-table-row-expand-icon-cell', '.ant-table-row-expand-icon',
+  '.ant-checkbox-wrapper', '.ant-dropdown-trigger', '.ant-select', '.ant-switch', '.ant-popover', '.ant-image',
+].join(', ');
+
+/** Tạo thuộc tính `onRow` chuẩn cho bảng: nhấn vào bất kỳ đâu trên dòng để mở ngay chi tiết, tự bỏ qua ô checkbox / nút thao tác / kéo bôi đen văn bản. */
+export function buildClickableRowProps<TRecord>(
+  record: TRecord,
+  onRowClick?: (record: TRecord) => void,
+) {
+  if (!onRowClick) return {};
+  return {
+    className: 'umbm-clickable-row',
+    style: { cursor: 'pointer' as const },
+    onClick: (e: { target: EventTarget | null }) => {
+      const el = e.target instanceof Element ? e.target : null;
+      if (el?.closest(INTERACTIVE_ROW_SELECTOR)) return;
+      if (typeof window !== 'undefined') {
+        const selectedText = window.getSelection()?.toString().trim();
+        if (selectedText && selectedText.length > 0) return;
+      }
+      onRowClick(record);
+    },
+  };
+}

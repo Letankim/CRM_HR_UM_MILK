@@ -126,7 +126,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
       />
 
       <SelectableTable<Record<string, unknown>>
-        size="small" rowKey="id" loading={candQ.isLoading}
+        size="small" rowKey="id" loading={candQ.isLoading} onRowClick={setViewingCand}
         bulkActions={[
           ...(canManageRec ? [
             { key: 'contacted', label: 'Đánh dấu Đã liên hệ đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, eligibleFilter: (x: Record<string, unknown>) => x.status === 'NEW', onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel) await api.put(`/admin/candidates/${r.id}`, { version: r.version, status: 'CONTACTED' }); message.success('Đã cập nhật trạng thái Đã liên hệ cho ứng viên hợp lệ'); refreshAll(); } },

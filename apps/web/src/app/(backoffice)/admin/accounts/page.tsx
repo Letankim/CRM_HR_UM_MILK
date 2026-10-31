@@ -178,6 +178,7 @@ function AccountsView() {
         loading={query.isLoading || query.isFetching || manualRefreshing}
         codeExtractor={(r) => r.employeeId || 'Nội bộ'}
         onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }}
+        onRowClick={setDetailRow}
         bulkActions={bulkActions}
       />
       <AccountCreateModal open={modalOpen} editing={editingRow} onClose={() => { setModalOpen(false); setEditingRow(null); }} />

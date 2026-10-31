@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { Alert, Button, Flex, Form, Input, Modal, Space, Table, Tag } from 'antd';
 import { CloseCircleOutlined, CloseOutlined, DownOutlined, ExclamationCircleOutlined, UpOutlined } from '@ant-design/icons';
 import { StatusTag } from '../StatusTag';
+import { buildClickableRowProps } from './BulkActionBar';
+import { useQuickDetail } from './RecordQuickDetailModal';
 import { cleanShiftLabel, fmtYmd, issueSeverity, type PlannerIssue, type PlannerOffItem, type PlannerShift } from './schedule-planner-types';
 
 export interface PlannerIssuesAlertProps {
@@ -85,9 +87,11 @@ export function PlannerIssuesAlert({
 
 /** Bảng đơn OFF trong kỳ chốt lịch (dùng chung cho tuần chính thức và chu kỳ thử việc). */
 export function PlannerOffTable({ rows, renderActions, loading }: { rows: PlannerOffItem[]; renderActions?: (r: PlannerOffItem) => React.ReactNode; loading?: boolean }) {
+  const showDetail = useQuickDetail();
   return (
     <Table<PlannerOffItem>
       size="small" rowKey="id" loading={loading} dataSource={rows} pagination={rows.length > 10 ? { pageSize: 10, showTotal: (t) => `Tổng ${t} đơn` } : false}
+      onRow={(r) => buildClickableRowProps(r, (item) => showDetail('plannerOff', item))}
       locale={{ emptyText: 'Không có đơn nghỉ OFF nào trong kỳ này' }}
       columns={[
         { title: 'Mã đơn', dataIndex: 'requestCode', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
@@ -103,9 +107,11 @@ export function PlannerOffTable({ rows, renderActions, loading }: { rows: Planne
 
 /** Bảng ca dự kiến sẽ tự động sắp theo quy tắc 1 người/ca (ưu tiên ca mặc định & tự động bù ca OFF). */
 export function PlannerShiftTable({ rows, showEmployee = true }: { rows: PlannerShift[]; showEmployee?: boolean }) {
+  const showDetail = useQuickDetail();
   return (
     <Table<PlannerShift>
       size="small" rowKey={(r) => `${r.employeeId}-${r.workDate}-${r.shiftCode}`} dataSource={rows}
+      onRow={(r) => buildClickableRowProps(r, (item) => showDetail('plannerShift', item))}
       pagination={rows.length > 10 ? { pageSize: 10, showTotal: (t) => `Tổng ${t} ca dự kiến` } : false}
       locale={{ emptyText: 'Không còn ca nào cần tự động sắp' }}
       columns={[

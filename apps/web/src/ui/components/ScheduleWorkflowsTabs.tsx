@@ -113,20 +113,20 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
         { key: 'adjustments', label: <span><FileAddOutlined /> Phiếu bổ sung công ({adjQ.data?.meta.pagination.total ?? adjRows.length})</span>, children: (
           <>
             {filterBar(ADJ_STATUS_OPTS, () => exportAdjustmentsExcel(adjRows), <GuardButton type="primary" icon={<FileAddOutlined />} perms={['attendance.confirm', 'adjustment.approve']} onClick={() => setAdjModal(true)}>Tạo phiếu bổ sung công</GuardButton>)}
-            <SelectableTable<RowRec> size="small" rowKey="id" loading={adjQ.isLoading} scroll={{ x: 1300 }} pagination={mkPag(adjQ.data?.meta.pagination.total)} dataSource={adjRows} bulkActions={buildAdjustmentsBulkActions(bulkOpts)} columns={buildAdjustmentColumns(colCtx)} />
+            <SelectableTable<RowRec> size="small" rowKey="id" loading={adjQ.isLoading} scroll={{ x: 1300 }} pagination={mkPag(adjQ.data?.meta.pagination.total)} dataSource={adjRows} onRowClick={(r) => setDetailTarget({ kind: 'adjustment', record: r })} bulkActions={buildAdjustmentsBulkActions(bulkOpts)} columns={buildAdjustmentColumns(colCtx)} />
           </>
         ) },
         { key: 'leave', label: <span><CalendarOutlined /> Đơn xin nghỉ phép (OFF) ({leavesQ.data?.meta.pagination.total ?? leaveRows.length})</span>, children: (
           <>
             {filterBar(LEAVE_STATUS_OPTS, () => exportLeavesExcel(leaveRows), <GuardButton type="primary" icon={<PlusOutlined />} perms={['leave.approve']} onClick={() => setLeaveModal(true)}>Đăng ký nghỉ OFF</GuardButton>)}
-            <SelectableTable<RowRec> size="small" rowKey="id" loading={leavesQ.isLoading} pagination={mkPag(leavesQ.data?.meta.pagination.total)} dataSource={leaveRows} bulkActions={buildLeavesBulkActions(bulkOpts)} columns={buildLeaveColumns(colCtx)} />
+            <SelectableTable<RowRec> size="small" rowKey="id" loading={leavesQ.isLoading} pagination={mkPag(leavesQ.data?.meta.pagination.total)} dataSource={leaveRows} onRowClick={(r) => setDetailTarget({ kind: 'leave', record: r })} bulkActions={buildLeavesBulkActions(bulkOpts)} columns={buildLeaveColumns(colCtx)} />
           </>
         ) },
         { key: 'swap', label: <span><SwapOutlined /> Đổi ca / Nhường ca ({swapsQ.data?.meta.pagination.total ?? swapRows.length})</span>, children: (
           <>
             {filterBar(SWAP_STATUS_OPTS, () => exportSwapsExcel(swapRows), <GuardButton type="primary" icon={<PlusOutlined />} perms={['swap.approve']} onClick={() => setSwapModal(true)}>Tạo yêu cầu đổi / nhường ca</GuardButton>,
               <Select value={kindFilter} onChange={(v) => { setKindFilter(v); setPage(1); }} options={SWAP_KIND_OPTS} style={{ width: 185 }} />)}
-            <SelectableTable<RowRec> size="small" rowKey="id" loading={swapsQ.isLoading} scroll={{ x: 1450 }} pagination={mkPag(swapsQ.data?.meta.pagination.total)} dataSource={swapRows} bulkActions={buildSwapsBulkActions(bulkOpts)} columns={buildSwapColumns(colCtx)} />
+            <SelectableTable<RowRec> size="small" rowKey="id" loading={swapsQ.isLoading} scroll={{ x: 1450 }} pagination={mkPag(swapsQ.data?.meta.pagination.total)} dataSource={swapRows} onRowClick={(r) => setDetailTarget({ kind: 'swap', record: r })} bulkActions={buildSwapsBulkActions(bulkOpts)} columns={buildSwapColumns(colCtx)} />
           </>
         ) },
       ]} />

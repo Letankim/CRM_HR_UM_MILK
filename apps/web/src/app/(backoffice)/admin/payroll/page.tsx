@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
+import { buildClickableRowProps } from '@/ui/components/BulkActionBar';
 import { PayrollAttendanceReconcileCard } from '@/ui/components/PayrollAttendanceReconcileCard';
 import { CreatePeriodModal, PayrollItemModal } from '@/ui/components/PayrollModals';
 import { PayrollItemsCard } from '@/ui/components/PayrollItemsCard';
@@ -13,30 +14,22 @@ import { PayrollPeriodBar } from '@/ui/components/PayrollPeriodBar';
 import { exportPayrollSheet, PayrollSheetCard } from '@/ui/components/PayrollSheetCard';
 import { fmtVnd, MONEY_INPUT_PROPS, type PayPeriodRow, type PayrollItemRow, type PayrollSnapshotItem } from '@/ui/components/payroll-types';
 import { PayslipDrawer } from '@/ui/components/PayslipDrawer';
+import { useQuickDetail } from '@/ui/components/RecordQuickDetailModal';
 import { SalaryProfilesTab } from '@/ui/components/SalaryProfilesTab';
 import { StatusTag } from '@/ui/StatusTag';
 
 type TabKey = 'SHEET' | 'RECONCILE' | 'ITEMS' | 'SALARY' | 'REPORTS';
 
 function PayrollView() {
-  const qc = useQueryClient();
-  const can = useCan();
-  const canManage = can('payroll.manage');
-  const canManageSalary = can('payroll.manage');
-  const { message } = App.useApp();
+  const qc = useQueryClient(), can = useCan(), { message } = App.useApp(), showDetail = useQuickDetail();
+  const canManage = can('payroll.manage'), canManageSalary = can('payroll.manage');
 
-  const [tab, setTab] = useState<TabKey>('SHEET');
-  const [reportSubTab, setReportSubTab] = useState<'revenue' | 'periods'>('revenue');
-  const [selectedPeriodId, setSelectedPeriodId] = useState('');
-  const [periodModalOpen, setPeriodModalOpen] = useState(false);
-  const [itemModalOpen, setItemModalOpen] = useState(false);
-  const [revInputOpen, setRevInputOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<PayrollItemRow | null>(null);
-  const [payslipSnap, setPayslipSnap] = useState<PayrollSnapshotItem | null>(null);
-  const [revPage, setRevPage] = useState(1);
-  const [revPerPage, setRevPerPage] = useState(12);
-  const [perPageNum, setPerPageNum] = useState(1);
-  const [perPageSize, setPerPageSize] = useState(12);
+  const [tab, setTab] = useState<TabKey>('SHEET'), [reportSubTab, setReportSubTab] = useState<'revenue' | 'periods'>('revenue');
+  const [selectedPeriodId, setSelectedPeriodId] = useState(''), [periodModalOpen, setPeriodModalOpen] = useState(false);
+  const [itemModalOpen, setItemModalOpen] = useState(false), [revInputOpen, setRevInputOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<PayrollItemRow | null>(null), [payslipSnap, setPayslipSnap] = useState<PayrollSnapshotItem | null>(null);
+  const [revPage, setRevPage] = useState(1), [revPerPage, setRevPerPage] = useState(12);
+  const [perPageNum, setPerPageNum] = useState(1), [perPageSize, setPerPageSize] = useState(12);
   const [revForm] = Form.useForm();
 
   const periodsQuery = useQuery({ queryKey: ['payroll-periods'], queryFn: () => api.get<PayPeriodRow[]>('/admin/payroll/periods?per_page=100') });
@@ -147,7 +140,7 @@ function PayrollView() {
                 label: <span><BarChartOutlined /> Đối chiếu Chi phí Lương / Doanh thu ({revInputsQuery.data?.meta.pagination.total ?? 0})</span>,
                 children: (
                   <Table
-                    size="small" rowKey="id"
+                    size="small" rowKey="id" onRow={(r) => buildClickableRowProps(r, (item) => showDetail('revenueInput', item))}
                     pagination={{ current: revPage, pageSize: revPerPage, total: revInputsQuery.data?.meta.pagination.total ?? 0, showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'], showTotal: (t) => `Tổng ${t} bản ghi`, onChange: (p, ps) => { setRevPage(ps !== revPerPage ? 1 : p); setRevPerPage(ps); } }}
                     loading={revInputsQuery.isLoading || revInputsQuery.isFetching} dataSource={revInputsQuery.data?.data ?? []}
                     locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có dữ liệu đối chiếu doanh thu. Nhấn 'Nhập Doanh thu đối chiếu' để thêm báo cáo." /> }}
@@ -167,7 +160,7 @@ function PayrollView() {
                 label: <span><CalendarOutlined /> Tổng hợp Quỹ lương theo Kỳ lương ({periodsReportQuery.data?.meta.pagination.total ?? periods.length})</span>,
                 children: (
                   <Table<PayPeriodRow>
-                    size="small" rowKey="id"
+                    size="small" rowKey="id" onRow={(r) => buildClickableRowProps(r, (item) => showDetail('payPeriod', item))}
                     pagination={{ current: perPageNum, pageSize: perPageSize, total: periodsReportQuery.data?.meta.pagination.total ?? periods.length, showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'], showTotal: (t) => `Tổng ${t} kỳ lương`, onChange: (p, ps) => { setPerPageNum(ps !== perPageSize ? 1 : p); setPerPageSize(ps); } }}
                     loading={periodsReportQuery.isLoading || periodsReportQuery.isFetching} dataSource={periodsReportQuery.data?.data ?? periods}
                     locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có kỳ lương nào. Hãy thiết lập hồ sơ lương cho nhân sự, sau đó tạo kỳ lương mới." /> }}

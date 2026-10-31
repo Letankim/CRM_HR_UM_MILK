@@ -6,6 +6,8 @@ import { CheckCircleOutlined, CloseOutlined, LockOutlined, ReloadOutlined, Sched
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
+import { buildClickableRowProps } from './BulkActionBar';
+import { useQuickDetail } from './RecordQuickDetailModal';
 import { PlannerIssuesAlert, PlannerOffTable, PlannerShiftTable } from './SchedulePlannerShared';
 import { fmtDm, fmtTs, type PlannerProbationItem, type PlannerProbationLockResult } from './schedule-planner-types';
 import { useInvalidatePlanner } from './usePlannerOffDecision';
@@ -15,6 +17,7 @@ interface Props { branchOptions: { value: string; label: string }[] }
 /** Chốt lịch chu kỳ thử việc 12 ngày (7 ca làm + tối đa 5 ngày OFF) và duyệt chuyển chính thức khi hoàn thành đủ 7 ca. */
 export function SchedulePlannerProbationPane({ branchOptions }: Props) {
   const { message, modal } = App.useApp();
+  const showDetail = useQuickDetail();
   const qc = useQueryClient();
   const can = useCan();
   const canPublish = can('schedule.publish');
@@ -76,6 +79,7 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
       </div>
       <Table<PlannerProbationItem>
         size="small" rowKey="employeeId" loading={q.isLoading} dataSource={rows} scroll={{ x: 1340 }}
+        onRow={(r) => buildClickableRowProps(r, (item) => showDetail('plannerProbation', item))}
         pagination={rows.length > 10 ? { pageSize: 10, showTotal: (t) => `Tổng ${t} nhân viên thử việc` } : false}
         locale={{ emptyText: 'Không có nhân viên thử việc nào đang hoạt động' }}
         expandable={{

@@ -126,6 +126,7 @@ function BranchesView() {
             loading={branchesQuery.isLoading || branchesQuery.isFetching || manualRefreshing}
             codeExtractor={(r) => r.code}
             onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }}
+            onRowClick={setViewing}
             bulkActions={[
               { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportBranchesExcel(rows) },
               ...(canConfig ? [{ key: 'delete', label: 'Xóa chi nhánh đã chọn', danger: true, icon: <DeleteOutlined />, loading: deleteBranch.isPending, confirm: 'Xác nhận xóa các chi nhánh đã chọn?', onClick: (rows: BranchRowItem[]) => deleteBranch.mutate(rows) }] : []),

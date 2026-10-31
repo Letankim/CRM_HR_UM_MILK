@@ -154,7 +154,7 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
         </Flex>
 
         <SelectableTable<PayrollSnapshotItem>
-          size="small" rowKey="employeeId" loading={snapshotsQ.isLoading || snapshotsQ.isFetching} dataSource={rows}
+          size="small" rowKey="employeeId" loading={snapshotsQ.isLoading || snapshotsQ.isFetching} dataSource={rows} onRowClick={onOpenPayslip}
           bulkActions={[{ key: 'export', label: 'Xuất Excel nhân sự đã chọn', icon: <DownloadOutlined />, onClick: (sel) => exportToExcel({ fileName: `UB_Bang_Cham_Cong_Chon_${period.period_code ?? 'KY_LUONG'}.xls`, sheetTitle: `BẢNG CHẤM CÔNG & ĐỐI SOÁT CÔNG — ${period.name ?? ''}`, rows: sel.map((r) => ({ ...r, reconcileStatus: r.hasAnomaly ? 'Cần kiểm tra bổ sung công' : 'Đã khớp công hợp lệ' })), columns: [{ header: 'Mã NV', key: 'employeeCode' }, { header: 'Họ và tên', key: 'fullName' }, { header: 'Chi nhánh', key: 'branchName' }, { header: 'Số ca công', key: 'totalShiftsCount', align: 'right' }, { header: 'Giờ thực tế', key: 'actualHours', align: 'right' }, { header: 'Trạng thái đối soát', key: 'reconcileStatus' }] }) }]}
           pagination={{
             current: page, pageSize: perPage, total: totalCount,
@@ -177,9 +177,9 @@ export function PayrollAttendanceReconcileCard({ period, onOpenPayslip }: Props)
               title: 'Đối soát Giờ công & Bù công', width: 270,
               render: (_, r) => r.hasAnomaly ? (
                 <Space size={4} wrap>
-                  {(r.missingCheckoutCount ?? 0) > 0 && <Tag color="red" icon={<WarningOutlined />} style={{ cursor: 'pointer', margin: 0 }} onClick={() => openEmployeeMissing(r)}>Thiếu Vào/Ra: {r.missingCheckoutCount} ca</Tag>}
-                  {(r.pendingAdjCount ?? 0) > 0 && <Badge status="processing" text={<Tag color="gold" style={{ cursor: 'pointer', margin: 0 }} onClick={() => openEmployeeMissing(r)}>{r.pendingAdjCount} đơn bù công chờ duyệt</Tag>} />}
-                  <Button size="small" type="link" danger icon={<EyeOutlined />} style={{ padding: '0 4px', height: 22 }} onClick={() => openEmployeeMissing(r)}>Xem chi tiết</Button>
+                  {(r.missingCheckoutCount ?? 0) > 0 && <Tag data-no-row-click color="red" icon={<WarningOutlined />} style={{ cursor: 'pointer', margin: 0 }} onClick={(e) => { e.stopPropagation(); openEmployeeMissing(r); }}>Thiếu Vào/Ra: {r.missingCheckoutCount} ca</Tag>}
+                  {(r.pendingAdjCount ?? 0) > 0 && <Badge status="processing" text={<Tag data-no-row-click color="gold" style={{ cursor: 'pointer', margin: 0 }} onClick={(e) => { e.stopPropagation(); openEmployeeMissing(r); }}>{r.pendingAdjCount} đơn bù công chờ duyệt</Tag>} />}
+                  <Button size="small" type="link" danger icon={<EyeOutlined />} style={{ padding: '0 4px', height: 22 }} onClick={(e) => { e.stopPropagation(); openEmployeeMissing(r); }}>Xem chi tiết</Button>
                 </Space>
               ) : (
                 <Space size={4}>

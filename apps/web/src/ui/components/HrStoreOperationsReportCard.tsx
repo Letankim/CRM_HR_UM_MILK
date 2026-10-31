@@ -10,7 +10,9 @@ import { api } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
+import { buildClickableRowProps } from './BulkActionBar';
 import { useJobPositions } from './JobPositionsManagerModal';
+import { useQuickDetail } from './RecordQuickDetailModal';
 import { RowActionButtons } from './RowActionButtons';
 
 interface Props {
@@ -25,6 +27,7 @@ interface Props {
 export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Props) {
   const router = useRouter();
   const can = useCan();
+  const showDetail = useQuickDetail();
   const canViewReport = can('report.hr', 'report.store');
   const canRecruit = can('candidate.manage');
   const canEmployee = can('employee.read');
@@ -152,6 +155,7 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
       <Table
         size="small" rowKey="id" pagination={false} loading={branchesQ.isLoading || shiftsQ.isLoading} dataSource={reportRows} scroll={{ x: 1350 }}
         locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có dữ liệu báo cáo theo bộ lọc" /> }}
+        onRow={(r) => buildClickableRowProps(r, (item) => showDetail('hrBranchReport', item))}
         columns={[
           { title: 'Chi nhánh', width: 220, fixed: 'left', render: (_, r) => <div><strong style={{ whiteSpace: 'nowrap' }}>{r.branchName}</strong><div style={{ fontSize: 12, color: '#64748B', whiteSpace: 'nowrap' }}>{r.branchCode}</div></div> },
           { title: 'Tổng nhân sự', dataIndex: 'headcount', width: 130, align: 'right', render: (v: number) => <strong className="num" style={{ whiteSpace: 'nowrap' }}>{v} NV</strong> },
@@ -161,10 +165,12 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
           { title: 'Đi trễ', dataIndex: 'lateCount', width: 105, align: 'center', render: (v: number) => v > 0 ? <Tag color="volcano" style={{ margin: 0, whiteSpace: 'nowrap' }}>{v} lượt</Tag> : <Tag color="green" style={{ margin: 0 }}>0</Tag> },
           { title: 'Vắng / Thiếu ca', width: 165, align: 'center', render: (_, r) => <Space size={4} style={{ whiteSpace: 'nowrap' }}><Tag color={r.absentCount > 0 ? 'red' : 'default'} style={{ margin: 0 }}>{r.absentCount} vắng</Tag><Tag color={r.understaffedCount > 0 ? 'orange' : 'default'} style={{ margin: 0 }}>{r.understaffedCount} thiếu</Tag></Space> },
           { title: 'Tỷ lệ phủ ca', dataIndex: 'coverageRate', width: 125, align: 'right', render: (v: number) => <Tag color={v >= 90 ? 'green' : 'orange'} className="num" style={{ margin: 0 }}>{v}%</Tag> },
-          ...(canSchedule || canEmployee ? [{
-            title: 'Thao tác', key: 'actions', width: 84, fixed: 'right' as const, align: 'center' as const,
-            render: () => (
+          {
+            title: 'Thao tác', key: 'actions', width: 88, fixed: 'right', align: 'center',
+            render: (_, r) => (
               <RowActionButtons
+                detailTooltip="Xem chi tiết báo cáo chi nhánh"
+                onViewDetail={() => showDetail('hrBranchReport', r)}
                 menuItems={[
                   ...(canSchedule ? [
                     { key: 'schedules', icon: <CalendarOutlined />, label: 'Mở lịch phân ca', onClick: () => router.push('/admin/schedules') },
@@ -174,7 +180,7 @@ export function HrStoreOperationsReportCard({ branchFilter, periodFilter }: Prop
                 ]}
               />
             ),
-          }] : []),
+          },
         ]}
       />
     </Card>

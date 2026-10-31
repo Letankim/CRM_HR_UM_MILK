@@ -188,6 +188,7 @@ function AuditLogsView() {
         loading={query.isLoading || query.isFetching || manualRefreshing}
         codeExtractor={(r) => dayjs(r.created_at).format('HH:mm:ss')}
         onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }}
+        onRowClick={setSelected}
         emptyText={view === 'ARCHIVED' ? 'Kho lưu trữ hiện đang trống' : 'Danh sách nhật ký hiện hành đã được dọn trống'}
         bulkActions={[
           view === 'ACTIVE'

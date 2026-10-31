@@ -108,14 +108,9 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
         </Flex>
       </div>
       <SelectableTable<PayrollSnapshotItem>
-        size="small" rowKey="id" loading={snapshotsQ.isLoading || snapshotsQ.isFetching} dataSource={rows}
+        size="small" rowKey="id" loading={snapshotsQ.isLoading || snapshotsQ.isFetching} dataSource={rows} onRowClick={onOpenPayslip}
         bulkActions={[{ key: 'export', label: 'Xuất Excel nhân sự đã chọn', icon: <DownloadOutlined />, onClick: (sel) => exportPayrollSheet(period, sel) }]}
-        pagination={{
-          current: page, pageSize: perPage, total: totalCount,
-          showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'],
-          showTotal: (t) => `Tổng ${t} nhân sự`,
-          onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); },
-        }}
+        pagination={{ current: page, pageSize: perPage, total: totalCount, showSizeChanger: true, pageSizeOptions: ['10', '12', '15', '20', '50', '100'], showTotal: (t) => `Tổng ${t} nhân sự`, onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } }}
         scroll={{ x: 'max-content' }}
         columns={[
           {
@@ -128,7 +123,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
                   {(!r.hasSalaryProfile || r.missingProfileShifts > 0) && <Tooltip title="Chưa thiết lập hồ sơ lương hoặc có ca ngoài thời gian hiệu lực"><WarningOutlined style={{ color: '#D97706' }} /></Tooltip>}
                   {!r.employeeConfirmedAt && r.disputeStatus === 'OPEN' && (
                     <Tooltip title={r.disputeReason ? `Thắc mắc: ${r.disputeReason} (Bấm để mở Trung tâm Phiếu hỗ trợ)` : 'Nhân sự đang gửi thắc mắc phiếu lương'}>
-                      <Tag color="volcano" icon={<MessageOutlined />} style={{ margin: 0, cursor: 'pointer', fontSize: 11 }} onClick={() => router.push('/admin/tickets')}>
+                      <Tag data-no-row-click color="volcano" icon={<MessageOutlined />} style={{ margin: 0, cursor: 'pointer', fontSize: 11 }} onClick={(e) => { e.stopPropagation(); router.push('/admin/tickets'); }}>
                         Thắc mắc{r.disputeTicketCode ? ` ${r.disputeTicketCode}` : ''}
                       </Tag>
                     </Tooltip>
@@ -156,7 +151,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
                 {(r.lateCount ?? 0) > 0 && <div style={{ fontSize: 11, color: '#D97706' }}>Đi trễ: {r.lateCount} lần ({r.lateMinutesTotal ?? 0}p)</div>}
                 {((r.missingCheckoutCount ?? 0) > 0 || (r.pendingAdjCount ?? 0) > 0) && (
                   <div style={{ marginTop: 3 }}>
-                    <Tag color="red" icon={<WarningOutlined />} style={{ margin: 0, cursor: 'pointer', fontSize: 11 }} onClick={() => openEmpMissing(r)}>Thiếu Vào/Ra: {r.missingCheckoutCount ?? 0} ca · Xem chi tiết</Tag>
+                    <Tag data-no-row-click color="red" icon={<WarningOutlined />} style={{ margin: 0, cursor: 'pointer', fontSize: 11 }} onClick={(e) => { e.stopPropagation(); openEmpMissing(r); }}>Thiếu Vào/Ra: {r.missingCheckoutCount ?? 0} ca · Xem chi tiết</Tag>
                   </div>
                 )}
               </div>
@@ -171,7 +166,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
           { title: 'Thực lĩnh', dataIndex: 'netVnd', align: 'right', render: (v: number) => <span className="num" style={{ color: '#2563EB', fontWeight: 800 }}>{fmtVnd(v)}</span> },
           {
             title: 'Xác nhận của NV', key: 'confirm', width: 175,
-            render: (_, r) => <PayrollConfirmationCell row={r} periodStatus={period.status} onOpenTickets={() => router.push('/admin/tickets')} />,
+            render: (_, r) => <PayrollConfirmationCell row={r} periodStatus={period.status} onOpenTickets={((e?: { stopPropagation?: () => void }) => { e?.stopPropagation?.(); router.push('/admin/tickets'); }) as () => void} />,
           },
           {
             title: 'Thao tác', key: 'act', width: 92, align: 'right', fixed: 'right',

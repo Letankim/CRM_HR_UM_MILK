@@ -147,6 +147,7 @@ export function SalaryProfilesTab({ canManage, employeeOptions }: { canManage: b
         loading={listQuery.isLoading || (listQuery.isFetching && !listQuery.data)}
         codeExtractor={(r) => r.employeeCode}
         onPageChange={(p, perPage) => setPage({ page: p, perPage })}
+        onRowClick={(r) => (r.profile ? setDetailProfile(r.profile) : setHistoryOf({ id: r.employeeId, label: `${r.fullName} (${r.employeeCode})` }))}
         emptyText="Chưa có nhân sự phù hợp bộ lọc"
         bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined style={{ color: '#15803D' }} />, onClick: (sel) => exportSalaryExcel(sel) }]}
       />

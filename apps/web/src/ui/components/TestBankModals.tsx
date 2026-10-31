@@ -6,8 +6,10 @@ import dayjs from 'dayjs';
 import { StatusTag } from '../StatusTag';
 import { useEmployeeSearchSelect } from '../hooks/useEmployeeSearchSelect';
 import { BaseDetailDrawer } from './BaseDetailDrawer';
+import { buildClickableRowProps } from './BulkActionBar';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
 import { AttemptHistoryTable } from './ExamTestCenter';
+import { useQuickDetail } from './RecordQuickDetailModal';
 
 export interface QuestionRow {
   id: string;
@@ -105,6 +107,7 @@ export function TestDetailDrawer({
   onViewAttempt?: (attempt: Record<string, unknown>) => void;
   onDeleteAttempt?: (attempt: Record<string, unknown>) => void;
 }) {
+  const showDetail = useQuickDetail();
   const assignmentAttempts = viewingAssignment
     ? attempts.filter((att) => String(att.assignment_id) === String(viewingAssignment.id))
     : [];
@@ -131,8 +134,9 @@ export function TestDetailDrawer({
                 key: 'qlist',
                 label: <span><UnorderedListOutlined /> Danh sách Câu hỏi ({parseQuestions(viewingTest.questions_json).length} câu)</span>,
                 children: (
-                  <Table
+                  <Table<QuestionRow>
                     size="small" rowKey="id" pagination={false} scroll={{ x: 'max-content' }} dataSource={parseQuestions(viewingTest.questions_json)}
+                    onRow={(r) => buildClickableRowProps(r, (item) => showDetail('testQuestion', item))}
                     columns={[
                       { title: 'STT', width: 70, render: (_, __, i) => `Câu ${i + 1}` },
                       { title: 'Nội dung câu hỏi', dataIndex: 'q' },

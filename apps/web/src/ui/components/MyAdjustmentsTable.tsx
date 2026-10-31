@@ -23,7 +23,7 @@ export function MyAdjustmentsTable({ adjustments, loading = false, onViewDetail 
   const pag = useClientPagination(10, 'phiếu');
   return (
     <SelectableTable<Row>
-      size="small" rowKey="id" loading={loading} pagination={pag} dataSource={adjustments}
+      size="small" rowKey="id" loading={loading} pagination={pag} dataSource={adjustments} onRowClick={onViewDetail}
       locale={{ emptyText: 'Bạn chưa có phiếu bổ sung công nào.' }}
       bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAdjustmentsExcel(rows) }]}
       columns={[

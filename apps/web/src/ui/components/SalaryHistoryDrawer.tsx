@@ -9,6 +9,7 @@ import { api, ApiClientError } from '@/lib/api';
 import { StatusTag } from '@/ui/StatusTag';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { BaseDetailDrawer, DETAIL_DRAWER_CONFIG } from './BaseDetailDrawer';
+import { buildClickableRowProps } from './BulkActionBar';
 import { fmtVnd, type SalaryProfile } from './payroll-types';
 import { RowActionButtons } from './RowActionButtons';
 
@@ -159,6 +160,7 @@ export function SalaryHistoryDrawer({
           loading={historyQuery.isLoading}
           dataSource={historyQuery.data ?? []}
           pagination={histPag}
+          onRow={(p) => buildClickableRowProps(p, setViewing)}
           columns={[
             { title: 'Hiệu lực', key: 'eff', width: 155, render: (_, p) => <div><strong>{fmtDate(p.effectiveFrom)}</strong><div style={{ fontSize: 12, color: '#64748B' }}>đến {fmtDate(p.effectiveTo)}</div></div> },
             { title: 'Hình thức', dataIndex: 'rateTypeLabel', width: 115, render: (v: string, p) => <Tag color={p.rateType === 'MONTHLY' ? 'purple' : p.rateType === 'SHIFT' ? 'cyan' : 'blue'} style={{ borderRadius: 2 }}>{v}</Tag> },

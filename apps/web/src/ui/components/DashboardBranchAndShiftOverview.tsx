@@ -13,6 +13,8 @@ import { useMemo } from 'react';
 import { api } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { StatusTag } from '../StatusTag';
+import { buildClickableRowProps } from './BulkActionBar';
+import { useQuickDetail } from './RecordQuickDetailModal';
 import { RowActionButtons } from './RowActionButtons';
 import { fmtVnd, type PayPeriodRow } from './payroll-types';
 
@@ -29,6 +31,7 @@ export function DashboardBranchAndShiftOverview({
 }: Props) {
   const router = useRouter();
   const can = useCan();
+  const showDetail = useQuickDetail();
   const canEmployee = can('employee.read');
   const canSchedule = can('schedule.read', 'attendance.read');
   const canPayroll = can('payroll.read');
@@ -178,6 +181,7 @@ export function DashboardBranchAndShiftOverview({
           <Table
             size="small" rowKey="id" pagination={false} loading={branchesQ.isLoading || shiftsQ.isLoading} dataSource={branchRows} scroll={{ x: 1480 }}
             locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có chi nhánh phù hợp bộ lọc" /> }}
+            onRow={(r) => buildClickableRowProps(r, (item) => showDetail('dashboardBranch', item))}
             columns={[
               { title: 'Chi nhánh', width: 220, fixed: 'left', render: (_, r) => <div><strong style={{ whiteSpace: 'nowrap' }}>{r.name}</strong><div style={{ fontSize: 12, color: '#64748B', whiteSpace: 'nowrap' }}>Mã: {r.code}</div></div> },
               { title: 'Nhân sự (TV / CT)', width: 175, render: (_, r) => <div style={{ whiteSpace: 'nowrap' }}><strong>{r.totalStaff} NV</strong> <span style={{ color: '#64748B', fontSize: 12 }}>({r.probationCount} TV / {r.officialCount} CT)</span></div> },
@@ -187,9 +191,11 @@ export function DashboardBranchAndShiftOverview({
               { title: 'Nghỉ OFF / Vắng', width: 165, align: 'center', render: (_, r) => <Space size={4} style={{ whiteSpace: 'nowrap' }}><Tag style={{ margin: 0 }}>{r.offCount} OFF</Tag>{r.absent > 0 && <Tag color="red" style={{ margin: 0 }}>{r.absent} vắng</Tag>}</Space> },
               { title: 'Cảnh báo vận hành', width: 215, render: (_, r) => <div style={{ whiteSpace: 'nowrap' }}>{r.isUnderstaffed ? <Badge status="warning" text={<Tag color="volcano" style={{ margin: 0 }}>Thiếu người / Cần bù ca</Tag>} /> : <Badge status="success" text={<Tag color="green" style={{ margin: 0 }}>Đủ định biên ca</Tag>} />}</div> },
               {
-                title: 'Thao tác', key: 'actions', width: 84, fixed: 'right', align: 'center',
-                render: () => (
+                title: 'Thao tác', key: 'actions', width: 88, fixed: 'right', align: 'center',
+                render: (_, r) => (
                   <RowActionButtons
+                    detailTooltip="Xem chi tiết vận hành chi nhánh"
+                    onViewDetail={() => showDetail('dashboardBranch', r)}
                     menuItems={[
                       { key: 'schedules', icon: <CalendarOutlined />, label: 'Mở lịch phân ca', onClick: () => router.push('/admin/schedules') },
                       { key: 'workflows', icon: <SafetyCertificateOutlined />, label: 'Điểm danh & Đơn từ', onClick: () => router.push('/admin/schedules?section=workflows') },

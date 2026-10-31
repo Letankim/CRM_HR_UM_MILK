@@ -194,7 +194,7 @@ function SchedulesView() {
                 canEdit, onApprove: (r) => approveSingle.mutate(r), onViewAttendance: (r) => setAttShiftId(r.id), onEdit: openEdit,
                 onDelete: (r) => modal.confirm({ title: `Xác nhận xóa phân công ca của ${r.employeeName}?`, content: `Ca ${r.shiftLabel} ngày ${r.workDate} sẽ bị xóa khỏi lịch làm việc.`, okText: 'Xác nhận xóa', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelText: 'Hủy bỏ', cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => deleteSingle.mutateAsync(r) }),
               })}
-              dataSource={items} meta={query.data?.meta} loading={query.isLoading || query.isFetching || manualRefreshing}
+              dataSource={items} meta={query.data?.meta} loading={query.isLoading || query.isFetching || manualRefreshing} onRowClick={openEdit}
               codeExtractor={(r) => r.employeeCode} onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }} bulkActions={bulkActions}
             />
           )}

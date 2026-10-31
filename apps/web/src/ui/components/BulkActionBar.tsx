@@ -6,6 +6,7 @@ import { CheckOutlined, CloseOutlined, FilterOutlined } from '@ant-design/icons'
 import { type Key, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { BRAND } from '../theme';
 import {
+  buildClickableRowProps,
   buildTableSelections,
   describeSelectionBreakdown,
   getRowStateLabel,
@@ -13,7 +14,7 @@ import {
   type TableSelectionPreset,
 } from './table-selection-helpers';
 
-export { buildTableSelections, describeSelectionBreakdown, getRowStateLabel, isRowActionable, type TableSelectionPreset };
+export { buildClickableRowProps, buildTableSelections, describeSelectionBreakdown, getRowStateLabel, isRowActionable, type TableSelectionPreset };
 
 export interface BulkActionItem<TRecord> {
   key: string;
@@ -121,10 +122,11 @@ export function BulkActionBar<TRecord>({
 export interface SelectableTableProps<TRecord extends object> extends TableProps<TRecord> {
   bulkActions?: BulkActionItem<TRecord>[] | ((selectedRows: TRecord[], clearSelection: () => void) => BulkActionItem<TRecord>[]);
   selectionPresets?: TableSelectionPreset<TRecord>[];
+  onRowClick?: (record: TRecord) => void;
 }
 
 export function SelectableTable<TRecord extends object>({
-  bulkActions = [], selectionPresets, dataSource = [], rowKey = 'id', columns, scroll, ...rest
+  bulkActions = [], selectionPresets, dataSource = [], rowKey = 'id', columns, scroll, onRow, onRowClick, ...rest
 }: SelectableTableProps<TRecord>) {
   const getKey = (r: TRecord): string => typeof rowKey === 'function' ? String(rowKey(r)) : String((r as Record<string, unknown>)[String(rowKey)] ?? '');
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
@@ -172,6 +174,7 @@ export function SelectableTable<TRecord extends object>({
           onChange: (keys) => setSelectedRowKeys(keys),
           selections,
         }}
+        onRow={onRow ?? (onRowClick ? (record) => buildClickableRowProps(record, onRowClick) : undefined)}
         {...rest}
       />
     </>

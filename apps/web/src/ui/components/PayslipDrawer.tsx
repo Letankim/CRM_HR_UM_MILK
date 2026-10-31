@@ -11,52 +11,38 @@ import { useCan } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { BaseDetailDrawer } from './BaseDetailDrawer';
+import { buildClickableRowProps } from './BulkActionBar';
 import { LOG_STATUS_COLORS, payslipLines, type PayslipLine } from './payroll-sheet-helpers';
 import { allowancesOf, fmtVnd, MONEY_INPUT_PROPS, type PayrollSnapshotItem, type ShiftPayrollLog } from './payroll-types';
+import { useQuickDetail } from './RecordQuickDetailModal';
+import { ShiftAttendanceDetailModal } from './ShiftAttendanceDetailModal';
 
 export { payslipLines };
 
 export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { snapshot: PayrollSnapshotItem | null; periodStatus?: PayPeriodStatus; onClose: () => void }) {
-  const [s, setS] = useState<PayrollSnapshotItem | null>(propSnap);
-  const [revModal, setRevModal] = useState(false);
+  const [s, setS] = useState<PayrollSnapshotItem | null>(propSnap), [revModal, setRevModal] = useState(false);
+  const [attShiftId, setAttShiftId] = useState<string | null>(null);
   const [revForm] = Form.useForm();
-  const logPag = useClientPagination(10, 'ca');
-  const revPag = useClientPagination(10, 'lần điều chỉnh');
-  const qc = useQueryClient();
-  const can = useCan();
-  const canManage = can('payroll.manage');
-  const { message } = App.useApp();
+  const logPag = useClientPagination(10, 'ca'), revPag = useClientPagination(10, 'lần điều chỉnh');
+  const qc = useQueryClient(), can = useCan(), canManage = can('payroll.manage'), { message } = App.useApp(), showDetail = useQuickDetail();
 
-  useEffect(() => { setS(propSnap); }, [propSnap]);
+  useEffect(() => { setS(propSnap); if (!propSnap) setAttShiftId(null); }, [propSnap]);
 
-  const revsQ = useQuery({
-    queryKey: ['payslip-revisions', s?.id],
-    queryFn: () => api.get<Record<string, unknown>[]>(`/admin/payroll/payslips/${s!.id}/revisions`),
-    enabled: Boolean(s?.id),
-    retry: false,
-  });
+  const revsQ = useQuery({ queryKey: ['payslip-revisions', s?.id], queryFn: () => api.get<Record<string, unknown>[]>(`/admin/payroll/payslips/${s!.id}/revisions`), enabled: Boolean(s?.id), retry: false });
 
   const revMut = useMutation({
     mutationFn: (v: Record<string, unknown>) => api.post(`/admin/payroll/payslips/${s!.id}/revisions`, v),
     onSuccess: (_res, vars) => {
       const delta = Number(vars.delta_vnd || 0);
-      setS((prev) =>
-        prev
-          ? {
-              ...prev,
-              payslipRevision: (prev.payslipRevision || 1) + 1,
-              positiveAdjustmentsVnd: delta > 0 ? prev.positiveAdjustmentsVnd + delta : prev.positiveAdjustmentsVnd,
-              approvedDeductionsVnd: delta < 0 ? prev.approvedDeductionsVnd + Math.abs(delta) : prev.approvedDeductionsVnd,
-              grossVnd: delta > 0 ? prev.grossVnd + delta : prev.grossVnd,
-              netVnd: prev.netVnd + delta,
-            }
-          : prev,
-      );
+      setS((prev) => prev ? {
+        ...prev, payslipRevision: (prev.payslipRevision || 1) + 1,
+        positiveAdjustmentsVnd: delta > 0 ? prev.positiveAdjustmentsVnd + delta : prev.positiveAdjustmentsVnd,
+        approvedDeductionsVnd: delta < 0 ? prev.approvedDeductionsVnd + Math.abs(delta) : prev.approvedDeductionsVnd,
+        grossVnd: delta > 0 ? prev.grossVnd + delta : prev.grossVnd, netVnd: prev.netVnd + delta,
+      } : prev);
       message.success('Đã lưu điều chỉnh lương và cập nhật thực lĩnh của nhân sự');
       setRevModal(false);
-      ['payslip-revisions', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items'].forEach((k) =>
-        qc.invalidateQueries({ queryKey: [k] }),
-      );
+      ['payslip-revisions', 'payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Không thể lưu điều chỉnh lương, vui lòng thử lại'),
   });
@@ -161,6 +147,7 @@ export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { s
                 children: (
                   <Table<ShiftPayrollLog>
                     size="small" rowKey={(r, i) => `${r.date}-${r.shiftCode}-${i}`} pagination={logPag} dataSource={s.shiftLogs ?? []}
+                    onRow={(r) => r.assignmentId ? buildClickableRowProps(r, (item) => setAttShiftId(String(item.assignmentId))) : {}}
                     columns={[
                       { title: 'Ngày', dataIndex: 'date', width: 105, render: (v: string) => <strong className="num">{dayjs(v).format('DD/MM/YYYY')}</strong> },
                       { title: 'Ca làm việc', width: 165, render: (_, r) => <div><strong>{r.shiftLabel}</strong><div style={{ fontSize: 11, color: '#64748B' }}>{r.shiftTime}</div></div> },
@@ -193,6 +180,7 @@ export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { s
                 children: (
                   <Table
                     size="small" rowKey="id" pagination={revPag} dataSource={revsQ.data ?? []}
+                    onRow={(r) => buildClickableRowProps(r, (item) => showDetail('payslipRevision', item))}
                     columns={[
                       { title: 'Lần điều chỉnh', dataIndex: 'revision', width: 130, render: (v: number) => <Tag color="geekblue">Lần #{v}</Tag> },
                       { title: 'Chênh lệch (+/-)', dataIndex: 'delta_vnd', width: 150, render: (v: number) => <span className="num" style={{ fontWeight: 700, color: v >= 0 ? '#16A34A' : '#DC2626' }}>{v >= 0 ? `+${fmtVnd(v)}` : fmtVnd(v)}</span> },
@@ -210,6 +198,7 @@ export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { s
               <Form.Item name="reason" label="Lý do điều chỉnh lương (tối thiểu 5 ký tự)" rules={[{ required: true, min: 5, message: 'Vui lòng nhập lý do điều chỉnh tối thiểu 5 ký tự' }]}><Input.TextArea rows={2} placeholder="VD: Bổ sung phụ cấp ca tối ngày 20/10 sau đối soát..." /></Form.Item>
             </Form>
           </Modal>
+          <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
         </>
       )}
     </BaseDetailDrawer>

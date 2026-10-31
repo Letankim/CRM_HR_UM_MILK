@@ -12,6 +12,7 @@ import { StatusTag } from '../StatusTag';
 import { BRAND } from '../theme';
 import { SelectableTable } from './BulkActionBar';
 import { ExamFullscreenModal } from './ExamFullscreenModal';
+import { useQuickDetail } from './RecordQuickDetailModal';
 import { RowActionButtons } from './RowActionButtons';
 
 export interface AttemptReviewItem {
@@ -100,7 +101,7 @@ export function AttemptHistoryTable({
   const attPag = useClientPagination(10, 'lượt thi');
   return (
     <SelectableTable<Record<string, unknown>>
-      size="small" rowKey="id" pagination={attPag} dataSource={attempts}
+      size="small" rowKey="id" pagination={attPag} dataSource={attempts} onRowClick={onViewAttempt}
       bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Lich_su_lam_bai_TEST.xls', sheetTitle: 'Lịch sử các lượt làm bài kiểm tra (TEST)', rows, columns: [{ header: 'Lượt thi', key: 'attempt_no', align: 'right' }, { header: 'Nhân sự', key: 'employeeName' }, { header: 'Bộ đề', key: 'testTitle' }, { header: 'Thời gian nộp', key: 'submitted_at' }, { header: 'Điểm (%)', key: 'score_percent', align: 'right' }] }) }]}
       locale={{ emptyText: 'Chưa có lịch sử lượt làm bài nào được ghi nhận.' }}
       columns={[
@@ -128,12 +129,9 @@ export function AttemptHistoryTable({
 export function EmployeeTestCenterView({
   assignments, attempts, tests, onRefresh,
 }: { assignments: Record<string, unknown>[]; attempts: Record<string, unknown>[]; tests: Record<string, unknown>[]; onRefresh: () => void }) {
-  const { message } = App.useApp();
-  const qc = useQueryClient();
-  const [subTab, setSubTab] = useState<'assignments' | 'history'>('assignments');
-  const [filterTestId, setFilterTestId] = useState<string>('ALL');
-  const [activeAttempt, setActiveAttempt] = useState<Record<string, unknown> | null>(null);
-  const [activeTestRec, setActiveTestRec] = useState<Record<string, unknown> | null>(null);
+  const { message } = App.useApp(), qc = useQueryClient(), showDetail = useQuickDetail();
+  const [subTab, setSubTab] = useState<'assignments' | 'history'>('assignments'), [filterTestId, setFilterTestId] = useState<string>('ALL');
+  const [activeAttempt, setActiveAttempt] = useState<Record<string, unknown> | null>(null), [activeTestRec, setActiveTestRec] = useState<Record<string, unknown> | null>(null);
   const [reviewingAttempt, setReviewingAttempt] = useState<Record<string, unknown> | null>(null);
   const [startingId, setStartingId] = useState<string | null>(null), [refreshing, setRefreshing] = useState(false);
   const asgPag = useClientPagination(10, 'bài kiểm tra');
@@ -160,7 +158,7 @@ export function EmployeeTestCenterView({
 
   const assignmentsPane = (
     <SelectableTable<Record<string, unknown>>
-      size="small" rowKey="id" pagination={asgPag} dataSource={assignments}
+      size="small" rowKey="id" pagination={asgPag} dataSource={assignments} onRowClick={(r) => showDetail('employeeTestAssignment', r)}
       bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Bai_kiem_tra_cua_ban.xls', sheetTitle: 'Danh sách Bài kiểm tra Nghiệp vụ của bạn', rows, columns: [{ header: 'Mã đợt giao', key: 'assignment_code' }, { header: 'Đề thi', key: 'testTitle' }, { header: 'Hạn nộp', key: 'close_at' }, { header: 'Điểm cao nhất (%)', key: 'best_score_percent', align: 'right' }] }) }]}
       locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Hiện chưa có bài kiểm tra nghiệp vụ nào được giao cho bạn." /> }}
       columns={[

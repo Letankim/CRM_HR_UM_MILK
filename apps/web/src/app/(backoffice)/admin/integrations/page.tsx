@@ -11,6 +11,8 @@ import { api } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { PageHeader } from '@/ui/PageHeader';
 import { StatusTag } from '@/ui/StatusTag';
+import { buildClickableRowProps } from '@/ui/components/BulkActionBar';
+import { useQuickDetail } from '@/ui/components/RecordQuickDetailModal';
 import { ReconciliationAndEmailPanel } from '@/ui/components/ReconciliationAndEmailPanel';
 import { SystemGovernanceAndCommsTabs } from '@/ui/components/SystemGovernanceAndCommsTabs';
 import { useClientPagination } from '@/ui/hooks/useClientPagination';
@@ -46,6 +48,7 @@ function IntegrationsView() {
   const qc = useQueryClient();
   const can = useCan();
   const { message } = App.useApp();
+  const showDetail = useQuickDetail();
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<'health' | 'reconcile' | 'email'>('health');
   const [healthSubTab, setHealthSubTab] = useState<'tables' | 'queue'>('tables');
@@ -117,6 +120,7 @@ function IntegrationsView() {
               pagination={tablesPagination}
               dataSource={d.data.tables}
               scroll={{ x: 640 }}
+              onRow={(r) => buildClickableRowProps(r, (item) => showDetail('sheetTableStat', item))}
               columns={[
                 { title: 'Bảng dữ liệu', dataIndex: 'table', render: (v: string) => <span style={{ fontWeight: 500 }}>{TABLE_DISPLAY_LABELS[v] ?? v}</span> },
                 { title: 'Số dòng', dataIndex: 'rows', align: 'right', width: 110, render: (v: number) => <span className="num">{v.toLocaleString('vi-VN')}</span> },

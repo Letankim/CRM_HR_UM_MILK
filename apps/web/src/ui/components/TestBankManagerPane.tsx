@@ -83,7 +83,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
   const bankTable = (
     <Card size="small" title="Ngân hàng Bộ đề Kiểm tra" extra={<Space><Button size="small" icon={<ReloadOutlined />} loading={refreshing} onClick={() => void handleManualRefresh()}>Làm mới</Button>{canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={openCreateBank}>Tạo bộ đề mới</Button>}</Space>}>
       <SelectableTable<Record<string, unknown>>
-        size="small" rowKey="id" pagination={bankPag} dataSource={tests}
+        size="small" rowKey="id" pagination={bankPag} dataSource={tests} onRowClick={setViewingTest}
         bulkActions={[
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Ngan_hang_bo_de_TEST.xls', sheetTitle: 'Ngân hàng Bộ đề Kiểm tra Nghiệp vụ', rows, columns: [{ header: 'Mã bộ đề', key: 'code' }, { header: 'Tên bộ đề', key: 'title' }, { header: 'Nhóm vị trí', key: 'staffGroupLabel' }, { header: 'Thời gian (phút)', key: 'duration_minutes', align: 'right' }, { header: 'Điểm chuẩn (%)', key: 'pass_percent', align: 'right' }, { header: 'Trạng thái', key: 'status' }] }) },
           ...(canManage ? [{ key: 'del', label: 'Xóa bộ đề đã chọn', danger: true, icon: <DeleteOutlined />, confirm: 'Xác nhận xóa các bộ đề đã chọn?', onClick: async (rows: Record<string, unknown>[]) => { for (const r of rows) await api.delete(`/admin/tests/bank/${r.id}`, { version: r.version }); message.success('Đã xóa các bộ đề kiểm tra đã chọn'); refresh(); } }] : []),
@@ -119,7 +119,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
   const assignmentsTable = (
     <Card size="small" title="Đợt giao bài & Kết quả thi" extra={<Space><Button size="small" icon={<ReloadOutlined />} loading={refreshing} onClick={() => void handleManualRefresh()}>Làm mới</Button>{canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => openCreateAssignment()}>Giao bài kiểm tra</Button>}</Space>}>
       <SelectableTable<Record<string, unknown>>
-        size="small" rowKey="id" pagination={asgPag} dataSource={assignments}
+        size="small" rowKey="id" pagination={asgPag} dataSource={assignments} onRowClick={setViewingAssignment}
         bulkActions={[
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportToExcel({ fileName: 'Dot_giao_bai_TEST.xls', sheetTitle: 'Danh sách Đợt Giao Bài Kiểm Tra & Kết Quả', rows, columns: [{ header: 'Mã đợt giao', key: 'assignment_code' }, { header: 'Nhân sự', key: 'employeeName' }, { header: 'Bộ đề', key: 'testTitle' }, { header: 'Lượt đã thi', key: 'attempts_used', align: 'right' }, { header: 'Hạn nộp', key: 'close_at' }, { header: 'Điểm cao nhất (%)', key: 'best_score_percent', align: 'right' }, { header: 'Trạng thái', key: 'status' }] }) },
           ...(canManage ? [{ key: 'revoke', label: 'Thu hồi đợt giao đã chọn', danger: true, icon: <DeleteOutlined />, confirm: 'Xác nhận thu hồi các đợt giao bài đã chọn?', onClick: async (rows: Record<string, unknown>[]) => { for (const r of rows) await api.delete(`/admin/tests/assignments/${r.id}`, { version: r.version }); message.success('Đã thu hồi các đợt giao bài đã chọn'); refresh(); } }] : []),

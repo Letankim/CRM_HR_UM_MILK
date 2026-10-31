@@ -14,10 +14,7 @@ import type { AttendanceEventRow } from './AttendanceEventsTable';
 import { DateStringPicker, TimeStringPicker } from './DateTimePickers';
 import { FancyboxImage, type FancyboxSlideItem } from './FancyboxPreview';
 
-interface DetailProps {
-  event: AttendanceEventRow | null;
-  onClose: () => void;
-}
+interface DetailProps { event: AttendanceEventRow | null; onClose: () => void; }
 
 function renderCheckEventPane(ev: AttendanceEventRow | null | undefined, kind: 'CHECK_IN' | 'CHECK_OUT', gallerySlides: FancyboxSlideItem[], canViewMedia: boolean) {
   const isCheckIn = kind === 'CHECK_IN';
@@ -29,9 +26,7 @@ function renderCheckEventPane(ev: AttendanceEventRow | null | undefined, kind: '
       title={<Space size={6}><Tag color={isCheckIn ? 'blue' : 'purple'} style={{ margin: 0 }}>{isCheckIn ? 'Vào ca' : 'Ra ca'}</Tag><Typography.Text strong style={{ fontSize: 13 }}>{titleLabel}</Typography.Text></Space>}
     >
       {!ev ? (
-        <div style={{ padding: '24px 12px', textAlign: 'center' }}>
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={isCheckIn ? 'Chưa có dữ liệu điểm danh Vào ca' : 'Nhân sự chưa điểm danh Ra ca (Đang trong ca)'} />
-        </div>
+        <div style={{ padding: '24px 12px', textAlign: 'center' }}><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={isCheckIn ? 'Chưa có dữ liệu điểm danh Vào ca' : 'Nhân sự chưa điểm danh Ra ca (Đang trong ca)'} /></div>
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           {canViewMedia && (
@@ -113,11 +108,7 @@ export function AttendanceEventDetailModal({ event, onClose }: DetailProps) {
   );
 }
 
-interface EditProps {
-  event: AttendanceEventRow | null;
-  onClose: () => void;
-  onSuccess: () => void;
-}
+interface EditProps { event: AttendanceEventRow | null; onClose: () => void; onSuccess: () => void; }
 
 export function AttendanceEventEditModal({ event, onClose, onSuccess }: EditProps) {
   const [form] = Form.useForm();
@@ -182,9 +173,7 @@ export function AttendanceEventEditModal({ event, onClose, onSuccess }: EditProp
   );
 }
 
-interface CheckInLauncherProps {
-  open: boolean; assignments: Record<string, unknown>[]; events: AttendanceEventRow[]; onClose: () => void; onSuccess: () => void;
-}
+interface CheckInLauncherProps { open: boolean; assignments: Record<string, unknown>[]; events: AttendanceEventRow[]; onClose: () => void; onSuccess: () => void; }
 
 export function BackofficeCheckInLauncherModal({ open, assignments, events, onClose, onSuccess }: CheckInLauncherProps) {
   const { message } = App.useApp();

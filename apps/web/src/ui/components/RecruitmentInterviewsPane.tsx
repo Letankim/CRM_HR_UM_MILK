@@ -133,7 +133,7 @@ export function RecruitmentInterviewsPane({ branches, interviewerOptions = [], e
       />
 
       <SelectableTable<Record<string, unknown>>
-        size="small" rowKey="id" loading={ivQ.isLoading}
+        size="small" rowKey="id" loading={ivQ.isLoading} onRowClick={setViewingIv}
         bulkActions={[
           ...(canManageRec ? [
             { key: 'pass', label: 'Duyệt Đạt phỏng vấn đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, eligibleFilter: (x: Record<string, unknown>) => x.decision === 'PENDING', onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel) await api.put(`/admin/interviews/${r.id}/evaluate`, { version: r.version, decision: 'PASS', appearance_score: 90, attitude_score: 90, skill_score: 88, score: 89, comment: 'Đạt yêu cầu phỏng vấn, mời thử việc' }); message.success('Đã duyệt Đạt phỏng vấn cho các lịch hợp lệ'); refreshAll(); } },

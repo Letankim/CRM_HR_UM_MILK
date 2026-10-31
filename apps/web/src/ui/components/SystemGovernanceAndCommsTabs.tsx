@@ -120,7 +120,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
         </Flex>
       </div>
       <SelectableTable
-        size="small" rowKey="id" loading={polQ.isLoading}
+        size="small" rowKey="id" loading={polQ.isLoading} onRowClick={setViewing}
         pagination={{ current: polPage, pageSize: polPerPage, total: polTotal, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t) => `Tổng ${t} chính sách`, onChange: (p, ps) => { setPolPage(ps !== polPerPage ? 1 : p); setPolPerPage(ps); } }}
         dataSource={filteredPolicies} scroll={{ x: 'max-content' }}
         bulkActions={(rows, clear) => [
@@ -181,7 +181,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
         <Button size="small" icon={<ReloadOutlined />} loading={bkpQ.isFetching} onClick={refreshAll}>Làm mới lịch sử</Button>
       </Flex>
       <SelectableTable
-        size="small" rowKey="id" loading={bkpQ.isLoading}
+        size="small" rowKey="id" loading={bkpQ.isLoading} onRowClick={setViewingBackup}
         pagination={{ current: bkpPage, pageSize: bkpPerPage, total: bkpTotal, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t) => `Tổng ${t} bản sao lưu`, onChange: (p, ps) => { setBkpPage(ps !== bkpPerPage ? 1 : p); setBkpPerPage(ps); } }}
         dataSource={filteredBackups}
         bulkActions={(rows) => [{ key: 'excel', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: () => exportToExcel({ fileName: 'Sao_Luu_Da_Chon', sheetTitle: 'Bản sao lưu đã chọn', columns: [{ header: 'Mã sao lưu', render: (r) => String(r.backup_code ?? '') }, { header: 'Loại sao lưu', render: (r) => String(r.kindLabel ?? '') }, { header: 'Thực hiện bởi', render: (r) => String(r.actorName ?? '') }, { header: 'Thời điểm', render: (r) => String(r.started_at ?? '') }, { header: 'Trạng thái', render: (r) => String(r.status ?? '') }], rows }) }]}

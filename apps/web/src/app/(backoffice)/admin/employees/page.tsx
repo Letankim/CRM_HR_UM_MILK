@@ -182,6 +182,7 @@ function EmployeesView() {
             loading={query.isLoading || query.isFetching || manualRefreshing}
             codeExtractor={(r) => r.employeeCode}
             onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }}
+            onRowClick={setDetailRow}
             bulkActions={bulkActions}
           />
           <EmployeeCreateModal open={modalOpen} editing={editingRow} existingCodes={existingCodes} branches={branchOptions} onClose={() => { setModalOpen(false); setEditingRow(null); }} />

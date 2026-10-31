@@ -250,6 +250,14 @@ body {
   background: #eff6ff !important;
 }
 
+.ant-table-wrapper .ant-table-tbody > tr.umbm-clickable-row > td {
+  transition: background-color 0.12s ease;
+}
+
+.ant-table-wrapper .ant-table-tbody > tr.umbm-clickable-row:hover > td {
+  background-color: #eff6ff !important;
+}
+
 /* Chống tràn Card, Modal, Drawer, Descriptions, Tag */
 .ant-card-head-wrapper,
 .ant-drawer-header,
