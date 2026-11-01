@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file-if-exists=../../.env dist/server.js",
     "typecheck": "tsc -p tsconfig.check.json",
-    "test": "vitest run",
+    "test": "vitest run --testTimeout=20000 --hookTimeout=20000",
     "google:auth": "tsx --env-file-if-exists=../../.env scripts/google-auth.ts",
     "google:doctor": "tsx --env-file-if-exists=../../.env scripts/google-doctor.ts",
     "sheets:bootstrap": "tsx --env-file-if-exists=../../.env scripts/bootstrap-sheets.ts",

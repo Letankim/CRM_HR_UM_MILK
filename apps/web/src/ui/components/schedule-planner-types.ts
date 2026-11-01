@@ -1,10 +1,38 @@
 import type { OffWindowState } from '@umbm/shared';
 import dayjs from 'dayjs';
 
+export interface OffConflictPeerItem {
+  requestId: string; requestCode: string; employeeId: string; employeeCode: string; employeeName: string;
+  shiftCode: string; shiftLabel: string; status: string; statusLabel: string;
+}
+
+export interface LeaveRequestConflictInfo {
+  hasConflict: boolean;
+  severity: 'NONE' | 'WARNING' | 'CRITICAL';
+  willUnderstaffShift: boolean;
+  sameShiftOffCount: number;
+  sameShiftTotalStaff: number;
+  remainingGroupStaff: number;
+  minStaffRequired: number;
+  sameBranchOffCount: number;
+  shiftCode: string;
+  shiftLabel: string;
+  sameShiftPeers: OffConflictPeerItem[];
+  otherShiftPeers: OffConflictPeerItem[];
+  warningMessage: string;
+}
+
+export interface PlannerOffConflictGroup {
+  key: string; branchId: string; branchName: string; leaveDate: string;
+  severity: 'WARNING' | 'CRITICAL'; totalOffCount: number; emptyShiftSummaries: string[];
+  employees: OffConflictPeerItem[]; message: string;
+}
+
 /** Đơn OFF trong dữ liệu chốt lịch (tuần chính thức / chu kỳ thử việc). */
 export interface PlannerOffItem {
   id: string; version: number; requestCode: string; leaveDate: string; status: string; statusLabel: string; reason: string;
   employeeId: string; employeeCode: string; employeeName: string; stage: string; branchId: string; branchCode?: string; branchName: string;
+  shiftCode?: string; shiftLabel?: string; offConflict?: LeaveRequestConflictInfo;
 }
 
 /** Ca làm việc đã được lưu chính thức trên bảng phân ca trong tuần / chu kỳ. */
@@ -55,8 +83,8 @@ export interface PlannerWeekData {
   branchStatuses?: PlannerBranchStatus[];
   existingShifts?: PlannerExistingShift[];
   employeeLoads?: PlannerEmployeeLoadItem[];
-  offRequests: PlannerOffItem[]; planned: PlannerShift[]; issues: PlannerIssue[];
-  summary: { plannedCount: number; existingCount?: number; offCount: number; pendingOffCount: number; issueCount: number };
+  offRequests: PlannerOffItem[]; offConflicts?: PlannerOffConflictGroup[]; planned: PlannerShift[]; issues: PlannerIssue[];
+  summary: { plannedCount: number; existingCount?: number; offCount: number; pendingOffCount: number; offConflictCount?: number; issueCount: number };
 }
 
 export interface PlannerWeekLockResult {

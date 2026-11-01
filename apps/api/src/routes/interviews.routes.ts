@@ -1,115 +1,88 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { ROLE_LABELS, zListQueryBase, type Role } from '@umbm/shared';
+import {
+  computeInterviewWeightedScore, inferCandidateExperienceTrack, INTERVIEW_EXPERIENCE_TRACK_LABELS,
+  INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS, INTERVIEW_EXPERIENCE_TRACKS, zListQueryBase, type InterviewExperienceTrack,
+} from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
-import { SocketEvents } from '../realtime/realtime.js';
 import { queueInterviewEmails } from '../services/action-email-dispatcher.js';
+import { sweepUpcomingInterviewReminders } from '../services/interview-reminder.service.js';
+import {
+  findInterviewTimeOverlaps, notifyInterviewParticipants, parseInterviewWindowMs,
+  parseRawInterviewers, resolveInterviewerLabel, resolveInterviewerRecipients,
+} from '../services/interview-schedule-helper.js';
 import { resolveStaffGroupLabel } from './employee-mapper.js';
 
-const LEGACY_INTERVIEWER_MAP: Record<string, { role: Role; label: string }> = {
-  'u-hr-01': { role: 'HR', label: 'Nguyễn Thị Nhân Sự (Quản lý Nhân sự)' },
-  'u-store-01': { role: 'STORE', label: 'Trần Văn Cửa Hàng (Quản lý cửa hàng)' },
-  'u-admin-01': { role: 'ADMIN', label: 'Ban Giám đốc (Quản trị viên)' },
-};
-
 const zCreateInterviewBody = z.object({
-  candidate_id: z.string().trim().min(1), interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
-  interviewer_ids: z.array(z.string().trim()).optional(), scheduled_at: z.string().trim().optional(), start_at: z.string().trim().optional(),
-  duration_minutes: z.coerce.number().int().min(5).max(240).default(30), meet_link: z.string().optional().default(''),
+  candidate_id: z.string().trim().min(1),
+  interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
+  interviewer_ids: z.array(z.string().trim()).optional(),
+  scheduled_at: z.string().trim().optional(),
+  start_at: z.string().trim().optional(),
+  duration_minutes: z.coerce.number().int().min(5).max(240).default(30),
+  meet_link: z.string().optional().default(''),
 });
 
 const zEvaluateInterviewBody = z.object({
-  version: z.coerce.number().int().min(1), score: z.coerce.number().min(0).max(100).optional(),
-  appearance_score: z.coerce.number().min(0).max(100).default(9), attitude_score: z.coerce.number().min(0).max(100).default(9),
-  skill_score: z.coerce.number().min(0).max(100).default(9), decision: z.enum(['PENDING', 'PASS', 'FAIL', 'PASSED', 'FAILED', 'HOLD']).default('PASS'),
+  version: z.coerce.number().int().min(1), experience_track: z.enum(INTERVIEW_EXPERIENCE_TRACKS).optional(),
+  score: z.coerce.number().min(0).max(100).optional(), appearance_score: z.coerce.number().min(0).max(100).default(90),
+  attitude_score: z.coerce.number().min(0).max(100).default(90), skill_score: z.coerce.number().min(0).max(100).default(85),
+  decision: z.enum(['PENDING', 'PASS', 'FAIL', 'PASSED', 'FAILED', 'HOLD']).default('PASS'),
   comment: z.string().trim().optional(), result_note: z.string().trim().optional(),
-  candidate_confirmed: z.boolean().optional(), reschedule_requested: z.boolean().optional(), reschedule_reason: z.string().trim().optional(),
-  scheduled_at: z.string().trim().optional(), interviewer_ids: z.array(z.string().trim()).optional(),
+  candidate_confirmed: z.boolean().optional(), reschedule_requested: z.boolean().optional(),
+  reschedule_reason: z.string().trim().optional(), scheduled_at: z.string().trim().optional(),
+  interviewer_ids: z.array(z.string().trim()).optional(),
   interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
   duration_minutes: z.coerce.number().int().min(5).max(240).optional(), meet_link: z.string().trim().optional(),
 });
 
 const zDeleteBody = z.object({ version: z.coerce.number().int().min(1).optional() });
 
-function parseRawInterviewers(ids?: string[], singleOrArr?: string | string[], fallbackCsv = ''): string[] {
-  if (ids?.length) return ids.map((s) => s.trim()).filter(Boolean);
-  if (Array.isArray(singleOrArr) && singleOrArr.length) return singleOrArr.map((s) => s.trim()).filter(Boolean);
-  if (typeof singleOrArr === 'string' && singleOrArr.trim()) return singleOrArr.split(',').map((s) => s.trim()).filter(Boolean);
-  return fallbackCsv.split(',').map((s) => s.trim()).filter(Boolean);
-}
-
-function resolveInterviewerRecipients(ctx: AppContext, rawIds: string[]): { userIds: string[]; roles: string[] } {
-  const userIds = new Set<string>(), roles = new Set<string>();
-  for (const raw of rawIds) {
-    const id = raw.trim();
-    if (!id) continue;
-    const legacy = LEGACY_INTERVIEWER_MAP[id];
-    if (legacy) {
-      roles.add(legacy.role);
-      for (const u of ctx.db.users.filter((x) => x.role === legacy.role && x.status === 'ACTIVE')) userIds.add(u.id);
-      continue;
-    }
-    const u = ctx.db.users.get(id) ?? ctx.db.users.find((x) => x.username.toLowerCase() === id.toLowerCase());
-    if (u) { userIds.add(u.id); continue; }
-    const emp = ctx.db.employees.get(id) ?? ctx.db.employees.find((e) => e.employee_code.toLowerCase() === id.toLowerCase());
-    if (emp) {
-      const linked = (emp.user_id ? ctx.db.users.get(emp.user_id) : undefined) ?? ctx.db.users.find((x) => x.employee_id === emp.employee_code || (Boolean(emp.phone) && x.phone === emp.phone));
-      if (linked) userIds.add(linked.id);
-    }
-  }
-  return { userIds: Array.from(userIds), roles: Array.from(roles) };
-}
-
-async function notifyInterviewParticipants(ctx: AppContext, actorId: string, params: { rawIds: string[]; branchId: string; interviewId: string; code: string; title: string; body: string; kind: string }) {
-  const recipients = resolveInterviewerRecipients(ctx, params.rawIds);
-  const notif = await ctx.db.notifications.insert({
-    recipient_user_id: recipients.userIds.join(','), recipient_role: recipients.userIds.length === 0 ? (recipients.roles.join(',') || 'HR') : '',
-    branch_id: params.branchId || 'ALL', category: 'HR', title: params.title, body: params.body, link: '/admin/employees?section=recruitment&sub=interviews',
-    severity: 'INFO', read_at: '', entity_type: 'INTERVIEWS', entity_id: params.interviewId,
-  }, actorId);
-  const wsPayload = { kind: params.kind, id: notif.id, code: params.code, title: params.title, summary: params.body, priority: 'NORMAL' };
-  recipients.userIds.filter((uid) => uid !== actorId).forEach((uid) => ctx.realtime()?.toUser(uid, SocketEvents.NOTIFICATION, wsPayload));
-  if (recipients.userIds.length === 0 && recipients.roles.length > 0) ctx.realtime()?.toTargets({ roles: recipients.roles as Role[], excludeUserId: actorId }, SocketEvents.NOTIFICATION, wsPayload);
-  return recipients.userIds;
-}
-
 export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
-  const resolveInterviewerLabel = (rawId: string) =>
-    rawId.split(',').map((part) => {
-      const id = part.trim();
-      if (LEGACY_INTERVIEWER_MAP[id]) return LEGACY_INTERVIEWER_MAP[id]!.label;
-      const u = ctx.db.users.get(id) ?? ctx.db.users.find((x) => x.username === id);
-      if (u) {
-        const emp = u.employee_id ? ctx.db.employees.get(u.employee_id) : undefined;
-        return emp ? `${emp.full_name} (${ROLE_LABELS[u.role]})` : `${u.display_name || u.username} (${ROLE_LABELS[u.role]})`;
-      }
-      const emp = ctx.db.employees.get(id) ?? ctx.db.employees.find((e) => e.employee_code === id);
-      return emp ? `${emp.full_name} (${emp.employee_code})` : id;
-    }).join(', ');
-
   app.get('/api/admin/interviews', { preHandler: requirePermission('interview.manage', 'candidate.manage') }, async (request) => {
-    const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), decision: z.string().trim().optional(), status: z.string().trim().optional() }).parse(request.query ?? {});
+    void sweepUpcomingInterviewReminders(ctx).catch(() => undefined);
+    const query = zListQueryBase.extend({
+      branch_id: z.string().trim().optional(),
+      decision: z.string().trim().optional(),
+      status: z.string().trim().optional(),
+      experience_track: z.string().trim().optional(),
+    }).parse(request.query ?? {});
+
     const items = ctx.db.interviews.all().map((iv) => {
       const cand = ctx.db.candidates.get(iv.candidate_id) ?? ctx.db.candidates.find((c) => c.candidate_code === iv.candidate_id);
       const branchId = iv.branch_id || cand?.branch_pref || '', branch = ctx.db.branches.get(branchId);
+      const track: InterviewExperienceTrack = iv.decision !== 'PENDING'
+        ? (iv.experience_track || inferCandidateExperienceTrack(cand?.experience_note))
+        : (iv.experience_track === 'EXPERIENCED' ? 'EXPERIENCED' : inferCandidateExperienceTrack(cand?.experience_note));
+      const rawIvIds = parseRawInterviewers(undefined, iv.interviewer_id);
+      const resolvedUserIds = resolveInterviewerRecipients(ctx, rawIvIds).userIds;
       return {
-        ...iv, branch_id: branchId, branchName: branch?.name ?? (branchId || 'Chưa phân chi nhánh'),
-        scheduled_at: iv.start_at, candidateName: cand?.full_name ?? iv.candidate_id, candidateCode: cand?.candidate_code ?? '',
+        ...iv, experience_track: track,
+        experienceTrackLabel: INTERVIEW_EXPERIENCE_TRACK_LABELS[track],
+        experienceTrackShortLabel: INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS[track],
+        candidateExperienceNote: cand?.experience_note ?? '', branch_id: branchId,
+        branchName: branch?.name ?? (branchId || 'Chưa phân chi nhánh'), scheduled_at: iv.start_at,
+        candidateName: cand?.full_name ?? iv.candidate_id, candidateCode: cand?.candidate_code ?? '',
         candidatePhone: cand?.phone ?? '', candidateEmail: cand?.email ?? '',
         positionLabel: cand ? resolveStaffGroupLabel(ctx, cand.staff_group, cand.position) : '',
-        interviewerLabel: resolveInterviewerLabel(iv.interviewer_id),
+        interviewerLabel: resolveInterviewerLabel(ctx, iv.interviewer_id), interviewerUserIds: resolvedUserIds,
       };
-    }).filter((item) => (!query.branch_id || query.branch_id === 'ALL' || item.branch_id === query.branch_id) && (!query.decision || query.decision === 'ALL' || item.decision === query.decision) && (!query.status || query.status === 'ALL' || item.status === query.status));
+    }).filter((item) =>
+      (!query.branch_id || query.branch_id === 'ALL' || item.branch_id === query.branch_id)
+      && (!query.decision || query.decision === 'ALL' || item.decision === query.decision)
+      && (!query.status || query.status === 'ALL' || item.status === query.status)
+      && (!query.experience_track || query.experience_track === 'ALL' || item.experience_track === query.experience_track),
+    );
     return sendPaginated(request, 'Lấy danh sách lịch phỏng vấn thành công', paginateAndSort(items, {
       page: query.page, perPage: query.per_page ?? 20, defaultSortBy: 'created_at', defaultSortOrder: 'desc',
       allowedSortFields: ['created_at', 'start_at', 'score', 'decision'], q: query.q,
-      searchExtractor: (i) => [i.candidateName, i.candidateCode, i.candidatePhone, i.interviewerLabel, i.branchName, i.comment],
-      filters: { branch_id: query.branch_id, status: query.status, decision: query.decision },
+      searchExtractor: (i) => [i.candidateName, i.candidateCode, i.candidatePhone, i.interviewerLabel, i.branchName, i.comment, i.experienceTrackLabel],
+      filters: { branch_id: query.branch_id, status: query.status, decision: query.decision, experience_track: query.experience_track },
     }));
   });
 
@@ -122,26 +95,27 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     }
     const rawInterviewers = parseRawInterviewers(body.interviewer_ids, body.interviewer_id);
     if (rawInterviewers.length === 0) throw Errors.fieldValidation('interviewer_id', 'REQUIRED_FIELD', 'Vui lòng chọn ít nhất 1 người phỏng vấn', '');
-    const startAt = body.start_at || body.scheduled_at || '', startMs = Date.parse(startAt);
-    if (Number.isNaN(startMs)) throw Errors.fieldValidation('scheduled_at', 'INVALID_VALUE', 'Thời gian bắt đầu phỏng vấn không hợp lệ', startAt);
-    const endMs = startMs + body.duration_minutes * 60_000, endAt = new Date(endMs).toISOString();
+    const startAt = body.start_at || body.scheduled_at || '';
+    const win = parseInterviewWindowMs(startAt, body.duration_minutes);
+    if (!win) throw Errors.fieldValidation('scheduled_at', 'INVALID_VALUE', 'Thời gian bắt đầu phỏng vấn không hợp lệ', startAt);
 
-    const conflict = ctx.db.interviews.find((iv) => {
-      if (iv.status === 'CANCELLED' || !rawInterviewers.some((id) => iv.interviewer_id.split(',').map((s) => s.trim()).includes(id))) return false;
-      if (iv.start_at === startAt) return true;
-      const exStart = Date.parse(iv.start_at), exEnd = Number.isNaN(exStart) ? NaN : exStart + (iv.duration_minutes || 30) * 60_000;
-      return !Number.isNaN(exStart) && startMs < exEnd && endMs > exStart;
-    });
-    if (conflict) throw Errors.fieldValidation('scheduled_at', 'DUPLICATE_VALUE', 'Khung giờ phỏng vấn này đã trùng lịch của người phỏng vấn', startAt);
-
-    const slotLocal = startAt.slice(0, 16).replace('T', ' ');
-    if (slotLocal < dayjs().format('YYYY-MM-DD HH:mm')) throw Errors.fieldValidation('scheduled_at', 'OUT_OF_RANGE', 'Không được chọn thời gian phỏng vấn trong quá khứ', startAt);
+    const overlaps = findInterviewTimeOverlaps(ctx, { startAt, durationMinutes: body.duration_minutes, rawInterviewers });
+    if (overlaps.interviewerConflicts.length > 0) {
+      throw Errors.fieldValidation('scheduled_at', 'DUPLICATE_VALUE', overlaps.interviewerConflicts[0]!.message, startAt);
+    }
+    const slotLocal = `${win.dateStr} ${win.startHm}`;
+    if (slotLocal < dayjs().format('YYYY-MM-DD HH:mm')) {
+      throw Errors.fieldValidation('scheduled_at', 'OUT_OF_RANGE', 'Không được chọn thời gian phỏng vấn trong quá khứ', startAt);
+    }
 
     const meetLink = body.meet_link || 'https://meet.google.com/umb-milk-hr', actorId = request.auth!.user.id;
+    const initialTrack = inferCandidateExperienceTrack(cand.experience_note);
     const created = await ctx.db.interviews.insert({
-      candidate_id: cand.id, branch_id: cand.branch_pref, start_at: startAt, end_at: endAt, duration_minutes: body.duration_minutes,
-      meet_link: meetLink, interviewer_id: rawInterviewers.join(', '), status: 'SCHEDULED', candidate_confirmed: true, reschedule_requested: false,
-      reschedule_reason: '', appearance_score: 0, attitude_score: 0, skill_score: 0, score: 0, comment: '', decision: 'PENDING', calendar_event_id: `CAL-${Date.now()}`, decided_at: '',
+      candidate_id: cand.id, branch_id: cand.branch_pref, start_at: startAt, end_at: new Date(win.endMs).toISOString(),
+      duration_minutes: body.duration_minutes, meet_link: meetLink, interviewer_id: rawInterviewers.join(', '),
+      status: 'SCHEDULED', candidate_confirmed: true, reschedule_requested: false, reschedule_reason: '',
+      appearance_score: 0, attitude_score: 0, skill_score: 0, score: 0, comment: '', decision: 'PENDING',
+      calendar_event_id: `CAL-${Date.now()}`, decided_at: '', experience_track: initialTrack,
     }, actorId);
     await ctx.db.candidates.update(cand.id, cand.version, { status: 'INTERVIEW_SCHEDULED' }, actorId);
 
@@ -151,9 +125,11 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       body: `Bạn được đính kèm tham gia phỏng vấn ứng viên ${cand.full_name} vào lúc ${slotLocal} (${body.duration_minutes} phút). Link họp: ${meetLink}`,
     });
     queueInterviewEmails(ctx, { candidate: cand, interview: created, interviewerUserIds: notifiedUsers, actorId });
+    void sweepUpcomingInterviewReminders(ctx).catch(() => undefined);
     await ctx.audit.record(auditContext(request), { action: 'interview.create', entity: 'INTERVIEWS', entityId: created.id, after: { candidate_id: created.candidate_id, start_at: created.start_at, interviewers: rawInterviewers, notified_users: notifiedUsers } });
     reply.code(201);
-    return sendSuccess(request, 'Đã đặt lịch phỏng vấn và gửi thông báo tới tất cả người tham gia phỏng vấn thành công', created);
+    const slotWarn = overlaps.slotOverlaps.length > 0 ? ` (Lưu ý: ${overlaps.slotOverlaps[0]!.message})` : '';
+    return sendSuccess(request, `Đã đặt lịch phỏng vấn và gửi thông báo tới tất cả người tham gia phỏng vấn thành công${slotWarn}`, { ...created, slotOverlaps: overlaps.slotOverlaps });
   });
 
   app.put('/api/admin/interviews/:id/evaluate', { preHandler: requirePermission('interview.manage') }, async (request) => {
@@ -166,21 +142,26 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
 
     if (body.reschedule_requested !== undefined || body.candidate_confirmed !== undefined || body.scheduled_at || body.interviewer_ids || body.interviewer_id || body.duration_minutes !== undefined || body.meet_link !== undefined) {
       const nextStart = body.scheduled_at || before.start_at;
-      const slotLocal = nextStart.slice(0, 16).replace('T', ' ');
+      const nextDuration = body.duration_minutes ?? (before.duration_minutes || 30);
+      const win = parseInterviewWindowMs(nextStart, nextDuration);
+      if (!win) throw Errors.fieldValidation('scheduled_at', 'INVALID_VALUE', 'Thời gian phỏng vấn không hợp lệ', nextStart);
+      const slotLocal = `${win.dateStr} ${win.startHm}`;
       if (body.scheduled_at && body.scheduled_at.slice(0, 16) !== before.start_at.slice(0, 16) && slotLocal < dayjs().format('YYYY-MM-DD HH:mm')) {
         throw Errors.fieldValidation('scheduled_at', 'OUT_OF_RANGE', 'Không được chọn thời gian đổi lịch phỏng vấn trong quá khứ', nextStart);
       }
       const nextInterviewers = parseRawInterviewers(body.interviewer_ids, body.interviewer_id, before.interviewer_id);
       if (nextInterviewers.length === 0) throw Errors.fieldValidation('interviewer_id', 'REQUIRED_FIELD', 'Vui lòng chọn ít nhất 1 người phỏng vấn', '');
-      const nextDuration = body.duration_minutes ?? (before.duration_minutes || 30);
-      const startMs = Date.parse(nextStart);
-      const nextEnd = Number.isNaN(startMs) ? before.end_at : new Date(startMs + nextDuration * 60_000).toISOString();
+      const overlaps = findInterviewTimeOverlaps(ctx, { startAt: nextStart, durationMinutes: nextDuration, rawInterviewers: nextInterviewers, excludeInterviewId: id });
+      if (overlaps.interviewerConflicts.length > 0) {
+        throw Errors.fieldValidation('scheduled_at', 'DUPLICATE_VALUE', overlaps.interviewerConflicts[0]!.message, nextStart);
+      }
       const nextMeet = body.meet_link ?? before.meet_link;
       const nextStatus = body.reschedule_requested ? 'RESCHEDULE_NEEDED' : body.candidate_confirmed ? 'CONFIRMED' : before.status;
       const updatedConfirm = await ctx.db.interviews.update(id, body.version, {
-        start_at: nextStart, end_at: nextEnd, duration_minutes: nextDuration, meet_link: nextMeet, interviewer_id: nextInterviewers.join(', '),
-        status: nextStatus, candidate_confirmed: body.candidate_confirmed ?? before.candidate_confirmed, reschedule_requested: body.reschedule_requested ?? before.reschedule_requested,
-        reschedule_reason: body.reschedule_reason ?? before.reschedule_reason, ...(body.comment ? { comment: body.comment } : {}),
+        start_at: nextStart, end_at: new Date(win.endMs).toISOString(), duration_minutes: nextDuration, meet_link: nextMeet,
+        interviewer_id: nextInterviewers.join(', '), status: nextStatus, candidate_confirmed: body.candidate_confirmed ?? before.candidate_confirmed,
+        reschedule_requested: body.reschedule_requested ?? before.reschedule_requested, reschedule_reason: body.reschedule_reason ?? before.reschedule_reason,
+        ...(body.comment ? { comment: body.comment } : {}),
       }, actorId);
       const allRelatedIds = Array.from(new Set([...before.interviewer_id.split(',').map((s) => s.trim()), ...nextInterviewers].filter(Boolean)));
       const updatedUserIds = await notifyInterviewParticipants(ctx, actorId, {
@@ -189,25 +170,42 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
         body: `Lịch phỏng vấn ứng viên ${cand?.full_name ?? before.candidate_id} đã được chỉnh sửa sang ${slotLocal} (${nextDuration} phút)${updatedConfirm.reschedule_reason ? ` — Ghi chú: ${updatedConfirm.reschedule_reason}` : ''}. Link họp: ${nextMeet}`,
       });
       if (cand) queueInterviewEmails(ctx, { candidate: cand, interview: updatedConfirm, isUpdate: true, interviewerUserIds: updatedUserIds, actorId });
+      void sweepUpcomingInterviewReminders(ctx).catch(() => undefined);
       await ctx.audit.record(auditContext(request), { action: 'interview.update_status', entity: 'INTERVIEWS', entityId: id, before: { start_at: before.start_at, interviewer_id: before.interviewer_id, status: before.status }, after: { start_at: updatedConfirm.start_at, interviewer_id: updatedConfirm.interviewer_id, status: updatedConfirm.status } });
-      return sendSuccess(request, 'Đã cập nhật lịch phỏng vấn và gửi thông báo đến những người liên quan', updatedConfirm);
+      return sendSuccess(request, 'Đã cập nhật lịch phỏng vấn và gửi thông báo đến những người liên quan', { ...updatedConfirm, slotOverlaps: overlaps.slotOverlaps });
     }
 
     const normalizedDecision = body.decision === 'PASSED' || body.decision === 'PASS' ? 'PASS' : body.decision === 'HOLD' ? 'HOLD' : 'FAIL';
-    const rawBody = (request.body ?? {}) as Record<string, unknown>, avgScore = Math.round(((body.appearance_score + body.attitude_score + body.skill_score) / 3) * 10) / 10;
-    const computedScore = (rawBody.appearance_score !== undefined || rawBody.attitude_score !== undefined || rawBody.skill_score !== undefined) ? avgScore : (body.score ?? avgScore);
-    const updated = await ctx.db.interviews.update(id, body.version, { status: 'COMPLETED', score: computedScore, appearance_score: body.appearance_score, attitude_score: body.attitude_score, skill_score: body.skill_score, decision: normalizedDecision, comment: body.comment || body.result_note || '', decided_at: nowIso() }, actorId);
+    const track: InterviewExperienceTrack = body.experience_track ?? before.experience_track ?? inferCandidateExperienceTrack(cand?.experience_note);
+    const rawBody = (request.body ?? {}) as Record<string, unknown>;
+    const hasComponentScores = rawBody.appearance_score !== undefined || rawBody.attitude_score !== undefined || rawBody.skill_score !== undefined;
+    const recalcScore = body.experience_track
+      ? computeInterviewWeightedScore(body.experience_track, body.appearance_score, body.attitude_score, body.skill_score)
+      : Number(((body.appearance_score + body.attitude_score + body.skill_score) / 3).toFixed(1));
+    const computedScore = hasComponentScores ? recalcScore : (body.score ?? recalcScore);
+    const updated = await ctx.db.interviews.update(id, body.version, {
+      status: 'COMPLETED', experience_track: track, score: computedScore, appearance_score: body.appearance_score,
+      attitude_score: body.attitude_score, skill_score: body.skill_score, decision: normalizedDecision,
+      comment: body.comment || body.result_note || '', decided_at: nowIso(),
+    }, actorId);
     if (cand && normalizedDecision !== 'HOLD') {
       await ctx.db.candidates.update(cand.id, cand.version, { status: normalizedDecision === 'PASS' ? 'HIRED' : 'REJECTED' }, actorId);
     }
-    await ctx.audit.record(auditContext(request), { action: 'interview.evaluate', entity: 'INTERVIEWS', entityId: id, before: { decision: before.decision }, after: { decision: updated.decision, score: updated.score } });
-    return sendSuccess(request, normalizedDecision === 'PASS' ? 'Đã chấm ĐẠT phỏng vấn và chuyển ứng viên sang bước Tiếp nhận thử việc' : normalizedDecision === 'HOLD' ? 'Đã lưu kết quả phỏng vấn ở trạng thái Cân nhắc thêm' : 'Đã cập nhật kết quả phỏng vấn: Không đạt', updated);
+    await ctx.audit.record(auditContext(request), { action: 'interview.evaluate', entity: 'INTERVIEWS', entityId: id, before: { decision: before.decision }, after: { decision: updated.decision, score: updated.score, experience_track: track } });
+    const trackLabel = INTERVIEW_EXPERIENCE_TRACK_LABELS[track];
+    return sendSuccess(
+      request,
+      normalizedDecision === 'PASS'
+        ? `Đã chấm ĐẠT phỏng vấn (${trackLabel} · ${computedScore} điểm) và chuyển ứng viên sang bước Tiếp nhận thử việc`
+        : normalizedDecision === 'HOLD'
+          ? `Đã lưu kết quả phỏng vấn (${trackLabel} · ${computedScore} điểm) ở trạng thái Cân nhắc thêm`
+          : `Đã cập nhật kết quả phỏng vấn (${trackLabel} · ${computedScore} điểm): Không đạt`,
+      updated,
+    );
   });
 
   app.delete('/api/admin/interviews/:id', { preHandler: requirePermission('interview.manage') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const body = zDeleteBody.parse(request.body ?? {});
-    const before = ctx.db.interviews.get(id);
+    const { id } = request.params as { id: string }, body = zDeleteBody.parse(request.body ?? {}), before = ctx.db.interviews.get(id);
     if (!before) throw Errors.notFound('Lịch phỏng vấn', id);
     await ctx.db.interviews.softDelete(id, body.version ?? before.version, request.auth!.user.id);
     const cand = ctx.db.candidates.get(before.candidate_id);

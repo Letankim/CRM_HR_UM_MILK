@@ -57,6 +57,7 @@ export function buildShiftGroupFairnessMap(
   ctx: AppContext,
   groupEmps: Employee[],
   weekStart: string,
+  historicalShifts?: ShiftAssignment[],
 ): Map<string, ShiftGroupFairnessMetrics> {
   const sorted = [...groupEmps].sort((a, b) => a.employee_code.localeCompare(b.employee_code));
   const k = sorted.length;
@@ -69,7 +70,8 @@ export function buildShiftGroupFairnessMap(
   const prevSunday = addDaysYmd(weekStart, -1);
   const historyEnd = prevSunday;
 
-  const relevantAssignments = ctx.db.shiftAssignments.filter(
+  const sourceShifts = historicalShifts ?? ctx.db.shiftAssignments.all();
+  const relevantAssignments = sourceShifts.filter(
     (a) => a.work_date >= earliestStart && a.work_date <= historyEnd && a.status !== 'DRAFT' && isCountedWorkShift(a),
   );
 
@@ -150,6 +152,7 @@ export function summarizeOfficialEmployeeWeekLoads(
     existingShifts: ShiftAssignment[];
     plannedShifts: { employeeId: string; hours: number }[];
     offEmployeeIdsByDate: { employeeId: string; leaveDate: string }[];
+    historicalShifts?: ShiftAssignment[];
   },
 ): PlannerEmployeeLoadSummary[] {
   const branchSet = new Set(params.branchIds);
@@ -159,7 +162,8 @@ export function summarizeOfficialEmployeeWeekLoads(
 
   const window28Start = addDaysYmd(params.weekStart, -28);
   const prevDay = addDaysYmd(params.weekStart, -1);
-  const histRows = ctx.db.shiftAssignments.filter(
+  const sourceShifts = params.historicalShifts ?? ctx.db.shiftAssignments.all();
+  const histRows = sourceShifts.filter(
     (a) => a.work_date >= window28Start && a.work_date <= prevDay && a.status !== 'DRAFT' && isCountedWorkShift(a),
   );
 

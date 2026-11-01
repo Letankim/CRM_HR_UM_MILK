@@ -9,6 +9,7 @@ import {
   carryScheduleLocksToMonth, isMissingSpreadsheetError, runPartitionExclusive,
   stageCarryRowsToTarget, type AnyStore, type MonthlyStoreDesc,
 } from './data-partition-helpers.js';
+import { invalidateHistoricalShiftsCache } from './historical-shifts-loader.js';
 import { saveOperationSettings } from './operations-settings.service.js';
 
 export interface PartitionListItem {
@@ -163,6 +164,7 @@ export async function switchPartition(db: Database, monthKey: string, actorId: s
     const prepared = await Promise.all(descs.map((m) => (m.store as unknown as AnyStore).prepareTarget(target.targetFor(m))));
     descs.forEach((m, idx) => (m.store as unknown as AnyStore).commitPreparedTarget(prepared[idx]!));
     db.partitionMonth = monthKey;
+    invalidateHistoricalShiftsCache(db);
     await persistActiveMonth(db, monthKey, actorId);
   });
 }
@@ -203,6 +205,7 @@ export async function rolloverToMonth(db: Database, monthKey: string, actorId: s
     }
     snapshots.forEach((s, idx) => s.store.commitPreparedTarget(prepared[idx]!));
     db.partitionMonth = monthKey;
+    invalidateHistoricalShiftsCache(db);
     await persistActiveMonth(db, monthKey, actorId);
     return { monthKey, label: monthKeyLabel(monthKey), file: target.entry, carried, pendingLeftBehind };
   });

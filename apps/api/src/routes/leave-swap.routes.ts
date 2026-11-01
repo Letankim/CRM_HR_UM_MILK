@@ -10,6 +10,7 @@ import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requireP
 import { SocketEvents } from '../realtime/realtime.js';
 import { queueLeaveCreatedEmail, queueLeaveDecisionEmail } from '../services/action-email-dispatcher.js';
 import { runBackgroundSideEffect } from '../services/background-write.js';
+import { evaluateLeaveRequestConflict } from '../services/leave-conflict-detector.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
@@ -64,7 +65,11 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     const mapped = scoped.map((r) => {
       const emp = ctx.db.employees.get(r.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === r.employee_id);
       const branch = (emp ? ctx.db.branches.get(emp.branch_id) : undefined) ?? ctx.db.branches.get(r.branch_id), bId = branch?.id ?? r.branch_id;
-      return { ...r, ...resolveShiftTimeDetails(ctx, r.shift_code, r.assignment_id, bId, r.employee_id, r.leave_date), ...computeLeaveStaffing(bId, r.leave_date, r.shift_code, emp?.id ?? r.employee_id), branch_id: bId, employeeId: emp?.id ?? r.employee_id, employeeCode: emp?.employee_code ?? r.employee_id, employeeName: emp?.full_name ?? 'Nhân sự', branchName: branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[r.status], weekStart: mondayOfWeek(r.leave_date) };
+      const offConflict = evaluateLeaveRequestConflict(ctx, r);
+      const staffing = ACTIVE_LEAVE(r.status)
+        ? { staffing_after_leave: offConflict.remainingGroupStaff, min_staff_required: offConflict.minStaffRequired }
+        : computeLeaveStaffing(bId, r.leave_date, r.shift_code, emp?.id ?? r.employee_id);
+      return { ...r, ...resolveShiftTimeDetails(ctx, r.shift_code, r.assignment_id, bId, r.employee_id, r.leave_date), ...staffing, offConflict, branch_id: bId, employeeId: emp?.id ?? r.employee_id, employeeCode: emp?.employee_code ?? r.employee_id, employeeName: emp?.full_name ?? 'Nhân sự', branchName: branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[r.status], weekStart: mondayOfWeek(r.leave_date) };
     }).filter((r) => (!query.branch_id || query.branch_id === 'ALL' || r.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || r.status === query.status) && (!query.from_date || r.leave_date >= query.from_date) && (!query.to_date || r.leave_date <= query.to_date));
     return sendPaginated(request, 'Lấy danh sách đơn đăng ký nghỉ OFF thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'leave_date', 'status'], q: query.q, searchExtractor: (i) => [i.request_code, i.employeeCode, i.employeeName, i.reason, i.leave_date], filters: { branch_id: query.branch_id, status: query.status } }));
   });
@@ -109,6 +114,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     assertDateNotLockedByPayroll(ctx.db, before.leave_date, 'phê duyệt đơn nghỉ OFF');
     if (body.decision === 'REJECTED' && !body.decision_reason.trim()) throw Errors.fieldValidation('decision_reason', 'REQUIRED_FIELD', 'Vui lòng nhập lý do từ chối đơn xin nghỉ OFF', '');
     const actorId = request.auth!.user.id, emp = ctx.db.employees.get(before.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === before.employee_id);
+    const beforeConflict = evaluateLeaveRequestConflict(ctx, before);
     const isTargetEmp = (eid: string) => eid === before.employee_id || Boolean(emp && matchEmp(emp)(eid));
     const updated = await ctx.reconciliation.executeSaga({
       sagaKey: `leave-decide-${id}-v${body.version}`, operation: 'DECIDE_LEAVE_REQUEST', actorId, initialContext: { leave: before },
@@ -132,8 +138,12 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: 'LEAVE_DECIDED', message: `Đơn nghỉ OFF ngày ${vi(before.leave_date)} đã ${body.decision === 'APPROVED' ? 'được phê duyệt' : 'bị từ chối'}`, actorId });
     await runBackgroundSideEffect(async () => {
       await ensureSyncedNotifications(ctx);
-      await ctx.audit.record(reqAudit, { action: 'leave.decide', entity: 'LEAVE_REQUESTS', entityId: id, before: { status: before.status }, after: { status: updated.status, decision_reason: updated.decision_reason } });
+      await ctx.audit.record(reqAudit, { action: 'leave.decide', entity: 'LEAVE_REQUESTS', entityId: id, before: { status: before.status }, after: { status: updated.status, decision_reason: updated.decision_reason, off_conflict: beforeConflict.hasConflict ? beforeConflict.warningMessage : '' } });
     });
-    return sendSuccess(request, body.decision === 'APPROVED' ? 'Đã phê duyệt đơn nghỉ OFF và tự động gỡ ca làm việc trùng ngày' : 'Đã từ chối đơn nghỉ OFF', updated);
+    const afterConflict = evaluateLeaveRequestConflict(ctx, updated);
+    const approveMsg = beforeConflict.hasConflict
+      ? `Đã phê duyệt đơn nghỉ OFF — ${beforeConflict.warningMessage}`
+      : 'Đã phê duyệt đơn nghỉ OFF và tự động gỡ ca làm việc trùng ngày';
+    return sendSuccess(request, body.decision === 'APPROVED' ? approveMsg : 'Đã từ chối đơn nghỉ OFF', { ...updated, offConflict: afterConflict });
   });
 }

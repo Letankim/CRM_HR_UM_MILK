@@ -1,7 +1,7 @@
 'use client';
 
-import { App, Card, Col, Form, Input, InputNumber, Modal, Row, Select, Tabs } from 'antd';
-import { BookOutlined, CalendarOutlined, CloseOutlined, SolutionOutlined, TeamOutlined } from '@ant-design/icons';
+import { App, Card, Form, Tabs } from 'antd';
+import { BookOutlined, CalendarOutlined, SolutionOutlined, TeamOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useSearchParams } from 'next/navigation';
@@ -10,7 +10,7 @@ import { ROLE_LABELS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
 import { useEmployeeSearchSelect } from '../hooks/useEmployeeSearchSelect';
-import { DateStringPicker, TimeSelect } from './DateTimePickers';
+import { InterviewCreateModal } from './InterviewScheduleModals';
 import { RecruitmentCandidatesPane } from './RecruitmentCandidatesPane';
 import { RecruitmentInterviewsPane } from './RecruitmentInterviewsPane';
 import { TestBankManagerPane } from './TestBankManagerPane';
@@ -51,16 +51,13 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
   const [recSubTab, setRecSubTab] = useState<'candidates' | 'interviews'>(subParam === 'interviews' ? 'interviews' : 'candidates');
   const [ivModal, setIvModal] = useState(false);
   const [externalEditIv, setExternalEditIv] = useState<Record<string, unknown> | null>(null);
+  const [ivForm] = Form.useForm();
 
   useEffect(() => {
     if (subParam === 'interviews' || subParam === 'candidates') {
       setRecSubTab(subParam);
     }
   }, [subParam]);
-  const [ivForm] = Form.useForm();
-  const selectedDate = Form.useWatch('interview_date', ivForm);
-  const todayStr = dayjs().format('YYYY-MM-DD');
-  const nowTimeStr = dayjs().format('HH:mm');
 
   const canViewRec = can('candidate.manage', 'interview.manage');
   const canViewTests = can('test.manage', 'employee.read', 'system.config');
@@ -68,9 +65,9 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
   const isTestsActive = !activeTab || activeTab === 'tests';
   const empSelect = useEmployeeSearchSelect({ initialOptions: employees, enabled: (canViewRec && ivModal) || (canViewTests && isTestsActive) });
   const candQ = useQuery({ queryKey: ['candidates'], queryFn: () => api.list<Record<string, unknown>>('/admin/candidates?per_page=100'), enabled: canViewRec && isRecActive });
-  const ivQ = useQuery({ queryKey: ['interviews'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/interviews'), enabled: canViewRec && isRecActive });
+  const ivQ = useQuery({ queryKey: ['interviews', 'all'], queryFn: () => api.get<Record<string, unknown>[]>('/admin/interviews?per_page=100'), enabled: canViewRec && isRecActive });
   const testsQ = useQuery({ queryKey: ['tests-bank'], queryFn: () => api.get<{ tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts: Record<string, unknown>[] }>('/admin/tests/bank'), enabled: canViewTests && isTestsActive });
-  const recipientsQ = useQuery({ queryKey: ['notifications', 'recipients'], queryFn: () => api.get<{ id: string; username: string; displayName: string; roleLabel: string }[]>('/notifications/recipients'), enabled: ivModal });
+  const recipientsQ = useQuery({ queryKey: ['notifications', 'recipients'], queryFn: () => api.get<{ id: string; username: string; displayName: string; roleLabel: string }[]>('/notifications/recipients'), enabled: canViewRec && isRecActive });
 
   const interviewerOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -87,16 +84,17 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
     return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
   }, [me?.user, recipientsQ.data, empSelect.options]);
 
+  const allInterviews = ivQ.data ?? [];
   const scheduledCandidateIds = useMemo(() => {
     const s = new Set<string>();
-    for (const iv of ivQ.data ?? []) {
+    for (const iv of allInterviews) {
       if (iv.status !== 'CANCELLED') {
         s.add(String(iv.candidate_id));
         if (iv.candidateCode) s.add(String(iv.candidateCode));
       }
     }
     return s;
-  }, [ivQ.data]);
+  }, [allInterviews]);
 
   const refreshAll = () => ['candidates', 'interviews', 'tests-bank', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
 
@@ -104,6 +102,8 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
     mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body),
     onSuccess: () => {
       message.success('Đã đặt lịch phỏng vấn thành công');
+      setIvModal(false);
+      setRecSubTab('interviews');
       refreshAll();
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Đặt lịch phỏng vấn thất bại'),
@@ -111,7 +111,7 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
 
   const openScheduleForCandidate = (candidateId?: string) => {
     if (candidateId) {
-      const existingIv = (ivQ.data ?? []).find((iv) => (String(iv.candidate_id) === candidateId || String(iv.candidateCode) === candidateId) && iv.status !== 'CANCELLED');
+      const existingIv = allInterviews.find((iv) => (String(iv.candidate_id) === candidateId || String(iv.candidateCode) === candidateId) && iv.status !== 'CANCELLED');
       if (existingIv) {
         setRecSubTab('interviews');
         setExternalEditIv(existingIv);
@@ -144,8 +144,17 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
         },
         {
           key: 'interviews',
-          label: <span><CalendarOutlined /> Lịch Phỏng vấn &amp; Google Meet ({ivQ.data?.length ?? 0})</span>,
-          children: <RecruitmentInterviewsPane branches={branches} interviewerOptions={interviewerOptions} externalEditTarget={externalEditIv} onClearExternalEdit={() => setExternalEditIv(null)} onOpenScheduleModal={() => openScheduleForCandidate()} />,
+          label: <span><CalendarOutlined /> Lịch Phỏng vấn &amp; Google Meet ({allInterviews.length})</span>,
+          children: (
+            <RecruitmentInterviewsPane
+              branches={branches}
+              interviewerOptions={interviewerOptions}
+              allInterviews={allInterviews}
+              externalEditTarget={externalEditIv}
+              onClearExternalEdit={() => setExternalEditIv(null)}
+              onOpenScheduleModal={() => openScheduleForCandidate()}
+            />
+          ),
         },
       ]}
     />
@@ -165,54 +174,17 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
         />
       )}
 
-      <Modal width={680} open={ivModal} forceRender destroyOnHidden title="Đặt lịch phỏng vấn & Google Meet" okText="Đặt lịch phỏng vấn" cancelText="Hủy bỏ" okButtonProps={{ icon: <CalendarOutlined />, loading: postMut.isPending }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={() => setIvModal(false)} onOk={() => ivForm.submit()}>
-        <Form
-          form={ivForm}
-          layout="vertical"
-          onFinish={(v) => {
-            postMut.mutate({ url: '/admin/interviews', body: { candidate_id: v.candidate_id, interviewer_ids: v.interviewer_ids, scheduled_at: `${v.interview_date}T${v.interview_slot}:00+07:00`, duration_minutes: Number(v.duration_minutes || 30), meet_link: v.meet_link } });
-            setIvModal(false);
-            setRecSubTab('interviews');
-          }}
-        >
-          <Form.Item name="candidate_id" label="Ứng viên phỏng vấn" rules={[{ required: true, message: 'Vui lòng chọn ứng viên' }]}><Select showSearch optionFilterProp="label" placeholder="Chọn ứng viên phỏng vấn" options={(candQ.data?.data ?? []).map((c) => { const hasIv = scheduledCandidateIds.has(String(c.id)) || scheduledCandidateIds.has(String(c.candidate_code)); return { value: String(c.id), disabled: hasIv, label: `${c.candidate_code} — ${c.full_name} (${c.phone})${hasIv ? ' — Đã có lịch phỏng vấn' : ''}` }; })} /></Form.Item>
-          <Form.Item name="interviewer_ids" label="Người tham gia phỏng vấn" rules={[{ required: true, message: 'Chọn ít nhất 1 người phỏng vấn' }]}><Select mode="multiple" allowClear showSearch optionFilterProp="label" placeholder="Chọn người tham gia phỏng vấn" options={interviewerOptions} /></Form.Item>
-          <Row gutter={12}>
-            <Col span={8}>
-              <Form.Item
-                name="interview_date"
-                label="Ngày phỏng vấn"
-                rules={[
-                  { required: true, message: 'Vui lòng chọn ngày phỏng vấn' },
-                  { validator: async (_, val) => { if (val && String(val) < dayjs().format('YYYY-MM-DD')) throw new Error('Không được chọn ngày trong quá khứ'); } },
-                ]}
-              >
-                <DateStringPicker minDate={todayStr} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                name="interview_slot"
-                label="Giờ bắt đầu"
-                dependencies={['interview_date']}
-                rules={[
-                  { required: true, message: 'Vui lòng chọn giờ bắt đầu' },
-                  ({ getFieldValue }) => ({
-                    validator: async (_, val) => {
-                      const d = getFieldValue('interview_date');
-                      if (d && val && `${d} ${val}` < dayjs().format('YYYY-MM-DD HH:mm')) throw new Error('Không được chọn thời gian trong quá khứ');
-                    },
-                  }),
-                ]}
-              >
-                <TimeSelect placeholder="Chọn giờ bắt đầu" minTime={selectedDate === todayStr ? nowTimeStr : undefined} />
-              </Form.Item>
-            </Col>
-            <Col span={8}><Form.Item name="duration_minutes" label="Thời lượng" rules={[{ required: true }]}><InputNumber min={5} max={240} step={5} style={{ width: '100%' }} suffix="phút" /></Form.Item></Col>
-          </Row>
-          <Form.Item name="meet_link" label="Link Google Meet / Calendar"><Input placeholder="https://meet.google.com/umb-milk-hr" /></Form.Item>
-        </Form>
-      </Modal>
+      <InterviewCreateModal
+        open={ivModal}
+        form={ivForm}
+        candidates={candQ.data?.data ?? []}
+        scheduledCandidateIds={scheduledCandidateIds}
+        interviewerOptions={interviewerOptions}
+        existingInterviews={allInterviews}
+        loading={postMut.isPending}
+        onCancel={() => setIvModal(false)}
+        onSubmit={(payload) => postMut.mutate({ url: '/admin/interviews', body: payload })}
+      />
     </Card>
   );
 }

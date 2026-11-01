@@ -5,6 +5,7 @@ import { App } from 'antd';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, ApiClientError } from '@/lib/api';
 import type { PlannerOffItem } from './schedule-planner-types';
+import { confirmWorkflowShiftOverride } from './workflow-shift-warning';
 
 const PLANNER_RELATED_KEYS = ['schedule-planner-week', 'schedule-planner-probation', 'leave-requests', 'schedules', 'dashboard-leaves', 'notifications'];
 
@@ -16,7 +17,7 @@ export function useInvalidatePlanner() {
 
 /** Duyệt / từ chối từng đơn OFF ngay trên màn hình chốt lịch (từ chối bắt buộc nhập lý do). */
 export function usePlannerOffDecision() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const invalidate = useInvalidatePlanner();
   const [rejectTarget, setRejectTarget] = useState<PlannerOffItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -38,7 +39,10 @@ export function usePlannerOffDecision() {
     rejectTarget,
     openReject: (row: PlannerOffItem) => setRejectTarget(row),
     closeReject: () => setRejectTarget(null),
-    approve: (row: PlannerOffItem) => mut.mutate({ row, decision: 'APPROVED', reason: 'Đồng ý nghỉ OFF, đảm bảo định biên ca' }),
+    approve: (row: PlannerOffItem) =>
+      confirmWorkflowShiftOverride(modal, 'leave', [row as unknown as Record<string, unknown>], () =>
+        mut.mutate({ row, decision: 'APPROVED', reason: 'Đồng ý nghỉ OFF, đã kiểm tra định biên ca' }),
+      ),
     reject: (reason: string) => rejectTarget && mut.mutate({ row: rejectTarget, decision: 'REJECTED', reason }),
   };
 }

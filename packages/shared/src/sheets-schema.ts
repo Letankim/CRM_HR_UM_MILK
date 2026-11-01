@@ -36,7 +36,7 @@ export const SPREADSHEETS = {
       INTERVIEWS: cols(
         'candidate_id', 'start_at', 'end_at', 'meet_link', 'interviewer_id', 'status', 'score', 'comment', 'decision',
         'branch_id', 'duration_minutes', 'calendar_event_id', 'candidate_confirmed', 'reschedule_requested',
-        'reschedule_reason', 'appearance_score', 'attitude_score', 'skill_score', 'decided_at',
+        'reschedule_reason', 'appearance_score', 'attitude_score', 'skill_score', 'decided_at', 'experience_track',
       ),
       EMPLOYEES: cols(
         'employee_code', 'full_name', 'phone', 'branch_id', 'staff_group', 'stage', 'probation_start',

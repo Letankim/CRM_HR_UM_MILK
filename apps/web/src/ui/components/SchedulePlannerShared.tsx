@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { Alert, Button, Flex, Form, Input, Modal, Space, Table, Tag } from 'antd';
-import { CloseCircleOutlined, CloseOutlined, DownOutlined, ExclamationCircleOutlined, UpOutlined } from '@ant-design/icons';
+import { CloseCircleOutlined, CloseOutlined, DownOutlined, ExclamationCircleOutlined, UpOutlined, WarningOutlined } from '@ant-design/icons';
 import { StatusTag } from '../StatusTag';
 import { buildClickableRowProps } from './BulkActionBar';
 import { useQuickDetail } from './RecordQuickDetailModal';
-import { fmtYmd, issueSeverity, type PlannerIssue, type PlannerOffItem } from './schedule-planner-types';
+import { fmtYmd, issueSeverity, type PlannerIssue, type PlannerOffConflictGroup, type PlannerOffItem } from './schedule-planner-types';
+import { renderLeaveOffConflictTag } from './workflow-shift-warning';
 
 export interface PlannerIssuesAlertProps {
   issues: PlannerIssue[];
@@ -17,14 +18,39 @@ export interface PlannerIssuesAlertProps {
   onExpandedChange?: (next: boolean) => void;
 }
 
+/** Cảnh báo nổi bật cho HR khi trong cùng 1 ngày có 2, 3, 4 (hoặc toàn bộ) nhân sự cùng đăng ký nghỉ OFF. */
+export function PlannerOffConflictsAlert({ conflicts }: { conflicts?: PlannerOffConflictGroup[] }) {
+  if (!conflicts || conflicts.length === 0) return null;
+  const criticalCount = conflicts.filter((c) => c.severity === 'CRITICAL').length;
+  return (
+    <Alert
+      type={criticalCount > 0 ? 'error' : 'warning'}
+      showIcon
+      icon={<WarningOutlined />}
+      message={
+        criticalCount > 0
+          ? `Cảnh báo trùng lịch nghỉ OFF: Có ${criticalCount} ngày bị thiếu / trống người trực ca do nhiều nhân sự cùng đăng ký nghỉ!`
+          : `Lưu ý trùng lịch nghỉ OFF: Có ${conflicts.length} ngày có từ 2 nhân sự trở lên cùng đăng ký nghỉ OFF`
+      }
+      description={
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 4 }}>
+          {conflicts.map((c) => (
+            <div key={c.key} style={{ fontSize: 13 }}>
+              <Tag color={c.severity === 'CRITICAL' ? 'red' : 'orange'} style={{ marginRight: 6 }}>
+                {c.severity === 'CRITICAL' ? 'Thiếu người trực' : `Trùng ${c.totalOffCount} đơn OFF`}
+              </Tag>
+              <span>{c.message}</span>
+            </div>
+          ))}
+        </div>
+      }
+    />
+  );
+}
+
 /** Danh sách vướng mắc khi tự động sắp ca (hỗ trợ đóng/mở thu gọn để không chiếm diện tích trang). */
 export function PlannerIssuesAlert({
-  issues,
-  maxHeight = 220,
-  collapsible = true,
-  defaultExpanded = false,
-  expanded,
-  onExpandedChange,
+  issues, maxHeight = 220, collapsible = true, defaultExpanded = false, expanded, onExpandedChange,
 }: PlannerIssuesAlertProps) {
   const [internalOpen, setInternalOpen] = useState(defaultExpanded);
   if (issues.length === 0) return null;
@@ -43,25 +69,15 @@ export function PlannerIssuesAlert({
       style={{ padding: isOpen ? '10px 12px' : '7px 12px' }}
       message={
         <Flex
-          justify="space-between"
-          align="center"
-          gap={8}
-          wrap={false}
+          justify="space-between" align="center" gap={8} wrap={false}
           onClick={collapsible ? toggle : undefined}
           style={{ width: '100%', cursor: collapsible ? 'pointer' : 'default', userSelect: 'none' }}
         >
-          <span style={{ fontWeight: 600, minWidth: 0 }}>
-            Không thể xếp được / Cảnh báo định biên ({issues.length} trường hợp)
-          </span>
+          <span style={{ fontWeight: 600, minWidth: 0 }}>Không thể xếp được / Cảnh báo định biên ({issues.length} trường hợp)</span>
           {collapsible && (
             <Button
-              size="small"
-              type="text"
-              icon={isOpen ? <UpOutlined /> : <DownOutlined />}
-              onClick={(e) => {
-                e.stopPropagation();
-                toggle();
-              }}
+              size="small" type="text" icon={isOpen ? <UpOutlined /> : <DownOutlined />}
+              onClick={(e) => { e.stopPropagation(); toggle(); }}
               style={{ flexShrink: 0, fontWeight: 600, color: errorCount > 0 ? '#DC2626' : '#D97706', paddingInline: 8, height: 24 }}
             >
               {isOpen ? 'Thu gọn' : `Xem chi tiết (${issues.length})`}
@@ -96,8 +112,8 @@ export function PlannerOffTable({ rows, renderActions, loading }: { rows: Planne
       columns={[
         { title: 'Mã đơn', dataIndex: 'requestCode', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
         { title: 'Nhân sự', width: 220, ellipsis: true, render: (_, r) => <span><strong>{r.employeeName}</strong> <span style={{ color: '#64748B' }}>({r.employeeCode})</span></span> },
-        { title: 'Ngày nghỉ', dataIndex: 'leaveDate', width: 115, render: (v: string) => <strong className="num">{fmtYmd(v)}</strong> },
-        { title: 'Trạng thái', dataIndex: 'status', width: 170, render: (v: string, r) => <StatusTag value={v} label={r.statusLabel || undefined} /> },
+        { title: 'Ngày nghỉ & Ca', dataIndex: 'leaveDate', width: 235, render: (v: string, r) => <Space size={4} wrap><strong className="num">{fmtYmd(v)}</strong>{r.shiftLabel && <Tag color="blue" style={{ margin: 0 }}>{r.shiftLabel}</Tag>}{renderLeaveOffConflictTag(r as unknown as Record<string, unknown>)}</Space> },
+        { title: 'Trạng thái', dataIndex: 'status', width: 155, render: (v: string, r) => <StatusTag value={v} label={r.statusLabel || undefined} /> },
         { title: 'Lý do', dataIndex: 'reason', ellipsis: true },
         ...(renderActions ? [{ title: 'Thao tác', width: 180, align: 'right' as const, render: (_: unknown, r: PlannerOffItem) => renderActions(r) }] : []),
       ]}
@@ -119,7 +135,7 @@ export function OffRejectModal({ target, loading, onClose, onConfirm }: { target
       {target && <Alert type="info" showIcon style={{ marginBottom: 12 }} message={`${target.employeeName} (${target.employeeCode}) xin nghỉ OFF ngày ${fmtYmd(target.leaveDate)}`} />}
       <Form form={form} layout="vertical" onFinish={(v) => onConfirm(v.reason.trim())}>
         <Form.Item name="reason" label="Lý do từ chối" rules={[{ required: true, whitespace: true, message: 'Vui lòng nhập lý do từ chối đơn nghỉ OFF' }]}>
-          <Input.TextArea rows={3} maxLength={300} placeholder="Ví dụ: Ngày này cửa hàng thiếu định biên, vui lòng chọn ngày khác" />
+          <Input.TextArea rows={3} maxLength={300} placeholder="Ví dụ: Ngày này các đồng nghiệp cùng ca đã xin nghỉ hết, cửa hàng thiếu định biên" />
         </Form.Item>
       </Form>
     </Modal>

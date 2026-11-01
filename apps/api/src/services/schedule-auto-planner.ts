@@ -1,4 +1,4 @@
-import { DEFAULT_SHIFT_LABELS, weekDates, type Employee, type LeaveRequest, type ShiftTemplate } from '@umbm/shared';
+import { DEFAULT_SHIFT_LABELS, weekDates, type Employee, type LeaveRequest, type ShiftAssignment, type ShiftTemplate } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { dayjs } from '../lib/time.js';
 import { findBranchShiftTemplate, resolveEmployeeBranchId } from '../routes/account-employee-sync.js';
@@ -56,7 +56,7 @@ function collectOffBlockedAssignmentIds(ctx: AppContext, fromDate: string, toDat
  * - Cân bằng công bằng xuyên tuần: ưu tiên người ít ca nhất trong tuần -> ít ca tích lũy tương đối các tuần trước -> xoay vòng chỉ số tuần -> đảo trực Chủ Nhật.
  * - Khi thành viên trong cùng nhóm ca mặc định nghỉ OFF, các thành viên còn lại của chính nhóm ca đó tự động xoay vòng bù ca (1 người/ca).
  */
-export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; branchId?: string }): PlanResult {
+export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; branchId?: string; historicalShifts?: ShiftAssignment[] }): PlanResult {
   const settings = getOperationSettings(ctx.db), dates = weekDates(params.weekStart);
   const ignoredIds = collectOffBlockedAssignmentIds(ctx, dates[0]!, dates[6]!);
   const tracker = createCapacityTracker(ctx, ignoredIds);
@@ -122,7 +122,7 @@ export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; b
 
     for (const tpl of storeShifts) {
       const groupEmps = branchEmps.filter((e) => (e.default_shift_code || 'CA_SANG').toUpperCase() === tpl.code.toUpperCase());
-      const fairnessMap = buildShiftGroupFairnessMap(ctx, groupEmps, params.weekStart);
+      const fairnessMap = buildShiftGroupFairnessMap(ctx, groupEmps, params.weekStart, params.historicalShifts);
 
       for (const workDate of dates) {
         while (tracker.count(branch.id, workDate, tpl.code) < tracker.capacity(branch.id, tpl.code)) {
@@ -155,7 +155,7 @@ export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; b
 /**
  * Lập kế hoạch chu kỳ thử việc 12 ngày: trừ tối đa 5 ngày OFF, xếp đúng ca mặc định vào các ngày còn lại để đủ 7 ca bắt buộc.
  */
-export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: string): PlanResult & { cycle: ReturnType<typeof resolveProbationCycle>; existingCount: number } {
+export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: string, historicalShifts?: ShiftAssignment[]): PlanResult & { cycle: ReturnType<typeof resolveProbationCycle>; existingCount: number } {
   const settings = getOperationSettings(ctx.db), cycle = resolveProbationCycle(emp, todayStr);
   const ignoredIds = collectOffBlockedAssignmentIds(ctx, cycle.start, cycle.end);
   const tracker = createCapacityTracker(ctx, ignoredIds), isEmp = matchEmp(emp);
@@ -165,7 +165,10 @@ export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: str
   if (offRequests.length > cycle.offLimit) {
     issues.push({ kind: 'OFF_QUOTA', employeeId: emp.id, employeeName: empName, workDate: cycle.start, shiftCode: '', message: `${empName} đăng ký ${offRequests.length} ngày OFF, vượt định mức ${cycle.offLimit} ngày / chu kỳ thử việc.` });
   }
-  const existingCount = cycle.dates.reduce((sum, d) => sum + employeeShiftsOnDate(ctx, emp, d, [...ignoredIds]).length, 0);
+  const shiftsOnDate = (d: string) => historicalShifts
+    ? historicalShifts.filter((a) => !ignoredIds.has(a.id) && a.work_date === d && isEmp(a.employee_id) && isCountedWorkShift(a))
+    : employeeShiftsOnDate(ctx, emp, d, [...ignoredIds]);
+  const existingCount = cycle.dates.reduce((sum, d) => sum + shiftsOnDate(d).length, 0);
   let total = existingCount;
   const defCode = (emp.default_shift_code || 'CA_SANG').toUpperCase();
   const defTpl = findBranchShiftTemplate(ctx, defCode, emp.branch_id);
@@ -175,7 +178,7 @@ export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: str
   for (const workDate of cycle.dates) {
     if (total >= cycle.workRequired) break;
     if (workDate < todayStr || offRequests.some((l) => l.leave_date === workDate)) continue;
-    const todayShifts = employeeShiftsOnDate(ctx, emp, workDate, [...ignoredIds]);
+    const todayShifts = shiftsOnDate(workDate);
     if (todayShifts.length > 0 || todayShifts.length >= settings.maxShiftsPerDay) continue;
     if (candidateTpls.length === 0) {
       dayIssues.push({ kind: 'NO_TEMPLATE', employeeId: emp.id, employeeName: empName, workDate, shiftCode: defCode, message: `Chi nhánh ${branchName} chưa cấu hình khung ca mặc định cho ${empName}.` });

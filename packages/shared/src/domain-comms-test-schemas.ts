@@ -44,10 +44,9 @@ export const zInterview = zSystemColumns.extend({
   candidate_confirmed: zBool.default(false),
   reschedule_requested: zBool.default(false),
   reschedule_reason: z.string().default(''),
-  appearance_score: z.coerce.number().default(0),
-  attitude_score: z.coerce.number().default(0),
-  skill_score: z.coerce.number().default(0),
+  appearance_score: z.coerce.number().default(0), attitude_score: z.coerce.number().default(0), skill_score: z.coerce.number().default(0),
   decided_at: z.string().default(''),
+  experience_track: z.preprocess((v) => (v === 'EXPERIENCED' ? 'EXPERIENCED' : 'INEXPERIENCED'), z.enum(['INEXPERIENCED', 'EXPERIENCED'])).default('INEXPERIENCED'),
 });
 export type Interview = z.infer<typeof zInterview>;
 

@@ -12,7 +12,7 @@ import { mondayOfWeek } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { PlannerWeekPreviewModal } from './PlannerWeekPreviewModal';
-import { OffRejectModal, PlannerIssuesAlert, PlannerOffTable } from './SchedulePlannerShared';
+import { OffRejectModal, PlannerIssuesAlert, PlannerOffConflictsAlert, PlannerOffTable } from './SchedulePlannerShared';
 import { fmtDm, fmtTs, fmtYmd, type PlannerWeekData } from './schedule-planner-types';
 import { usePlannerOffDecision } from './usePlannerOffDecision';
 
@@ -97,6 +97,7 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
         </Col>
       </Row>
 
+      <PlannerOffConflictsAlert conflicts={data?.offConflicts} />
       <PlannerIssuesAlert issues={data?.issues ?? []} expanded={issuesOpen} onExpandedChange={setIssuesOpen} />
 
       <Card size="small" title={`Đơn nghỉ OFF tuần ${data ? `${fmtYmd(data.weekStart)} – ${fmtYmd(data.weekEnd)}` : ''}`}>

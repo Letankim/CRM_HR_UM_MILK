@@ -6,6 +6,7 @@ import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { sweepDueScheduledAnnouncements } from '../services/announcement-scheduler.service.js';
 import { listRegisteredMonthlySpreadsheets } from '../services/backup-targets.helper.js';
+import { sweepUpcomingInterviewReminders } from '../services/interview-reminder.service.js';
 
 const zBackupStart = z.object({
   kind: z.enum(['DAILY', 'CRITICAL', 'PRE_OPERATION', 'WEEKLY', 'MONTHLY']),
@@ -97,12 +98,18 @@ export async function internalRoutes(app: FastifyInstance, ctx: AppContext) {
     switch (job) {
       case 'reconcile': {
         const publishedAnnouncements = await sweepDueScheduledAnnouncements(ctx, 'cron-reconciler');
+        const interviewReminders = await sweepUpcomingInterviewReminders(ctx, Date.now(), 'cron-reconciler');
         const report = await ctx.reconciliation.scanAndRepair({ autoFix: true, actorId: 'cron-reconciler' });
-        return sendSuccess(request, 'Thực thi cron đối soát tự động thành công', { ...report, publishedAnnouncements });
+        return sendSuccess(request, 'Thực thi cron đối soát tự động thành công', { ...report, publishedAnnouncements, interviewReminders });
       }
       case 'publish-announcements': {
         const publishedAnnouncements = await sweepDueScheduledAnnouncements(ctx, 'cron-announcements');
-        return sendSuccess(request, 'Quét và phát hành bản tin hẹn giờ thành công', { publishedAnnouncements });
+        const interviewReminders = await sweepUpcomingInterviewReminders(ctx, Date.now(), 'cron-announcements');
+        return sendSuccess(request, 'Quét và phát hành bản tin hẹn giờ thành công', { publishedAnnouncements, interviewReminders });
+      }
+      case 'interview-reminders': {
+        const interviewReminders = await sweepUpcomingInterviewReminders(ctx, Date.now(), 'cron-interviews');
+        return sendSuccess(request, 'Quét nhắc lịch phỏng vấn trước 5–10 phút thành công', { interviewReminders, reminded: interviewReminders });
       }
       case 'backup-daily': {
         const log = await ctx.backup.runBackup('DAILY', 'cron-daily');

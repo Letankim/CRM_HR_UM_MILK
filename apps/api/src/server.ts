@@ -13,6 +13,7 @@ import { AuditService } from './services/audit.service.js';
 import { startAnnouncementScheduler, sweepDueScheduledAnnouncements } from './services/announcement-scheduler.service.js';
 import { BackupService } from './services/backup.service.js';
 import { EmailService } from './services/email.service.js';
+import { startInterviewReminderScheduler, sweepUpcomingInterviewReminders } from './services/interview-reminder.service.js';
 import { ensureSyncedNotifications } from './services/notification-sync.service.js';
 import { ensurePublishedPeriodPayslips } from './services/payslip.service.js';
 import { ReconciliationService } from './services/reconciliation.service.js';
@@ -159,6 +160,7 @@ async function main() {
 
   await app.listen({ port: env.API_PORT, host: '0.0.0.0' });
   let stopAnnouncementScheduler = () => {};
+  let stopInterviewReminderScheduler = () => {};
   try {
     await db.loadAll();
     email.hydrateFromDatabase();
@@ -166,10 +168,12 @@ async function main() {
     await reconciliation.scanAndRepair({ autoFix: true, actorId: 'startup-sync' }).catch(() => undefined);
     await ensurePublishedPeriodPayslips(ctx, 'startup-sync', { skipEmail: env.NODE_ENV === 'production' && !hasSmtpRelayOrigin() }).catch(() => undefined);
     await sweepDueScheduledAnnouncements(ctx, 'startup-sync').catch(() => undefined);
+    await sweepUpcomingInterviewReminders(ctx, Date.now(), 'startup-sync').catch(() => undefined);
     await ensureSyncedNotifications(ctx).catch(() => undefined);
     db.startAutoRefresh(env.CACHE_REFRESH_SECONDS, app.log);
     backup.startEmbeddedScheduler(app.log);
     stopAnnouncementScheduler = startAnnouncementScheduler(ctx, app.log);
+    stopInterviewReminderScheduler = startInterviewReminderScheduler(ctx, app.log);
   } catch (err) {
     const revoked = isAuthRevokedError(err);
     const userMsg = revoked
@@ -193,6 +197,7 @@ async function main() {
   const shutdown = async (signal: string) => {
     app.log.info(`Nhận ${signal}, đang dừng — chờ hàng đợi ghi hoàn tất...`);
     stopAnnouncementScheduler();
+    stopInterviewReminderScheduler();
     await backup.stopEmbeddedScheduler();
     db.stopAutoRefresh();
     await realtime?.close();

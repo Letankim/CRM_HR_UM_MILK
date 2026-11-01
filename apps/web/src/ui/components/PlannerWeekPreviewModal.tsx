@@ -7,7 +7,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { api, ApiClientError } from '@/lib/api';
 import { PlannerEmployeeLoadStrip } from './PlannerEmployeeLoadStrip';
 import { PlannerMatrixGrid } from './PlannerMatrixGrid';
-import { PlannerIssuesAlert } from './SchedulePlannerShared';
+import { PlannerIssuesAlert, PlannerOffConflictsAlert } from './SchedulePlannerShared';
 import {
   buildPlannerMatrixItems, fmtDm, fmtTs, fmtYmd,
   type PlannerBranchStatus, type PlannerWeekData, type PlannerWeekLockResult,
@@ -163,6 +163,7 @@ export function PlannerWeekPreviewModal({
         {!isLocked && lockedInAll.length > 0 && (
           <Alert type="info" showIcon message={`Có ${lockedInAll.length} chi nhánh đã chốt lịch trước đó (${lockedInAll.map((b) => b.branchCode || b.branchName).join(', ')}) sẽ được giữ nguyên dữ liệu cũ; hệ thống chỉ tự động sinh lịch cho các chi nhánh chưa chốt.`} />
         )}
+        {!isLocked && <PlannerOffConflictsAlert conflicts={data?.offConflicts} />}
         {!isLocked && <PlannerIssuesAlert issues={data?.issues ?? []} expanded={issuesOpen} onExpandedChange={setIssuesOpen} />}
         {data?.employeeLoads && data.employeeLoads.length > 0 && (
           <PlannerEmployeeLoadStrip loads={data.employeeLoads} selectedBranchId={branchId} />
