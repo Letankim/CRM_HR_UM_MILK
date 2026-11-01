@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, App, Button, Checkbox, Flex, Input, Modal, Space, Spin, Tag } from 'antd';
-import { CheckCircleOutlined, CloseOutlined, LockOutlined, ReloadOutlined, ScheduleOutlined, UnlockOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, CloseOutlined, FormOutlined, LockOutlined, ReloadOutlined, ScheduleOutlined, UnlockOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { mondayOfWeek } from '@umbm/shared';
@@ -45,6 +45,7 @@ export function PlannerProbationPreviewModal({
 
   const item = useMemo(() => (q.data ?? []).find((r) => r.employeeId === employeeId) ?? null, [q.data, employeeId]);
   const isLocked = Boolean(item?.isLocked);
+  const readOnlyView = isLocked || !canPublish;
 
   const matrixItems = useMemo(
     () => (item ? buildPlannerMatrixItems(item.existingShifts ?? [], item.planned ?? [], isLocked) : []),
@@ -90,12 +91,12 @@ export function PlannerProbationPreviewModal({
     <Modal
       open={open} onCancel={onClose} destroyOnHidden centered width="98vw"
       style={{ maxWidth: '98vw', top: 8, paddingBottom: 0 }}
-      styles={{ body: { height: isLocked ? 'calc(100vh - 156px)' : 'calc(100vh - 205px)', overflowY: 'auto', paddingTop: 8 } }}
+      styles={{ body: { height: 'calc(100vh - 156px)', overflowY: 'auto', paddingTop: 8 } }}
       title={
         <Space size={8} wrap>
           <ScheduleOutlined style={{ color: '#2563EB' }} />
           <span>
-            {isLocked ? 'Xem lại Lịch Chu Kỳ Thử Việc Đã Chốt' : 'Xem trước & Tự động sắp ca Chu Kỳ Thử Việc 12 Ngày'}
+            {readOnlyView ? 'Xem trước Lịch Chu Kỳ Thử Việc 12 Ngày' : 'Xem trước & Tự động sắp ca Chu Kỳ Thử Việc 12 Ngày'}
             {item ? ` — ${item.employeeName} (${item.employeeCode})` : ''}
           </span>
           {item && <Tag color={isLocked ? 'green' : 'blue'} icon={isLocked ? <LockOutlined /> : <UnlockOutlined />} style={{ margin: 0 }}>{isLocked ? `Đã chốt lúc ${fmtTs(item.lockedAt)}` : 'Chưa chốt chu kỳ'}</Tag>}
@@ -104,32 +105,27 @@ export function PlannerProbationPreviewModal({
       footer={
         q.isLoading || !item ? (
           <Flex justify="flex-end"><Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button></Flex>
-        ) : isLocked ? (
-          <Flex justify="space-between" align="center" wrap gap={10}>
-            <span style={{ color: '#15803D', fontSize: 13, fontWeight: 500 }}>Chu kỳ thử việc đã chốt lịch — Chế độ xem trước dữ liệu đã lưu, không cho phép chỉnh sửa hoặc sinh lại lịch.</span>
+        ) : readOnlyView ? (
+          <Flex justify="space-between" align="center" wrap gap={10} style={{ width: '100%' }}>
+            <span style={{ color: isLocked ? '#15803D' : '#64748B', fontSize: 13, fontWeight: 500 }}>
+              {isLocked
+                ? 'Chu kỳ thử việc đã chốt lịch — Chế độ xem trước dữ liệu đã lưu, không cho phép chỉnh sửa hoặc sinh lại lịch.'
+                : 'Chế độ xem trước lịch chu kỳ thử việc — Chỉ bộ phận Nhân sự (HR) thực hiện chốt lịch & tự động sinh lịch.'}
+            </span>
             <Button type="primary" icon={<CloseOutlined />} onClick={onClose}>Đóng xem trước</Button>
           </Flex>
         ) : (
-          <Space direction="vertical" size={8} style={{ width: '100%', textAlign: 'left' }}>
-            <Flex align="center" gap={10} wrap>
-              <span style={{ fontSize: 12.5, fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>Ghi chú chốt lịch (không bắt buộc):</span>
-              <Input.TextArea
-                autoSize={{ minRows: 1, maxRows: 2 }} maxLength={300} disabled={!canPublish || lockMut.isPending}
-                value={lockNote} onChange={(e) => setLockNote(e.target.value)}
-                placeholder="Nhập ghi chú biên bản chốt lịch chu kỳ thử việc (tối đa 300 ký tự, không bắt buộc)..."
-                style={{ flex: 1, minWidth: 260 }}
-              />
-            </Flex>
-            <Flex justify="space-between" align="center" wrap gap={12}>
-              <Checkbox checked={confirmed} disabled={!canPublish || lockMut.isPending} onChange={(e) => setConfirmed(e.target.checked)}>
-                Tôi đã kiểm tra lưới lịch chu kỳ ({fmtDm(item.cycleStart)} – {fmtDm(item.cycleEnd)}) và xác nhận tự động sắp lịch cho <strong>{item.employeeName} ({item.branchName})</strong>
-              </Checkbox>
-              <Space size={8}>
-                <Button icon={<CloseOutlined />} disabled={lockMut.isPending} onClick={onClose}>Hủy bỏ</Button>
-                <Button type="primary" icon={<CheckCircleOutlined />} disabled={!confirmed || !canPublish} loading={lockMut.isPending} onClick={() => lockMut.mutate()}>Xác nhận & Tự động sinh lịch</Button>
-              </Space>
-            </Flex>
-          </Space>
+          <Flex justify="space-between" align="center" wrap gap={12} style={{ width: '100%' }}>
+            <Checkbox checked={confirmed} disabled={lockMut.isPending} onChange={(e) => setConfirmed(e.target.checked)} style={{ textAlign: 'left' }}>
+              Tôi đã kiểm tra lưới lịch chu kỳ ({fmtDm(item.cycleStart)} – {fmtDm(item.cycleEnd)}) và xác nhận tự động sắp lịch cho <strong>{item.employeeName} ({item.branchName})</strong>
+            </Checkbox>
+            <Space size={8}>
+              <Button icon={<CloseOutlined />} disabled={lockMut.isPending} onClick={onClose}>Hủy bỏ</Button>
+              <Button type="primary" icon={<CheckCircleOutlined />} disabled={!confirmed} loading={lockMut.isPending} onClick={() => lockMut.mutate()}>
+                Xác nhận &amp; Tự động sinh lịch
+              </Button>
+            </Space>
+          </Flex>
         )
       }
     >
@@ -147,6 +143,24 @@ export function PlannerProbationPreviewModal({
                 </Space>
                 <Button icon={<ReloadOutlined />} loading={q.isFetching && !q.isLoading} onClick={() => q.refetch()}>Tải lại dữ liệu</Button>
               </Flex>
+              {!readOnlyView && (
+                <Flex align="center" gap={10} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #E5E7EB' }}>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: '#0F172A', whiteSpace: 'nowrap' }}>
+                    <FormOutlined style={{ color: '#2563EB', marginRight: 6 }} />
+                    Ghi chú biên bản chốt lịch:
+                  </span>
+                  <Input
+                    allowClear
+                    maxLength={300}
+                    showCount
+                    disabled={lockMut.isPending}
+                    value={lockNote}
+                    onChange={(e) => setLockNote(e.target.value)}
+                    placeholder="Nhập ghi chú lưu biên bản chốt lịch chu kỳ thử việc (không bắt buộc)..."
+                    style={{ flex: 1 }}
+                  />
+                </Flex>
+              )}
             </div>
             {isLocked && (
               <Alert type="success" showIcon icon={<LockOutlined />} message={`Chu kỳ thử việc đã chốt lịch lúc ${fmtTs(item.lockedAt)}${item.lockNote ? ` — ${item.lockNote}` : ''}`} description="Lịch chu kỳ 12 ngày của nhân sự này đã được khóa sổ chính thức. Chế độ chỉ xem trước dữ liệu đã lưu." />

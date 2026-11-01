@@ -9,7 +9,9 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isEmployeeRole, type Role } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
+import { AdminPayrollSignatureCard } from './AdminPayrollSignatureCard';
 import { ChangeSecretFields } from './ChangeSecretFields';
+import { FinancePayrollSignaturePanel } from './FinancePayrollSignatureModal';
 import { ProfileBankQrUploader } from './ProfileBankQrUploader';
 
 interface SelfProfileData {
@@ -20,12 +22,13 @@ interface SelfProfileData {
   bankQrFileId?: string; bankQrUrl?: string | null; bankQrDriveFolder?: string;
 }
 
-export interface UserProfileModalProps { open: boolean; initialTab?: 'info' | 'password'; onClose: () => void; }
+export type UserProfileTabKey = 'info' | 'password' | 'signature';
+export interface UserProfileModalProps { open: boolean; initialTab?: UserProfileTabKey; onClose: () => void; }
 
 export function UserProfileModal({ open, initialTab = 'info', onClose }: UserProfileModalProps) {
   const qc = useQueryClient();
   const { message } = App.useApp();
-  const [activeTab, setActiveTab] = useState<'info' | 'password'>(initialTab);
+  const [activeTab, setActiveTab] = useState<UserProfileTabKey>(initialTab);
   const [draftQrBase64, setDraftQrBase64] = useState('');
   const [removeQr, setRemoveQr] = useState(false);
   const [infoForm] = Form.useForm();
@@ -125,11 +128,11 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
             <Button type="primary" icon={<SaveOutlined />} loading={updateInfoMut.isPending} onClick={() => infoForm.submit()}>
               Lưu thông tin cá nhân
             </Button>
-          ) : (
+          ) : activeTab === 'password' ? (
             <Button type="primary" icon={<KeyOutlined />} loading={changePwdMut.isPending} onClick={() => pwdForm.submit()}>
               {isEmployee ? 'Xác nhận đổi mã PIN' : 'Xác nhận đổi mật khẩu'}
             </Button>
-          )}
+          ) : null}
         </Space>
       }
     >
@@ -144,7 +147,7 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
 
       <Tabs
         activeKey={activeTab}
-        onChange={(k) => setActiveTab(k as 'info' | 'password')}
+        onChange={(k) => setActiveTab(k as UserProfileTabKey)}
         items={[
           {
             key: 'info',
@@ -196,6 +199,15 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
               </Form>
             ),
           },
+          ...(p?.role === 'FINANCE' ? [{
+            key: 'signature',
+            label: <span><SafetyCertificateOutlined /> Chữ ký Kế toán</span>,
+            children: <FinancePayrollSignaturePanel />,
+          }] : p?.role === 'ADMIN' ? [{
+            key: 'signature',
+            label: <span><SafetyCertificateOutlined /> Chữ ký Ban Quản trị</span>,
+            children: <AdminPayrollSignatureCard />,
+          }] : []),
         ]}
       />
     </Modal>

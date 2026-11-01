@@ -163,43 +163,49 @@ async function batchUpsertSystemSettings(
   }
 }
 
-export function getConfiguredAdminSignature(ctx: AppContext) {
-  const fileId = ctx.db.systemSettings.find((s) => s.key === OPERATION_SETTING_KEYS.PAYROLL_ADMIN_SIGNATURE_FILE_ID)?.value?.trim() || '';
-  const signerName = ctx.db.systemSettings.find((s) => s.key === OPERATION_SETTING_KEYS.PAYROLL_ADMIN_SIGNER_NAME)?.value?.trim() || '';
-  const updatedAt = ctx.db.systemSettings.find((s) => s.key === OPERATION_SETTING_KEYS.PAYROLL_ADMIN_SIGNED_UPDATED_AT)?.value?.trim() || null;
-  return {
-    fileId,
-    signatureUrl: resolvePayrollMediaUrl(fileId),
-    signerName,
-    updatedAt,
-    driveFolder: `${DRIVE_FOLDERS.PAYROLL_SIGNATURES}/01_QUAN_TRI`,
-  };
+const ROLE_SIG_META = {
+  ADMIN: {
+    fileKey: OPERATION_SETTING_KEYS.PAYROLL_ADMIN_SIGNATURE_FILE_ID,
+    signerKey: OPERATION_SETTING_KEYS.PAYROLL_ADMIN_SIGNER_NAME,
+    updatedKey: OPERATION_SETTING_KEYS.PAYROLL_ADMIN_SIGNED_UPDATED_AT,
+    folder: '01_QUAN_TRI', prefix: 'CHU_KY_QUAN_TRI', fallbackSlug: 'ADMIN', titleVi: 'Ban Quản trị',
+  },
+  FINANCE: {
+    fileKey: OPERATION_SETTING_KEYS.PAYROLL_FINANCE_SIGNATURE_FILE_ID,
+    signerKey: OPERATION_SETTING_KEYS.PAYROLL_FINANCE_SIGNER_NAME,
+    updatedKey: OPERATION_SETTING_KEYS.PAYROLL_FINANCE_SIGNED_UPDATED_AT,
+    folder: '02_KE_TOAN', prefix: 'CHU_KY_KE_TOAN', fallbackSlug: 'FINANCE', titleVi: 'Kế toán',
+  },
+} as const;
+
+function readRoleSignature(ctx: AppContext, role: keyof typeof ROLE_SIG_META) {
+  const m = ROLE_SIG_META[role];
+  const fileId = ctx.db.systemSettings.find((s) => s.key === m.fileKey)?.value?.trim() || '';
+  const signerName = ctx.db.systemSettings.find((s) => s.key === m.signerKey)?.value?.trim() || '';
+  const updatedAt = ctx.db.systemSettings.find((s) => s.key === m.updatedKey)?.value?.trim() || null;
+  return { fileId, signatureUrl: resolvePayrollMediaUrl(fileId), signerName, updatedAt, driveFolder: `${DRIVE_FOLDERS.PAYROLL_SIGNATURES}/${m.folder}` };
 }
 
-export async function saveConfiguredAdminSignature(
-  ctx: AppContext,
-  params: { base64: string; signerName: string; actorId: string },
-) {
+async function writeRoleSignature(ctx: AppContext, role: keyof typeof ROLE_SIG_META, params: { base64: string; signerName: string; actorId: string }) {
+  const m = ROLE_SIG_META[role];
   const saved = await persistPayrollMedia(ctx, {
-    base64: params.base64,
-    rootFolder: DRIVE_FOLDERS.PAYROLL_SIGNATURES,
-    folderSegments: ['01_QUAN_TRI'],
-    fileBaseName: `CHU_KY_QUAN_TRI_${toCleanDriveSlug(params.signerName, 'ADMIN')}`,
-    fieldName: 'signature_base64',
-    labelVi: 'Ảnh chữ ký Ban Quản trị',
-    asyncDrive: true,
+    base64: params.base64, rootFolder: DRIVE_FOLDERS.PAYROLL_SIGNATURES, folderSegments: [m.folder],
+    fileBaseName: `${m.prefix}_${toCleanDriveSlug(params.signerName, m.fallbackSlug)}`,
+    fieldName: 'signature_base64', labelVi: `Ảnh chữ ký ${m.titleVi}`, asyncDrive: true,
   });
-  const ts = nowIso();
   await batchUpsertSystemSettings(ctx, [
-    { key: OPERATION_SETTING_KEYS.PAYROLL_ADMIN_SIGNATURE_FILE_ID, value: saved.fileId, label: 'Mã tệp Drive chữ ký Ban Quản trị' },
-    { key: OPERATION_SETTING_KEYS.PAYROLL_ADMIN_SIGNER_NAME, value: params.signerName, label: 'Người đại diện ký Ban Quản trị' },
-    { key: OPERATION_SETTING_KEYS.PAYROLL_ADMIN_SIGNED_UPDATED_AT, value: ts, label: 'Thời điểm cập nhật chữ ký Ban Quản trị' },
+    { key: m.fileKey, value: saved.fileId, label: `Mã tệp Drive chữ ký ${m.titleVi}` },
+    { key: m.signerKey, value: params.signerName, label: `Người đại diện ký ${m.titleVi}` },
+    { key: m.updatedKey, value: nowIso(), label: `Thời điểm cập nhật chữ ký ${m.titleVi}` },
   ], params.actorId);
   saved.syncDrive?.(async (driveFileId) => {
-    const row = ctx.db.systemSettings.find((s) => s.key === OPERATION_SETTING_KEYS.PAYROLL_ADMIN_SIGNATURE_FILE_ID);
-    if (row && row.value === saved.fileId) {
-      await ctx.db.systemSettings.update(row.id, row.version, { value: driveFileId }, 'system-drive-sync');
-    }
+    const row = ctx.db.systemSettings.find((s) => s.key === m.fileKey);
+    if (row && row.value === saved.fileId) await ctx.db.systemSettings.update(row.id, row.version, { value: driveFileId }, 'system-drive-sync');
   });
-  return getConfiguredAdminSignature(ctx);
+  return readRoleSignature(ctx, role);
 }
+
+export const getConfiguredAdminSignature = (ctx: AppContext) => readRoleSignature(ctx, 'ADMIN');
+export const saveConfiguredAdminSignature = (ctx: AppContext, p: { base64: string; signerName: string; actorId: string }) => writeRoleSignature(ctx, 'ADMIN', p);
+export const getConfiguredFinanceSignature = (ctx: AppContext) => readRoleSignature(ctx, 'FINANCE');
+export const saveConfiguredFinanceSignature = (ctx: AppContext, p: { base64: string; signerName: string; actorId: string }) => writeRoleSignature(ctx, 'FINANCE', p);

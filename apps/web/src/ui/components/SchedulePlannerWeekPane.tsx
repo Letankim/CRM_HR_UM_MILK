@@ -3,14 +3,14 @@
 import { useMemo, useState } from 'react';
 import { Alert, Button, Card, Col, DatePicker, Flex, Row, Select, Space, Statistic, Tag } from 'antd';
 import {
-  CalendarOutlined, CheckCircleOutlined, CloseCircleOutlined, LockOutlined,
+  CalendarOutlined, CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, LockOutlined,
   ReloadOutlined, ScheduleOutlined, UnlockOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import dayjs, { type Dayjs } from 'dayjs';
 import { mondayOfWeek } from '@umbm/shared';
 import { api } from '@/lib/api';
-import { useCan } from '@/lib/auth';
+import { useCan, useMe } from '@/lib/auth';
 import { PlannerWeekPreviewModal } from './PlannerWeekPreviewModal';
 import { PlannerIssuesAlert, PlannerOffConflictsAlert, PlannerOffTable } from './SchedulePlannerShared';
 import { fmtDm, fmtTs, fmtYmd, type PlannerWeekData } from './schedule-planner-types';
@@ -20,7 +20,8 @@ interface Props { branchOptions: { value: string; label: string }[] }
 
 /** Chốt lịch tuần cho nhân viên chính thức: xem trước Lưới Lịch Tuần toàn màn hình & tự động sắp ca theo chi nhánh. */
 export function SchedulePlannerWeekPane({ branchOptions }: Props) {
-  const can = useCan(), canPublish = can('schedule.publish'), canDecide = can('leave.approve');
+  const can = useCan(), me = useMe().data?.user;
+  const isFinance = me?.role === 'FINANCE', canPublish = !isFinance && can('schedule.publish'), canDecide = !isFinance && can('leave.approve');
   const [weekStart, setWeekStart] = useState<string | null>(null);
   const [branchId, setBranchId] = useState('ALL');
   const [issuesOpen, setIssuesOpen] = useState(false);
@@ -58,12 +59,18 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
           </Space>
           <Space size={8} wrap>
             <Button icon={<ReloadOutlined />} loading={q.isFetching && !q.isLoading} onClick={() => q.refetch()}>Làm mới</Button>
-            <Button
-              type="primary" icon={<ScheduleOutlined />} disabled={!effWeek}
-              onClick={() => setPreview((p) => ({ open: true, seq: p.seq + 1, branchId }))}
-            >
-              Chốt lịch &amp; Tự động sắp ca
-            </Button>
+            {canPublish ? (
+              <Button
+                type="primary" icon={<ScheduleOutlined />} disabled={!effWeek}
+                onClick={() => setPreview((p) => ({ open: true, seq: p.seq + 1, branchId }))}
+              >
+                {data?.isLocked ? 'Xem lại lưới lịch đã chốt' : 'Chốt lịch & Tự động sắp ca'}
+              </Button>
+            ) : !isFinance ? (
+              <Button icon={<EyeOutlined />} disabled={!effWeek} onClick={() => setPreview((p) => ({ open: true, seq: p.seq + 1, branchId }))}>
+                Xem trước lưới lịch tuần
+              </Button>
+            ) : null}
           </Space>
         </Flex>
       </div>

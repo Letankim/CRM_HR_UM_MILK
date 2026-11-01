@@ -7,8 +7,10 @@ import { resolveSystemHrMailbox, resolveUserPersonalRealEmail, webOrigin } from 
 import { ensureSyncedNotifications } from './notification-sync.service.js';
 import {
   getConfiguredAdminSignature,
+  getConfiguredFinanceSignature,
   persistPayrollMedia,
   saveConfiguredAdminSignature,
+  saveConfiguredFinanceSignature,
   toCleanDriveSlug,
 } from './payroll-media-storage.js';
 import { recalculatePeriodSnapshots } from './payroll-snapshot.service.js';
@@ -127,30 +129,39 @@ export async function adminApproveAndSignPeriod(
   return updated;
 }
 
-/** Bước 3: Kế toán tải chữ ký từ máy lên để ký & Phát hành phiếu lương xuống nhân viên (APPROVED -> PUBLISHED) */
+/** Bước 3: Kế toán đóng chữ ký Kế toán (đã tải lên hoặc tải mới từ máy) & Phát hành phiếu lương xuống nhân viên (APPROVED -> PUBLISHED) */
 export async function financeSignAndPublishPeriod(
   ctx: AppContext,
   periodId: string,
-  params: { signatureBase64: string; signerName?: string; note?: string },
+  params: { signatureBase64?: string; signerName?: string; note?: string },
   actor: User,
 ): Promise<PayPeriod> {
+  if (actor.role !== 'FINANCE') {
+    throw Errors.forbidden('Chỉ vai trò Kế toán mới có quyền ký chữ ký Kế toán và phát hành phiếu lương xuống nhân viên');
+  }
   const before = ctx.db.payPeriods.get(periodId);
   if (!before) throw Errors.notFound('Không tìm thấy kỳ lương');
   if (before.status !== 'APPROVED') {
     throw Errors.conflict('Kỳ lương phải được Ban Quản trị ký phê duyệt trước khi Kế toán ký phát hành xuống nhân viên');
   }
-  if (!params.signatureBase64?.trim()) {
-    throw Errors.fieldValidation('signature_base64', 'REQUIRED_FIELD', 'Kế toán bắt buộc tải ảnh chữ ký từ máy lên để ký trước khi phát hành phiếu lương xuống nhân viên', '');
+  const cfgFinSig = getConfiguredFinanceSignature(ctx);
+  const signerName = (params.signerName || '').trim() || cfgFinSig.signerName || actor.display_name || actor.username;
+  let finSigFileId = cfgFinSig.fileId;
+  if (params.signatureBase64?.trim()) {
+    await saveConfiguredFinanceSignature(ctx, { base64: params.signatureBase64, signerName, actorId: actor.id });
+    const savedFinSig = await persistPayrollMedia(ctx, {
+      base64: params.signatureBase64,
+      rootFolder: DRIVE_FOLDERS.PAYROLL_SIGNATURES,
+      folderSegments: ['02_KE_TOAN', before.period_code],
+      fileBaseName: `${before.period_code}_CHU_KY_KE_TOAN_${toCleanDriveSlug(signerName, 'FINANCE')}`,
+      fieldName: 'signature_base64',
+      labelVi: 'Ảnh chữ ký Kế toán',
+    });
+    finSigFileId = savedFinSig.fileId;
   }
-  const signerName = (params.signerName || '').trim() || actor.display_name || actor.username;
-  const savedFinSig = await persistPayrollMedia(ctx, {
-    base64: params.signatureBase64,
-    rootFolder: DRIVE_FOLDERS.PAYROLL_SIGNATURES,
-    folderSegments: ['02_KE_TOAN', before.period_code],
-    fileBaseName: `${before.period_code}_CHU_KY_KE_TOAN_${toCleanDriveSlug(signerName, 'FINANCE')}`,
-    fieldName: 'signature_base64',
-    labelVi: 'Ảnh chữ ký Kế toán',
-  });
+  if (!finSigFileId) {
+    throw Errors.fieldValidation('signature_base64', 'REQUIRED_FIELD', 'Chưa có ảnh chữ ký Kế toán. Vui lòng tải ảnh chữ ký Kế toán từ máy lên trước khi ký phát hành phiếu lương xuống nhân viên.', '');
+  }
   const now = nowIso();
   return ctx.reconciliation.executeSaga({
     sagaKey: `payroll-finance-publish-${periodId}-v${before.version}`,
@@ -163,7 +174,7 @@ export async function financeSignAndPublishPeriod(
         run: async (s) => {
           s.period = await ctx.db.payPeriods.update(periodId, before.version, {
             status: 'PUBLISHED', published_by: actor.id, published_at: now,
-            finance_signature_file_id: savedFinSig.fileId, finance_signed_by: signerName, finance_signed_at: now,
+            finance_signature_file_id: finSigFileId, finance_signed_by: signerName, finance_signed_at: now,
             ...(params.note ? { note: params.note } : {}),
           }, actor.id);
         },
@@ -175,7 +186,7 @@ export async function financeSignAndPublishPeriod(
           if (existing.length > 0) {
             await ctx.db.payslips.batchUpdate(existing.map((p) => ({
               id: p.id, expectedVersion: p.version,
-              patch: { admin_signature_file_id: s.period.admin_signature_file_id, finance_signature_file_id: savedFinSig.fileId },
+              patch: { admin_signature_file_id: s.period.admin_signature_file_id, finance_signature_file_id: finSigFileId },
             })), actor.id);
           }
           await generatePayslips(ctx, s.period, actor.id, { actorEmail: actor.email });

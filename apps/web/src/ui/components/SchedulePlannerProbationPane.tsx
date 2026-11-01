@@ -3,13 +3,13 @@
 import { useState } from 'react';
 import { Alert, App, Button, Card, Flex, Select, Space, Table, Tag, Tooltip } from 'antd';
 import {
-  CheckCircleOutlined, CloseCircleOutlined, LockOutlined,
+  CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, LockOutlined,
   ReloadOutlined, ScheduleOutlined, TrophyOutlined, UnlockOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
-import { useCan } from '@/lib/auth';
+import { useCan, useMe } from '@/lib/auth';
 import { buildClickableRowProps } from './BulkActionBar';
 import { DateStringPicker } from './DateTimePickers';
 import { PlannerProbationPreviewModal } from './PlannerProbationPreviewModal';
@@ -46,10 +46,10 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
   const { message } = App.useApp();
   const showDetail = useQuickDetail();
   const qc = useQueryClient();
-  const can = useCan();
-  const canPublish = can('schedule.publish');
-  const canPromote = can('employee.promote');
-  const canDecideOff = can('leave.approve');
+  const can = useCan(), me = useMe().data?.user, isFinance = me?.role === 'FINANCE';
+  const canPublish = !isFinance && can('schedule.publish');
+  const canPromote = !isFinance && can('employee.promote');
+  const canDecideOff = !isFinance && can('leave.approve');
   const [branchId, setBranchId] = useState('ALL');
   const [promoteBusyId, setPromoteBusyId] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ open: boolean; seq: number; employeeId: string | null }>({ open: false, seq: 0, employeeId: null });
@@ -161,28 +161,27 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
           },
           { title: 'Đăng ký thêm ca', width: 130, render: (_, r) => r.pendingExtraShifts > 0 ? <Tag color="gold" style={{ margin: 0 }}>{r.pendingExtraShifts} ca chờ duyệt</Tag> : <span style={{ color: '#64748B' }}>Không có</span> },
           { title: 'Trạng thái chốt', width: 185, render: (_, r) => <Tag color={r.isLocked ? 'green' : 'default'} icon={r.isLocked ? <LockOutlined /> : <UnlockOutlined />} style={{ margin: 0 }}>{r.isLocked ? `Đã chốt lúc ${fmtTs(r.lockedAt)}` : 'Chưa chốt'}</Tag> },
-          {
-            title: 'Thao tác', width: 320, fixed: 'right', align: 'right',
-            render: (_, r) => (
+          ...(!isFinance ? [{
+            title: 'Thao tác', width: canPromote ? 320 : 185, fixed: 'right' as const, align: 'right' as const,
+            render: (_: unknown, r: PlannerProbationItem) => (
               <Flex justify="flex-end" align="center" gap={6} wrap={false} style={{ width: '100%', whiteSpace: 'nowrap' }}>
-                {r.readyForOfficial && (
-                  <Button
-                    size="small" type="primary" icon={<TrophyOutlined />}
-                    disabled={!canPromote} loading={promoteBusyId === r.employeeId}
-                    onClick={() => openPromoteModal(r)}
-                  >
+                {canPromote && r.readyForOfficial && (
+                  <Button size="small" type="primary" icon={<TrophyOutlined />} loading={promoteBusyId === r.employeeId} onClick={() => openPromoteModal(r)}>
                     Duyệt chính thức
                   </Button>
                 )}
-                <Button
-                  size="small" type="primary" ghost icon={<ScheduleOutlined />}
-                  onClick={() => setPreview((p) => ({ open: true, seq: p.seq + 1, employeeId: r.employeeId }))}
-                >
-                  Chốt lịch chu kỳ
-                </Button>
+                {canPublish ? (
+                  <Button size="small" type="primary" ghost icon={<ScheduleOutlined />} onClick={() => setPreview((p) => ({ open: true, seq: p.seq + 1, employeeId: r.employeeId }))}>
+                    {r.isLocked ? 'Xem lịch chu kỳ' : 'Chốt lịch chu kỳ'}
+                  </Button>
+                ) : (
+                  <Button size="small" icon={<EyeOutlined />} onClick={() => setPreview((p) => ({ open: true, seq: p.seq + 1, employeeId: r.employeeId }))}>
+                    Xem lịch chu kỳ
+                  </Button>
+                )}
               </Flex>
             ),
-          },
+          }] : []),
         ]}
       />
       {offDecision.decisionModalElement}

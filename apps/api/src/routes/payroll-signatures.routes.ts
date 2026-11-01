@@ -7,8 +7,10 @@ import { auditContext, requireAuth, requirePermission } from '../plugins/auth-co
 import { runBackgroundSideEffect } from '../services/background-write.js';
 import {
   getConfiguredAdminSignature,
+  getConfiguredFinanceSignature,
   loadPayrollMediaBuffer,
   saveConfiguredAdminSignature,
+  saveConfiguredFinanceSignature,
 } from '../services/payroll-media-storage.js';
 import {
   adminApproveAndSignPeriod,
@@ -37,8 +39,13 @@ const zAdminApproveBody = z.object({
   note: z.string().trim().max(300).optional().default(''),
 });
 
+const zFinanceSigConfigBody = z.object({
+  signature_base64: z.string({ required_error: 'Vui lòng chọn ảnh chữ ký Kế toán' }).trim().min(20, 'Ảnh chữ ký Kế toán không hợp lệ'),
+  signer_name: z.string().trim().min(2, 'Tên Kế toán ký tối thiểu 2 ký tự').max(100).optional(),
+});
+
 const zFinancePublishBody = z.object({
-  signature_base64: z.string({ required_error: 'Kế toán bắt buộc tải ảnh chữ ký từ máy lên để ký phát hành' }).trim().min(1, 'Kế toán bắt buộc tải ảnh chữ ký từ máy lên để ký phát hành'),
+  signature_base64: z.string().trim().optional().default(''),
   signer_name: z.string().trim().max(100).optional().default(''),
   note: z.string().trim().max(300).optional().default(''),
 });
@@ -92,6 +99,22 @@ export async function payrollSignatureRoutes(app: FastifyInstance, ctx: AppConte
     const reqAudit = auditContext(request);
     await runBackgroundSideEffect(() => ctx.audit.record(reqAudit, { action: 'payroll.admin_signature_config', entity: 'SYSTEM_SETTINGS', entityId: 'payroll.admin_signature', after: { signerName: saved.signerName, fileId: saved.fileId } }));
     return sendSuccess(request, 'Đã lưu cấu hình chữ ký số Ban Quản trị trên Google Drive thành công', saved);
+  });
+
+  app.get('/api/admin/payroll/finance-signature', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish') }, async (request) => {
+    return sendSuccess(request, 'Lấy cấu hình chữ ký Kế toán thành công', getConfiguredFinanceSignature(ctx));
+  });
+
+  app.put('/api/admin/payroll/finance-signature', { preHandler: requirePermission('payroll.manage', 'payroll.publish') }, async (request) => {
+    if (request.auth!.user.role !== 'FINANCE') {
+      throw Errors.forbidden('Chỉ vai trò Kế toán mới được phép tải lên và cấu hình chữ ký Kế toán');
+    }
+    const body = zFinanceSigConfigBody.parse(request.body);
+    const signerName = body.signer_name?.trim() || request.auth!.user.display_name || request.auth!.user.username;
+    const saved = await saveConfiguredFinanceSignature(ctx, { base64: body.signature_base64, signerName, actorId: request.auth!.user.id });
+    const reqAudit = auditContext(request);
+    await runBackgroundSideEffect(() => ctx.audit.record(reqAudit, { action: 'payroll.finance_signature_config', entity: 'SYSTEM_SETTINGS', entityId: 'payroll.finance_signature', after: { signerName: saved.signerName, fileId: saved.fileId } }));
+    return sendSuccess(request, 'Đã lưu hình ảnh chữ ký số Kế toán trên Google Drive thành công', saved);
   });
 
   app.post('/api/admin/payroll/periods/:id/submit-to-admin', { preHandler: requirePermission('payroll.manage', 'payroll.publish', 'system.config') }, async (request) => {

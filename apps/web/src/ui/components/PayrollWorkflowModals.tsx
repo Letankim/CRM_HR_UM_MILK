@@ -8,6 +8,7 @@ import { api, ApiClientError } from '@/lib/api';
 import { useMe } from '@/lib/auth';
 import { normalizeImageFileToPngDataUrl } from '@/lib/payroll-file-helpers';
 import type { AdminSignatureConfigData } from './AdminPayrollSignatureCard';
+import type { FinanceSignatureConfigData } from './FinancePayrollSignatureModal';
 import { fmtVnd, type PayPeriodRow } from './payroll-types';
 
 export function AdminApprovePeriodModal({ open, period, onClose, onSuccess }: { open: boolean; period: PayPeriodRow; onClose: () => void; onSuccess: () => void }) {
@@ -101,40 +102,36 @@ export function AdminApprovePeriodModal({ open, period, onClose, onSuccess }: { 
 }
 
 export function FinancePublishPeriodModal({
-  open,
-  period,
-  onClose,
-  onSuccess,
-}: {
-  open: boolean;
-  period: PayPeriodRow;
-  onClose: () => void;
-  onSuccess: () => void;
-}) {
-  const me = useMe().data?.user;
-  const { message } = App.useApp();
+  open, period, onClose, onSuccess,
+}: { open: boolean; period: PayPeriodRow; onClose: () => void; onSuccess: () => void }) {
+  const qc = useQueryClient(), me = useMe().data?.user, { message } = App.useApp();
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const [signerName, setSignerName] = useState('');
-  const [sigBase64, setSigBase64] = useState('');
-  const [note, setNote] = useState('');
+  const [signerName, setSignerName] = useState(''), [sigBase64, setSigBase64] = useState(''), [note, setNote] = useState('');
+
+  const finSigQ = useQuery({
+    queryKey: ['payroll-finance-signature'],
+    queryFn: () => api.get<FinanceSignatureConfigData>('/admin/payroll/finance-signature'),
+    enabled: open,
+  });
 
   useEffect(() => {
     if (open) {
       setSigBase64('');
       setNote('');
-      setSignerName(me?.displayName || 'Kế toán tiền lương');
+      setSignerName(finSigQ.data?.signerName || me?.displayName || 'Kế toán tiền lương');
     }
-  }, [open, me?.displayName]);
+  }, [open, finSigQ.data?.signerName, me?.displayName]);
 
   const publishMut = useMutation({
     mutationFn: () =>
       api.post(`/admin/payroll/periods/${period.id}/finance-publish`, {
-        signature_base64: sigBase64,
+        signature_base64: sigBase64 || undefined,
         signer_name: signerName.trim(),
         note: note.trim(),
       }),
     onSuccess: () => {
       message.success(`Kế toán đã ký và phát hành phiếu lương kỳ "${period.name}" xuống toàn bộ nhân viên`);
+      void qc.invalidateQueries({ queryKey: ['payroll-finance-signature'] });
       onSuccess();
       onClose();
     },
@@ -152,6 +149,8 @@ export function FinancePublishPeriodModal({
     }
   };
 
+  const previewUrl = sigBase64 || finSigQ.data?.signatureUrl || null;
+
   return (
     <Modal
       width={760}
@@ -161,20 +160,24 @@ export function FinancePublishPeriodModal({
       onOk={() => publishMut.mutate()}
       okText="Ký chữ ký Kế toán & Phát hành xuống Nhân viên"
       cancelText="Hủy bỏ"
-      okButtonProps={{ icon: <SendOutlined />, disabled: !sigBase64 }}
+      okButtonProps={{ icon: <SendOutlined />, disabled: !previewUrl }}
       cancelButtonProps={{ icon: <CloseOutlined /> }}
       confirmLoading={publishMut.isPending}
       destroyOnHidden
     >
       <Alert
-        type="success" showIcon style={{ marginBottom: 12 }}
-        message={`Ban Quản trị (${period.adminSignedBy || 'Quản trị hệ thống'}) đã ký phê duyệt kỳ lương này. Để phát hành phiếu xuống nhân viên, Kế toán bắt buộc tải ảnh chữ ký của mình từ máy tính lên bên dưới.`}
+        type={previewUrl ? 'success' : 'warning'} showIcon style={{ marginBottom: 12 }}
+        message={
+          previewUrl
+            ? `Ban Quản trị (${period.adminSignedBy || 'Quản trị hệ thống'}) đã ký phê duyệt kỳ lương này. Kiểm tra chữ ký Kế toán bên dưới và nhấn xác nhận để phát hành phiếu lương xuống nhân viên.`
+            : `Ban Quản trị (${period.adminSignedBy || 'Quản trị hệ thống'}) đã ký phê duyệt kỳ lương này. Vui lòng tải ảnh chữ ký Kế toán từ máy tính lên bên dưới để ký phát hành.`
+        }
       />
       <Row gutter={12} align="middle" style={{ marginBottom: 12 }}>
         <Col xs={24} sm={11}>
           <div style={{ border: '1px dashed #CBD5E1', borderRadius: 4, background: '#F8FAFC', height: 112, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8 }}>
-            {sigBase64 ? (
-              <img src={sigBase64} alt="Chữ ký Kế toán" style={{ maxHeight: 96, maxWidth: '100%', objectFit: 'contain' }} />
+            {previewUrl ? (
+              <img src={previewUrl} alt="Chữ ký Kế toán" style={{ maxHeight: 96, maxWidth: '100%', objectFit: 'contain' }} />
             ) : (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>Chưa tải ảnh chữ ký Kế toán</Typography.Text>
             )}
@@ -184,10 +187,13 @@ export function FinancePublishPeriodModal({
           <Space direction="vertical" size={8} style={{ width: '100%' }}>
             <div style={{ fontSize: 12, color: '#64748B' }}>Họ tên Kế toán ký phát hành phiếu lương</div>
             <Input value={signerName} onChange={(e) => setSignerName(e.target.value)} placeholder="Nhập họ tên Kế toán" />
-            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={(e) => void handlePickFile(e)} />
-            <Button type={sigBase64 ? 'default' : 'primary'} ghost={!sigBase64} icon={<UploadOutlined />} onClick={() => fileRef.current?.click()}>
-              {sigBase64 ? 'Chọn lại ảnh chữ ký Kế toán từ máy' : 'Tải ảnh chữ ký Kế toán từ máy lên (*)'}
-            </Button>
+            <Flex justify="space-between" align="center" wrap gap={6}>
+              <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={(e) => void handlePickFile(e)} />
+              <Button size="small" type={previewUrl ? 'default' : 'primary'} ghost={!previewUrl} icon={<UploadOutlined />} onClick={() => fileRef.current?.click()}>
+                {previewUrl ? 'Đổi ảnh chữ ký Kế toán từ máy' : 'Tải ảnh chữ ký Kế toán từ máy lên (*)'}
+              </Button>
+              {finSigQ.data?.fileId && !sigBase64 && <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Lấy từ Chữ ký đã lưu</Tag>}
+            </Flex>
           </Space>
         </Col>
       </Row>

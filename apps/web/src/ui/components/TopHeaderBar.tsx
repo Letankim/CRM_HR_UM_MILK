@@ -24,7 +24,7 @@ import { useCan } from '@/lib/auth';
 import { useNotificationSound } from '@/lib/notification-sound';
 import { BRAND } from '../theme';
 import { HeaderNotificationBell } from './HeaderNotificationBell';
-import { UserProfileModal } from './UserProfileModal';
+import { UserProfileModal, type UserProfileTabKey } from './UserProfileModal';
 
 export interface TopHeaderBarProps {
   isMobile: boolean;
@@ -49,7 +49,7 @@ export function TopHeaderBar({
   const qc = useQueryClient();
   const can = useCan();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [profileTab, setProfileTab] = useState<'info' | 'password' | null>(null);
+  const [profileTab, setProfileTab] = useState<UserProfileTabKey | null>(null);
   const { soundEnabled, setSoundEnabled, toggleSound, playTestSound } = useNotificationSound();
 
   const handleLogout = async () => {
@@ -146,6 +146,7 @@ export function TopHeaderBar({
               },
               { type: 'divider' },
               { key: 'profile', icon: <UserOutlined />, label: 'Hồ sơ cá nhân & Cập nhật thông tin', onClick: () => setProfileTab('info') },
+              ...(user.role === 'FINANCE' ? [{ key: 'finance-sig', icon: <SafetyCertificateOutlined />, label: 'Tải lên & Cấu hình Chữ ký Kế toán', onClick: () => setProfileTab('signature') }] : []),
               { key: 'password', icon: <KeyOutlined />, label: isEmployeeRole(user.role) ? 'Đổi mã PIN bảo mật (6 số)' : 'Đổi mật khẩu bảo mật', onClick: () => setProfileTab('password') },
               {
                 key: 'sound',

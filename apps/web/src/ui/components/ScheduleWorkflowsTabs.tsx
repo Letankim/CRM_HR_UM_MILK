@@ -6,6 +6,7 @@ import { CalendarOutlined, EnvironmentOutlined, FileAddOutlined, FormOutlined, P
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SHIFT_SWAP_KIND_LABELS, SHIFT_SWAP_STATUS_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
+import { useCan, useMe } from '@/lib/auth';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { AttendanceEventsTable, type AttendanceEventRow } from './AttendanceEventsTable';
 import { SelectableTable } from './BulkActionBar';
@@ -30,18 +31,20 @@ const SWAP_KIND_OPTS = [{ value: 'ALL', label: 'Tất cả loại yêu cầu' },
 const REFRESH_KEYS = ['attendance-adjustments', 'leave-requests', 'shift-swaps', 'shift-registrations', 'attendance-sessions', 'attendance-sessions-count', 'schedules', 'schedule-planner-week', 'schedule-planner-probation', 'my-attendance', 'payroll-periods', 'payroll-snapshots', 'payroll-reconcile'];
 
 export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
-  const qc = useQueryClient(), { message } = App.useApp();
+  const qc = useQueryClient(), { message } = App.useApp(), can = useCan(), me = useMe().data?.user;
+  const showPlannerTabs = me?.role !== 'FINANCE' && can('schedule.publish', 'schedule.propose', 'leave.approve');
   const [activeTab, setActiveTab] = useState('planner'), [leaveModal, setLeaveModal] = useState(false), [swapModal, setSwapModal] = useState(false), [adjModal, setAdjModal] = useState(false);
+  const resolvedTab = !showPlannerTabs && (activeTab === 'planner' || activeTab === 'registrations') ? 'attendance' : activeTab;
   const [detailTarget, setDetailTarget] = useState<ScheduleDetailTarget | null>(null), [swapApproveTarget, setSwapApproveTarget] = useState<ShiftSwapApproveTarget | null>(null);
   const [searchInput, setSearchInput] = useState(''), debouncedQ = useDebouncedValue(searchInput, 400);
   const [branchFilter, setBranchFilter] = useState('ALL'), [statusFilter, setStatusFilter] = useState('ALL'), [kindFilter, setKindFilter] = useState('ALL');
   const [page, setPage] = useState(1), [perPage, setPerPage] = useState(10);
 
   const mkParams = (tabKey: string) => {
-    const p = new URLSearchParams({ page: String(activeTab === tabKey ? page : 1), per_page: String(perPage) });
+    const p = new URLSearchParams({ page: String(resolvedTab === tabKey ? page : 1), per_page: String(perPage) });
     if (debouncedQ) p.set('q', debouncedQ);
     if (branchFilter !== 'ALL') p.set('branch_id', branchFilter);
-    if (activeTab === tabKey && statusFilter !== 'ALL') p.set('status', statusFilter);
+    if (resolvedTab === tabKey && statusFilter !== 'ALL') p.set('status', statusFilter);
     if (tabKey === 'swap' && kindFilter !== 'ALL') p.set('kind', kindFilter);
     return p.toString();
   };
@@ -52,7 +55,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
   const leavesQ = useQuery({ queryKey: ['leave-requests', leaveParams], queryFn: () => api.list<RowRec>(`/admin/leave-requests?${leaveParams}`) });
   const swapsQ = useQuery({ queryKey: ['shift-swaps', swapParams], queryFn: () => api.list<RowRec>(`/admin/shift-swaps?${swapParams}`) });
   const attCountQ = useQuery({ queryKey: ['attendance-sessions-count', branchFilter], queryFn: () => api.list<AttendanceEventRow>(`/admin/attendance/sessions?page=1&per_page=1${branchFilter !== 'ALL' ? `&branch_id=${branchFilter}` : ''}`) });
-  const draftCountQ = useQuery({ queryKey: ['shift-registrations', 'count'], queryFn: () => api.list<RowRec>('/admin/schedules?status=DRAFT&page=1&per_page=1') });
+  const draftCountQ = useQuery({ queryKey: ['shift-registrations', 'count'], queryFn: () => api.list<RowRec>('/admin/schedules?status=DRAFT&page=1&per_page=1'), enabled: showPlannerTabs });
   const draftTotal = draftCountQ.data?.meta.pagination.total ?? 0;
 
   const refreshAll = () => REFRESH_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
@@ -109,9 +112,11 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
 
   return (
     <Card size="small" styles={{ body: { padding: '12px 20px 20px' } }}>
-      <Tabs activeKey={activeTab} onChange={(k) => { setActiveTab(k); setStatusFilter('ALL'); setPage(1); }} items={[
-        { key: 'planner', label: <span><ScheduleOutlined /> Chốt lịch &amp; Sắp ca</span>, children: <SchedulePlannerPanel /> },
-        { key: 'registrations', label: <span><FormOutlined /> Đăng ký ca chờ duyệt ({draftTotal})</span>, children: <ScheduleShiftRegistrationsPane branchOptions={branchOptions} onDetail={setDetailTarget} onDecideDraftShifts={wf.decideDraftShifts} busy={wf.busy} /> },
+      <Tabs activeKey={resolvedTab} onChange={(k) => { setActiveTab(k); setStatusFilter('ALL'); setPage(1); }} items={[
+        ...(showPlannerTabs ? [
+          { key: 'planner', label: <span><ScheduleOutlined /> Chốt lịch &amp; Sắp ca</span>, children: <SchedulePlannerPanel /> },
+          { key: 'registrations', label: <span><FormOutlined /> Đăng ký ca chờ duyệt ({draftTotal})</span>, children: <ScheduleShiftRegistrationsPane branchOptions={branchOptions} onDetail={setDetailTarget} onDecideDraftShifts={wf.decideDraftShifts} busy={wf.busy} /> },
+        ] : []),
         { key: 'attendance', label: <span><EnvironmentOutlined /> Lịch sử Điểm danh Vào/Ra ca ({attCountQ.data?.meta.pagination.total ?? 0})</span>, children: <AttendanceEventsTable assignments={assignments as unknown as RowRec[]} /> },
         { key: 'adjustments', label: <span><FileAddOutlined /> Phiếu bổ sung công ({adjQ.data?.meta.pagination.total ?? adjRows.length})</span>, children: (
           <>

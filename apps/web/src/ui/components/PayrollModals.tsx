@@ -8,7 +8,7 @@ import { useEffect } from 'react';
 import { PAYROLL_ITEM_TYPE_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { DateStringPicker } from './DateTimePickers';
-import { MONEY_INPUT_PROPS } from './payroll-types';
+import { MONEY_INPUT_PROPS, type PayPeriodRow } from './payroll-types';
 
 export function CreatePeriodModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form] = Form.useForm();
@@ -150,6 +150,59 @@ export function PayrollItemModal({
           <Col span={16}><Form.Item name="unit_amount_vnd" label="Đơn giá / Số tiền" rules={[{ required: true }]}><InputNumber min={0} step={50000} style={{ width: '100%' }} suffix="đ" {...MONEY_INPUT_PROPS} /></Form.Item></Col>
         </Row>
         <Form.Item name="note" label="Ghi chú"><Input /></Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
+export function RevenueInputModal({
+  open, currentPeriodId, periods, branchOptions, onClose,
+}: {
+  open: boolean;
+  currentPeriodId?: string;
+  periods: PayPeriodRow[];
+  branchOptions: { value: string; label: string }[];
+  onClose: () => void;
+}) {
+  const [form] = Form.useForm();
+  const { message } = App.useApp();
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (open) {
+      form.resetFields();
+      form.setFieldsValue({ period_id: currentPeriodId || undefined, branch_id: 'ALL', revenue_vnd: 120000000 });
+    }
+  }, [open, currentPeriodId, form]);
+
+  const saveMut = useMutation({
+    mutationFn: (v: Record<string, unknown>) => api.post('/admin/payroll/revenue-inputs', { ...v, period_id: v.period_id || currentPeriodId || '' }),
+    onSuccess: () => {
+      message.success('Đã lưu doanh thu đối chiếu & tính tỷ lệ chi phí lương/doanh thu');
+      void qc.invalidateQueries({ queryKey: ['payroll-revenue-inputs'] });
+      onClose();
+    },
+    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu doanh thu đối chiếu thất bại'),
+  });
+
+  return (
+    <Modal
+      width={680} title="Nhập Doanh Thu Đối Chiếu & Tính Tỷ Lệ Chi Phí Lương"
+      open={open} onCancel={onClose} onOk={() => form.submit()}
+      okText="Lưu đối chiếu" cancelText="Hủy bỏ"
+      okButtonProps={{ icon: <SaveOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
+      confirmLoading={saveMut.isPending} destroyOnHidden
+    >
+      <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)} style={{ marginTop: 12 }}>
+        <Row gutter={12}>
+          <Col xs={24} md={12}><Form.Item name="period_id" label="Kỳ lương áp dụng"><Select allowClear placeholder="Chọn kỳ lương (hoặc kỳ hiện hành)" options={periods.map((p) => ({ value: p.id, label: `${p.name} (${p.statusLabel})` }))} /></Form.Item></Col>
+          <Col xs={24} md={12}><Form.Item name="branch_id" label="Phạm vi chi nhánh đối chiếu"><Select options={branchOptions} /></Form.Item></Col>
+        </Row>
+        <Row gutter={12}>
+          <Col xs={24} md={12}><Form.Item name="revenue_vnd" label="Doanh thu thuần trong kỳ lương (VNĐ)" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} min={1000000} step={5000000} suffix="VNĐ" {...MONEY_INPUT_PROPS} /></Form.Item></Col>
+          <Col xs={24} md={12}><Form.Item name="payroll_cost_vnd" label="Quỹ lương đối chiếu"><InputNumber style={{ width: '100%' }} min={0} step={1000000} suffix="VNĐ" placeholder="Để trống lấy theo kỳ lương" {...MONEY_INPUT_PROPS} /></Form.Item></Col>
+        </Row>
+        <Form.Item name="note" label="Ghi chú báo cáo tài chính"><Input placeholder="VD: Doanh thu POS chốt kỳ tháng 10/2026" /></Form.Item>
       </Form>
     </Modal>
   );

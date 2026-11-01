@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   addDaysYmd, DEFAULT_SHIFT_LABELS, EMPLOYEE_STAGE_LABELS, evaluateOffWindow, mondayOfWeek,
@@ -84,11 +84,11 @@ async function applyPlan(ctx: AppContext, plan: PlanResult, lock: { code: string
 }
 
 export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContext) {
-  const readPerms = requirePermission('schedule.read', 'schedule.propose', 'schedule.publish', 'leave.approve');
-  const preloadWeekHistory = (weekStart: string, weekEnd: string, forceRefresh = false) => {
-    const lookbackWeeks = Math.min(12, Math.max(4, ctx.db.employees.filter((e) => e.status === 'ACTIVE').length));
-    return loadShiftsAcrossPartitions(ctx, addDaysYmd(weekStart, -7 * lookbackWeeks), weekEnd, { forceRefresh });
-  };
+  const readPerms = [requirePermission('schedule.read', 'schedule.propose', 'schedule.publish', 'leave.approve'), async (req: FastifyRequest) => {
+    if (req.auth?.user.role === 'FINANCE') throw Errors.forbidden('Bộ phận Kế toán không sử dụng chức năng chốt lịch và tự động sắp ca');
+  }];
+  const preloadWeekHistory = (weekStart: string, weekEnd: string, forceRefresh = false) =>
+    loadShiftsAcrossPartitions(ctx, addDaysYmd(weekStart, -7 * Math.min(12, Math.max(4, ctx.db.employees.filter((e) => e.status === 'ACTIVE').length))), weekEnd, { forceRefresh });
 
   app.get('/api/admin/schedule-planner/week', { preHandler: readPerms }, async (request) => {
     const q = zWeekQuery.parse(request.query ?? {});

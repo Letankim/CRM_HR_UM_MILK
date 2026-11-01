@@ -1,19 +1,20 @@
 'use client';
 
-import { App, Button, Card, Col, Empty, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Table, Tabs, Tag } from 'antd';
-import { BarChartOutlined, CalendarOutlined, CloseOutlined, FileExcelOutlined, FileZipOutlined, GiftOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { App, Button, Card, Empty, Flex, Segmented, Select, Space, Table, Tabs, Tag } from 'antd';
+import { BarChartOutlined, CalendarOutlined, FileExcelOutlined, FileZipOutlined, GiftOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { downloadBase64File, type ExportFilePayload } from '@/lib/payroll-file-helpers';
 import { buildClickableRowProps } from '@/ui/components/BulkActionBar';
+import { FinanceSignatureToolbarButton } from '@/ui/components/FinancePayrollSignatureModal';
 import { PayrollAttendanceReconcileCard } from '@/ui/components/PayrollAttendanceReconcileCard';
-import { CreatePeriodModal, PayrollItemModal } from '@/ui/components/PayrollModals';
+import { CreatePeriodModal, PayrollItemModal, RevenueInputModal } from '@/ui/components/PayrollModals';
 import { PayrollItemsCard } from '@/ui/components/PayrollItemsCard';
 import { PayrollPeriodBar } from '@/ui/components/PayrollPeriodBar';
 import { exportPayrollSheet, PayrollSheetCard } from '@/ui/components/PayrollSheetCard';
-import { fmtVnd, MONEY_INPUT_PROPS, type PayPeriodRow, type PayrollItemRow, type PayrollSnapshotItem } from '@/ui/components/payroll-types';
+import { fmtVnd, type PayPeriodRow, type PayrollItemRow, type PayrollSnapshotItem } from '@/ui/components/payroll-types';
 import { PayslipDrawer } from '@/ui/components/PayslipDrawer';
 import { useQuickDetail } from '@/ui/components/RecordQuickDetailModal';
 import { SalaryProfilesTab } from '@/ui/components/SalaryProfilesTab';
@@ -31,7 +32,6 @@ function PayrollView() {
   const [editingItem, setEditingItem] = useState<PayrollItemRow | null>(null), [payslipSnap, setPayslipSnap] = useState<PayrollSnapshotItem | null>(null);
   const [revPage, setRevPage] = useState(1), [revPerPage, setRevPerPage] = useState(12);
   const [perPageNum, setPerPageNum] = useState(1), [perPageSize, setPerPageSize] = useState(12);
-  const [revForm] = Form.useForm();
 
   const periodsQuery = useQuery({ queryKey: ['payroll-periods'], queryFn: () => api.get<PayPeriodRow[]>('/admin/payroll/periods?per_page=100') });
   const periods = periodsQuery.data ?? [];
@@ -55,12 +55,6 @@ function PayrollView() {
   const empOptions = useMemo(() => (employeesQuery.data?.data ?? []).map((e) => ({ value: e.id, label: `${e.employeeCode} — ${e.fullName}` })), [employeesQuery.data]);
   const branchOptions = useMemo(() => [{ value: 'ALL', label: 'Toàn chuỗi Ụm Bò Milk' }, ...(branchesQuery.data?.data ?? []).map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))], [branchesQuery.data]);
 
-  const saveRevMut = useMutation({
-    mutationFn: (v: Record<string, unknown>) => api.post('/admin/payroll/revenue-inputs', { ...v, period_id: v.period_id || currentPeriod?.id || '' }),
-    onSuccess: () => { message.success('Đã lưu doanh thu đối chiếu & tính tỷ lệ chi phí lương/doanh thu'); setRevInputOpen(false); void qc.invalidateQueries({ queryKey: ['payroll-revenue-inputs'] }); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu doanh thu đối chiếu thất bại'),
-  });
-
   const exportAllPdfZipMut = useMutation({
     mutationFn: () => api.post<ExportFilePayload>(`/admin/payroll/periods/${currentPeriod!.id}/export-pdf-zip`, { selected_ids: [] }),
     onSuccess: (out) => {
@@ -73,13 +67,8 @@ function PayrollView() {
   const isLocked = !!currentPeriod && currentPeriod.status !== 'DRAFT' && currentPeriod.status !== 'RECONCILE';
   const refreshAll = async () => {
     if (currentPeriod) await api.get(`/admin/payroll/periods/${currentPeriod.id}/snapshots?refresh=1`).catch(() => null);
-    ['payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items', 'payroll-revenue-inputs', 'salary-profiles'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
+    ['payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items', 'payroll-revenue-inputs', 'salary-profiles', 'payroll-finance-signature'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
     message.success('Đã đồng bộ và cập nhật dữ liệu bảng lương & đối soát công mới nhất');
-  };
-  const openRevModal = () => {
-    revForm.resetFields();
-    revForm.setFieldsValue({ period_id: currentPeriod?.id || undefined, branch_id: 'ALL', revenue_vnd: 120000000 });
-    setRevInputOpen(true);
   };
   const handleExportSheet = async () => {
     if (!currentPeriod) return;
@@ -109,24 +98,27 @@ function PayrollView() {
               />
             )}
           </Space>
-          {tab !== 'SALARY' && (
-            <Space size={8} wrap>
-              {tab !== 'REPORTS' && (
-                <>
-                  <Button icon={<FileZipOutlined style={{ color: '#2563EB' }} />} loading={exportAllPdfZipMut.isPending} onClick={() => exportAllPdfZipMut.mutate()} disabled={!currentPeriod}>
-                    Xuất phiếu lương
-                  </Button>
-                  <Button icon={<FileExcelOutlined style={{ color: '#15803D' }} />} onClick={() => void handleExportSheet()} disabled={!currentPeriod}>Xuất Bảng lương Excel</Button>
-                </>
-              )}
-              {canManage && tab === 'REPORTS' && <Button type="primary" icon={<BarChartOutlined />} onClick={openRevModal}>Nhập Doanh thu đối chiếu</Button>}
-              {canManage && (tab === 'SHEET' || tab === 'ITEMS') && currentPeriod && !isLocked && (
-                <Button icon={<GiftOutlined />} onClick={() => { setEditingItem(null); setItemModalOpen(true); }}>Thêm Thưởng / Phụ cấp</Button>
-              )}
-              <Button icon={<ReloadOutlined />} loading={periodsQuery.isFetching || revInputsQuery.isFetching} onClick={refreshAll}>Làm mới</Button>
-              {canManage && <Button type={tab === 'REPORTS' ? 'default' : 'primary'} icon={<PlusOutlined />} onClick={() => setPeriodModalOpen(true)}>Tạo kỳ lương mới</Button>}
-            </Space>
-          )}
+          <Space size={8} wrap>
+            <FinanceSignatureToolbarButton />
+            {tab !== 'SALARY' && (
+              <>
+                {tab !== 'REPORTS' && (
+                  <>
+                    <Button icon={<FileZipOutlined style={{ color: '#2563EB' }} />} loading={exportAllPdfZipMut.isPending} onClick={() => exportAllPdfZipMut.mutate()} disabled={!currentPeriod}>
+                      Xuất phiếu lương
+                    </Button>
+                    <Button icon={<FileExcelOutlined style={{ color: '#15803D' }} />} onClick={() => void handleExportSheet()} disabled={!currentPeriod}>Xuất Bảng lương Excel</Button>
+                  </>
+                )}
+                {canManage && tab === 'REPORTS' && <Button type="primary" icon={<BarChartOutlined />} onClick={() => setRevInputOpen(true)}>Nhập Doanh thu đối chiếu</Button>}
+                {canManage && (tab === 'SHEET' || tab === 'ITEMS') && currentPeriod && !isLocked && (
+                  <Button icon={<GiftOutlined />} onClick={() => { setEditingItem(null); setItemModalOpen(true); }}>Thêm Thưởng / Phụ cấp</Button>
+                )}
+                <Button icon={<ReloadOutlined />} loading={periodsQuery.isFetching || revInputsQuery.isFetching} onClick={refreshAll}>Làm mới</Button>
+                {canManage && <Button type={tab === 'REPORTS' ? 'default' : 'primary'} icon={<PlusOutlined />} onClick={() => setPeriodModalOpen(true)}>Tạo kỳ lương mới</Button>}
+              </>
+            )}
+          </Space>
         </Flex>
         {(tab === 'SHEET' || tab === 'RECONCILE' || tab === 'ITEMS') && currentPeriod && (
           <PayrollPeriodBar period={currentPeriod} canManage={canManage} onDeleted={() => setSelectedPeriodId('')} />
@@ -197,19 +189,7 @@ function PayrollView() {
       <CreatePeriodModal open={periodModalOpen} onClose={() => setPeriodModalOpen(false)} />
       {currentPeriod && <PayrollItemModal open={itemModalOpen} periodId={currentPeriod.id} employees={empOptions} editing={editingItem} onClose={() => { setItemModalOpen(false); setEditingItem(null); }} />}
       <PayslipDrawer snapshot={payslipSnap} periodStatus={currentPeriod?.status} onClose={() => setPayslipSnap(null)} />
-      <Modal width={680} title="Nhập Doanh Thu Đối Chiếu & Tính Tỷ Lệ Chi Phí Lương" open={revInputOpen} onCancel={() => setRevInputOpen(false)} onOk={() => revForm.submit()} okText="Lưu đối chiếu" cancelText="Hủy bỏ" okButtonProps={{ icon: <SaveOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} confirmLoading={saveRevMut.isPending} destroyOnHidden>
-        <Form form={revForm} layout="vertical" onFinish={(v) => saveRevMut.mutate(v)} style={{ marginTop: 12 }}>
-          <Row gutter={12}>
-            <Col xs={24} md={12}><Form.Item name="period_id" label="Kỳ lương áp dụng"><Select allowClear placeholder="Chọn kỳ lương (hoặc kỳ hiện hành)" options={periods.map((p) => ({ value: p.id, label: `${p.name} (${p.statusLabel})` }))} /></Form.Item></Col>
-            <Col xs={24} md={12}><Form.Item name="branch_id" label="Phạm vi chi nhánh đối chiếu"><Select options={branchOptions} /></Form.Item></Col>
-          </Row>
-          <Row gutter={12}>
-            <Col xs={24} md={12}><Form.Item name="revenue_vnd" label="Doanh thu thuần trong kỳ lương (VNĐ)" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} min={1000000} step={5000000} suffix="VNĐ" {...MONEY_INPUT_PROPS} /></Form.Item></Col>
-            <Col xs={24} md={12}><Form.Item name="payroll_cost_vnd" label="Quỹ lương đối chiếu"><InputNumber style={{ width: '100%' }} min={0} step={1000000} suffix="VNĐ" placeholder="Để trống lấy theo kỳ lương" {...MONEY_INPUT_PROPS} /></Form.Item></Col>
-          </Row>
-          <Form.Item name="note" label="Ghi chú báo cáo tài chính"><Input placeholder="VD: Doanh thu POS chốt kỳ tháng 10/2026" /></Form.Item>
-        </Form>
-      </Modal>
+      <RevenueInputModal open={revInputOpen} currentPeriodId={currentPeriod?.id} periods={periods} branchOptions={branchOptions} onClose={() => setRevInputOpen(false)} />
     </Space>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, App, Button, Checkbox, Flex, Input, Modal, Select, Space, Spin, Tag } from 'antd';
-import { CheckCircleOutlined, CloseOutlined, LockOutlined, ReloadOutlined, ScheduleOutlined, UnlockOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, CloseOutlined, FormOutlined, LockOutlined, ReloadOutlined, ScheduleOutlined, UnlockOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api, ApiClientError } from '@/lib/api';
 import { PlannerEmployeeLoadStrip } from './PlannerEmployeeLoadStrip';
@@ -104,48 +104,44 @@ export function PlannerWeekPreviewModal({
   });
 
   const lockedInAll = branchId === 'ALL' ? statuses.filter((s) => s.isLocked) : [];
+  const readOnlyView = isLocked || !canPublish;
 
   return (
     <Modal
       open={open} onCancel={onClose} destroyOnHidden centered width="98vw"
       style={{ maxWidth: '98vw', top: 8, paddingBottom: 0 }}
-      styles={{ body: { height: isLocked ? 'calc(100vh - 156px)' : 'calc(100vh - 205px)', overflowY: 'auto', paddingTop: 8 } }}
+      styles={{ body: { height: 'calc(100vh - 156px)', overflowY: 'auto', paddingTop: 8 } }}
       title={
         <Space size={8} wrap>
           <ScheduleOutlined style={{ color: '#2563EB' }} />
-          <span>{isLocked ? 'Xem lại Lưới Lịch Tuần Đã Chốt' : 'Xem trước & Tự động sắp ca Lưới Lịch Tuần'}{data ? ` (${fmtYmd(data.weekStart)} – ${fmtYmd(data.weekEnd)})` : ''}</span>
+          <span>{readOnlyView ? 'Xem trước Lưới Lịch Tuần' : 'Xem trước & Tự động sắp ca Lưới Lịch Tuần'}{data ? ` (${fmtYmd(data.weekStart)} – ${fmtYmd(data.weekEnd)})` : ''}</span>
           {data && <Tag color={isLocked ? 'green' : 'blue'} icon={isLocked ? <LockOutlined /> : <UnlockOutlined />} style={{ margin: 0 }}>{isLocked ? `Đã chốt lúc ${fmtTs(data.lockedAt)}` : 'Chưa chốt lịch'}</Tag>}
         </Space>
       }
       footer={
         q.isLoading || !data ? (
           <Flex justify="flex-end"><Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button></Flex>
-        ) : isLocked ? (
-          <Flex justify="space-between" align="center" wrap gap={10}>
-            <span style={{ color: '#15803D', fontSize: 13, fontWeight: 500 }}>Chi nhánh đã chốt lịch tuần này — Chế độ xem trước dữ liệu đã lưu, không cho phép chỉnh sửa hoặc sinh lại lịch.</span>
+        ) : readOnlyView ? (
+          <Flex justify="space-between" align="center" wrap gap={10} style={{ width: '100%' }}>
+            <span style={{ color: isLocked ? '#15803D' : '#64748B', fontSize: 13, fontWeight: 500 }}>
+              {isLocked
+                ? 'Chi nhánh đã chốt lịch tuần này — Chế độ xem trước dữ liệu đã lưu, không cho phép chỉnh sửa hoặc sinh lại lịch.'
+                : 'Chế độ xem trước lưới lịch tuần dự kiến — Chỉ bộ phận Nhân sự (HR) thực hiện chốt lịch & tự động sinh lịch.'}
+            </span>
             <Button type="primary" icon={<CloseOutlined />} onClick={onClose}>Đóng xem trước</Button>
           </Flex>
         ) : (
-          <Space direction="vertical" size={8} style={{ width: '100%', textAlign: 'left' }}>
-            <Flex align="center" gap={10} wrap>
-              <span style={{ fontSize: 12.5, fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>Ghi chú chốt lịch (không bắt buộc):</span>
-              <Input.TextArea
-                autoSize={{ minRows: 1, maxRows: 2 }} maxLength={300} disabled={!canPublish || lockMut.isPending}
-                value={lockNote} onChange={(e) => setLockNote(e.target.value)}
-                placeholder="Nhập ghi chú biên bản chốt lịch tuần (tối đa 300 ký tự, không bắt buộc)..."
-                style={{ flex: 1, minWidth: 260 }}
-              />
-            </Flex>
-            <Flex justify="space-between" align="center" wrap gap={12}>
-              <Checkbox checked={confirmed} disabled={!canPublish || lockMut.isPending} onChange={(e) => setConfirmed(e.target.checked)}>
-                Tôi đã kiểm tra lưới lịch tuần dự kiến và xác nhận tự động sắp lịch cho <strong>{targetBranchLabel}</strong>
-              </Checkbox>
-              <Space size={8}>
-                <Button icon={<CloseOutlined />} disabled={lockMut.isPending} onClick={onClose}>Hủy bỏ</Button>
-                <Button type="primary" icon={<CheckCircleOutlined />} disabled={!confirmed || !canPublish} loading={lockMut.isPending} onClick={() => lockMut.mutate()}>Xác nhận & Tự động sinh lịch</Button>
-              </Space>
-            </Flex>
-          </Space>
+          <Flex justify="space-between" align="center" wrap gap={12} style={{ width: '100%' }}>
+            <Checkbox checked={confirmed} disabled={lockMut.isPending} onChange={(e) => setConfirmed(e.target.checked)} style={{ textAlign: 'left' }}>
+              Tôi đã kiểm tra lưới lịch tuần dự kiến và xác nhận tự động sắp lịch cho <strong>{targetBranchLabel}</strong>
+            </Checkbox>
+            <Space size={8}>
+              <Button icon={<CloseOutlined />} disabled={lockMut.isPending} onClick={onClose}>Hủy bỏ</Button>
+              <Button type="primary" icon={<CheckCircleOutlined />} disabled={!confirmed} loading={lockMut.isPending} onClick={() => lockMut.mutate()}>
+                Xác nhận &amp; Tự động sinh lịch
+              </Button>
+            </Space>
+          </Flex>
         )
       }
     >
@@ -165,6 +161,24 @@ export function PlannerWeekPreviewModal({
             </Space>
             <Button icon={<ReloadOutlined />} loading={q.isFetching && !q.isLoading} onClick={() => q.refetch()}>Tải lại dữ liệu</Button>
           </Flex>
+          {!readOnlyView && (
+            <Flex align="center" gap={10} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #E5E7EB' }}>
+              <span style={{ fontWeight: 600, fontSize: 13, color: '#0F172A', whiteSpace: 'nowrap' }}>
+                <FormOutlined style={{ color: '#2563EB', marginRight: 6 }} />
+                Ghi chú biên bản chốt lịch:
+              </span>
+              <Input
+                allowClear
+                maxLength={300}
+                showCount
+                disabled={lockMut.isPending}
+                value={lockNote}
+                onChange={(e) => setLockNote(e.target.value)}
+                placeholder="Nhập ghi chú lưu biên bản chốt lịch tuần (không bắt buộc, ví dụ: Đã điều phối đủ 1 người/ca cho toàn bộ chi nhánh)..."
+                style={{ flex: 1 }}
+              />
+            </Flex>
+          )}
         </div>
 
         {isLocked && (
