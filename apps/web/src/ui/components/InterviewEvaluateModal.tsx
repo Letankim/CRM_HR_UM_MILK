@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Alert, Col, Form, Input, InputNumber, Modal, Radio, Row, Select, Space, Tag } from 'antd';
+import { Col, Form, Input, InputNumber, Modal, Radio, Row, Select } from 'antd';
 import { CloseOutlined, SaveOutlined, SolutionOutlined, UserOutlined } from '@ant-design/icons';
 import {
   computeInterviewWeightedScore,
@@ -62,11 +62,10 @@ export function InterviewEvaluateModal({
     });
   }, [target, form]);
 
-  const candidateExpNote = String(target?.candidateExperienceNote || '').trim();
-
   return (
     <Modal
-      width={680}
+      width={1120}
+      style={{ maxWidth: 'calc(100vw - 32px)' }}
       open={Boolean(target)}
       forceRender
       destroyOnHidden
@@ -102,9 +101,9 @@ export function InterviewEvaluateModal({
           name="experience_track"
           label="Loại bảng chấm điểm theo kinh nghiệm ứng viên"
           rules={[{ required: true, message: 'Vui lòng chọn phân loại ứng viên' }]}
-          style={{ marginBottom: 10 }}
+          style={{ marginBottom: 16 }}
         >
-          <Radio.Group buttonStyle="solid" style={{ width: '100%', display: 'flex' }}>
+          <Radio.Group size="large" buttonStyle="solid" style={{ width: '100%', display: 'flex' }}>
             <Radio.Button value="INEXPERIENCED" style={{ flex: 1, textAlign: 'center', fontWeight: 600 }}>
               <UserOutlined /> Ứng viên chưa có kinh nghiệm
             </Radio.Button>
@@ -114,31 +113,18 @@ export function InterviewEvaluateModal({
           </Radio.Group>
         </Form.Item>
 
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 14 }}
-          message={
-            <Space size={6} wrap>
-              <strong>{rubric.label}</strong>
-              {candidateExpNote && <Tag color="geekblue" style={{ margin: 0 }}>Hồ sơ UV: {candidateExpNote}</Tag>}
-            </Space>
-          }
-          description={rubric.summary}
-        />
-
-        <Row gutter={12}>
-          <Col xs={24} sm={8}>
+        <Row gutter={16}>
+          <Col xs={24} md={8}>
             <Form.Item name="appearance_score" label={rubric.criteria.appearance.label} tooltip={rubric.criteria.appearance.hint} rules={[{ required: true, message: 'Nhập điểm 0–100' }]}>
               <InputNumber min={0} max={100} style={{ width: '100%' }} />
             </Form.Item>
           </Col>
-          <Col xs={24} sm={8}>
+          <Col xs={24} md={8}>
             <Form.Item name="attitude_score" label={rubric.criteria.attitude.label} tooltip={rubric.criteria.attitude.hint} rules={[{ required: true, message: 'Nhập điểm 0–100' }]}>
               <InputNumber min={0} max={100} style={{ width: '100%' }} />
             </Form.Item>
           </Col>
-          <Col xs={24} sm={8}>
+          <Col xs={24} md={8}>
             <Form.Item name="skill_score" label={rubric.criteria.skill.label} tooltip={rubric.criteria.skill.hint} rules={[{ required: true, message: 'Nhập điểm 0–100' }]}>
               <InputNumber min={0} max={100} style={{ width: '100%' }} />
             </Form.Item>
@@ -162,7 +148,7 @@ export function InterviewEvaluateModal({
           <Col span={24}>
             <Form.Item name="comment" label="Nhận xét chi tiết của HR" rules={[{ required: true, message: 'Vui lòng nhập nhận xét đánh giá phỏng vấn' }]}>
               <Input.TextArea
-                rows={3}
+                rows={4}
                 placeholder={
                   watchedTrack === 'EXPERIENCED'
                     ? 'Ghi nhận kinh nghiệm làm việc thực tế, tốc độ thao tác quầy, khả năng đáp ứng ca...'
