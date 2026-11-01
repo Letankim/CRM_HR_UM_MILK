@@ -14,6 +14,7 @@ import { StatusTag } from '../StatusTag';
 import { BRAND } from '../theme';
 import { BaseDetailDrawer } from './BaseDetailDrawer';
 import type { SupportTicketItem, TicketAssigneeOption } from './ticket-types';
+import { useWorkflowDecisionModal } from './WorkflowDecisionModal';
 
 export interface TicketDetailDrawerProps {
   ticketId: string | null;
@@ -28,6 +29,7 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
   const [replyText, setReplyText] = useState('');
   const [nextDept, setNextDept] = useState<TicketDepartment>('HR');
   const [nextAssignee, setNextAssignee] = useState<string>('');
+  const { promptDecision, decisionModalElement } = useWorkflowDecisionModal();
 
   const detailQ = useQuery({
     queryKey: ['ticket-detail', ticketId],
@@ -93,8 +95,25 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
       onClose={onClose}
       title={t ? `Chi tiết Phiếu hỗ trợ — ${t.ticket_code}` : 'Chi tiết Phiếu hỗ trợ'}
       extra={
-        canCloseTicket ? (
-          <Button size="small" icon={<CheckCircleOutlined />} loading={updateMut.isPending} onClick={() => updateMut.mutate({ status: 'CLOSED' })}>
+        canCloseTicket && t ? (
+          <Button
+            size="small"
+            icon={<CheckCircleOutlined />}
+            loading={updateMut.isPending}
+            onClick={() =>
+              promptDecision({
+                title: `Xác nhận đóng phiếu hỗ trợ — ${t.ticket_code}`,
+                subtitle: `Sau khi đóng, phiếu hỗ trợ "${t.subject}" sẽ kết thúc luồng trao đổi và lưu trữ kết quả xử lý.`,
+                required: false,
+                noteLabel: 'Ghi chú kết luận đóng phiếu',
+                placeholder: 'Nhập ghi chú kết luận trước khi đóng phiếu hỗ trợ (nếu có)...',
+                okText: 'Xác nhận đóng phiếu',
+                onConfirm: async (note) => {
+                  await updateMut.mutateAsync({ status: 'CLOSED', resolution_note: note || t.resolution_note });
+                },
+              })
+            }
+          >
             Đóng phiếu
           </Button>
         ) : null
@@ -112,20 +131,14 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
             <Descriptions.Item label="Ưu tiên & Trạng thái">
               <Space size={6} wrap><StatusTag value={t.priority} label={t.priorityLabel} /><StatusTag value={t.status} label={t.statusLabel} /></Space>
             </Descriptions.Item>
-            <Descriptions.Item label="Bộ phận tiếp nhận" span={2}>
-              <strong>{t.departmentLabel}</strong>
-            </Descriptions.Item>
+            <Descriptions.Item label="Bộ phận tiếp nhận" span={2}><strong>{t.departmentLabel}</strong></Descriptions.Item>
             <Descriptions.Item label="Người phụ trách xử lý" span={2}>
               <span style={{ color: t.assignee_user_id ? BRAND.primary : undefined, fontWeight: t.assignee_user_id ? 600 : 400 }}>
                 {t.assigneeName}{t.assignee_user_id && t.assigneeRoleLabel ? ` (${t.assigneeRoleLabel})` : ''}
               </span>
             </Descriptions.Item>
             <Descriptions.Item label="Hồ sơ / Phiếu liên quan" span={2}>
-              {t.related_label ? (
-                <Tag color="blue" style={{ margin: 0 }}>{t.related_label}</Tag>
-              ) : (
-                <Typography.Text type="secondary">Không đính kèm hồ sơ / phiếu cụ thể</Typography.Text>
-              )}
+              {t.related_label ? <Tag color="blue" style={{ margin: 0 }}>{t.related_label}</Tag> : <Typography.Text type="secondary">Không đính kèm hồ sơ / phiếu cụ thể</Typography.Text>}
             </Descriptions.Item>
           </Descriptions>
 
@@ -189,6 +202,7 @@ export function TicketDetailDrawer({ ticketId, isBackoffice = false, onClose }: 
           )}
         </div>
       )}
+      {decisionModalElement}
     </BaseDetailDrawer>
   );
 }

@@ -121,7 +121,7 @@ function EmployeesView() {
     router.replace(`/admin/employees${sp.size ? `?${sp}` : ''}`);
   };
 
-  const { bulkActions } = useEmployeesBulkActions({ canManage, canPromote });
+  const { bulkActions, decisionModalElement } = useEmployeesBulkActions({ canManage, canPromote });
 
   const columns = useMemo(
     () =>
@@ -198,6 +198,7 @@ function EmployeesView() {
             onPromoteOfficial={(r) => setPromotingRow(r)}
             onClose={() => setDetailRow(null)}
           />
+          {decisionModalElement}
         </>
       ) : (
         <RecruitmentAndTestTabs

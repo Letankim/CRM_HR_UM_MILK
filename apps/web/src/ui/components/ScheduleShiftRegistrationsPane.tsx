@@ -1,16 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { App, Space, Tag } from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, DownloadOutlined } from '@ant-design/icons';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, ApiClientError } from '@/lib/api';
+import { Space, Tag } from 'antd';
+import { CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, DownloadOutlined } from '@ant-design/icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
 import { SelectableTable } from './BulkActionBar';
 import { RowActionButtons } from './RowActionButtons';
 import type { ScheduleDetailTarget } from './ScheduleRequestDetailModal';
+import { useWorkflowDecisions } from './useWorkflowDecisions';
 import { exportMyShiftsExcel } from './workflow-bulk-helpers';
 import { cleanShiftName, fmtDate, fmtShiftTime } from './workflow-columns';
 import { WorkflowSubFilterBar } from './WorkflowSubFilterBar';
@@ -30,13 +31,21 @@ export function renderProbationExtraTags(r: RowRec) {
   );
 }
 
+export interface ScheduleShiftRegistrationsPaneProps {
+  branchOptions: { value: string; label: string }[];
+  onDetail: (t: ScheduleDetailTarget) => void;
+  onDecideDraftShifts?: (rows: RowRec[], action: 'PUBLISH' | 'DELETE', clear?: () => void) => void;
+  busy?: boolean;
+}
+
 /** Danh sách ca đăng ký đang chờ duyệt (DRAFT) — HR duyệt để ca có hiệu lực chấm công. */
-export function ScheduleShiftRegistrationsPane({ branchOptions, onDetail }: { branchOptions: { value: string; label: string }[]; onDetail: (t: ScheduleDetailTarget) => void }) {
-  const qc = useQueryClient(), { message } = App.useApp();
+export function ScheduleShiftRegistrationsPane({
+  branchOptions, onDetail, onDecideDraftShifts, busy = false,
+}: ScheduleShiftRegistrationsPaneProps) {
+  const qc = useQueryClient();
   const canPublish = useCan()('schedule.publish', 'schedule.propose');
   const [searchInput, setSearchInput] = useState(''), debouncedQ = useDebouncedValue(searchInput, 400);
   const [branchId, setBranchId] = useState('ALL'), [source, setSource] = useState('ALL'), [page, setPage] = useState(1), [perPage, setPerPage] = useState(10);
-  const [busyId, setBusyId] = useState<string | null>(null);
 
   const params = new URLSearchParams({ status: 'DRAFT', page: String(page), per_page: String(perPage), sort_by: 'workDate', sort_order: 'asc' });
   if (debouncedQ) params.set('q', debouncedQ);
@@ -45,20 +54,9 @@ export function ScheduleShiftRegistrationsPane({ branchOptions, onDetail }: { br
   const rows = (q.data?.data ?? []).filter((r) => source === 'ALL' || (source === 'PROBATION_EXTRA' ? r.source === 'PROBATION_EXTRA' : r.source !== 'PROBATION_EXTRA'));
   const refresh = () => RELATED_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
 
-  const actMut = useMutation({
-    mutationFn: async ({ action, items }: { action: 'PUBLISH' | 'DELETE'; items: RowRec[] }) => {
-      if (items.length === 0) throw new Error('Không có ca đăng ký nào ở trạng thái chờ duyệt');
-      if (items.length === 1) setBusyId(String(items[0]!.id));
-      await api.post('/admin/schedules/bulk-action', { action, items: items.map((r) => ({ id: r.id, version: r.version })) });
-      return { action, count: items.length, hasLinked: items.some((r) => Boolean(r.linkedAssignmentId)) };
-    },
-    onSuccess: ({ action, count, hasLinked }) => {
-      message.success(action === 'PUBLISH' ? `Đã duyệt ${count} ca đăng ký${hasLinked ? ' và dời ca cuối chu kỳ thử việc tương ứng' : ''}` : `Đã từ chối ${count} ca đăng ký`);
-      refresh();
-    },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : e instanceof Error ? e.message : 'Xử lý ca đăng ký thất bại'),
-    onSettled: () => setBusyId(null),
-  });
+  const fallbackWf = useWorkflowDecisions({ onSuccess: refresh });
+  const decideDraft = onDecideDraftShifts ?? fallbackWf.decideDraftShifts;
+  const isBusy = busy || fallbackWf.busy;
 
   return (
     <>
@@ -73,8 +71,8 @@ export function ScheduleShiftRegistrationsPane({ branchOptions, onDetail }: { br
         pagination={{ current: page, pageSize: perPage, total: q.data?.meta.pagination.total ?? 0, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], showTotal: (t) => `Tổng ${t} ca chờ duyệt`, onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } }}
         bulkActions={[
           ...(canPublish ? [
-            { key: 'publish', label: 'Duyệt ca đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: actMut.isPending, eligibleFilter: (r: RowRec) => r.status === 'DRAFT', onClick: (sel: RowRec[]) => actMut.mutate({ action: 'PUBLISH', items: sel }) },
-            { key: 'reject', label: 'Từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: actMut.isPending, confirm: 'Từ chối và xóa các ca đăng ký đã chọn?', eligibleFilter: (r: RowRec) => r.status === 'DRAFT', onClick: (sel: RowRec[]) => actMut.mutate({ action: 'DELETE', items: sel }) },
+            { key: 'publish', label: 'Duyệt ca đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: isBusy, eligibleFilter: (r: RowRec) => r.status === 'DRAFT', onClick: (sel: RowRec[], clear: () => void) => decideDraft(sel, 'PUBLISH', clear) },
+            { key: 'reject', label: 'Từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: isBusy, eligibleFilter: (r: RowRec) => r.status === 'DRAFT', onClick: (sel: RowRec[], clear: () => void) => decideDraft(sel, 'DELETE', clear) },
           ] : []),
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (sel: RowRec[]) => exportMyShiftsExcel(sel) },
         ]}
@@ -88,16 +86,17 @@ export function ScheduleShiftRegistrationsPane({ branchOptions, onDetail }: { br
           {
             title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
             render: (_, r) => (
-              <RowActionButtons detailTooltip="Xem chi tiết ca đăng ký" onViewDetail={() => onDetail({ kind: 'shift', record: r })} loading={busyId === String(r.id)}
+              <RowActionButtons detailTooltip="Xem chi tiết ca đăng ký" onViewDetail={() => onDetail({ kind: 'shift', record: r })} loading={isBusy}
                 menuItems={canPublish && r.status === 'DRAFT' ? [
-                  { key: 'publish', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: r.linkedAssignmentId ? 'Duyệt ca & dời ca cuối chu kỳ' : 'Duyệt ca đăng ký', onClick: () => actMut.mutate({ action: 'PUBLISH', items: [r] }) },
-                  { key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối ca đăng ký', onClick: () => actMut.mutate({ action: 'DELETE', items: [r] }) },
+                  { key: 'publish', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: r.linkedAssignmentId ? 'Duyệt ca & dời ca cuối chu kỳ' : 'Duyệt ca đăng ký', onClick: () => decideDraft([r], 'PUBLISH') },
+                  { key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối ca đăng ký', onClick: () => decideDraft([r], 'DELETE') },
                 ] : []}
               />
             ),
           },
         ]}
       />
+      {!onDecideDraftShifts && fallbackWf.decisionModalElement}
     </>
   );
 }

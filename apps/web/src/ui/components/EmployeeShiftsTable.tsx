@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Space, Tag } from 'antd';
-import { ClockCircleOutlined, DeleteOutlined, EyeOutlined, FileAddOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, CloseOutlined, DeleteOutlined, EyeOutlined, FileAddOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
@@ -26,7 +26,7 @@ export interface EmployeeShiftsTableProps {
 
 /** Bảng danh sách ca làm việc của chính nhân viên (chế độ xem Bảng chi tiết). */
 export function EmployeeShiftsTable({ shifts, empId, refreshing = false, onViewDetail, onViewAttendance, onRefresh }: EmployeeShiftsTableProps) {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const pag = useClientPagination(10, 'ca');
   const cancelShiftMut = useMutation({
     mutationFn: async (ids: string[]) => { for (const id of ids) await api.delete(`/my-attendance/shifts/${id}`); },
@@ -34,11 +34,25 @@ export function EmployeeShiftsTable({ shifts, empId, refreshing = false, onViewD
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Không thể hủy ca'),
   });
   const withEmp = (r: Row) => ({ ...r, employeeId: empId });
+  const confirmCancelDrafts = (rows: Row[], clear?: () => void) => {
+    const single = rows.length === 1 ? rows[0] : null;
+    modal.confirm({
+      title: single ? 'Xác nhận hủy đăng ký ca chờ duyệt?' : `Xác nhận hủy ${rows.length} ca đăng ký chờ duyệt?`,
+      content: single
+        ? `Ca ${cleanShiftName(single.shiftLabel)} ngày ${dayjs(String(single.workDate)).format('DD/MM/YYYY')} sẽ bị rút khỏi danh sách chờ duyệt.`
+        : `${rows.length} ca đăng ký làm thêm đang chờ duyệt sẽ bị hủy bỏ.`,
+      okText: 'Xác nhận hủy ca',
+      okButtonProps: { danger: true, icon: <DeleteOutlined /> },
+      cancelText: 'Đóng',
+      cancelButtonProps: { icon: <CloseOutlined /> },
+      onOk: async () => { await cancelShiftMut.mutateAsync(rows.map((r) => String(r.id))); clear?.(); },
+    });
+  };
 
   return (
     <SelectableTable<Row>
       size="small" rowKey="id" loading={refreshing} pagination={pag} dataSource={shifts} onRowClick={(r) => onViewDetail(withEmp(r))}
-      bulkActions={buildPortalShiftsBulkActions({ loading: cancelShiftMut.isPending, onCancelDrafts: (rows) => cancelShiftMut.mutate(rows.map((r) => String(r.id))), onCreateAbsentAdj: (row) => onViewDetail(withEmp(row)) })}
+      bulkActions={buildPortalShiftsBulkActions({ loading: cancelShiftMut.isPending, onCancelDrafts: (rows, clear) => confirmCancelDrafts(rows, clear), onCreateAbsentAdj: (row) => onViewDetail(withEmp(row)) })}
       locale={{ emptyText: 'Bạn chưa có ca làm việc nào được phân công trong kỳ này.' }}
       columns={[
         { title: 'Ngày & Phân loại', dataIndex: 'workDate', width: 175, render: (v: string, r) => <Space size={4} wrap><span className="num" style={{ fontWeight: 600 }}>{dayjs(v).format('DD/MM/YYYY')}</span><Tag color={r.dayType === 'OFF' || r.status === 'ON_LEAVE' ? 'gold' : 'blue'} style={{ margin: 0 }}>{r.dayType === 'OFF' || r.status === 'ON_LEAVE' ? 'Nghỉ OFF' : 'Làm việc'}</Tag></Space> },
@@ -54,7 +68,7 @@ export function EmployeeShiftsTable({ shifts, empId, refreshing = false, onViewD
               menuItems={[
                 ...(canViewShiftAttendanceDetail(r as { status?: string; attendanceStatusLabel?: string; checkInEvent?: unknown; checkOutEvent?: unknown }) ? [{ key: 'view-att', icon: <EyeOutlined style={{ color: '#16A34A' }} />, label: 'Xem chi tiết điểm danh', onClick: () => onViewAttendance(String(r.id)) }] : []),
                 ...(isAbsentShiftRecord(r) ? [{ key: 'adj', icon: <FileAddOutlined style={{ color: '#DC2626' }} />, label: 'Gửi phiếu bổ sung công', onClick: () => onViewDetail(withEmp(r)) }] : []),
-                ...(r.status === 'DRAFT' && !r.checkInEvent ? [{ key: 'cancel', icon: <DeleteOutlined />, danger: true, label: 'Hủy đăng ký ca chờ duyệt', onClick: () => cancelShiftMut.mutate([String(r.id)]) }] : []),
+                ...(r.status === 'DRAFT' && !r.checkInEvent ? [{ key: 'cancel', icon: <DeleteOutlined />, danger: true, label: 'Hủy đăng ký ca chờ duyệt', onClick: () => confirmCancelDrafts([r]) }] : []),
               ]}
             />
           ),

@@ -1,6 +1,6 @@
 'use client';
 
-import { App, Card, Col, Row, Typography } from 'antd';
+import { App, Card, Col, Row } from 'antd';
 import {
   CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, CustomerServiceOutlined,
   DeleteOutlined, EditOutlined, FileExcelOutlined, SyncOutlined,
@@ -17,19 +17,20 @@ import { RowActionButtons } from '@/ui/components/RowActionButtons';
 import { TicketCreateEditModal } from '@/ui/components/TicketCreateEditModal';
 import { TicketDetailDrawer } from '@/ui/components/TicketDetailDrawer';
 import { exportTicketsExcel, type SupportTicketItem } from '@/ui/components/ticket-types';
+import { useWorkflowDecisionModal } from '@/ui/components/WorkflowDecisionModal';
 import { StatusTag } from '@/ui/StatusTag';
 import { BRAND } from '@/ui/theme';
 
 const shortDept = (label: string) => label.replace(/^(Bộ phận|Phòng|Ban)\s+/i, '');
 const oneLineStyle = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
+const RESOLVE_SUGGESTIONS = ['Đã kiểm tra, đối soát và xử lý hoàn tất yêu cầu trên hệ thống', 'Đã cập nhật bổ sung dữ liệu liên quan theo phản ánh của nhân sự'];
 
 export default function AdminTicketsPage() {
-  const qc = useQueryClient();
-  const { message, modal } = App.useApp();
-  const { data: me } = useMe();
+  const qc = useQueryClient(), { message, modal } = App.useApp(), { data: me } = useMe();
   const [q, setQ] = useState(''), [scope, setScope] = useState('ALL'), [dept, setDept] = useState(''), [status, setStatus] = useState('');
   const [page, setPage] = useState(1), [perPage, setPerPage] = useState(12), [refreshing, setRefreshing] = useState(false);
   const [modalOpen, setModalOpen] = useState(false), [editing, setEditing] = useState<SupportTicketItem | null>(null), [detailId, setDetailId] = useState<string | null>(null);
+  const { promptDecision, decisionModalElement } = useWorkflowDecisionModal();
 
   useEffect(() => { setPage(1); }, [q, scope, dept, status]);
 
@@ -60,28 +61,24 @@ export default function AdminTicketsPage() {
     }
   };
 
+  const invalidateTickets = () => {
+    void qc.invalidateQueries({ queryKey: ['tickets'] });
+    void qc.invalidateQueries({ queryKey: ['notifications'] });
+  };
+
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.del(`/tickets/${id}`),
-    onSuccess: () => {
-      message.success('Đã xóa phiếu hỗ trợ thành công');
-      void qc.invalidateQueries({ queryKey: ['tickets'] });
-      void qc.invalidateQueries({ queryKey: ['notifications'] });
-    },
+    onSuccess: () => { message.success('Đã xóa phiếu hỗ trợ thành công'); invalidateTickets(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Không thể xóa phiếu hỗ trợ'),
   });
 
   const bulkMut = useMutation({
-    mutationFn: (payload: { ids: string[]; action: 'IN_PROGRESS' | 'RESOLVE' | 'CLOSE' | 'DELETE' }) => api.post('/tickets/bulk-action', payload),
-    onSuccess: () => {
-      message.success('Đã thực hiện thao tác hàng loạt thành công');
-      void qc.invalidateQueries({ queryKey: ['tickets'] });
-      void qc.invalidateQueries({ queryKey: ['notifications'] });
-    },
+    mutationFn: (payload: { ids: string[]; action: 'IN_PROGRESS' | 'RESOLVE' | 'CLOSE' | 'DELETE'; note?: string }) => api.post('/tickets/bulk-action', payload),
+    onSuccess: () => { message.success('Đã thực hiện thao tác hàng loạt thành công'); invalidateTickets(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác hàng loạt thất bại'),
   });
 
-  const rows = listQ.data?.data ?? [];
-  const meta = listQ.data?.meta;
+  const rows = listQ.data?.data ?? [], meta = listQ.data?.meta;
   const openCount = Number(meta?.filters?.open_count ?? 0);
   const inProgressCount = Number(meta?.filters?.in_progress_count ?? 0);
   const resolvedCount = Number(meta?.filters?.resolved_count ?? 0);
@@ -113,38 +110,49 @@ export default function AdminTicketsPage() {
 
       <FilterToolbar
         searchPlaceholder="Tìm mã phiếu, tiêu đề, người gửi, phân loại..."
-        searchValue={q}
-        onSearchChange={setQ}
+        searchValue={q} onSearchChange={setQ}
         selects={[
           {
             key: 'scope', value: scope, width: 185, onChange: setScope,
             options: [
-              { value: 'ALL', label: 'Tất cả phiếu thuộc phạm vi' },
-              { value: 'ASSIGNED_TO_ME', label: 'Giao cho tôi / Bộ phận' },
-              { value: 'DIRECT_TO_ME', label: 'Chỉ định đích danh tôi' },
-              { value: 'CREATED_BY_ME', label: 'Phiếu do tôi tạo' },
+              { value: 'ALL', label: 'Tất cả phiếu thuộc phạm vi' }, { value: 'ASSIGNED_TO_ME', label: 'Giao cho tôi / Bộ phận' },
+              { value: 'DIRECT_TO_ME', label: 'Chỉ định đích danh tôi' }, { value: 'CREATED_BY_ME', label: 'Phiếu do tôi tạo' },
             ],
           },
           { key: 'dept', value: dept, width: 190, onChange: setDept, options: [{ value: '', label: 'Tất cả bộ phận' }, ...TICKET_DEPARTMENT_OPTIONS.map((o) => ({ value: o.value, label: shortDept(o.label) }))] },
           { key: 'status', value: status, width: 175, onChange: setStatus, options: [{ value: '', label: 'Mọi trạng thái' }, ...TICKET_STATUS_OPTIONS] },
         ]}
-        onRefresh={() => void handleRefresh()}
-        refreshing={refreshing}
-        onExportExcel={() => exportTicketsExcel(rows)}
-        primaryActionLabel="Tạo phiếu hỗ trợ"
-        onPrimaryAction={() => { setEditing(null); setModalOpen(true); }}
+        onRefresh={() => void handleRefresh()} refreshing={refreshing} onExportExcel={() => exportTicketsExcel(rows)}
+        primaryActionLabel="Tạo phiếu hỗ trợ" onPrimaryAction={() => { setEditing(null); setModalOpen(true); }}
       />
 
       <DataTableCard<SupportTicketItem>
-        dataSource={rows}
-        meta={meta}
-        loading={listQ.isLoading}
-        codeExtractor={(r) => r.ticket_code}
-        onPageChange={(p, ps) => { setPage(p); setPerPage(ps); }}
-        onRowClick={(r) => setDetailId(r.id)}
+        dataSource={rows} meta={meta} loading={listQ.isLoading} codeExtractor={(r) => r.ticket_code}
+        onPageChange={(p, ps) => { setPage(p); setPerPage(ps); }} onRowClick={(r) => setDetailId(r.id)}
         bulkActions={[
-          { key: 'progress', label: 'Tiếp nhận xử lý', icon: <SyncOutlined />, eligibleFilter: (r) => isAssignedRow(r) && r.status === 'OPEN', onClick: (sel, clr) => bulkMut.mutate({ ids: sel.map((r) => r.id), action: 'IN_PROGRESS' }, { onSuccess: clr }) },
-          { key: 'resolve', label: 'Đánh dấu Đã giải quyết', type: 'primary', icon: <CheckCircleOutlined />, eligibleFilter: (r) => isAssignedRow(r) && (r.status === 'OPEN' || r.status === 'IN_PROGRESS'), confirm: 'Đánh dấu hoàn tất giải quyết các phiếu đã chọn?', onClick: (sel, clr) => bulkMut.mutate({ ids: sel.map((r) => r.id), action: 'RESOLVE' }, { onSuccess: clr }) },
+          {
+            key: 'progress', label: 'Tiếp nhận xử lý', icon: <SyncOutlined />,
+            loading: bulkMut.isPending && bulkMut.variables?.action === 'IN_PROGRESS',
+            eligibleFilter: (r) => isAssignedRow(r) && r.status === 'OPEN',
+            onClick: (sel, clr) => promptDecision({
+              title: `Tiếp nhận xử lý hàng loạt (${sel.length} phiếu hỗ trợ)`,
+              subtitle: 'Các phiếu hỗ trợ đã chọn sẽ được chuyển sang trạng thái "Đang xử lý".',
+              required: false, noteLabel: 'Ghi chú tiếp nhận xử lý', okText: 'Xác nhận tiếp nhận',
+              onConfirm: async (note) => { await bulkMut.mutateAsync({ ids: sel.map((r) => r.id), action: 'IN_PROGRESS', note: note || undefined }); clr(); },
+            }),
+          },
+          {
+            key: 'resolve', label: 'Đánh dấu Đã giải quyết', type: 'primary', icon: <CheckCircleOutlined />,
+            loading: bulkMut.isPending && bulkMut.variables?.action === 'RESOLVE',
+            eligibleFilter: (r) => isAssignedRow(r) && (r.status === 'OPEN' || r.status === 'IN_PROGRESS'),
+            onClick: (sel, clr) => promptDecision({
+              title: `Hoàn tất giải quyết hàng loạt (${sel.length} phiếu hỗ trợ)`,
+              subtitle: 'Hệ thống sẽ lưu nội dung kết quả xử lý và thông báo phản hồi đến nhân sự đã gửi phiếu.',
+              required: true, noteLabel: 'Nội dung phản hồi / Kết quả giải quyết phiếu hỗ trợ', okText: 'Xác nhận Đã giải quyết',
+              suggestions: RESOLVE_SUGGESTIONS,
+              onConfirm: async (note) => { await bulkMut.mutateAsync({ ids: sel.map((r) => r.id), action: 'RESOLVE', note }); clr(); },
+            }),
+          },
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <FileExcelOutlined />, onClick: (sel) => exportTicketsExcel(sel) },
           { key: 'delete', label: 'Xóa đã chọn', danger: true, icon: <DeleteOutlined />, eligibleFilter: canDeleteRow, confirm: 'Xóa các phiếu hỗ trợ đã chọn?', onClick: (sel, clr) => bulkMut.mutate({ ids: sel.map((r) => r.id), action: 'DELETE' }, { onSuccess: clr }) },
         ]}
@@ -172,25 +180,18 @@ export default function AdminTicketsPage() {
             render: (_, r) => (
               <div style={{ minWidth: 0 }} title={`${r.departmentLabel} — ${r.assigneeName}`}>
                 <div style={{ ...oneLineStyle, fontWeight: 600, fontSize: 13 }}>{shortDept(r.departmentLabel)}</div>
-                <div style={{ ...oneLineStyle, fontSize: 12, color: r.assignee_user_id ? BRAND.primary : BRAND.textSecondary, marginTop: 2 }}>
-                  {r.assignee_user_id ? r.assigneeName : 'Toàn bộ phận'}
-                </div>
+                <div style={{ ...oneLineStyle, fontSize: 12, color: r.assignee_user_id ? BRAND.primary : BRAND.textSecondary, marginTop: 2 }}>{r.assignee_user_id ? r.assigneeName : 'Toàn bộ phận'}</div>
               </div>
             ),
           },
           { title: 'Ưu tiên', key: 'prio', width: 118, render: (_, r) => <StatusTag value={r.priority} label={r.priorityLabel} /> },
           { title: 'Trạng thái', key: 'st', width: 192, render: (_, r) => <StatusTag value={r.status} label={r.statusLabel} /> },
-          {
-            title: 'Cập nhật', key: 'time', width: 138,
-            render: (_, r) => <span className="num" style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap' }}>{dayjs(r.updated_at || r.created_at).format('HH:mm DD/MM/YYYY')}</span>,
-          },
+          { title: 'Cập nhật', key: 'time', width: 138, render: (_, r) => <span className="num" style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap' }}>{dayjs(r.updated_at || r.created_at).format('HH:mm DD/MM/YYYY')}</span> },
           {
             title: 'Thao tác', key: 'actions', width: 84, align: 'right',
             render: (_, r) => (
               <RowActionButtons
-                detailTooltip="Xem & Phản hồi phiếu hỗ trợ"
-                onViewDetail={() => setDetailId(r.id)}
-                loading={deleteMut.isPending}
+                detailTooltip="Xem & Phản hồi phiếu hỗ trợ" onViewDetail={() => setDetailId(r.id)} loading={deleteMut.isPending}
                 menuItems={[
                   ...(canForwardRow(r) ? [{ key: 'forward', icon: <EditOutlined />, label: 'Điều phối / Chuyển bộ phận', onClick: () => { setEditing(r); setModalOpen(true); } }] : []),
                   ...(canEditOwnRow(r) ? [{ key: 'edit', icon: <EditOutlined />, label: 'Sửa nội dung phiếu', onClick: () => { setEditing(r); setModalOpen(true); } }] : []),
@@ -211,6 +212,7 @@ export default function AdminTicketsPage() {
 
       <TicketCreateEditModal open={modalOpen} editingTicket={editing} onClose={() => { setModalOpen(false); setEditing(null); }} />
       <TicketDetailDrawer ticketId={detailId} isBackoffice onClose={() => setDetailId(null)} />
+      {decisionModalElement}
     </div>
   );
 }

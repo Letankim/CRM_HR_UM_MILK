@@ -15,30 +15,22 @@ import { PayrollBankQrPayModal } from './PayrollBankQrPayModal';
 import { PayrollMissingShiftsModal } from './PayrollMissingShiftsModal';
 import { RowActionButtons } from './RowActionButtons';
 import { allowancesOf, bonusesOf, deductionsOf, fmtVnd, type MissingShiftDetailItem, type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
+import { useWorkflowDecisionModal } from './WorkflowDecisionModal';
 
 export { exportPayrollSheet };
 
 const sum = (rows: PayrollSnapshotItem[], f: (r: PayrollSnapshotItem) => number) => rows.reduce((s, r) => s + f(r), 0);
 
 export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodRow; onOpenPayslip: (r: PayrollSnapshotItem) => void }) {
-  const qc = useQueryClient();
-  const router = useRouter();
-  const can = useCan();
-  const me = useMe().data?.user;
-  const isFinance = me?.role === 'FINANCE';
-  const { message } = App.useApp();
-  const canManage = can('payroll.manage');
-  const canPay = isFinance && can('payroll.pay', 'payroll.manage');
-  const [searchInput, setSearchInput] = useState('');
-  const debouncedQ = useDebouncedValue(searchInput, 400);
-  const [branchFilter, setBranchFilter] = useState('ALL');
-  const [rateFilter, setRateFilter] = useState('ALL');
-  const [confirmFilter, setConfirmFilter] = useState('ALL');
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(12);
+  const qc = useQueryClient(), router = useRouter(), can = useCan(), me = useMe().data?.user;
+  const isFinance = me?.role === 'FINANCE', { message } = App.useApp();
+  const canManage = can('payroll.manage'), canPay = isFinance && can('payroll.pay', 'payroll.manage');
+  const [searchInput, setSearchInput] = useState(''), debouncedQ = useDebouncedValue(searchInput, 400);
+  const [branchFilter, setBranchFilter] = useState('ALL'), [rateFilter, setRateFilter] = useState('ALL'), [confirmFilter, setConfirmFilter] = useState('ALL');
+  const [page, setPage] = useState(1), [perPage, setPerPage] = useState(12);
   const [missingModalOpen, setMissingModalOpen] = useState(false);
-  const [inspectEmp, setInspectEmp] = useState<PayrollSnapshotItem | null>(null);
-  const [qrPayTarget, setQrPayTarget] = useState<PayrollSnapshotItem | null>(null);
+  const [inspectEmp, setInspectEmp] = useState<PayrollSnapshotItem | null>(null), [qrPayTarget, setQrPayTarget] = useState<PayrollSnapshotItem | null>(null);
+  const { promptDecision, decisionModalElement } = useWorkflowDecisionModal();
 
   useEffect(() => { setPage(1); }, [period.id, branchFilter, rateFilter, confirmFilter, debouncedQ]);
 
@@ -61,15 +53,13 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
 
   const exportZipMut = useMutation({
     mutationFn: (selectedIds: string[]) => api.post<ExportFilePayload>(`/admin/payroll/periods/${period.id}/export-pdf-zip`, { selected_ids: selectedIds }),
-    onSuccess: (out) => {
-      downloadBase64File(out.base64, out.fileName, out.mimeType);
-      message.success(`Đã xuất ${out.count ?? 1} phiếu lương PDF đầy đủ chữ ký và nén tệp ${out.fileName}`);
-    },
+    onSuccess: (out) => { downloadBase64File(out.base64, out.fileName, out.mimeType); message.success(`Đã xuất ${out.count ?? 1} phiếu lương PDF đầy đủ chữ ký và nén tệp ${out.fileName}`); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xuất tệp ZIP phiếu lương PDF thất bại'),
   });
 
   const bulkPayMut = useMutation({
-    mutationFn: (ids: string[]) => api.post<{ count: number }>('/admin/payroll/payslips/bulk-pay', { ids }),
+    mutationFn: (p: { ids: string[]; payment_reference?: string }) =>
+      api.post<{ count: number }>('/admin/payroll/payslips/bulk-pay', { ids: p.ids, payslip_ids: p.ids, payment_reference: p.payment_reference }),
     onSuccess: (res) => {
       message.success(`Đã đánh dấu Đã thanh toán cho ${res.count} phiếu lương đã chọn`);
       ['payroll-snapshots', 'payroll-periods', 'payroll-periods-report'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
@@ -122,10 +112,20 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
       </div>
       <SelectableTable<PayrollSnapshotItem>
         size="small" rowKey="id" loading={snapshotsQ.isLoading || snapshotsQ.isFetching} dataSource={rows} onRowClick={onOpenPayslip}
-        bulkActions={(sel, clear) => [
+        bulkActions={(_sel, clear) => [
           { key: 'pdf-zip', label: 'Xuất phiếu lương', type: 'primary', icon: <FileZipOutlined />, loading: exportZipMut.isPending, onClick: (items) => exportZipMut.mutate(items.map((r) => r.id)) },
           ...(canPay && period.status === 'PUBLISHED'
-            ? [{ key: 'bulk-pay', label: 'Đánh dấu Đã thanh toán đã chọn', icon: <CheckCircleOutlined />, loading: bulkPayMut.isPending, confirm: `Xác nhận đánh dấu Đã thanh toán cho ${sel.length} phiếu lương đã chọn?`, onClick: async (items: PayrollSnapshotItem[]) => { await bulkPayMut.mutateAsync(items.map((r) => r.payslipId || r.id)); clear(); } }]
+            ? [{
+                key: 'bulk-pay', label: 'Đánh dấu Đã thanh toán đã chọn', icon: <CheckCircleOutlined />, loading: bulkPayMut.isPending,
+                onClick: (items: PayrollSnapshotItem[]) =>
+                  promptDecision({
+                    title: `Xác nhận thanh toán hàng loạt (${items.length} phiếu lương)`,
+                    subtitle: `Kỳ lương: ${period.name} · Tổng thực lĩnh đã chọn: ${fmtVnd(sum(items, (r) => r.netVnd))}`,
+                    required: false, noteLabel: 'Mã chứng từ / Ghi chú xác nhận chuyển khoản hàng loạt',
+                    placeholder: 'Ví dụ: UNC-202610-BATCH01 — Đã chuyển khoản lương qua VietQR...', okText: 'Xác nhận Đã thanh toán',
+                    onConfirm: async (note) => { await bulkPayMut.mutateAsync({ ids: items.map((r) => r.payslipId || r.id), payment_reference: note || undefined }); clear(); },
+                  }),
+              }]
             : []),
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (items) => exportPayrollSheet(period, items) },
         ]}
@@ -211,6 +211,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
       />
       <PayrollMissingShiftsModal open={missingModalOpen} period={period} selectedEmployee={inspectEmp} allMissingShifts={allMissingShifts} onClose={() => setMissingModalOpen(false)} onShowAll={() => setInspectEmp(null)} onOpenPayslip={onOpenPayslip} />
       {isFinance && <PayrollBankQrPayModal row={qrPayTarget} onClose={() => setQrPayTarget(null)} />}
+      {decisionModalElement}
     </Card>
   );
 }

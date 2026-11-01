@@ -14,7 +14,7 @@ import { AccountRevokeModal } from '@/ui/components/AccountRevokeModal';
 import { buildAccountColumns, exportAccountsExcel } from '@/ui/components/account-table-columns';
 import { DataTableCard } from '@/ui/components/DataTableCard';
 import { FilterToolbar } from '@/ui/components/FilterToolbar';
-import { useAccountsBulkActions } from '@/ui/hooks/useAccountsBulkActions';
+import { useAccountsBulkActions, type SingleAccountActionKind } from '@/ui/hooks/useAccountsBulkActions';
 
 function AccountsView() {
   const params = useSearchParams();
@@ -77,18 +77,16 @@ function AccountsView() {
   };
 
   const singleAction = useMutation({
-    mutationFn: async (payload: { row: AccountRowItem; kind: 'activate' | 'lock' | 'unlock' }) => {
-      setProcessingId(payload.row.id);
-      return api.post(`/admin/accounts/${payload.row.id}/${payload.kind}`, { version: payload.row.version });
+    mutationFn: async (p: { row: AccountRowItem; kind: SingleAccountActionKind; reason?: string }) => {
+      setProcessingId(p.row.id);
+      return api.post<{ version: number }>(`/admin/accounts/${p.row.id}/${p.kind}`, { version: p.row.version, reason: p.reason || undefined });
     },
-    onSuccess: (_d, { row, kind }) => {
-      const msg =
-        kind === 'activate'
-          ? `Đã kích hoạt tài khoản ${row.displayName}`
-          : kind === 'lock'
-            ? `Đã khóa tạm thời tài khoản ${row.displayName}`
-            : `Đã mở khóa đăng nhập cho ${row.displayName}`;
-      message.success(msg);
+    onSuccess: (res, { row, kind }) => {
+      const nextStatus: AccountStatus = kind === 'activate' ? 'ACTIVE' : kind === 'lock' ? 'LOCKED' : row.status === 'LOCKED' ? 'ACTIVE' : row.status;
+      setDetailRow((prev) => (prev?.id === row.id ? { ...prev, status: nextStatus, version: res.version, ...(kind !== 'lock' ? { failedLoginCount: 0 } : {}) } : prev));
+      message.success(
+        kind === 'activate' ? `Đã kích hoạt tài khoản ${row.displayName}` : kind === 'lock' ? `Đã khóa tạm thời tài khoản ${row.displayName}` : `Đã mở khóa đăng nhập cho ${row.displayName}`,
+      );
       qc.invalidateQueries({ queryKey: ['accounts'] });
       qc.invalidateQueries({ queryKey: ['account-audit-history'] });
     },
@@ -100,23 +98,22 @@ function AccountsView() {
   });
 
   const deleteSingle = useMutation({
-    mutationFn: async (row: AccountRowItem) => {
-      setProcessingId(row.id);
-      return api.delete(`/admin/accounts/${row.id}`, { version: row.version });
-    },
-    onSuccess: () => {
-      message.success('Đã xóa tài khoản thành công');
-      qc.invalidateQueries({ queryKey: ['accounts'] });
-    },
+    mutationFn: async (row: AccountRowItem) => { setProcessingId(row.id); return api.delete(`/admin/accounts/${row.id}`, { version: row.version }); },
+    onSuccess: () => { message.success('Đã xóa tài khoản thành công'); qc.invalidateQueries({ queryKey: ['accounts'] }); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa tài khoản thất bại'),
     onSettled: () => setProcessingId(null),
   });
 
   const canActivate = can('account.activate');
   const canManage = can('account.manage', 'employee.manage');
-  const canCreate = can('account.manage', 'employee.manage');
 
-  const { bulkActions, bulkMutation, revokeTargets, setRevokeTargets } = useAccountsBulkActions({ canActivate, currentUserId: me?.user.id });
+  const { bulkActions, bulkMutation, revokeTargets, setRevokeTargets, promptSingleAccountDecision, decisionModalElement } =
+    useAccountsBulkActions({ canActivate, currentUserId: me?.user.id });
+
+  const liveDetailRow = useMemo(
+    () => (detailRow ? (query.data?.data.find((x) => x.id === detailRow.id) ?? detailRow) : null),
+    [detailRow, query.data?.data],
+  );
 
   const updateUrlParam = (key: string, val: string) => {
     setPage(1);
@@ -126,27 +123,25 @@ function AccountsView() {
     router.replace(`/admin/accounts${sp.size ? `?${sp}` : ''}`);
   };
 
+  const triggerSingle = (r: AccountRowItem, kind: SingleAccountActionKind) =>
+    promptSingleAccountDecision(r, kind, (p) => singleAction.mutateAsync(p));
+
   const columns = useMemo(
     () =>
       buildAccountColumns({
-        canActivate,
-        canManage,
-        currentUserId: me?.user.id,
-        processingId,
-        onViewDetail: (r) => setDetailRow(r),
+        canActivate, canManage, currentUserId: me?.user.id, processingId,
+        onViewDetail: setDetailRow,
         onEdit: (r) => { setEditingRow(r); setModalOpen(true); },
-        onActivate: (r) => singleAction.mutate({ row: r, kind: 'activate' }),
-        onLock: (r) => singleAction.mutate({ row: r, kind: 'lock' }),
-        onUnlock: (r) => singleAction.mutate({ row: r, kind: 'unlock' }),
+        onActivate: (r) => triggerSingle(r, 'activate'),
+        onLock: (r) => triggerSingle(r, 'lock'),
+        onUnlock: (r) => triggerSingle(r, 'unlock'),
         onRevoke: (r) => setRevokeTargets([r]),
         onDelete: (r) =>
           modal.confirm({
             title: `Xóa tài khoản @${r.username} (${r.displayName})?`,
             content: 'Tài khoản sẽ bị đánh dấu xóa và thu hồi phiên đăng nhập.',
-            okText: 'Xác nhận xóa',
-            okButtonProps: { danger: true, icon: <DeleteOutlined /> },
-            cancelText: 'Hủy bỏ',
-            cancelButtonProps: { icon: <CloseOutlined /> },
+            okText: 'Xác nhận xóa', okButtonProps: { danger: true, icon: <DeleteOutlined /> },
+            cancelText: 'Hủy bỏ', cancelButtonProps: { icon: <CloseOutlined /> },
             onOk: () => deleteSingle.mutateAsync(r),
           }),
       }),
@@ -168,27 +163,37 @@ function AccountsView() {
         onExportExcel={() => exportAccountsExcel(query.data?.data ?? [])}
         onRefresh={handleManualRefresh}
         refreshing={manualRefreshing}
-        primaryActionLabel={canCreate ? 'Thêm tài khoản mới' : undefined}
-        onPrimaryAction={canCreate ? () => { setEditingRow(null); setModalOpen(true); } : undefined}
+        primaryActionLabel={canManage ? 'Thêm tài khoản mới' : undefined}
+        onPrimaryAction={canManage ? () => { setEditingRow(null); setModalOpen(true); } : undefined}
       />
       <DataTableCard<AccountRowItem>
-        columns={columns}
-        dataSource={query.data?.data}
-        meta={query.data?.meta}
+        columns={columns} dataSource={query.data?.data} meta={query.data?.meta}
         loading={query.isLoading || query.isFetching || manualRefreshing}
         codeExtractor={(r) => r.employeeId || 'Nội bộ'}
         onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }}
-        onRowClick={setDetailRow}
-        bulkActions={bulkActions}
+        onRowClick={setDetailRow} bulkActions={bulkActions}
       />
       <AccountCreateModal open={modalOpen} editing={editingRow} onClose={() => { setModalOpen(false); setEditingRow(null); }} />
       <AccountDetailDrawer
-        account={detailRow}
-        canManage={canManage}
+        account={liveDetailRow} canManage={canManage} canActivate={canActivate} currentUserId={me?.user.id}
+        actionLoading={Boolean(liveDetailRow && processingId === liveDetailRow.id) || bulkMutation.isPending}
         onEdit={(r) => { setEditingRow(r); setModalOpen(true); }}
+        onActivate={(r) => triggerSingle(r, 'activate')}
+        onLock={(r) => triggerSingle(r, 'lock')}
+        onUnlock={(r) => triggerSingle(r, 'unlock')}
+        onRevoke={(r) => setRevokeTargets([r])}
         onClose={() => setDetailRow(null)}
       />
-      <AccountRevokeModal targets={revokeTargets} loading={bulkMutation.isPending} onConfirm={(reason) => bulkMutation.mutate({ action: 'REVOKE', rows: revokeTargets, reason })} onCancel={() => setRevokeTargets([])} />
+      <AccountRevokeModal
+        targets={revokeTargets} loading={bulkMutation.isPending} onCancel={() => setRevokeTargets([])}
+        onConfirm={(reason) =>
+          bulkMutation.mutate(
+            { action: 'REVOKE', rows: revokeTargets, reason },
+            { onSuccess: () => setDetailRow((prev) => (prev && revokeTargets.some((t) => t.id === prev.id) ? { ...prev, status: 'REVOKED', revokeReason: reason, version: prev.version + 1 } : prev)) },
+          )
+        }
+      />
+      {decisionModalElement}
     </>
   );
 }

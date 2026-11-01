@@ -30,11 +30,11 @@ export function EmployeeLeavesTable({ leaves, quotaText, refreshing = false, onV
     onSuccess: (_d, ids) => { message.success(`Đã hủy ${ids.length} đơn nghỉ OFF`); onRefresh(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Không thể hủy đơn nghỉ OFF'),
   });
-  const confirmCancel = (rows: Row[]) => modal.confirm({
+  const confirmCancel = (rows: Row[], clear?: () => void) => modal.confirm({
     title: 'Hủy đơn nghỉ OFF',
     content: `Bạn chắc chắn muốn hủy ${rows.length} đơn nghỉ OFF đang chờ duyệt?`,
     okText: 'Hủy đơn', okButtonProps: { danger: true, icon: <CloseCircleOutlined /> }, cancelText: 'Đóng', cancelButtonProps: { icon: <CloseOutlined /> },
-    onOk: () => cancelMut.mutateAsync(rows.map((r) => String(r.id))),
+    onOk: async () => { await cancelMut.mutateAsync(rows.map((r) => String(r.id))); clear?.(); },
   });
 
   return (
@@ -43,7 +43,7 @@ export function EmployeeLeavesTable({ leaves, quotaText, refreshing = false, onV
       <SelectableTable<Row>
         size="small" rowKey="id" loading={refreshing} pagination={pag} dataSource={leaves} onRowClick={onViewDetail}
         bulkActions={[
-          { key: 'cancel', label: 'Hủy đơn đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: cancelMut.isPending, eligibleFilter: isCancellable, onClick: (rows) => confirmCancel(rows) },
+          { key: 'cancel', label: 'Hủy đơn đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: cancelMut.isPending, eligibleFilter: isCancellable, onClick: (rows, clear) => confirmCancel(rows, clear) },
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportLeavesExcel(rows) },
         ]}
         locale={{ emptyText: 'Bạn chưa có đơn đăng ký nghỉ OFF nào trong kỳ.' }}

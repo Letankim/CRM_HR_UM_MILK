@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, App, Button, Checkbox, Flex, Modal, Select, Space, Spin, Tag } from 'antd';
+import { Alert, App, Button, Checkbox, Flex, Input, Modal, Select, Space, Spin, Tag } from 'antd';
 import { CheckCircleOutlined, CloseOutlined, LockOutlined, ReloadOutlined, ScheduleOutlined, UnlockOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api, ApiClientError } from '@/lib/api';
@@ -22,20 +22,22 @@ export interface PlannerWeekPreviewModalProps {
   branchOptions: { value: string; label: string }[];
   canPublish: boolean;
   onBranchChange: (branchId: string) => void;
+  onConfirmLock?: (note: string) => void;
   onClose: () => void;
 }
 
 /** Popup toàn màn hình xem trước Lưới Lịch Tuần (Ca × Ngày) theo chi nhánh & xác nhận tự động sinh lịch. */
 export function PlannerWeekPreviewModal({
-  open, openSeq, weekStart, branchId, branchOptions, canPublish, onBranchChange, onClose,
+  open, openSeq, weekStart, branchId, branchOptions, canPublish, onBranchChange, onConfirmLock, onClose,
 }: PlannerWeekPreviewModalProps) {
   const { message, modal } = App.useApp();
   const invalidate = useInvalidatePlanner();
   const [confirmed, setConfirmed] = useState(false);
   const [issuesOpen, setIssuesOpen] = useState(false);
+  const [lockNote, setLockNote] = useState('');
   const [lastStatuses, setLastStatuses] = useState<PlannerBranchStatus[]>([]);
 
-  useEffect(() => { setConfirmed(false); setIssuesOpen(false); }, [open, openSeq, weekStart, branchId]);
+  useEffect(() => { setConfirmed(false); setIssuesOpen(false); setLockNote(''); }, [open, openSeq, weekStart, branchId]);
 
   const q = useQuery({
     queryKey: ['schedule-planner-week-preview', openSeq, weekStart, branchId],
@@ -79,13 +81,14 @@ export function PlannerWeekPreviewModal({
   }, [branchId, branchOptions, statuses]);
 
   const lockMut = useMutation({
-    mutationFn: () => api.post<PlannerWeekLockResult>('/admin/schedule-planner/week/lock', { week_start: data?.weekStart ?? weekStart, branch_id: branchId }),
+    mutationFn: () => api.post<PlannerWeekLockResult>('/admin/schedule-planner/week/lock', { week_start: data?.weekStart ?? weekStart, branch_id: branchId, note: lockNote.trim() }),
     onSuccess: (res) => {
       if (res.alreadyLocked) {
         message.info('Chi nhánh đã chốt lịch cho tuần này — chỉ xem lại dữ liệu lịch đã chốt.');
         q.refetch();
         return;
       }
+      onConfirmLock?.(lockNote.trim());
       const summary = `Đã chốt lịch tuần ${fmtDm(res.weekStart)} cho ${targetBranchLabel}: duyệt ${res.approvedOffCount} đơn OFF và tự động sinh ${res.createdCount} ca (1 người/ca).`;
       onClose();
       invalidate();
@@ -106,7 +109,7 @@ export function PlannerWeekPreviewModal({
     <Modal
       open={open} onCancel={onClose} destroyOnHidden centered width="98vw"
       style={{ maxWidth: '98vw', top: 8, paddingBottom: 0 }}
-      styles={{ body: { height: 'calc(100vh - 156px)', overflowY: 'auto', paddingTop: 8 } }}
+      styles={{ body: { height: isLocked ? 'calc(100vh - 156px)' : 'calc(100vh - 205px)', overflowY: 'auto', paddingTop: 8 } }}
       title={
         <Space size={8} wrap>
           <ScheduleOutlined style={{ color: '#2563EB' }} />
@@ -123,15 +126,26 @@ export function PlannerWeekPreviewModal({
             <Button type="primary" icon={<CloseOutlined />} onClick={onClose}>Đóng xem trước</Button>
           </Flex>
         ) : (
-          <Flex justify="space-between" align="center" wrap gap={12}>
-            <Checkbox checked={confirmed} disabled={!canPublish || lockMut.isPending} onChange={(e) => setConfirmed(e.target.checked)}>
-              Tôi đã kiểm tra lưới lịch tuần dự kiến và xác nhận tự động sắp lịch cho <strong>{targetBranchLabel}</strong>
-            </Checkbox>
-            <Space size={8}>
-              <Button icon={<CloseOutlined />} disabled={lockMut.isPending} onClick={onClose}>Hủy bỏ</Button>
-              <Button type="primary" icon={<CheckCircleOutlined />} disabled={!confirmed || !canPublish} loading={lockMut.isPending} onClick={() => lockMut.mutate()}>Xác nhận & Tự động sinh lịch</Button>
-            </Space>
-          </Flex>
+          <Space direction="vertical" size={8} style={{ width: '100%', textAlign: 'left' }}>
+            <Flex align="center" gap={10} wrap>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>Ghi chú chốt lịch (không bắt buộc):</span>
+              <Input.TextArea
+                autoSize={{ minRows: 1, maxRows: 2 }} maxLength={300} disabled={!canPublish || lockMut.isPending}
+                value={lockNote} onChange={(e) => setLockNote(e.target.value)}
+                placeholder="Nhập ghi chú biên bản chốt lịch tuần (tối đa 300 ký tự, không bắt buộc)..."
+                style={{ flex: 1, minWidth: 260 }}
+              />
+            </Flex>
+            <Flex justify="space-between" align="center" wrap gap={12}>
+              <Checkbox checked={confirmed} disabled={!canPublish || lockMut.isPending} onChange={(e) => setConfirmed(e.target.checked)}>
+                Tôi đã kiểm tra lưới lịch tuần dự kiến và xác nhận tự động sắp lịch cho <strong>{targetBranchLabel}</strong>
+              </Checkbox>
+              <Space size={8}>
+                <Button icon={<CloseOutlined />} disabled={lockMut.isPending} onClick={onClose}>Hủy bỏ</Button>
+                <Button type="primary" icon={<CheckCircleOutlined />} disabled={!confirmed || !canPublish} loading={lockMut.isPending} onClick={() => lockMut.mutate()}>Xác nhận & Tự động sinh lịch</Button>
+              </Space>
+            </Flex>
+          </Space>
         )
       }
     >

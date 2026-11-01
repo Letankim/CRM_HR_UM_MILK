@@ -7,7 +7,7 @@ import { DEFAULT_OPERATION_SETTINGS } from '@umbm/shared';
 import { EmployeeLeavesTable } from './EmployeeLeavesTable';
 import { LeaveRequestModal, MyShiftRegisterModal, ShiftSwapRequestModal } from './EmployeePortalModals';
 import { EmployeeShiftsTable } from './EmployeeShiftsTable';
-import { EmployeeSwapsTable } from './EmployeeSwapsTable';
+import { EmployeeSwapsTable, usePeerSwapDecision } from './EmployeeSwapsTable';
 import type { ScheduleAssignmentItem } from './ScheduleFormModal';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
 import { ScheduleViewsPanel } from './ScheduleViewsPanel';
@@ -50,6 +50,8 @@ export function EmployeeScheduleAndLeaveCenter({
     : `Tối đa ${offWin?.officialWeeklyOffLimit ?? DEFAULT_OPERATION_SETTINGS.officialWeeklyOffLimit} ngày OFF / tuần${offWin?.message ? ` · ${offWin.message}` : ''}`;
   const effectiveTab = mode === 'all' ? (!canSwap && activeTab === 'swaps' ? 'shifts' : activeTab) : mode;
   const showShiftsActions = mode === 'all' || mode === 'shifts';
+  const peerSwap = usePeerSwapDecision({ empId, empCode, onSuccess: onRefresh });
+  const canPeerRespondDetail = Boolean(detailTarget?.kind === 'swap' && peerSwap.canRespond(detailTarget.record));
 
   return (
     <>
@@ -97,7 +99,11 @@ export function EmployeeScheduleAndLeaveCenter({
             key: 'swaps',
             label: <span><SwapOutlined /> Nhường / Đổi ca ({swaps.length})</span>,
             children: canSwap ? (
-              <EmployeeSwapsTable swaps={swaps} empId={empId} empCode={empCode} refreshing={refreshing} onViewDetail={(record) => setDetailTarget({ kind: 'swap', record })} onRefresh={onRefresh} />
+              <EmployeeSwapsTable
+                swaps={swaps} empId={empId} empCode={empCode} refreshing={refreshing}
+                onViewDetail={(record) => setDetailTarget({ kind: 'swap', record })} onRefresh={onRefresh}
+                onPeerRespond={peerSwap.promptRespond} peerResponding={peerSwap.responding}
+              />
             ) : (
               <Alert
                 type="info" showIcon
@@ -109,7 +115,12 @@ export function EmployeeScheduleAndLeaveCenter({
         ].filter((it) => (mode === 'all' ? (it.key !== 'swaps' || canSwap) : it.key === mode))}
       />
 
-      <ScheduleRequestDetailModal target={detailTarget} onClose={() => setDetailTarget(null)} />
+      <ScheduleRequestDetailModal
+        target={detailTarget} onClose={() => setDetailTarget(null)}
+        onPeerAcceptSwap={canPeerRespondDetail ? (r) => peerSwap.promptRespond([r], true) : undefined}
+        onPeerDeclineSwap={canPeerRespondDetail ? (r) => peerSwap.promptRespond([r], false) : undefined}
+      />
+      {peerSwap.decisionModalElement}
       <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
       {canRegister && <MyShiftRegisterModal open={addShiftOpen} todayDate={todayDate} onClose={() => setAddShiftOpen(false)} onCreated={onRefresh} />}
       <LeaveRequestModal open={leaveOpen} employeeId={empId} stage={stage} onClose={() => setLeaveOpen(false)} onSuccess={onRefresh} />

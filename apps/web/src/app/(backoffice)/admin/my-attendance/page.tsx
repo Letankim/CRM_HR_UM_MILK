@@ -21,6 +21,7 @@ import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from '@/ui/comp
 import { SelfShiftActionPanel } from '@/ui/components/SelfShiftActionPanel';
 import { buildSelfShiftOptions, cleanShiftName, pickActiveSelfShift, useCheckoutLateHours, useNowHm, type BranchPeerItem, type SelfAttendanceExtras } from '@/ui/components/self-attendance-shared';
 import { ShiftAttendanceDetailModal } from '@/ui/components/ShiftAttendanceDetailModal';
+import { useWorkflowDecisions } from '@/ui/components/useWorkflowDecisions';
 import { useClientPagination } from '@/ui/hooks/useClientPagination';
 
 interface MyShiftRow extends Record<string, unknown> {
@@ -48,6 +49,7 @@ export default function MyAttendancePage() {
 
   const myQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<MyAttendanceResponse>('/my-attendance') });
   const refreshAll = () => ['my-attendance', 'attendance-all', 'schedules', 'nv-attendance', 'nv-schedules', 'nv-swaps', 'off-window'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+  const wf = useWorkflowDecisions({ onSuccess: refreshAll });
 
   const checkMut = useMutation({
     mutationFn: (payload: unknown) => api.post('/attendance/check', payload),
@@ -156,8 +158,9 @@ export default function MyAttendancePage() {
       <AttendanceCameraModal open={Boolean(cameraKind)} kind={cameraKind ?? 'CHECK_IN'} shift={activeShift} loading={checkMut.isPending} onClose={() => setCameraKind(null)} onConfirm={(payload) => checkMut.mutate({ ...payload, enforce_shift_state: true })} />
       <AttendanceEventDetailModal event={detailEvent} onClose={() => setDetailEvent(null)} />
       <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
-      <ScheduleRequestDetailModal target={detailReq} onClose={() => setDetailReq(null)} />
+      <ScheduleRequestDetailModal target={detailReq} onClose={() => setDetailReq(null)} {...wf.detailActions} />
       <AttendanceAdjustmentModal open={adjOpen} employeeId={profile?.employeeId || ''} shifts={shifts as unknown as Record<string, unknown>[]} initialShiftId={presetAdjShiftId} onClose={() => setAdjOpen(false)} onSuccess={refreshAll} />
+      {wf.decisionModalElement}
     </Space>
   );
 }

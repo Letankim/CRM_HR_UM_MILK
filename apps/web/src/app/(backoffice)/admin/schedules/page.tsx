@@ -106,18 +106,8 @@ function SchedulesView() {
     mutationFn: (r: ScheduleAssignmentItem) => api.delete(`/admin/schedules/${r.id}`, { version: r.version }),
     onSuccess: () => { message.success('Đã xóa phân công ca làm việc'); ['schedules', 'attendance-sessions', 'attendance-sessions-count', 'payroll-periods', 'payroll-snapshots', 'payroll-reconcile'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })); },
   });
-  const approveSingle = useMutation({
-    mutationFn: (r: ScheduleAssignmentItem) => api.put(`/admin/schedules/${r.id}`, { version: r.version, status: 'PUBLISHED' }),
-    onSuccess: () => { message.success('Đã duyệt và phát hành phân ca chính thức — nhân sự đã có thể chấm công Vào/Ra ca'); qc.invalidateQueries({ queryKey: ['schedules'] }); qc.invalidateQueries({ queryKey: ['my-attendance'] }); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Duyệt phân ca thất bại'),
-  });
-  const approveBulkMut = useMutation({
-    mutationFn: (rows: ScheduleAssignmentItem[]) => api.post<{ processedCount: number }>('/admin/schedules/bulk-action', { action: 'PUBLISH', items: rows.map((r) => ({ id: r.id, version: r.version })) }),
-    onSuccess: (res) => { message.success(`Đã duyệt và phát hành chính thức ${res.processedCount} ca làm việc`); qc.invalidateQueries({ queryKey: ['schedules'] }); qc.invalidateQueries({ queryKey: ['my-attendance'] }); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Duyệt hàng loạt thất bại'),
-  });
 
-  const { bulkActions } = useScheduleBulkActions({ canEdit });
+  const { bulkActions, promptPublishShifts, publishing, decisionModalElement } = useScheduleBulkActions({ canEdit });
   const employeeOptions = useMemo(() => (employeesQuery.data?.data ?? []).map((e) => ({ value: e.id, label: `${e.employeeCode} — ${e.fullName} (${e.branchName})`, branchId: e.branchId, canSwapShift: Boolean(e.canSwapShift) })), [employeesQuery.data]);
   const items = query.data?.data ?? [], scopeAssignments = needFullScope ? (staffingScopeQ.data?.data ?? items) : items;
   const draftItems = useMemo(() => items.filter((i) => i.status === 'DRAFT'), [items]);
@@ -176,7 +166,7 @@ function SchedulesView() {
                   <span>Có <strong>{totalDraftCount} ca làm việc</strong> đang ở trạng thái <strong>Chờ duyệt phân ca</strong>. {canPublish ? 'Nhấn Duyệt & Phát hành để lịch có hiệu lực chấm công.' : 'Quản lý cửa hàng kiểm tra định biên, đề xuất điều chỉnh và xác nhận dữ liệu vận hành.'}</span>
                   <Space wrap size={8}>
                     <Button size="small" icon={<TableOutlined />} onClick={() => { setStatus('DRAFT'); setViewMode('TABLE'); }}>Xem danh sách chờ duyệt</Button>
-                    {draftItems.length > 0 && <Button size="small" type="primary" icon={<CheckOutlined />} loading={approveBulkMut.isPending} onClick={() => approveBulkMut.mutate(draftItems)}>{canPublish ? `Duyệt & Phát hành (${draftItems.length} ca)` : `Xác nhận vận hành & Duyệt (${draftItems.length} ca)`}</Button>}
+                    {draftItems.length > 0 && <Button size="small" type="primary" icon={<CheckOutlined />} loading={publishing} onClick={() => promptPublishShifts(draftItems)}>{canPublish ? `Duyệt & Phát hành (${draftItems.length} ca)` : `Xác nhận vận hành & Duyệt (${draftItems.length} ca)`}</Button>}
                   </Space>
                 </Flex>
               }
@@ -191,7 +181,7 @@ function SchedulesView() {
           ) : (
             <DataTableCard<ScheduleAssignmentItem>
               columns={buildScheduleColumns({
-                canEdit, onApprove: (r) => approveSingle.mutate(r), onViewAttendance: (r) => setAttShiftId(r.id), onEdit: openEdit,
+                canEdit, onApprove: (r) => promptPublishShifts([r]), onViewAttendance: (r) => setAttShiftId(r.id), onEdit: openEdit,
                 onDelete: (r) => modal.confirm({ title: `Xác nhận xóa phân công ca của ${r.employeeName}?`, content: `Ca ${r.shiftLabel} ngày ${r.workDate} sẽ bị xóa khỏi lịch làm việc.`, okText: 'Xác nhận xóa', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelText: 'Hủy bỏ', cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => deleteSingle.mutateAsync(r) }),
               })}
               dataSource={items} meta={query.data?.meta} loading={query.isLoading || query.isFetching || manualRefreshing} onRowClick={openEdit}
@@ -200,6 +190,7 @@ function SchedulesView() {
           )}
           <ScheduleFormModal open={modalOpen} editing={editingRow} presetDate={presetDate} presetShiftCode={presetShift} employees={employeeOptions} existingAssignments={scopeAssignments} canEdit={canEdit} onClose={() => { setModalOpen(false); setEditingRow(null); }} onViewAttendance={(r) => setAttShiftId(r.id)} />
           <ShiftAttendanceDetailModal assignmentId={attShiftId} onClose={() => setAttShiftId(null)} />
+          {decisionModalElement}
         </>
       ) : (
         <ScheduleWorkflowsTabs employees={employeeOptions} assignments={items} />

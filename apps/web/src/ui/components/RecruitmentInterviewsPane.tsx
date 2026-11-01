@@ -1,25 +1,26 @@
 'use client';
 
-import { App, Button, Descriptions, Space, Tag } from 'antd';
-import { CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, VideoCameraOutlined } from '@ant-design/icons';
+import { App, Space, Tag } from 'antd';
+import { CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import {
   INTERVIEW_EXPERIENCE_TRACK_LABELS, INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS,
-  INTERVIEW_RUBRICS, STATUS_VISUAL_MAP, type InterviewExperienceTrack,
+  STATUS_VISUAL_MAP, type InterviewExperienceTrack,
 } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
-import { BaseDetailDrawer } from './BaseDetailDrawer';
 import { SelectableTable } from './BulkActionBar';
 import { FilterToolbar } from './FilterToolbar';
 import { usePermissionGuard } from './GuardButton';
 import { InterviewEvaluateModal } from './InterviewEvaluateModal';
 import { InterviewRescheduleModal } from './InterviewScheduleModals';
+import { InterviewDetailDrawer } from './RecruitmentSubModals';
 import { RowActionButtons } from './RowActionButtons';
 import { UpcomingInterviewsBanner } from './UpcomingInterviewsBanner';
+import { useWorkflowDecisionModal } from './WorkflowDecisionModal';
 
 const INTERVIEW_STATUS_OPTIONS = [
   { value: 'ALL', label: 'Tất cả trạng thái lịch' }, { value: 'SCHEDULED', label: 'Đã xếp lịch' },
@@ -33,6 +34,11 @@ const TRACK_OPTIONS = [
   { value: 'ALL', label: 'Tất cả nhóm kinh nghiệm' },
   { value: 'INEXPERIENCED', label: INTERVIEW_EXPERIENCE_TRACK_LABELS.INEXPERIENCED },
   { value: 'EXPERIENCED', label: INTERVIEW_EXPERIENCE_TRACK_LABELS.EXPERIENCED },
+];
+const PASS_SUGGESTIONS = ['Đạt yêu cầu phỏng vấn, thái độ tốt, mời nhận việc thử việc'];
+const FAIL_SUGGESTIONS = [
+  'Tác phong và kỹ năng chưa đáp ứng yêu cầu vận hành tại cửa hàng',
+  'Ứng viên vắng mặt phỏng vấn không thông báo trước',
 ];
 
 interface Props {
@@ -53,6 +59,7 @@ export function RecruitmentInterviewsPane({
   const qc = useQueryClient();
   const canManageRec = usePermissionGuard({ perms: ['interview.manage'] });
   const { message, modal } = App.useApp();
+  const { promptDecision, decisionModalElement } = useWorkflowDecisionModal();
 
   const [q, setQ] = useState('');
   const debouncedQ = useDebouncedValue(q, 400);
@@ -135,8 +142,35 @@ export function RecruitmentInterviewsPane({
         size="small" rowKey="id" loading={ivQ.isLoading} onRowClick={setViewingIv}
         bulkActions={[
           ...(canManageRec ? [
-            { key: 'pass', label: 'Duyệt Đạt phỏng vấn đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, eligibleFilter: (x: Record<string, unknown>) => x.decision === 'PENDING', onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel) await api.put(`/admin/interviews/${r.id}/evaluate`, { version: r.version, experience_track: getTrack(r), decision: 'PASS', appearance_score: 90, attitude_score: 90, skill_score: 88, comment: 'Đạt yêu cầu phỏng vấn, mời thử việc' }); message.success('Đã duyệt Đạt phỏng vấn cho các lịch hợp lệ'); refreshAll(); } },
-            { key: 'delete', label: 'Xóa lịch phỏng vấn đã chọn', danger: true, icon: <DeleteOutlined />, confirm: 'Xác nhận xóa các lịch phỏng vấn đã chọn?', onClick: async (sel: Record<string, unknown>[]) => { for (const r of sel) await api.delete(`/admin/interviews/${r.id}`, { version: r.version }); message.success('Đã xóa các lịch phỏng vấn đã chọn'); refreshAll(); } },
+            {
+              key: 'pass', label: 'Duyệt Đạt phỏng vấn đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />,
+              eligibleFilter: (x: Record<string, unknown>) => x.decision === 'PENDING',
+              onClick: (sel: Record<string, unknown>[], clr: () => void) =>
+                promptDecision({
+                  title: `Duyệt Đạt phỏng vấn hàng loạt (${sel.length} ứng viên)`,
+                  subtitle: 'Hệ thống sẽ ghi nhận quyết định Đạt phỏng vấn và chuyển hồ sơ ứng viên sang bước Tiếp nhận thử việc.',
+                  required: true, noteLabel: 'Nhận xét đánh giá phỏng vấn của HR', suggestions: PASS_SUGGESTIONS, okText: 'Xác nhận Đạt phỏng vấn',
+                  onConfirm: async (note) => {
+                    for (const r of sel) await api.put(`/admin/interviews/${r.id}/evaluate`, { version: r.version, experience_track: getTrack(r), decision: 'PASS', appearance_score: 90, attitude_score: 90, skill_score: 88, comment: note });
+                    clr(); message.success('Đã duyệt Đạt phỏng vấn cho các lịch hợp lệ'); refreshAll();
+                  },
+                }),
+            },
+            {
+              key: 'fail', label: 'Đánh dấu Không đạt đã chọn', danger: true, icon: <CloseCircleOutlined />,
+              eligibleFilter: (x: Record<string, unknown>) => x.decision === 'PENDING',
+              onClick: (sel: Record<string, unknown>[], clr: () => void) =>
+                promptDecision({
+                  title: `Đánh dấu Không đạt phỏng vấn (${sel.length} ứng viên)`,
+                  subtitle: 'Hồ sơ ứng viên tương ứng sẽ được cập nhật sang trạng thái Chưa phù hợp.',
+                  required: true, danger: true, noteLabel: 'Lý do từ chối / Kết quả chưa đạt phỏng vấn', suggestions: FAIL_SUGGESTIONS, okText: 'Xác nhận Không đạt',
+                  onConfirm: async (note) => {
+                    for (const r of sel) await api.put(`/admin/interviews/${r.id}/evaluate`, { version: r.version, experience_track: getTrack(r), decision: 'FAIL', appearance_score: 50, attitude_score: 50, skill_score: 50, comment: note });
+                    clr(); message.success('Đã cập nhật kết quả Không đạt phỏng vấn cho các lịch đã chọn'); refreshAll();
+                  },
+                }),
+            },
+            { key: 'delete', label: 'Xóa lịch phỏng vấn đã chọn', danger: true, icon: <DeleteOutlined />, confirm: 'Xác nhận xóa các lịch phỏng vấn đã chọn?', onClick: async (sel: Record<string, unknown>[], clr: () => void) => { for (const r of sel) await api.delete(`/admin/interviews/${r.id}`, { version: r.version }); clr(); message.success('Đã xóa các lịch phỏng vấn đã chọn'); refreshAll(); } },
           ] : []),
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (sel) => exportIvs(sel) },
         ]}
@@ -153,8 +187,7 @@ export function RecruitmentInterviewsPane({
             title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
             render: (_, r) => (
               <RowActionButtons
-                detailTooltip="Xem chi tiết lịch phỏng vấn"
-                onViewDetail={() => setViewingIv(r)}
+                detailTooltip="Xem chi tiết lịch phỏng vấn" onViewDetail={() => setViewingIv(r)}
                 menuItems={canManageRec ? [
                   ...(r.meet_link ? [{ key: 'meet', icon: <VideoCameraOutlined style={{ color: '#2563EB' }} />, label: 'Mở phòng họp Google Meet', onClick: () => window.open(String(r.meet_link), '_blank') }] : []),
                   { key: 'eval', icon: <EditOutlined style={{ color: '#2563EB' }} />, label: 'Chấm điểm & Ra quyết định HR', onClick: () => setEvalTarget(r) },
@@ -167,42 +200,10 @@ export function RecruitmentInterviewsPane({
         ]}
       />
 
-      <BaseDetailDrawer open={Boolean(liveViewingIv)} title={liveViewingIv ? `Chi tiết Phỏng vấn: ${liveViewingIv.candidateName}` : 'Chi tiết phỏng vấn'} onClose={() => setViewingIv(null)} extra={<>{Boolean(liveViewingIv?.meet_link) && <Button size="small" type="primary" icon={<VideoCameraOutlined />} href={String(liveViewingIv?.meet_link)} target="_blank">Mở Google Meet</Button>}{canManageRec && liveViewingIv && <Button size="small" icon={<ClockCircleOutlined />} onClick={() => { const iv = liveViewingIv; setViewingIv(null); setReschedTarget(iv); }}>Chỉnh sửa lịch</Button>}{canManageRec && liveViewingIv && <Button size="small" icon={<EditOutlined />} onClick={() => { const iv = liveViewingIv; setViewingIv(null); setEvalTarget(iv); }}>Chấm điểm HR</Button>}</>}>
-        {liveViewingIv && (() => {
-          const track = getTrack(liveViewingIv);
-          const rubric = INTERVIEW_RUBRICS[track];
-          return (
-            <Descriptions size="small" bordered column={2}>
-              <Descriptions.Item label="Ứng viên">{String(liveViewingIv.candidateName)} {liveViewingIv.candidateCode ? <Tag color="geekblue">{String(liveViewingIv.candidateCode)}</Tag> : null}</Descriptions.Item>
-              <Descriptions.Item label="Số điện thoại">{String(liveViewingIv.candidatePhone || '—')}</Descriptions.Item>
-              <Descriptions.Item label="Vị trí ứng tuyển">{String(liveViewingIv.positionLabel || '—')}</Descriptions.Item>
-              <Descriptions.Item label="Chi nhánh">{String(liveViewingIv.branchName || '—')}</Descriptions.Item>
-              <Descriptions.Item label="Phân loại chấm điểm" span={2}>
-                <Space size={6} wrap>
-                  <Tag color={track === 'EXPERIENCED' ? 'purple' : 'cyan'} style={{ margin: 0 }}>{rubric.label}</Tag>
-                  {Boolean(liveViewingIv.candidateExperienceNote) && <span style={{ color: '#64748B', fontSize: 12 }}>Hồ sơ UV: {String(liveViewingIv.candidateExperienceNote)}</span>}
-                </Space>
-              </Descriptions.Item>
-              <Descriptions.Item label="Thời gian phỏng vấn">{String(liveViewingIv.scheduled_at || '').slice(0, 16).replace('T', ' ')} ({String(liveViewingIv.duration_minutes ?? 30)} phút)</Descriptions.Item>
-              <Descriptions.Item label="Phòng họp trực tuyến">{liveViewingIv.meet_link ? <Button size="small" type="link" icon={<VideoCameraOutlined />} href={String(liveViewingIv.meet_link)} target="_blank" style={{ padding: 0, height: 'auto' }}>{String(liveViewingIv.meet_link)}</Button> : '—'}</Descriptions.Item>
-              <Descriptions.Item label="Hội đồng phỏng vấn" span={2}>{String(liveViewingIv.interviewerLabel || liveViewingIv.interviewer_id || '—')}</Descriptions.Item>
-              <Descriptions.Item label="Trạng thái xác nhận">{liveViewingIv.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />}>Cần đổi lịch</Tag> : liveViewingIv.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã xác nhận</Tag> : <Tag>Chờ xác nhận</Tag>}</Descriptions.Item>
-              <Descriptions.Item label="Quyết định HR"><Space size={6}><StatusTag value={String(liveViewingIv.decision)} />{liveViewingIv.decision !== 'PENDING' && <Tag color="blue">{String(liveViewingIv.score)} điểm</Tag>}</Space></Descriptions.Item>
-              {Boolean(liveViewingIv.reschedule_reason) && <Descriptions.Item label="Lý do xin đổi lịch" span={2}>{String(liveViewingIv.reschedule_reason)}</Descriptions.Item>}
-              <Descriptions.Item label="Điểm thành phần theo trọng số" span={2}>
-                {rubric.criteria.appearance.label}: <b>{String(liveViewingIv.appearance_score ?? 0)}</b> · {rubric.criteria.attitude.label}: <b>{String(liveViewingIv.attitude_score ?? 0)}</b> · {rubric.criteria.skill.label}: <b>{String(liveViewingIv.skill_score ?? 0)}</b>
-              </Descriptions.Item>
-              <Descriptions.Item label="Nhận xét của HR" span={2}>{String(liveViewingIv.comment || 'Chưa có nhận xét đánh giá')}</Descriptions.Item>
-            </Descriptions>
-          );
-        })()}
-      </BaseDetailDrawer>
-
-      <InterviewEvaluateModal target={evalTarget} loading={putMut.isPending} onClose={() => setEvalTarget(null)}
-        onSubmit={(id, body) => putMut.mutate({ url: `/admin/interviews/${id}/evaluate`, body })} />
-      <InterviewRescheduleModal target={reschedTarget} interviewerOptions={interviewerOptions} existingInterviews={bannerInterviews}
-        loading={putMut.isPending} onClose={() => setReschedTarget(null)}
-        onSubmit={(id, body) => putMut.mutate({ url: `/admin/interviews/${id}/evaluate`, body })} />
+      <InterviewDetailDrawer interview={liveViewingIv} canManage={canManageRec} onClose={() => setViewingIv(null)} onReschedule={setReschedTarget} onEvaluate={setEvalTarget} />
+      <InterviewEvaluateModal target={evalTarget} loading={putMut.isPending} onClose={() => setEvalTarget(null)} onSubmit={(id, body) => putMut.mutate({ url: `/admin/interviews/${id}/evaluate`, body })} />
+      <InterviewRescheduleModal target={reschedTarget} interviewerOptions={interviewerOptions} existingInterviews={bannerInterviews} loading={putMut.isPending} onClose={() => setReschedTarget(null)} onSubmit={(id, body) => putMut.mutate({ url: `/admin/interviews/${id}/evaluate`, body })} />
+      {decisionModalElement}
     </Space>
   );
 }

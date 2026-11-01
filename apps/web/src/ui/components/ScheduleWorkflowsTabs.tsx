@@ -9,15 +9,15 @@ import { api, ApiClientError } from '@/lib/api';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { AttendanceEventsTable, type AttendanceEventRow } from './AttendanceEventsTable';
 import { SelectableTable } from './BulkActionBar';
-import { GuardButton, usePermissionGuard } from './GuardButton';
+import { GuardButton } from './GuardButton';
 import { SchedulePlannerPanel } from './SchedulePlannerPanel';
 import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from './ScheduleRequestDetailModal';
 import { ScheduleShiftRegistrationsPane } from './ScheduleShiftRegistrationsPane';
 import { ScheduleWorkflowModals, type WorkflowAssignmentOption } from './ScheduleWorkflowModals';
 import { ShiftSwapApproveModal, submitShiftSwapApproval, type ShiftSwapApprovePayload, type ShiftSwapApproveTarget } from './ShiftSwapApproveModal';
+import { useWorkflowDecisions } from './useWorkflowDecisions';
 import { buildAdjustmentsBulkActions, buildLeavesBulkActions, buildSwapsBulkActions, exportAdjustmentsExcel, exportLeavesExcel, exportSwapsExcel } from './workflow-bulk-helpers';
 import { buildAdjustmentColumns, buildLeaveColumns, buildSwapColumns, type WorkflowColumnCtx } from './workflow-columns';
-import { confirmWorkflowShiftOverride, type WorkflowConfirmKind } from './workflow-shift-warning';
 import { WorkflowSubFilterBar } from './WorkflowSubFilterBar';
 
 type RowRec = Record<string, unknown>;
@@ -30,9 +30,7 @@ const SWAP_KIND_OPTS = [{ value: 'ALL', label: 'Tất cả loại yêu cầu' },
 const REFRESH_KEYS = ['attendance-adjustments', 'leave-requests', 'shift-swaps', 'shift-registrations', 'attendance-sessions', 'attendance-sessions-count', 'schedules', 'schedule-planner-week', 'schedule-planner-probation', 'my-attendance', 'payroll-periods', 'payroll-snapshots', 'payroll-reconcile'];
 
 export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
-  const qc = useQueryClient(), { message, modal } = App.useApp();
-  const canConfirmAtt = usePermissionGuard({ perms: ['attendance.confirm'] }), canApproveAdj = usePermissionGuard({ perms: ['adjustment.approve'] });
-  const canApproveLeave = usePermissionGuard({ perms: ['leave.approve'] }), canApproveSwap = usePermissionGuard({ perms: ['swap.approve'] });
+  const qc = useQueryClient(), { message } = App.useApp();
   const [activeTab, setActiveTab] = useState('planner'), [leaveModal, setLeaveModal] = useState(false), [swapModal, setSwapModal] = useState(false), [adjModal, setAdjModal] = useState(false);
   const [detailTarget, setDetailTarget] = useState<ScheduleDetailTarget | null>(null), [swapApproveTarget, setSwapApproveTarget] = useState<ShiftSwapApproveTarget | null>(null);
   const [searchInput, setSearchInput] = useState(''), debouncedQ = useDebouncedValue(searchInput, 400);
@@ -59,7 +57,9 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
 
   const refreshAll = () => REFRESH_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   const isRefreshing = adjQ.isFetching || leavesQ.isFetching || swapsQ.isFetching || attCountQ.isFetching;
-  const actMut = useMutation({
+  const wf = useWorkflowDecisions({ onSuccess: () => { setPage(1); refreshAll(); } });
+
+  const createMut = useMutation({
     mutationFn: ({ url, body }: { url: string; body: unknown; successMsg?: string }) => api.post(url, body),
     onSuccess: (_r, { successMsg }) => { message.success(successMsg || 'Đã thực hiện thao tác thành công'); setPage(1); refreshAll(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại'),
@@ -69,26 +69,29 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
     onSuccess: (_res, { target, payload }) => {
       const pcText = payload.allowance_eligible && payload.allowance_amount_vnd > 0 ? `+${payload.allowance_amount_vnd.toLocaleString('vi-VN')} đ/ca` : 'Không tính phụ cấp (0 đ)';
       message.success(target.mode === 'edit-allowance' ? `Đã cập nhật phụ cấp nhận ca (${pcText}) và đồng bộ bảng lương` : `HR đã phê duyệt ${target.rows.length > 1 ? `${target.rows.length} yêu cầu` : 'yêu cầu'} và cập nhật lịch làm việc (${pcText})`);
+      target.clearSelection?.();
       setSwapApproveTarget(null); setPage(1); refreshAll();
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Phê duyệt yêu cầu thất bại'),
   });
-  const runAct = (url: string, body: unknown, successMsg: string, confirmKind?: WorkflowConfirmKind, row?: RowRec) =>
-    confirmKind && row ? confirmWorkflowShiftOverride(modal, confirmKind, [row], () => actMut.mutate({ url, body, successMsg })) : actMut.mutate({ url, body, successMsg });
-  const batchMut = useMutation({
-    mutationFn: async ({ items, buildCall, successMsg }: { items: RowRec[]; buildCall: (r: RowRec) => { url: string; body: unknown } | null; successMsg: string }) => {
-      if (items.length === 0) throw new Error('Không có bản ghi nào ở trạng thái hợp lệ để thực hiện thao tác này');
-      await Promise.all(items.map((r) => { const c = buildCall(r); return c ? api.post(c.url, c.body) : Promise.resolve(); }));
-      return successMsg;
-    },
-    onSuccess: (msg) => { message.success(msg); refreshAll(); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : e instanceof Error ? e.message : 'Thao tác hàng loạt thất bại'),
-  });
-  const bulkOpts = { canConfirmAtt, canApproveAdj, canApproveLeave, canApproveSwap, loading: batchMut.isPending || swapApproveMut.isPending, onOpenApproveSwaps: (rows: RowRec[]) => setSwapApproveTarget({ mode: 'approve', rows }), runBatch: (items: RowRec[], buildCall: (r: RowRec) => { url: string; body: unknown } | null, successMsg: string, confirmKind?: WorkflowConfirmKind) => confirmKind ? confirmWorkflowShiftOverride(modal, confirmKind, items, () => batchMut.mutate({ items, buildCall, successMsg })) : batchMut.mutate({ items, buildCall, successMsg }) };
+
+  const bulkOpts = {
+    canConfirmAtt: wf.canConfirmAtt, canApproveAdj: wf.canApproveAdj, canApproveLeave: wf.canApproveLeave, canApproveSwap: wf.canApproveSwap,
+    loading: wf.busy || swapApproveMut.isPending,
+    onDecideAdjustments: wf.decideAdjustments,
+    onDecideLeaves: wf.decideLeaves,
+    onOpenApproveSwaps: (rows: RowRec[], clear?: () => void) => setSwapApproveTarget({ mode: 'approve', rows, clearSelection: clear }),
+    onRejectSwaps: wf.rejectSwaps,
+  };
   const colCtx: WorkflowColumnCtx = {
-    loading: actMut.isPending || swapApproveMut.isPending, canConfirmAtt, canApproveAdj, canApproveLeave, canApproveSwap, runAct,
+    loading: wf.busy || swapApproveMut.isPending,
+    canConfirmAtt: wf.canConfirmAtt, canApproveAdj: wf.canApproveAdj, canApproveLeave: wf.canApproveLeave, canApproveSwap: wf.canApproveSwap,
     onDetail: (kind, record) => setDetailTarget({ kind, record }),
-    onApproveSwap: (r) => setSwapApproveTarget({ mode: 'approve', rows: [r] }), onEditSwapAllowance: (r) => setSwapApproveTarget({ mode: 'edit-allowance', rows: [r] }),
+    onDecideAdjustment: (r, action) => wf.decideAdjustments([r], action),
+    onDecideLeave: (r, decision) => wf.decideLeaves([r], decision),
+    onApproveSwap: (r) => setSwapApproveTarget({ mode: 'approve', rows: [r] }),
+    onRejectSwap: (r) => wf.rejectSwaps([r]),
+    onEditSwapAllowance: (r) => setSwapApproveTarget({ mode: 'edit-allowance', rows: [r] }),
   };
 
   const branchList = branchesQ.data?.data ?? [];
@@ -107,8 +110,8 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
   return (
     <Card size="small" styles={{ body: { padding: '12px 20px 20px' } }}>
       <Tabs activeKey={activeTab} onChange={(k) => { setActiveTab(k); setStatusFilter('ALL'); setPage(1); }} items={[
-        { key: 'planner', label: <span><ScheduleOutlined /> Chốt lịch & Sắp ca</span>, children: <SchedulePlannerPanel /> },
-        { key: 'registrations', label: <span><FormOutlined /> Đăng ký ca chờ duyệt ({draftTotal})</span>, children: <ScheduleShiftRegistrationsPane branchOptions={branchOptions} onDetail={setDetailTarget} /> },
+        { key: 'planner', label: <span><ScheduleOutlined /> Chốt lịch &amp; Sắp ca</span>, children: <SchedulePlannerPanel /> },
+        { key: 'registrations', label: <span><FormOutlined /> Đăng ký ca chờ duyệt ({draftTotal})</span>, children: <ScheduleShiftRegistrationsPane branchOptions={branchOptions} onDetail={setDetailTarget} onDecideDraftShifts={wf.decideDraftShifts} busy={wf.busy} /> },
         { key: 'attendance', label: <span><EnvironmentOutlined /> Lịch sử Điểm danh Vào/Ra ca ({attCountQ.data?.meta.pagination.total ?? 0})</span>, children: <AttendanceEventsTable assignments={assignments as unknown as RowRec[]} /> },
         { key: 'adjustments', label: <span><FileAddOutlined /> Phiếu bổ sung công ({adjQ.data?.meta.pagination.total ?? adjRows.length})</span>, children: (
           <>
@@ -130,9 +133,14 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
           </>
         ) },
       ]} />
-      <ScheduleRequestDetailModal target={detailTarget} onClose={() => setDetailTarget(null)} onApproveSwap={canApproveSwap ? (r) => setSwapApproveTarget({ mode: 'approve', rows: [r] }) : undefined} onEditSwapAllowance={canApproveSwap ? (r) => setSwapApproveTarget({ mode: 'edit-allowance', rows: [r] }) : undefined} />
+      <ScheduleRequestDetailModal
+        target={detailTarget} onClose={() => setDetailTarget(null)} {...wf.detailActions}
+        onApproveSwap={wf.canApproveSwap ? (r) => setSwapApproveTarget({ mode: 'approve', rows: [r] }) : undefined}
+        onEditSwapAllowance={wf.canApproveSwap ? (r) => setSwapApproveTarget({ mode: 'edit-allowance', rows: [r] }) : undefined}
+      />
       <ShiftSwapApproveModal target={swapApproveTarget} loading={swapApproveMut.isPending} onClose={() => setSwapApproveTarget(null)} onConfirm={(payload) => swapApproveTarget && swapApproveMut.mutate({ target: swapApproveTarget, payload })} />
-      <ScheduleWorkflowModals employees={employees} assignments={assignments} leaveModal={leaveModal} swapModal={swapModal} adjModal={adjModal} submitting={actMut.isPending} onCloseLeave={() => setLeaveModal(false)} onCloseSwap={() => setSwapModal(false)} onCloseAdj={() => setAdjModal(false)} onSubmitAction={(url, body) => !actMut.isPending && actMut.mutate({ url, body, successMsg: url.includes('shift-swaps') ? 'Đã gửi yêu cầu — chờ đồng nghiệp xác nhận' : undefined })} />
+      <ScheduleWorkflowModals employees={employees} assignments={assignments} leaveModal={leaveModal} swapModal={swapModal} adjModal={adjModal} submitting={createMut.isPending} onCloseLeave={() => setLeaveModal(false)} onCloseSwap={() => setSwapModal(false)} onCloseAdj={() => setAdjModal(false)} onSubmitAction={(url, body) => !createMut.isPending && createMut.mutate({ url, body, successMsg: url.includes('shift-swaps') ? 'Đã gửi yêu cầu — chờ đồng nghiệp xác nhận' : undefined })} />
+      {wf.decisionModalElement}
     </Card>
   );
 }

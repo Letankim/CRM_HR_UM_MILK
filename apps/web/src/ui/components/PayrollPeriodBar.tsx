@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, App, Button, Flex, Input, Popconfirm, Space, Steps, Tag } from 'antd';
+import { Alert, App, Button, Flex, Popconfirm, Space, Steps, Tag } from 'antd';
 import {
   CalculatorOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined,
   DeleteOutlined, MailOutlined, RollbackOutlined, SafetyCertificateOutlined, SendOutlined,
@@ -13,19 +13,32 @@ import { useCan, useMe } from '@/lib/auth';
 import { StatusTag } from '@/ui/StatusTag';
 import { fmtVnd, type PayPeriodRow } from './payroll-types';
 import { AdminApprovePeriodModal, FinancePublishPeriodModal } from './PayrollWorkflowModals';
+import { useWorkflowDecisionModal } from './WorkflowDecisionModal';
 
 const STEP_ORDER: PayPeriodStatus[] = ['DRAFT', 'RECONCILE', 'APPROVED', 'PUBLISHED', 'PAID'];
 const BACK: Partial<Record<PayPeriodStatus, PayPeriodStatus>> = { RECONCILE: 'DRAFT', APPROVED: 'RECONCILE' };
+const RETURN_SUGGESTIONS = [
+  'Cần đối soát lại giờ công / ca thiếu chấm công của nhân sự',
+  'Cần kiểm tra lại khoản thưởng / phụ cấp / khấu trừ trong kỳ',
+  'Cần cập nhật lại hồ sơ lương hiệu lực trước khi phê duyệt',
+];
 
-export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: PayPeriodRow; canManage: boolean; onDeleted: () => void }) {
+export interface PayrollPeriodBarProps {
+  period: PayPeriodRow;
+  canManage: boolean;
+  onDeleted: () => void;
+  onTransition?: (status: PayPeriodStatus, note?: string) => Promise<void> | void;
+}
+
+export function PayrollPeriodBar({ period, canManage, onDeleted, onTransition }: PayrollPeriodBarProps) {
   const qc = useQueryClient();
   const can = useCan();
   const me = useMe().data?.user;
   const isAdmin = me?.role === 'ADMIN';
   const { message } = App.useApp();
-  const [payVoucherNote, setPayVoucherNote] = useState('');
   const [adminApproveOpen, setAdminApproveOpen] = useState(false);
   const [financePublishOpen, setFinancePublishOpen] = useState(false);
+  const { promptDecision, decisionModalElement } = useWorkflowDecisionModal();
 
   const refresh = () => {
     ['payroll-periods', 'payroll-periods-report', 'payroll-snapshots', 'payroll-reconcile', 'payroll-items', 'notifications'].forEach((k) =>
@@ -35,14 +48,14 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
   const onError = (e: unknown) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại, vui lòng thử lại');
 
   const submitAdminMut = useMutation({
-    mutationFn: () => api.post(`/admin/payroll/periods/${period.id}/submit-to-admin`, {}),
+    mutationFn: (note?: string) => api.post(`/admin/payroll/periods/${period.id}/submit-to-admin`, { note: note ?? '' }),
     onSuccess: () => { message.success('Đã gửi bảng lương trình Ban Quản trị ký phê duyệt'); refresh(); },
     onError,
   });
   const transition = useMutation({
     mutationFn: (payload: { target: PayPeriodStatus; note?: string }) =>
       api.post(`/admin/payroll/periods/${period.id}/transition`, { version: period.version, target_status: payload.target, note: payload.note }),
-    onSuccess: (_d, vars) => { message.success(`Đã chuyển kỳ lương sang "${PAY_PERIOD_STATUS_LABELS[vars.target]}"`); setPayVoucherNote(''); refresh(); },
+    onSuccess: (_d, vars) => { message.success(`Đã chuyển kỳ lương sang "${PAY_PERIOD_STATUS_LABELS[vars.target]}"`); refresh(); },
     onError,
   });
   const recalc = useMutation({
@@ -65,6 +78,11 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
     onError,
   });
 
+  const runTransition = async (target: PayPeriodStatus, note?: string) => {
+    if (onTransition) await onTransition(target, note);
+    else await transition.mutateAsync({ target, note });
+  };
+
   const editable = period.status === 'DRAFT' || period.status === 'RECONCILE';
   const isPublishedOrPaid = period.status === 'PUBLISHED' || period.status === 'PAID';
   const isFinance = me?.role === 'FINANCE';
@@ -85,36 +103,20 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
           <span>Nhân sự: <strong>{period.total_employees}</strong></span>
           <span>Thực lĩnh: <strong className="num" style={{ color: '#15803D', fontSize: 15 }}>{fmtVnd(period.total_net_vnd)}</strong></span>
           <StatusTag value={period.status} label={PAY_PERIOD_STATUS_LABELS[period.status]} />
-          {period.adminSignedBy && (
-            <Tag color="geekblue" icon={<SafetyCertificateOutlined />} style={{ margin: 0, borderRadius: 2 }}>
-              Quản trị đã ký: {period.adminSignedBy}
-            </Tag>
-          )}
-          {period.financeSignedBy && (
-            <Tag color="blue" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>
-              Kế toán đã ký: {period.financeSignedBy}
-            </Tag>
-          )}
+          {period.adminSignedBy && <Tag color="geekblue" icon={<SafetyCertificateOutlined />} style={{ margin: 0, borderRadius: 2 }}>Quản trị đã ký: {period.adminSignedBy}</Tag>}
+          {period.financeSignedBy && <Tag color="blue" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>Kế toán đã ký: {period.financeSignedBy}</Tag>}
           {isPublishedOrPaid && (
             <>
-              <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>
-                NV đã ký: {period.confirmed_count ?? 0}/{totalIssued}
-              </Tag>
-              <Tag color={(period.paid_count ?? 0) >= totalIssued && totalIssued > 0 ? 'green' : 'cyan'} style={{ margin: 0, borderRadius: 2 }}>
-                Đã TT: {period.paid_count ?? 0}/{totalIssued}
-              </Tag>
-              {(period.disputed_count ?? 0) > 0 && (
-                <Tag color="volcano" style={{ margin: 0, borderRadius: 2 }}>Thắc mắc: {period.disputed_count}</Tag>
-              )}
+              <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>NV đã ký: {period.confirmed_count ?? 0}/{totalIssued}</Tag>
+              <Tag color={(period.paid_count ?? 0) >= totalIssued && totalIssued > 0 ? 'green' : 'cyan'} style={{ margin: 0, borderRadius: 2 }}>Đã TT: {period.paid_count ?? 0}/{totalIssued}</Tag>
+              {(period.disputed_count ?? 0) > 0 && <Tag color="volcano" style={{ margin: 0, borderRadius: 2 }}>Thắc mắc: {period.disputed_count}</Tag>}
             </>
           )}
         </Space>
 
         <Space size={8} wrap>
           {isPublishedOrPaid && (canManage || canPublish || canPay) && (
-            <Button size="small" icon={<MailOutlined />} loading={notifyPayslips.isPending} onClick={() => notifyPayslips.mutate()}>
-              Gửi lại phiếu lương
-            </Button>
+            <Button size="small" icon={<MailOutlined />} loading={notifyPayslips.isPending} onClick={() => notifyPayslips.mutate()}>Gửi lại phiếu lương</Button>
           )}
           {canManage && editable && <Button size="small" icon={<CalculatorOutlined />} loading={recalc.isPending} onClick={() => recalc.mutate()}>Tính lại</Button>}
           {canManage && editable && (
@@ -123,64 +125,87 @@ export function PayrollPeriodBar({ period, canManage, onDeleted }: { period: Pay
             </Popconfirm>
           )}
           {(canManage || isAdmin) && back && (
-            <Button size="small" icon={<RollbackOutlined />} loading={transition.isPending && transition.variables?.target === back} onClick={() => transition.mutate({ target: back })}>
+            <Button
+              size="small"
+              icon={<RollbackOutlined />}
+              loading={transition.isPending && transition.variables?.target === back}
+              onClick={() =>
+                promptDecision({
+                  title: `Trả kỳ lương về bước "${PAY_PERIOD_STATUS_LABELS[back]}" — ${period.name}`,
+                  subtitle: 'Bảng lương sẽ được mở khóa lại để bộ phận Kế toán / Nhân sự kiểm tra và điều chỉnh số liệu theo yêu cầu.',
+                  required: true,
+                  danger: true,
+                  noteLabel: 'Lý do trả lại bảng lương để chỉnh sửa',
+                  okText: 'Xác nhận trả lại',
+                  suggestions: RETURN_SUGGESTIONS,
+                  onConfirm: async (note) => { await runTransition(back, note); },
+                })
+              }
+            >
               Trả về {PAY_PERIOD_STATUS_LABELS[back]}
             </Button>
           )}
 
           {period.status === 'DRAFT' && canManage && (
-            <Popconfirm
-              title="Gửi bảng lương trình Ban Quản trị ký phê duyệt?"
-              description="Hệ thống sẽ tổng hợp lại số liệu công lương mới nhất và gửi thông báo tới Ban Quản trị để rà soát & ký chữ ký số."
-              okText="Gửi trình Quản trị" cancelText="Hủy bỏ" okButtonProps={{ icon: <SendOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
-              onConfirm={() => submitAdminMut.mutateAsync()}
+            <Button
+              size="small"
+              type="primary"
+              icon={<SendOutlined />}
+              loading={submitAdminMut.isPending}
+              onClick={() =>
+                promptDecision({
+                  title: `Gửi trình Quản trị phê duyệt — ${period.name}`,
+                  subtitle: `Hệ thống sẽ tổng hợp số liệu công lương mới nhất (${period.total_employees} nhân sự · Thực lĩnh ${fmtVnd(period.total_net_vnd)}) và gửi thông báo tới Ban Quản trị để rà soát & ký chữ ký số.`,
+                  required: false,
+                  noteLabel: 'Ghi chú trình duyệt gửi Ban Quản trị',
+                  placeholder: 'Nhập thuyết minh biến động quỹ lương, thưởng hoặc lưu ý đối soát gửi Ban Quản trị (nếu có)...',
+                  okText: 'Xác nhận gửi trình duyệt',
+                  onConfirm: async (note) => { await submitAdminMut.mutateAsync(note || undefined); },
+                })
+              }
             >
-              <Button size="small" type="primary" icon={<SendOutlined />} loading={submitAdminMut.isPending}>
-                Gửi trình Quản trị phê duyệt
-              </Button>
-            </Popconfirm>
+              Gửi trình Quản trị phê duyệt
+            </Button>
           )}
 
           {period.status === 'RECONCILE' && (
             isAdmin ? (
-              <Button size="small" type="primary" icon={<SafetyCertificateOutlined />} onClick={() => setAdminApproveOpen(true)}>
-                Duyệt &amp; Ký chữ ký Quản trị
-              </Button>
+              <Button size="small" type="primary" icon={<SafetyCertificateOutlined />} onClick={() => setAdminApproveOpen(true)}>Duyệt &amp; Ký chữ ký Quản trị</Button>
             ) : (
-              <Tag color="processing" icon={<ClockCircleOutlined />} style={{ margin: 0, padding: '2px 8px' }}>
-                Đã gửi trình — Đang chờ Ban Quản trị ký phê duyệt
-              </Tag>
+              <Tag color="processing" icon={<ClockCircleOutlined />} style={{ margin: 0, padding: '2px 8px' }}>Đã gửi trình — Đang chờ Ban Quản trị ký phê duyệt</Tag>
             )
           )}
 
           {period.status === 'APPROVED' && canPublish && (
-            <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => setFinancePublishOpen(true)}>
-              Ký chữ ký Kế toán &amp; Phát hành xuống NV
-            </Button>
+            <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => setFinancePublishOpen(true)}>Ký chữ ký Kế toán &amp; Phát hành xuống NV</Button>
           )}
 
           {period.status === 'PUBLISHED' && canPay && (
-            <Popconfirm
-              title="Tất toán & khóa hoàn tất toàn bộ kỳ lương?"
-              description={
-                <div style={{ maxWidth: 330 }}>
-                  <div>Bạn có thể đánh dấu Đã thanh toán cho từng nhân sự qua nút Mã QR trên bảng, hoặc bấm xác nhận bên dưới để tất toán toàn bộ kỳ lương.</div>
-                  <Input size="small" style={{ marginTop: 8 }} placeholder="Mã chứng từ / UNC tổng (VD: UNC-202610)" value={payVoucherNote} onChange={(e) => setPayVoucherNote(e.target.value)} />
-                </div>
+            <Button
+              size="small"
+              icon={<CheckCircleOutlined />}
+              loading={transition.isPending && transition.variables?.target === 'PAID'}
+              onClick={() =>
+                promptDecision({
+                  title: `Tất toán & khóa hoàn tất kỳ lương — ${period.name}`,
+                  subtitle: 'Bạn có thể đánh dấu Đã thanh toán cho từng nhân sự qua nút Mã QR trên bảng, hoặc xác nhận bên dưới để tất toán và khóa hoàn tất toàn bộ kỳ lương.',
+                  required: false,
+                  noteLabel: 'Mã chứng từ / Ghi chú tất toán kỳ lương',
+                  placeholder: 'Ví dụ: UNC-202610 — Đã tất toán toàn bộ quỹ lương kỳ này...',
+                  okText: 'Xác nhận tất toán cả kỳ',
+                  onConfirm: async (note) => { await runTransition('PAID', note || period.note || 'Đã tất toán toàn bộ kỳ lương'); },
+                })
               }
-              okText="Tất toán cả kỳ" cancelText="Hủy bỏ" okButtonProps={{ icon: <CheckCircleOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
-              onConfirm={() => transition.mutateAsync({ target: 'PAID', note: payVoucherNote.trim() || period.note || 'Đã tất toán toàn bộ kỳ lương' })}
             >
-              <Button size="small" icon={<CheckCircleOutlined />} loading={transition.isPending && transition.variables?.target === 'PAID'}>
-                Tất toán cả kỳ
-              </Button>
-            </Popconfirm>
+              Tất toán cả kỳ
+            </Button>
           )}
         </Space>
       </Flex>
 
       <AdminApprovePeriodModal open={adminApproveOpen} period={period} onClose={() => setAdminApproveOpen(false)} onSuccess={refresh} />
       <FinancePublishPeriodModal open={financePublishOpen} period={period} onClose={() => setFinancePublishOpen(false)} onSuccess={refresh} />
+      {decisionModalElement}
     </div>
   );
 }

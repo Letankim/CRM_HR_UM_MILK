@@ -12,7 +12,7 @@ import { mondayOfWeek } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { PlannerWeekPreviewModal } from './PlannerWeekPreviewModal';
-import { OffRejectModal, PlannerIssuesAlert, PlannerOffConflictsAlert, PlannerOffTable } from './SchedulePlannerShared';
+import { PlannerIssuesAlert, PlannerOffConflictsAlert, PlannerOffTable } from './SchedulePlannerShared';
 import { fmtDm, fmtTs, fmtYmd, type PlannerWeekData } from './schedule-planner-types';
 import { usePlannerOffDecision } from './usePlannerOffDecision';
 
@@ -31,6 +31,7 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
   if (weekStart) params.set('week_start', weekStart);
   const q = useQuery({ queryKey: ['schedule-planner-week', weekStart, branchId], queryFn: () => api.get<PlannerWeekData>(`/admin/schedule-planner/week?${params.toString()}`) });
   const data = q.data, effWeek = weekStart ?? data?.weekStart ?? null;
+  const allowOffDecision = canDecide && !data?.isLocked;
 
   const enrichedBranchOptions = useMemo(() => {
     const statuses = data?.branchStatuses ?? [];
@@ -61,7 +62,7 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
               type="primary" icon={<ScheduleOutlined />} disabled={!effWeek}
               onClick={() => setPreview((p) => ({ open: true, seq: p.seq + 1, branchId }))}
             >
-              Chốt lịch & Tự động sắp ca
+              Chốt lịch &amp; Tự động sắp ca
             </Button>
           </Space>
         </Flex>
@@ -103,7 +104,9 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
       <Card size="small" title={`Đơn nghỉ OFF tuần ${data ? `${fmtYmd(data.weekStart)} – ${fmtYmd(data.weekEnd)}` : ''}`}>
         <PlannerOffTable
           rows={data?.offRequests ?? []} loading={q.isLoading}
-          renderActions={canDecide && !data?.isLocked ? (r) => (r.status === 'PENDING' || r.status === 'DRAFT' ? (
+          onApprove={allowOffDecision ? decision.approve : undefined}
+          onReject={allowOffDecision ? decision.openReject : undefined}
+          renderActions={allowOffDecision ? (r) => (r.status === 'PENDING' || r.status === 'DRAFT' ? (
             <Space size={6}>
               <Button size="small" type="primary" ghost icon={<CheckCircleOutlined />} loading={decision.busyId === r.id} onClick={() => decision.approve(r)}>Duyệt</Button>
               <Button size="small" danger icon={<CloseCircleOutlined />} disabled={decision.busyId === r.id} onClick={() => decision.openReject(r)}>Từ chối</Button>
@@ -112,7 +115,7 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
         />
       </Card>
 
-      <OffRejectModal target={decision.rejectTarget} loading={decision.pending} onClose={decision.closeReject} onConfirm={decision.reject} />
+      {decision.decisionModalElement}
       <PlannerWeekPreviewModal
         open={preview.open} openSeq={preview.seq} weekStart={effWeek} branchId={preview.branchId}
         branchOptions={branchOptions} canPublish={canPublish}

@@ -3,13 +3,21 @@
 import { App } from 'antd';
 import { CheckOutlined, CloseOutlined, DeleteOutlined, FileExcelOutlined, LockOutlined, StopOutlined, UnlockOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import type { AccountRowItem } from '@/ui/components/AccountDetailDrawer';
 import { exportAccountsExcel } from '@/ui/components/account-table-columns';
 import type { BulkActionItem } from '@/ui/components/BulkActionBar';
+import { useWorkflowDecisionModal } from '@/ui/components/WorkflowDecisionModal';
 
 export type AccountBulkAction = 'ACTIVATE' | 'LOCK' | 'UNLOCK' | 'REVOKE' | 'DELETE';
+export type SingleAccountActionKind = 'activate' | 'lock' | 'unlock';
+
+const LOCK_SUGGESTIONS = [
+  'Tạm khóa theo yêu cầu rà soát nhân sự / phân quyền',
+  'Nhân sự tạm ngưng công việc dài ngày theo đơn được duyệt',
+  'Phát hiện phiên đăng nhập bất thường cần kiểm tra bảo mật',
+];
 
 interface UseAccountsBulkActionsOptions {
   canActivate: boolean;
@@ -17,14 +25,15 @@ interface UseAccountsBulkActionsOptions {
 }
 
 /**
- * Quản lý thao tác hàng loạt trên danh sách tài khoản (Kích hoạt, Khóa tạm thời, Mở khóa, Thu hồi, Xóa, Xuất Excel)
- * kèm danh sách tài khoản đang chờ xác nhận thu hồi.
+ * Quản lý thao tác hàng loạt & hộp thoại xác nhận quyết định trên danh sách tài khoản
+ * (Kích hoạt, Khóa tạm thời, Mở khóa, Thu hồi, Xóa, Xuất Excel).
  */
 export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccountsBulkActionsOptions) {
   const qc = useQueryClient();
   const { message, modal } = App.useApp();
   const [revokeTargets, setRevokeTargets] = useState<AccountRowItem[]>([]);
   const [clearBulkFn, setClearBulkFn] = useState<(() => void) | null>(null);
+  const { promptDecision, decisionModalElement } = useWorkflowDecisionModal();
 
   const bulkMutation = useMutation({
     mutationFn: (payload: { action: AccountBulkAction; rows: AccountRowItem[]; reason?: string; clear?: () => void }) =>
@@ -45,6 +54,46 @@ export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccoun
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác hàng loạt thất bại'),
   });
 
+  const promptSingleAccountDecision = useCallback(
+    (
+      row: AccountRowItem,
+      kind: SingleAccountActionKind,
+      onExecute: (payload: { row: AccountRowItem; kind: SingleAccountActionKind; reason?: string }) => Promise<unknown>,
+    ) => {
+      if (kind === 'lock') {
+        promptDecision({
+          title: `Khóa tạm thời tài khoản: ${row.displayName} (@${row.username})`,
+          subtitle: 'Phiên đăng nhập hiện tại của tài khoản sẽ bị ngắt ngay lập tức trên mọi thiết bị.',
+          required: true,
+          danger: true,
+          noteLabel: 'Lý do khóa tạm thời tài khoản',
+          okText: 'Xác nhận khóa tạm thời',
+          suggestions: LOCK_SUGGESTIONS,
+          onConfirm: async (note) => {
+            await onExecute({ row, kind: 'lock', reason: note });
+          },
+        });
+        return;
+      }
+      const isActivate = kind === 'activate';
+      promptDecision({
+        title: isActivate
+          ? `Kích hoạt tài khoản: ${row.displayName} (@${row.username})`
+          : `Mở khóa đăng nhập: ${row.displayName} (@${row.username})`,
+        subtitle: isActivate
+          ? 'Tài khoản sẽ chuyển sang trạng thái Hoạt động và hệ thống sẽ gửi thông báo kích hoạt tới người dùng.'
+          : 'Đặt lại bộ đếm đăng nhập sai về 0 và khôi phục quyền truy cập cho tài khoản.',
+        required: false,
+        noteLabel: 'Ghi chú phê duyệt / xử lý',
+        okText: isActivate ? 'Xác nhận kích hoạt' : 'Xác nhận mở khóa',
+        onConfirm: async (note) => {
+          await onExecute({ row, kind, reason: note || undefined });
+        },
+      });
+    },
+    [promptDecision],
+  );
+
   const bulkActions: BulkActionItem<AccountRowItem>[] = useMemo(() => {
     const items: BulkActionItem<AccountRowItem>[] = [];
     if (canActivate) {
@@ -56,7 +105,17 @@ export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccoun
           icon: <CheckOutlined />,
           loading: bulkMutation.isPending && bulkMutation.variables?.action === 'ACTIVATE',
           eligibleFilter: (r) => r.status === 'PENDING_ACTIVATION',
-          onClick: (rows, clear) => bulkMutation.mutate({ action: 'ACTIVATE', rows, clear }),
+          onClick: (rows, clear) =>
+            promptDecision({
+              title: `Kích hoạt tài khoản hàng loạt (${rows.length} tài khoản)`,
+              subtitle: 'Các tài khoản được chọn sẽ chuyển sang trạng thái Hoạt động và nhận thông báo kích hoạt.',
+              required: false,
+              noteLabel: 'Ghi chú phê duyệt / xử lý',
+              okText: 'Xác nhận kích hoạt',
+              onConfirm: async (note) => {
+                await bulkMutation.mutateAsync({ action: 'ACTIVATE', rows, reason: note || undefined, clear });
+              },
+            }),
         },
         {
           key: 'bulk-lock',
@@ -64,7 +123,19 @@ export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccoun
           icon: <LockOutlined />,
           loading: bulkMutation.isPending && bulkMutation.variables?.action === 'LOCK',
           eligibleFilter: (r) => r.status === 'ACTIVE' && r.id !== currentUserId && r.username !== 'admin',
-          onClick: (rows, clear) => bulkMutation.mutate({ action: 'LOCK', rows, clear }),
+          onClick: (rows, clear) =>
+            promptDecision({
+              title: `Khóa tạm thời hàng loạt (${rows.length} tài khoản)`,
+              subtitle: 'Các tài khoản đang chọn sẽ bị ngắt phiên đăng nhập ngay lập tức trên mọi thiết bị.',
+              required: true,
+              danger: true,
+              noteLabel: 'Lý do khóa tạm thời tài khoản',
+              okText: 'Xác nhận khóa tạm thời',
+              suggestions: LOCK_SUGGESTIONS,
+              onConfirm: async (note) => {
+                await bulkMutation.mutateAsync({ action: 'LOCK', rows, reason: note, clear });
+              },
+            }),
         },
         {
           key: 'bulk-unlock',
@@ -72,7 +143,17 @@ export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccoun
           icon: <UnlockOutlined />,
           loading: bulkMutation.isPending && bulkMutation.variables?.action === 'UNLOCK',
           eligibleFilter: (r) => r.status === 'LOCKED' || Number(r.failedLoginCount ?? 0) > 0,
-          onClick: (rows, clear) => bulkMutation.mutate({ action: 'UNLOCK', rows, clear }),
+          onClick: (rows, clear) =>
+            promptDecision({
+              title: `Mở khóa đăng nhập hàng loạt (${rows.length} tài khoản)`,
+              subtitle: 'Đặt lại số lần đăng nhập sai về 0 và khôi phục quyền truy cập cho các tài khoản đã chọn.',
+              required: false,
+              noteLabel: 'Ghi chú phê duyệt / xử lý',
+              okText: 'Xác nhận mở khóa',
+              onConfirm: async (note) => {
+                await bulkMutation.mutateAsync({ action: 'UNLOCK', rows, reason: note || undefined, clear });
+              },
+            }),
         },
         {
           key: 'bulk-revoke',
@@ -121,7 +202,7 @@ export function useAccountsBulkActions({ canActivate, currentUserId }: UseAccoun
       },
     });
     return items;
-  }, [bulkMutation, canActivate, currentUserId, message, modal]);
+  }, [bulkMutation, canActivate, currentUserId, message, modal, promptDecision]);
 
-  return { bulkActions, bulkMutation, revokeTargets, setRevokeTargets };
+  return { bulkActions, bulkMutation, revokeTargets, setRevokeTargets, promptSingleAccountDecision, decisionModalElement };
 }

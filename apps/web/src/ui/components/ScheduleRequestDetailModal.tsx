@@ -2,18 +2,20 @@
 
 import { useState } from 'react';
 import { Alert, Button, Descriptions, Modal, Space, Tag } from 'antd';
-import { CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, DollarOutlined, EyeOutlined, FileAddOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, FileAddOutlined } from '@ant-design/icons';
 import { ADJUSTMENT_PUNCH_TYPE_LABELS } from '@umbm/shared';
 import dayjs from 'dayjs';
 import { StatusTag } from '../StatusTag';
 import { formatAdjustmentProposal } from './AdjustmentEvidenceFields';
 import { FancyboxImage } from './FancyboxPreview';
 import { hasPendingAdjustmentRecord, isAbsentShiftRecord, QuickAbsentAdjustmentModal } from './QuickAbsentAdjustmentModal';
+import { ScheduleRequestDetailFooter, type ScheduleRequestDetailActions } from './ScheduleRequestDetailFooter';
 import { renderProbationExtraTags } from './ScheduleShiftRegistrationsPane';
 import { canViewShiftAttendanceDetail, ShiftAttendanceDetailModal } from './ShiftAttendanceDetailModal';
 import { renderSwapAllowanceTag } from './ShiftSwapApproveModal';
 import { renderDetailShiftStateAlert, renderWorkflowShiftStateTag } from './workflow-shift-warning';
 
+export type { ScheduleRequestDetailActions };
 export type ScheduleDetailKind = 'shift' | 'leave' | 'swap' | 'adjustment';
 
 export interface ScheduleDetailTarget {
@@ -34,13 +36,12 @@ const TITLES: Record<ScheduleDetailKind, string> = {
   adjustment: 'Chi tiết Phiếu giải trình / Bổ sung công',
 };
 
-export function ScheduleRequestDetailModal({
-  target, onClose, onApproveSwap, onEditSwapAllowance,
-}: {
-  target: ScheduleDetailTarget | null; onClose: () => void;
-  onApproveSwap?: (record: Record<string, unknown>) => void;
-  onEditSwapAllowance?: (record: Record<string, unknown>) => void;
-}) {
+export interface ScheduleRequestDetailModalProps extends ScheduleRequestDetailActions {
+  target: ScheduleDetailTarget | null;
+  onClose: () => void;
+}
+
+export function ScheduleRequestDetailModal({ target, onClose, ...actions }: ScheduleRequestDetailModalProps) {
   const [quickAdjOpen, setQuickAdjOpen] = useState(false);
   const [attShiftId, setAttShiftId] = useState<string | null>(null);
   if (!target) return null;
@@ -51,19 +52,13 @@ export function ScheduleRequestDetailModal({
 
   return (
     <Modal
-      width="min(860px, 94vw)" open title={TITLES[kind]} onCancel={onClose}
+      width="min(860px, 94vw)" open destroyOnHidden title={TITLES[kind]} onCancel={onClose}
       footer={
-        <Space wrap size={8}>
-          {canViewAtt && <Button type="primary" ghost icon={<EyeOutlined />} onClick={() => setAttShiftId(String(r.id))}>Xem chi tiết điểm danh</Button>}
-          {kind === 'swap' && r.status === 'PEER_ACCEPTED' && onApproveSwap && (
-            <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => { onApproveSwap(r); onClose(); }}>HR phê duyệt yêu cầu</Button>
-          )}
-          {kind === 'swap' && r.status === 'APPROVED' && onEditSwapAllowance && (
-            <Button icon={<DollarOutlined />} onClick={() => { onEditSwapAllowance(r); onClose(); }}>Điều chỉnh phụ cấp đổi ca</Button>
-          )}
-          {isAbsentShift && <Button type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công từ ca này</Button>}
-          <Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
-        </Space>
+        <ScheduleRequestDetailFooter
+          kind={kind} record={r} canViewAtt={canViewAtt} isAbsentShift={isAbsentShift}
+          onOpenAttendance={() => setAttShiftId(String(r.id))} onOpenQuickAdj={() => setQuickAdjOpen(true)}
+          onClose={onClose} {...actions}
+        />
       }
     >
       {renderDetailShiftStateAlert(kind, r)}

@@ -102,12 +102,23 @@ export function PlannerIssuesAlert({
 }
 
 /** Bảng đơn OFF trong kỳ chốt lịch (dùng chung cho tuần chính thức và chu kỳ thử việc). */
-export function PlannerOffTable({ rows, renderActions, loading }: { rows: PlannerOffItem[]; renderActions?: (r: PlannerOffItem) => React.ReactNode; loading?: boolean }) {
+export function PlannerOffTable({
+  rows, renderActions, loading, onApprove, onReject,
+}: {
+  rows: PlannerOffItem[];
+  renderActions?: (r: PlannerOffItem) => React.ReactNode;
+  loading?: boolean;
+  onApprove?: (r: PlannerOffItem) => void;
+  onReject?: (r: PlannerOffItem) => void;
+}) {
   const showDetail = useQuickDetail();
   return (
     <Table<PlannerOffItem>
       size="small" rowKey="id" loading={loading} dataSource={rows} pagination={rows.length > 10 ? { pageSize: 10, showTotal: (t) => `Tổng ${t} đơn` } : false}
-      onRow={(r) => buildClickableRowProps(r, (item) => showDetail('plannerOff', item))}
+      onRow={(r) => buildClickableRowProps(r, (item) => showDetail('plannerOff', item, {
+        onApprovePlannerOff: onApprove ? (rec) => onApprove(rec as unknown as PlannerOffItem) : undefined,
+        onRejectPlannerOff: onReject ? (rec) => onReject(rec as unknown as PlannerOffItem) : undefined,
+      }))}
       locale={{ emptyText: 'Không có đơn nghỉ OFF nào trong kỳ này' }}
       columns={[
         { title: 'Mã đơn', dataIndex: 'requestCode', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },

@@ -2,10 +2,14 @@
 
 import { Alert, Button, Descriptions, Space, Tabs, Tag } from 'antd';
 import {
+  CheckOutlined,
   EditOutlined,
   HistoryOutlined,
   IdcardOutlined,
+  LockOutlined,
   SafetyCertificateOutlined,
+  StopOutlined,
+  UnlockOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -53,35 +57,70 @@ export interface AccountRowItem {
 const fmtDate = (v: string | null) => (v ? dayjs(v).format('HH:mm:ss DD/MM/YYYY') : 'Chưa ghi nhận');
 const fmtPhone = (p: string) => (p ? p.replace(/^\+?84/, '0') : 'Chưa cập nhật');
 
+export interface AccountDetailDrawerProps {
+  account: AccountRowItem | null;
+  canManage?: boolean;
+  canActivate?: boolean;
+  currentUserId?: string;
+  actionLoading?: boolean;
+  onEdit?: (row: AccountRowItem) => void;
+  onActivate?: (row: AccountRowItem) => void;
+  onLock?: (row: AccountRowItem) => void;
+  onUnlock?: (row: AccountRowItem) => void;
+  onRevoke?: (row: AccountRowItem) => void;
+  onClose: () => void;
+}
+
 export function AccountDetailDrawer({
   account,
   canManage,
+  canActivate,
+  currentUserId,
+  actionLoading,
   onEdit,
+  onActivate,
+  onLock,
+  onUnlock,
+  onRevoke,
   onClose,
-}: {
-  account: AccountRowItem | null;
-  canManage?: boolean;
-  onEdit?: (row: AccountRowItem) => void;
-  onClose: () => void;
-}) {
+}: AccountDetailDrawerProps) {
+  const isSelf = Boolean(account && currentUserId && account.id === currentUserId);
+  const isRootAdmin = account?.username === 'admin';
+
   return (
     <BaseDetailDrawer
       title={account ? `Hồ sơ tài khoản: ${account.displayName} (@${account.username})` : 'Chi tiết tài khoản'}
       open={!!account}
       onClose={onClose}
       extra={
-        account && canManage && onEdit ? (
-          <Button
-            size="small"
-            type="primary"
-            icon={<EditOutlined />}
-            onClick={() => {
-              onClose();
-              onEdit(account);
-            }}
-          >
-            Sửa &amp; Phân quyền
-          </Button>
+        account ? (
+          <Space size={6} wrap>
+            {canActivate && onActivate && account.status !== 'ACTIVE' && (
+              <Button size="small" icon={<CheckOutlined />} loading={actionLoading} onClick={() => onActivate(account)}>
+                Kích hoạt
+              </Button>
+            )}
+            {canActivate && onLock && account.status === 'ACTIVE' && !isSelf && !isRootAdmin && (
+              <Button size="small" icon={<LockOutlined />} loading={actionLoading} onClick={() => onLock(account)}>
+                Khóa tạm thời
+              </Button>
+            )}
+            {canActivate && onUnlock && (account.status === 'LOCKED' || (account.failedLoginCount ?? 0) > 0) && (
+              <Button size="small" icon={<UnlockOutlined />} loading={actionLoading} onClick={() => onUnlock(account)}>
+                Mở khóa
+              </Button>
+            )}
+            {canActivate && onRevoke && !isSelf && account.status !== 'REVOKED' && (
+              <Button size="small" danger icon={<StopOutlined />} loading={actionLoading} onClick={() => onRevoke(account)}>
+                Thu hồi
+              </Button>
+            )}
+            {canManage && onEdit && (
+              <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { onClose(); onEdit(account); }}>
+                Chỉnh sửa &amp; Phân quyền
+              </Button>
+            )}
+          </Space>
         ) : null
       }
     >
@@ -97,9 +136,7 @@ export function AccountDetailDrawer({
                   <Descriptions column={{ xs: 1, md: 2, lg: 2, xl: 2, xxl: 2 }} bordered size="small">
                     <Descriptions.Item label="Họ và tên hiển thị">{account.displayName}</Descriptions.Item>
                     <Descriptions.Item label="Tên đăng nhập">
-                      <Tag color="blue" style={{ borderRadius: 2, fontWeight: 600 }}>
-                        <UserOutlined /> @{account.username}
-                      </Tag>
+                      <Tag color="blue" style={{ borderRadius: 2, fontWeight: 600 }}><UserOutlined /> @{account.username}</Tag>
                     </Descriptions.Item>
                     <Descriptions.Item label="Vai trò phân quyền">
                       <Space size={6}>
@@ -152,7 +189,7 @@ export function AccountDetailDrawer({
                   type="info"
                   showIcon
                   message="Tài khoản này chưa gắn với Hồ sơ Nhân sự cửa hàng (Tài khoản Quản trị nội bộ)"
-                  description="Nếu muốn gắn tài khoản này với một Hồ sơ Nhân sự cụ thể, hãy nhấn nút Sửa & Phân quyền ở góc trên bên phải."
+                  description="Nếu muốn gắn tài khoản này với một Hồ sơ Nhân sự cụ thể, hãy nhấn nút Chỉnh sửa & Phân quyền ở góc trên bên phải."
                 />
               ),
             },

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Alert, Checkbox, Descriptions, Form, Input, InputNumber, Modal, Space, Tag } from 'antd';
+import { Alert, Checkbox, Descriptions, Flex, Form, Input, InputNumber, Modal, Space, Tag, Typography } from 'antd';
 import { CheckCircleOutlined, CloseOutlined, DollarOutlined, SaveOutlined } from '@ant-design/icons';
 import { SYSTEM_CONFIG } from '@umbm/shared';
 import dayjs from 'dayjs';
@@ -21,6 +21,7 @@ export async function submitShiftSwapApproval(target: ShiftSwapApproveTarget, pa
 export interface ShiftSwapApproveTarget {
   mode: 'approve' | 'edit-allowance';
   rows: Record<string, unknown>[];
+  clearSelection?: () => void;
 }
 
 export interface ShiftSwapApprovePayload {
@@ -31,6 +32,8 @@ export interface ShiftSwapApprovePayload {
 
 const DEFAULT_ALLOWANCE = SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd;
 const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
+const APPROVE_SUGGESTIONS = ['HR chấp thuận cho nhận thêm ca vượt 2 ca/ngày', 'Đảm bảo sức khỏe nhân sự và định biên trực ca tại cửa hàng'];
+const EDIT_SUGGESTIONS = ['Điều chỉnh mức phụ cấp nhận đổi ca theo thực tế vận hành'];
 
 export function renderSwapAllowanceTag(r: Record<string, unknown>, compact = false) {
   const st = String(r.status || '');
@@ -49,10 +52,7 @@ export function renderSwapAllowanceTag(r: Record<string, unknown>, compact = fal
 }
 
 export function ShiftSwapApproveModal({
-  target,
-  loading = false,
-  onClose,
-  onConfirm,
+  target, loading = false, onClose, onConfirm,
 }: {
   target: ShiftSwapApproveTarget | null;
   loading?: boolean;
@@ -62,6 +62,7 @@ export function ShiftSwapApproveModal({
   const [form] = Form.useForm();
   const ticked = Boolean(Form.useWatch('allowance_eligible', form));
   const watchedAmt = Number(Form.useWatch('allowance_amount_vnd', form) ?? 0);
+  const watchedReason = String(Form.useWatch('decision_reason', form) ?? '');
 
   useEffect(() => {
     if (!target) return;
@@ -69,17 +70,9 @@ export function ShiftSwapApproveModal({
       const r = target.rows[0];
       const curEligible = Boolean(r.allowance_eligible ?? r.allowanceEligible) && Number(r.allowance_amount_vnd ?? 0) > 0;
       const curAmt = curEligible ? Math.max(0, Number(r.allowance_amount_vnd ?? DEFAULT_ALLOWANCE)) : DEFAULT_ALLOWANCE;
-      form.setFieldsValue({
-        allowance_eligible: curEligible,
-        allowance_amount_vnd: curAmt,
-        decision_reason: String(r.decision_reason || 'Cập nhật phụ cấp nhận đổi ca'),
-      });
+      form.setFieldsValue({ allowance_eligible: curEligible, allowance_amount_vnd: curAmt, decision_reason: '' });
     } else {
-      form.setFieldsValue({
-        allowance_eligible: true,
-        allowance_amount_vnd: DEFAULT_ALLOWANCE,
-        decision_reason: target.rows.length > 1 ? 'Duyệt đổi ca hàng loạt' : 'Hợp lệ, duyệt đổi ca',
-      });
+      form.setFieldsValue({ allowance_eligible: true, allowance_amount_vnd: DEFAULT_ALLOWANCE, decision_reason: '' });
     }
   }, [target, form]);
 
@@ -88,6 +81,7 @@ export function ShiftSwapApproveModal({
   const isEdit = target?.mode === 'edit-allowance';
   const warnRows = !isEdit ? rows.filter((r) => isShiftNonOfficialPublished(r)) : [];
   const effectivePerShift = ticked ? Math.max(0, Math.round(watchedAmt || 0)) : 0;
+  const suggestions = isEdit ? EDIT_SUGGESTIONS : APPROVE_SUGGESTIONS;
 
   return (
     <Modal
@@ -161,25 +155,14 @@ export function ShiftSwapApproveModal({
             name="allowance_amount_vnd"
             label={<span><DollarOutlined /> Mức phụ cấp đổi ca cộng cho người nhận ca thay</span>}
             style={{ marginBottom: 8 }}
-            rules={[
-              {
-                validator: async (_, val) => {
-                  if (!form.getFieldValue('allowance_eligible')) return;
-                  if (val === undefined || val === null || val === '' || Number(val) < 0) throw new Error('Vui lòng nhập số tiền phụ cấp hợp lệ (>= 0)');
-                },
+            rules={[{
+              validator: async (_, val) => {
+                if (!form.getFieldValue('allowance_eligible')) return;
+                if (val === undefined || val === null || val === '' || Number(val) < 0) throw new Error('Vui lòng nhập số tiền phụ cấp hợp lệ (>= 0)');
               },
-            ]}
+            }]}
           >
-            <InputNumber
-              style={{ width: '100%' }}
-              min={0}
-              max={5_000_000}
-              step={5000}
-              disabled={!ticked}
-              suffix="VNĐ"
-              placeholder="30.000"
-              {...MONEY_INPUT_PROPS}
-            />
+            <InputNumber style={{ width: '100%' }} min={0} max={5_000_000} step={5000} disabled={!ticked} suffix="VNĐ" placeholder="30.000" {...MONEY_INPUT_PROPS} />
           </Form.Item>
 
           {ticked && effectivePerShift > 0 ? (
@@ -195,9 +178,22 @@ export function ShiftSwapApproveModal({
           )}
         </div>
 
-        <Form.Item name="decision_reason" label="Ghi chú phê duyệt" style={{ marginBottom: 0 }}>
-          <Input.TextArea rows={2} maxLength={300} placeholder="Nhập ghi chú phê duyệt đổi ca (nếu có)..." />
+        <Form.Item name="decision_reason" label="Ghi chú phê duyệt (không bắt buộc)" style={{ marginBottom: 6 }}>
+          <Input.TextArea rows={2} maxLength={300} showCount placeholder="Nhập ghi chú phê duyệt hoặc hướng dẫn bổ sung (nếu có)..." />
         </Form.Item>
+        <Flex wrap="wrap" gap={6} align="center">
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>Gợi ý nhanh:</Typography.Text>
+          {suggestions.map((item) => (
+            <Tag
+              key={item}
+              color={watchedReason.trim() === item ? 'blue' : undefined}
+              style={{ cursor: 'pointer', margin: 0, borderRadius: 2, userSelect: 'none' }}
+              onClick={() => form.setFieldValue('decision_reason', item)}
+            >
+              {item}
+            </Tag>
+          ))}
+        </Flex>
       </Form>
     </Modal>
   );

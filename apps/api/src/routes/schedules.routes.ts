@@ -10,7 +10,7 @@ import { assertBranchAccess, auditContext, filterByBranch, requirePermission } f
 import { SocketEvents } from '../realtime/realtime.js';
 import { assertDateNotLockedByPayroll, findLockedPayrollPeriodForDate } from '../services/salary-profile.service.js';
 import { assertBranchShiftCapacityAvailable, assertNoDuplicateOrOverlappingEmployeeShift, getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
-import { applyProbationExtraApproval, assertApprovedShiftNoteOnlyPatch, assertMaxShiftsPerDay } from '../services/schedule-rules.js';
+import { applyProbationExtraApproval, assertApprovedShiftNoteOnlyPatch, assertMaxShiftsPerDay, mergeShiftDecisionNote, notifyDraftShiftsRejected } from '../services/schedule-rules.js';
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { runBackgroundSideEffect } from '../services/background-write.js';
 import { clearShiftAttendanceOnWorkflowOverride, formatPendingAdjustmentLabel, resolveShiftActiveRequests } from '../services/shift-absent-scanner.js';
@@ -25,7 +25,7 @@ const zScheduleQuery = zListQueryBase.extend({
 });
 const zCreateScheduleBody = z.object({ employee_id: z.string({ required_error: 'Vui lòng chọn nhân sự' }).trim().min(1), branch_id: z.string().trim().optional(), work_date: z.string({ required_error: 'Ngày làm việc là bắt buộc' }).regex(/^\d{4}-\d{2}-\d{2}$/, 'Định dạng ngày YYYY-MM-DD'), shift_code: z.string().trim().default('CA_SANG'), status: z.enum(SHIFT_ASSIGNMENT_STATUSES).default('PUBLISHED'), day_type: z.enum(['WORK', 'OFF', 'OT']).default('WORK'), scheduled_hours: z.coerce.number().min(0).max(24).optional(), note: z.string().trim().max(300).optional().default('') });
 const zUpdateScheduleBody = z.object({ version: z.coerce.number().int().min(1), employee_id: z.string().trim().optional(), work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), shift_code: z.string().trim().optional(), status: z.enum(SHIFT_ASSIGNMENT_STATUSES).optional(), day_type: z.enum(['WORK', 'OFF', 'OT']).optional(), scheduled_hours: z.coerce.number().min(0).max(24).optional(), note: z.string().trim().max(300).optional() });
-const zBulkScheduleBody = z.object({ action: z.enum(['PUBLISH', 'DELETE']), items: z.array(z.object({ id: z.string().min(1), version: z.coerce.number().int().min(1) })).min(1).max(100) });
+const zBulkScheduleBody = z.object({ action: z.enum(['PUBLISH', 'DELETE']), items: z.array(z.object({ id: z.string().min(1), version: z.coerce.number().int().min(1) })).min(1).max(100), note: z.string().trim().max(300).optional().default('') });
 
 export function mapShiftAssignment(a: ShiftAssignment, ctx: AppContext, shiftEvents?: { inHm?: string; inLateMins?: number; hasOut?: boolean }) {
   const emp = ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === a.employee_id);
@@ -170,14 +170,16 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.delete('/api/admin/schedules/:id', { preHandler: requirePermission('schedule.propose', 'schedule.publish') }, async (request) => {
-    const { id } = request.params as { id: string }, before = ctx.db.shiftAssignments.get(id);
+    const { id } = request.params as { id: string }, before = ctx.db.shiftAssignments.get(id), rawBody = (request.body ?? {}) as { note?: string; reason?: string };
     if (!before) throw Errors.notFound('Không tìm thấy bản ghi phân ca');
+    const delNote = String(rawBody.note ?? rawBody.reason ?? '').trim();
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.employee_id, before.branch_id));
     assertDateNotLockedByPayroll(ctx.db, before.work_date, 'xóa ca làm việc');
-    await ctx.db.shiftAssignments.softDelete(id, before.version, request.auth!.user.id);
-    await clearShiftAttendanceOnWorkflowOverride(ctx.db, before, request.auth!.user.id, 'Đã xóa phân công ca làm việc khỏi lịch');
+    await ctx.db.shiftAssignments.update(id, before.version, { is_deleted: true, ...(delNote ? { note: mergeShiftDecisionNote(before.note, delNote, 'Từ chối') } : {}) }, request.auth!.user.id);
+    if (before.status === 'DRAFT') await notifyDraftShiftsRejected(ctx, [before], delNote, request.auth!.user.id);
+    await clearShiftAttendanceOnWorkflowOverride(ctx.db, before, request.auth!.user.id, delNote || 'Đã xóa phân công ca làm việc khỏi lịch');
     await ensureSyncedNotifications(ctx);
-    await ctx.audit.record(auditContext(request), { action: 'schedule.delete', entity: 'SHIFT_ASSIGNMENTS', entityId: id, before: { work_date: before.work_date, shift_code: before.shift_code } });
+    await ctx.audit.record(auditContext(request), { action: 'schedule.delete', entity: 'SHIFT_ASSIGNMENTS', entityId: id, before: { work_date: before.work_date, shift_code: before.shift_code }, ...(delNote ? { after: { reason: delNote } } : {}) });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: 'SHIFT_DELETED', actorId: request.auth!.user.id });
     return sendSuccess(request, 'Đã xóa phân công ca làm việc', { id });
   });
@@ -197,7 +199,8 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
         assertBranchShiftCapacityAvailable(ctx, { branchId: lastBranchId, workDate: a.work_date, shiftCode: a.shift_code, excludeIds: [a.id, a.linked_assignment_id].filter(Boolean), extraCount: slotExtra.get(sk) ?? 0 });
         slotExtra.set(sk, (slotExtra.get(sk) ?? 0) + 1);
       }
-      patches.push({ id: a.id, expectedVersion: a.version, patch: body.action === 'DELETE' ? { is_deleted: true } : { status: 'PUBLISHED', published_at: pubAt } });
+      const nextNote = body.note ? mergeShiftDecisionNote(a.note, body.note, body.action === 'DELETE' ? 'Từ chối' : 'Duyệt') : a.note;
+      patches.push({ id: a.id, expectedVersion: a.version, patch: body.action === 'DELETE' ? { is_deleted: true, note: nextNote } : { status: 'PUBLISHED', published_at: pubAt, note: nextNote } });
       if (body.action === 'DELETE') deletedRows.push(a);
       else if (a.status !== 'PUBLISHED') {
         const tpl = findBranchShiftTemplate(ctx, a.shift_code, lastBranchId);
@@ -207,9 +210,10 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
     }
     const published = await ctx.db.shiftAssignments.batchUpdate(patches, actorId);
     if (body.action === 'PUBLISH') for (const row of published) await applyProbationExtraApproval(ctx, row, actorId);
-    for (const delRow of deletedRows) await clearShiftAttendanceOnWorkflowOverride(ctx.db, delRow, actorId, 'Đã xóa phân công ca làm việc khỏi lịch');
+    if (body.action === 'DELETE' && deletedRows.length > 0) await notifyDraftShiftsRejected(ctx, deletedRows, body.note, actorId);
+    for (const delRow of deletedRows) await clearShiftAttendanceOnWorkflowOverride(ctx.db, delRow, actorId, body.note || 'Đã xóa phân công ca làm việc khỏi lịch');
     await ensureSyncedNotifications(ctx);
-    await ctx.audit.record(auditContext(request), { action: body.action === 'DELETE' ? 'schedule.delete' : 'schedule.publish', entity: 'SHIFT_ASSIGNMENTS', entityId: `bulk-${processedIds.length}`, after: { action: body.action, processedIds } });
+    await ctx.audit.record(auditContext(request), { action: body.action === 'DELETE' ? 'schedule.delete' : 'schedule.publish', entity: 'SHIFT_ASSIGNMENTS', entityId: `bulk-${processedIds.length}`, after: { action: body.action, processedIds, ...(body.note ? { note: body.note } : {}) } });
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: lastBranchId, employeeIds: Array.from(empIds), kind: body.action === 'PUBLISH' ? 'SHIFT_APPROVED' : 'SHIFT_DELETED', message: body.action === 'PUBLISH' ? `Đã phát hành chính thức ${processedIds.length} ca làm việc` : '', actorId });
     return sendSuccess(request, body.action === 'DELETE' ? `Đã xóa ${processedIds.length} ca làm việc` : `Đã phát hành chính thức ${processedIds.length} ca làm việc`, { processedCount: processedIds.length, processedIds });
   });

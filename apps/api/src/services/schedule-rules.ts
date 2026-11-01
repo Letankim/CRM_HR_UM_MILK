@@ -1,7 +1,8 @@
-import { addDaysYmd, type Employee, type ShiftAssignment } from '@umbm/shared';
+import { addDaysYmd, DEFAULT_SHIFT_LABELS, type Employee, type ShiftAssignment } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs } from '../lib/time.js';
+import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 
 /**
  * Quy tắc lịch làm việc dùng chung: số ca tối đa / ngày, chu kỳ thử việc 12 ngày,
@@ -107,4 +108,29 @@ export async function applyProbationExtraApproval(ctx: AppContext, approved: Shi
   if (ctx.db.attendanceEvents.find((e) => e.assignment_id === linked.id)) return null;
   await ctx.db.shiftAssignments.softDelete(linked.id, linked.version, actorId);
   return linked;
+}
+
+export function mergeShiftDecisionNote(prevNote: string, decisionNote: string, prefix: 'Duyệt' | 'Từ chối'): string {
+  const clean = decisionNote.trim();
+  if (!clean) return prevNote;
+  return prevNote ? `${prevNote} | ${prefix}: ${clean}` : prefix === 'Từ chối' ? `Từ chối: ${clean}` : clean;
+}
+
+export async function notifyDraftShiftsRejected(ctx: AppContext, rows: ShiftAssignment[], reason: string, actorId: string): Promise<void> {
+  const cleanReason = reason.trim();
+  for (const a of rows) {
+    if (a.status !== 'DRAFT') continue;
+    const emp = ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === a.employee_id);
+    const empUser = (emp ? findLinkedUserForEmployee(emp, ctx) : undefined) ?? ctx.db.users.find((u) => Boolean(a.employee_id && u.employee_id.trim().toUpperCase() === a.employee_id.trim().toUpperCase()));
+    if (!empUser || empUser.id === actorId) continue;
+    const entityId = `${a.id}_REJECTED`;
+    if (ctx.db.notifications.find((n) => n.entity_type === 'SHIFT_REJECTED_USER' && n.entity_id === entityId)) continue;
+    const shiftLabel = (DEFAULT_SHIFT_LABELS as Record<string, string>)[a.shift_code] ?? a.shift_code;
+    await ctx.db.notifications.insert({
+      recipient_user_id: empUser.id, recipient_role: '', branch_id: emp?.branch_id || a.branch_id || 'ALL',
+      category: 'WORKFLOW', title: `Ca đăng ký ngày ${a.work_date} bị từ chối`,
+      body: `${shiftLabel} (${a.start_at}–${a.end_at}) ngày ${a.work_date} không được phê duyệt.${cleanReason ? ` Lý do: ${cleanReason}.` : ''}`,
+      link: '/nv/lich', severity: 'WARNING', entity_type: 'SHIFT_REJECTED_USER', entity_id: entityId, read_at: '',
+    }, actorId);
+  }
 }

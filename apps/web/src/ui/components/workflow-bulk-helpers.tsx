@@ -6,7 +6,7 @@ import { exportToExcel } from '@/lib/export-excel';
 import { formatAdjustmentProposal } from './AdjustmentEvidenceFields';
 import type { BulkActionItem } from './BulkActionBar';
 import { isAbsentShiftRecord } from './QuickAbsentAdjustmentModal';
-import type { WorkflowConfirmKind } from './workflow-shift-warning';
+import type { AdjustmentDecisionAction } from './useWorkflowDecisions';
 
 type RowRec = Record<string, unknown>;
 const tsSuffix = () => dayjs().format('YYYYMMDD_HHmm');
@@ -79,8 +79,10 @@ export interface WorkflowBulkRunnerOptions {
   canApproveLeave?: boolean;
   canApproveSwap?: boolean;
   loading?: boolean;
-  onOpenApproveSwaps?: (rows: RowRec[]) => void;
-  runBatch: (items: RowRec[], buildCall: (r: RowRec) => { url: string; body: unknown } | null, successMsg: string, confirmKind?: WorkflowConfirmKind) => void;
+  onDecideAdjustments: (rows: RowRec[], action: AdjustmentDecisionAction, clear?: () => void) => void;
+  onDecideLeaves: (rows: RowRec[], decision: 'APPROVED' | 'REJECTED', clear?: () => void) => void;
+  onOpenApproveSwaps: (rows: RowRec[], clear?: () => void) => void;
+  onRejectSwaps: (rows: RowRec[], clear?: () => void) => void;
 }
 
 export function buildAdjustmentsBulkActions(opts: WorkflowBulkRunnerOptions): BulkActionItem<RowRec>[] {
@@ -88,18 +90,18 @@ export function buildAdjustmentsBulkActions(opts: WorkflowBulkRunnerOptions): Bu
     ...(opts.canConfirmAtt ? [{
       key: 'store-confirm', label: 'CH xác nhận đã chọn', icon: <CheckCircleOutlined />, loading: opts.loading,
       eligibleFilter: (r: RowRec) => r.status === 'PENDING',
-      onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/attendance/adjustments/${r.id}/decide`, body: { version: r.version, action: 'STORE_CONFIRM', decision_reason: 'CH xác nhận hàng loạt' } }), 'Đã xác nhận cửa hàng cho các phiếu bổ sung công hợp lệ'),
+      onClick: (rows: RowRec[], clear: () => void) => opts.onDecideAdjustments(rows, 'STORE_CONFIRM', clear),
     }] : []),
     ...(opts.canApproveAdj ? [
       {
         key: 'hr-approve', label: 'Phê duyệt đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'PENDING' || r.status === 'STORE_CONFIRMED',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/attendance/adjustments/${r.id}/decide`, body: { version: r.version, action: 'HR_APPROVE', decision_reason: 'Phê duyệt bổ sung công hàng loạt' } }), 'Đã phê duyệt các phiếu bổ sung công hợp lệ'),
+        onClick: (rows: RowRec[], clear: () => void) => opts.onDecideAdjustments(rows, 'HR_APPROVE', clear),
       },
       {
         key: 'hr-reject', label: 'Từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'PENDING' || r.status === 'STORE_CONFIRMED',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/attendance/adjustments/${r.id}/decide`, body: { version: r.version, action: 'HR_REJECT', decision_reason: 'Từ chối bổ sung công hàng loạt' } }), 'Đã từ chối các phiếu bổ sung công hợp lệ'),
+        onClick: (rows: RowRec[], clear: () => void) => opts.onDecideAdjustments(rows, 'HR_REJECT', clear),
       },
     ] : []),
     { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAdjustmentsExcel(rows) },
@@ -112,12 +114,12 @@ export function buildLeavesBulkActions(opts: WorkflowBulkRunnerOptions): BulkAct
       {
         key: 'approve', label: 'Duyệt đơn đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'PENDING',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/leave-requests/${r.id}/decide`, body: { version: r.version, decision: 'APPROVED', decision_reason: 'Duyệt nghỉ phép hàng loạt' } }), 'Đã phê duyệt các đơn xin nghỉ phép hợp lệ', 'leave'),
+        onClick: (rows: RowRec[], clear: () => void) => opts.onDecideLeaves(rows, 'APPROVED', clear),
       },
       {
         key: 'reject', label: 'Từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'PENDING',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/leave-requests/${r.id}/decide`, body: { version: r.version, decision: 'REJECTED', decision_reason: 'Từ chối đơn nghỉ phép hàng loạt' } }), 'Đã từ chối các đơn xin nghỉ phép hợp lệ'),
+        onClick: (rows: RowRec[], clear: () => void) => opts.onDecideLeaves(rows, 'REJECTED', clear),
       },
     ] : []),
     { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportLeavesExcel(rows) },
@@ -130,12 +132,12 @@ export function buildSwapsBulkActions(opts: WorkflowBulkRunnerOptions): BulkActi
       {
         key: 'approve', label: 'HR duyệt đã chọn', type: 'primary' as const, icon: <CheckCircleOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'PEER_ACCEPTED',
-        onClick: (rows: RowRec[]) => opts.onOpenApproveSwaps ? opts.onOpenApproveSwaps(rows) : opts.runBatch(rows, (r) => ({ url: `/admin/shift-swaps/${r.id}/decide`, body: { version: r.version, decision: 'APPROVED', decision_reason: 'HR duyệt nhường ca hàng loạt', allowance_eligible: true } }), 'Đã phê duyệt các yêu cầu nhường ca hợp lệ', 'swap'),
+        onClick: (rows: RowRec[], clear: () => void) => opts.onOpenApproveSwaps(rows, clear),
       },
       {
         key: 'reject', label: 'HR từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: opts.loading,
         eligibleFilter: (r: RowRec) => r.status === 'PEER_ACCEPTED',
-        onClick: (rows: RowRec[]) => opts.runBatch(rows, (r) => ({ url: `/admin/shift-swaps/${r.id}/decide`, body: { version: r.version, decision: 'REJECTED', decision_reason: 'HR từ chối yêu cầu nhường ca hàng loạt' } }), 'Đã từ chối các yêu cầu nhường ca hợp lệ'),
+        onClick: (rows: RowRec[], clear: () => void) => opts.onRejectSwaps(rows, clear),
       },
     ] : []),
     { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportSwapsExcel(rows) },
@@ -144,7 +146,7 @@ export function buildSwapsBulkActions(opts: WorkflowBulkRunnerOptions): BulkActi
 
 export function buildPortalShiftsBulkActions(opts: {
   loading?: boolean;
-  onCancelDrafts: (rows: RowRec[]) => void;
+  onCancelDrafts: (rows: RowRec[], clear?: () => void) => void;
   onCreateAbsentAdj?: (row: RowRec) => void;
 }): BulkActionItem<RowRec>[] {
   return [
@@ -160,7 +162,7 @@ export function buildPortalShiftsBulkActions(opts: {
     {
       key: 'cancel-draft', label: 'Hủy đăng ký ca chờ duyệt', danger: true, icon: <DeleteOutlined />, loading: opts.loading,
       eligibleFilter: (r: RowRec) => r.status === 'DRAFT' && !r.checkInEvent,
-      onClick: (rows) => opts.onCancelDrafts(rows),
+      onClick: (rows, clear) => opts.onCancelDrafts(rows, clear),
     },
     { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportMyShiftsExcel(rows) },
   ];

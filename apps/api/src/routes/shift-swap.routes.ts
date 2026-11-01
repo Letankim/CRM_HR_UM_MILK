@@ -88,21 +88,22 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!actorEmp || (actorEmp.id !== before.peer_id && actorEmp.employee_code !== before.peer_id)) throw Errors.forbidden('Chỉ đồng nghiệp được đề nghị mới có quyền xác nhận yêu cầu này');
     if (!body.accept) {
       const declined = await ctx.db.shiftSwaps.update(id, body.version, { status: 'PEER_DECLINED', peer_responded_at: nowIso(), peer_note: body.peer_note }, actor.id), reqAudit = auditContext(request);
-      await notify(request, declined, 'PEER_RESPONDED', `Đồng nghiệp đã từ chối yêu cầu ${before.swap_code}`, [before.requester_id], () => ctx.audit.record(reqAudit, { action: 'swap.peer_respond', entity: 'SHIFT_SWAPS', entityId: id, after: { status: declined.status } }));
+      await notify(request, declined, 'PEER_RESPONDED', `Đồng nghiệp đã từ chối yêu cầu ${before.swap_code}${body.peer_note ? ` — Lý do: ${body.peer_note}` : ''}`, [before.requester_id], () => ctx.audit.record(reqAudit, { action: 'swap.peer_respond', entity: 'SHIFT_SWAPS', entityId: id, after: { status: declined.status, peer_note: body.peer_note } }));
       return sendSuccess(request, 'Bạn đã từ chối yêu cầu đổi / nhường ca', mapShiftSwapRecord(ctx, declined));
     }
     const pair = loadPair(before);
     const evalRes = evaluateSwapRequest(ctx, { kind: before.kind, requester: pair.requester, peer: pair.peer, from: pair.from, to: pair.to });
     if (evalRes.requiresHr) {
       const waiting = await ctx.db.shiftSwaps.update(id, body.version, { status: 'PEER_ACCEPTED', requires_hr_approval: true, peer_responded_at: nowIso(), peer_note: body.peer_note }, actor.id), reqAudit = auditContext(request);
-      await notify(request, waiting, 'PEER_RESPONDED', `Yêu cầu nhường ca ${before.swap_code} cần HR phê duyệt vì người nhận vượt 2 ca/ngày`, [before.requester_id], () => ctx.audit.record(reqAudit, { action: 'swap.peer_respond', entity: 'SHIFT_SWAPS', entityId: id, after: { status: waiting.status, requires_hr_approval: true } }));
+      await notify(request, waiting, 'PEER_RESPONDED', `Yêu cầu nhường ca ${before.swap_code} cần HR phê duyệt vì người nhận vượt 2 ca/ngày`, [before.requester_id], () => ctx.audit.record(reqAudit, { action: 'swap.peer_respond', entity: 'SHIFT_SWAPS', entityId: id, after: { status: waiting.status, requires_hr_approval: true, peer_note: body.peer_note } }));
       return sendSuccess(request, `Bạn đã đồng ý nhận ca. Vì sẽ làm ${evalRes.receiverCountAfter} ca trong ngày nên yêu cầu được chuyển HR phê duyệt.`, mapShiftSwapRecord(ctx, waiting));
     }
     const allowance = before.kind === 'GIVE' ? resolveSwapAllowance({ decision: 'APPROVED' }) : { allowance_eligible: false, allowance_amount_vnd: 0 };
+    const autoDecisionReason = body.peer_note ? `Đồng nghiệp đồng ý (${body.peer_note}) — tự động cập nhật lịch` : 'Đồng nghiệp đồng ý — tự động cập nhật lịch';
     const updated = await ctx.reconciliation.executeSaga({
       sagaKey: `swap-peer-apply-${id}-v${body.version}`, operation: 'APPLY_SHIFT_SWAP', actorId: actor.id, initialContext: { swap: before },
       steps: [
-        { name: 'UPDATE_SWAP_STATUS', run: async (s) => { s.swap = await ctx.db.shiftSwaps.update(id, body.version, { status: 'APPROVED', peer_responded_at: nowIso(), peer_note: body.peer_note, decided_by: actor.id, decided_at: nowIso(), decision_reason: 'Đồng nghiệp đồng ý — tự động cập nhật lịch', ...allowance }, actor.id); } },
+        { name: 'UPDATE_SWAP_STATUS', run: async (s) => { s.swap = await ctx.db.shiftSwaps.update(id, body.version, { status: 'APPROVED', peer_responded_at: nowIso(), peer_note: body.peer_note, decided_by: actor.id, decided_at: nowIso(), decision_reason: autoDecisionReason, ...allowance }, actor.id); } },
         { name: 'APPLY_TO_OFFICIAL_SCHEDULE', run: async (s) => { await applySwapToSchedule(ctx, s.swap, actor.id); } },
       ],
       resultSelector: (s) => s.swap,

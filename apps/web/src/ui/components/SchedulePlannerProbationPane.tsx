@@ -1,19 +1,45 @@
 'use client';
 
 import { useState } from 'react';
-import { Alert, App, Button, Card, Flex, Popconfirm, Select, Space, Table, Tag, Tooltip } from 'antd';
-import { CheckCircleOutlined, CloseOutlined, LockOutlined, ReloadOutlined, ScheduleOutlined, TrophyOutlined, UnlockOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Card, Flex, Select, Space, Table, Tag, Tooltip } from 'antd';
+import {
+  CheckCircleOutlined, CloseCircleOutlined, LockOutlined,
+  ReloadOutlined, ScheduleOutlined, TrophyOutlined, UnlockOutlined,
+} from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { buildClickableRowProps } from './BulkActionBar';
+import { DateStringPicker } from './DateTimePickers';
 import { PlannerProbationPreviewModal } from './PlannerProbationPreviewModal';
 import { useQuickDetail } from './RecordQuickDetailModal';
 import { PlannerIssuesAlert, PlannerOffTable } from './SchedulePlannerShared';
 import { fmtDm, fmtTs, type PlannerProbationItem } from './schedule-planner-types';
-import { useInvalidatePlanner } from './usePlannerOffDecision';
+import { useInvalidatePlanner, usePlannerOffDecision } from './usePlannerOffDecision';
+import { useWorkflowDecisionModal } from './WorkflowDecisionModal';
 
 interface Props { branchOptions: { value: string; label: string }[] }
+
+function PromoteOfficialDateField({ initialDate, onChange }: { initialDate: string; onChange: (val: string) => void }) {
+  const [val, setVal] = useState(initialDate);
+  return (
+    <div>
+      <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A', marginBottom: 6 }}>
+        Ngày hiệu lực chuyển Nhân viên chính thức
+      </div>
+      <DateStringPicker
+        value={val}
+        placeholder="Chọn ngày hiệu lực chính thức (DD/MM/YYYY)"
+        onChange={(next) => {
+          const resolved = next || initialDate;
+          setVal(resolved);
+          onChange(resolved);
+        }}
+      />
+    </div>
+  );
+}
 
 /** Chốt lịch chu kỳ thử việc 12 ngày (7 ca làm + tối đa 5 ngày OFF) và duyệt chuyển chính thức khi hoàn thành đủ 7 ca. */
 export function SchedulePlannerProbationPane({ branchOptions }: Props) {
@@ -23,21 +49,27 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
   const can = useCan();
   const canPublish = can('schedule.publish');
   const canPromote = can('employee.promote');
+  const canDecideOff = can('leave.approve');
   const [branchId, setBranchId] = useState('ALL');
   const [promoteBusyId, setPromoteBusyId] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ open: boolean; seq: number; employeeId: string | null }>({ open: false, seq: 0, employeeId: null });
   const invalidate = useInvalidatePlanner();
+  const offDecision = usePlannerOffDecision();
+  const { promptDecision, decisionModalElement: promoteModalElement } = useWorkflowDecisionModal();
+
   const q = useQuery({ queryKey: ['schedule-planner-probation', branchId], queryFn: () => api.get<PlannerProbationItem[]>(`/admin/schedule-planner/probation?branch_id=${encodeURIComponent(branchId)}`) });
   const rows = q.data ?? [];
   const readyRows = rows.filter((r) => r.readyForOfficial);
 
   const promoteMut = useMutation({
-    mutationFn: (row: PlannerProbationItem) => api.post(`/admin/employees/${row.employeeId}/promote-official`, {
-      version: row.employeeVersion,
-      evaluation_summary: `Hoàn thành đủ ${row.completedCount}/${row.workRequired} ca thử việc bắt buộc — HR duyệt chuyển Chính thức`,
-    }),
-    onMutate: (row) => setPromoteBusyId(row.employeeId),
-    onSuccess: (_, row) => {
+    mutationFn: ({ row, official_from, evaluation_summary }: { row: PlannerProbationItem; official_from: string; evaluation_summary: string }) =>
+      api.post(`/admin/employees/${row.employeeId}/promote-official`, {
+        version: row.employeeVersion,
+        official_from,
+        evaluation_summary,
+      }),
+    onMutate: ({ row }) => setPromoteBusyId(row.employeeId),
+    onSuccess: (_, { row }) => {
       message.success(`Đã duyệt chuyển Nhân viên chính thức cho ${row.employeeName} (${row.employeeCode})`);
       invalidate();
       ['employees', 'dashboard-employees', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
@@ -45,6 +77,26 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Duyệt chuyển chính thức thất bại'),
     onSettled: () => setPromoteBusyId(null),
   });
+
+  const openPromoteModal = (row: PlannerProbationItem) => {
+    let selectedDate = dayjs().format('YYYY-MM-DD');
+    promptDecision({
+      title: 'Duyệt chuyển Nhân viên chính thức',
+      subtitle: `${row.employeeName} (${row.employeeCode}) · ${row.branchName} · Đã hoàn thành ${row.completedCount}/${row.workRequired} ca thử việc`,
+      extraNode: <PromoteOfficialDateField initialDate={selectedDate} onChange={(v) => { selectedDate = v; }} />,
+      noteLabel: 'Đánh giá của HR & Điều kiện phê duyệt',
+      placeholder: 'Nhập nhận xét đánh giá năng lực, tác phong và điều kiện đạt thử việc...',
+      required: true,
+      okText: 'Duyệt chính thức',
+      suggestions: [
+        `Hoàn thành đủ ${row.completedCount}/${row.workRequired} ca thử việc và đạt yêu cầu nghiệp vụ tại cửa hàng`,
+        'Đạt tiêu chuẩn tác phong, kỹ năng pha chế SOP và nội quy vận hành',
+      ],
+      onConfirm: async (note) => {
+        await promoteMut.mutateAsync({ row, official_from: selectedDate, evaluation_summary: note });
+      },
+    });
+  };
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -70,12 +122,27 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
         pagination={rows.length > 10 ? { pageSize: 10, showTotal: (t) => `Tổng ${t} nhân viên thử việc` } : false}
         locale={{ emptyText: 'Không có nhân viên thử việc nào đang hoạt động' }}
         expandable={{
-          expandedRowRender: (r) => (
-            <Space direction="vertical" size={10} style={{ width: '100%' }}>
-              <PlannerIssuesAlert issues={r.issues} />
-              <Card size="small" title={`Đơn nghỉ OFF trong chu kỳ (${r.offRequests.length}/${r.offLimit})`}><PlannerOffTable rows={r.offRequests} /></Card>
-            </Space>
-          ),
+          expandedRowRender: (r) => {
+            const allowOff = canDecideOff && !r.isLocked;
+            return (
+              <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                <PlannerIssuesAlert issues={r.issues} />
+                <Card size="small" title={`Đơn nghỉ OFF trong chu kỳ (${r.offRequests.length}/${r.offLimit})`}>
+                  <PlannerOffTable
+                    rows={r.offRequests}
+                    onApprove={allowOff ? offDecision.approve : undefined}
+                    onReject={allowOff ? offDecision.openReject : undefined}
+                    renderActions={allowOff ? (offRow) => (offRow.status === 'PENDING' || offRow.status === 'DRAFT' ? (
+                      <Space size={6}>
+                        <Button size="small" type="primary" ghost icon={<CheckCircleOutlined />} loading={offDecision.busyId === offRow.id} onClick={() => offDecision.approve(offRow)}>Duyệt</Button>
+                        <Button size="small" danger icon={<CloseCircleOutlined />} disabled={offDecision.busyId === offRow.id} onClick={() => offDecision.openReject(offRow)}>Từ chối</Button>
+                      </Space>
+                    ) : null) : undefined}
+                  />
+                </Card>
+              </Space>
+            );
+          },
         }}
         columns={[
           { title: 'Nhân viên thử việc', width: 230, ellipsis: true, render: (_, r) => <span><strong>{r.employeeName}</strong> <span style={{ color: '#64748B' }}>({r.employeeCode})</span></span> },
@@ -99,14 +166,13 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
             render: (_, r) => (
               <Flex justify="flex-end" align="center" gap={6} wrap={false} style={{ width: '100%', whiteSpace: 'nowrap' }}>
                 {r.readyForOfficial && (
-                  <Popconfirm
-                    title="Duyệt chuyển Nhân viên chính thức"
-                    description={<div style={{ maxWidth: 340 }}>{r.employeeName} đã hoàn thành {r.completedCount}/{r.workRequired} ca thử việc bắt buộc. Xác nhận duyệt chuyển sang Nhân viên chính thức?</div>}
-                    okText="Duyệt chính thức" cancelText="Hủy bỏ" okButtonProps={{ icon: <CheckCircleOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
-                    disabled={!canPromote} onConfirm={() => promoteMut.mutate(r)}
+                  <Button
+                    size="small" type="primary" icon={<TrophyOutlined />}
+                    disabled={!canPromote} loading={promoteBusyId === r.employeeId}
+                    onClick={() => openPromoteModal(r)}
                   >
-                    <Button size="small" type="primary" icon={<TrophyOutlined />} disabled={!canPromote} loading={promoteBusyId === r.employeeId}>Duyệt chính thức</Button>
-                  </Popconfirm>
+                    Duyệt chính thức
+                  </Button>
                 )}
                 <Button
                   size="small" type="primary" ghost icon={<ScheduleOutlined />}
@@ -119,6 +185,8 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
           },
         ]}
       />
+      {offDecision.decisionModalElement}
+      {promoteModalElement}
       <PlannerProbationPreviewModal
         open={preview.open} openSeq={preview.seq} employeeId={preview.employeeId}
         branchId={branchId} canPublish={canPublish}

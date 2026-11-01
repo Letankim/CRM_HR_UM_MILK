@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, App, Button, Checkbox, Flex, Modal, Space, Spin, Tag } from 'antd';
+import { Alert, App, Button, Checkbox, Flex, Input, Modal, Space, Spin, Tag } from 'antd';
 import { CheckCircleOutlined, CloseOutlined, LockOutlined, ReloadOutlined, ScheduleOutlined, UnlockOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -21,18 +21,20 @@ export interface PlannerProbationPreviewModalProps {
   employeeId: string | null;
   branchId: string;
   canPublish: boolean;
+  onConfirmLock?: (note: string) => void;
   onClose: () => void;
 }
 
 /** Popup toàn màn hình xem trước Lưới Lịch Tuần cho chu kỳ thử việc 12 ngày & xác nhận tự động sinh lịch. */
 export function PlannerProbationPreviewModal({
-  open, openSeq, employeeId, branchId, canPublish, onClose,
+  open, openSeq, employeeId, branchId, canPublish, onConfirmLock, onClose,
 }: PlannerProbationPreviewModalProps) {
   const { message, modal } = App.useApp();
   const invalidate = useInvalidatePlanner();
   const [confirmed, setConfirmed] = useState(false);
+  const [lockNote, setLockNote] = useState('');
 
-  useEffect(() => { setConfirmed(false); }, [open, openSeq, employeeId]);
+  useEffect(() => { setConfirmed(false); setLockNote(''); }, [open, openSeq, employeeId]);
 
   const q = useQuery({
     queryKey: ['schedule-planner-probation-preview', openSeq, branchId, employeeId],
@@ -61,13 +63,14 @@ export function PlannerProbationPreviewModal({
   }, [item]);
 
   const lockMut = useMutation({
-    mutationFn: () => api.post<PlannerProbationLockResult>('/admin/schedule-planner/probation/lock', { employee_id: employeeId }),
+    mutationFn: () => api.post<PlannerProbationLockResult>('/admin/schedule-planner/probation/lock', { employee_id: employeeId, note: lockNote.trim() }),
     onSuccess: (res) => {
       if (res.alreadyLocked) {
         message.info('Chu kỳ thử việc này đã chốt lịch — chỉ xem lại dữ liệu lịch đã chốt.');
         q.refetch();
         return;
       }
+      onConfirmLock?.(lockNote.trim());
       const empName = item?.employeeName ?? 'nhân viên thử việc';
       const summary = `Đã chốt lịch chu kỳ ${fmtDm(res.cycleStart)} – ${fmtDm(res.cycleEnd)} của ${empName}: duyệt ${res.approvedOffCount} ngày OFF, tự động sinh ${res.createdCount} ca.`;
       onClose();
@@ -87,7 +90,7 @@ export function PlannerProbationPreviewModal({
     <Modal
       open={open} onCancel={onClose} destroyOnHidden centered width="98vw"
       style={{ maxWidth: '98vw', top: 8, paddingBottom: 0 }}
-      styles={{ body: { height: 'calc(100vh - 156px)', overflowY: 'auto', paddingTop: 8 } }}
+      styles={{ body: { height: isLocked ? 'calc(100vh - 156px)' : 'calc(100vh - 205px)', overflowY: 'auto', paddingTop: 8 } }}
       title={
         <Space size={8} wrap>
           <ScheduleOutlined style={{ color: '#2563EB' }} />
@@ -107,15 +110,26 @@ export function PlannerProbationPreviewModal({
             <Button type="primary" icon={<CloseOutlined />} onClick={onClose}>Đóng xem trước</Button>
           </Flex>
         ) : (
-          <Flex justify="space-between" align="center" wrap gap={12}>
-            <Checkbox checked={confirmed} disabled={!canPublish || lockMut.isPending} onChange={(e) => setConfirmed(e.target.checked)}>
-              Tôi đã kiểm tra lưới lịch chu kỳ ({fmtDm(item.cycleStart)} – {fmtDm(item.cycleEnd)}) và xác nhận tự động sắp lịch cho <strong>{item.employeeName} ({item.branchName})</strong>
-            </Checkbox>
-            <Space size={8}>
-              <Button icon={<CloseOutlined />} disabled={lockMut.isPending} onClick={onClose}>Hủy bỏ</Button>
-              <Button type="primary" icon={<CheckCircleOutlined />} disabled={!confirmed || !canPublish} loading={lockMut.isPending} onClick={() => lockMut.mutate()}>Xác nhận & Tự động sinh lịch</Button>
-            </Space>
-          </Flex>
+          <Space direction="vertical" size={8} style={{ width: '100%', textAlign: 'left' }}>
+            <Flex align="center" gap={10} wrap>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>Ghi chú chốt lịch (không bắt buộc):</span>
+              <Input.TextArea
+                autoSize={{ minRows: 1, maxRows: 2 }} maxLength={300} disabled={!canPublish || lockMut.isPending}
+                value={lockNote} onChange={(e) => setLockNote(e.target.value)}
+                placeholder="Nhập ghi chú biên bản chốt lịch chu kỳ thử việc (tối đa 300 ký tự, không bắt buộc)..."
+                style={{ flex: 1, minWidth: 260 }}
+              />
+            </Flex>
+            <Flex justify="space-between" align="center" wrap gap={12}>
+              <Checkbox checked={confirmed} disabled={!canPublish || lockMut.isPending} onChange={(e) => setConfirmed(e.target.checked)}>
+                Tôi đã kiểm tra lưới lịch chu kỳ ({fmtDm(item.cycleStart)} – {fmtDm(item.cycleEnd)}) và xác nhận tự động sắp lịch cho <strong>{item.employeeName} ({item.branchName})</strong>
+              </Checkbox>
+              <Space size={8}>
+                <Button icon={<CloseOutlined />} disabled={lockMut.isPending} onClick={onClose}>Hủy bỏ</Button>
+                <Button type="primary" icon={<CheckCircleOutlined />} disabled={!confirmed || !canPublish} loading={lockMut.isPending} onClick={() => lockMut.mutate()}>Xác nhận & Tự động sinh lịch</Button>
+              </Space>
+            </Flex>
+          </Space>
         )
       }
     >
@@ -135,7 +149,7 @@ export function PlannerProbationPreviewModal({
               </Flex>
             </div>
             {isLocked && (
-              <Alert type="success" showIcon icon={<LockOutlined />} message={`Chu kỳ thử việc đã chốt lịch lúc ${fmtTs(item.lockedAt)}`} description="Lịch chu kỳ 12 ngày của nhân sự này đã được khóa sổ chính thức. Chế độ chỉ xem trước dữ liệu đã lưu." />
+              <Alert type="success" showIcon icon={<LockOutlined />} message={`Chu kỳ thử việc đã chốt lịch lúc ${fmtTs(item.lockedAt)}${item.lockNote ? ` — ${item.lockNote}` : ''}`} description="Lịch chu kỳ 12 ngày của nhân sự này đã được khóa sổ chính thức. Chế độ chỉ xem trước dữ liệu đã lưu." />
             )}
             {!isLocked && <PlannerIssuesAlert issues={item.issues} />}
             {cycleWeeks.map((ws) => (

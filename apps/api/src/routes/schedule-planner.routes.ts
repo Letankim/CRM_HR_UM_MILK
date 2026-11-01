@@ -24,7 +24,7 @@ import { emitScheduleRealtime, findBranchShiftTemplate, resolveEmployeeBranchId 
 
 const zWeekQuery = z.object({ week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày đầu tuần phải theo định dạng YYYY-MM-DD').optional(), branch_id: z.string().trim().optional().default('ALL'), refresh: z.string().optional() });
 const zWeekLockBody = z.object({ week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày đầu tuần phải theo định dạng YYYY-MM-DD'), branch_id: z.string().trim().optional().default('ALL'), note: z.string().trim().max(300).optional().default('') });
-const zProbationLockBody = z.object({ employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân viên thử việc') });
+const zProbationLockBody = z.object({ employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân viên thử việc'), note: z.string().trim().max(300).optional().default('') });
 const OFF_ACTIVE = new Set(['PENDING', 'DRAFT', 'APPROVED']);
 
 function mapOff(ctx: AppContext, l: LeaveRequest) {
@@ -54,7 +54,8 @@ function enrichPlanned(ctx: AppContext, list: PlannedShift[]) {
 async function applyPlan(ctx: AppContext, plan: PlanResult, lock: { code: string; branchId: string; weekStart: string; weekEnd: string; kind: 'WEEKLY' | 'PROBATION_12_DAYS'; note: string }, actorId: string) {
   const now = nowIso(), pendingOffs = plan.offRequests.filter((l) => l.status === 'PENDING' || l.status === 'DRAFT');
   if (pendingOffs.length > 0) {
-    await ctx.db.leaveRequests.batchUpdate(pendingOffs.map((l) => ({ id: l.id, expectedVersion: l.version, patch: { status: 'APPROVED' as const, decided_by: actorId, decided_at: now, decision_reason: 'Đã duyệt khi HR chốt lịch & tự động sắp ca' } })), actorId);
+    const offDecisionNote = lock.note ? `Đã duyệt khi HR chốt lịch: ${lock.note}` : 'Đã duyệt khi HR chốt lịch & tự động sắp ca';
+    await ctx.db.leaveRequests.batchUpdate(pendingOffs.map((l) => ({ id: l.id, expectedVersion: l.version, patch: { status: 'APPROVED' as const, decided_by: actorId, decided_at: now, decision_reason: offDecisionNote } })), actorId);
   }
   for (const off of plan.offRequests) {
     const emp = ctx.db.employees.get(off.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === off.employee_id);
@@ -185,7 +186,7 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
         defaultShiftCode: emp.default_shift_code, cycleStart: plan.cycle.start, cycleEnd: plan.cycle.end, workRequired: plan.cycle.workRequired, offLimit: plan.cycle.offLimit,
         existingCount: plan.existingCount, completedCount, readyForOfficial: completedCount >= plan.cycle.workRequired,
         existingShifts, offRequests: plan.offRequests.map((l) => mapOff(ctx, l)), planned: locked ? [] : enrichPlanned(ctx, plan.planned), issues: locked ? [] : plan.issues,
-        isLocked: locked, lockedAt: lock?.locked_at ?? null,
+        isLocked: locked, lockedAt: lock?.locked_at ?? null, lockNote: lock?.note ?? '',
         pendingExtraShifts: ctx.db.shiftAssignments.filter((a) => isEmp(a.employee_id) && a.status === 'DRAFT' && a.source === 'PROBATION_EXTRA').length,
       };
     });
@@ -207,7 +208,7 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
       });
     }
     const code = probationLockCode(emp.employee_code, plan.cycle.start, ctx.db.partitionMonth);
-    const result = await applyPlan(ctx, plan, { code, branchId: emp.branch_id, weekStart: plan.cycle.start, weekEnd: plan.cycle.end, kind: 'PROBATION_12_DAYS', note: '' }, actorId);
+    const result = await applyPlan(ctx, plan, { code, branchId: emp.branch_id, weekStart: plan.cycle.start, weekEnd: plan.cycle.end, kind: 'PROBATION_12_DAYS', note: body.note }, actorId);
     await recalculateOpenPeriods(ctx, actorId);
     await ensureSyncedNotifications(ctx);
     await ctx.audit.record(auditContext(request), { action: 'schedule.probation.lock', entity: 'SCHEDULE_WEEKS', entityId: code, after: { ...result, issues: plan.issues.length } });

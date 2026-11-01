@@ -11,7 +11,10 @@ import { FancyboxImage } from './FancyboxPreview';
 import { RowActionButtons } from './RowActionButtons';
 import type { ScheduleDetailKind } from './ScheduleRequestDetailModal';
 import { renderSwapAllowanceTag } from './ShiftSwapApproveModal';
-import { renderLeaveOffConflictTag, renderWorkflowShiftStateTag, type WorkflowConfirmKind } from './workflow-shift-warning';
+import { adjustmentApprovedMessage, type AdjustmentDecisionAction } from './useWorkflowDecisions';
+import { renderLeaveOffConflictTag, renderWorkflowShiftStateTag } from './workflow-shift-warning';
+
+export { adjustmentApprovedMessage };
 
 type RowRec = Record<string, unknown>;
 export const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
@@ -22,21 +25,16 @@ export interface WorkflowColumnCtx {
   loading: boolean;
   canConfirmAtt: boolean; canApproveAdj: boolean; canApproveLeave: boolean; canApproveSwap: boolean;
   onDetail: (kind: ScheduleDetailKind, r: RowRec) => void;
-  runAct: (url: string, body: unknown, successMsg: string, confirmKind?: WorkflowConfirmKind, row?: RowRec) => void;
+  onDecideAdjustment: (r: RowRec, action: AdjustmentDecisionAction) => void;
+  onDecideLeave: (r: RowRec, decision: 'APPROVED' | 'REJECTED') => void;
   onApproveSwap: (r: RowRec) => void;
+  onRejectSwap: (r: RowRec) => void;
   onEditSwapAllowance: (r: RowRec) => void;
 }
-
-/** Thông báo phê duyệt phiếu bổ sung công theo loại lỗi chấm công (đồng bộ với thông điệp máy chủ). */
-export const adjustmentApprovedMessage = (r: RowRec) =>
-  r.punch_type === 'CHECK_IN' ? 'Đã phê duyệt minh chứng — ghi nhận Vào ca thành công'
-    : r.punch_type === 'CHECK_OUT' ? 'Đã phê duyệt minh chứng — ghi nhận Ra ca, ca làm việc hoàn thành'
-      : 'Đã phê duyệt phiếu bổ sung công và cập nhật trạng thái hoàn thành ca làm việc';
 
 const punchLabel = (r: RowRec) => String(r.punchTypeLabel || ADJUSTMENT_PUNCH_TYPE_LABELS[r.punch_type as keyof typeof ADJUSTMENT_PUNCH_TYPE_LABELS] || 'Bổ sung công cả ca');
 
 export function buildAdjustmentColumns(c: WorkflowColumnCtx): ColumnsType<RowRec> {
-  const decide = (r: RowRec, action: string, reason: string, msg: string) => c.runAct(`/admin/attendance/adjustments/${r.id}/decide`, { version: r.version, action, decision_reason: reason }, msg);
   return [
     { title: 'Mã phiếu', dataIndex: 'adjustment_code', width: 115, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
     { title: 'Nhân sự', width: 190, ellipsis: true, render: (_, r) => <strong>{String(r.employeeName || '')}</strong> },
@@ -56,10 +54,10 @@ export function buildAdjustmentColumns(c: WorkflowColumnCtx): ColumnsType<RowRec
       render: (_, r) => (
         <RowActionButtons detailTooltip="Xem chi tiết phiếu bổ sung công" onViewDetail={() => c.onDetail('adjustment', r)} loading={c.loading}
           menuItems={[
-            ...(r.status === 'PENDING' && c.canConfirmAtt ? [{ key: 'store-confirm', icon: <CheckCircleOutlined style={{ color: '#2563EB' }} />, label: 'Cửa hàng xác nhận thực tế', onClick: () => decide(r, 'STORE_CONFIRM', 'CH xác nhận có làm thực tế', 'Cửa hàng đã xác nhận phiếu bổ sung công để chuyển HR duyệt') }] : []),
+            ...(r.status === 'PENDING' && c.canConfirmAtt ? [{ key: 'store-confirm', icon: <CheckCircleOutlined style={{ color: '#2563EB' }} />, label: 'Cửa hàng xác nhận thực tế', onClick: () => c.onDecideAdjustment(r, 'STORE_CONFIRM') }] : []),
             ...((r.status === 'PENDING' || r.status === 'STORE_CONFIRMED') && c.canApproveAdj ? [
-              { key: 'hr-approve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Phê duyệt phiếu bổ sung công', onClick: () => decide(r, 'HR_APPROVE', 'HR duyệt bổ sung công', adjustmentApprovedMessage(r)) },
-              { key: 'hr-reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối phiếu bổ sung công', onClick: () => decide(r, 'HR_REJECT', 'Không đủ căn cứ bổ sung công', 'Đã từ chối phiếu bổ sung công') },
+              { key: 'hr-approve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Phê duyệt phiếu bổ sung công', onClick: () => c.onDecideAdjustment(r, 'HR_APPROVE') },
+              { key: 'hr-reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối phiếu bổ sung công', onClick: () => c.onDecideAdjustment(r, 'HR_REJECT') },
             ] : []),
           ]}
         />
@@ -69,8 +67,6 @@ export function buildAdjustmentColumns(c: WorkflowColumnCtx): ColumnsType<RowRec
 }
 
 export function buildLeaveColumns(c: WorkflowColumnCtx): ColumnsType<RowRec> {
-  const decide = (r: RowRec, decision: 'APPROVED' | 'REJECTED', reason: string) =>
-    c.runAct(`/admin/leave-requests/${r.id}/decide`, { version: r.version, decision, decision_reason: reason }, decision === 'APPROVED' ? 'Đã phê duyệt đơn nghỉ OFF' : 'Đã từ chối đơn nghỉ OFF', decision === 'APPROVED' ? 'leave' : undefined, r);
   return [
     { title: 'Mã đơn', dataIndex: 'request_code', width: 110, render: (v: string) => <Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag> },
     { title: 'Nhân sự', width: 215, ellipsis: true, render: (_, r) => <strong>{String(r.employeeName)} ({String(r.employeeCode)})</strong> },
@@ -83,8 +79,8 @@ export function buildLeaveColumns(c: WorkflowColumnCtx): ColumnsType<RowRec> {
       render: (_, r) => (
         <RowActionButtons detailTooltip="Xem chi tiết đơn nghỉ OFF" onViewDetail={() => c.onDetail('leave', r)} loading={c.loading}
           menuItems={r.status === 'PENDING' && c.canApproveLeave ? [
-            { key: 'approve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Phê duyệt đơn nghỉ OFF', onClick: () => decide(r, 'APPROVED', 'Đảm bảo đủ định biên ca') },
-            { key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối đơn nghỉ OFF', onClick: () => decide(r, 'REJECTED', 'Ca đang thiếu định biên') },
+            { key: 'approve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Phê duyệt đơn nghỉ OFF', onClick: () => c.onDecideLeave(r, 'APPROVED') },
+            { key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối đơn nghỉ OFF', onClick: () => c.onDecideLeave(r, 'REJECTED') },
           ] : []}
         />
       ),
@@ -115,7 +111,7 @@ export function buildSwapColumns(c: WorkflowColumnCtx): ColumnsType<RowRec> {
           menuItems={c.canApproveSwap ? [
             ...(r.status === 'PEER_ACCEPTED' ? [
               { key: 'approve', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'HR phê duyệt & Phụ cấp', onClick: () => c.onApproveSwap(r) },
-              { key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'HR từ chối yêu cầu', onClick: () => c.runAct(`/admin/shift-swaps/${r.id}/decide`, { version: r.version, decision: 'REJECTED', decision_reason: 'Người nhận vượt số ca cho phép trong ngày' }, 'Đã từ chối yêu cầu nhường ca') },
+              { key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'HR từ chối yêu cầu', onClick: () => c.onRejectSwap(r) },
             ] : []),
             ...(r.status === 'APPROVED' ? [{ key: 'edit-allowance', icon: <DollarOutlined style={{ color: '#7C3AED' }} />, label: 'Điều chỉnh phụ cấp đổi ca', onClick: () => c.onEditSwapAllowance(r) }] : []),
           ] : []}

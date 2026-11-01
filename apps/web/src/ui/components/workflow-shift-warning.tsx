@@ -19,12 +19,12 @@ export function isWorkflowPending(r: RowRec): boolean {
 }
 
 export function isShiftNonOfficialPublished(r: RowRec): boolean {
-  return Boolean(r.shiftStatus && r.shiftStatus !== 'PUBLISHED');
+  return Boolean(r.shiftStatus && r.shiftStatus !== 'PUBLISHED' && r.shiftStatus !== 'MISSING');
 }
 
 export function getLeaveOffConflict(r: RowRec): LeaveRequestConflictInfo | null {
-  const c = r.offConflict as LeaveRequestConflictInfo | undefined;
-  return c && c.hasConflict ? c : null;
+  const c = r.offConflict as (LeaveRequestConflictInfo & { hasSameDayConflict?: boolean }) | undefined;
+  return c && (c.hasConflict || c.hasSameDayConflict) ? c : null;
 }
 
 export function renderLeaveOffConflictTag(r: RowRec): ReactNode {
@@ -80,103 +80,76 @@ export function renderDetailShiftStateAlert(kind: string, r: RowRec): ReactNode 
   );
 }
 
-export function confirmWorkflowShiftOverride(
-  modal: ModalHookAPI,
-  kind: WorkflowConfirmKind,
-  rows: RowRec[],
-  onConfirm: () => void,
-): void {
-  const shiftWarnRows = rows.filter((r) => isShiftNonOfficialPublished(r));
+/** Khối cảnh báo hợp nhất (trùng ngày nghỉ OFF + ghi đè trạng thái ca trên lịch) hiển thị trực tiếp bên trong WorkflowDecisionModal. */
+export function renderWorkflowDecisionAlert(kind: WorkflowConfirmKind, rows: RowRec[]): ReactNode {
   const offConflictRows = kind === 'leave' ? rows.filter((r) => Boolean(getLeaveOffConflict(r))) : [];
-  if (shiftWarnRows.length === 0 && offConflictRows.length === 0) {
-    onConfirm();
-    return;
-  }
+  const shiftWarnRows = rows.filter((r) => isShiftNonOfficialPublished(r));
+  const activeShiftRows = kind === 'leave' && shiftWarnRows.length === 0
+    ? rows.filter((r) => Boolean(r.hasActiveShiftOnWorkflow || r.shiftStatus === 'PUBLISHED' || r.assignment_id || r.shiftAssignmentId))
+    : [];
 
-  if (kind === 'leave' && offConflictRows.length > 0 && shiftWarnRows.length === 0) {
-    const hasCritical = offConflictRows.some((r) => getLeaveOffConflict(r)?.severity === 'CRITICAL');
-    modal.confirm({
-      width: 620,
-      icon: <ExclamationCircleOutlined style={{ color: hasCritical ? '#DC2626' : '#D97706' }} />,
-      title: hasCritical
-        ? 'Cảnh báo: Nhiều nhân sự cùng đăng ký nghỉ OFF gây thiếu / trống ca!'
-        : 'Lưu ý: Có nhiều nhân sự cùng đăng ký nghỉ OFF trong một ngày',
-      content: (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-          <div style={{ maxHeight: 200, overflowY: 'auto', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 4, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {offConflictRows.map((r, idx) => {
-              const info = getLeaveOffConflict(r)!;
-              return (
-                <div key={String(r.id || idx)} style={{ fontSize: 13, color: '#0F172A' }}>
-                  • <strong>{String(r.employeeName || 'Nhân sự')}</strong> ({fmtDate(r.leave_date || r.leaveDate)}): {info.warningMessage}
+  if (offConflictRows.length === 0 && shiftWarnRows.length === 0 && activeShiftRows.length === 0) return null;
+  const hasCritical = offConflictRows.some((r) => getLeaveOffConflict(r)?.severity === 'CRITICAL');
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {offConflictRows.length > 0 && (
+        <Alert
+          type={hasCritical ? 'error' : 'warning'}
+          showIcon
+          message={
+            hasCritical
+              ? 'Cảnh báo: Nhiều nhân sự cùng đăng ký nghỉ OFF gây thiếu / trống ca trực'
+              : 'Lưu ý: Có nhiều nhân sự cùng đăng ký nghỉ OFF trong một ngày'
+          }
+          description={
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 140, overflowY: 'auto' }}>
+              {offConflictRows.map((r, idx) => (
+                <div key={String(r.id || idx)} style={{ fontSize: 12.5 }}>
+                  • <strong>{String(r.employeeName || 'Nhân sự')}</strong> ({fmtDate(r.leave_date || r.leaveDate)}): {getLeaveOffConflict(r)?.warningMessage}
                 </div>
-              );
-            })}
-          </div>
-          <div style={{ color: hasCritical ? '#DC2626' : '#B45309', fontWeight: 500 }}>
-            {hasCritical
-              ? 'Nếu vẫn phê duyệt tất cả các đơn trùng ngày này, khung ca trên sẽ không đủ nhân sự trực theo định biên. Bạn có chắc chắn muốn tiếp tục phê duyệt không?'
-              : 'Bạn có chắc chắn muốn phê duyệt đơn nghỉ OFF trong ngày đã có đồng nghiệp xin nghỉ không?'}
-          </div>
-        </div>
-      ),
-      okText: rows.length > 1 ? `Vẫn phê duyệt (${rows.length} đơn)` : 'Vẫn phê duyệt đơn OFF',
-      okButtonProps: { danger: hasCritical, icon: <CheckOutlined /> },
-      cancelText: 'Quay lại kiểm tra',
-      cancelButtonProps: { icon: <CloseOutlined /> },
-      onOk: () => onConfirm(),
-    });
-    return;
-  }
+              ))}
+            </div>
+          }
+        />
+      )}
+      {shiftWarnRows.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          message={
+            rows.length === 1 && shiftWarnRows[0]
+              ? `Cảnh báo ghi đè ca: Ca làm việc trên lịch hiện đang ở trạng thái "${String(shiftWarnRows[0].shiftStatusLabel || 'Đã hoàn thành ca')}"`
+              : `Cảnh báo ghi đè ca: Có ${shiftWarnRows.length}/${rows.length} đơn ảnh hưởng ca làm việc đã ghi nhận trạng thái trên lịch`
+          }
+          description={
+            kind === 'swap'
+              ? 'Khi xác nhận đồng ý đổi / nhận ca, trạng thái cũ của ca sẽ được làm mới và chuyển sang "Đã phân ca chính thức" cho người nhận ca.'
+              : 'Khi phê duyệt đơn nghỉ OFF, ca làm việc trùng ngày trên bảng lịch phân ca sẽ tự động được gỡ bỏ khỏi lịch làm việc.'
+          }
+        />
+      )}
+      {activeShiftRows.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          message="Lưu ý ghi đè lịch phân ca hiện có"
+          description="Nhân sự đã được phân công ca làm việc trong ngày xin nghỉ. Khi phê duyệt đơn nghỉ OFF, ca làm việc trùng ngày sẽ tự động được gỡ khỏi lịch."
+        />
+      )}
+    </div>
+  );
+}
 
-  const warnRows = shiftWarnRows.length > 0 ? shiftWarnRows : offConflictRows;
-  if (rows.length === 1 && warnRows[0]) {
-    const r = warnRows[0], statusLabel = String(r.shiftStatusLabel || 'Đã hoàn thành ca');
-    const dateStr = fmtDate(r.leave_date || r.from_work_date || r.work_date);
-    const shiftName = cleanShift(r.shiftLabel || r.shift_code || r.from_shift_code);
-    const empName = String(r.employeeName || r.requesterName || 'Nhân sự');
-    const offInfo = kind === 'leave' ? getLeaveOffConflict(r) : null;
-    const consequence = kind === 'swap'
-      ? `Nếu xác nhận, ca (${statusLabel}) của ${empName} sẽ xóa trạng thái cũ và chuyển sang "Đã phân ca chính thức" cho ${String(r.peerName || 'đồng nghiệp')}.`
-      : `Nếu xác nhận, ca (${statusLabel}) trên bảng lịch phân ca sẽ bị xóa do nghỉ OFF.`;
-    modal.confirm({
-      width: 580,
-      icon: <ExclamationCircleOutlined style={{ color: '#D97706' }} />,
-      title: `Cảnh báo: Ca làm việc đang ở trạng thái "${statusLabel}"`,
-      content: (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-          <div>Ca <strong>{shiftName}</strong> ngày <strong>{dateStr}</strong> của <strong>{empName}</strong> đang ở trạng thái <Tag color={shiftColor(r.shiftStatus)} style={{ margin: 0 }}>{statusLabel}</Tag>.</div>
-          {offInfo && <Alert type={offInfo.severity === 'CRITICAL' ? 'error' : 'warning'} showIcon message={offInfo.warningMessage} />}
-          <div style={{ color: '#DC2626', fontWeight: 500 }}>{consequence} Bạn có chắc chắn muốn chấp nhận không?</div>
-        </div>
-      ),
-      okText: kind === 'swap' ? 'Chấp nhận đổi ca' : 'Chấp nhận & Xóa ca do OFF',
-      okButtonProps: { danger: true, icon: <CheckOutlined /> },
-      cancelText: 'Hủy bỏ',
-      cancelButtonProps: { icon: <CloseOutlined /> },
-      onOk: () => onConfirm(),
-    });
-    return;
-  }
-
+export function confirmWorkflowShiftOverride(modal: ModalHookAPI, kind: WorkflowConfirmKind, rows: RowRec[], onConfirm: () => void): void {
+  const alertNode = renderWorkflowDecisionAlert(kind, rows);
+  if (!alertNode) { onConfirm(); return; }
   modal.confirm({
     width: 600,
     icon: <ExclamationCircleOutlined style={{ color: '#D97706' }} />,
-    title: `Cảnh báo: Có ${warnRows.length}/${rows.length} đơn ảnh hưởng ca làm việc hoặc trùng ngày nghỉ`,
-    content: (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-        <div style={{ maxHeight: 170, overflowY: 'auto', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {warnRows.map((r, idx) => (
-            <div key={String(r.id || idx)} style={{ fontSize: 13 }}>
-              • <strong>{String(r.employeeName || r.requesterName || 'Nhân sự')}</strong> — {cleanShift(r.shiftLabel || r.shift_code || r.from_shift_code)} ngày <strong>{fmtDate(r.leave_date || r.from_work_date || r.work_date)}</strong>
-              {getLeaveOffConflict(r) ? ` (${getLeaveOffConflict(r)!.warningMessage})` : ''}
-            </div>
-          ))}
-        </div>
-        <div style={{ color: '#DC2626', fontWeight: 500 }}>Bạn có chắc chắn muốn tiếp tục phê duyệt ({rows.length} đơn) không?</div>
-      </div>
-    ),
-    okText: kind === 'swap' ? `Chấp nhận đổi ca (${rows.length} đơn)` : `Chấp nhận & Duyệt (${rows.length} đơn)`,
+    title: kind === 'swap' ? 'Xác nhận ảnh hưởng lịch ca khi đổi / nhận ca' : 'Xác nhận cảnh báo định biên & lịch ca khi duyệt nghỉ OFF',
+    content: alertNode,
+    okText: 'Tiếp tục xác nhận',
     okButtonProps: { danger: true, icon: <CheckOutlined /> },
     cancelText: 'Hủy bỏ',
     cancelButtonProps: { icon: <CloseOutlined /> },

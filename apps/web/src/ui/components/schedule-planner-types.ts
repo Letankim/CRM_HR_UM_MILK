@@ -33,6 +33,7 @@ export interface PlannerOffItem {
   id: string; version: number; requestCode: string; leaveDate: string; status: string; statusLabel: string; reason: string;
   employeeId: string; employeeCode: string; employeeName: string; stage: string; branchId: string; branchCode?: string; branchName: string;
   shiftCode?: string; shiftLabel?: string; offConflict?: LeaveRequestConflictInfo;
+  decidedAt?: string | null; decisionReason?: string;
 }
 
 /** Ca làm việc đã được lưu chính thức trên bảng phân ca trong tuần / chu kỳ. */
@@ -97,7 +98,7 @@ export interface PlannerProbationItem {
   cycleStart: string; cycleEnd: string; workRequired: number; offLimit: number; existingCount: number; completedCount: number; readyForOfficial: boolean;
   existingShifts?: PlannerExistingShift[];
   offRequests: PlannerOffItem[]; planned: PlannerShift[]; issues: PlannerIssue[];
-  isLocked: boolean; lockedAt: string | null; pendingExtraShifts: number;
+  isLocked: boolean; lockedAt: string | null; lockNote?: string; pendingExtraShifts: number;
 }
 
 export interface PlannerProbationLockResult {

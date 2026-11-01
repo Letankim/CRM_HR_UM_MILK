@@ -47,6 +47,8 @@ const zPromoteOfficialBody = z.object({
 const zBulkEmployeeActionBody = z.object({
   action: z.enum(['PROMOTE_OFFICIAL', 'DELETE']),
   official_from: z.string().optional(),
+  evaluation_summary: z.string().trim().max(300).optional().default(''),
+  note: z.string().trim().max(300).optional().default(''),
   items: z.array(z.object({ id: z.string().min(1), version: z.coerce.number().int().min(1) })).min(1).max(50),
 });
 
@@ -181,38 +183,31 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.post('/api/admin/employees/bulk-action', { preHandler: requirePermission('employee.promote', 'employee.manage') }, async (request) => {
-    const body = zBulkEmployeeActionBody.parse(request.body);
-    const effectiveDate = body.official_from || dayjs().format('YYYY-MM-DD');
-    const actorId = request.auth!.user.id;
-    const processed: string[] = [];
-    const skipped: { id: string; reason: string }[] = [];
-
-    const empPatches: Parameters<typeof ctx.db.employees.batchUpdate>[0] = [];
-    const userPatches: Parameters<typeof ctx.db.users.batchUpdate>[0] = [];
+    const body = zBulkEmployeeActionBody.parse(request.body), effectiveDate = body.official_from || dayjs().format('YYYY-MM-DD');
+    const actorId = request.auth!.user.id, actorName = request.auth!.user.username, processed: string[] = [], skipped: { id: string; reason: string }[] = [], promotedBefore: Employee[] = [];
+    const empPatches: Parameters<typeof ctx.db.employees.batchUpdate>[0] = [], userPatches: Parameters<typeof ctx.db.users.batchUpdate>[0] = [];
     for (const item of body.items) {
       const emp = ctx.db.employees.get(item.id);
       if (!emp) { skipped.push({ id: item.id, reason: 'Không tồn tại' }); continue; }
       if (body.action === 'DELETE') { empPatches.push({ id: emp.id, expectedVersion: emp.version, patch: { is_deleted: true } }); processed.push(emp.id); continue; }
       if (emp.stage === 'OFFICIAL') { skipped.push({ id: item.id, reason: 'Đã là nhân viên chính thức' }); continue; }
-      empPatches.push({ id: emp.id, expectedVersion: emp.version, patch: { stage: 'OFFICIAL', official_from: effectiveDate } });
-      const u = emp.user_id ? ctx.db.users.get(emp.user_id) : undefined;
+      empPatches.push({ id: emp.id, expectedVersion: emp.version, patch: { stage: 'OFFICIAL', official_from: effectiveDate, employment_type: emp.employment_type === 'PROBATION' ? 'PART_TIME' : emp.employment_type, ...(body.note ? { note: body.note } : {}) } });
+      const u = findLinkedUserForEmployee(emp, ctx);
       if (u && u.role === 'THU_VIEC') userPatches.push({ id: u.id, expectedVersion: u.version, patch: { role: 'CHINH_THUC' } });
-      processed.push(emp.id);
+      promotedBefore.push(emp); processed.push(emp.id);
     }
     const updatedEmps = empPatches.length > 0 ? await ctx.db.employees.batchUpdate(empPatches, actorId) : [];
     if (userPatches.length > 0) await ctx.db.users.batchUpdate(userPatches, actorId);
-    if (body.action === 'PROMOTE_OFFICIAL') updatedEmps.forEach((emp) => queuePromotionOfficialEmail(ctx, emp, actorId));
-
+    if (body.action === 'PROMOTE_OFFICIAL') {
+      const summary = body.evaluation_summary || body.note || 'Đạt điều kiện thử việc và TEST nghiệp vụ, chuyển sang Nhân viên chính thức';
+      for (const prev of promotedBefore) {
+        const dossier = buildEmployeeDossierSummary(prev, ctx);
+        await ctx.db.employeeStageHistory.insert({ employee_id: prev.id, from_stage: prev.stage, to_stage: 'OFFICIAL', effective_from: effectiveDate, decided_by: actorName, note: summary, change_type: 'PROMOTE_OFFICIAL', from_branch_id: prev.branch_id, to_branch_id: prev.branch_id, from_shift_code: prev.default_shift_code, to_shift_code: prev.default_shift_code, probation_hours_completed: dossier.probationHoursCompleted, test_score_percent: dossier.testBestScorePercent, evaluation_summary: summary, approved_by: actorName }, actorId);
+      }
+      updatedEmps.forEach((emp) => queuePromotionOfficialEmail(ctx, emp, actorId));
+    }
     await recalculateOpenPeriods(ctx, actorId);
-    await ctx.audit.record(auditContext(request), {
-      action: body.action === 'DELETE' ? 'employee.delete' : 'employee.bulk.promote_official',
-      entity: 'EMPLOYEES', entityId: `bulk-${processed.length}`,
-      after: { action: body.action, processed, skipped, official_from: effectiveDate },
-    });
-    return sendSuccess(
-      request,
-      body.action === 'DELETE' ? `Đã xóa ${processed.length}/${body.items.length} hồ sơ nhân sự` : `Đã chuyển chính thức ${processed.length}/${body.items.length} nhân sự đã chọn`,
-      { processedCount: processed.length, skippedCount: skipped.length, processedIds: processed, skipped },
-    );
+    await ctx.audit.record(auditContext(request), { action: body.action === 'DELETE' ? 'employee.delete' : 'employee.bulk.promote_official', entity: 'EMPLOYEES', entityId: `bulk-${processed.length}`, after: { action: body.action, processed, skipped, official_from: effectiveDate, ...(body.evaluation_summary ? { evaluation_summary: body.evaluation_summary } : {}) } });
+    return sendSuccess(request, body.action === 'DELETE' ? `Đã xóa ${processed.length}/${body.items.length} hồ sơ nhân sự` : `Đã chuyển chính thức ${processed.length}/${body.items.length} nhân sự đã chọn`, { processedCount: processed.length, skippedCount: skipped.length, processedIds: processed, skipped });
   });
 }

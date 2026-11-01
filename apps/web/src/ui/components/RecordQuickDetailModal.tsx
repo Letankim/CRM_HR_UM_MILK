@@ -1,11 +1,20 @@
 'use client';
 
 import { Button, Descriptions, Flex, Modal, Space } from 'antd';
-import { CloseOutlined, CompressOutlined, ExpandOutlined, EyeOutlined, LinkOutlined } from '@ant-design/icons';
+import {
+  CheckCircleOutlined, CloseCircleOutlined, CloseOutlined,
+  CompressOutlined, ExpandOutlined, EyeOutlined, LinkOutlined,
+} from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
-import { buildQuickDetailSpec, type QuickDetailKind } from './record-quick-detail-builders';
+import { buildQuickDetailSpec, type QuickDetailField, type QuickDetailKind } from './record-quick-detail-builders';
 
-export type ShowQuickDetailFn = (kind: QuickDetailKind, record: unknown) => void;
+export interface QuickDetailActionOptions {
+  onApprovePlannerOff?: (record: Record<string, unknown>) => void;
+  onRejectPlannerOff?: (record: Record<string, unknown>) => void;
+}
+
+export type ShowQuickDetailFn = (kind: QuickDetailKind, record: unknown, options?: QuickDetailActionOptions) => void;
 
 const QuickDetailContext = createContext<ShowQuickDetailFn>(() => undefined);
 
@@ -14,11 +23,11 @@ export function useQuickDetail(): ShowQuickDetailFn {
 }
 
 export function QuickDetailProvider({ children }: { children: ReactNode }) {
-  const [active, setActive] = useState<{ kind: QuickDetailKind; record: unknown } | null>(null);
+  const [active, setActive] = useState<{ kind: QuickDetailKind; record: unknown; options?: QuickDetailActionOptions } | null>(null);
   const [expanded, setExpanded] = useState(false);
 
-  const showDetail = useCallback<ShowQuickDetailFn>((kind, record) => {
-    setActive({ kind, record });
+  const showDetail = useCallback<ShowQuickDetailFn>((kind, record, options) => {
+    setActive({ kind, record, options });
   }, []);
 
   const handleClose = () => {
@@ -27,6 +36,24 @@ export function QuickDetailProvider({ children }: { children: ReactNode }) {
   };
 
   const spec = active ? buildQuickDetailSpec(active.kind, active.record) : null;
+  const rawRec = (active?.record && typeof active.record === 'object' ? active.record : {}) as Record<string, unknown>;
+  const isPlannerOff = active?.kind === 'plannerOff';
+  const decidedAtRaw = rawRec.decidedAt || rawRec.decided_at;
+  const decisionReasonRaw = rawRec.decisionReason || rawRec.decision_reason;
+
+  const extraFields: QuickDetailField[] = [];
+  if (isPlannerOff && decidedAtRaw) {
+    extraFields.push({ label: 'Thời điểm phê duyệt', value: dayjs(String(decidedAtRaw)).format('HH:mm · DD/MM/YYYY') });
+  }
+  if (isPlannerOff && decisionReasonRaw) {
+    extraFields.push({ label: 'Ghi chú phê duyệt', value: String(decisionReasonRaw) });
+  }
+  const fields = spec ? [...spec.fields, ...extraFields] : [];
+
+  const isPendingPlannerOff = isPlannerOff && (rawRec.status === 'PENDING' || rawRec.status === 'DRAFT');
+  const approveFn = isPendingPlannerOff ? active?.options?.onApprovePlannerOff : undefined;
+  const rejectFn = isPendingPlannerOff ? active?.options?.onRejectPlannerOff : undefined;
+  const hasDecisionBtns = Boolean(approveFn || rejectFn);
 
   return (
     <QuickDetailContext.Provider value={showDetail}>
@@ -63,16 +90,29 @@ export function QuickDetailProvider({ children }: { children: ReactNode }) {
         footer={
           <Space size={8} wrap>
             {spec?.externalLink && (
-              <Button
-                icon={<LinkOutlined />}
-                href={spec.externalLink.href}
-                target="_blank"
-                rel="noreferrer"
-              >
+              <Button icon={<LinkOutlined />} href={spec.externalLink.href} target="_blank" rel="noreferrer">
                 {spec.externalLink.label}
               </Button>
             )}
-            <Button type="primary" icon={<CloseOutlined />} onClick={handleClose}>
+            {approveFn && (
+              <Button
+                type="primary"
+                icon={<CheckCircleOutlined />}
+                onClick={() => { handleClose(); approveFn(rawRec); }}
+              >
+                Phê duyệt đơn nghỉ OFF
+              </Button>
+            )}
+            {rejectFn && (
+              <Button
+                danger
+                icon={<CloseCircleOutlined />}
+                onClick={() => { handleClose(); rejectFn(rawRec); }}
+              >
+                Từ chối đơn nghỉ OFF
+              </Button>
+            )}
+            <Button type={hasDecisionBtns ? 'default' : 'primary'} icon={<CloseOutlined />} onClick={handleClose}>
               Đóng
             </Button>
           </Space>
@@ -101,7 +141,7 @@ export function QuickDetailProvider({ children }: { children: ReactNode }) {
               },
             }}
           >
-            {spec.fields.map((f, idx) => (
+            {fields.map((f, idx) => (
               <Descriptions.Item key={`${f.label}-${idx}`} label={f.label} span={1}>
                 {f.value}
               </Descriptions.Item>

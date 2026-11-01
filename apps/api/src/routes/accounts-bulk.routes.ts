@@ -185,7 +185,7 @@ export async function accountBulkRoutes(app: FastifyInstance, ctx: AppContext) {
         patches.push({ id: user.id, expectedVersion: user.version, patch: { status: user.status === 'LOCKED' ? 'ACTIVE' : user.status, failed_login_count: 0, locked_until: '' } });
         processedIds.push(user.id);
       } else if (body.action === 'REVOKE' && user.id !== actorId && user.status !== 'REVOKED') {
-        patches.push({ id: user.id, expectedVersion: user.version, patch: { status: 'REVOKED', revoked_at: now, session_version: user.session_version + 1 } });
+        patches.push({ id: user.id, expectedVersion: user.version, patch: { status: 'REVOKED', revoked_at: now, revoked_by: actorId, revoke_reason: (body.reason ?? '').trim(), session_version: user.session_version + 1 } });
         processedIds.push(user.id);
       } else if (body.action === 'DELETE' && user.id !== actorId && user.username !== 'admin') {
         patches.push({ id: user.id, expectedVersion: user.version, patch: { is_deleted: true } });
