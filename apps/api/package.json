@@ -30,6 +30,7 @@
     "pdf-lib": "^1.17.1",
     "socket.io": "^4.8.1",
     "ulid": "^2.3.0",
+    "zca-js": "^2.2.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

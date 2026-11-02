@@ -11,13 +11,21 @@ import {
   DEFAULT_ZALO_TEMPLATES, ZALO_HR_SETTING_CATEGORY, decryptZaloPayload, encryptZaloPayload, ensureInterviewRsvpUrl,
   listHrZaloAccounts, recordZaloDeliveryLog, renderZaloMessageTemplate, resolveZaloAccountByIdOrDefault, type StoredZaloAccountSecret,
 } from '../services/zalo-hr.service.js';
+import { getZaloQrSessionState, sendRealZaloMessageIfConnected, startZaloQrLoginSession } from '../services/zalo-qr-session.service.js';
 import { resolveStaffGroupLabel } from './employee-mapper.js';
+
+const zQrSessionBody = z.object({
+  owner_user_id: z.string().trim().optional(),
+  zalo_name: z.string().trim().optional(),
+  zalo_phone: z.string().trim().optional(),
+  is_default: z.boolean().optional().default(true),
+});
 
 const zUpsertZaloAccountBody = z.object({
   owner_user_id: z.string().trim().optional(),
   zalo_name: z.string().trim().min(2, 'Tên hiển thị tài khoản Zalo tối thiểu 2 ký tự').max(120),
   zalo_phone: z.string().trim().min(9, 'Số điện thoại Zalo không hợp lệ'),
-  zalo_id: z.string().trim().max(80).optional().default(''), access_token: z.string().trim().max(2000).optional().default(''),
+  zalo_id: z.string().trim().max(80).optional().default(''), access_token: z.string().trim().max(8000).optional().default(''),
   is_default: z.boolean().optional().default(true), status: z.enum(['ACTIVE', 'INACTIVE']).optional().default('ACTIVE'),
   greeting_template: z.string().trim().max(1500).optional().default(''), invite_template: z.string().trim().max(1500).optional().default(''),
   reminder_template: z.string().trim().max(1500).optional().default(''), pass_template: z.string().trim().max(1500).optional().default(''),
@@ -34,12 +42,26 @@ const zSendZaloNotifyBody = z.object({
 
 export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContext) {
   app.post('/api/admin/recruitment/zalo-qr-session', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
-    const sessionId = `zqr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const body = zQrSessionBody.parse(request.body ?? {}), actorId = request.auth!.user.id;
+    const state = await startZaloQrLoginSession(ctx, {
+      actorId, ownerUserId: body.owner_user_id || actorId, isDefault: body.is_default,
+      fallbackName: body.zalo_name, fallbackPhone: body.zalo_phone,
+    });
     return sendSuccess(request, 'Đã khởi tạo mã QR đăng nhập Zalo tuyển dụng', {
-      session_id: sessionId,
-      qr_url: `https://id.zalo.me/account/login/qr?token=${sessionId}`,
-      session_token: `zalo_qr_session_${sessionId}`,
-      expires_in: 180,
+      session_id: state.session_id, qr_image: state.qr_image, qr_url: state.qr_url,
+      session_token: state.session_token, status: state.status, expires_in: state.expires_in,
+    });
+  });
+
+  app.get('/api/admin/recruitment/zalo-qr-session/:sessionId', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
+    const { sessionId } = request.params as { sessionId: string };
+    const state = getZaloQrSessionState(sessionId);
+    if (!state) return sendSuccess(request, 'Phiên QR đã hết hạn', { session_id: sessionId, status: 'EXPIRED', expires_in: 0 });
+    return sendSuccess(request, 'Trạng thái phiên quét QR Zalo', {
+      session_id: state.session_id, status: state.status, expires_in: state.expires_in,
+      scanned_display_name: state.scanned_display_name, scanned_avatar: state.scanned_avatar,
+      zalo_name: state.zalo_name, zalo_phone: state.zalo_phone, zalo_id: state.zalo_id,
+      saved_account: state.saved_account ?? null, error_message: state.error_message,
     });
   });
 
@@ -109,7 +131,7 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
     const nextSecret: StoredZaloAccountSecret = {
       owner_user_id: ownerUser.id, zalo_name: body.zalo_name, zalo_phone: phone,
       zalo_id: body.zalo_id || prevSecret?.zalo_id || `zalo_${phone}`,
-      access_token: body.access_token ? body.access_token : (prevSecret?.access_token || `zalo_session_${phone}`),
+      access_token: prevSecret?.access_token?.startsWith('{') ? prevSecret.access_token : (body.access_token || prevSecret?.access_token || `zalo_session_${phone}`),
       is_default: body.is_default, status: body.status,
       greeting_template: body.greeting_template || prevSecret?.greeting_template || DEFAULT_ZALO_TEMPLATES.greeting,
       invite_template: body.invite_template || prevSecret?.invite_template || DEFAULT_ZALO_TEMPLATES.invite,
@@ -144,24 +166,19 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
     const activeIv = iv ?? (cand ? ctx.db.interviews.find((x) => (x.candidate_id === cand.id || x.candidate_id === cand.candidate_code) && x.status !== 'CANCELLED') : undefined);
     if (!cand && !activeIv) throw Errors.badRequest('Vui lòng chọn ứng viên hoặc lịch phỏng vấn cần gửi Zalo');
 
-    const branchId = activeIv?.branch_id || cand?.branch_pref || '';
-    const branchName = ctx.db.branches.get(branchId)?.name ?? 'Ụm Bò Milk';
+    const branchId = activeIv?.branch_id || cand?.branch_pref || '', branchName = ctx.db.branches.get(branchId)?.name ?? 'Ụm Bò Milk';
     const posLabel = cand ? resolveStaffGroupLabel(ctx, cand.staff_group, cand.position) : 'Nhân viên Cửa hàng';
     const win = activeIv ? parseInterviewWindowMs(activeIv.start_at, activeIv.duration_minutes || 30) : null;
     const rsvp = activeIv ? ensureInterviewRsvpUrl(ctx, activeIv.id, cand?.id ?? activeIv.candidate_id, activeIv.rsvp_token) : { token: '', url: '' };
-
-    const rawTemplate =
-      body.template_type === 'GREETING' ? zaloResolved.dto.greeting_template
-      : body.template_type === 'REMINDER' ? zaloResolved.dto.reminder_template
-      : body.template_type === 'PASS' ? zaloResolved.dto.pass_template
-      : zaloResolved.dto.invite_template;
+    const rawTemplate = body.template_type === 'GREETING' ? zaloResolved.dto.greeting_template : body.template_type === 'REMINDER' ? zaloResolved.dto.reminder_template : body.template_type === 'PASS' ? zaloResolved.dto.pass_template : zaloResolved.dto.invite_template;
     const finalMessage = body.message || renderZaloMessageTemplate(rawTemplate, {
-      candidateName: cand?.full_name ?? 'Ứng viên', candidateCode: cand?.candidate_code ?? '',
-      position: posLabel, branchName, interviewTime: win ? `${win.startHm} – ${win.endHm} (${win.dateVi})` : (activeIv?.start_at ?? ''),
+      candidateName: cand?.full_name ?? 'Ứng viên', candidateCode: cand?.candidate_code ?? '', position: posLabel, branchName,
+      interviewTime: win ? `${win.startHm} – ${win.endHm} (${win.dateVi})` : (activeIv?.start_at ?? ''),
       meetLink: activeIv?.meet_link || 'https://meet.google.com/umb-milk-hr', rsvpUrl: rsvp.url,
       hrZaloName: zaloResolved.dto.zalo_name, hrZaloPhone: zaloResolved.dto.zalo_phone, minutesLeft: 10,
     });
 
+    const directSend = body.mode === 'SEND' ? await sendRealZaloMessageIfConnected(zaloResolved.rowId, zaloResolved.secret, body.candidate_zalo_id, finalMessage) : { deliveredViaZca: false };
     const now = nowIso();
     if (cand) {
       await ctx.db.candidates.update(cand.id, cand.version, {
@@ -171,14 +188,11 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
     }
     if (activeIv) {
       const resetForNewInvite = body.template_type === 'INVITE' && body.mark_confirmed === undefined;
-      const nextConfirmed = body.mark_confirmed !== undefined ? body.mark_confirmed : resetForNewInvite ? false : activeIv.candidate_confirmed;
-      const nextStatus = body.mark_confirmed === true ? 'CONFIRMED' : resetForNewInvite ? 'SCHEDULED' : activeIv.status;
       await ctx.db.interviews.update(activeIv.id, activeIv.version, {
-        candidate_zalo_id: body.candidate_zalo_id, zalo_account_id: zaloResolved.dto.id,
-        rsvp_token: activeIv.rsvp_token || rsvp.token,
-        candidate_confirmed: nextConfirmed,
+        candidate_zalo_id: body.candidate_zalo_id, zalo_account_id: zaloResolved.dto.id, rsvp_token: activeIv.rsvp_token || rsvp.token,
+        candidate_confirmed: body.mark_confirmed !== undefined ? body.mark_confirmed : resetForNewInvite ? false : activeIv.candidate_confirmed,
         reschedule_requested: resetForNewInvite ? false : activeIv.reschedule_requested,
-        status: nextStatus,
+        status: body.mark_confirmed === true ? 'CONFIRMED' : resetForNewInvite ? 'SCHEDULED' : activeIv.status,
       }, actorId);
     }
 
@@ -189,16 +203,10 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
     });
 
     const cleanPhone = normalizePhone(body.candidate_zalo_id) ?? normalizePhone(cand?.phone ?? '') ?? body.candidate_zalo_id;
-    return sendSuccess(
-      request,
-      body.mode === 'COPY_AND_SAVE'
-        ? `Đã sao chép tin nhắn và lưu ID Zalo ứng viên (${body.candidate_zalo_id})`
-        : `Đã gửi tin nhắn Zalo qua "${zaloResolved.dto.zalo_name}" tới ứng viên (${body.candidate_zalo_id})`,
-      {
-        sent: true, mode: body.mode, zalo_account_id: zaloResolved.dto.id, zalo_account_name: zaloResolved.dto.zalo_name,
-        zalo_account_phone: zaloResolved.dto.zalo_phone, candidate_zalo_id: body.candidate_zalo_id,
-        zalo_chat_url: `https://zalo.me/${cleanPhone}`, rsvp_url: rsvp.url, message: finalMessage, sent_at: now,
-      },
-    );
+    return sendSuccess(request, body.mode === 'COPY_AND_SAVE' ? `Đã sao chép tin nhắn và lưu ID Zalo ứng viên (${body.candidate_zalo_id})` : `Đã gửi tin nhắn Zalo qua "${zaloResolved.dto.zalo_name}" tới ứng viên (${body.candidate_zalo_id})`, {
+      sent: true, delivered_direct: directSend.deliveredViaZca, mode: body.mode, zalo_account_id: zaloResolved.dto.id,
+      zalo_account_name: zaloResolved.dto.zalo_name, zalo_account_phone: zaloResolved.dto.zalo_phone,
+      candidate_zalo_id: body.candidate_zalo_id, zalo_chat_url: `https://zalo.me/${cleanPhone}`, rsvp_url: rsvp.url, message: finalMessage, sent_at: now,
+    });
   });
 }
