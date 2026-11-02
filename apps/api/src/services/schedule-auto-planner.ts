@@ -18,6 +18,7 @@ export interface PlanIssue {
   employeeId: string; employeeName: string; workDate: string; shiftCode: string; message: string;
 }
 export interface PlanResult { planned: PlannedShift[]; issues: PlanIssue[]; offRequests: LeaveRequest[] }
+export const MONTHLY_WORK_DAYS_TARGET = { min: 10, max: 12 } as const;
 
 const OFF_ACTIVE = new Set(['PENDING', 'DRAFT', 'APPROVED']);
 const vi = (d: string) => dayjs(d).format('DD/MM/YYYY');
@@ -51,10 +52,8 @@ function collectOffBlockedAssignmentIds(ctx: AppContext, fromDate: string, toDat
 }
 
 /**
- * Lập kế hoạch tuần cho Nhân viên chính thức theo quy tắc 1 ca = đúng 1 người & xoay vòng công bằng trong nội bộ từng nhóm ca mặc định:
- * - Nhân sự thuộc nhóm ca mặc định nào (Ca sáng / Ca chiều / Ca tối) CHỈ xoay vòng trong đúng khung ca mặc định đó (không tự điều chéo sang ca khác).
- * - Cân bằng công bằng xuyên tuần: ưu tiên người ít ca nhất trong tuần -> ít ca tích lũy tương đối các tuần trước -> xoay vòng chỉ số tuần -> đảo trực Chủ Nhật.
- * - Khi thành viên trong cùng nhóm ca mặc định nghỉ OFF, các thành viên còn lại của chính nhóm ca đó tự động xoay vòng bù ca (1 người/ca).
+ * Lập kế hoạch tuần cho Nhân viên chính thức theo quy tắc 1 ca = đúng 1 người & xoay vòng công bằng trong nội bộ từng nhóm ca mặc định
+ * (cân bằng mục tiêu 10–12 ngày công/tháng, khi thành viên cùng nhóm nghỉ OFF thì các thành viên còn lại tự động bù ca).
  */
 export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; branchId?: string; historicalShifts?: ShiftAssignment[] }): PlanResult {
   const settings = getOperationSettings(ctx.db), dates = weekDates(params.weekStart);
@@ -67,20 +66,24 @@ export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; b
     .sort((a, b) => a.employee_code.localeCompare(b.employee_code));
   const offRequests = ctx.db.leaveRequests.filter((l) => OFF_ACTIVE.has(l.status) && l.leave_date >= dates[0]! && l.leave_date <= dates[6]! && emps.some((e) => matchEmp(e)(l.employee_id)));
 
-  const weeklyCount = new Map<string, number>();
-  const dailySpans = new Map<string, [number, number][]>();
-  const dailyCodes = new Map<string, Set<string>>();
+  const monthPrefix = params.weekStart.slice(0, 7);
+  const monthPool = (params.historicalShifts ?? ctx.db.shiftAssignments.all()).filter(
+    (a) => !ignoredIds.has(a.id) && a.work_date.startsWith(monthPrefix) && a.status !== 'DRAFT' && isCountedWorkShift(a),
+  );
+  const weeklyCount = new Map<string, number>(), monthlyCount = new Map<string, number>();
+  const dailySpans = new Map<string, [number, number][]>(), dailyCodes = new Map<string, Set<string>>();
   for (const emp of emps) {
     let wCount = 0;
+    const isE = matchEmp(emp);
     for (const d of dates) {
       const ek = `${emp.id}|${d}`;
-      const rows = ctx.db.shiftAssignments.filter((a) => !ignoredIds.has(a.id) && a.work_date === d && matchEmp(emp)(a.employee_id) && isCountedWorkShift(a));
-      const approvedRows = rows.filter((a) => a.status !== 'DRAFT');
+      const approvedRows = ctx.db.shiftAssignments.filter((a) => !ignoredIds.has(a.id) && a.work_date === d && isE(a.employee_id) && isCountedWorkShift(a) && a.status !== 'DRAFT');
       wCount += approvedRows.length;
       dailySpans.set(ek, approvedRows.map((a) => toMinuteSpan(a.start_at, a.end_at)));
       dailyCodes.set(ek, new Set(approvedRows.map((a) => a.shift_code.toUpperCase())));
     }
     weeklyCount.set(emp.id, wCount);
+    monthlyCount.set(emp.id, monthPool.filter((a) => isE(a.employee_id)).length);
   }
 
   const isOffOnDate = (emp: Employee, d: string) => offRequests.some((l) => matchEmp(emp)(l.employee_id) && l.leave_date === d);
@@ -105,11 +108,21 @@ export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; b
     set.add(tpl.code.toUpperCase());
     dailyCodes.set(ek, set);
     weeklyCount.set(emp.id, (weeklyCount.get(emp.id) ?? 0) + 1);
+    monthlyCount.set(emp.id, (monthlyCount.get(emp.id) ?? 0) + 1);
+  };
+  const rankCandidates = (a: Employee, b: Employee, fairnessMap: ReturnType<typeof buildShiftGroupFairnessMap>) => {
+    const ma = monthlyCount.get(a.id) ?? 0, mb = monthlyCount.get(b.id) ?? 0;
+    if ((ma >= MONTHLY_WORK_DAYS_TARGET.max) !== (mb >= MONTHLY_WORK_DAYS_TARGET.max)) return ma - mb;
+    if ((ma >= MONTHLY_WORK_DAYS_TARGET.min) !== (mb >= MONTHLY_WORK_DAYS_TARGET.min)) return ma - mb;
+    if (Math.abs(ma - mb) >= 2) return ma - mb;
+    const wa = weeklyCount.get(a.id) ?? 0, wb = weeklyCount.get(b.id) ?? 0;
+    if (wa !== wb) return wa - wb;
+    if (ma !== mb) return ma - mb;
+    return compareFairShiftCandidates(a, b, weeklyCount, fairnessMap);
   };
 
   for (const branch of branches) {
-    const branchEmps = emps.filter((e) => e.branch_id === branch.id);
-    const storeShifts = listBranchStoreShiftTemplates(ctx, branch.id);
+    const branchEmps = emps.filter((e) => e.branch_id === branch.id), storeShifts = listBranchStoreShiftTemplates(ctx, branch.id);
     if (storeShifts.length === 0) {
       for (const emp of branchEmps) {
         const sc = emp.default_shift_code || 'CA_SANG';
@@ -117,31 +130,22 @@ export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; b
       }
       continue;
     }
-    const hasStaffOrRule = branchEmps.length > 0 || Boolean(ctx.db.staffingRules.find((r) => r.branch_id === branch.id || r.branch_id === branch.code));
-    if (!hasStaffOrRule) continue;
+    if (branchEmps.length === 0 && !ctx.db.staffingRules.find((r) => r.branch_id === branch.id || r.branch_id === branch.code)) continue;
 
     for (const tpl of storeShifts) {
       const groupEmps = branchEmps.filter((e) => (e.default_shift_code || 'CA_SANG').toUpperCase() === tpl.code.toUpperCase());
       const fairnessMap = buildShiftGroupFairnessMap(ctx, groupEmps, params.weekStart, params.historicalShifts);
-
       for (const workDate of dates) {
         while (tracker.count(branch.id, workDate, tpl.code) < tracker.capacity(branch.id, tpl.code)) {
-          const cands = groupEmps
-            .filter((e) => (dailySpans.get(`${e.id}|${workDate}`)?.length ?? 0) === 0 && canTakeShift(e, workDate, tpl))
-            .sort((a, b) => compareFairShiftCandidates(a, b, weeklyCount, fairnessMap));
+          const cands = groupEmps.filter((e) => (dailySpans.get(`${e.id}|${workDate}`)?.length ?? 0) === 0 && canTakeShift(e, workDate, tpl)).sort((a, b) => rankCandidates(a, b, fairnessMap));
           if (cands.length === 0) break;
           const picked = cands[0]!;
-          const isCoveringOffPeer = groupEmps.some(
-            (peer) => peer.id !== picked.id && isOffOnDate(peer, workDate) && compareFairShiftCandidates(peer, picked, weeklyCount, fairnessMap) < 0,
-          );
+          const isCoveringOffPeer = groupEmps.some((peer) => peer.id !== picked.id && isOffOnDate(peer, workDate) && rankCandidates(peer, picked, fairnessMap) < 0);
           assign(picked, branch.name, workDate, tpl, isCoveringOffPeer);
         }
-
         const cur = tracker.count(branch.id, workDate, tpl.code), min = tracker.minStaff(branch.id, tpl.code), cap = tracker.capacity(branch.id, tpl.code);
         if (cur < min) {
-          const reason = groupEmps.length === 0
-            ? `chưa có nhân sự chính thức nào đăng ký ca mặc định ${tpl.name}`
-            : `nhân sự thuộc nhóm mặc định ${tpl.name} đều nghỉ OFF hoặc đã kín lịch`;
+          const reason = groupEmps.length === 0 ? `chưa có nhân sự chính thức nào đăng ký ca mặc định ${tpl.name}` : `nhân sự thuộc nhóm mặc định ${tpl.name} đều nghỉ OFF hoặc đã kín lịch`;
           issues.push({ kind: 'UNDERSTAFFED', employeeId: '', employeeName: '', workDate, shiftCode: tpl.code, message: `${branch.name} · ${tpl.name} ngày ${vi(workDate)} chưa đủ người trực (${cur}/${min} nhân sự) do ${reason}.` });
         } else if (cur > cap) {
           issues.push({ kind: 'CAPACITY_FULL', employeeId: '', employeeName: '', workDate, shiftCode: tpl.code, message: `${branch.name} · ${tpl.name} ngày ${vi(workDate)} đang vượt định biên (${cur}/${cap} nhân sự — quy định mỗi ca chỉ có ${cap} người).` });

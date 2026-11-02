@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
-  computeInterviewWeightedScore, inferCandidateExperienceTrack, INTERVIEW_EXPERIENCE_TRACK_LABELS,
-  INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS, INTERVIEW_EXPERIENCE_TRACKS, zListQueryBase, type InterviewExperienceTrack,
+  computeInterviewWeightedScore, evaluateInterviewRubric13, inferCandidateExperienceTrack,
+  INTERVIEW_EXPERIENCE_TRACK_LABELS, INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS, INTERVIEW_EXPERIENCE_TRACKS,
+  INTERVIEW_RUBRIC_BLOCKS, zListQueryBase, type InterviewExperienceTrack, type InterviewRubricBlock,
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
@@ -19,25 +20,22 @@ import {
 import { resolveStaffGroupLabel } from './employee-mapper.js';
 
 const zCreateInterviewBody = z.object({
-  candidate_id: z.string().trim().min(1),
-  interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
-  interviewer_ids: z.array(z.string().trim()).optional(),
-  scheduled_at: z.string().trim().optional(),
-  start_at: z.string().trim().optional(),
-  duration_minutes: z.coerce.number().int().min(5).max(240).default(30),
+  candidate_id: z.string().trim().min(1), interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
+  interviewer_ids: z.array(z.string().trim()).optional(), scheduled_at: z.string().trim().optional(),
+  start_at: z.string().trim().optional(), duration_minutes: z.coerce.number().int().min(5).max(240).default(30),
   meet_link: z.string().optional().default(''),
 });
 
 const zEvaluateInterviewBody = z.object({
   version: z.coerce.number().int().min(1), experience_track: z.enum(INTERVIEW_EXPERIENCE_TRACKS).optional(),
-  score: z.coerce.number().min(0).max(100).optional(), appearance_score: z.coerce.number().min(0).max(100).default(90),
-  attitude_score: z.coerce.number().min(0).max(100).default(90), skill_score: z.coerce.number().min(0).max(100).default(85),
-  decision: z.enum(['PENDING', 'PASS', 'FAIL', 'PASSED', 'FAILED', 'HOLD']).default('PASS'),
+  rubric_block: z.enum(INTERVIEW_RUBRIC_BLOCKS).optional(), rubric_scores: z.record(z.coerce.number()).optional(),
+  red_flags: z.array(z.string()).optional(), score: z.coerce.number().min(0).max(100).optional(),
+  appearance_score: z.coerce.number().min(0).max(100).default(90), attitude_score: z.coerce.number().min(0).max(100).default(90),
+  skill_score: z.coerce.number().min(0).max(100).default(85), decision: z.enum(['PENDING', 'PASS', 'FAIL', 'PASSED', 'FAILED', 'HOLD']).default('PASS'),
   comment: z.string().trim().optional(), result_note: z.string().trim().optional(),
   candidate_confirmed: z.boolean().optional(), reschedule_requested: z.boolean().optional(),
   reschedule_reason: z.string().trim().optional(), scheduled_at: z.string().trim().optional(),
-  interviewer_ids: z.array(z.string().trim()).optional(),
-  interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
+  interviewer_ids: z.array(z.string().trim()).optional(), interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
   duration_minutes: z.coerce.number().int().min(5).max(240).optional(), meet_link: z.string().trim().optional(),
 });
 
@@ -47,10 +45,8 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/interviews', { preHandler: requirePermission('interview.manage', 'candidate.manage') }, async (request) => {
     void sweepUpcomingInterviewReminders(ctx).catch(() => undefined);
     const query = zListQueryBase.extend({
-      branch_id: z.string().trim().optional(),
-      decision: z.string().trim().optional(),
-      status: z.string().trim().optional(),
-      experience_track: z.string().trim().optional(),
+      branch_id: z.string().trim().optional(), decision: z.string().trim().optional(),
+      status: z.string().trim().optional(), experience_track: z.string().trim().optional(),
     }).parse(request.query ?? {});
 
     const items = ctx.db.interviews.all().map((iv) => {
@@ -175,16 +171,22 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       return sendSuccess(request, 'Đã cập nhật lịch phỏng vấn và gửi thông báo đến những người liên quan', { ...updatedConfirm, slotOverlaps: overlaps.slotOverlaps });
     }
 
-    const normalizedDecision = body.decision === 'PASSED' || body.decision === 'PASS' ? 'PASS' : body.decision === 'HOLD' ? 'HOLD' : 'FAIL';
+    const hasRubric13 = Boolean(body.rubric_scores || (body.red_flags && body.red_flags.length > 0));
+    const block: InterviewRubricBlock = body.rubric_block ?? ((before.rubric_block === 'OFFICE' ? 'OFFICE' : 'STORE') as InterviewRubricBlock);
+    const eval13 = hasRubric13 ? evaluateInterviewRubric13(block, body.rubric_scores ?? {}, body.red_flags ?? []) : null;
+    const normalizedDecision = eval13?.hasRedFlag ? 'FAIL' : (body.decision === 'PASSED' || body.decision === 'PASS' ? 'PASS' : body.decision === 'HOLD' ? 'HOLD' : 'FAIL');
     const track: InterviewExperienceTrack = body.experience_track ?? before.experience_track ?? inferCandidateExperienceTrack(cand?.experience_note);
     const rawBody = (request.body ?? {}) as Record<string, unknown>;
     const hasComponentScores = rawBody.appearance_score !== undefined || rawBody.attitude_score !== undefined || rawBody.skill_score !== undefined;
     const recalcScore = body.experience_track
       ? computeInterviewWeightedScore(body.experience_track, body.appearance_score, body.attitude_score, body.skill_score)
       : Number(((body.appearance_score + body.attitude_score + body.skill_score) / 3).toFixed(1));
-    const computedScore = hasComponentScores ? recalcScore : (body.score ?? recalcScore);
+    const computedScore = eval13 && !hasComponentScores ? eval13.normalizedScore100 : hasComponentScores ? recalcScore : (body.score ?? recalcScore);
     const updated = await ctx.db.interviews.update(id, body.version, {
-      status: 'COMPLETED', experience_track: track, score: computedScore, appearance_score: body.appearance_score,
+      status: 'COMPLETED', experience_track: track, rubric_block: block,
+      score_13: eval13 ? eval13.totalScore13 : before.score_13,
+      rubric_details_json: eval13 ? JSON.stringify({ block, scores: body.rubric_scores ?? {}, redFlags: body.red_flags ?? [], totalScore13: eval13.totalScore13, isPerfect13: eval13.isPerfect13 }) : before.rubric_details_json,
+      score: computedScore, appearance_score: body.appearance_score,
       attitude_score: body.attitude_score, skill_score: body.skill_score, decision: normalizedDecision,
       comment: body.comment || body.result_note || '', decided_at: nowIso(),
     }, actorId);

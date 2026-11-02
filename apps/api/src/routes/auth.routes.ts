@@ -7,15 +7,46 @@ import { hashSecret, verifySecret } from '../auth/password.js';
 import { ACCESS_COOKIE, ACCESS_TTL_SECONDS, REFRESH_COOKIE, REFRESH_TTL_SECONDS, SESSION_MARKER_COOKIE, type TokenClaims } from '../auth/tokens.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
-import { nowIso } from '../lib/time.js';
+import { dayjs, nowIso } from '../lib/time.js';
 import { auditContext, requireAuth } from '../plugins/auth-context.js';
 import { registerAuthProfileRoutes } from './auth-profile.routes.js';
 
 const zChangePasswordBody = z.object({
-  current_secret: z.string().min(1, 'Vui lòng nhập mật khẩu hoặc mã PIN hiện tại'),
-  new_secret: z.string().min(6, 'Mật khẩu / Mã PIN mới tối thiểu 6 ký tự').max(128, 'Mật khẩu tối đa 128 ký tự'),
-  confirm_secret: z.string().min(6, 'Vui lòng xác nhận lại mật khẩu / mã PIN mới').max(128),
+  current_secret: z.string().optional(),
+  new_secret: z.string().optional(),
+  confirm_secret: z.string().optional(),
+  current_pin: z.string().optional(),
+  new_pin: z.string().optional(),
+  confirm_pin: z.string().optional(),
 });
+
+export function parsePinHistory(raw?: string): string[] {
+  try {
+    const arr = JSON.parse(raw || '[]');
+    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string' && x.length > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Kiểm tra đợt xoay mã PIN định kỳ từ ngày 01 đến ngày 05 hàng tháng hoặc quá hạn pinRotationDays. */
+export function isPinRotationRequiredInWindow(
+  user: { must_change_pin?: boolean; pin_changed_at?: string; activated_at?: string; created_at?: string },
+  pinRotationDays: number,
+  nowInput?: string | Date,
+): { required: boolean; inDay01To05Window: boolean; reason: 'FIRST_LOGIN' | 'RESET' | 'EXPIRED' | null } {
+  const now = nowInput ? dayjs(nowInput) : dayjs();
+  const inDay01To05Window = now.date() >= 1 && now.date() <= 5;
+  if (user.must_change_pin) return { required: true, inDay01To05Window, reason: user.pin_changed_at ? 'RESET' : 'FIRST_LOGIN' };
+  if (pinRotationDays <= 0) return { required: false, inDay01To05Window, reason: null };
+  const base = user.pin_changed_at || user.activated_at || user.created_at;
+  const expiredByDays = Boolean(base && now.diff(dayjs(base), 'day') >= pinRotationDays);
+  const changedThisMonth = Boolean(user.pin_changed_at && dayjs(user.pin_changed_at).format('YYYY-MM') === now.format('YYYY-MM'));
+  if (expiredByDays || (inDay01To05Window && !changedThisMonth)) {
+    return { required: true, inDay01To05Window, reason: 'EXPIRED' };
+  }
+  return { required: false, inDay01To05Window, reason: null };
+}
 
 export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
   const cookieBase = { httpOnly: true, secure: ctx.env.COOKIE_SECURE, sameSite: 'lax' as const, path: '/' };
@@ -113,26 +144,47 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
 
   registerAuthProfileRoutes(app, ctx, toResolvedPublicUser);
 
-  app.put('/api/auth/password', { preHandler: requireAuth() }, async (request) => {
+  const handlePinOrPasswordChange = async (request: Parameters<typeof auditContext>[0]) => {
     const user = request.auth!.user;
     const isEmp = isEmployeeRole(user.role);
-    const body = zChangePasswordBody.parse(request.body);
-    if (body.new_secret !== body.confirm_secret) {
+    const raw = zChangePasswordBody.parse(request.body ?? {});
+    const currentSecret = raw.current_secret ?? raw.current_pin ?? '';
+    const newSecret = raw.new_secret ?? raw.new_pin ?? '';
+    const confirmSecret = raw.confirm_secret ?? raw.confirm_pin ?? newSecret;
+    if (!currentSecret) throw Errors.fieldValidation('current_secret', 'REQUIRED_FIELD', 'Vui lòng nhập mật khẩu hoặc mã PIN hiện tại', '');
+    if (newSecret.length < 6) throw Errors.fieldValidation('new_secret', 'INVALID_FORMAT', 'Mật khẩu / Mã PIN mới tối thiểu 6 ký tự', '***');
+    if (newSecret !== confirmSecret) {
       throw Errors.fieldValidation('confirm_secret', 'INVALID_VALUE', isEmp ? 'Mã PIN xác nhận không khớp với mã PIN mới' : 'Mật khẩu xác nhận không khớp với mật khẩu mới', '***');
     }
-    const ok = await verifySecret(user.password_hash, body.current_secret);
-    if (!ok) {
+    if (!(await verifySecret(user.password_hash, currentSecret))) {
       throw Errors.fieldValidation('current_secret', 'INVALID_VALUE', isEmp ? 'Mã PIN hiện tại không chính xác' : 'Mật khẩu hiện tại không chính xác', '***');
     }
-    if (isEmp && !PIN_REGEX.test(body.new_secret)) {
+    if (isEmp && !PIN_REGEX.test(newSecret)) {
       throw Errors.fieldValidation('new_secret', 'INVALID_FORMAT', 'Mã PIN mới phải gồm đúng 6 chữ số', '******');
     }
-    if (await verifySecret(user.password_hash, body.new_secret)) {
-      throw Errors.fieldValidation('new_secret', 'INVALID_VALUE', isEmp ? 'Mã PIN mới phải khác mã PIN hiện tại' : 'Mật khẩu mới phải khác mật khẩu hiện tại', '******');
+    const history = parsePinHistory(user.pin_history_json);
+    const sameCurrent = await verifySecret(user.password_hash, newSecret);
+    let sameHistory = false;
+    if (!sameCurrent) {
+      for (const oldHash of history) {
+        if (await verifySecret(oldHash, newSecret)) { sameHistory = true; break; }
+      }
     }
-    const nextHash = await hashSecret(body.new_secret);
-    const updated = await ctx.db.users.update(user.id, user.version, { password_hash: nextHash, must_change_pin: false, pin_changed_at: nowIso() }, user.id);
+    if (sameCurrent || sameHistory) {
+      throw Errors.fieldValidation('new_secret', 'INVALID_VALUE', 'Mã PIN mới không được trùng với các mã PIN bạn đã từng sử dụng trước đây', '******');
+    }
+    const nextHash = await hashSecret(newSecret);
+    const nextHistory = [user.password_hash, ...history.filter((h) => h !== user.password_hash)].slice(0, 10);
+    const updated = await ctx.db.users.update(
+      user.id,
+      user.version,
+      { password_hash: nextHash, must_change_pin: false, pin_changed_at: nowIso(), pin_history_json: JSON.stringify(nextHistory) },
+      user.id,
+    );
     await ctx.audit.record(auditContext(request), { action: 'auth.password.change', entity: 'USERS', entityId: user.id });
     return sendSuccess(request, isEmp ? 'Đã đổi mã PIN bảo mật thành công' : 'Đã đổi mật khẩu bảo mật thành công', { ok: true, user: toResolvedPublicUser(updated) });
-  });
+  };
+
+  app.put('/api/auth/password', { preHandler: requireAuth() }, handlePinOrPasswordChange);
+  app.post('/api/auth/change-pin', { preHandler: requireAuth() }, handlePinOrPasswordChange);
 }

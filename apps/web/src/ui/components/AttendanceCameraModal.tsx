@@ -1,17 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Col, Descriptions, Modal, Row, Space, Tag, Typography } from 'antd';
-import { CameraOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, CloseOutlined, EnvironmentOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Alert, Button, Checkbox, Col, Descriptions, Modal, Row, Space, Tag, Typography } from 'antd';
+import { CameraOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, CloseOutlined, EnvironmentOutlined, ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api } from '@/lib/api';
 import { getAccurateDeviceLocation, type AccurateCoords } from '@/lib/geolocation';
+import { analyzePinkUniformFromDataUrl, type PinkUniformAnalysisResult } from '@/lib/pink-uniform-detector';
 import { FancyboxImage } from './FancyboxPreview';
 
 export interface AttendanceCheckPayload {
   assignment_id: string; kind: 'CHECK_IN' | 'CHECK_OUT'; lat: number; lng: number;
   accuracy_m: number; selfie_source: 'LIVE_CAMERA'; photo_base64: string; enforce_shift_state: boolean;
+  pink_ratio_percent?: number; uniform_verified?: boolean;
 }
 
 interface Props {
@@ -50,24 +52,20 @@ export function evaluateShiftPunctuality(kind: 'CHECK_IN' | 'CHECK_OUT', nowHm: 
 }
 
 export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onConfirm }: Props) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const [photoDataUrl, setPhotoDataUrl] = useState<string>('');
-  const [cameraReady, setCameraReady] = useState(false);
-  const [coords, setCoords] = useState<AccurateCoords | null>(null);
-  const [locating, setLocating] = useState(false);
-  const [gpsError, setGpsError] = useState<string | null>(null);
-  const [nowStr, setNowStr] = useState(() => dayjs().format('HH:mm:ss'));
+  const videoRef = useRef<HTMLVideoElement | null>(null), streamRef = useRef<MediaStream | null>(null);
+  const [photoDataUrl, setPhotoDataUrl] = useState<string>(''), [pinkResult, setPinkResult] = useState<PinkUniformAnalysisResult | null>(null);
+  const [uniformConfirmed, setUniformConfirmed] = useState(true), [cameraReady, setCameraReady] = useState(false);
+  const [coords, setCoords] = useState<AccurateCoords | null>(null), [locating, setLocating] = useState(false);
+  const [gpsError, setGpsError] = useState<string | null>(null), [nowStr, setNowStr] = useState(() => dayjs().format('HH:mm:ss'));
 
-  const liveQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<{ shifts: Record<string, unknown>[] }>('/my-attendance'), enabled: open });
-  const liveMatchedShift = liveQ.data?.shifts?.find((s) => String(s.id) === String(shift?.id));
-  const activeShift = liveMatchedShift ?? shift;
+  const liveQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<{ profile?: { stage?: string; role?: string }; shifts: Record<string, unknown>[] }>('/my-attendance'), enabled: open });
+  const activeShift = liveQ.data?.shifts?.find((s) => String(s.id) === String(shift?.id)) ?? shift;
+  const isProbation = String(activeShift?.employeeStage ?? activeShift?.employee_stage ?? liveQ.data?.profile?.stage ?? '') === 'PROBATION' || liveQ.data?.profile?.role === 'THU_VIEC';
   const branchName = String(activeShift?.branchName || 'Chi nhánh làm việc');
   const branchLat = activeShift?.branchLat !== undefined && activeShift?.branchLat !== null ? Number(activeShift.branchLat) : null;
   const branchLng = activeShift?.branchLng !== undefined && activeShift?.branchLng !== null ? Number(activeShift.branchLng) : null;
   const branchRadiusM = Number(activeShift?.branchRadiusM || 100);
-  const empBranchId = String(activeShift?.employeeBranchId || '');
-  const shiftBranchId = String(activeShift?.branchId || '');
+  const empBranchId = String(activeShift?.employeeBranchId || ''), shiftBranchId = String(activeShift?.branchId || '');
   const branchMismatch = Boolean(empBranchId && shiftBranchId && empBranchId !== shiftBranchId);
   const hasBranchCoords = branchLat !== null && branchLng !== null && !Number.isNaN(branchLat) && !Number.isNaN(branchLng);
   const distanceM = coords && hasBranchCoords ? calculateHaversineMeters(coords.lat, coords.lng, branchLat!, branchLng!) : null;
@@ -86,32 +84,24 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
       streamRef.current = stream;
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play().catch(() => undefined); }
       setCameraReady(true);
-    } catch {
-      setCameraReady(false);
-    }
+    } catch { setCameraReady(false); }
   }, [stopStream]);
 
   const locateGps = useCallback(async (bLat?: number | null, bLng?: number | null, bRad?: number) => {
     setLocating(true); setGpsError(null);
     try {
-      const pos = await getAccurateDeviceLocation({
-        targetBranch: !branchMismatch ? { lat: bLat ?? branchLat, lng: bLng ?? branchLng, radiusM: bRad ?? branchRadiusM } : undefined,
-      });
+      const pos = await getAccurateDeviceLocation({ targetBranch: !branchMismatch ? { lat: bLat ?? branchLat, lng: bLng ?? branchLng, radiusM: bRad ?? branchRadiusM } : undefined });
       setCoords(pos);
     } catch {
       setCoords(null);
       setGpsError('Không lấy được vị trí hiện tại. Vui lòng cấp quyền truy cập Vị trí (GPS) trên trình duyệt rồi bấm "Lấy vị trí hiện tại".');
-    } finally {
-      setLocating(false);
-    }
+    } finally { setLocating(false); }
   }, [branchLat, branchLng, branchRadiusM, branchMismatch]);
 
   useEffect(() => {
     if (!open) { stopStream(); return; }
-    setPhotoDataUrl('');
-    void startCamera();
-    void locateGps();
-    void liveQ.refetch();
+    setPhotoDataUrl(''); setPinkResult(null); setUniformConfirmed(true);
+    void startCamera(); void locateGps(); void liveQ.refetch();
     const timer = setInterval(() => setNowStr(dayjs().format('HH:mm:ss')), 1000);
     return () => { clearInterval(timer); stopStream(); };
   }, [open, shift?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -128,17 +118,15 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
     if (!ctx) return;
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     if (videoRef.current && cameraReady && videoRef.current.videoWidth > 0) {
-      const vw = videoRef.current.videoWidth, vh = videoRef.current.videoHeight;
-      const targetRatio = canvas.width / canvas.height, videoRatio = vw / vh;
-      const sw = videoRatio > targetRatio ? vh * targetRatio : vw;
-      const sh = videoRatio > targetRatio ? vh : vw / targetRatio;
+      const vw = videoRef.current.videoWidth, vh = videoRef.current.videoHeight, targetRatio = canvas.width / canvas.height, videoRatio = vw / vh;
+      const sw = videoRatio > targetRatio ? vh * targetRatio : vw, sh = videoRatio > targetRatio ? vh : vw / targetRatio;
       ctx.drawImage(videoRef.current, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, canvas.width, canvas.height);
     } else {
       ctx.fillStyle = '#0F172A'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#1E293B'; ctx.beginPath(); ctx.arc(360, 212, 76, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#94A3B8'; ctx.font = '600 22px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#EC4899'; ctx.fillRect(210, 260, 300, 190);
+      ctx.fillStyle = '#1E293B'; ctx.beginPath(); ctx.arc(360, 185, 68, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#FFFFFF'; ctx.font = '600 20px sans-serif'; ctx.textAlign = 'center';
       ctx.fillText(String(activeShift?.employeeName ?? 'Nhân sự Ụm Bò Milk'), 360, 336);
-      ctx.font = '16px sans-serif'; ctx.fillText('Ảnh xác thực Camera trực tiếp', 360, 368);
     }
     ctx.fillStyle = 'rgba(15, 23, 42, 0.84)'; ctx.fillRect(0, 456, canvas.width, 84);
     ctx.fillStyle = '#FFFFFF'; ctx.textAlign = 'left'; ctx.font = '600 18px sans-serif';
@@ -147,70 +135,72 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
     ctx.fillStyle = '#CBD5E1'; ctx.font = '15px monospace';
     const gpsText = coords ? `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)} (${distanceM !== null ? formatDistanceVi(distanceM) : '?'})` : 'Chưa có GPS';
     ctx.fillText(`${dayjs().format('DD/MM/YYYY HH:mm:ss')} · GPS: ${gpsText}`, 18, 518);
-    setPhotoDataUrl(canvas.toDataURL('image/jpeg', 0.86));
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+    setPhotoDataUrl(dataUrl);
+    void analyzePinkUniformFromDataUrl(dataUrl).then(setPinkResult);
     stopStream();
   };
 
-  const startAt = String(activeShift?.startAt || activeShift?.start_at || '07:00');
-  const endAt = String(activeShift?.endAt || activeShift?.end_at || '12:00');
+  const startAt = String(activeShift?.startAt || activeShift?.start_at || '07:00'), endAt = String(activeShift?.endAt || activeShift?.end_at || '12:00');
   const cleanShiftTitle = String(activeShift?.shiftLabel ?? 'Ca sáng').replace(/\s*\([^)]*\)\s*/g, '').trim();
   const punc = evaluateShiftPunctuality(kind, nowStr.slice(0, 5), startAt, endAt);
+  const canSubmit = Boolean(photoDataUrl && activeShift && coords && withinRadius && !branchMismatch && !locating && (isProbation || uniformConfirmed));
 
   return (
     <Modal
-      open={open} onCancel={onClose} width={840} style={{ top: 12, maxWidth: '98vw' }} destroyOnHidden
+      open={open} onCancel={onClose} width={860} style={{ top: 12, maxWidth: '98vw' }} destroyOnHidden
       title={kind === 'CHECK_IN' ? 'Chụp ảnh Camera & Xác nhận Vào ca' : 'Chụp ảnh Camera & Xác nhận Ra ca'}
       footer={
         <Space wrap>
           <Button icon={<CloseOutlined />} onClick={onClose}>Hủy bỏ</Button>
-          <Button type="primary" icon={<CheckCircleOutlined />} disabled={!photoDataUrl || !activeShift || !coords || !withinRadius || branchMismatch || locating} loading={loading} onClick={() => activeShift && coords && onConfirm({ assignment_id: String(activeShift.id), kind, lat: coords.lat, lng: coords.lng, accuracy_m: coords.accuracy, selfie_source: 'LIVE_CAMERA', photo_base64: photoDataUrl, enforce_shift_state: true }, photoDataUrl)}>{kind === 'CHECK_IN' ? 'Xác nhận Vào ca' : 'Xác nhận Ra ca'}</Button>
+          <Button type="primary" icon={<CheckCircleOutlined />} disabled={!canSubmit} loading={loading} onClick={() => activeShift && coords && onConfirm({ assignment_id: String(activeShift.id), kind, lat: coords.lat, lng: coords.lng, accuracy_m: coords.accuracy, selfie_source: 'LIVE_CAMERA', photo_base64: photoDataUrl, enforce_shift_state: true, pink_ratio_percent: pinkResult?.pinkRatioPercent ?? 0, uniform_verified: isProbation ? true : uniformConfirmed }, photoDataUrl)}>{kind === 'CHECK_IN' ? 'Xác nhận Vào ca' : 'Xác nhận Ra ca'}</Button>
         </Space>
       }
     >
       <Row gutter={[12, 12]} align="top">
         <Col xs={24} md={13}>
           <Descriptions size="small" bordered column={1} styles={{ label: { width: 96 }, content: { wordBreak: 'break-word' } }}>
-            <Descriptions.Item label="Ca làm việc">
-              <strong>{cleanShiftTitle} ({startAt} – {endAt})</strong> · Ngày {String(activeShift?.workDate ?? activeShift?.work_date ?? '')}
-            </Descriptions.Item>
+            <Descriptions.Item label="Ca làm việc"><strong>{cleanShiftTitle} ({startAt} – {endAt})</strong> · Ngày {String(activeShift?.workDate ?? activeShift?.work_date ?? '')}</Descriptions.Item>
             <Descriptions.Item label="Chi nhánh">
               <div><strong>{branchName}</strong> <Tag color="blue" style={{ marginLeft: 4 }}>Bán kính {branchRadiusM}m</Tag></div>
-              {hasBranchCoords && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-                  <span className="mono" style={{ fontSize: 12, color: '#475569' }}>Tọa độ: ({branchLat!.toFixed(5)}, {branchLng!.toFixed(5)})</span>
-                  <Button size="small" type="link" icon={<EnvironmentOutlined />} style={{ padding: 0, height: 20, fontSize: 12 }} href={`https://www.google.com/maps?q=${branchLat},${branchLng}`} target="_blank" rel="noopener noreferrer">Xem trên Google Maps</Button>
-                </div>
-              )}
+              {hasBranchCoords && <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 4 }}><span className="mono" style={{ fontSize: 12, color: '#475569' }}>Tọa độ: ({branchLat!.toFixed(5)}, {branchLng!.toFixed(5)})</span><Button size="small" type="link" icon={<EnvironmentOutlined />} style={{ padding: 0, height: 20, fontSize: 12 }} href={`https://www.google.com/maps?q=${branchLat},${branchLng}`} target="_blank" rel="noopener noreferrer">Xem trên Google Maps</Button></div>}
             </Descriptions.Item>
-            <Descriptions.Item label="Giờ hiện tại">
-              <Space wrap size={6}><Tag icon={<ClockCircleOutlined />} color="blue" style={{ margin: 0 }}>{nowStr}</Tag><Tag color={punc.color} style={{ margin: 0, fontWeight: 600 }}>{punc.label}</Tag></Space>
-            </Descriptions.Item>
+            <Descriptions.Item label="Giờ hiện tại"><Space wrap size={6}><Tag icon={<ClockCircleOutlined />} color="blue" style={{ margin: 0 }}>{nowStr}</Tag><Tag color={punc.color} style={{ margin: 0, fontWeight: 600 }}>{punc.label}</Tag></Space></Descriptions.Item>
             <Descriptions.Item label="Vị trí GPS">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                 {locating ? <Tag color="processing" style={{ margin: 0 }}>Đang lấy vị trí hiện tại...</Tag> : branchMismatch ? <Tag color="red" icon={<CloseCircleOutlined />} style={{ margin: 0 }}>Sai chi nhánh ({String(activeShift?.employeeBranchName || 'chi nhánh khác')})</Tag> : !coords ? <Tag color="red" icon={<CloseCircleOutlined />} style={{ margin: 0 }}>Chưa xác định được tọa độ GPS</Tag> : withinRadius ? <Tag color="green" icon={<EnvironmentOutlined />} style={{ margin: 0, fontWeight: 600 }}>Hợp lệ tại {branchName}: Cách {formatDistanceVi(distanceM!)} / {branchRadiusM}m</Tag> : <Tag color="red" icon={<CloseCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>Ngoài vùng cho phép: Cách {formatDistanceVi(distanceM!)} (Tối đa {branchRadiusM}m)</Tag>}
                 <Button size="small" icon={<ReloadOutlined />} loading={locating} onClick={() => void locateGps()}>Lấy vị trí hiện tại</Button>
               </div>
-              {coords && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-                  <span className="mono" style={{ fontSize: 12, color: '#475569' }}>Thiết bị: ({coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}) · ±{coords.accuracy}m</span>
-                  <Button size="small" type="link" icon={<EnvironmentOutlined />} style={{ padding: 0, height: 20, fontSize: 12 }} href={`https://www.google.com/maps?q=${coords.lat},${coords.lng}`} target="_blank" rel="noopener noreferrer">Xem trên Google Maps</Button>
-                </div>
-              )}
+              {coords && <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 6 }}><span className="mono" style={{ fontSize: 12, color: '#475569' }}>Thiết bị: ({coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}) · ±{coords.accuracy}m</span><Button size="small" type="link" icon={<EnvironmentOutlined />} style={{ padding: 0, height: 20, fontSize: 12 }} href={`https://www.google.com/maps?q=${coords.lat},${coords.lng}`} target="_blank" rel="noopener noreferrer">Xem trên Google Maps</Button></div>}
             </Descriptions.Item>
           </Descriptions>
           {branchMismatch && <Alert type="error" showIcon message={`Bạn thuộc "${String(activeShift?.employeeBranchName)}", không được phép Vào/Ra ca tại "${branchName}".`} style={{ marginTop: 10 }} />}
           {gpsError && <Alert type="error" showIcon message={gpsError} style={{ marginTop: 10 }} />}
         </Col>
         <Col xs={24} md={11}>
-          <div style={{ position: 'relative', width: '100%', height: 250, background: '#0F172A', borderRadius: 4, overflow: 'hidden', marginBottom: 10, border: '1px solid #CBD5E1' }}>
-            {photoDataUrl ? <FancyboxImage src={photoDataUrl} alt="Ảnh chụp điểm danh" caption={`${kind === 'CHECK_IN' ? 'Ảnh Vào ca' : 'Ảnh Ra ca'} — ${branchName}`} height={250} /> : <video ref={videoRef} autoPlay playsInline muted style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: cameraReady ? 'block' : 'none' }} />}
+          <div style={{ position: 'relative', width: '100%', height: 235, background: '#0F172A', borderRadius: 4, overflow: 'hidden', marginBottom: 10, border: '1px solid #CBD5E1' }}>
+            {photoDataUrl ? <FancyboxImage src={photoDataUrl} alt="Ảnh chụp điểm danh" caption={`${kind === 'CHECK_IN' ? 'Ảnh Vào ca' : 'Ảnh Ra ca'} — ${branchName}`} height={235} /> : <video ref={videoRef} autoPlay playsInline muted style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: cameraReady ? 'block' : 'none' }} />}
             {!photoDataUrl && !cameraReady && <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', textAlign: 'center', padding: 12 }}><CameraOutlined style={{ fontSize: 30, marginBottom: 6 }} /><Typography.Text style={{ color: '#E2E8F0', fontSize: 12 }}>Khung chụp ảnh xác thực Camera trực tiếp</Typography.Text></div>}
           </div>
           {!photoDataUrl ? (
             <Button type="primary" icon={<CameraOutlined />} block disabled={!coords || !withinRadius || branchMismatch || locating} onClick={handleCapture}>
-              {!coords ? 'Vui lòng lấy vị trí GPS trước khi chụp ảnh' : !withinRadius ? `Ngoài bán kính (${formatDistanceVi(distanceM!)} / ${branchRadiusM}m)` : 'Chụp ảnh khuôn mặt'}
+              {!coords ? 'Vui lòng lấy vị trí GPS trước khi chụp ảnh' : !withinRadius ? `Ngoài bán kính (${formatDistanceVi(distanceM!)} / ${branchRadiusM}m)` : 'Chụp ảnh khuôn mặt & Đồng phục'}
             </Button>
-          ) : <Space style={{ width: '100%', justifyContent: 'space-between' }}><Tag color="green" icon={<CheckCircleOutlined />}>Đã chụp ảnh xác thực</Tag><Button size="small" icon={<ReloadOutlined />} onClick={() => { setPhotoDataUrl(''); void startCamera(); }}>Chụp lại ảnh</Button></Space>}
+          ) : (
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap><Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã chụp ảnh xác thực</Tag><Button size="small" icon={<ReloadOutlined />} onClick={() => { setPhotoDataUrl(''); setPinkResult(null); void startCamera(); }}>Chụp lại ảnh</Button></Space>
+              <div style={{ padding: '8px 10px', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4 }}>
+                {isProbation ? (
+                  <Tag color="gold" icon={<SafetyCertificateOutlined />} style={{ margin: 0 }}>Nhân viên thử việc: Miễn trừ kiểm tra tỷ lệ màu áo hồng</Tag>
+                ) : (
+                  <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                    <Tag color={pinkResult?.passed ? 'magenta' : 'warning'} icon={<SafetyCertificateOutlined />} style={{ margin: 0 }}>Tỷ lệ đồng phục áo hồng: {(pinkResult?.pinkRatioPercent ?? 0).toFixed(1)}% — {pinkResult?.passed ? 'Đạt chuẩn >= 10%' : 'Cảnh báo < 10% khung hình'}</Tag>
+                    <Checkbox checked={uniformConfirmed} onChange={(e) => setUniformConfirmed(e.target.checked)} style={{ fontSize: 12 }}>Tôi xác nhận đang mặc đồng phục áo hồng &amp; đeo bảng tên đúng quy định</Checkbox>
+                  </Space>
+                )}
+              </div>
+            </Space>
+          )}
         </Col>
       </Row>
     </Modal>

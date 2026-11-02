@@ -1,9 +1,10 @@
 'use client';
 
 import { Alert, Button, Descriptions, Space, Tabs, Tag } from 'antd';
-import { CalendarOutlined, ContactsOutlined, DollarOutlined, EditOutlined, IdcardOutlined, RiseOutlined, UserOutlined, UserSwitchOutlined } from '@ant-design/icons';
+import { CalendarOutlined, ContactsOutlined, DollarOutlined, EditOutlined, FileProtectOutlined, IdcardOutlined, RiseOutlined, UserOutlined, UserSwitchOutlined } from '@ant-design/icons';
 import { StatusTag } from '../StatusTag';
 import { BaseDetailDrawer } from './BaseDetailDrawer';
+import { EmployeeContractStorePanel } from './EmployeeContractStorePanel';
 import { EmployeeDossierHistoryTab } from './EmployeeDossierHistoryTab';
 import { fmtEmployeeSalary, type EmployeeRowItem } from './employee-table-columns';
 import { fmtVnd } from './payroll-types';
@@ -143,6 +144,12 @@ export function EmployeeDetailDrawer({
                 );
               })(),
             }] : []),
+            {
+              key: 'contracts',
+              forceRender: true,
+              label: <span><FileProtectOutlined /> Hợp đồng Điện tử &amp; Đánh giá TV</span>,
+              children: <EmployeeContractStorePanel employee={employee} canManage={canManage} />,
+            },
             {
               key: 'account',
               label: <span><UserSwitchOutlined /> Tài khoản Liên kết</span>,

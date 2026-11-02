@@ -9,6 +9,7 @@ import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { resolveShiftLabel, resolveStaffGroupLabel } from './employee-mapper.js';
 import { interviewRoutes } from './interviews.routes.js';
+import { recruitmentRsvpRoutes } from './recruitment-rsvp.routes.js';
 import { testBankRoutes } from './test-bank.routes.js';
 
 const zCandidateListQuery = zListQueryBase.extend({
@@ -161,5 +162,6 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
   });
 
   await interviewRoutes(app, ctx);
+  await recruitmentRsvpRoutes(app, ctx);
   await testBankRoutes(app, ctx);
 }

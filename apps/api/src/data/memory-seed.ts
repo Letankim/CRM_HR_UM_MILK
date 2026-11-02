@@ -19,6 +19,12 @@ export const MEMORY_IDS: SpreadsheetIds = {
 export const DEMO_PASSWORD = 'Umbm@2026';
 export const DEMO_PIN = '246810';
 
+export const SHIFT_DEFINITIONS = [
+  { code: 'CA_SANG', name: 'Ca Sáng', start_time: '07:00', end_time: '12:00', standard_hours: 5 },
+  { code: 'CA_CHIEU', name: 'Ca Chiều', start_time: '12:00', end_time: '18:00', standard_hours: 6 },
+  { code: 'CA_TOI', name: 'Ca Tối', start_time: '18:00', end_time: '23:00', standard_hours: 5 },
+] as const;
+
 function row(headers: readonly string[], data: Record<string, unknown>): string[] {
   return headers.map((h) => serializeCell(data[h]));
 }
@@ -44,33 +50,28 @@ export async function createMemoryGateway(): Promise<InMemorySheetsGateway> {
 
   const branchHeaders = SPREADSHEETS.CORE.tabs.BRANCHES;
   const branches = [
-    { code: 'CN01', name: 'Ụm Bò Milk Chi nhánh 1', lat: 10.7769, lng: 106.7009 },
-    { code: 'CN02', name: 'Ụm Bò Milk Chi nhánh 2', lat: 10.8012, lng: 106.7143 },
-    { code: 'CN03', name: 'Ụm Bò Milk Chi nhánh 3', lat: 10.7626, lng: 106.6602 },
-    { code: 'CN04', name: 'Ụm Bò Milk Chi nhánh 4', lat: 10.8231, lng: 106.6297 },
+    { id: newId(), code: 'CN01', name: 'Ụm Bò Milk Chi nhánh 1', address: '130 Vạn Kiếp, P.3, Q.Bình Thạnh', lat: 10.797820, lng: 106.693450, radius_m: 300, max_accuracy_m: 150 },
+    { id: newId(), code: 'CN02', name: 'Ụm Bò Milk Chi nhánh 2', address: '261 Tô Hiến Thành, P.13, Q.10', lat: 10.776650, lng: 106.666420, radius_m: 300, max_accuracy_m: 150 },
+    { id: newId(), code: 'CN03', name: 'Ụm Bò Milk Chi nhánh 3', address: '120 Hoàng Diệu 2, TP.Thủ Đức', lat: 10.856950, lng: 106.764310, radius_m: 300, max_accuracy_m: 150 },
+    { id: newId(), code: 'CN04', name: 'Ụm Bò Milk Chi nhánh 4', address: '111 Tôn Đản, P.14, Q.4', lat: 10.758820, lng: 106.705840, radius_m: 300, max_accuracy_m: 150 },
+    { id: 'br_xuong_sx', code: 'XUONG_SX', name: 'Xưởng Củ Chi', address: 'Xưởng Củ Chi, TP. Hồ Chí Minh', lat: 10.974420, lng: 106.494900, radius_m: 500, max_accuracy_m: 150 },
+    { id: 'br_van_phong', code: 'VAN_PHONG', name: 'Văn phòng Phú Nhuận', address: '10 Đặng Thai Mai, P.7, Q.Phú Nhuận', lat: 10.799150, lng: 106.687210, radius_m: 300, max_accuracy_m: 150 },
   ].map((b) => ({
-    ...sys(newId()),
+    ...sys(b.id),
     ...b,
-    address: 'TP. Hồ Chí Minh',
-    radius_m: 100,
-    max_accuracy_m: 50,
     timezone: 'Asia/Ho_Chi_Minh',
     status: 'ACTIVE',
     phone_contact: '0901000000',
     manager_employee_id: '',
     open_time: '07:00',
-    close_time: '22:30',
+    close_time: '23:00',
     effective_from: '2026-01-01',
     note: '',
   }));
   gw.seed(MEMORY_IDS.CORE, 'BRANCHES', [[...branchHeaders], ...branches.map((b) => row(branchHeaders, b))]);
 
   const shiftHeaders = SPREADSHEETS.CORE.tabs.SHIFT_TEMPLATES;
-  const shifts = [
-    { code: 'CA_SANG', name: 'Ca Sáng', start_time: '07:00', end_time: '12:00', standard_hours: 5 },
-    { code: 'CA_CHIEU', name: 'Ca Chiều', start_time: '12:00', end_time: '17:00', standard_hours: 5 },
-    { code: 'CA_TOI', name: 'Ca Tối', start_time: '17:00', end_time: '22:30', standard_hours: 5.5 },
-  ].map((s) => ({
+  const shifts = SHIFT_DEFINITIONS.map((s) => ({
     ...sys(newId()),
     ...s,
     effective_from: '2026-01-01',

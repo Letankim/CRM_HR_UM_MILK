@@ -76,7 +76,7 @@ export const zLeaveRequest = zSystemColumns.extend({
   employee_id: z.string(),
   branch_id: z.string(),
   leave_date: z.string(),
-  kind: z.enum(['PROBATION_OFF', 'WEEKLY_OFF', 'UNPAID_LEAVE']).default('WEEKLY_OFF'),
+  kind: z.enum(['PROBATION_OFF', 'WEEKLY_OFF', 'UNPAID_LEAVE', 'DOT_XUAT']).default('WEEKLY_OFF'),
   reason: z.string().default(''),
   status: z.enum(REQUEST_STATUSES).default('PENDING'),
   decided_by: z.string().default(''),
@@ -120,10 +120,11 @@ export const zShiftSwap = zSystemColumns.extend({
   peer_note: z.string().default(''),
   decided_at: z.string().default(''),
   allowance_amount_vnd: z.coerce.number().int().default(30000),
-  /** SWAP = đổi 2 ca giữa 2 người (đồng nghiệp đồng ý là đổi ngay); GIVE = nhường ca cho người khác */
-  kind: enumOrDefault(['SWAP', 'GIVE'] as const, 'GIVE'),
+  /** SWAP = đổi 2 ca giữa 2 người; GIVE = nhường ca; HR_DISPATCH = điều phối khẩn cấp (+30k); HR_SUPPORT = hỗ trợ liên chi nhánh */
+  kind: enumOrDefault(['SWAP', 'GIVE', 'HR_DISPATCH', 'HR_SUPPORT'] as const, 'GIVE'),
   /** true khi người nhận ca sẽ vượt quá 2 ca/ngày — bắt buộc HR phê duyệt */
   requires_hr_approval: zBool.default(false),
+  target_branch_id: z.string().default(''),
 });
 export type ShiftSwap = z.infer<typeof zShiftSwap>;
 export type ShiftSwapKind = ShiftSwap['kind'];
@@ -143,18 +144,22 @@ export const zAttendanceEvent = zSystemColumns.extend({
   photo_id: z.string().default(''),
   photo_sha256: z.string().default(''),
   device_info: z.string().default(''),
-  result: z.enum(['VALID', 'OUT_OF_RADIUS', 'LOW_ACCURACY', 'LATE', 'EARLY_LEAVE']).default('VALID'),
+  result: z.enum(['VALID', 'OUT_OF_RADIUS', 'OUT_OF_BOUNDS', 'LOW_ACCURACY', 'LATE', 'EARLY_LEAVE']).default('VALID'),
   work_date: z.string().default(''),
   shift_code: z.string().default('CA_SANG'),
   scheduled_time: z.string().default('07:00'),
   late_minutes: z.coerce.number().int().default(0),
   early_leave_minutes: z.coerce.number().int().default(0),
-  allowed_radius_m: z.coerce.number().default(100),
+  allowed_radius_m: z.coerce.number().default(300),
   gps_status: z.string().default('OK'),
   photo_drive_file_id: z.string().default(''),
   ip_address: z.string().default(''),
   anomaly_flags_json: z.string().default('[]'),
   note: z.string().default(''),
+  late_fine_tier: z.string().default('NONE'),
+  late_fine_vnd: z.coerce.number().min(0).default(0),
+  pink_ratio_percent: z.coerce.number().min(0).default(0),
+  uniform_verified: zBool.default(true),
 });
 export type AttendanceEvent = z.infer<typeof zAttendanceEvent>;
 

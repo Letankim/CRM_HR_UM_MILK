@@ -18,10 +18,22 @@ export interface BaseRecord {
 type SystemKeys = keyof BaseRecord;
 /** Cột bổ sung có giá trị mặc định trong schema Zod — được phép bỏ trống khi thêm mới (tự điền mặc định). */
 type DefaultedInsertKeys =
-  | 'must_change_pin' | 'pin_changed_at' | 'linked_assignment_id' | 'kind' | 'requires_hr_approval' | 'punch_type'
+  | 'must_change_pin' | 'pin_changed_at' | 'pin_history_json' | 'linked_assignment_id' | 'kind' | 'requires_hr_approval' | 'punch_type'
   | 'bank_qr_file_id' | 'admin_signature_file_id' | 'admin_signed_by' | 'admin_signed_at'
   | 'finance_signature_file_id' | 'finance_signed_by' | 'finance_signed_at' | 'employee_signature_file_id'
-  | 'paid_at' | 'paid_by' | 'payment_reference' | 'experience_track';
+  | 'paid_at' | 'paid_by' | 'payment_reference' | 'experience_track'
+  | 'avatar_file_id' | 'attendance_credit_points' | 'emergency_leave_grant_count' | 'probation_meet_done' | 'probation_meet_at' | 'probation_meet_note' | 'probation_eval_score' | 'vip_off_window_until' | 'contracts_json'
+  | 'probation_cycle_days' | 'probation_work_days' | 'probation_off_days'
+  | 'is_vip' | 'vip_rank' | 'ai_score_14' | 'ai_qualified' | 'ai_summary' | 'red_flag_reason' | 'form_payload_json'
+  | 'rubric_block' | 'score_13' | 'rubric_details_json' | 'rsvp_token'
+  | 'late_fine_tier' | 'late_fine_vnd' | 'pink_ratio_percent' | 'uniform_verified'
+  | 'ot_daily_allowance_vnd' | 'manual_base_add_vnd' | 'manual_ot_add_vnd' | 'manual_bonus_vnd'
+  | 'manual_advance_deduct_vnd' | 'manual_kpi_deduct_vnd' | 'manual_uniform_deduct_vnd'
+  | 'user_id' | 'date_of_birth' | 'gender' | 'citizen_id' | 'citizen_issue_date' | 'permanent_address' | 'current_address'
+  | 'emergency_contact_name' | 'emergency_contact_phone' | 'probation_start' | 'probation_end' | 'official_from' | 'resigned_at' | 'resign_reason'
+  | 'bank_name' | 'bank_account_number' | 'bank_account_holder' | 'bank_branch' | 'tax_code' | 'social_insurance_no'
+  | 'health_certificate_expiry' | 'uniform_status' | 'contract_code' | 'contract_signed_at' | 'contract_file_id'
+  | 'id_card_front_file_id' | 'id_card_back_file_id' | 'base_hourly_rate_vnd' | 'note';
 export type InsertInput<T extends BaseRecord> = Omit<T, SystemKeys | DefaultedInsertKeys> & Partial<Pick<T, Extract<keyof T, DefaultedInsertKeys>>> & { id?: string; created_at?: string; updated_at?: string };
 export type UpdatePatch<T extends BaseRecord> = Partial<Omit<T, SystemKeys>> & { is_deleted?: boolean };
 

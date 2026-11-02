@@ -112,6 +112,8 @@ export const zUser = zSystemColumns.extend({
   must_change_pin: zBool.default(false),
   /** Thời điểm đổi mã PIN gần nhất — dùng để tính chu kỳ bắt buộc đổi PIN định kỳ. */
   pin_changed_at: z.string().default(''),
+  /** Lịch sử các mã băm PIN cũ (JSON array) để chặn nhân viên dùng lại mã PIN cũ đã từng sử dụng. */
+  pin_history_json: z.string().default('[]'),
 });
 export type User = z.infer<typeof zUser>;
 

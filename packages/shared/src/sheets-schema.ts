@@ -15,12 +15,7 @@ export const SPREADSHEETS = {
       SHIFT_TEMPLATES: cols('code', 'name', 'start_time', 'end_time', 'effective_from', 'effective_to', 'status', 'shift_group', 'break_minutes', 'standard_hours', 'is_overnight', 'note'),
       STAFFING_RULES: cols('branch_id', 'shift_template_id', 'min_staff', 'max_staff', 'enforcement', 'effective_from', 'day_of_week', 'required_groups_json', 'approved_by', 'note'),
       POLICIES: cols('key', 'value_json', 'policy_version', 'effective_from', 'approved_by', 'note', 'category', 'title', 'is_locked_policy', 'effective_to', 'approved_at'),
-      USERS: cols(
-        'username', 'phone', 'display_name', 'password_hash', 'role', 'permissions_json', 'branch_scope',
-        'employee_id', 'status', 'session_version', 'failed_login_count', 'locked_until', 'last_login_at',
-        'activated_by', 'activated_at', 'revoked_at', 'email', 'revoked_by', 'revoke_reason',
-        'must_change_pin', 'pin_changed_at',
-      ),
+      USERS: cols('username', 'phone', 'display_name', 'password_hash', 'role', 'permissions_json', 'branch_scope', 'employee_id', 'status', 'session_version', 'failed_login_count', 'locked_until', 'last_login_at', 'activated_by', 'activated_at', 'revoked_at', 'email', 'revoked_by', 'revoke_reason', 'must_change_pin', 'pin_changed_at', 'pin_history_json'),
       SYSTEM_SETTINGS: cols('key', 'value', 'note', 'category', 'label', 'value_type'),
       MAINTENANCE: cols('scope', 'enabled', 'message', 'expected_end_at', 'target_module', 'title', 'started_at'),
     },
@@ -28,16 +23,8 @@ export const SPREADSHEETS = {
   HR: {
     title: 'UMBM_HR',
     tabs: {
-      CANDIDATES: cols(
-        'source_row', 'full_name', 'phone', 'position', 'branch_pref', 'status', 'hr_note',
-        'candidate_code', 'source_channel', 'email', 'birth_year', 'gender', 'staff_group',
-        'shift_pref', 'experience_note', 'cv_file_id', 'assigned_hr_id', 'contacted_at',
-      ),
-      INTERVIEWS: cols(
-        'candidate_id', 'start_at', 'end_at', 'meet_link', 'interviewer_id', 'status', 'score', 'comment', 'decision',
-        'branch_id', 'duration_minutes', 'calendar_event_id', 'candidate_confirmed', 'reschedule_requested',
-        'reschedule_reason', 'appearance_score', 'attitude_score', 'skill_score', 'decided_at', 'experience_track',
-      ),
+      CANDIDATES: cols('source_row', 'full_name', 'phone', 'position', 'branch_pref', 'status', 'hr_note', 'candidate_code', 'source_channel', 'email', 'birth_year', 'gender', 'staff_group', 'shift_pref', 'experience_note', 'cv_file_id', 'assigned_hr_id', 'contacted_at', 'is_vip', 'vip_rank', 'ai_score_14', 'ai_qualified', 'red_flag_reason', 'form_payload_json'),
+      INTERVIEWS: cols('candidate_id', 'start_at', 'end_at', 'meet_link', 'interviewer_id', 'status', 'score', 'comment', 'decision', 'branch_id', 'duration_minutes', 'calendar_event_id', 'candidate_confirmed', 'reschedule_requested', 'reschedule_reason', 'appearance_score', 'attitude_score', 'skill_score', 'decided_at', 'experience_track', 'rubric_block', 'score_13', 'rubric_details_json', 'rsvp_token'),
       EMPLOYEES: cols(
         'employee_code', 'full_name', 'phone', 'branch_id', 'staff_group', 'stage', 'probation_start',
         'probation_end', 'official_from', 'status', 'user_id', 'candidate_id', 'email', 'date_of_birth',
@@ -46,6 +33,8 @@ export const SPREADSHEETS = {
         'default_shift_code', 'probation_cycle_days', 'probation_work_days', 'probation_off_days',
         'resigned_at', 'resign_reason', 'bank_name', 'bank_account_number', 'bank_account_holder',
         'tax_code', 'base_hourly_rate_vnd', 'note', 'bank_qr_file_id',
+        'avatar_file_id', 'attendance_credit_points', 'emergency_leave_grant_count', 'probation_meet_done',
+        'probation_meet_note', 'vip_off_window_until', 'contracts_json',
       ),
       EMPLOYEE_STAGE_HISTORY: cols(
         'employee_id', 'from_stage', 'to_stage', 'effective_from', 'decided_by', 'note',
@@ -80,7 +69,7 @@ export const SPREADSHEETS = {
         'requester_id', 'peer_id', 'from_assignment_id', 'to_assignment_id', 'reason', 'status',
         'peer_responded_at', 'decided_by', 'decision_reason', 'allowance_eligible', 'swap_code', 'branch_id',
         'from_work_date', 'from_shift_code', 'to_work_date', 'to_shift_code', 'has_conflict', 'staffing_valid',
-        'requested_at', 'peer_note', 'decided_at', 'allowance_amount_vnd', 'kind', 'requires_hr_approval',
+        'requested_at', 'peer_note', 'decided_at', 'allowance_amount_vnd', 'kind', 'requires_hr_approval', 'target_branch_id',
       ),
     },
   },
@@ -92,6 +81,7 @@ export const SPREADSHEETS = {
         'accuracy_m', 'distance_m', 'within_radius', 'photo_id', 'photo_sha256', 'device_info', 'result',
         'work_date', 'shift_code', 'scheduled_time', 'late_minutes', 'early_leave_minutes',
         'allowed_radius_m', 'gps_status', 'photo_drive_file_id', 'ip_address', 'anomaly_flags_json', 'note',
+        'late_fine_tier', 'late_fine_vnd', 'pink_ratio_percent', 'uniform_verified',
       ),
       ATTENDANCE_RECORDS: cols(
         'assignment_id', 'employee_id', 'employee_stage', 'branch_id', 'work_date', 'shift_template_id',
@@ -146,6 +136,8 @@ export const SPREADSHEETS = {
         'attendance_bonus_vnd', 'kpi_bonus_vnd', 'other_allowances_vnd', 'positive_adjustments_vnd',
         'approved_deductions_vnd', 'advance_deduction_vnd', 'late_count', 'late_minutes_total',
         'bank_name', 'bank_account_number', 'bank_account_holder', 'snapshot_at',
+        'late_fine_vnd', 'ot_daily_allowance_vnd', 'manual_base_add_vnd', 'manual_ot_add_vnd',
+        'manual_bonus_vnd', 'manual_advance_deduct_vnd', 'manual_kpi_deduct_vnd', 'manual_uniform_deduct_vnd',
       ),
       PAYSLIPS: cols(
         'period_id', 'employee_id', 'snapshot_id', 'revision', 'status', 'published_at', 'payslip_code',

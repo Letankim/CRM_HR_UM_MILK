@@ -1,10 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import {
-  addDaysYmd, DEFAULT_SHIFT_LABELS, EMPLOYEE_STAGE_LABELS, evaluateOffWindow, mondayOfWeek,
-  REQUEST_STATUS_LABELS, STATUS_VISUAL_MAP, type DefaultShiftCode, type Employee, type EmployeeStage,
-  type LeaveRequest, type ShiftAssignment,
-} from '@umbm/shared';
+import { addDaysYmd, DEFAULT_SHIFT_LABELS, EMPLOYEE_STAGE_LABELS, evaluateOffWindow, mondayOfWeek, REQUEST_STATUS_LABELS, STATUS_VISUAL_MAP, type DefaultShiftCode, type Employee, type EmployeeStage, type LeaveRequest, type ShiftAssignment } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
@@ -20,11 +16,13 @@ import { planOfficialWeek, planProbationCycle, type PlannedShift, type PlanIssue
 import { summarizeOfficialEmployeeWeekLoads } from '../services/schedule-fairness.js';
 import { findProbationLock, findWeekLock, isCountedWorkShift, matchEmp, probationLockCode, resolveProbationCycle, weekLockCode } from '../services/schedule-rules.js';
 import { clearShiftAttendanceOnWorkflowOverride, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
+import { executeSchedulePlannerCleanup, type CleanupAction } from '../services/weekly-off-gate.service.js';
 import { emitScheduleRealtime, findBranchShiftTemplate, resolveEmployeeBranchId } from './account-employee-sync.js';
 
 const zWeekQuery = z.object({ week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày đầu tuần phải theo định dạng YYYY-MM-DD').optional(), branch_id: z.string().trim().optional().default('ALL'), refresh: z.string().optional() });
 const zWeekLockBody = z.object({ week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày đầu tuần phải theo định dạng YYYY-MM-DD'), branch_id: z.string().trim().optional().default('ALL'), note: z.string().trim().max(300).optional().default('') });
 const zProbationLockBody = z.object({ employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân viên thử việc'), note: z.string().trim().max(300).optional().default('') });
+const zCleanupBody = z.object({ week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày đầu tuần phải theo định dạng YYYY-MM-DD').optional(), branch_id: z.string().trim().optional().default('ALL'), action: z.enum(['CLEAN_STALE_DRAFTS', 'DEDUPE_SHIFTS', 'BACKFILL_NEW_OFFICIAL']).optional(), actions: z.array(z.enum(['CLEAN_STALE_DRAFTS', 'DEDUPE_SHIFTS', 'BACKFILL_NEW_OFFICIAL'])).optional() });
 const OFF_ACTIVE = new Set(['PENDING', 'DRAFT', 'APPROVED']);
 
 function mapOff(ctx: AppContext, l: LeaveRequest) {
@@ -39,10 +37,8 @@ function mapExistingShift(ctx: AppContext, a: ShiftAssignment) {
   const tpl = (a.shift_template_id ? ctx.db.shiftTemplates.get(a.shift_template_id) : undefined) ?? findBranchShiftTemplate(ctx, a.shift_code, bId);
   const stage = (emp?.stage ?? a.employee_stage) as EmployeeStage;
   return {
-    id: a.id, employeeId: emp?.id ?? a.employee_id, employeeCode: emp?.employee_code ?? a.employee_id, employeeName: emp?.full_name ?? 'Nhân sự',
-    stage, stageLabel: EMPLOYEE_STAGE_LABELS[stage] ?? 'Nhân sự', branchId: bId, branchCode: br?.code ?? '', branchName: br?.name ?? 'Chi nhánh',
-    workDate: a.work_date, shiftCode: a.shift_code, shiftLabel: tpl?.name ?? DEFAULT_SHIFT_LABELS[a.shift_code as DefaultShiftCode] ?? a.shift_code,
-    startAt: a.start_at || tpl?.start_time || '07:00', endAt: a.end_at || tpl?.end_time || '12:00', hours: a.scheduled_hours || tpl?.standard_hours || 5,
+    id: a.id, employeeId: emp?.id ?? a.employee_id, employeeCode: emp?.employee_code ?? a.employee_id, employeeName: emp?.full_name ?? 'Nhân sự', stage, stageLabel: EMPLOYEE_STAGE_LABELS[stage] ?? 'Nhân sự', branchId: bId, branchCode: br?.code ?? '', branchName: br?.name ?? 'Chi nhánh',
+    workDate: a.work_date, shiftCode: a.shift_code, shiftLabel: tpl?.name ?? DEFAULT_SHIFT_LABELS[a.shift_code as DefaultShiftCode] ?? a.shift_code, startAt: a.start_at || tpl?.start_time || '07:00', endAt: a.end_at || tpl?.end_time || '12:00', hours: a.scheduled_hours || tpl?.standard_hours || 5,
     status: a.status, statusLabel: STATUS_VISUAL_MAP[a.status]?.label ?? a.status, source: a.source, note: a.note ?? '',
   };
 }
@@ -70,11 +66,8 @@ async function applyPlan(ctx: AppContext, plan: PlanResult, lock: { code: string
     for (const d of staleDrafts) await ctx.db.shiftAssignments.softDelete(d.id, d.version, actorId);
   }
   const created = await Promise.all(plan.planned.map((p) => ctx.db.shiftAssignments.insert({
-    schedule_week_id: lock.code, employee_id: p.employeeId, branch_id: p.branchId, work_date: p.workDate, shift_template_id: p.templateId,
-    start_at: p.startAt, end_at: p.endAt, status: 'PUBLISHED', source: 'AUTO_PLAN', employee_stage: p.stage, day_type: 'WORK', shift_code: p.shiftCode,
-    scheduled_hours: p.hours, swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now,
-    note: p.isCoverShift ? 'Tự động điều phối bù ca OFF để đủ 1 người/ca khi HR chốt lịch' : 'Tự động sắp ca theo ca mặc định (1 người/ca) khi HR chốt lịch',
-    linked_assignment_id: '',
+    schedule_week_id: lock.code, employee_id: p.employeeId, branch_id: p.branchId, work_date: p.workDate, shift_template_id: p.templateId, start_at: p.startAt, end_at: p.endAt, status: 'PUBLISHED', source: 'AUTO_PLAN', employee_stage: p.stage, day_type: 'WORK', shift_code: p.shiftCode,
+    scheduled_hours: p.hours, swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now, note: p.isCoverShift ? 'Tự động điều phối bù ca OFF để đủ 1 người/ca khi HR chốt lịch' : 'Tự động sắp ca theo ca mặc định (1 người/ca) khi HR chốt lịch', linked_assignment_id: '',
   }, actorId)));
   const existing = ctx.db.scheduleWeeks.find((w) => w.code === lock.code);
   const record = { branch_id: lock.branchId, week_start: lock.weekStart, week_end: lock.weekEnd, status: 'PUBLISHED' as const, published_by: actorId, published_at: now, code: lock.code, schedule_kind: lock.kind, store_confirmed_by: '', store_confirmed_at: '', locked_at: now, note: lock.note || `Đã xếp ${created.length} ca · Duyệt ${pendingOffs.length} đơn OFF · ${plan.issues.length} cảnh báo` };
@@ -87,8 +80,11 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
   const readPerms = [requirePermission('schedule.read', 'schedule.propose', 'schedule.publish', 'leave.approve'), async (req: FastifyRequest) => {
     if (req.auth?.user.role === 'FINANCE') throw Errors.forbidden('Bộ phận Kế toán không sử dụng chức năng chốt lịch và tự động sắp ca');
   }];
-  const preloadWeekHistory = (weekStart: string, weekEnd: string, forceRefresh = false) =>
-    loadShiftsAcrossPartitions(ctx, addDaysYmd(weekStart, -7 * Math.min(12, Math.max(4, ctx.db.employees.filter((e) => e.status === 'ACTIVE').length))), weekEnd, { forceRefresh });
+  const preloadWeekHistory = (weekStart: string, weekEnd: string, forceRefresh = false) => loadShiftsAcrossPartitions(ctx, addDaysYmd(weekStart, -7 * Math.min(12, Math.max(4, ctx.db.employees.filter((e) => e.status === 'ACTIVE').length))), weekEnd, { forceRefresh });
+  const resolveTargetBranches = (request: FastifyRequest, branchId: string) => {
+    const accessible = filterByBranch(request, ctx.db.branches.filter((b) => b.status === 'ACTIVE').sort((a, b) => a.code.localeCompare(b.code)), (b) => b.id);
+    return { accessible, targets: branchId === 'ALL' ? accessible : accessible.filter((b) => b.id === branchId || b.code === branchId) };
+  };
 
   app.get('/api/admin/schedule-planner/week', { preHandler: readPerms }, async (request) => {
     const q = zWeekQuery.parse(request.query ?? {});
@@ -96,12 +92,11 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
     const settings = getOperationSettings(ctx.db), { todayStr, nowHm } = getVnNowDateAndHm(), offWindow = evaluateOffWindow(settings, todayStr, nowHm);
     const weekStart = q.week_start ? mondayOfWeek(q.week_start) : offWindow.targetWeekStart, weekEnd = addDaysYmd(weekStart, 6);
     const historicalShifts = await preloadWeekHistory(weekStart, weekEnd, q.refresh === '1');
-    const accessibleBranches = filterByBranch(request, ctx.db.branches.filter((b) => b.status === 'ACTIVE').sort((a, b) => a.code.localeCompare(b.code)), (b) => b.id);
+    const { accessible: accessibleBranches, targets: targetBranches } = resolveTargetBranches(request, q.branch_id);
     const branchStatuses = accessibleBranches.map((b) => {
       const lk = findWeekLock(ctx, b.id, weekStart);
       return { branchId: b.id, branchCode: b.code, branchName: b.name, isLocked: Boolean(lk), lockedAt: lk?.locked_at ?? null, lockNote: lk?.note ?? '' };
     });
-    const targetBranches = q.branch_id === 'ALL' ? accessibleBranches : accessibleBranches.filter((b) => b.id === q.branch_id || b.code === q.branch_id);
     const plannedRaw: PlannedShift[] = [], issues: PlanIssue[] = [], offRaw: LeaveRequest[] = [], existingRaw: ShiftAssignment[] = [];
 
     for (const b of targetBranches) {
@@ -125,8 +120,7 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
     const offConflicts = summarizeWeekOffConflicts(ctx, { weekStart, weekEnd, branchIds: targetBranchIds });
     const employeeLoads = summarizeOfficialEmployeeWeekLoads(ctx, { weekStart, weekEnd, branchIds: targetBranchIds, existingShifts: existingRaw, plannedShifts: planned, offEmployeeIdsByDate: offRequests, historicalShifts });
     return sendSuccess(request, 'Lấy dữ liệu chốt lịch tuần & dự kiến sắp ca thành công', {
-      weekStart, weekEnd, branchId: q.branch_id, offWindow, isLocked: allLocked,
-      lockedAt: firstLock?.locked_at ?? null, lockNote: firstLock?.note ?? '',
+      weekStart, weekEnd, branchId: q.branch_id, offWindow, isLocked: allLocked, lockedAt: firstLock?.locked_at ?? null, lockNote: firstLock?.note ?? '',
       branchStatuses, existingShifts, offRequests, offConflicts, planned, issues, employeeLoads,
       summary: { plannedCount: planned.length, existingCount: existingShifts.length, offCount: offRequests.length, pendingOffCount: offRequests.filter((o) => o.status === 'PENDING').length, offConflictCount: offConflicts.length, issueCount: issues.length },
     });
@@ -136,8 +130,7 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
     const body = zWeekLockBody.parse(request.body ?? {});
     if (body.branch_id !== 'ALL') assertBranchAccess(request, body.branch_id);
     const weekStart = mondayOfWeek(body.week_start), weekEnd = addDaysYmd(weekStart, 6), actorId = request.auth!.user.id;
-    const accessibleBranches = filterByBranch(request, ctx.db.branches.filter((b) => b.status === 'ACTIVE').sort((a, b) => a.code.localeCompare(b.code)), (b) => b.id);
-    const targetBranches = body.branch_id === 'ALL' ? accessibleBranches : accessibleBranches.filter((b) => b.id === body.branch_id || b.code === body.branch_id);
+    const { targets: targetBranches } = resolveTargetBranches(request, body.branch_id);
     const unlockedBranches = targetBranches.filter((b) => !findWeekLock(ctx, b.id, weekStart));
     if (unlockedBranches.length === 0) {
       return sendSuccess(request, 'Chi nhánh đã chốt lịch cho tuần này — chỉ xem lại dữ liệu lịch đã chốt, không sinh lại lịch', { weekStart, createdCount: 0, approvedOffCount: 0, createdIds: [], issues: [], alreadyLocked: true });
@@ -169,6 +162,19 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
     return sendSuccess(request, `Đã chốt lịch tuần, duyệt ${approvedOffCount} đơn OFF và tự động sắp ${createdCount} ca theo ca mặc định${warn}`, { weekStart, createdCount, approvedOffCount, createdIds, issues: allIssues });
   });
 
+  app.post('/api/admin/schedule-planner/cleanup', { preHandler: requirePermission('schedule.publish') }, async (request) => {
+    const body = zCleanupBody.parse(request.body ?? {});
+    if (body.branch_id !== 'ALL') assertBranchAccess(request, body.branch_id);
+    const { todayStr } = getVnNowDateAndHm(), weekStart = mondayOfWeek(body.week_start ?? todayStr), weekEnd = addDaysYmd(weekStart, 6), actorId = request.auth!.user.id;
+    const { targets: targetBranches } = resolveTargetBranches(request, body.branch_id);
+    const actions: CleanupAction[] = body.actions && body.actions.length > 0 ? body.actions : body.action ? [body.action] : ['CLEAN_STALE_DRAFTS', 'DEDUPE_SHIFTS', 'BACKFILL_NEW_OFFICIAL'];
+    const historicalShifts = await preloadWeekHistory(weekStart, weekEnd);
+    const res = await executeSchedulePlannerCleanup(ctx, { weekStart, branchIds: targetBranches.map((b) => b.id), actions, historicalShifts, actorId });
+    await recalculateOpenPeriods(ctx, actorId);
+    await ctx.audit.record(auditContext(request), { action: 'schedule.week.cleanup', entity: 'SHIFT_ASSIGNMENTS', entityId: weekStart, after: { ...res, actions } });
+    return sendSuccess(request, `Đã dọn lịch tuần ${weekStart}: xóa ${res.cleanedDraftCount} ca nháp, khử ${res.dedupedCount} ca trùng và bổ sung ${res.backfilledCount} ca chính thức`, { ...res, branchId: body.branch_id, actions });
+  });
+
   app.get('/api/admin/schedule-planner/probation', { preHandler: readPerms }, async (request) => {
     const branchId = z.string().trim().optional().default('ALL').parse((request.query as { branch_id?: string } | undefined)?.branch_id);
     const { todayStr } = getVnNowDateAndHm();
@@ -182,11 +188,9 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
       const existingShifts = historicalShifts.filter((a) => isEmp(a.employee_id) && a.work_date >= plan.cycle.start && a.work_date <= plan.cycle.end && a.status !== 'DRAFT' && isCountedWorkShift(a)).map((a) => mapExistingShift(ctx, a));
       const br = ctx.db.branches.get(emp.branch_id);
       return {
-        employeeId: emp.id, employeeVersion: emp.version, employeeCode: emp.employee_code, employeeName: emp.full_name, branchId: emp.branch_id, branchCode: br?.code ?? '', branchName: br?.name ?? 'Chi nhánh',
-        defaultShiftCode: emp.default_shift_code, cycleStart: plan.cycle.start, cycleEnd: plan.cycle.end, workRequired: plan.cycle.workRequired, offLimit: plan.cycle.offLimit,
-        existingCount: plan.existingCount, completedCount, readyForOfficial: completedCount >= plan.cycle.workRequired,
-        existingShifts, offRequests: plan.offRequests.map((l) => mapOff(ctx, l)), planned: locked ? [] : enrichPlanned(ctx, plan.planned), issues: locked ? [] : plan.issues,
-        isLocked: locked, lockedAt: lock?.locked_at ?? null, lockNote: lock?.note ?? '',
+        employeeId: emp.id, employeeVersion: emp.version, employeeCode: emp.employee_code, employeeName: emp.full_name, branchId: emp.branch_id, branchCode: br?.code ?? '', branchName: br?.name ?? 'Chi nhánh', defaultShiftCode: emp.default_shift_code,
+        cycleStart: plan.cycle.start, cycleEnd: plan.cycle.end, workRequired: plan.cycle.workRequired, offLimit: plan.cycle.offLimit, existingCount: plan.existingCount, completedCount, readyForOfficial: completedCount >= plan.cycle.workRequired,
+        existingShifts, offRequests: plan.offRequests.map((l) => mapOff(ctx, l)), planned: locked ? [] : enrichPlanned(ctx, plan.planned), issues: locked ? [] : plan.issues, isLocked: locked, lockedAt: lock?.locked_at ?? null, lockNote: lock?.note ?? '',
         pendingExtraShifts: ctx.db.shiftAssignments.filter((a) => isEmp(a.employee_id) && a.status === 'DRAFT' && a.source === 'PROBATION_EXTRA').length,
       };
     });
@@ -200,12 +204,9 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
     if (emp.stage !== 'PROBATION') throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Chỉ áp dụng chốt lịch chu kỳ 12 ngày cho nhân viên thử việc', body.employee_id);
     assertBranchAccess(request, emp.branch_id);
     const { todayStr } = getVnNowDateAndHm(), actorId = request.auth!.user.id, cyc = resolveProbationCycle(emp, todayStr);
-    const historicalShifts = await loadShiftsAcrossPartitions(ctx, cyc.start, cyc.end);
-    const plan = planProbationCycle(ctx, emp, todayStr, historicalShifts);
+    const plan = planProbationCycle(ctx, emp, todayStr, await loadShiftsAcrossPartitions(ctx, cyc.start, cyc.end));
     if (findProbationLock(ctx, emp, plan.cycle.start)) {
-      return sendSuccess(request, `Chu kỳ thử việc của ${emp.full_name} đã chốt lịch — chỉ xem lại lịch đã chốt`, {
-        createdCount: 0, approvedOffCount: 0, cycleStart: plan.cycle.start, cycleEnd: plan.cycle.end, issues: [], alreadyLocked: true,
-      });
+      return sendSuccess(request, `Chu kỳ thử việc của ${emp.full_name} đã chốt lịch — chỉ xem lại lịch đã chốt`, { createdCount: 0, approvedOffCount: 0, cycleStart: plan.cycle.start, cycleEnd: plan.cycle.end, issues: [], alreadyLocked: true });
     }
     const code = probationLockCode(emp.employee_code, plan.cycle.start, ctx.db.partitionMonth);
     const result = await applyPlan(ctx, plan, { code, branchId: emp.branch_id, weekStart: plan.cycle.start, weekEnd: plan.cycle.end, kind: 'PROBATION_12_DAYS', note: body.note }, actorId);

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { App, Button, Card, Flex, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
-import { CheckCircleOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FilePdfOutlined, FileZipOutlined, MessageOutlined, QrcodeOutlined, SearchOutlined, WarningOutlined } from '@ant-design/icons';
+import { CalculatorOutlined, CheckCircleOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FilePdfOutlined, FileZipOutlined, MessageOutlined, QrcodeOutlined, SearchOutlined, WarningOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api, ApiClientError } from '@/lib/api';
@@ -12,6 +12,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { SelectableTable } from './BulkActionBar';
 import { exportPayrollSheet, PayrollConfirmationCell } from './payroll-sheet-helpers';
 import { PayrollBankQrPayModal } from './PayrollBankQrPayModal';
+import { PayrollManualColumnsModal } from './PayrollManualColumnsModal';
 import { PayrollMissingShiftsModal } from './PayrollMissingShiftsModal';
 import { RowActionButtons } from './RowActionButtons';
 import { allowancesOf, bonusesOf, deductionsOf, fmtVnd, type MissingShiftDetailItem, type PayPeriodRow, type PayrollSnapshotItem } from './payroll-types';
@@ -23,13 +24,13 @@ const sum = (rows: PayrollSnapshotItem[], f: (r: PayrollSnapshotItem) => number)
 
 export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodRow; onOpenPayslip: (r: PayrollSnapshotItem) => void }) {
   const qc = useQueryClient(), router = useRouter(), can = useCan(), me = useMe().data?.user;
-  const isFinance = me?.role === 'FINANCE', { message } = App.useApp();
+  const isFinance = me?.role === 'FINANCE', canManual6 = (me?.role === 'FINANCE' || me?.role === 'ADMIN') && can('payroll.manage'), { message } = App.useApp();
   const canManage = can('payroll.manage'), canPay = isFinance && can('payroll.pay', 'payroll.manage');
   const [searchInput, setSearchInput] = useState(''), debouncedQ = useDebouncedValue(searchInput, 400);
   const [branchFilter, setBranchFilter] = useState('ALL'), [rateFilter, setRateFilter] = useState('ALL'), [confirmFilter, setConfirmFilter] = useState('ALL');
-  const [page, setPage] = useState(1), [perPage, setPerPage] = useState(12);
-  const [missingModalOpen, setMissingModalOpen] = useState(false);
+  const [page, setPage] = useState(1), [perPage, setPerPage] = useState(12), [missingModalOpen, setMissingModalOpen] = useState(false);
   const [inspectEmp, setInspectEmp] = useState<PayrollSnapshotItem | null>(null), [qrPayTarget, setQrPayTarget] = useState<PayrollSnapshotItem | null>(null);
+  const [manualTarget, setManualTarget] = useState<PayrollSnapshotItem | null>(null);
   const { promptDecision, decisionModalElement } = useWorkflowDecisionModal();
 
   useEffect(() => { setPage(1); }, [period.id, branchFilter, rateFilter, confirmFilter, debouncedQ]);
@@ -184,6 +185,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
                   detailTooltip="Xem chi tiết phiếu lương" onViewDetail={() => onOpenPayslip(r)}
                   menuItems={[
                     { key: 'pdf', icon: <FilePdfOutlined />, label: 'Xuất phiếu lương', onClick: () => void downloadSinglePdf(r) },
+                    ...(canManual6 && period.status !== 'PAID' && r.payslipStatus !== 'PAID' ? [{ key: 'manual6', icon: <CalculatorOutlined />, label: 'Nhập tay 6 cột Kế toán', onClick: () => setManualTarget(r) }] : []),
                     ...(isFinance && r.employeeConfirmedAt ? [{ key: 'qr', icon: <QrcodeOutlined />, label: 'Mã QR Ngân hàng & Đánh dấu Đã TT', onClick: () => setQrPayTarget(r) }] : []),
                     ...(canAdj ? [{ key: 'adjust', icon: <EditOutlined />, label: 'Điều chỉnh phiếu lương (+ / -)', onClick: () => onOpenPayslip(r) }] : []),
                   ]}
@@ -211,6 +213,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
       />
       <PayrollMissingShiftsModal open={missingModalOpen} period={period} selectedEmployee={inspectEmp} allMissingShifts={allMissingShifts} onClose={() => setMissingModalOpen(false)} onShowAll={() => setInspectEmp(null)} onOpenPayslip={onOpenPayslip} />
       {isFinance && <PayrollBankQrPayModal row={qrPayTarget} onClose={() => setQrPayTarget(null)} />}
+      {canManual6 && <PayrollManualColumnsModal row={manualTarget} onClose={() => setManualTarget(null)} />}
       {decisionModalElement}
     </Card>
   );

@@ -64,7 +64,30 @@ export const SYSTEM_CONFIG = {
     standardHoursPerDay: readEnvNumber(['APP_STANDARD_HOURS_PER_DAY'], 8),
     /** Hệ số tăng ca mặc định */
     overtimeMultiplier: readEnvNumber(['APP_OT_MULTIPLIER'], 1.5),
-    gpsRadiusMeters: readEnvNumber(['APP_GPS_DEFAULT_RADIUS_M'], 100),
-    gpsMaxAccuracyMeters: readEnvNumber(['APP_GPS_DEFAULT_MAX_ACCURACY_M'], 80),
+    gpsRadiusMeters: readEnvNumber(['APP_GPS_DEFAULT_RADIUS_M'], 300),
+    gpsFactoryRadiusMeters: readEnvNumber(['APP_GPS_FACTORY_RADIUS_M'], 500),
+    gpsMaxAccuracyMeters: readEnvNumber(['APP_GPS_DEFAULT_MAX_ACCURACY_M'], 150),
+    /** Đơn giá lương theo giờ chuẩn (Thử việc: 21.000đ/h, Chính thức: 25.500đ/h) */
+    probationHourlyRateVnd: readEnvNumber(['APP_PROBATION_HOURLY_RATE_VND'], 21000),
+    officialHourlyRateVnd: readEnvNumber(['APP_OFFICIAL_HOURLY_RATE_VND'], 25500),
+    /** Ngưỡng giờ làm việc trong ngày để hưởng phụ cấp OT định mức (+30.000đ ở mốc 10h, +60.000đ ở mốc 15h) */
+    otDailyThreshold1Hours: readEnvNumber(['APP_OT_DAILY_THRESHOLD_1_H'], 10),
+    otDailyThreshold2Hours: readEnvNumber(['APP_OT_DAILY_THRESHOLD_2_H'], 15),
+    otAllowancePerSlotVnd: readEnvNumber(['APP_OT_ALLOWANCE_SLOT_VND'], 30000),
+    /** Cửa thời gian điểm danh & Kiểm tra đồng phục */
+    checkInOpenBeforeMinutes: readEnvNumber(['APP_CHECKIN_OPEN_BEFORE_MINUTES'], 30),
+    checkInAutoAbsentAfterHours: readEnvNumber(['APP_CHECKIN_AUTO_ABSENT_HOURS'], 3),
+    pinkUniformMinRatioPercent: readEnvNumber(['APP_PINK_UNIFORM_MIN_RATIO_PERCENT'], 10),
+    /** Quy tắc Bổ sung công & Gamification điểm tích lũy */
+    adjustmentWindowStartHm: readEnv(['APP_ADJUSTMENT_WINDOW_START_HM'], '08:00'),
+    adjustmentWindowEndHm: readEnv(['APP_ADJUSTMENT_WINDOW_END_HM'], '21:00'),
+    adjustmentWeeklyMaxCount: readEnvNumber(['APP_ADJUSTMENT_WEEKLY_MAX_COUNT'], 1),
+    adjustmentCreditPerValidShift: readEnvNumber(['APP_ADJUSTMENT_CREDIT_PER_SHIFT'], 2),
+    adjustmentFullShiftCreditCost: readEnvNumber(['APP_ADJUSTMENT_FULL_SHIFT_COST'], 5),
+    adjustmentAutoRejectTtlMinutes: readEnvNumber(['APP_ADJUSTMENT_AUTO_REJECT_TTL_MIN'], 30),
+    /** Cấu hình Phòng thi trắc nghiệm định kỳ (120 câu ngân hàng / 25 câu mỗi đề / 480 giây / >= 8.0 điểm) */
+    testDurationSeconds: readEnvNumber(['APP_TEST_DURATION_SECONDS'], 480),
+    testQuestionsPerExam: readEnvNumber(['APP_TEST_QUESTIONS_PER_EXAM'], 25),
+    testPassScore10: readEnvNumber(['APP_TEST_PASS_SCORE_10'], 8),
   },
 } as const;

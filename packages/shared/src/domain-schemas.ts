@@ -58,6 +58,13 @@ export const zEmployee = zSystemColumns.extend({
   base_hourly_rate_vnd: z.coerce.number().min(0).default(0),
   note: z.string().default(''),
   bank_qr_file_id: z.string().default(''),
+  avatar_file_id: z.string().default(''),
+  attendance_credit_points: z.coerce.number().int().default(0),
+  emergency_leave_grant_count: z.coerce.number().int().default(0),
+  probation_meet_done: z.preprocess((v) => v === true || String(v).toUpperCase() === 'TRUE' || v === '1', z.boolean()).default(false),
+  probation_meet_note: z.string().default(''),
+  vip_off_window_until: z.string().default(''),
+  contracts_json: z.string().default('[]'),
 });
 export type Employee = z.infer<typeof zEmployee>;
 
@@ -199,5 +206,13 @@ export const zPayrollSnapshot = zSystemColumns.extend({
   bank_account_number: z.string().default(''),
   bank_account_holder: z.string().default(''),
   snapshot_at: z.string().default(''),
+  late_fine_vnd: z.coerce.number().min(0).default(0),
+  ot_daily_allowance_vnd: z.coerce.number().min(0).default(0),
+  manual_base_add_vnd: z.coerce.number().min(0).default(0),
+  manual_ot_add_vnd: z.coerce.number().min(0).default(0),
+  manual_bonus_vnd: z.coerce.number().min(0).default(0),
+  manual_advance_deduct_vnd: z.coerce.number().min(0).default(0),
+  manual_kpi_deduct_vnd: z.coerce.number().min(0).default(0),
+  manual_uniform_deduct_vnd: z.coerce.number().min(0).default(0),
 });
 export type PayrollSnapshot = z.infer<typeof zPayrollSnapshot>;

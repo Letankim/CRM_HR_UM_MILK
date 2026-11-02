@@ -1,9 +1,11 @@
 'use client';
 
-import { App, Button, Flex, Space } from 'antd';
-import { DeleteOutlined, QrcodeOutlined, UploadOutlined } from '@ant-design/icons';
-import { useRef } from 'react';
+import { App, Button, Flex, Form, Space, Tag, Typography } from 'antd';
+import { CheckCircleOutlined, DeleteOutlined, QrcodeOutlined, UploadOutlined } from '@ant-design/icons';
+import { useRef, useState } from 'react';
+import type { ParsedVietQrResult } from '@umbm/shared';
 import { normalizeImageFileToPngDataUrl } from '@/lib/payroll-file-helpers';
+import { decodeVietQrFromImage } from '@/lib/vietqr-image-decoder';
 
 export function ProfileBankQrUploader({
   currentQrUrl,
@@ -11,20 +13,37 @@ export function ProfileBankQrUploader({
   removeQr,
   onChangeDraft,
   onToggleRemove,
+  onDecoded,
 }: {
   currentQrUrl?: string | null;
   draftQrBase64: string;
   removeQr: boolean;
   onChangeDraft: (base64: string) => void;
   onToggleRemove: (remove: boolean) => void;
+  onDecoded?: (decoded: ParsedVietQrResult) => void;
 }) {
   const { message } = App.useApp();
+  const form = Form.useFormInstance();
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const [decoding, setDecoding] = useState(false);
+  const [decodedInfo, setDecodedInfo] = useState<ParsedVietQrResult | null>(null);
+
+  const applyDecodedToForm = (decoded: ParsedVietQrResult) => {
+    setDecodedInfo(decoded);
+    form?.setFieldsValue({
+      ...(decoded.bankName ? { bank_name: decoded.bankName } : {}),
+      ...(decoded.accountNumber ? { bank_account_number: decoded.accountNumber } : {}),
+      ...(decoded.accountHolder ? { bank_account_holder: decoded.accountHolder } : {}),
+    });
+    onDecoded?.(decoded);
+    message.success('Đã tự động nhận diện thông tin ngân hàng từ mã VietQR');
+  };
 
   const handlePickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    setDecoding(true);
     try {
       const qrDataUrl = await normalizeImageFileToPngDataUrl(file, 2400, {
         preferJpeg: true,
@@ -34,8 +53,16 @@ export function ProfileBankQrUploader({
       });
       onToggleRemove(false);
       onChangeDraft(qrDataUrl);
+      const decoded = await decodeVietQrFromImage({ file, dataUrl: qrDataUrl });
+      if (decoded) {
+        applyDecodedToForm(decoded);
+      } else {
+        setDecodedInfo(null);
+      }
     } catch (err) {
       message.error(err instanceof Error ? err.message : 'Không thể đọc tệp ảnh Mã QR');
+    } finally {
+      setDecoding(false);
     }
   };
 
@@ -72,21 +99,34 @@ export function ProfileBankQrUploader({
           <QrcodeOutlined style={{ fontSize: 26, color: '#94A3B8' }} />
         )}
       </div>
-      <Space size={8} wrap>
-        <Button icon={<UploadOutlined />} onClick={() => fileRef.current?.click()}>
-          {previewUrl ? 'Đổi ảnh QR' : 'Tải ảnh QR'}
-        </Button>
-        {previewUrl && (
-          <Button
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => {
-              onChangeDraft('');
-              onToggleRemove(true);
-            }}
-          >
-            Xóa
+      <Space direction="vertical" size={6}>
+        <Space size={8} wrap>
+          <Button icon={<UploadOutlined />} loading={decoding} onClick={() => fileRef.current?.click()}>
+            {previewUrl ? 'Đổi ảnh QR' : 'Tải ảnh QR (Tự nhận diện VietQR)'}
           </Button>
+          {previewUrl && (
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => {
+                onChangeDraft('');
+                setDecodedInfo(null);
+                onToggleRemove(true);
+              }}
+            >
+              Xóa
+            </Button>
+          )}
+        </Space>
+        {decodedInfo ? (
+          <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>
+            Đã giải mã EMVCo VietQR: {decodedInfo.bankName} · {decodedInfo.accountNumber}
+            {decodedInfo.accountHolder ? ` (${decodedInfo.accountHolder})` : ''}
+          </Tag>
+        ) : (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            Tải ảnh mã VietQR Napas247 để hệ thống tự động điền Tên ngân hàng, Số tài khoản và Chủ tài khoản.
+          </Typography.Text>
         )}
       </Space>
     </Flex>

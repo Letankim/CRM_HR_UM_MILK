@@ -87,7 +87,7 @@ export function mapShiftSwapRecord(ctx: AppContext, s: ShiftSwap, fallbackBranch
     requesterName: reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id,
     peerName: peerEmp ? `${peerEmp.full_name} (${peerEmp.employee_code})` : s.peer_id,
     statusLabel: s.status === 'PENDING_PEER' && s.kind === 'GIVE' ? 'Chờ người nhận xác nhận' : SHIFT_SWAP_STATUS_LABELS[s.status],
-    kindLabel: SHIFT_SWAP_KIND_LABELS[s.kind],
+    kindLabel: (SHIFT_SWAP_KIND_LABELS as Record<string, string>)[s.kind] ?? (s.kind === 'HR_DISPATCH' ? 'Điều phối khẩn cấp (+30k)' : s.kind === 'HR_SUPPORT' ? 'Hỗ trợ liên chi nhánh' : s.kind),
     requiresHrApproval: s.requires_hr_approval,
     toShiftDetails: s.kind === 'SWAP' && s.to_assignment_id ? resolveShiftTimeDetails(ctx, s.to_shift_code, s.to_assignment_id, branchId, s.peer_id, s.to_work_date) : null,
     allowanceEligible: effEligible,

@@ -3,6 +3,7 @@
 import { Alert, App, Button, Col, Descriptions, Flex, Input, Modal, Row, Space, Tag, Typography } from 'antd';
 import { BankOutlined, CheckCircleOutlined, CloseOutlined, CopyOutlined, QrcodeOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { buildDynamicVietQrUrl } from '@umbm/shared';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
@@ -26,6 +27,16 @@ export function PayrollBankQrPayModal({
   const [reference, setReference] = useState('');
 
   const suggestedMemo = row ? `LUONG ${row.periodCode} ${row.employeeCode}` : '';
+  const dynamicVietQrUrl = row && row.bankAccountNumber
+    ? buildDynamicVietQrUrl({
+        bankNameOrBin: row.bankName || 'VCB',
+        accountNumber: row.bankAccountNumber,
+        accountHolder: row.bankAccountHolder || row.fullName,
+        amountVnd: row.netVnd,
+        periodCode: row.periodCode,
+        employeeCode: row.employeeCode,
+      })
+    : '';
 
   useEffect(() => {
     if (row) {
@@ -63,7 +74,7 @@ export function PayrollBankQrPayModal({
 
   return (
     <Modal
-      width={940}
+      width={980}
       centered
       style={{ maxWidth: 'calc(100vw - 28px)' }}
       open={Boolean(row)}
@@ -91,7 +102,7 @@ export function PayrollBankQrPayModal({
           ) : row.employeeConfirmedAt ? (
             <Alert
               type="info" showIcon style={{ marginBottom: 14 }}
-              message={`Nhân sự ${row.fullName} đã ký tay xác nhận phiếu lương lúc ${dayjs(row.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')}. Vui lòng quét mã QR ngân hàng bên dưới để chuyển khoản và đánh dấu Đã thanh toán.`}
+              message={`Nhân sự ${row.fullName} đã ký tay xác nhận phiếu lương lúc ${dayjs(row.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')}. Vui lòng quét mã VietQR bên dưới để chuyển khoản và đánh dấu Đã thanh toán.`}
             />
           ) : (
             <Alert
@@ -100,35 +111,47 @@ export function PayrollBankQrPayModal({
             />
           )}
 
-          <Row gutter={[20, 16]} align="stretch">
-            <Col xs={24} md={9}>
-              <div style={{ border: '1px solid #E5E7EB', borderRadius: 4, background: '#F8FAFC', padding: 16, textAlign: 'center', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          <Row gutter={[16, 16]} align="stretch">
+            <Col xs={24} md={10}>
+              <div style={{ border: '1px solid #E5E7EB', borderRadius: 4, background: '#F8FAFC', padding: 14, textAlign: 'center', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 10 }}>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0F172A', marginBottom: 12 }}>
-                    <QrcodeOutlined /> MÃ QR NGÂN HÀNG NHÂN VIÊN
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#2563EB', marginBottom: 8 }}>
+                    <QrcodeOutlined /> MÃ VIETQR ĐỘNG NAPAS247 (TỰ ĐỘNG ĐIỀN SỐ TIỀN &amp; NỘI DUNG CK)
                   </div>
-                  {row.bankQrUrl ? (
-                    <img src={row.bankQrUrl} alt="Mã QR Ngân hàng" style={{ maxWidth: '100%', maxHeight: 240, objectFit: 'contain', borderRadius: 4, background: '#FFFFFF', padding: 8, border: '1px solid #E5E7EB' }} />
+                  {row.employeeConfirmedAt && dynamicVietQrUrl ? (
+                    <img src={dynamicVietQrUrl} alt="Mã VietQR Động Napas247" style={{ maxWidth: '100%', maxHeight: 210, objectFit: 'contain', borderRadius: 4, background: '#FFFFFF', padding: 6, border: '1px solid #BFDBFE' }} />
                   ) : (
-                    <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-                      <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                        {row.employeeConfirmedAt
-                          ? 'Nhân sự chưa tải ảnh Mã QR Ngân hàng trong Hồ sơ cá nhân (vẫn có thể chuyển khoản theo Số tài khoản bên cạnh)'
-                          : 'Mã QR sẽ hiển thị ngay sau khi nhân sự ký xác nhận phiếu lương'}
+                    <div style={{ padding: 12, background: '#FFFFFF', border: '1px dashed #CBD5E1', borderRadius: 4 }}>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {row.employeeConfirmedAt ? 'Chưa có Số tài khoản để sinh mã VietQR động Napas247' : 'Mã VietQR động sẽ mở khóa sau khi nhân sự ký xác nhận phiếu lương'}
                       </Typography.Text>
                     </div>
                   )}
                 </div>
+
+                <div style={{ borderTop: '1px dashed #CBD5E1', paddingTop: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#0F172A', marginBottom: 6 }}>
+                    <QrcodeOutlined /> MÃ QR NGÂN HÀNG TĨNH NHÂN VIÊN TẢI LÊN
+                  </div>
+                  {row.bankQrUrl ? (
+                    <img src={row.bankQrUrl} alt="Mã QR Ngân hàng" style={{ maxWidth: '100%', maxHeight: 150, objectFit: 'contain', borderRadius: 4, background: '#FFFFFF', padding: 6, border: '1px solid #E5E7EB' }} />
+                  ) : (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {row.employeeConfirmedAt ? 'Nhân sự chưa tải ảnh QR tĩnh (sử dụng Mã VietQR Động ở trên)' : 'Chưa mở khóa ảnh QR tĩnh'}
+                    </Typography.Text>
+                  )}
+                </div>
+
                 {row.employeeSignatureUrl && (
-                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed #CBD5E1' }}>
+                  <div style={{ paddingTop: 8, borderTop: '1px dashed #CBD5E1' }}>
                     <div style={{ fontSize: 11, color: '#64748B', marginBottom: 4 }}>Chữ ký trực tiếp của nhân viên</div>
-                    <img src={row.employeeSignatureUrl} alt="Chữ ký nhân viên" style={{ maxHeight: 54, maxWidth: '100%', objectFit: 'contain' }} />
+                    <img src={row.employeeSignatureUrl} alt="Chữ ký nhân viên" style={{ maxHeight: 48, maxWidth: '100%', objectFit: 'contain' }} />
                   </div>
                 )}
               </div>
             </Col>
 
-            <Col xs={24} md={15}>
+            <Col xs={24} md={14}>
               <Descriptions
                 size="middle"
                 bordered

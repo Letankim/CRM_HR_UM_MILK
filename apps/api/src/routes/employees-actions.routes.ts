@@ -15,6 +15,7 @@ import { currentProfile, isProfileLocked, profilesOf, today } from '../services/
 import { assertAmountInRange, createSalaryProfile } from '../services/salary-profile.writer.js';
 import { cascadeEmployeeBranchChange, syncAccountFromEmployee } from './account-employee-sync.js';
 import { buildEmployeeDossierSummary } from './employee-dossier-summary.js';
+import { cleanupProbationShiftsAfterOfficial, registerEmployeeContractRoutes } from './employee-contracts.routes.js';
 import { assertUniquePersonalIdentifiers, findLinkedUserForEmployee, mapEmployeeRecord } from './employee-mapper.js';
 import { zSalaryProfileFields } from './salary-profile.schemas.js';
 
@@ -53,6 +54,7 @@ const zBulkEmployeeActionBody = z.object({
 });
 
 export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext) {
+  registerEmployeeContractRoutes(app, ctx);
   app.put('/api/admin/employees/:id', { preHandler: requirePermission('employee.manage') }, async (request) => {
     const { id } = request.params as { id: string };
     const body = zUpdateEmployeeBody.parse(request.body);
@@ -171,6 +173,7 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
             const dossier = buildEmployeeDossierSummary(before, ctx);
             const summary = body.evaluation_summary || body.note || 'Đạt điều kiện thử việc và TEST nghiệp vụ, chuyển sang Nhân viên chính thức';
             await ctx.db.employeeStageHistory.insert({ employee_id: before.id, from_stage: before.stage, to_stage: 'OFFICIAL', effective_from: effectiveDate, decided_by: request.auth!.user.username, note: summary, change_type: 'PROMOTE_OFFICIAL', from_branch_id: before.branch_id, to_branch_id: before.branch_id, from_shift_code: before.default_shift_code, to_shift_code: before.default_shift_code, probation_hours_completed: dossier.probationHoursCompleted, test_score_percent: dossier.testBestScorePercent, evaluation_summary: summary, approved_by: request.auth!.user.username }, actorId);
+            await cleanupProbationShiftsAfterOfficial(ctx, before, effectiveDate, actorId);
           },
         },
       ],
@@ -203,6 +206,7 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
       for (const prev of promotedBefore) {
         const dossier = buildEmployeeDossierSummary(prev, ctx);
         await ctx.db.employeeStageHistory.insert({ employee_id: prev.id, from_stage: prev.stage, to_stage: 'OFFICIAL', effective_from: effectiveDate, decided_by: actorName, note: summary, change_type: 'PROMOTE_OFFICIAL', from_branch_id: prev.branch_id, to_branch_id: prev.branch_id, from_shift_code: prev.default_shift_code, to_shift_code: prev.default_shift_code, probation_hours_completed: dossier.probationHoursCompleted, test_score_percent: dossier.testBestScorePercent, evaluation_summary: summary, approved_by: actorName }, actorId);
+        await cleanupProbationShiftsAfterOfficial(ctx, prev, effectiveDate, actorId);
       }
       updatedEmps.forEach((emp) => queuePromotionOfficialEmail(ctx, emp, actorId));
     }

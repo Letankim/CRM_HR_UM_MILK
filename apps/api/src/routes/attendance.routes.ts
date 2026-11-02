@@ -1,13 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { isEmployeeRole, zListQueryBase } from '@umbm/shared';
+import { SYSTEM_CONFIG, computeLateFine, isEmployeeRole, zListQueryBase } from '@umbm/shared';
 import type { AppContext } from '../context.js';
-import { Errors } from '../lib/errors.js';
+import { AppError, Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs, nowIso } from '../lib/time.js';
-import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
-import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
+import { auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { runBackgroundSideEffect } from '../services/background-write.js';
 import { formatGraceLabel, getShiftCheckoutWindow } from '../services/schedule-staffing-helper.js';
 import { getOperationSettings } from '../services/operations-settings.service.js';
@@ -24,11 +23,9 @@ const zCheckInOutBody = z.object({
   lat: z.coerce.number().min(-90).max(90), lng: z.coerce.number().min(-180).max(180), accuracy_m: z.coerce.number().min(0).max(5000).default(15),
   selfie_source: z.enum(['LIVE_CAMERA'], { message: 'Chỉ cho phép chụp ảnh trực tiếp từ Camera (LIVE_CAMERA), cấm tải ảnh từ thư viện' }).default('LIVE_CAMERA'),
   photo_base64: z.string().min(10, 'Vui lòng chụp ảnh khuôn mặt trực tiếp từ Camera').default('data:image/jpeg;base64,umbm_live_camera_selfie'),
-  device_info: z.string().trim().max(200).optional().default('Mobile Browser HTTPS'), enforce_shift_state: z.boolean().optional().default(false), idempotency_key: z.string().trim().optional(),
-});
-const zUpdateAttendanceEventBody = z.object({
-  version: z.coerce.number().int().min(1), type: z.enum(['CHECK_IN', 'CHECK_OUT']).optional(), work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  shift_code: z.string().trim().optional(), check_time_hm: z.string().regex(/^\d{2}:\d{2}$/).optional(), distance_m: z.coerce.number().int().min(0).max(5000).optional(), note: z.string().trim().max(300).optional(),
+  device_info: z.string().trim().max(200).optional().default('Mobile Browser HTTPS'), enforce_shift_state: z.boolean().optional().default(false),
+  enforce_time_window: z.boolean().optional().default(false), record_out_of_bounds: z.boolean().optional().default(false),
+  pink_ratio_percent: z.coerce.number().min(0).max(100).optional(), uniform_verified: z.boolean().optional(), idempotency_key: z.string().trim().optional(),
 });
 export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   registerShiftAttendanceDetailRoute(app, ctx);
@@ -109,6 +106,22 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       }
     }
 
+    if (empRecord.stage === 'OFFICIAL' && body.pink_ratio_percent !== undefined && body.pink_ratio_percent < SYSTEM_CONFIG.defaults.pinkUniformMinRatioPercent) {
+      throw new AppError(400, 'BUSINESS_RULE_VIOLATION', `Tỷ lệ nhận diện đồng phục áo hồng (${body.pink_ratio_percent}%) chưa đạt ngưỡng tối thiểu ${SYSTEM_CONFIG.defaults.pinkUniformMinRatioPercent}% khung hình theo quy định nhân sự chính thức`);
+    }
+    if (body.enforce_time_window || body.enforce_shift_state) {
+      const { todayStr, nowHm } = getVnNowDateAndHm(), diffFromStart = parseHm(nowHm) - parseHm(assign.start_at || '07:00');
+      if (checkType === 'CHECK_IN' && assign.work_date === todayStr) {
+        if (diffFromStart < -SYSTEM_CONFIG.defaults.checkInOpenBeforeMinutes) {
+          throw Errors.badRequest(`Chưa đến giờ mở cổng điểm danh vào ca (chỉ mở trước giờ vào ca ${SYSTEM_CONFIG.defaults.checkInOpenBeforeMinutes} phút)`);
+        }
+        const hasInNow = Boolean(ctx.db.attendanceEvents.find((e) => e.assignment_id === assign.id && e.type === 'CHECK_IN'));
+        if (!hasInNow && diffFromStart > SYSTEM_CONFIG.defaults.checkInAutoAbsentAfterHours * 60) {
+          await ctx.db.shiftAssignments.update(assign.id, assign.version, { status: 'ABSENT', note: 'Quá 3 giờ kể từ giờ bắt đầu ca chưa điểm danh — Tự động chuyển Vắng mặt' }, request.auth!.user.id);
+          throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'}) đã quá ${SYSTEM_CONFIG.defaults.checkInAutoAbsentAfterHours} giờ kể từ giờ bắt đầu mà chưa điểm danh vào ca nên đã tự động chuyển sang trạng thái Vắng mặt (ABSENT).`);
+        }
+      }
+    }
     if (body.enforce_shift_state) {
       const user = request.auth!.user;
       const myEmp = ctx.db.employees.find((e) => e.user_id === user.id || Boolean(user.employee_id && (e.employee_code === user.employee_id || e.id === user.employee_id)));
@@ -137,15 +150,17 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     }
     const distanceM = calculateHaversineMeters(body.lat, body.lng, branch.lat, branch.lng);
     const withinRadius = distanceM <= branch.radius_m;
-    if (!withinRadius) {
+    if (!withinRadius && !body.record_out_of_bounds) {
       const distLabel = distanceM >= 1000 ? `${(distanceM / 1000).toFixed(2).replace('.', ',')} km` : `${distanceM}m`;
       throw Errors.fieldValidation('lat', 'OUT_OF_RANGE', `Vị trí hiện tại cách ${branch.name} ${distLabel}, vượt quá bán kính cho phép (${branch.radius_m}m). Bạn bắt buộc phải có mặt đúng tại ${branch.name} để Vào/Ra ca (hoặc gửi Phiếu bổ sung công nếu thiết bị lỗi GPS).`, `${body.lat},${body.lng}`);
     }
-    const accuracyOk = body.accuracy_m <= branch.max_accuracy_m, result = !accuracyOk ? 'LOW_ACCURACY' : 'VALID';
+    const accuracyOk = body.accuracy_m <= branch.max_accuracy_m, result = !withinRadius ? 'OUT_OF_BOUNDS' : !accuracyOk ? 'LOW_ACCURACY' : 'VALID';
     const serverNow = nowIso(), serverDt = dayjs(serverNow), schedTime = checkType === 'CHECK_IN' ? assign.start_at : assign.end_at;
     const checkWin = getShiftCheckoutWindow(assign.work_date, assign.start_at || '07:00', assign.end_at || '12:00', serverDt.format('YYYY-MM-DD'), serverDt.format('HH:mm'));
     const lateMinutes = checkType === 'CHECK_IN' ? (body.enforce_shift_state ? checkWin.lateCheckInMinutes : Math.max(0, parseHm(serverDt.format('HH:mm')) - parseHm(schedTime))) : 0;
     const earlyLeaveMinutes = checkType === 'CHECK_OUT' ? checkWin.earlyLeaveMinutes : 0;
+    const shiftPayVnd = (assign.scheduled_hours || 5) * (empRecord.stage === 'OFFICIAL' ? SYSTEM_CONFIG.defaults.officialHourlyRateVnd : SYSTEM_CONFIG.defaults.probationHourlyRateVnd);
+    const fine = checkType === 'CHECK_IN' ? computeLateFine(lateMinutes, shiftPayVnd) : { tier: 'NONE' as const, fineVnd: 0 };
     const punc = describePunctuality(checkType, lateMinutes, earlyLeaveMinutes);
     const shiftMeta = resolveShiftTimeDetails(ctx, assign.shift_code, assign.id, branch.id);
     const uploadedPhoto = await persistAttendancePhoto(ctx, { base64: body.photo_base64, employeeCode: empRecord.employee_code, checkType, workDate: assign.work_date, shiftFolder: buildShiftFolderName(shiftMeta.shiftLabel, assign.shift_code, assign.start_at, assign.end_at) });
@@ -153,45 +168,28 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const created = await ctx.db.attendanceEvents.insert({
       idempotency_key: body.idempotency_key || `chk_${assign.id}_${checkType}_${Date.now()}`, employee_id: assign.employee_id, assignment_id: assign.id, branch_id: branch.id, type: checkType, server_time: serverNow,
       lat: body.lat, lng: body.lng, accuracy_m: body.accuracy_m, distance_m: distanceM, within_radius: withinRadius, photo_id: `photo_${Date.now()}`, photo_sha256: uploadedPhoto.sha256, device_info: body.device_info, result,
-      work_date: assign.work_date, shift_code: assign.shift_code, scheduled_time: schedTime, late_minutes: lateMinutes, early_leave_minutes: earlyLeaveMinutes, allowed_radius_m: branch.radius_m, gps_status: accuracyOk ? 'OK' : 'WARNING',
+      work_date: assign.work_date, shift_code: assign.shift_code, scheduled_time: schedTime, late_minutes: lateMinutes, late_fine_tier: fine.tier, late_fine_vnd: fine.fineVnd, early_leave_minutes: earlyLeaveMinutes,
+      pink_ratio_percent: body.pink_ratio_percent ?? 100, uniform_verified: body.uniform_verified ?? true, allowed_radius_m: branch.radius_m, gps_status: accuracyOk && withinRadius ? 'OK' : 'WARNING',
       photo_drive_file_id: uploadedPhoto.fileId, ip_address: request.ip, anomaly_flags_json: '[]', note: `${punc.punctualityLabel} · Khoảng cách GPS ${distanceM}m`,
     }, request.auth!.user.id);
     uploadedPhoto.syncDrive?.(async (driveFileId) => { queueAttendancePhotoDrivePatch(ctx, created.id, driveFileId); });
     if (checkType === 'CHECK_OUT' && assign.status !== 'COMPLETED') await ctx.db.shiftAssignments.update(assign.id, assign.version, { status: 'COMPLETED' }, request.auth!.user.id);
+    if (checkType === 'CHECK_OUT' && result === 'VALID') {
+      const curEmp = ctx.db.employees.get(empRecord.id);
+      if (curEmp) await ctx.db.employees.update(curEmp.id, curEmp.version, { attendance_credit_points: (curEmp.attendance_credit_points ?? 0) + SYSTEM_CONFIG.defaults.adjustmentCreditPerValidShift }, request.auth!.user.id);
+    }
     const reqAuditCtx = auditContext(request);
     ctx.realtime()?.toBranch(branch.id, 'attendance:event', { id: created.id, type: created.type, result, distanceM, lateMinutes, earlyLeaveMinutes, message: '' });
-    await runBackgroundSideEffect(() => ctx.audit.record(reqAuditCtx, { action: checkType === 'CHECK_IN' ? 'attendance.check_in' : 'attendance.check_out', entity: 'ATTENDANCE_EVENTS', entityId: created.id, after: { type: created.type, distance_m: distanceM, within_radius: withinRadius, result, late_minutes: lateMinutes, early_leave_minutes: earlyLeaveMinutes } }));
+    await runBackgroundSideEffect(() => ctx.audit.record(reqAuditCtx, { action: checkType === 'CHECK_IN' ? 'attendance.check_in' : 'attendance.check_out', entity: 'ATTENDANCE_EVENTS', entityId: created.id, after: { type: created.type, distance_m: distanceM, within_radius: withinRadius, result, late_minutes: lateMinutes, late_fine_tier: fine.tier, late_fine_vnd: fine.fineVnd, early_leave_minutes: earlyLeaveMinutes } }));
     return reply.code(201), sendSuccess(request, `Điểm danh ${checkType === 'CHECK_IN' ? 'vào ca' : 'ra ca'} thành công (${punc.punctualityLabel} · GPS ${distanceM}m)`, mapAttendanceEvent(created, ctx));
     } finally {
       if (lockKey) inFlightSet.delete(lockKey);
     }
   });
 
-  app.put('/api/admin/attendance/events/:id', { preHandler: requirePermission('system.config') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const body = zUpdateAttendanceEventBody.parse(request.body);
-    const before = ctx.db.attendanceEvents.get(id);
-    if (!before) throw Errors.notFound('Sự kiện điểm danh', id);
-    assertBranchAccess(request, before.branch_id);
-    assertDateNotLockedByPayroll(ctx.db, before.work_date, 'chỉnh sửa điểm danh');
-    const nextType = body.type ?? before.type, nextDate = body.work_date ?? before.work_date, nextShiftCode = body.shift_code ?? before.shift_code;
-    const nextHm = body.check_time_hm ?? dayjs(before.server_time).format('HH:mm'), nextServerTime = `${nextDate}T${nextHm}:00+07:00`;
-    const assign = ctx.db.shiftAssignments.get(before.assignment_id);
-    const startAt = assign?.start_at || '07:00', endAt = assign?.end_at || '12:00', actualMins = parseHm(nextHm);
-    const lateMins = nextType === 'CHECK_IN' ? Math.max(0, actualMins - parseHm(startAt)) : 0;
-    const earlyMins = nextType === 'CHECK_OUT' ? Math.max(0, parseHm(endAt) - actualMins) : 0;
-    const punc = describePunctuality(nextType, lateMins, earlyMins), nextDistance = body.distance_m ?? before.distance_m;
-    const updated = await ctx.db.attendanceEvents.update(id, body.version, { type: nextType, work_date: nextDate, shift_code: nextShiftCode, server_time: nextServerTime, distance_m: nextDistance, late_minutes: lateMins, early_leave_minutes: earlyMins, note: body.note ?? `${punc.punctualityLabel} · Khoảng cách GPS ${nextDistance}m` }, request.auth!.user.id);
-    await ctx.audit.record(auditContext(request), { action: 'attendance.event.update', entity: 'ATTENDANCE_EVENTS', entityId: id, before: { type: before.type, server_time: before.server_time }, after: { type: updated.type, server_time: updated.server_time } });
-    return sendSuccess(request, 'Đã cập nhật bản ghi điểm danh thành công', mapAttendanceEvent(updated, ctx));
-  });
-
-  app.delete('/api/admin/attendance/events/:id', { preHandler: requirePermission('system.config') }, async (request) => {
-    const { id } = request.params as { id: string }, body = z.object({ version: z.coerce.number().int().min(1).optional() }).parse(request.body ?? {}), before = ctx.db.attendanceEvents.get(id);
-    if (!before) throw Errors.notFound('Sự kiện điểm danh', id);
-    assertBranchAccess(request, before.branch_id); assertDateNotLockedByPayroll(ctx.db, before.work_date, 'xóa điểm danh');
-    await ctx.db.attendanceEvents.softDelete(id, body.version ?? before.version, request.auth!.user.id);
-    await ctx.audit.record(auditContext(request), { action: 'attendance.event.delete', entity: 'ATTENDANCE_EVENTS', entityId: id, before: { type: before.type, work_date: before.work_date } });
-    return sendSuccess(request, 'Đã xóa bản ghi điểm danh', { id });
-  });
+  const rejectImmutableLedger = async () => {
+    throw Errors.forbidden('Nhật ký điểm danh gốc là bất biến, mọi điều chỉnh công bắt buộc thực hiện qua Phiếu bổ sung công');
+  };
+  app.put('/api/admin/attendance/events/:id', { preHandler: requireAuth() }, rejectImmutableLedger);
+  app.delete('/api/admin/attendance/events/:id', { preHandler: requireAuth() }, rejectImmutableLedger);
 }

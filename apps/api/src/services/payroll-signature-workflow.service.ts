@@ -1,6 +1,6 @@
 import { DRIVE_FOLDERS, SYSTEM_CONFIG, type PayPeriod, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
-import { Errors } from '../lib/errors.js';
+import { AppError, Errors } from '../lib/errors.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { resolveSystemHrMailbox, resolveUserPersonalRealEmail, webOrigin } from './account-email-dispatcher.js';
@@ -92,10 +92,13 @@ export async function adminApproveAndSignPeriod(
   actor: User,
 ): Promise<PayPeriod> {
   if (actor.role !== 'ADMIN') {
-    throw Errors.forbidden('Chỉ Quản trị hệ thống mới có quyền phê duyệt và ký chữ ký Ban Quản trị trên kỳ lương');
+    throw new AppError(403, 'SEPARATION_OF_DUTIES_VIOLATION', 'Vi phạm nguyên tắc tách biệt nhiệm vụ (Separation of Duties): Kế toán lập bảng lương không được tự phê duyệt; chỉ Tổng quản trị (ADMIN) mới có quyền phê duyệt và ký chữ ký Ban Quản trị trên kỳ lương');
   }
   const before = ctx.db.payPeriods.get(periodId);
   if (!before) throw Errors.notFound('Không tìm thấy kỳ lương');
+  if (before.reconciled_by && before.reconciled_by === actor.id) {
+    throw new AppError(403, 'SEPARATION_OF_DUTIES_VIOLATION', 'Vi phạm nguyên tắc tách biệt nhiệm vụ (Separation of Duties): Người gửi đối soát bảng lương không được tự phê duyệt kỳ lương của chính mình');
+  }
   if (before.status !== 'RECONCILE') {
     throw Errors.conflict('Kỳ lương phải được Kế toán rà soát và gửi trình (bước Đối soát) trước khi Quản trị ký phê duyệt');
   }

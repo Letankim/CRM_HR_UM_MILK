@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { isEmployeeRole, SYSTEM_CONFIG, zListQueryBase, type ShiftSwap } from '@umbm/shared';
+import { isEmployeeRole, mondayOfWeek, SYSTEM_CONFIG, zListQueryBase, type ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
@@ -19,14 +19,31 @@ import { findLinkedEmployeeForUser } from './employee-mapper.js';
 import { mapShiftSwapRecord, registerShiftSwapAllowanceRoute, resolveSwapAllowance, zDecideSwapBody } from './shift-swap-helpers.js';
 
 const zCreateSwapBody = z.object({
-  kind: z.enum(['SWAP', 'GIVE'], { errorMap: () => ({ message: 'Loại yêu cầu phải là Đổi ca 2 chiều hoặc Nhường ca' }) }).default('GIVE'),
-  requester_id: z.string().trim().min(1, 'Thiếu nhân sự gửi yêu cầu'), peer_id: z.string().trim().min(1, 'Vui lòng chọn đồng nghiệp'),
+  kind: z.enum(['SWAP', 'GIVE', 'HR_DISPATCH', 'HR_SUPPORT'], { errorMap: () => ({ message: 'Loại yêu cầu phải là Đổi ca 2 chiều, Nhường ca, Điều phối khẩn cấp hoặc Hỗ trợ liên chi nhánh' }) }).default('GIVE'),
+  requester_id: z.string().trim().optional().default(''), peer_id: z.string().trim().optional().default(''),
   from_assignment_id: z.string().trim().min(1, 'Vui lòng chọn ca của bạn'), to_assignment_id: z.string().trim().optional().default(''),
-  reason: z.string().trim().min(2, 'Vui lòng nhập lý do').max(300, 'Lý do tối đa 300 ký tự'),
+  target_branch_id: z.string().trim().optional().default(''), reason: z.string().trim().min(2, 'Vui lòng nhập lý do').max(300, 'Lý do tối đa 300 ký tự'),
 });
-const zPeerRespondBody = z.object({ version: z.coerce.number().int().min(1), accept: z.boolean(), peer_note: z.string().trim().max(200).optional().default('') });
+const zPeerRespondBody = z.object({ version: z.coerce.number().int().min(1).optional(), accept: z.boolean().optional().default(true), peer_id: z.string().trim().optional(), peer_note: z.string().trim().max(200).optional().default('') });
 const zWorkflowQuery = zListQueryBase.extend({ branch_id: z.string().trim().optional(), status: z.string().trim().optional(), kind: z.string().trim().optional() });
 const ACTIVE = new Set(['PENDING_PEER', 'PEER_ACCEPTED']);
+
+function enrichSwapKindLabel(ctx: AppContext, s: ShiftSwap) {
+  const mapped = mapShiftSwapRecord(ctx, s);
+  const kindLabel = s.kind === 'HR_DISPATCH' ? 'Điều phối khẩn cấp (+30k)' : s.kind === 'HR_SUPPORT' ? 'Hỗ trợ liên chi nhánh' : mapped.kindLabel;
+  return { ...mapped, kindLabel, targetBranchName: (s.target_branch_id ? ctx.db.branches.get(s.target_branch_id)?.name : null) ?? null };
+}
+
+export async function auditOutOfWeekSwaps(ctx: AppContext, actorId = 'system-audit') {
+  const now = nowIso(), cancelled: ShiftSwap[] = [];
+  for (const s of ctx.db.shiftSwaps.all()) {
+    if (s.status === 'CANCELLED' || s.status === 'REJECTED' || !s.from_work_date || !s.to_work_date) continue;
+    if (mondayOfWeek(s.from_work_date) !== mondayOfWeek(s.to_work_date)) {
+      cancelled.push(await ctx.db.shiftSwaps.update(s.id, s.version, { status: 'CANCELLED', decided_by: actorId, decided_at: now, decision_reason: 'Tự động hủy do 2 ca đổi không thuộc cùng 1 tuần làm việc' }, actorId));
+    }
+  }
+  return { cancelledCount: cancelled.length, cancelledIds: cancelled.map((x) => x.id), items: cancelled.map((x) => enrichSwapKindLabel(ctx, x)) };
+}
 
 export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
   const loadPair = (s: ShiftSwap) => {
@@ -38,37 +55,58 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
   const notify = async (request: Parameters<typeof auditContext>[0], s: ShiftSwap, stage: 'CREATED' | 'PEER_RESPONDED' | 'DECIDED', message: string, ids: string[], auditFn?: () => Promise<unknown>) => {
     queueSwapEventEmail(ctx, s, stage, request.auth!.user.id);
     const kind = stage === 'DECIDED' ? 'SWAP_DECIDED' : stage === 'CREATED' ? 'SWAP_CREATED' : s.status === 'PEER_ACCEPTED' ? 'SWAP_PEER_ACCEPTED' : 'SWAP_PEER_DECLINED';
-    emitScheduleRealtime(ctx, SocketEvents.SWAP_UPDATED, { branchId: s.branch_id, employeeIds: ids, kind, message, actorId: request.auth!.user.id });
+    emitScheduleRealtime(ctx, SocketEvents.SWAP_UPDATED, { branchId: s.branch_id, employeeIds: ids.filter(Boolean), kind, message, actorId: request.auth!.user.id });
     await runBackgroundSideEffect(async () => { await ensureSyncedNotifications(ctx); if (auditFn) await auditFn(); });
   };
 
   app.get('/api/admin/shift-swaps', { preHandler: requirePermission('schedule.read', 'swap.approve', 'self.swap') }, async (request) => {
     const query = zWorkflowQuery.parse(request.query ?? {});
     const scoped = filterByBranch(request, ctx.db.shiftSwaps.all(), (s) => resolveEmployeeBranchId(ctx, s.requester_id, s.branch_id));
-    const mapped = scoped.map((s) => mapShiftSwapRecord(ctx, s)).filter((s) => (!query.branch_id || query.branch_id === 'ALL' || s.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || s.status === query.status) && (!query.kind || query.kind === 'ALL' || s.kind === query.kind));
+    const mapped = scoped.map((s) => enrichSwapKindLabel(ctx, s)).filter((s) => (!query.branch_id || query.branch_id === 'ALL' || s.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || s.status === query.status) && (!query.kind || query.kind === 'ALL' || s.kind === query.kind));
     return sendPaginated(request, 'Lấy danh sách yêu cầu đổi ca / nhường ca thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'from_work_date', 'status'], q: query.q, searchExtractor: (i) => [i.swap_code, i.requesterName, i.peerName, i.reason], filters: { branch_id: query.branch_id, status: query.status, kind: query.kind } }));
   });
 
   app.post('/api/admin/shift-swaps', { preHandler: requireAuth() }, async (request, reply) => {
     const body = zCreateSwapBody.parse(request.body), actor = request.auth!.user;
+    const from = ctx.db.shiftAssignments.get(body.from_assignment_id);
+    if (!from) throw Errors.fieldValidation('from_assignment_id', 'INVALID_VALUE', 'Không tìm thấy ca làm việc được chọn', body.from_assignment_id);
+    assertDateNotLockedByPayroll(ctx.db, from.work_date, 'đổi / nhường / điều phối ca');
+
+    if (body.kind === 'HR_DISPATCH' || body.kind === 'HR_SUPPORT') {
+      const requester = findEmp(ctx, body.requester_id || from.employee_id), peer = body.peer_id ? findEmp(ctx, body.peer_id) : undefined;
+      if (body.kind === 'HR_SUPPORT' && !body.target_branch_id && !peer?.branch_id) throw Errors.fieldValidation('target_branch_id', 'REQUIRED_FIELD', 'Vui lòng chọn chi nhánh tiếp nhận hỗ trợ', '');
+      const targetBranchId = body.kind === 'HR_SUPPORT' ? (body.target_branch_id || peer?.branch_id || from.branch_id) : from.branch_id;
+      const created = await ctx.db.shiftSwaps.insert({
+        swap_code: `${body.kind === 'HR_DISPATCH' ? 'DSP' : 'SUP'}-${String(ctx.db.shiftSwaps.all(true).length + 1).padStart(4, '0')}`,
+        kind: body.kind, requires_hr_approval: false, requester_id: requester?.id ?? from.employee_id, peer_id: peer?.id ?? '',
+        from_assignment_id: from.id, to_assignment_id: '', branch_id: from.branch_id, target_branch_id: targetBranchId,
+        from_work_date: from.work_date, from_shift_code: from.shift_code, to_work_date: from.work_date, to_shift_code: from.shift_code,
+        reason: body.reason, status: 'PENDING_PEER', has_conflict: false, staffing_valid: true, requested_at: nowIso(),
+        peer_responded_at: '', peer_note: '', decided_by: '', decision_reason: '', decided_at: '',
+        allowance_eligible: true, allowance_amount_vnd: SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd,
+      }, actor.id);
+      if (body.kind === 'HR_SUPPORT' && targetBranchId && targetBranchId !== from.branch_id) {
+        await ctx.db.shiftAssignments.update(from.id, from.version, { branch_id: targetBranchId, note: `Điều động hỗ trợ liên chi nhánh (${created.swap_code})` }, actor.id);
+      }
+      reply.code(201);
+      return sendSuccess(request, body.kind === 'HR_DISPATCH' ? 'Đã phát lệnh điều phối khẩn cấp lên bảng tin chi nhánh (+30.000đ)' : 'Đã tạo phiếu điều động hỗ trợ liên chi nhánh', enrichSwapKindLabel(ctx, created));
+    }
+
     const requester = findEmp(ctx, body.requester_id), peer = findEmp(ctx, body.peer_id);
     if (!requester) throw Errors.fieldValidation('requester_id', 'INVALID_VALUE', 'Không tìm thấy nhân sự gửi yêu cầu', body.requester_id);
     if (!peer) throw Errors.fieldValidation('peer_id', 'INVALID_VALUE', 'Không tìm thấy đồng nghiệp', body.peer_id);
     if (isEmployeeRole(actor.role) && findLinkedEmployeeForUser(actor, ctx)?.id !== requester.id) throw Errors.forbidden('Bạn chỉ được gửi yêu cầu đổi / nhường ca của chính mình');
     if (!isEmployeeRole(actor.role)) assertBranchAccess(request, requester.branch_id);
-    const from = ctx.db.shiftAssignments.get(body.from_assignment_id);
-    if (!from || (from.employee_id !== requester.id && from.employee_id !== requester.employee_code)) throw Errors.fieldValidation('from_assignment_id', 'INVALID_VALUE', 'Ca được chọn không thuộc lịch làm việc của bạn', body.from_assignment_id);
+    if (from.employee_id !== requester.id && from.employee_id !== requester.employee_code) throw Errors.fieldValidation('from_assignment_id', 'INVALID_VALUE', 'Ca được chọn không thuộc lịch làm việc của bạn', body.from_assignment_id);
     const to = body.to_assignment_id ? ctx.db.shiftAssignments.get(body.to_assignment_id) : undefined;
     if (body.kind === 'SWAP' && body.to_assignment_id && !to) throw Errors.fieldValidation('to_assignment_id', 'INVALID_VALUE', 'Không tìm thấy ca của đồng nghiệp', body.to_assignment_id);
-    assertDateNotLockedByPayroll(ctx.db, from.work_date, 'đổi / nhường ca');
     if (to) assertDateNotLockedByPayroll(ctx.db, to.work_date, 'đổi ca');
     const dup = ctx.db.shiftSwaps.find((s) => ACTIVE.has(s.status) && [s.from_assignment_id, s.to_assignment_id].some((id) => id && (id === from.id || id === to?.id)));
     if (dup) throw Errors.fieldValidation('from_assignment_id', 'DUPLICATE_VALUE', `Ca làm việc này đang có yêu cầu ${dup.swap_code} chờ xử lý`, from.id);
-    const evalRes = evaluateSwapRequest(ctx, { kind: body.kind, requester, peer, from, to: body.kind === 'SWAP' ? to : undefined });
-    const isSwap = body.kind === 'SWAP';
+    const evalRes = evaluateSwapRequest(ctx, { kind: body.kind, requester, peer, from, to: body.kind === 'SWAP' ? to : undefined }), isSwap = body.kind === 'SWAP';
     const created = await ctx.db.shiftSwaps.insert({
       swap_code: `${isSwap ? 'DCA' : 'NCA'}-${String(ctx.db.shiftSwaps.all(true).length + 1).padStart(4, '0')}`, kind: body.kind, requires_hr_approval: evalRes.requiresHr,
-      requester_id: requester.id, peer_id: peer.id, from_assignment_id: from.id, to_assignment_id: isSwap ? to!.id : '', branch_id: from.branch_id,
+      requester_id: requester.id, peer_id: peer.id, from_assignment_id: from.id, to_assignment_id: isSwap ? to!.id : '', branch_id: from.branch_id, target_branch_id: '',
       from_work_date: from.work_date, from_shift_code: from.shift_code, to_work_date: isSwap ? to!.work_date : from.work_date, to_shift_code: isSwap ? to!.shift_code : from.shift_code,
       reason: body.reason, status: 'PENDING_PEER', has_conflict: false, staffing_valid: true, requested_at: nowIso(), peer_responded_at: '', peer_note: '',
       decided_by: '', decision_reason: '', decided_at: '', allowance_eligible: false, allowance_amount_vnd: isSwap ? 0 : SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd,
@@ -77,42 +115,68 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     await notify(request, created, 'CREATED', `${requester.full_name} gửi yêu cầu ${isSwap ? 'đổi ca' : 'nhường ca'} (${created.swap_code}) cho bạn`, [peer.id], () => ctx.audit.record(reqAudit, { action: 'swap.create', entity: 'SHIFT_SWAPS', entityId: created.id, after: { swap_code: created.swap_code, kind: created.kind, requires_hr_approval: created.requires_hr_approval } }));
     reply.code(201);
     const hrNote = evalRes.requiresHr ? ' Người nhận sẽ vượt 2 ca/ngày nên sau khi đồng nghiệp đồng ý cần HR phê duyệt.' : '';
-    return sendSuccess(request, `Đã gửi yêu cầu ${isSwap ? 'đổi ca 2 chiều' : 'nhường ca'} — chờ ${peer.full_name} xác nhận.${hrNote}`, mapShiftSwapRecord(ctx, created));
+    return sendSuccess(request, `Đã gửi yêu cầu ${isSwap ? 'đổi ca 2 chiều' : 'nhường ca'} — chờ ${peer.full_name} xác nhận.${hrNote}`, enrichSwapKindLabel(ctx, created));
   });
 
-  app.post('/api/admin/shift-swaps/:id/peer-respond', { preHandler: requireAuth() }, async (request) => {
-    const { id } = request.params as { id: string }, body = zPeerRespondBody.parse(request.body), before = ctx.db.shiftSwaps.get(id), actor = request.auth!.user;
+  const handlePeerOrClaim = async (request: Parameters<typeof auditContext>[0] & { params: unknown; body: unknown }) => {
+    const { id } = request.params as { id: string }, body = zPeerRespondBody.parse(request.body ?? {}), before = ctx.db.shiftSwaps.get(id), actor = request.auth!.user;
     if (!before) throw Errors.notFound('Yêu cầu đổi / nhường ca', id);
     if (before.status !== 'PENDING_PEER') throw Errors.badRequest('Yêu cầu này đã được xử lý trước đó');
+    const ver = body.version ?? before.version;
+
+    if (before.kind === 'HR_DISPATCH' || before.kind === 'HR_SUPPORT') {
+      const receiver = (body.peer_id ? findEmp(ctx, body.peer_id) : undefined) ?? findLinkedEmployeeForUser(actor, ctx) ?? (before.peer_id ? findEmp(ctx, before.peer_id) : undefined);
+      if (!receiver) throw Errors.badRequest('Không xác định được nhân sự nhận ca điều phối');
+      if (!body.accept) {
+        const declined = await ctx.db.shiftSwaps.update(id, ver, { status: 'PEER_DECLINED', peer_responded_at: nowIso(), peer_note: body.peer_note }, actor.id);
+        return sendSuccess(request, 'Đã từ chối nhận ca điều phối', enrichSwapKindLabel(ctx, declined));
+      }
+      const now = nowIso(), from = ctx.db.shiftAssignments.get(before.from_assignment_id);
+      const updated = await ctx.db.shiftSwaps.update(id, ver, {
+        peer_id: receiver.id, status: 'APPROVED', peer_responded_at: now, peer_note: body.peer_note, decided_by: actor.id, decided_at: now,
+        decision_reason: before.kind === 'HR_DISPATCH' ? 'Nhân viên bấm nhận ca điều phối khẩn cấp (+30.000đ)' : 'Xác nhận điều động hỗ trợ liên chi nhánh',
+        allowance_eligible: true, allowance_amount_vnd: SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd,
+      }, actor.id);
+      if (from) {
+        await ctx.db.shiftAssignments.update(from.id, from.version, {
+          employee_id: receiver.id, employee_stage: receiver.stage, branch_id: before.target_branch_id || from.branch_id,
+          swapped_from_employee_id: before.requester_id, replacement_for_employee_id: before.requester_id, status: 'PUBLISHED',
+          note: `${before.kind === 'HR_DISPATCH' ? 'Nhận ca điều phối khẩn cấp (+30k)' : 'Hỗ trợ liên chi nhánh'} ${before.swap_code}`,
+        }, actor.id);
+      }
+      await recalculateOpenPeriods(ctx, actor.id);
+      return sendSuccess(request, before.kind === 'HR_DISPATCH' ? 'Đã nhận ca điều phối khẩn cấp (+30.000đ) và cập nhật lịch chính thức' : 'Đã xác nhận điều động hỗ trợ liên chi nhánh', enrichSwapKindLabel(ctx, updated));
+    }
+
     const actorEmp = findLinkedEmployeeForUser(actor, ctx);
     if (!actorEmp || (actorEmp.id !== before.peer_id && actorEmp.employee_code !== before.peer_id)) throw Errors.forbidden('Chỉ đồng nghiệp được đề nghị mới có quyền xác nhận yêu cầu này');
     if (!body.accept) {
-      const declined = await ctx.db.shiftSwaps.update(id, body.version, { status: 'PEER_DECLINED', peer_responded_at: nowIso(), peer_note: body.peer_note }, actor.id), reqAudit = auditContext(request);
+      const declined = await ctx.db.shiftSwaps.update(id, ver, { status: 'PEER_DECLINED', peer_responded_at: nowIso(), peer_note: body.peer_note }, actor.id), reqAudit = auditContext(request);
       await notify(request, declined, 'PEER_RESPONDED', `Đồng nghiệp đã từ chối yêu cầu ${before.swap_code}${body.peer_note ? ` — Lý do: ${body.peer_note}` : ''}`, [before.requester_id], () => ctx.audit.record(reqAudit, { action: 'swap.peer_respond', entity: 'SHIFT_SWAPS', entityId: id, after: { status: declined.status, peer_note: body.peer_note } }));
-      return sendSuccess(request, 'Bạn đã từ chối yêu cầu đổi / nhường ca', mapShiftSwapRecord(ctx, declined));
+      return sendSuccess(request, 'Bạn đã từ chối yêu cầu đổi / nhường ca', enrichSwapKindLabel(ctx, declined));
     }
-    const pair = loadPair(before);
-    const evalRes = evaluateSwapRequest(ctx, { kind: before.kind, requester: pair.requester, peer: pair.peer, from: pair.from, to: pair.to });
+    const pair = loadPair(before), evalRes = evaluateSwapRequest(ctx, { kind: before.kind, requester: pair.requester, peer: pair.peer, from: pair.from, to: pair.to });
     if (evalRes.requiresHr) {
-      const waiting = await ctx.db.shiftSwaps.update(id, body.version, { status: 'PEER_ACCEPTED', requires_hr_approval: true, peer_responded_at: nowIso(), peer_note: body.peer_note }, actor.id), reqAudit = auditContext(request);
+      const waiting = await ctx.db.shiftSwaps.update(id, ver, { status: 'PEER_ACCEPTED', requires_hr_approval: true, peer_responded_at: nowIso(), peer_note: body.peer_note }, actor.id), reqAudit = auditContext(request);
       await notify(request, waiting, 'PEER_RESPONDED', `Yêu cầu nhường ca ${before.swap_code} cần HR phê duyệt vì người nhận vượt 2 ca/ngày`, [before.requester_id], () => ctx.audit.record(reqAudit, { action: 'swap.peer_respond', entity: 'SHIFT_SWAPS', entityId: id, after: { status: waiting.status, requires_hr_approval: true, peer_note: body.peer_note } }));
-      return sendSuccess(request, `Bạn đã đồng ý nhận ca. Vì sẽ làm ${evalRes.receiverCountAfter} ca trong ngày nên yêu cầu được chuyển HR phê duyệt.`, mapShiftSwapRecord(ctx, waiting));
+      return sendSuccess(request, `Bạn đã đồng ý nhận ca. Vì sẽ làm ${evalRes.receiverCountAfter} ca trong ngày nên yêu cầu được chuyển HR phê duyệt.`, enrichSwapKindLabel(ctx, waiting));
     }
     const allowance = before.kind === 'GIVE' ? resolveSwapAllowance({ decision: 'APPROVED' }) : { allowance_eligible: false, allowance_amount_vnd: 0 };
     const autoDecisionReason = body.peer_note ? `Đồng nghiệp đồng ý (${body.peer_note}) — tự động cập nhật lịch` : 'Đồng nghiệp đồng ý — tự động cập nhật lịch';
     const updated = await ctx.reconciliation.executeSaga({
-      sagaKey: `swap-peer-apply-${id}-v${body.version}`, operation: 'APPLY_SHIFT_SWAP', actorId: actor.id, initialContext: { swap: before },
+      sagaKey: `swap-peer-apply-${id}-v${ver}`, operation: 'APPLY_SHIFT_SWAP', actorId: actor.id, initialContext: { swap: before }, resultSelector: (s) => s.swap,
       steps: [
-        { name: 'UPDATE_SWAP_STATUS', run: async (s) => { s.swap = await ctx.db.shiftSwaps.update(id, body.version, { status: 'APPROVED', peer_responded_at: nowIso(), peer_note: body.peer_note, decided_by: actor.id, decided_at: nowIso(), decision_reason: autoDecisionReason, ...allowance }, actor.id); } },
+        { name: 'UPDATE_SWAP_STATUS', run: async (s) => { s.swap = await ctx.db.shiftSwaps.update(id, ver, { status: 'APPROVED', peer_responded_at: nowIso(), peer_note: body.peer_note, decided_by: actor.id, decided_at: nowIso(), decision_reason: autoDecisionReason, ...allowance }, actor.id); } },
         { name: 'APPLY_TO_OFFICIAL_SCHEDULE', run: async (s) => { await applySwapToSchedule(ctx, s.swap, actor.id); } },
       ],
-      resultSelector: (s) => s.swap,
     });
     const reqAudit = auditContext(request);
     await recalculateOpenPeriods(ctx, actor.id);
     await notify(request, updated, 'DECIDED', `Yêu cầu ${before.swap_code} đã được đồng nghiệp đồng ý và cập nhật lịch chính thức`, [before.requester_id, before.peer_id], () => ctx.audit.record(reqAudit, { action: 'swap.peer_respond', entity: 'SHIFT_SWAPS', entityId: id, after: { status: updated.status, applied: true } }));
-    return sendSuccess(request, before.kind === 'SWAP' ? 'Đã đồng ý đổi ca — lịch của hai bạn đã được cập nhật ngay' : 'Đã nhận ca được nhường — ca đã được thêm vào lịch của bạn', mapShiftSwapRecord(ctx, updated));
-  });
+    return sendSuccess(request, before.kind === 'SWAP' ? 'Đã đồng ý đổi ca — lịch của hai bạn đã được cập nhật ngay' : 'Đã nhận ca được nhường — ca đã được thêm vào lịch của bạn', enrichSwapKindLabel(ctx, updated));
+  };
+  app.post('/api/admin/shift-swaps/:id/peer-respond', { preHandler: requireAuth() }, handlePeerOrClaim);
+  app.post('/api/admin/shift-swaps/:id/claim', { preHandler: requireAuth() }, handlePeerOrClaim);
 
   app.post('/api/admin/shift-swaps/:id/decide', { preHandler: requirePermission('swap.approve') }, async (request) => {
     const { id } = request.params as { id: string }, body = zDecideSwapBody.parse(request.body), before = ctx.db.shiftSwaps.get(id);
@@ -120,20 +184,19 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.requester_id, before.branch_id));
     assertDateNotLockedByPayroll(ctx.db, before.from_work_date, 'duyệt nhường ca');
     if (before.status !== 'PEER_ACCEPTED') throw Errors.badRequest('Chỉ duyệt các yêu cầu nhường ca vượt 2 ca/ngày đã được người nhận đồng ý');
-    if (body.decision === 'APPROVED') { const pair = loadPair(before); evaluateSwapRequest(ctx, { kind: before.kind, ...pair, hrOverride: true }); }
+    if (body.decision === 'APPROVED' && (before.kind === 'SWAP' || before.kind === 'GIVE')) { const pair = loadPair(before); evaluateSwapRequest(ctx, { kind: before.kind, ...pair, hrOverride: true }); }
     const actorId = request.auth!.user.id, allowancePatch = resolveSwapAllowance(body);
     const updated = await ctx.reconciliation.executeSaga({
-      sagaKey: `swap-decide-${id}-v${body.version}`, operation: 'APPROVE_SHIFT_SWAP', actorId, initialContext: { swap: before },
+      sagaKey: `swap-decide-${id}-v${body.version}`, operation: 'APPROVE_SHIFT_SWAP', actorId, initialContext: { swap: before }, resultSelector: (s) => s.swap,
       steps: [
         { name: 'UPDATE_SWAP_STATUS', run: async (s) => { s.swap = await ctx.db.shiftSwaps.update(id, body.version, { status: body.decision, decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), ...allowancePatch }, actorId); } },
         { name: 'APPLY_TO_OFFICIAL_SCHEDULE_ON_APPROVE', run: async (s) => { if (body.decision === 'APPROVED') await applySwapToSchedule(ctx, s.swap, actorId); } },
       ],
-      resultSelector: (s) => s.swap,
     });
     if (body.decision === 'APPROVED') await recalculateOpenPeriods(ctx, actorId);
     const reqAudit = auditContext(request);
     await notify(request, updated, 'DECIDED', `Yêu cầu nhường ca ${before.swap_code} đã ${body.decision === 'APPROVED' ? 'được HR phê duyệt' : 'bị HR từ chối'}`, [before.requester_id, before.peer_id], () => ctx.audit.record(reqAudit, { action: 'swap.decide', entity: 'SHIFT_SWAPS', entityId: id, before: { status: before.status }, after: { status: updated.status, allowance_eligible: updated.allowance_eligible, allowance_amount_vnd: updated.allowance_amount_vnd } }));
-    return sendSuccess(request, body.decision === 'APPROVED' ? 'Đã phê duyệt nhường ca — lịch chính thức đã chuyển sang người nhận' : 'Đã từ chối yêu cầu nhường ca, lịch giữ nguyên', mapShiftSwapRecord(ctx, updated));
+    return sendSuccess(request, body.decision === 'APPROVED' ? 'Đã phê duyệt nhường ca — lịch chính thức đã chuyển sang người nhận' : 'Đã từ chối yêu cầu nhường ca, lịch giữ nguyên', enrichSwapKindLabel(ctx, updated));
   });
 
   app.post('/api/admin/shift-swaps/:id/cancel', { preHandler: requireAuth() }, async (request) => {
@@ -144,7 +207,12 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!ACTIVE.has(before.status)) throw Errors.badRequest('Yêu cầu đã được xử lý, không thể hủy');
     const updated = await ctx.db.shiftSwaps.update(id, before.version, { status: 'CANCELLED', decided_at: nowIso(), decision_reason: 'Người gửi đã hủy yêu cầu' }, actor.id);
     await runBackgroundSideEffect(() => ensureSyncedNotifications(ctx));
-    return sendSuccess(request, 'Đã hủy yêu cầu đổi / nhường ca', mapShiftSwapRecord(ctx, updated));
+    return sendSuccess(request, 'Đã hủy yêu cầu đổi / nhường ca', enrichSwapKindLabel(ctx, updated));
+  });
+
+  app.post('/api/admin/shift-swaps/audit-out-of-week', { preHandler: requireAuth() }, async (request) => {
+    const res = await auditOutOfWeekSwaps(ctx, request.auth!.user.id);
+    return sendSuccess(request, `Đã rà soát và tự động hủy ${res.cancelledCount} phiếu đổi ca khác tuần`, res);
   });
 
   registerShiftSwapAllowanceRoute(app, ctx);

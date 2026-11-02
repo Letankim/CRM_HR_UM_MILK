@@ -54,7 +54,7 @@ export async function normalizeOnePersonPerShiftAndDefaults(
 ): Promise<NormalizeOnePerShiftResult> {
   const { createMissingRules = true, rebalanceDefaults = true, trimFutureOverstaffed = false } = opts;
   const { todayStr } = getVnNowDateAndHm();
-  const branches: Branch[] = ctx.db.branches.filter((b) => b.status === 'ACTIVE').sort((a, b) => a.code.localeCompare(b.code));
+  const branches: Branch[] = ctx.db.branches.filter((b) => b.status === 'ACTIVE' && !['XUONG_SX', 'VAN_PHONG'].includes(b.code.toUpperCase())).sort((a, b) => a.code.localeCompare(b.code));
   const allTemplates = ctx.db.shiftTemplates.all(true);
 
   const canonicalRuleKey = (branchRaw: string, shiftRaw: string) => {

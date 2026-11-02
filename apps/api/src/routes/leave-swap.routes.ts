@@ -17,10 +17,12 @@ import { assertDateNotLockedByPayroll } from '../services/salary-profile.service
 import { findProbationLock, findWeekLock, matchEmp, resolveProbationCycle, weekLockCode } from '../services/schedule-rules.js';
 import { resolveApplicableStaffingRule } from '../services/schedule-staffing-helper.js';
 import { assertNoDuplicateShiftWorkflow, clearShiftAttendanceOnWorkflowOverride, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
+import { isVipOffWindowActive } from '../services/weekly-off-gate.service.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { findLinkedEmployeeForUser } from './employee-mapper.js';
+import { assertEmergencyLeaveAllowed, completeEmergencyLeaveSideEffects, registerLeaveRequestGateRoutes } from './leave-requests.routes.js';
 
-const zCreateLeaveBody = z.object({ employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'), leave_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày nghỉ phải theo định dạng YYYY-MM-DD'), kind: z.enum(['PROBATION_OFF', 'WEEKLY_OFF', 'UNPAID_LEAVE']).default('WEEKLY_OFF'), shift_code: z.string().default('CA_SANG'), reason: z.string().trim().min(2, 'Vui lòng nhập lý do xin nghỉ').max(300), status: z.enum(['DRAFT', 'PENDING']).default('PENDING') });
+const zCreateLeaveBody = z.object({ employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'), leave_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày nghỉ phải theo định dạng YYYY-MM-DD'), kind: z.enum(['PROBATION_OFF', 'WEEKLY_OFF', 'UNPAID_LEAVE', 'DOT_XUAT']).default('WEEKLY_OFF'), shift_code: z.string().default('CA_SANG'), reason: z.string().trim().min(2, 'Vui lòng nhập lý do xin nghỉ').max(300), status: z.enum(['DRAFT', 'PENDING']).default('PENDING') });
 const zDecideLeaveBody = z.object({ version: z.coerce.number().int().min(1), decision: z.enum(['APPROVED', 'REJECTED']), decision_reason: z.string().trim().max(300).optional().default('') });
 const zWorkflowQuery = zListQueryBase.extend({ branch_id: z.string().trim().optional(), status: z.string().trim().optional(), from_date: z.string().trim().optional(), to_date: z.string().trim().optional() });
 const ACTIVE_LEAVE = (s: string) => s !== 'REJECTED' && s !== 'CANCELLED';
@@ -42,8 +44,8 @@ function assertSelfLeaveAllowed(ctx: AppContext, emp: Employee, leaveDate: strin
     if (used >= cycle.offLimit) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', `Bạn đã đăng ký đủ ${cycle.offLimit} ngày OFF trong chu kỳ thử việc (7 ca làm + 5 ngày OFF)`, leaveDate);
     return { limit: cycle.offLimit, used };
   }
-  const win = evaluateOffWindow(settings, todayStr, nowHm);
-  if (!win.isOpen) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', win.message, leaveDate);
+  const win = evaluateOffWindow(settings, todayStr, nowHm), vipOpen = isVipOffWindowActive(emp);
+  if (!win.isOpen && !vipOpen) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', win.message, leaveDate);
   if (leaveDate < win.targetWeekStart || leaveDate > win.targetWeekEnd) {
     throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', `Chỉ được đăng ký nghỉ OFF cho tuần kế tiếp (${vi(win.targetWeekStart)} – ${vi(win.targetWeekEnd)})`, leaveDate);
   }
@@ -54,6 +56,7 @@ function assertSelfLeaveAllowed(ctx: AppContext, emp: Employee, leaveDate: strin
 }
 
 export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
+  registerLeaveRequestGateRoutes(app, ctx);
   const computeLeaveStaffing = (branchId: string, leaveDate: string, shiftCode: string, empId: string) => {
     const activeShifts = ctx.db.shiftAssignments.filter((a) => a.branch_id === branchId && a.work_date === leaveDate && a.shift_code === shiftCode && a.day_type !== 'OFF' && a.status !== 'ON_LEAVE' && a.status !== 'ABSENT');
     const rule = resolveApplicableStaffingRule(ctx, branchId, shiftCode);
@@ -82,10 +85,14 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!isSelf) assertBranchAccess(request, emp.branch_id);
     assertDateNotLockedByPayroll(ctx.db, body.leave_date, 'đăng ký nghỉ OFF');
     if (ctx.db.leaveRequests.find((l) => matchEmp(emp)(l.employee_id) && l.leave_date === body.leave_date && ACTIVE_LEAVE(l.status))) throw Errors.fieldValidation('leave_date', 'DUPLICATE_VALUE', `Nhân sự đã có đơn đăng ký nghỉ OFF trong ngày ${vi(body.leave_date)}`, body.leave_date);
-    const quota = isSelf ? assertSelfLeaveAllowed(ctx, emp, body.leave_date) : { limit: emp.stage === 'PROBATION' ? emp.probation_off_days || 5 : getOperationSettings(ctx.db).officialWeeklyOffLimit, used: 0 };
+    const isEmergency = body.kind === 'DOT_XUAT';
+    if (isEmergency) assertEmergencyLeaveAllowed(emp);
+    const quota = isSelf && !isEmergency ? assertSelfLeaveAllowed(ctx, emp, body.leave_date) : { limit: emp.stage === 'PROBATION' ? emp.probation_off_days || 5 : getOperationSettings(ctx.db).officialWeeklyOffLimit, used: 0 };
     const existingShift = ctx.db.shiftAssignments.find((a) => matchEmp(emp)(a.employee_id) && a.work_date === body.leave_date && a.day_type !== 'OFF'), shiftCode = existingShift?.shift_code || emp.default_shift_code || body.shift_code;
     assertNoDuplicateShiftWorkflow(ctx.db, emp, 'leave_date', existingShift?.id ?? '', body.leave_date, shiftCode);
-    const created = await ctx.db.leaveRequests.insert({ request_code: `OFF-${String(ctx.db.leaveRequests.all(true).length + 1).padStart(4, '0')}`, employee_id: emp.id, branch_id: emp.branch_id, leave_date: body.leave_date, kind: emp.stage === 'PROBATION' ? 'PROBATION_OFF' : body.kind, shift_code: shiftCode, reason: body.reason, status: body.status, employee_stage: emp.stage, schedule_week_id: weekLockCode(emp.branch_id, mondayOfWeek(body.leave_date), ctx.db.partitionMonth), assignment_id: existingShift?.id ?? '', quota_cycle_used: quota.used + 1, quota_cycle_limit: quota.limit, ...computeLeaveStaffing(emp.branch_id, body.leave_date, shiftCode, emp.id), submitted_at: nowIso(), store_reviewed_by: '', store_reviewed_at: '', decided_by: '', decision_reason: '', decided_at: '' }, actor.id);
+    const effectiveKind = isEmergency ? 'DOT_XUAT' : emp.stage === 'PROBATION' ? 'PROBATION_OFF' : body.kind;
+    const created = await ctx.db.leaveRequests.insert({ request_code: `OFF-${String(ctx.db.leaveRequests.all(true).length + 1).padStart(4, '0')}`, employee_id: emp.id, branch_id: emp.branch_id, leave_date: body.leave_date, kind: effectiveKind, shift_code: shiftCode, reason: body.reason, status: body.status, employee_stage: emp.stage, schedule_week_id: weekLockCode(emp.branch_id, mondayOfWeek(body.leave_date), ctx.db.partitionMonth), assignment_id: existingShift?.id ?? '', quota_cycle_used: quota.used + 1, quota_cycle_limit: quota.limit, ...computeLeaveStaffing(emp.branch_id, body.leave_date, shiftCode, emp.id), submitted_at: nowIso(), store_reviewed_by: '', store_reviewed_at: '', decided_by: '', decision_reason: '', decided_at: '' }, actor.id);
+    if (isEmergency) await completeEmergencyLeaveSideEffects(ctx, emp, created, actor.id);
     queueLeaveCreatedEmail(ctx, created, actor.id);
     const reqAudit = auditContext(request);
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'LEAVE_CREATED', message: `${emp.full_name} gửi đơn nghỉ OFF ngày ${vi(created.leave_date)}`, actorId: actor.id });

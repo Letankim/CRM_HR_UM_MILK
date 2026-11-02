@@ -17,6 +17,7 @@ import { assertNoDuplicateOrOverlappingEmployeeShift, evaluateBranchShiftCapacit
 import { getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, findBranchShiftTemplate } from './account-employee-sync.js';
 import { ensurePersonalProfile } from './my-attendance.routes.js';
+import { registerProbationSelfServiceRoutes } from './probation-self-service.routes.js';
 import { mapShiftAssignment } from './schedules.routes.js';
 
 const zCreateMyShiftBody = z.object({
@@ -39,6 +40,7 @@ export function buildProbationCycleSummary(ctx: AppContext, emp: Employee, today
  * Tối đa 2 ca / ngày; nếu chu kỳ đã đủ 7 ca, ca cuối chu kỳ sẽ được dời lên ca đăng ký thêm khi HR duyệt.
  */
 export function registerMyShiftRegisterRoute(app: FastifyInstance, ctx: AppContext): void {
+  registerProbationSelfServiceRoutes(app, ctx);
   app.post('/api/my-attendance/shifts', { preHandler: requireAuth() }, async (request, reply) => {
     const user = request.auth!.user, body = zCreateMyShiftBody.parse(request.body), emp = await ensurePersonalProfile(ctx, user);
     if (emp.stage === 'OFFICIAL') {

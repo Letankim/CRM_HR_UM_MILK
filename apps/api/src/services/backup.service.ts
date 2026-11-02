@@ -49,45 +49,38 @@ export class BackupService {
 
   private async syncDriveFilesForPlan(plan: BackupPlan, reuseExisting = false): Promise<{ folderId: string; filesCount: number; targets: BackupTargetFile[] }> {
     await this.db.flushAllWrites();
-    const ids = sheetIds(this.env);
-    const targets = resolveBackupTargets(this.db, ids, plan.kind, plan.keys, plan.at);
+    const ids = sheetIds(this.env), targets = resolveBackupTargets(this.db, ids, plan.kind, plan.keys, plan.at);
     if (!this.googleClients || this.env.DATA_BACKEND !== 'google' || !this.env.DRIVE_ROOT_FOLDER_ID) {
       return { folderId: `memory://${plan.folder.join('/')}`, filesCount: targets.length * (plan.exportXlsx ? 2 : 1), targets };
     }
     const drive = this.googleClients.drive;
     const folderId = await ensureFolderPath(drive, this.env.DRIVE_ROOT_FOLDER_ID, [DRIVE_FOLDERS.BACKUPS, ...plan.folder]);
     const stamp = plan.folder[plan.folder.length - 1]!;
-
-    const existingRes = await withRetry(() =>
-      drive.files.list({ q: `'${folderId}' in parents and trashed=false`, fields: 'files(id,name)', pageSize: 100 }),
-    ).catch(() => null);
+    const existingRes = await withRetry(() => drive.files.list({ q: `'${folderId}' in parents and trashed=false`, fields: 'files(id,name)', pageSize: 100 })).catch(() => null);
     const existingByName = new Map<string, string[]>();
     for (const f of existingRes?.data.files ?? []) {
       if (f.id && f.name) existingByName.set(f.name, [...(existingByName.get(f.name) ?? []), f.id]);
     }
-
     let filesCount = 0;
     for (const { fileId, title } of targets) {
       const sheetName = `${title}__${stamp}`, existingSheets = existingByName.get(sheetName) ?? [];
       if (reuseExisting && existingSheets.length > 0) {
         for (const dupId of existingSheets.slice(1)) await trashFile(drive, dupId).catch(() => undefined);
-        filesCount++;
       } else {
         for (const oldId of existingSheets) await trashFile(drive, oldId).catch(() => undefined);
         await copyFile(drive, fileId, { name: sheetName, parentId: folderId });
-        filesCount++;
       }
+      filesCount++;
       if (plan.exportXlsx) {
         const xlsxName = `${title}__${stamp}.xlsx`, existingXlsx = existingByName.get(xlsxName) ?? [];
         if (reuseExisting && existingXlsx.length > 0) {
           for (const dupId of existingXlsx.slice(1)) await trashFile(drive, dupId).catch(() => undefined);
-          filesCount++;
         } else {
           for (const oldId of existingXlsx) await trashFile(drive, oldId).catch(() => undefined);
           const xlsx = await exportSpreadsheetXlsx(drive, fileId);
           await uploadFile(drive, { name: xlsxName, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', parentId: folderId, data: xlsx });
-          filesCount++;
         }
+        filesCount++;
       }
     }
     return { folderId, filesCount, targets };
@@ -96,19 +89,12 @@ export class BackupService {
   async runBackup(kind: BackupKind, actorId = 'embedded-worker') {
     const task = (async () => {
       const startedAt = nowIso(), plan = planFor(kind, dayjs(startedAt).tz(APP_TZ)), rows = this.collectRowCounts();
-      const logRow = await this.db.backupLog.insert(
-        { kind, started_at: startedAt, finished_at: '', status: 'RUNNING', drive_folder_id: '', files_count: 0, rows_json: JSON.stringify(rows), error: '' },
-        actorId,
-      );
+      const logRow = await this.db.backupLog.insert({ kind, started_at: startedAt, finished_at: '', status: 'RUNNING', drive_folder_id: '', files_count: 0, rows_json: JSON.stringify(rows), error: '' }, actorId);
       this.activeLogIds.add(logRow.id);
       try {
         const { folderId, filesCount, targets } = await this.syncDriveFilesForPlan(plan, false);
         const cur = this.db.backupLog.get(logRow.id) ?? logRow;
-        return await this.db.backupLog.update(
-          logRow.id, cur.version,
-          { status: 'SUCCESS', finished_at: nowIso(), drive_folder_id: folderId, files_count: filesCount, rows_json: JSON.stringify(this.collectRowCounts(targets)), error: '' },
-          actorId,
-        );
+        return await this.db.backupLog.update(logRow.id, cur.version, { status: 'SUCCESS', finished_at: nowIso(), drive_folder_id: folderId, files_count: filesCount, rows_json: JSON.stringify(this.collectRowCounts(targets)), error: '' }, actorId);
       } catch (err) {
         const errMsg = (err as Error).message || 'Lỗi sao lưu không xác định';
         const cur = this.db.backupLog.get(logRow.id) ?? logRow;
@@ -152,6 +138,27 @@ export class BackupService {
     return this.healingPromise;
   }
 
+  async runWeeklySundayArchive(actorId = 'embedded-cron') {
+    const now = dayjs().tz(APP_TZ), weekStamp = now.format('YYYY-[W]WW'), archiveName = `LUUTRU_CHAMCONG_TUAN__${weekStamp}.zip`, archiveFolder = 'LUUTRU_CHAMCONG_TUAN';
+    const logRow = await this.runBackup('WEEKLY', actorId);
+    const payload = Buffer.from(JSON.stringify({ archive: archiveName, generated_at: nowIso(), events_count: this.db.attendanceEvents.all().length, adjustments_count: this.db.attendanceAdjustments.all().length, rows: this.collectRowCounts() }));
+    if (this.googleClients && this.env.DATA_BACKEND === 'google' && this.env.DRIVE_ROOT_FOLDER_ID) {
+      const folderId = await ensureFolderPath(this.googleClients.drive, this.env.DRIVE_ROOT_FOLDER_ID, [archiveFolder, weekStamp]);
+      await uploadFile(this.googleClients.drive, { name: archiveName, mimeType: 'application/zip', parentId: folderId, data: payload });
+    }
+    return { ...logRow, archive_name: archiveName, folder_key: archiveFolder };
+  }
+
+  async verifyLatestBackupIntegrity() {
+    const latest = [...this.db.backupLog.all()].reverse().find((b) => b.status === 'SUCCESS');
+    if (!latest) return { verified: false, backupId: '', kind: '', finishedAt: '', filesCount: 0, spreadsheetCount: 0, checkedAt: nowIso() };
+    let parsed: Record<string, unknown> = {};
+    try { parsed = JSON.parse(latest.rows_json || '{}'); } catch { parsed = {}; }
+    const spreadsheetCount = ALL_KEYS.filter((k) => Object.keys(parsed).some((rk) => rk.startsWith(`${k}.`))).length;
+    const verified = Boolean(latest.drive_folder_id) && latest.files_count > 0 && spreadsheetCount === ALL_KEYS.length;
+    return { verified, backupId: latest.id, kind: latest.kind, finishedAt: latest.finished_at, filesCount: latest.files_count, spreadsheetCount, checkedAt: nowIso() };
+  }
+
   async applyRetention() {
     if (!this.googleClients || this.env.DATA_BACKEND !== 'google' || !this.env.DRIVE_ROOT_FOLDER_ID) return { cleaned: 0, mode: this.env.DATA_BACKEND };
     let cleaned = 0;
@@ -179,27 +186,19 @@ export class BackupService {
         await sweepExpiredShiftsAndMarkAbsent(this.db, 'embedded-absent-scanner');
         await this.healInterruptedBackups();
         const now = dayjs().tz(APP_TZ), hhmm = now.format('HH:mm'), slot = now.format('YYYY-MM-DD HH:mm');
-        const bootSettled = Date.now() - bootAtMs >= 90_000 && this.db.queue.stats().pending === 0;
-        if (bootSettled) {
+        if (Date.now() - bootAtMs >= 90_000 && this.db.queue.stats().pending === 0) {
           const catchUpKind = detectDueCatchUpBackup(this.db, now);
-          if (catchUpKind) {
-            this.lastTriggeredSlot = slot;
-            await this.runBackup(catchUpKind, 'embedded-cron');
-            return;
-          }
+          if (catchUpKind) { this.lastTriggeredSlot = slot; await this.runBackup(catchUpKind, 'embedded-cron'); return; }
         }
         if (slot !== this.lastTriggeredSlot) {
           if (hhmm === '01:00') { this.lastTriggeredSlot = slot; await this.runBackup('DAILY', 'embedded-cron'); }
           else if (['06:00', '10:00', '14:00', '18:00', '22:00'].includes(hhmm)) { this.lastTriggeredSlot = slot; await this.runBackup('CRITICAL', 'embedded-cron'); }
-          else if (hhmm === '02:00' && now.day() === 0) { this.lastTriggeredSlot = slot; await this.runBackup('WEEKLY', 'embedded-cron'); }
+          else if ((hhmm === '02:00' || hhmm === '23:30') && now.day() === 0) { this.lastTriggeredSlot = slot; await this.runWeeklySundayArchive('embedded-cron'); }
           else if (hhmm === '03:00' && now.date() === 1) { this.lastTriggeredSlot = slot; await this.runBackup('MONTHLY', 'embedded-cron'); }
           else if (hhmm === '04:00') { this.lastTriggeredSlot = slot; await this.applyRetention(); await this.reconciliation.scanAndRepair({ autoFix: true, actorId: 'embedded-cron' }); }
         }
-      } catch (err) {
-        log.error({ err }, 'Lỗi chạy tác vụ lập lịch nội bộ');
-      } finally {
-        this.running = false;
-      }
+      } catch (err) { log.error({ err }, 'Lỗi chạy tác vụ lập lịch nội bộ'); }
+      finally { this.running = false; }
     }, 60_000);
     this.timer.unref?.();
     log.info('Đã kích hoạt bộ lập lịch sao lưu & tự động phục hồi sao lưu bị ngắt (Embedded Worker)');

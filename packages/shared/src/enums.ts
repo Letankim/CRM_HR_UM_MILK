@@ -88,8 +88,8 @@ export const DEFAULT_SHIFT_CODES = ['CA_SANG', 'CA_CHIEU', 'CA_TOI', 'HANH_CHINH
 export type DefaultShiftCode = (typeof DEFAULT_SHIFT_CODES)[number];
 export const DEFAULT_SHIFT_LABELS: Record<DefaultShiftCode, string> = {
   CA_SANG: 'Ca Sáng (07:00 - 12:00)',
-  CA_CHIEU: 'Ca Chiều (12:00 - 17:00)',
-  CA_TOI: 'Ca Tối (17:00 - 22:30)',
+  CA_CHIEU: 'Ca Chiều (12:00 - 18:00)',
+  CA_TOI: 'Ca Tối (18:00 - 23:00)',
   HANH_CHINH: 'Ca Hành chính (08:00 - 17:30)',
 };
 
@@ -189,7 +189,7 @@ export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplateCode, string> = {
 export const API_ERROR_CODES = [
   'VALIDATION_ERROR', 'BAD_REQUEST', 'UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'VERSION_CONFLICT',
   'ACCOUNT_LOCKED', 'RATE_LIMITED', 'SYNC_PENDING', 'BUSINESS_RULE_VIOLATION', 'REQUEST_ERROR', 'INTERNAL_ERROR',
-  'PIN_CHANGE_REQUIRED',
+  'PIN_CHANGE_REQUIRED', 'SEPARATION_OF_DUTIES_VIOLATION',
 ] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
