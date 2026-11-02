@@ -97,7 +97,7 @@ export function resolveBranchFromText(raw: string, branches: { id: string; code:
     : /TÔN ĐẢN|TON DAN|QUẬN 4|Q\.?4|CN0?4/i.test(val) ? 'CN04'
     : /CỦ CHI|CU CHI|XƯỞNG|XUONG/i.test(val) ? 'XUONG_SX'
     : /ĐẶNG THAI MAI|DANG THAI MAI|PHÚ NHUẬN|PHU NHUAN|VĂN PHÒNG|VAN PHONG/i.test(val) ? 'VAN_PHONG' : '';
-  return codeMatch ? (branches.find((b) => b.code.toUpperCase() === codeMatch)?.id ?? codeMatch) : val;
+  return codeMatch ? (branches.find((b) => b.code.toUpperCase() === codeMatch)?.id ?? codeMatch) : (branches[0]?.id ?? val);
 }
 
 /** Chấm tự động 9 tiêu chí (thang 14 điểm) và kiểm tra cờ loại trực tiếp (Red Flag). */

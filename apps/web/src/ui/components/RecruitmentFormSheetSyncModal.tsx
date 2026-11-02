@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, App, Button, Descriptions, Form, Input, InputNumber, Modal, Space, Switch, Tag } from 'antd';
+import { App, Button, Descriptions, Form, Input, InputNumber, Modal, Space, Switch, Tag } from 'antd';
 import { CheckCircleOutlined, ClockCircleOutlined, CloudSyncOutlined, LinkOutlined, SaveOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -115,13 +115,6 @@ export function RecruitmentFormSheetSyncModal({ open, onClose, onSynced }: Props
       }
     >
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
-        <Alert
-          type="info"
-          showIcon
-          message="Đồng bộ tự động hàng giờ & Chống trùng lặp tuyệt đối"
-          description="Hệ thống đọc trực tiếp từ đường dẫn Google Sheet lưu câu trả lời Google Form (FROM_NHAN_VIEN), tự động chấm điểm AI 14 điểm (9 tiêu chí + cờ loại Red Flag) và tự động bỏ qua 100% các ứng viên đã lấy trước đó (so khớp theo mã dòng, số điện thoại 10 số và email)."
-        />
-
         {cfg && (
           <Descriptions size="small" bordered column={2}>
             <Descriptions.Item label="Trạng thái tự động">

@@ -7,23 +7,16 @@ import { scoreCandidateForm14 } from './candidate-form-scorer.js';
 export const RECRUITMENT_FORM_SHEET_CONFIG_KEY = 'RECRUITMENT_FORM_SHEET_CONFIG';
 
 export interface RecruitmentFormSheetConfig {
-  sheet_url: string;
-  spreadsheet_id: string;
-  gid: string;
-  tab_name: string;
-  hourly_auto_sync: boolean;
-  sync_interval_minutes: number;
-  last_synced_at: string;
-  last_new_count: number;
-  last_skipped_count: number;
-  last_total_rows: number;
-  last_status: 'IDLE' | 'SUCCESS' | 'ERROR';
-  last_message: string;
+  sheet_url: string; spreadsheet_id: string; gid: string; tab_name: string;
+  hourly_auto_sync: boolean; sync_interval_minutes: number; last_synced_at: string;
+  last_new_count: number; last_skipped_count: number; last_total_rows: number;
+  last_status: 'IDLE' | 'SUCCESS' | 'ERROR'; last_message: string;
 }
 
-const DEFAULT_SAMPLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1UMBM_FROM_NHAN_VIEN_FORM_2026/edit#gid=0';
+const DEFAULT_SHEET_ID = '17wXJZORVF6rtjEFhXWsEWRNY2TpbLk5TPvx08YWtQz8';
+const DEFAULT_SAMPLE_SHEET_URL = `https://docs.google.com/spreadsheets/d/${DEFAULT_SHEET_ID}/edit`;
 
-/** Dữ liệu mẫu thực tế từ Google Sheet FROM_NHAN_VIEN của Ụm Bò Milk (khi chưa nối link ngoài hoặc dùng link mặc định). */
+/** Dữ liệu mẫu thực tế từ Google Sheet FROM_NHAN_VIEN của Ụm Bò Milk (dùng khi môi trường test/offline). */
 export const BUILTIN_FROM_NHAN_VIEN_ROWS: Record<string, unknown>[] = [
   { source_row: 'GF-20260914-0346635827', 'Dấu thời gian': '2026-09-14T20:58:11.000+07:00', 'Tên Bạn là?': 'Nguyễn Thị Ngọc Hân', 'Giới tính của bạn?': 'Nữ', 'Năm Sinh của bạn?': '2004 - 2008', 'Trình độ học vấn': 'Đại học', 'Quê Quán theo CCCD?': 'Quảng Ngãi', 'Số điện thoại của bạn (Số zalo để liên hệ)': '0346635827', 'Em có thể làm ca nào?': 'Ca Sáng: 7g00 - 12g00', 'Chi nhánh em muốn ứng tuyển (CỐ ĐỊNH)?': 'CN3: 120 Hoàng Diệu 2, Phường Linh Trung, TP Thủ Đức', 'Kinh nghiệm làm việc?': 'Có kinh nghiệm khác ngoài FNB', 'Nếu như ngày mai em có việc đột xuất trùng lịch ca trực': 'Khi có việc đột xuất trùng với lịch ca trực vào ngày mai em sẽ báo ngay cho quản lý và nhờ bạn đổi ca hỗ trợ', 'Gửi link Facebook cá nhân của bạn vào đây nhé!': 'https://www.facebook.com/hnnguyn2503', 'Bạn biết tin ứng tuyển qua hình thức nào?': 'Quảng cáo FB, Tiktok, Instagram...' },
   { source_row: 'GF-20260915-0325577887', 'Dấu thời gian': '2026-09-15T08:52:44.000+07:00', 'Tên Bạn là?': 'Lênh Hân Hân', 'Giới tính của bạn?': 'Nữ', 'Năm Sinh của bạn?': '2004 - 2008', 'Trình độ học vấn': 'Đã nghỉ học chỉ đi làm', 'Quê Quán theo CCCD?': 'Bến Tre', 'Số điện thoại của bạn (Số zalo để liên hệ)': '0325577887', 'Em có thể làm ca nào?': 'Có thể làm từ 2 Ca trở lên', 'Chi nhánh em muốn ứng tuyển (CỐ ĐỊNH)?': 'CN1: 130 Vạn Kiếp, Phường 3, Quận Bình Thạnh', 'Kinh nghiệm làm việc?': 'Đã từng làm FNB pha chế trà sữa', 'Nếu như ngày mai em có việc đột xuất trùng lịch ca trực': 'Nếu công việc đột xuất quan trọng thì em sẽ xin phép quản lý trước và tìm bạn đổi ca trực', 'Gửi link Facebook cá nhân của bạn vào đây nhé!': 'https://www.facebook.com/share/14siLtSdvfh/', 'Bạn biết tin ứng tuyển qua hình thức nào?': 'Quảng cáo FB, Tiktok, Instagram...' },
@@ -35,19 +28,30 @@ export function extractSpreadsheetMeta(rawUrlOrId: string): { spreadsheetId: str
   const clean = (rawUrlOrId || '').trim();
   const idMatch = clean.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   const gidMatch = clean.match(/[?#&]gid=(\d+)/);
-  const spreadsheetId = idMatch ? idMatch[1]! : (/^[a-zA-Z0-9-_]{15,}$/.test(clean) ? clean : '1UMBM_FROM_NHAN_VIEN_FORM_2026');
-  return { spreadsheetId, gid: gidMatch ? gidMatch[1]! : '0' };
+  const spreadsheetId = idMatch ? idMatch[1]! : (/^[a-zA-Z0-9-_]{15,}$/.test(clean) ? clean : DEFAULT_SHEET_ID);
+  return { spreadsheetId, gid: gidMatch ? gidMatch[1]! : '' };
 }
 
 export function getRecruitmentFormSheetConfig(ctx: AppContext): RecruitmentFormSheetConfig {
   const row = ctx.db.systemSettings.find((s) => s.key === RECRUITMENT_FORM_SHEET_CONFIG_KEY);
   const defaults: RecruitmentFormSheetConfig = {
-    sheet_url: DEFAULT_SAMPLE_SHEET_URL, spreadsheet_id: '1UMBM_FROM_NHAN_VIEN_FORM_2026', gid: '0',
+    sheet_url: DEFAULT_SAMPLE_SHEET_URL, spreadsheet_id: DEFAULT_SHEET_ID, gid: '',
     tab_name: 'FROM_NHAN_VIEN', hourly_auto_sync: true, sync_interval_minutes: 60,
     last_synced_at: '', last_new_count: 0, last_skipped_count: 0, last_total_rows: 0, last_status: 'IDLE', last_message: 'Chưa chạy đồng bộ',
   };
   if (!row?.value) return defaults;
-  try { return { ...defaults, ...(JSON.parse(row.value) as Partial<RecruitmentFormSheetConfig>) }; } catch { return defaults; }
+  try {
+    const parsed = { ...defaults, ...(JSON.parse(row.value) as Partial<RecruitmentFormSheetConfig>) };
+    if (parsed.spreadsheet_id === '1UMBM_FROM_NHAN_VIEN_FORM_2026') {
+      parsed.sheet_url = DEFAULT_SAMPLE_SHEET_URL;
+      parsed.spreadsheet_id = DEFAULT_SHEET_ID;
+      parsed.gid = '';
+    }
+    const meta = extractSpreadsheetMeta(parsed.sheet_url);
+    parsed.spreadsheet_id = meta.spreadsheetId;
+    parsed.gid = meta.gid;
+    return parsed;
+  } catch { return defaults; }
 }
 
 export async function saveRecruitmentFormSheetConfig(ctx: AppContext, patch: Partial<RecruitmentFormSheetConfig>, actorId = 'system'): Promise<RecruitmentFormSheetConfig> {
@@ -57,8 +61,8 @@ export async function saveRecruitmentFormSheetConfig(ctx: AppContext, patch: Par
   const merged: RecruitmentFormSheetConfig = {
     ...current, ...patch,
     sheet_url: nextUrl || DEFAULT_SAMPLE_SHEET_URL,
-    spreadsheet_id: patch.spreadsheet_id?.trim() || meta.spreadsheetId,
-    gid: patch.gid?.trim() || meta.gid,
+    spreadsheet_id: meta.spreadsheetId,
+    gid: meta.gid,
   };
   const existing = ctx.db.systemSettings.find((s) => s.key === RECRUITMENT_FORM_SHEET_CONFIG_KEY);
   if (existing) {
@@ -72,71 +76,96 @@ export async function saveRecruitmentFormSheetConfig(ctx: AppContext, patch: Par
   return merged;
 }
 
-function parseCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = '', inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]!;
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [], cur = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
     if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; } else inQuotes = !inQuotes;
-    } else if (ch === ',' && !inQuotes) { out.push(cur.trim()); cur = ''; } else cur += ch;
+      if (inQuotes && text[i + 1] === '"') { cur += '"'; i++; } else inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      row.push(cur.trim()); cur = '';
+    } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(cur.trim()); cur = '';
+      if (row.some((c) => c.length > 0)) rows.push(row);
+      row = [];
+    } else {
+      cur += ch;
+    }
   }
-  out.push(cur.trim());
-  return out;
+  row.push(cur.trim());
+  if (row.some((c) => c.length > 0)) rows.push(row);
+  return rows;
 }
 
-async function fetchRowsFromGoogleSheet(cfg: RecruitmentFormSheetConfig): Promise<Record<string, unknown>[]> {
-  if (!cfg.spreadsheet_id || cfg.spreadsheet_id === '1UMBM_FROM_NHAN_VIEN_FORM_2026') return BUILTIN_FROM_NHAN_VIEN_ROWS;
-  const csvUrl = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(cfg.spreadsheet_id)}/gviz/tq?tqx=out:csv${cfg.gid ? `&gid=${encodeURIComponent(cfg.gid)}` : ''}`;
-  try {
-    const res = await fetch(csvUrl, { signal: AbortSignal.timeout(8_000) });
-    if (!res.ok) return BUILTIN_FROM_NHAN_VIEN_ROWS;
-    const text = await res.text();
-    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    if (lines.length < 2) return BUILTIN_FROM_NHAN_VIEN_ROWS;
-    const headers = parseCsvLine(lines[0]!);
-    return lines.slice(1).map((line, idx) => {
-      const cols = parseCsvLine(line);
-      const obj: Record<string, unknown> = { source_row: `GF-${cfg.spreadsheet_id.slice(0, 8)}-${idx + 2}` };
-      headers.forEach((h, i) => { if (h) obj[h] = cols[i] ?? ''; });
-      return obj;
-    });
-  } catch { return BUILTIN_FROM_NHAN_VIEN_ROWS; }
+async function fetchRowsFromGoogleSheet(ctx: AppContext, cfg: RecruitmentFormSheetConfig): Promise<Record<string, unknown>[]> {
+  if (ctx.env.NODE_ENV === 'test' || !cfg.spreadsheet_id || cfg.spreadsheet_id === '1UMBM_FROM_NHAN_VIEN_FORM_2026') {
+    return BUILTIN_FROM_NHAN_VIEN_ROWS;
+  }
+  const base = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(cfg.spreadsheet_id)}/gviz/tq?tqx=out:csv`;
+  const urlsToTry = cfg.gid && cfg.gid !== '0' ? [`${base}&gid=${encodeURIComponent(cfg.gid)}`, base] : [base];
+  for (const csvUrl of urlsToTry) {
+    try {
+      const res = await fetch(csvUrl, { signal: AbortSignal.timeout(8_000) });
+      if (!res.ok) continue;
+      const text = await res.text();
+      if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) continue;
+      const matrix = parseCsvRows(text);
+      if (matrix.length < 2) continue;
+      const headers = matrix[0]!;
+      return matrix.slice(1).map((cols, idx) => {
+        const obj: Record<string, unknown> = { source_row: `GF-${cfg.spreadsheet_id.slice(0, 8)}-${idx + 2}` };
+        headers.forEach((h, i) => { if (h) obj[h] = cols[i] ?? ''; });
+        return obj;
+      });
+    } catch { /* try next */ }
+  }
+  return [];
 }
 
 export async function syncRecruitmentFormFromGoogleSheet(ctx: AppContext, opts: { actorId?: string; customRows?: Record<string, unknown>[]; sheetUrl?: string } = {}) {
   const actorId = opts.actorId || 'system-sync';
   if (opts.sheetUrl) await saveRecruitmentFormSheetConfig(ctx, { sheet_url: opts.sheetUrl }, actorId);
   const cfg = getRecruitmentFormSheetConfig(ctx);
-  const rawRows = opts.customRows?.length ? opts.customRows : await fetchRowsFromGoogleSheet(cfg);
+  const rawRows = opts.customRows?.length ? opts.customRows : await fetchRowsFromGoogleSheet(ctx, cfg);
   const branches = ctx.db.branches.all();
 
-  const existingPhones = new Set<string>(), existingEmails = new Set<string>(), existingSourceRows = new Set<string>();
-  for (const c of ctx.db.candidates.all(true)) {
-    const p = normalizePhone(c.phone);
-    if (p) existingPhones.add(p);
-    if (c.email?.trim()) existingEmails.add(c.email.trim().toLowerCase());
-    if (c.source_row?.trim()) existingSourceRows.add(c.source_row.trim());
-  }
-  for (const e of ctx.db.employees.all(true)) {
-    const p = normalizePhone(e.phone);
-    if (p) existingPhones.add(p);
-    if (e.email?.trim()) existingEmails.add(e.email.trim().toLowerCase());
-  }
+  const activeCandidates = ctx.db.candidates.all();
+  const existingSourceRows = new Set(activeCandidates.map((c) => (c.source_row || '').trim()).filter(Boolean));
+  const existingByPhone = new Map(activeCandidates.map((c) => [normalizePhone(c.phone) ?? c.phone, c]));
 
   const createdItems = [];
   let skippedCount = 0;
-  for (const row of rawRows) {
+  for (const [idx, row] of rawRows.entries()) {
     const scored = scoreCandidateForm14(row, branches);
     const validPhone = normalizePhone(scored.raw_phone || scored.phone);
     if (!validPhone) { skippedCount++; continue; }
-    const rowKey = String(row.source_row || `GF-${cfg.spreadsheet_id.slice(0, 8)}-${validPhone}`);
-    const emailLower = (scored.email || '').trim().toLowerCase();
-    if (existingPhones.has(validPhone) || existingSourceRows.has(rowKey) || (emailLower && existingEmails.has(emailLower))) {
+    const tsSlug = (scored.timestamp || '').replace(/[^0-9]/g, '').slice(-10) || String(idx + 2);
+    const rowKey = String(row.source_row || `GF-${cfg.spreadsheet_id.slice(0, 8)}-${tsSlug}-${validPhone}`);
+    const matchedPhoneCand = existingByPhone.get(validPhone);
+    const sameSheetPrefix = `GF-${cfg.spreadsheet_id.slice(0, 8)}`;
+
+    if (existingSourceRows.has(rowKey) || (matchedPhoneCand && (matchedPhoneCand.source_row || '').startsWith(sameSheetPrefix))) {
       skippedCount++; continue;
     }
-    existingPhones.add(validPhone); existingSourceRows.add(rowKey);
-    if (emailLower) existingEmails.add(emailLower);
+    existingSourceRows.add(rowKey);
+
+    if (matchedPhoneCand) {
+      const updated = await ctx.db.candidates.update(matchedPhoneCand.id, matchedPhoneCand.version, {
+        source_row: rowKey, full_name: scored.full_name || matchedPhoneCand.full_name,
+        email: scored.email || matchedPhoneCand.email, branch_pref: scored.branch_pref || matchedPhoneCand.branch_pref,
+        shift_pref: scored.shift_pref || matchedPhoneCand.shift_pref, staff_group: scored.staff_group || matchedPhoneCand.staff_group,
+        position: resolveStaffGroupLabel(ctx, scored.staff_group, scored.position),
+        birth_year: scored.birth_year || matchedPhoneCand.birth_year, gender: scored.gender || matchedPhoneCand.gender,
+        experience_note: scored.experience_note || matchedPhoneCand.experience_note,
+        ai_score_14: scored.ai_score_14, ai_qualified: scored.ai_qualified, red_flag_reason: scored.red_flag_reason,
+        form_payload_json: JSON.stringify(scored),
+      }, actorId);
+      existingByPhone.set(validPhone, updated);
+      createdItems.push(updated);
+      continue;
+    }
 
     const created = await ctx.db.candidates.insert({
       candidate_code: `UV${String(ctx.db.candidates.all(true).length + 1).padStart(4, '0')}`,
@@ -150,13 +179,16 @@ export async function syncRecruitmentFormFromGoogleSheet(ctx: AppContext, opts: 
       is_vip: false, vip_rank: 0, ai_score_14: scored.ai_score_14, ai_qualified: scored.ai_qualified,
       red_flag_reason: scored.red_flag_reason, form_payload_json: JSON.stringify(scored),
     }, actorId);
+    existingByPhone.set(validPhone, created);
     createdItems.push(created);
   }
 
   const now = nowIso();
   const msg = createdItems.length > 0
     ? `Đã đồng bộ ${createdItems.length} ứng viên mới từ Sheet Form (bỏ qua ${skippedCount} hồ sơ đã tồn tại)`
-    : `Không có ứng viên mới (đã bỏ qua ${skippedCount}/${rawRows.length} hồ sơ đã lấy trước đó)`;
+    : rawRows.length === 0
+      ? 'Chưa có câu trả lời nào trong trang tính Google Sheet Form'
+      : `Không có ứng viên mới (đã bỏ qua ${skippedCount}/${rawRows.length} hồ sơ đã lấy trước đó)`;
   const updatedCfg = await saveRecruitmentFormSheetConfig(ctx, {
     last_synced_at: now, last_new_count: createdItems.length, last_skipped_count: skippedCount,
     last_total_rows: rawRows.length, last_status: 'SUCCESS', last_message: msg,
