@@ -164,6 +164,7 @@ export function EmployeeTestCenterView({
       columns={[
         { title: 'Mã đợt giao', dataIndex: 'assignment_code', width: 115, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
         { title: 'Đề thi nghiệp vụ', dataIndex: 'testTitle', ellipsis: true },
+        { title: 'Số câu hỏi', width: 125, render: (_, r) => <Tag color="purple" style={{ margin: 0, whiteSpace: 'nowrap' }}>Random {String(r.examSampleSize ?? r.exam_sample_size ?? 25)} câu</Tag> },
         { title: 'Thời lượng', dataIndex: 'durationMinutes', width: 95, render: (v: number) => `${v ?? 15} phút` },
         { title: 'Lượt đã thi', width: 105, render: (_, r) => <Tag color="blue" style={{ margin: 0 }}>{`${r.attempts_used ?? 0}/${r.max_attempts ?? 3} lần`}</Tag> },
         { title: 'Thời gian mở / Hạn nộp', width: 175, render: (_, r) => <div className="num" style={{ fontSize: 12 }}><div>Mở: {r.open_at ? dayjs(String(r.open_at)).format('HH:mm DD/MM') : 'Mở ngay'}</div><div style={{ color: '#64748B' }}>Hạn: {r.close_at ? dayjs(String(r.close_at)).format('HH:mm DD/MM/YYYY') : '—'}</div></div> },

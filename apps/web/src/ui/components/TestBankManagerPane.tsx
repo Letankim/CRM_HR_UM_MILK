@@ -33,12 +33,12 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
 
   const openCreateBank = () => {
     setEditingTest(null); setQuestions(DEFAULT_QUESTIONS); setModalTab('config'); bankForm.resetFields();
-    bankForm.setFieldsValue({ code: `SOP-TEST-${String(tests.length + 1).padStart(2, '0')}`, staff_group: 'BARISTA', target_stage: 'PROBATION', duration_minutes: 15, pass_percent: 80, max_attempts: 3, status: 'APPROVED' });
+    bankForm.setFieldsValue({ code: `SOP-TEST-${String(tests.length + 1).padStart(2, '0')}`, staff_group: 'BARISTA', target_stage: 'PROBATION', duration_minutes: 15, pass_percent: 80, max_attempts: 3, exam_sample_size: DEFAULT_QUESTIONS.length, status: 'APPROVED' });
     setBankModal(true);
   };
   const openEditBank = async (record: Record<string, unknown>, initialTab: 'config' | 'questions' = 'config') => {
     setEditingTest(record); setModalTab(initialTab);
-    bankForm.setFieldsValue({ code: record.code, title: record.title, staff_group: record.staff_group || 'BARISTA', target_stage: record.target_stage || 'PROBATION', duration_minutes: record.duration_minutes ?? 15, pass_percent: record.pass_percent ?? 80, max_attempts: record.max_attempts ?? 3, status: record.status || 'APPROVED' });
+    bankForm.setFieldsValue({ code: record.code, title: record.title, staff_group: record.staff_group || 'BARISTA', target_stage: record.target_stage || 'PROBATION', duration_minutes: record.duration_minutes ?? 15, pass_percent: record.pass_percent ?? 80, max_attempts: record.max_attempts ?? 3, exam_sample_size: Number(record.exam_sample_size ?? record.examSampleSize ?? record.questionsCount ?? 25), status: record.status || 'APPROVED' });
     try {
       const fullRes = await api.get<{ tests: Record<string, unknown>[] }>('/admin/tests/bank?include_answers=1');
       const fullTest = (fullRes.tests ?? []).find((t) => String(t.id) === String(record.id));
@@ -50,24 +50,24 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
   const openCreateAssignment = (defaultTestId?: string) => {
     setEditingAssignment(null); asgForm.resetFields();
     const matchedTest = tests.find((t) => String(t.id) === String(defaultTestId ?? tests[0]?.id));
-    asgForm.setFieldsValue({ test_id: defaultTestId ?? (tests[0] ? String(tests[0].id) : undefined), max_attempts: Number(matchedTest?.max_attempts ?? 3), due_date: '2026-10-30', due_time: '17:00', note: '' });
+    asgForm.setFieldsValue({ test_id: defaultTestId ?? (tests[0] ? String(tests[0].id) : undefined), max_attempts: Number(matchedTest?.max_attempts ?? 3), exam_sample_size: Number(matchedTest?.exam_sample_size ?? matchedTest?.examSampleSize ?? matchedTest?.questionsCount ?? 25), due_date: '2026-10-30', due_time: '17:00', note: '' });
     setAsgModal(true);
   };
   const openEditAssignment = (record: Record<string, unknown>) => {
     setEditingAssignment(record);
     const parsed = dayjs(String(record.close_at || '2026-10-30T17:00:00'));
-    asgForm.setFieldsValue({ test_id: String(record.test_id || ''), employee_id: String(record.employee_id || ''), max_attempts: Number(record.max_attempts ?? 3), due_date: parsed.isValid() ? parsed.format('YYYY-MM-DD') : '2026-10-30', due_time: parsed.isValid() ? parsed.format('HH:mm') : '17:00', reset_attempts: false, note: String(record.note || '') });
+    asgForm.setFieldsValue({ test_id: String(record.test_id || ''), employee_id: String(record.employee_id || ''), max_attempts: Number(record.max_attempts ?? 3), exam_sample_size: Number(record.exam_sample_size ?? record.examSampleSize ?? 25), due_date: parsed.isValid() ? parsed.format('YYYY-MM-DD') : '2026-10-30', due_time: parsed.isValid() ? parsed.format('HH:mm') : '17:00', reset_attempts: false, note: String(record.note || '') });
     setAsgModal(true);
   };
 
   const saveBankMut = useMutation({
-    mutationFn: async () => { const vals = await bankForm.validateFields(); const payload = { ...vals, questions_json: JSON.stringify(questions) }; return editingTest ? api.put(`/admin/tests/bank/${editingTest.id}`, { ...payload, version: editingTest.version }) : api.post('/admin/tests/bank', payload); },
+    mutationFn: async () => { const vals = await bankForm.validateFields(); const payload = { ...vals, exam_sample_size: Math.min(questions.length, Math.max(1, Number(vals.exam_sample_size ?? questions.length))), questions_json: JSON.stringify(questions) }; return editingTest ? api.put(`/admin/tests/bank/${editingTest.id}`, { ...payload, version: editingTest.version }) : api.post('/admin/tests/bank', payload); },
     onSuccess: () => { message.success(editingTest ? 'Đã cập nhật bộ đề kiểm tra' : 'Đã tạo bộ đề kiểm tra mới'); setBankModal(false); refresh(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu bộ đề thất bại'),
   });
   const delBankMut = useMutation({ mutationFn: (r: Record<string, unknown>) => api.delete(`/admin/tests/bank/${r.id}`, { version: r.version }), onSuccess: () => { message.success('Đã xóa bộ đề kiểm tra'); refresh(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa bộ đề thất bại') });
   const assignMut = useMutation({
-    mutationFn: (v: Record<string, unknown>) => { const closeAt = `${v.due_date}T${v.due_time}:00+07:00`; return editingAssignment ? api.put(`/admin/tests/assignments/${editingAssignment.id}`, { version: editingAssignment.version, test_id: v.test_id, employee_id: v.employee_id, max_attempts: Number(v.max_attempts ?? 3), close_at: closeAt, reset_attempts: Boolean(v.reset_attempts), note: v.note ?? '' }) : api.post('/admin/tests/assignments', { test_id: v.test_id, employee_ids: v.employee_ids, max_attempts: Number(v.max_attempts ?? 3), close_at: closeAt, note: v.note ?? '' }); },
+    mutationFn: (v: Record<string, unknown>) => { const closeAt = `${v.due_date}T${v.due_time}:00+07:00`, sampleSize = Number(v.exam_sample_size ?? 25); return editingAssignment ? api.put(`/admin/tests/assignments/${editingAssignment.id}`, { version: editingAssignment.version, test_id: v.test_id, employee_id: v.employee_id, max_attempts: Number(v.max_attempts ?? 3), exam_sample_size: sampleSize, close_at: closeAt, reset_attempts: Boolean(v.reset_attempts), note: v.note ?? '' }) : api.post('/admin/tests/assignments', { test_id: v.test_id, employee_ids: v.employee_ids, max_attempts: Number(v.max_attempts ?? 3), exam_sample_size: sampleSize, close_at: closeAt, note: v.note ?? '' }); },
     onSuccess: () => { message.success(editingAssignment ? 'Đã cập nhật đợt giao bài kiểm tra thành công' : 'Đã giao bài kiểm tra cho nhân sự'); setAsgModal(false); setEditingAssignment(null); setSubTab('assignments'); refresh(); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu đợt giao bài thất bại'),
   });
@@ -92,7 +92,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
           { title: 'Mã bộ đề', dataIndex: 'code', width: 130, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
           { title: 'Tên bộ đề kiểm tra', dataIndex: 'title', ellipsis: true },
           { title: 'Nhóm vị trí', dataIndex: 'staffGroupLabel', width: 130 },
-          { title: 'Số câu hỏi', width: 95, render: (_, r) => `${r.questionsCount ?? r.total_questions ?? 2} câu` },
+          { title: 'Kho & Ra đề (Random)', width: 185, render: (_, r) => <Space size={4} style={{ whiteSpace: 'nowrap' }}><Tag color="blue" style={{ margin: 0 }}>Kho: {String(r.questionsCount ?? r.total_questions ?? 2)} câu</Tag><Tag color="purple" style={{ margin: 0 }}>Random: {String(r.examSampleSize ?? r.exam_sample_size ?? 25)} câu</Tag></Space> },
           { title: 'Thời gian thi', dataIndex: 'duration_minutes', width: 110, render: (v: number) => `${v} phút` },
           { title: 'Số lần tối đa', dataIndex: 'max_attempts', width: 105, render: (v: number) => `${v ?? 3} lần` },
           { title: 'Điểm chuẩn', dataIndex: 'pass_percent', width: 105, render: (v: number) => <Tag color="blue">{v}%</Tag> },
@@ -128,6 +128,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
           { title: 'Mã đợt giao', dataIndex: 'assignment_code', width: 115, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
           { title: 'Nhân sự nhận đề', dataIndex: 'employeeName', width: 165, ellipsis: true },
           { title: 'Bộ đề kiểm tra', dataIndex: 'testTitle', ellipsis: true },
+          { title: 'Số câu (Random)', width: 135, render: (_, r) => <Tag color="purple" style={{ margin: 0, whiteSpace: 'nowrap' }}>Random {String(r.examSampleSize ?? r.exam_sample_size ?? 25)}/{String(r.bankQuestionsCount ?? r.examSampleSize ?? 25)} câu</Tag> },
           { title: 'Lượt đã thi', width: 100, render: (_, r) => <Tag color="blue" style={{ margin: 0 }}>{`${r.attempts_used ?? 0}/${r.max_attempts ?? 3} lần`}</Tag> },
           { title: 'Hạn nộp bài', dataIndex: 'close_at', width: 135, render: (v: string) => <span className="num" style={{ fontSize: 12 }}>{v ? dayjs(v).format('HH:mm DD/MM/YYYY') : '—'}</span> },
           { title: 'Điểm cao nhất', dataIndex: 'best_score_percent', width: 110, render: (v: number) => <Tag color={v >= 80 ? 'green' : 'default'}>{v}%</Tag> },
@@ -176,7 +177,7 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
               children: (
                 <>
                   <Row gutter={12}><Col span={8}><Form.Item name="code" label="Mã bộ đề" rules={[{ required: true }]}><Input placeholder="SOP-BARISTA-01" suffix={<span style={{ cursor: 'pointer', userSelect: 'none', fontWeight: 600, fontSize: 12, color: '#2563EB', background: '#EFF6FF', padding: '1px 6px', borderRadius: 2 }} onClick={() => bankForm.setFieldValue('code', `SOP-${Math.floor(100 + Math.random() * 900)}`)}><ThunderboltOutlined /> Tự sinh</span>} /></Form.Item></Col><Col span={16}><Form.Item name="title" label="Tên bộ đề kiểm tra" rules={[{ required: true }]}><Input placeholder="Ví dụ: Quy chuẩn Pha chế & Vệ sinh An toàn Thực phẩm" /></Form.Item></Col></Row>
-                  <Row gutter={12}><Col span={6}><Form.Item name="staff_group" label="Nhóm vị trí áp dụng"><Select options={jobPositionOptions} /></Form.Item></Col><Col span={6}><Form.Item name="duration_minutes" label="Thời gian làm bài (phút)" rules={[{ required: true }]}><InputNumber min={5} max={180} step={5} style={{ width: '100%' }} suffix="phút" /></Form.Item></Col><Col span={6}><Form.Item name="pass_percent" label="Điểm chuẩn đạt (%)" rules={[{ required: true }]}><InputNumber min={10} max={100} step={5} style={{ width: '100%' }} suffix="%" /></Form.Item></Col><Col span={6}><Form.Item name="max_attempts" label="Số lần thi tối đa"><InputNumber min={1} max={20} style={{ width: '100%' }} suffix="lần" /></Form.Item></Col></Row>
+                  <Row gutter={12}><Col span={6}><Form.Item name="staff_group" label="Nhóm vị trí áp dụng"><Select options={jobPositionOptions} /></Form.Item></Col><Col span={6}><Form.Item name="exam_sample_size" label="Số câu Random mỗi đề" rules={[{ required: true }]}><InputNumber min={1} max={Math.max(1, questions.length)} style={{ width: '100%' }} suffix={`/${questions.length} câu`} /></Form.Item></Col><Col span={4}><Form.Item name="duration_minutes" label="Thời gian (phút)" rules={[{ required: true }]}><InputNumber min={5} max={180} step={5} style={{ width: '100%' }} suffix="phút" /></Form.Item></Col><Col span={4}><Form.Item name="pass_percent" label="Điểm chuẩn (%)" rules={[{ required: true }]}><InputNumber min={10} max={100} step={5} style={{ width: '100%' }} suffix="%" /></Form.Item></Col><Col span={4}><Form.Item name="max_attempts" label="Số lần tối đa"><InputNumber min={1} max={20} style={{ width: '100%' }} suffix="lần" /></Form.Item></Col></Row>
                 </>
               ),
             },

@@ -131,23 +131,23 @@ describe('Giai đoạn 3 -> 6: Thử việc Tự động, Hợp đồng 6MB, Gat
     }
 
     // Kiểm tra tự động từ chối phiếu bổ sung công quá hạn 30 phút
-    const expireRes = await t.app.inject({
-      method: 'POST',
-      url: '/api/admin/attendance-adjustments/auto-expire',
-      headers: hr,
-      payload: {},
-    });
+    const expireRes = await t.app.inject({ method: 'POST', url: '/api/admin/attendance-adjustments/auto-expire', headers: hr, payload: {} });
     expect(expireRes.statusCode).toBe(200);
 
-    // Khởi tạo ngân hàng 120 câu hỏi SOP chuẩn Ụm Bò Milk
-    const seed120 = await t.app.inject({
-      method: 'POST',
-      url: '/api/admin/tests/bank/seed-120',
-      headers: hr,
-      payload: {},
-    });
+    // Khởi tạo ngân hàng 120 câu hỏi SOP chuẩn Ụm Bò Milk & kiểm tra bốc ngẫu nhiên theo số câu cấu hình
+    const seed120 = await t.app.inject({ method: 'POST', url: '/api/admin/tests/bank/seed-120', headers: hr, payload: {} });
     expect([200, 201]).toContain(seed120.statusCode);
-    expect(seed120.json().data.total_questions).toBe(120);
+    const bank120 = seed120.json().data;
+    expect(bank120.total_questions).toBe(120);
+    expect(bank120.exam_sample_size).toBe(25);
+
+    const anyEmp = t.db.employees.all()[0]!;
+    const asg15 = await t.app.inject({ method: 'POST', url: '/api/admin/tests/assignments', headers: hr, payload: { test_id: bank120.id, employee_ids: [anyEmp.id], max_attempts: 3, exam_sample_size: 18 } });
+    expect(asg15.statusCode).toBe(201);
+    expect(asg15.json().data.exam_sample_size).toBe(18);
+    const start15 = await t.app.inject({ method: 'POST', url: `/api/tests/assignments/${asg15.json().data.id}/start`, headers: hr, payload: {} });
+    expect(start15.statusCode).toBe(201);
+    expect(start15.json().data.questions).toHaveLength(18);
   });
 
   it('5. Tính lương: Phụ cấp OT ngưỡng 10h/15h, 6 Cột Kế toán nhập tay, Separation of Duties & Giải mã / Sinh VietQR động Napas247', async () => {

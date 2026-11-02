@@ -54,6 +54,7 @@ export const zTestBank = zSystemColumns.extend({
   total_questions: z.coerce.number().int().default(5),
   approved_by: z.string().default(''),
   approved_at: z.string().default(''),
+  exam_sample_size: z.coerce.number().int().default(0),
 });
 export type TestBank = z.infer<typeof zTestBank>;
 
@@ -70,6 +71,7 @@ export const zTestAssignment = zSystemColumns.extend({
   best_score_percent: z.coerce.number().default(0),
   passed: zBool.default(false),
   note: z.string().default(''),
+  exam_sample_size: z.coerce.number().int().default(0),
 });
 export type TestAssignment = z.infer<typeof zTestAssignment>;
 

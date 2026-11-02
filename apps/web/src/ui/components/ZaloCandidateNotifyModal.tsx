@@ -34,12 +34,10 @@ interface Props {
 }
 
 function renderLocalPreview(
-  tpl: string,
-  target: ZaloNotifyTarget,
-  acc?: ZaloHrAccountItem,
+  tpl: string, target: ZaloNotifyTarget, acc?: ZaloHrAccountItem, isGreeting = false,
 ): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-  return tpl
+  const rendered = tpl
     .replace(/\{candidate_name\}/g, target.candidateName || 'Bạn')
     .replace(/\{candidate_code\}/g, target.candidateCode || 'UV')
     .replace(/\{position\}/g, target.positionLabel || 'Nhân viên Cửa hàng')
@@ -50,7 +48,9 @@ function renderLocalPreview(
     .replace(/\{rsvp_url\}/g, target.rsvpUrl || `${origin}/rsvp/xac-nhan`)
     .replace(/\{hr_zalo_name\}/g, acc?.zalo_name || `HR ${SYSTEM_CONFIG.brandName}`)
     .replace(/\{hr_zalo_phone\}/g, acc?.zalo_phone || '0901000002')
-    .replace(/\{minutes_left\}/g, '10');
+    .replace(/\{minutes_left\}/g, '10')
+    .trim();
+  return isGreeting && rendered.length > 150 ? rendered.slice(0, 150).trim() : rendered;
 }
 
 export function ZaloCandidateNotifyModal({ target, accounts, currentUserId, onClose, onOpenAccountsConfig }: Props) {
@@ -84,7 +84,7 @@ export function ZaloCandidateNotifyModal({ target, accounts, currentUserId, onCl
       : nextTpl === 'REMINDER' ? preferredAcc?.reminder_template
       : nextTpl === 'PASS' ? preferredAcc?.pass_template
       : preferredAcc?.invite_template;
-    setMsgText(renderLocalPreview(rawTpl || '', target, preferredAcc));
+    setMsgText(renderLocalPreview(rawTpl || '', target, preferredAcc, nextTpl === 'GREETING'));
   }, [target, accounts, currentUserId]);
 
   const handleAccountOrTplChange = (nextAccId: string, nextTpl: 'GREETING' | 'INVITE' | 'REMINDER' | 'PASS') => {
@@ -97,25 +97,20 @@ export function ZaloCandidateNotifyModal({ target, accounts, currentUserId, onCl
       : nextTpl === 'REMINDER' ? acc?.reminder_template
       : nextTpl === 'PASS' ? acc?.pass_template
       : acc?.invite_template;
-    setMsgText(renderLocalPreview(rawTpl || '', target, acc));
+    setMsgText(renderLocalPreview(rawTpl || '', target, acc, nextTpl === 'GREETING'));
   };
 
   const sendMut = useMutation({
     mutationFn: (mode: 'SEND' | 'COPY_AND_SAVE') =>
       api.post<{ zalo_chat_url: string; message: string }>('/admin/recruitment/zalo-send', {
-        candidate_id: target?.candidateId,
-        interview_id: target?.interviewId,
+        candidate_id: target?.candidateId, interview_id: target?.interviewId,
         zalo_account_id: selectedAcc?.id || selectedAccId,
         candidate_zalo_id: candZaloId.trim() || target?.candidatePhone || '',
-        template_type: tplType,
-        message: msgText,
-        mark_confirmed: target?.interviewId ? markConfirmed : undefined,
-        mode,
+        template_type: tplType, message: msgText,
+        mark_confirmed: target?.interviewId ? markConfirmed : undefined, mode,
       }),
-    onSuccess: async (res, mode) => {
-      try {
-        await navigator.clipboard.writeText(msgText);
-      } catch { /* ignore */ }
+    onSuccess: async (_res, mode) => {
+      try { await navigator.clipboard.writeText(msgText); } catch { /* ignore */ }
       qc.invalidateQueries({ queryKey: ['candidates'] });
       qc.invalidateQueries({ queryKey: ['interviews'] });
       if (mode === 'COPY_AND_SAVE') {
@@ -133,48 +128,22 @@ export function ZaloCandidateNotifyModal({ target, accounts, currentUserId, onCl
       width={840} style={{ maxWidth: 'calc(100vw - 24px)' }} open={Boolean(target)} destroyOnHidden onCancel={onClose}
       title={target ? `Nhắn Zalo: ${target.candidateName}${target.candidateCode ? ` (${target.candidateCode})` : ''}` : 'Nhắn Zalo'}
       footer={[
-        <Button key="cancel" icon={<CloseOutlined />} onClick={onClose}>
-          Đóng
-        </Button>,
-        <Button key="copy" icon={<CopyOutlined />} loading={sendMut.isPending} onClick={() => sendMut.mutate('COPY_AND_SAVE')}>
-          Sao chép tin nhắn
-        </Button>,
-        <Button key="send" type="primary" icon={<SendOutlined />} loading={sendMut.isPending} onClick={() => sendMut.mutate('SEND')}>
-          Gửi Zalo
-        </Button>,
+        <Button key="cancel" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>,
+        <Button key="copy" icon={<CopyOutlined />} loading={sendMut.isPending} onClick={() => sendMut.mutate('COPY_AND_SAVE')}>Sao chép tin nhắn</Button>,
+        <Button key="send" type="primary" icon={<SendOutlined />} loading={sendMut.isPending} onClick={() => sendMut.mutate('SEND')}>Gửi Zalo</Button>,
       ]}
     >
       {target && (
         <Form layout="vertical">
           <Row gutter={12}>
             <Col xs={24} md={14}>
-              <Form.Item
-                label={
-                  <Space size={8}>
-                    <span>Tài khoản Zalo HR gửi đi</span>
-                    <Button size="small" type="link" icon={<SettingOutlined />} onClick={onOpenAccountsConfig} style={{ padding: 0, height: 'auto' }}>
-                      Quản lý TK Zalo
-                    </Button>
-                  </Space>
-                }
-              >
-                <Select
-                  value={selectedAcc?.id}
-                  onChange={(v) => handleAccountOrTplChange(v, tplType)}
-                  options={accounts.map((a) => ({
-                    value: a.id,
-                    label: `${a.zalo_name} (${a.zalo_phone}) — ${a.owner_display_name}`,
-                  }))}
-                />
+              <Form.Item label={<Space size={8}><span>Tài khoản Zalo HR gửi đi</span><Button size="small" type="link" icon={<SettingOutlined />} onClick={onOpenAccountsConfig} style={{ padding: 0, height: 'auto' }}>Quản lý TK Zalo</Button></Space>}>
+                <Select value={selectedAcc?.id} onChange={(v) => handleAccountOrTplChange(v, tplType)} options={accounts.map((a) => ({ value: a.id, label: `${a.zalo_name} (${a.zalo_phone}) — ${a.owner_display_name}` }))} />
               </Form.Item>
             </Col>
             <Col xs={24} md={10}>
               <Form.Item label="SĐT / ID Zalo của ứng viên (Lưu để nhắc lịch)">
-                <Input
-                  value={candZaloId}
-                  onChange={(e) => setCandZaloId(e.target.value)}
-                  placeholder="Nhập SĐT hoặc ID Zalo ứng viên..."
-                />
+                <Input value={candZaloId} onChange={(e) => setCandZaloId(e.target.value)} placeholder="Nhập SĐT hoặc ID Zalo ứng viên..." />
               </Form.Item>
             </Col>
           </Row>
@@ -193,22 +162,29 @@ export function ZaloCandidateNotifyModal({ target, accounts, currentUserId, onCl
             </Radio.Group>
           </Form.Item>
 
-          <Form.Item label="Nội dung tin nhắn gửi ứng viên (có thể chỉnh sửa trước khi gửi hoặc sao chép)">
-            <Input.TextArea rows={5} value={msgText} onChange={(e) => setMsgText(e.target.value)} />
+          <Form.Item
+            label={
+              <Space size={8} wrap>
+                <span>{tplType === 'GREETING' ? 'Lời mời kết bạn Zalo (Giới hạn tối đa 150 ký tự)' : 'Nội dung tin nhắn gửi ứng viên (có thể chỉnh sửa trước khi gửi hoặc sao chép)'}</span>
+                {tplType === 'GREETING' && <Tag color={msgText.length > 150 ? 'red' : 'blue'} style={{ margin: 0 }}>{msgText.length}/150 ký tự</Tag>}
+              </Space>
+            }
+          >
+            <Input.TextArea rows={5} maxLength={tplType === 'GREETING' ? 150 : 2000} showCount value={msgText} onChange={(e) => setMsgText(tplType === 'GREETING' ? e.target.value.slice(0, 150) : e.target.value)} />
           </Form.Item>
 
           {target.interviewId && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '8px 12px' }}>
-              <Space size={8} wrap>
-                <Tag color="blue" style={{ margin: 0 }}>Lịch hẹn: {target.interviewTime || 'Đã xếp lịch'}</Tag>
-                <span style={{ fontSize: 12, color: '#475569' }}>
-                  Khi ứng viên xác nhận tham gia, hệ thống sẽ tự động gửi tin nhắn Zalo nhắc lịch trước giờ phỏng vấn 5–15 phút.
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '8px 12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                <Tag color="blue" style={{ margin: 0, flexShrink: 0 }}>Lịch hẹn: {target.interviewTime || 'Đã xếp lịch'}</Tag>
+                <span style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Khi xác nhận lịch, hệ thống sẽ tự động nhắn Zalo nhắc trước giờ phỏng vấn 5–15 phút.
                 </span>
-              </Space>
-              <Space size={6}>
-                <span style={{ fontSize: 12, fontWeight: 600 }}>Đã xác nhận lịch:</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', whiteSpace: 'nowrap' }}>Đã xác nhận lịch:</span>
                 <Switch size="small" checked={markConfirmed} onChange={setMarkConfirmed} />
-              </Space>
+              </div>
             </div>
           )}
         </Form>

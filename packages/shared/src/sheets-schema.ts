@@ -41,8 +41,8 @@ export const SPREADSHEETS = {
         'change_type', 'from_branch_id', 'to_branch_id', 'from_shift_code', 'to_shift_code',
         'probation_hours_completed', 'test_score_percent', 'evaluation_summary', 'approved_by',
       ),
-      TEST_BANK: cols('code', 'title', 'questions_json', 'duration_minutes', 'pass_percent', 'max_attempts', 'status', 'target_stage', 'staff_group', 'total_questions', 'approved_by', 'approved_at'),
-      TEST_ASSIGNMENTS: cols('test_id', 'employee_id', 'open_at', 'close_at', 'assigned_by', 'status', 'branch_id', 'max_attempts', 'attempts_used', 'best_score_percent', 'passed', 'note'),
+      TEST_BANK: cols('code', 'title', 'questions_json', 'duration_minutes', 'pass_percent', 'max_attempts', 'status', 'target_stage', 'staff_group', 'total_questions', 'approved_by', 'approved_at', 'exam_sample_size'),
+      TEST_ASSIGNMENTS: cols('test_id', 'employee_id', 'open_at', 'close_at', 'assigned_by', 'status', 'branch_id', 'max_attempts', 'attempts_used', 'best_score_percent', 'passed', 'note', 'exam_sample_size'),
       TEST_ATTEMPTS: cols(
         'assignment_id', 'employee_id', 'started_at', 'expires_at', 'submitted_at', 'answers_json',
         'score_percent', 'passed', 'auto_submitted', 'test_id', 'attempt_no', 'duration_seconds',

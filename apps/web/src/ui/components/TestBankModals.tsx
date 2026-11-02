@@ -40,13 +40,16 @@ export function TestAssignmentFormModal({
   onClose: () => void; onSubmit: (values: Record<string, unknown>) => void;
 }) {
   const empSelect = useEmployeeSearchSelect({ initialOptions: employees, enabled: open });
+  const watchedTestId = Form.useWatch('test_id', form);
+  const selectedTest = tests.find((t) => String(t.id) === String(watchedTestId)) ?? tests[0];
+  const totalBankQuestions = Math.max(1, Number(selectedTest?.questionsCount ?? selectedTest?.total_questions ?? 25));
   const empOptions = editing?.employee_id && !empSelect.options.some((e) => e.value === String(editing.employee_id))
     ? [{ value: String(editing.employee_id), label: String(editing.employeeName || editing.employee_id) }, ...empSelect.options]
     : empSelect.options;
 
   return (
     <Modal
-      width={660}
+      width={680}
       open={open} forceRender
       title={editing ? `Chỉnh sửa Đợt giao bài — ${editing.assignment_code}` : 'Giao bài kiểm tra nghiệp vụ cho Nhân sự'}
       okText={editing ? 'Lưu cập nhật' : 'Giao bài kiểm tra'} cancelText="Hủy bỏ"
@@ -54,15 +57,18 @@ export function TestAssignmentFormModal({
       cancelButtonProps={{ icon: <CloseOutlined /> }}
       onCancel={onClose} onOk={() => form.submit()}
     >
-      <Form form={form} layout="vertical" initialValues={{ due_date: '2026-10-30', due_time: '17:00', max_attempts: 3, reset_attempts: false }} onFinish={onSubmit}>
+      <Form form={form} layout="vertical" initialValues={{ due_date: '2026-10-30', due_time: '17:00', max_attempts: 3, exam_sample_size: 25, reset_attempts: false }} onFinish={onSubmit}>
         <Form.Item name="test_id" label="Bộ đề kiểm tra" rules={[{ required: true, message: 'Vui lòng chọn bộ đề kiểm tra' }]}>
           <Select
             showSearch optionFilterProp="label" placeholder="Chọn bộ đề kiểm tra"
             onChange={(val) => {
               const found = tests.find((t) => String(t.id) === String(val));
-              if (found && !editing) form.setFieldValue('max_attempts', Number(found.max_attempts ?? 3));
+              if (found) {
+                if (!editing) form.setFieldValue('max_attempts', Number(found.max_attempts ?? 3));
+                form.setFieldValue('exam_sample_size', Number(found.exam_sample_size ?? found.examSampleSize ?? found.questionsCount ?? 25));
+              }
             }}
-            options={tests.map((t) => ({ value: String(t.id), disabled: Boolean(t.status && t.status !== 'APPROVED'), label: `${t.code} — ${t.title} (${t.duration_minutes} phút · Đạt ≥${t.pass_percent ?? 80}% · Tối đa ${t.max_attempts ?? 3} lần)${t.status && t.status !== 'APPROVED' ? ' — Chưa phê duyệt' : ''}` }))}
+            options={tests.map((t) => ({ value: String(t.id), disabled: Boolean(t.status && t.status !== 'APPROVED'), label: `${t.code} — ${t.title} (Kho ${t.questionsCount ?? t.total_questions ?? 25} câu · Random ${t.exam_sample_size ?? t.examSampleSize ?? 25} câu · ${t.duration_minutes}p · Đạt ≥${t.pass_percent ?? 80}%)${t.status && t.status !== 'APPROVED' ? ' — Chưa phê duyệt' : ''}` }))}
           />
         </Form.Item>
         {editing ? (
@@ -75,9 +81,10 @@ export function TestAssignmentFormModal({
           </Form.Item>
         )}
         <Row gutter={12}>
-          <Col xs={24} sm={8}><Form.Item name="max_attempts" label="Số lần thi tối đa" rules={[{ required: true, message: 'Nhập số lần thi' }]}><InputNumber min={1} max={20} style={{ width: '100%' }} suffix="lần" /></Form.Item></Col>
-          <Col xs={12} sm={8}><Form.Item name="due_date" label="Ngày hạn nộp" rules={[{ required: true, message: 'Chọn ngày hạn nộp' }]}><DateStringPicker /></Form.Item></Col>
-          <Col xs={12} sm={8}><Form.Item name="due_time" label="Giờ hạn nộp" rules={[{ required: true, message: 'Chọn giờ hạn nộp' }]}><TimeSelect /></Form.Item></Col>
+          <Col xs={12} sm={6}><Form.Item name="exam_sample_size" label="Số câu Random / đề" rules={[{ required: true, message: 'Nhập số câu' }]}><InputNumber min={1} max={totalBankQuestions} style={{ width: '100%' }} suffix={`/${totalBankQuestions} câu`} /></Form.Item></Col>
+          <Col xs={12} sm={6}><Form.Item name="max_attempts" label="Số lần thi tối đa" rules={[{ required: true, message: 'Nhập số lần thi' }]}><InputNumber min={1} max={20} style={{ width: '100%' }} suffix="lần" /></Form.Item></Col>
+          <Col xs={12} sm={6}><Form.Item name="due_date" label="Ngày hạn nộp" rules={[{ required: true, message: 'Chọn ngày hạn nộp' }]}><DateStringPicker /></Form.Item></Col>
+          <Col xs={12} sm={6}><Form.Item name="due_time" label="Giờ hạn nộp" rules={[{ required: true, message: 'Chọn giờ hạn nộp' }]}><TimeSelect /></Form.Item></Col>
         </Row>
         {editing && (
           <Form.Item name="reset_attempts" label="Đặt lại số lượt đã thi về 0" valuePropName="checked">
@@ -129,7 +136,7 @@ export function TestDetailDrawer({
         {viewingTest && (
           <Tabs
             items={[
-              { key: 'info', label: <span><SettingOutlined /> Cấu hình Kỳ thi</span>, children: <Descriptions size="small" bordered column={2}><Descriptions.Item label="Mã bộ đề"><Tag color="geekblue">{String(viewingTest.code)}</Tag></Descriptions.Item><Descriptions.Item label="Tên bộ đề">{String(viewingTest.title)}</Descriptions.Item><Descriptions.Item label="Nhóm vị trí">{String(viewingTest.staffGroupLabel ?? viewingTest.staff_group)}</Descriptions.Item><Descriptions.Item label="Thời gian làm bài">{String(viewingTest.duration_minutes)} phút</Descriptions.Item><Descriptions.Item label="Điểm chuẩn đạt">{String(viewingTest.pass_percent)}%</Descriptions.Item><Descriptions.Item label="Số lần làm tối đa">{String(viewingTest.max_attempts ?? 3)} lần</Descriptions.Item></Descriptions> },
+              { key: 'info', label: <span><SettingOutlined /> Cấu hình Kỳ thi</span>, children: <Descriptions size="small" bordered column={2}><Descriptions.Item label="Mã bộ đề"><Tag color="geekblue">{String(viewingTest.code)}</Tag></Descriptions.Item><Descriptions.Item label="Tên bộ đề">{String(viewingTest.title)}</Descriptions.Item><Descriptions.Item label="Nhóm vị trí">{String(viewingTest.staffGroupLabel ?? viewingTest.staff_group)}</Descriptions.Item><Descriptions.Item label="Kho & Ra đề (Random)"><Space size={6}><Tag color="blue" style={{ margin: 0 }}>Tổng kho: {String(viewingTest.questionsCount ?? viewingTest.total_questions ?? 25)} câu</Tag><Tag color="purple" style={{ margin: 0 }}>Random mỗi đề: {String(viewingTest.examSampleSize ?? viewingTest.exam_sample_size ?? 25)} câu</Tag></Space></Descriptions.Item><Descriptions.Item label="Thời gian làm bài">{String(viewingTest.duration_minutes)} phút</Descriptions.Item><Descriptions.Item label="Điểm chuẩn đạt">{String(viewingTest.pass_percent)}%</Descriptions.Item><Descriptions.Item label="Số lần làm tối đa">{String(viewingTest.max_attempts ?? 3)} lần</Descriptions.Item></Descriptions> },
               {
                 key: 'qlist',
                 label: <span><UnorderedListOutlined /> Danh sách Câu hỏi ({parseQuestions(viewingTest.questions_json).length} câu)</span>,
@@ -169,7 +176,8 @@ export function TestDetailDrawer({
               <Descriptions.Item label="Trạng thái"><StatusTag value={String(viewingAssignment.status)} /></Descriptions.Item>
               <Descriptions.Item label="Nhân sự nhận đề"><strong>{String(viewingAssignment.employeeName)}</strong></Descriptions.Item>
               <Descriptions.Item label="Số lượt đã thi / Tối đa"><Tag color="blue">{String(viewingAssignment.attempts_used ?? 0)} / {String(viewingAssignment.max_attempts ?? 3)} lần</Tag></Descriptions.Item>
-              <Descriptions.Item label="Bộ đề kiểm tra" span={2}>{String(viewingAssignment.testTitle)}</Descriptions.Item>
+              <Descriptions.Item label="Bộ đề kiểm tra">{String(viewingAssignment.testTitle)}</Descriptions.Item>
+              <Descriptions.Item label="Số câu hỏi ra đề (Random)"><Tag color="purple" style={{ margin: 0 }}>Random {String(viewingAssignment.examSampleSize ?? viewingAssignment.exam_sample_size ?? 25)} / {String(viewingAssignment.bankQuestionsCount ?? 120)} câu</Tag></Descriptions.Item>
               <Descriptions.Item label="Thời hạn nộp bài">{viewingAssignment.close_at ? dayjs(String(viewingAssignment.close_at)).format('HH:mm DD/MM/YYYY') : '—'}</Descriptions.Item>
               <Descriptions.Item label="Điểm cao nhất đạt được"><Tag color={Number(viewingAssignment.best_score_percent ?? 0) >= 80 ? 'green' : 'default'}>{String(viewingAssignment.best_score_percent ?? 0)}%</Tag></Descriptions.Item>
               <Descriptions.Item label="Ghi chú hướng dẫn" span={2}>{String(viewingAssignment.note || '—')}</Descriptions.Item>

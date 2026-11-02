@@ -180,19 +180,14 @@ export function getZaloQrSessionState(sessionId: string): ZaloQrSessionState | n
 }
 
 export async function sendRealZaloMessageIfConnected(
-  accountId: string,
-  secret: StoredZaloAccountSecret,
-  recipientPhoneOrUid: string,
-  messageText: string,
+  accountId: string, secret: StoredZaloAccountSecret, recipientPhoneOrUid: string, messageText: string, isFriendGreeting = false,
 ): Promise<{ deliveredViaZca: boolean; resolvedZaloUid?: string; msgId?: string }> {
   const rawToken = (secret.access_token || '').trim();
   if (!rawToken.startsWith('{')) return { deliveredViaZca: false };
   try {
     let api = zaloApiClients.get(accountId);
     if (!api) {
-      const creds = JSON.parse(rawToken) as Credentials;
-      const zalo = new Zalo({ logging: false });
-      api = await zalo.login(creds);
+      api = await new Zalo({ logging: false }).login(JSON.parse(rawToken) as Credentials);
       zaloApiClients.set(accountId, api);
     }
     const cleanPhone = normalizePhone(recipientPhoneOrUid);
@@ -201,12 +196,12 @@ export async function sendRealZaloMessageIfConnected(
       const found = await api.findUser(cleanPhone);
       if (found?.uid) targetUid = String(found.uid);
     }
-    const sent = await api.sendMessage({ msg: messageText }, targetUid, ThreadType.User);
-    return {
-      deliveredViaZca: true,
-      resolvedZaloUid: targetUid,
-      msgId: sent?.message?.msgId ? String(sent.message.msgId) : undefined,
-    };
+    const safeMsg = isFriendGreeting ? messageText.trim().slice(0, 150) : messageText;
+    if (isFriendGreeting && typeof (api as unknown as { sendFriendRequest?: (m: string, u: string) => Promise<unknown> }).sendFriendRequest === 'function') {
+      await (api as unknown as { sendFriendRequest: (m: string, u: string) => Promise<unknown> }).sendFriendRequest(safeMsg, targetUid).catch(() => null);
+    }
+    const sent = await api.sendMessage({ msg: safeMsg }, targetUid, ThreadType.User);
+    return { deliveredViaZca: true, resolvedZaloUid: targetUid, msgId: sent?.message?.msgId ? String(sent.message.msgId) : undefined };
   } catch {
     zaloApiClients.delete(accountId);
     return { deliveredViaZca: false };

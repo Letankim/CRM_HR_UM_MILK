@@ -45,11 +45,16 @@ export interface PublicZaloAccountDto {
   version: number;
 }
 
+export const ZALO_FRIEND_REQUEST_MAX_CHARS = 150;
 export const DEFAULT_ZALO_TEMPLATES = {
-  greeting: 'Chào {candidate_name}, Phòng Nhân sự {brand_name} ({hr_zalo_name} - {hr_zalo_phone}) đã nhận được hồ sơ ứng tuyển vị trí {position} tại {branch_name}. Bạn vui lòng kết bạn Zalo để trao đổi lịch phỏng vấn nhé!',
+  greeting: 'Chào {candidate_name}, HR {brand_name} đã nhận hồ sơ {position} ({branch_name}). Bạn đồng ý kết bạn Zalo để nhận lịch phỏng vấn nhé!',
   invite: 'Chào {candidate_name} ({candidate_code}), {brand_name} trân trọng mời bạn tham gia phỏng vấn vị trí {position} tại {branch_name} vào lúc {interview_time}. Link phòng họp Google Meet: {meet_link} — Vui lòng xác nhận tham gia hoặc xin dời lịch tại: {rsvp_url}',
   reminder: '[NHẮC LỊCH PHỎNG VẤN] Chào {candidate_name}, buổi phỏng vấn vị trí {position} tại {branch_name} sẽ bắt đầu sau khoảng {minutes_left} phút nữa ({interview_time}). Bạn vui lòng chuẩn bị và truy cập phòng họp đúng giờ nhé: {meet_link}',
   pass: 'Chúc mừng {candidate_name} ({candidate_code}) đã ĐẠT phỏng vấn vị trí {position} tại {branch_name}! Phòng Nhân sự {brand_name} ({hr_zalo_name} - {hr_zalo_phone}) mời bạn bắt đầu lộ trình thử việc. Vui lòng phản hồi tin nhắn Zalo này để nhận lịch ca đầu tiên.',
+};
+export const clampZaloFriendGreeting = (text: string): string => {
+  const clean = text.trim();
+  return clean.length <= ZALO_FRIEND_REQUEST_MAX_CHARS ? clean : clean.slice(0, ZALO_FRIEND_REQUEST_MAX_CHARS).trim();
 };
 
 function deriveAesKey(ctx: AppContext): Buffer {
@@ -127,44 +132,32 @@ export async function listHrZaloAccounts(ctx: AppContext): Promise<PublicZaloAcc
     if (!dec) continue;
     const owner = ctx.db.users.get(dec.owner_user_id) ?? ctx.db.users.find((u) => u.username === dec.owner_user_id);
     out.push({
-      id: r.id,
-      setting_key: r.key,
-      owner_user_id: owner?.id ?? dec.owner_user_id,
-      owner_username: owner?.username ?? 'hr',
-      owner_display_name: owner?.display_name ?? 'Nhân sự Tuyển dụng',
+      id: r.id, setting_key: r.key, owner_user_id: owner?.id ?? dec.owner_user_id,
+      owner_username: owner?.username ?? 'hr', owner_display_name: owner?.display_name ?? 'Nhân sự Tuyển dụng',
       owner_role_label: owner ? ROLE_LABELS[owner.role] : 'Quản lý Nhân sự (HR)',
-      zalo_name: dec.zalo_name,
-      zalo_phone: dec.zalo_phone,
-      zalo_id: dec.zalo_id,
-      has_credentials: Boolean(dec.access_token?.trim()),
-      masked_credentials: maskToken(dec.access_token || ''),
-      encrypted_preview: `${r.value.slice(0, 28)}...`,
-      is_default: Boolean(dec.is_default),
+      zalo_name: dec.zalo_name, zalo_phone: dec.zalo_phone, zalo_id: dec.zalo_id,
+      has_credentials: Boolean(dec.access_token?.trim()), masked_credentials: maskToken(dec.access_token || ''),
+      encrypted_preview: `${r.value.slice(0, 28)}...`, is_default: Boolean(dec.is_default),
       status: dec.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
-      greeting_template: dec.greeting_template || DEFAULT_ZALO_TEMPLATES.greeting,
+      greeting_template: !dec.greeting_template || dec.greeting_template.trim().length > ZALO_FRIEND_REQUEST_MAX_CHARS ? DEFAULT_ZALO_TEMPLATES.greeting : dec.greeting_template.trim(),
       invite_template: dec.invite_template || DEFAULT_ZALO_TEMPLATES.invite,
       reminder_template: dec.reminder_template || DEFAULT_ZALO_TEMPLATES.reminder,
       pass_template: dec.pass_template || DEFAULT_ZALO_TEMPLATES.pass,
-      updated_at: r.updated_at,
-      version: r.version,
+      updated_at: r.updated_at, version: r.version,
     });
   }
   return out.sort((a, b) => Number(b.is_default) - Number(a.is_default));
 }
 
 export async function resolveZaloAccountByIdOrDefault(
-  ctx: AppContext,
-  preferredAccountId?: string,
-  preferredUserId?: string,
+  ctx: AppContext, preferredAccountId?: string, preferredUserId?: string,
 ): Promise<{ rowId: string; secret: StoredZaloAccountSecret; dto: PublicZaloAccountDto } | null> {
   const all = await listHrZaloAccounts(ctx);
   const active = all.filter((a) => a.status === 'ACTIVE');
   const chosen =
     (preferredAccountId ? all.find((a) => a.id === preferredAccountId || a.zalo_id === preferredAccountId || a.setting_key === preferredAccountId) : undefined)
     ?? (preferredUserId ? active.find((a) => a.owner_user_id === preferredUserId && a.is_default) ?? active.find((a) => a.owner_user_id === preferredUserId) : undefined)
-    ?? active.find((a) => a.is_default)
-    ?? active[0]
-    ?? all[0];
+    ?? active.find((a) => a.is_default) ?? active[0] ?? all[0];
   if (!chosen) return null;
   const rawRow = ctx.db.systemSettings.get(chosen.id);
   const secret = rawRow ? decryptZaloPayload(ctx, rawRow.value) : null;
@@ -200,20 +193,11 @@ export function ensureInterviewRsvpUrl(ctx: AppContext, interviewId: string, can
 }
 
 export async function recordZaloDeliveryLog(
-  ctx: AppContext,
-  params: { channel: string; recipientId: string; branchId: string; summary: string; actorId: string },
+  ctx: AppContext, params: { channel: string; recipientId: string; branchId: string; summary: string; actorId: string },
 ): Promise<void> {
   await ctx.db.deliveryLogs.insert({
-    announcement_id: params.summary.slice(0, 120),
-    recipient_user_id: params.recipientId,
-    channel: params.channel,
-    status: 'SENT',
-    attempts: 1,
-    last_error: '',
-    branch_id: params.branchId || 'ALL',
-    sent_at: nowIso(),
-    delivered_at: nowIso(),
-    read_at: '',
-    ack_at: '',
+    announcement_id: params.summary.slice(0, 120), recipient_user_id: params.recipientId, channel: params.channel,
+    status: 'SENT', attempts: 1, last_error: '', branch_id: params.branchId || 'ALL',
+    sent_at: nowIso(), delivered_at: nowIso(), read_at: '', ack_at: '',
   }, params.actorId);
 }

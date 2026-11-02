@@ -8,7 +8,7 @@ import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { parseInterviewWindowMs } from '../services/interview-schedule-helper.js';
 import {
-  DEFAULT_ZALO_TEMPLATES, ZALO_HR_SETTING_CATEGORY, decryptZaloPayload, encryptZaloPayload, ensureInterviewRsvpUrl,
+  DEFAULT_ZALO_TEMPLATES, ZALO_FRIEND_REQUEST_MAX_CHARS, ZALO_HR_SETTING_CATEGORY, clampZaloFriendGreeting, decryptZaloPayload, encryptZaloPayload, ensureInterviewRsvpUrl,
   listHrZaloAccounts, recordZaloDeliveryLog, renderZaloMessageTemplate, resolveZaloAccountByIdOrDefault, type StoredZaloAccountSecret,
 } from '../services/zalo-hr.service.js';
 import { getZaloQrSessionState, sendRealZaloMessageIfConnected, startZaloQrLoginSession } from '../services/zalo-qr-session.service.js';
@@ -27,7 +27,7 @@ const zUpsertZaloAccountBody = z.object({
   zalo_phone: z.string().trim().min(9, 'Số điện thoại Zalo không hợp lệ'),
   zalo_id: z.string().trim().max(80).optional().default(''), access_token: z.string().trim().max(8000).optional().default(''),
   is_default: z.boolean().optional().default(true), status: z.enum(['ACTIVE', 'INACTIVE']).optional().default('ACTIVE'),
-  greeting_template: z.string().trim().max(1500).optional().default(''), invite_template: z.string().trim().max(1500).optional().default(''),
+  greeting_template: z.string().trim().max(ZALO_FRIEND_REQUEST_MAX_CHARS, 'Mẫu lời mời kết bạn Zalo chỉ được tối đa 150 ký tự').optional().default(''), invite_template: z.string().trim().max(1500).optional().default(''),
   reminder_template: z.string().trim().max(1500).optional().default(''), pass_template: z.string().trim().max(1500).optional().default(''),
 });
 
@@ -171,14 +171,18 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
     const win = activeIv ? parseInterviewWindowMs(activeIv.start_at, activeIv.duration_minutes || 30) : null;
     const rsvp = activeIv ? ensureInterviewRsvpUrl(ctx, activeIv.id, cand?.id ?? activeIv.candidate_id, activeIv.rsvp_token) : { token: '', url: '' };
     const rawTemplate = body.template_type === 'GREETING' ? zaloResolved.dto.greeting_template : body.template_type === 'REMINDER' ? zaloResolved.dto.reminder_template : body.template_type === 'PASS' ? zaloResolved.dto.pass_template : zaloResolved.dto.invite_template;
-    const finalMessage = body.message || renderZaloMessageTemplate(rawTemplate, {
+    if (body.template_type === 'GREETING' && body.message && body.message.trim().length > ZALO_FRIEND_REQUEST_MAX_CHARS) {
+      throw Errors.fieldValidation('message', 'TOO_LONG', `Lời mời kết bạn Zalo chỉ được tối đa ${ZALO_FRIEND_REQUEST_MAX_CHARS} ký tự`, body.message);
+    }
+    const renderedMsg = body.message || renderZaloMessageTemplate(rawTemplate, {
       candidateName: cand?.full_name ?? 'Ứng viên', candidateCode: cand?.candidate_code ?? '', position: posLabel, branchName,
       interviewTime: win ? `${win.startHm} – ${win.endHm} (${win.dateVi})` : (activeIv?.start_at ?? ''),
       meetLink: activeIv?.meet_link || 'https://meet.google.com/umb-milk-hr', rsvpUrl: rsvp.url,
       hrZaloName: zaloResolved.dto.zalo_name, hrZaloPhone: zaloResolved.dto.zalo_phone, minutesLeft: 10,
     });
+    const finalMessage = body.template_type === 'GREETING' ? clampZaloFriendGreeting(renderedMsg) : renderedMsg;
 
-    const directSend = body.mode === 'SEND' ? await sendRealZaloMessageIfConnected(zaloResolved.rowId, zaloResolved.secret, body.candidate_zalo_id, finalMessage) : { deliveredViaZca: false };
+    const directSend = body.mode === 'SEND' ? await sendRealZaloMessageIfConnected(zaloResolved.rowId, zaloResolved.secret, body.candidate_zalo_id, finalMessage, body.template_type === 'GREETING') : { deliveredViaZca: false };
     const now = nowIso();
     if (cand) {
       await ctx.db.candidates.update(cand.id, cand.version, {

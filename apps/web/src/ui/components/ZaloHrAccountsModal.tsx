@@ -198,7 +198,7 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
                   <Space size={4} wrap><span style={{ fontSize: 12, color: '#64748B' }}>Biến tự động:</span>{TEMPLATE_VARS.map((v) => <Tag key={v} color="blue" style={{ margin: 0, fontSize: 11 }}>{v}</Tag>)}</Space>
                 </div>
                 <Row gutter={12}>
-                  <Col xs={24} md={12}><Form.Item name="greeting_template" label="1. Mẫu tin nhắn Chào ứng viên & Kết bạn Zalo"><Input.TextArea rows={4} /></Form.Item></Col>
+                  <Col xs={24} md={12}><Form.Item name="greeting_template" label="1. Mẫu Lời mời kết bạn Zalo (Tối đa 150 ký tự)" rules={[{ max: 150, message: 'Lời mời kết bạn Zalo chỉ được tối đa 150 ký tự' }]}><Input.TextArea rows={4} maxLength={150} showCount /></Form.Item></Col>
                   <Col xs={24} md={12}><Form.Item name="invite_template" label="2. Mẫu tin nhắn Mời phỏng vấn (kèm Link xác nhận RSVP)"><Input.TextArea rows={4} /></Form.Item></Col>
                   <Col xs={24} md={12}><Form.Item name="reminder_template" label="3. Mẫu tin nhắn Tự động nhắc lịch trước giờ phỏng vấn (5–15 phút)"><Input.TextArea rows={4} /></Form.Item></Col>
                   <Col xs={24} md={12}><Form.Item name="pass_template" label="4. Mẫu tin nhắn Thông báo Đạt phỏng vấn & Mời nhận việc"><Input.TextArea rows={4} /></Form.Item></Col>
