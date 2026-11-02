@@ -1,7 +1,7 @@
 'use client';
 
-import { App, Button, Card, Form, Space, Tabs, Tag } from 'antd';
-import { BookOutlined, CalendarOutlined, LockOutlined, MessageOutlined, SolutionOutlined, TeamOutlined } from '@ant-design/icons';
+import { App, Button, Card, Form, Tabs } from 'antd';
+import { BookOutlined, CalendarOutlined, MessageOutlined, SolutionOutlined, TeamOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useSearchParams } from 'next/navigation';
@@ -154,10 +154,7 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
       tabBarExtraContent={
         canViewRec ? (
           <Button size="small" icon={<MessageOutlined style={{ color: '#2563EB' }} />} onClick={() => setZaloConfigOpen(true)}>
-            <Space size={4}>
-              <span>Cấu hình Tài khoản Zalo HR ({zaloAccounts.length})</span>
-              <Tag color="success" icon={<LockOutlined />} style={{ margin: 0 }}>Mã hóa Sheet</Tag>
-            </Space>
+            Tài khoản Zalo HR ({zaloAccounts.length})
           </Button>
         ) : null
       }

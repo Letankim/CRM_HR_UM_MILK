@@ -192,7 +192,7 @@ export function RecruitmentInterviewsPane({
               <RowActionButtons
                 detailTooltip="Xem chi tiết lịch phỏng vấn" onViewDetail={() => setViewingIv(r)}
                 menuItems={canManageRec ? [
-                  ...(onOpenZaloNotify ? [{ key: 'zalo', icon: <MessageOutlined style={{ color: '#2563EB' }} />, label: 'Gửi thông báo Zalo & Copy tin nhắn mẫu', onClick: () => onOpenZaloNotify(r) }] : []),
+                  ...(onOpenZaloNotify ? [{ key: 'zalo', icon: <MessageOutlined style={{ color: '#2563EB' }} />, label: 'Nhắn Zalo', onClick: () => onOpenZaloNotify(r) }] : []),
                   ...(r.meet_link ? [{ key: 'meet', icon: <VideoCameraOutlined style={{ color: '#2563EB' }} />, label: 'Mở phòng họp Google Meet', onClick: () => window.open(String(r.meet_link), '_blank') }] : []),
                   { key: 'eval', icon: <EditOutlined style={{ color: '#2563EB' }} />, label: 'Chấm điểm & Ra quyết định HR', onClick: () => setEvalTarget(r) },
                   { key: 'resched', icon: <ClockCircleOutlined style={{ color: '#D97706' }} />, label: 'Chỉnh sửa / Đổi lịch phỏng vấn', onClick: () => setReschedTarget(r) },

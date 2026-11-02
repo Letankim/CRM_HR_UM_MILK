@@ -33,12 +33,19 @@ const zSendZaloNotifyBody = z.object({
 });
 
 export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContext) {
+  app.post('/api/admin/recruitment/zalo-qr-session', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
+    const sessionId = `zqr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    return sendSuccess(request, 'Đã khởi tạo mã QR đăng nhập Zalo tuyển dụng', {
+      session_id: sessionId,
+      qr_url: `https://id.zalo.me/account/login/qr?token=${sessionId}`,
+      session_token: `zalo_qr_session_${sessionId}`,
+      expires_in: 180,
+    });
+  });
+
   app.get('/api/admin/recruitment/zalo-accounts', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
     const items = await listHrZaloAccounts(ctx);
-    return sendSuccess(request, 'Lấy danh sách tài khoản Zalo tuyển dụng thành công', {
-      items,
-      default_templates: DEFAULT_ZALO_TEMPLATES,
-    });
+    return sendSuccess(request, 'Lấy danh sách tài khoản Zalo tuyển dụng thành công', { items, default_templates: DEFAULT_ZALO_TEMPLATES });
   });
 
   app.post('/api/admin/recruitment/zalo-accounts', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request, reply) => {
@@ -46,28 +53,20 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
     const phone = normalizePhone(body.zalo_phone);
     if (!phone) throw Errors.fieldValidation('zalo_phone', 'INVALID_PHONE', 'Số điện thoại Zalo phải gồm 10 chữ số bắt đầu bằng số 0', body.zalo_phone);
 
-    const actor = request.auth!.user;
-    const ownerId = body.owner_user_id || actor.id;
+    const actor = request.auth!.user, ownerId = body.owner_user_id || actor.id;
     const ownerUser = ctx.db.users.get(ownerId) ?? ctx.db.users.find((u) => u.username === ownerId) ?? actor;
 
     if (body.is_default) {
-      const sameOwnerRows = ctx.db.systemSettings.filter((s) => s.category === ZALO_HR_SETTING_CATEGORY && s.note === ownerUser.id);
-      for (const r of sameOwnerRows) {
+      for (const r of ctx.db.systemSettings.filter((s) => s.category === ZALO_HR_SETTING_CATEGORY && s.note === ownerUser.id)) {
         const dec = decryptZaloPayload(ctx, r.value);
-        if (dec && dec.is_default) {
-          await ctx.db.systemSettings.update(r.id, r.version, { value: encryptZaloPayload(ctx, { ...dec, is_default: false }) }, actor.id);
-        }
+        if (dec?.is_default) await ctx.db.systemSettings.update(r.id, r.version, { value: encryptZaloPayload(ctx, { ...dec, is_default: false }) }, actor.id);
       }
     }
 
     const secret: StoredZaloAccountSecret = {
-      owner_user_id: ownerUser.id,
-      zalo_name: body.zalo_name,
-      zalo_phone: phone,
-      zalo_id: body.zalo_id || `zalo_${phone}`,
-      access_token: body.access_token || `zalo_session_${phone}_${Date.now()}`,
-      is_default: body.is_default,
-      status: body.status,
+      owner_user_id: ownerUser.id, zalo_name: body.zalo_name, zalo_phone: phone,
+      zalo_id: body.zalo_id || `zalo_${phone}`, access_token: body.access_token || `zalo_session_${phone}_${Date.now()}`,
+      is_default: body.is_default, status: body.status,
       greeting_template: body.greeting_template || DEFAULT_ZALO_TEMPLATES.greeting,
       invite_template: body.invite_template || DEFAULT_ZALO_TEMPLATES.invite,
       reminder_template: body.reminder_template || DEFAULT_ZALO_TEMPLATES.reminder,
@@ -75,12 +74,9 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
     };
 
     const created = await ctx.db.systemSettings.insert({
-      key: `ZALO_ACC_${ownerUser.id}_${Date.now()}`,
-      category: ZALO_HR_SETTING_CATEGORY,
+      key: `ZALO_ACC_${ownerUser.id}_${Date.now()}`, category: ZALO_HR_SETTING_CATEGORY,
       label: `${ownerUser.display_name} (@${ownerUser.username}) — ${secret.zalo_name} (${phone})`,
-      note: ownerUser.id,
-      value_type: 'ENCRYPTED_JSON',
-      value: encryptZaloPayload(ctx, secret),
+      note: ownerUser.id, value_type: 'ENCRYPTED_JSON', value: encryptZaloPayload(ctx, secret),
     }, actor.id);
 
     await ctx.audit.record(auditContext(request), {
@@ -88,42 +84,33 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
       after: { owner_user_id: ownerUser.id, zalo_name: secret.zalo_name, zalo_phone: phone, encrypted: true },
     });
     const list = await listHrZaloAccounts(ctx);
-    const dto = list.find((a) => a.id === created.id) ?? list[0];
     reply.code(201);
-    return sendSuccess(request, `Đã mã hóa AES-256 và lưu cấu hình tài khoản Zalo "${secret.zalo_name}" trên Sheet theo nhân sự ${ownerUser.display_name}`, dto);
+    return sendSuccess(request, `Đã liên kết và lưu tài khoản Zalo "${secret.zalo_name}" cho nhân sự ${ownerUser.display_name}`, list.find((a) => a.id === created.id) ?? list[0]);
   });
 
   app.put('/api/admin/recruitment/zalo-accounts/:id', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const body = zUpsertZaloAccountBody.parse(request.body ?? {});
+    const { id } = request.params as { id: string }, body = zUpsertZaloAccountBody.parse(request.body ?? {});
     const before = ctx.db.systemSettings.get(id);
     if (!before || before.category !== ZALO_HR_SETTING_CATEGORY) throw Errors.notFound('Cấu hình tài khoản Zalo', id);
     const prevSecret = decryptZaloPayload(ctx, before.value);
     const phone = normalizePhone(body.zalo_phone);
     if (!phone) throw Errors.fieldValidation('zalo_phone', 'INVALID_PHONE', 'Số điện thoại Zalo phải gồm 10 chữ số bắt đầu bằng số 0', body.zalo_phone);
 
-    const actor = request.auth!.user;
-    const ownerId = body.owner_user_id || prevSecret?.owner_user_id || before.note || actor.id;
+    const actor = request.auth!.user, ownerId = body.owner_user_id || prevSecret?.owner_user_id || before.note || actor.id;
     const ownerUser = ctx.db.users.get(ownerId) ?? ctx.db.users.find((u) => u.username === ownerId) ?? actor;
 
     if (body.is_default) {
-      const sameOwnerRows = ctx.db.systemSettings.filter((s) => s.category === ZALO_HR_SETTING_CATEGORY && s.id !== id && s.note === ownerUser.id);
-      for (const r of sameOwnerRows) {
+      for (const r of ctx.db.systemSettings.filter((s) => s.category === ZALO_HR_SETTING_CATEGORY && s.id !== id && s.note === ownerUser.id)) {
         const dec = decryptZaloPayload(ctx, r.value);
-        if (dec && dec.is_default) {
-          await ctx.db.systemSettings.update(r.id, r.version, { value: encryptZaloPayload(ctx, { ...dec, is_default: false }) }, actor.id);
-        }
+        if (dec?.is_default) await ctx.db.systemSettings.update(r.id, r.version, { value: encryptZaloPayload(ctx, { ...dec, is_default: false }) }, actor.id);
       }
     }
 
     const nextSecret: StoredZaloAccountSecret = {
-      owner_user_id: ownerUser.id,
-      zalo_name: body.zalo_name,
-      zalo_phone: phone,
+      owner_user_id: ownerUser.id, zalo_name: body.zalo_name, zalo_phone: phone,
       zalo_id: body.zalo_id || prevSecret?.zalo_id || `zalo_${phone}`,
       access_token: body.access_token ? body.access_token : (prevSecret?.access_token || `zalo_session_${phone}`),
-      is_default: body.is_default,
-      status: body.status,
+      is_default: body.is_default, status: body.status,
       greeting_template: body.greeting_template || prevSecret?.greeting_template || DEFAULT_ZALO_TEMPLATES.greeting,
       invite_template: body.invite_template || prevSecret?.invite_template || DEFAULT_ZALO_TEMPLATES.invite,
       reminder_template: body.reminder_template || prevSecret?.reminder_template || DEFAULT_ZALO_TEMPLATES.reminder,
@@ -132,26 +119,22 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
 
     await ctx.db.systemSettings.update(id, before.version, {
       label: `${ownerUser.display_name} (@${ownerUser.username}) — ${nextSecret.zalo_name} (${phone})`,
-      note: ownerUser.id,
-      value_type: 'ENCRYPTED_JSON',
-      value: encryptZaloPayload(ctx, nextSecret),
+      note: ownerUser.id, value_type: 'ENCRYPTED_JSON', value: encryptZaloPayload(ctx, nextSecret),
     }, actor.id);
 
     const list = await listHrZaloAccounts(ctx);
-    return sendSuccess(request, `Đã cập nhật và mã hóa lại tài khoản Zalo "${nextSecret.zalo_name}" trên Sheet`, list.find((a) => a.id === id) ?? null);
+    return sendSuccess(request, `Đã cập nhật tài khoản Zalo "${nextSecret.zalo_name}" thành công`, list.find((a) => a.id === id) ?? null);
   });
 
   app.delete('/api/admin/recruitment/zalo-accounts/:id', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const before = ctx.db.systemSettings.get(id);
+    const { id } = request.params as { id: string }, before = ctx.db.systemSettings.get(id);
     if (!before || before.category !== ZALO_HR_SETTING_CATEGORY) throw Errors.notFound('Cấu hình tài khoản Zalo', id);
     await ctx.db.systemSettings.softDelete(id, before.version, request.auth!.user.id);
     return sendSuccess(request, 'Đã xóa cấu hình tài khoản Zalo tuyển dụng', { id });
   });
 
   app.post('/api/admin/recruitment/zalo-send', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
-    const body = zSendZaloNotifyBody.parse(request.body ?? {});
-    const actorId = request.auth!.user.id;
+    const body = zSendZaloNotifyBody.parse(request.body ?? {}), actorId = request.auth!.user.id;
     const zaloResolved = await resolveZaloAccountByIdOrDefault(ctx, body.zalo_account_id, actorId);
     if (!zaloResolved) throw Errors.badRequest('Không tìm thấy tài khoản Zalo hợp lệ để gửi thông báo');
 
@@ -187,12 +170,15 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
       }, actorId);
     }
     if (activeIv) {
-      const nextConfirmed = body.mark_confirmed !== undefined ? body.mark_confirmed : activeIv.candidate_confirmed;
+      const resetForNewInvite = body.template_type === 'INVITE' && body.mark_confirmed === undefined;
+      const nextConfirmed = body.mark_confirmed !== undefined ? body.mark_confirmed : resetForNewInvite ? false : activeIv.candidate_confirmed;
+      const nextStatus = body.mark_confirmed === true ? 'CONFIRMED' : resetForNewInvite ? 'SCHEDULED' : activeIv.status;
       await ctx.db.interviews.update(activeIv.id, activeIv.version, {
         candidate_zalo_id: body.candidate_zalo_id, zalo_account_id: zaloResolved.dto.id,
         rsvp_token: activeIv.rsvp_token || rsvp.token,
         candidate_confirmed: nextConfirmed,
-        status: nextConfirmed && activeIv.status === 'SCHEDULED' ? 'CONFIRMED' : activeIv.status,
+        reschedule_requested: resetForNewInvite ? false : activeIv.reschedule_requested,
+        status: nextStatus,
       }, actorId);
     }
 
@@ -206,8 +192,8 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
     return sendSuccess(
       request,
       body.mode === 'COPY_AND_SAVE'
-        ? `Đã lưu liên kết tài khoản Zalo "${zaloResolved.dto.zalo_name}" và ID Zalo ứng viên (${body.candidate_zalo_id}) để tự động nhắc lịch phỏng vấn`
-        : `Đã gửi thông báo Zalo qua tài khoản "${zaloResolved.dto.zalo_name}" tới ứng viên (${body.candidate_zalo_id}) và lưu cấu hình tự động nhắc lịch`,
+        ? `Đã sao chép tin nhắn và lưu ID Zalo ứng viên (${body.candidate_zalo_id})`
+        : `Đã gửi tin nhắn Zalo qua "${zaloResolved.dto.zalo_name}" tới ứng viên (${body.candidate_zalo_id})`,
       {
         sent: true, mode: body.mode, zalo_account_id: zaloResolved.dto.id, zalo_account_name: zaloResolved.dto.zalo_name,
         zalo_account_phone: zaloResolved.dto.zalo_phone, candidate_zalo_id: body.candidate_zalo_id,

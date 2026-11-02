@@ -85,7 +85,7 @@ export function CandidateDetailDrawer({
           <Space size={6} wrap>
             {onOpenZaloNotify && (
               <GuardButton size="small" type="primary" ghost icon={<MessageOutlined />} perms={['candidate.manage', 'interview.manage']} onClick={() => onOpenZaloNotify(candidate)}>
-                Gửi Zalo / Tin nhắn mẫu
+                Nhắn Zalo
               </GuardButton>
             )}
             {candidate.status === 'NEW' && (
@@ -110,11 +110,11 @@ export function CandidateDetailDrawer({
     >
       {candidate && (
         <Space direction="vertical" size={14} style={{ width: '100%' }}>
-          <Card size="small" title="Kênh liên hệ tích hợp & Tin nhắn mẫu Zalo">
+          <Card size="small" title="Kênh liên hệ tích hợp">
             <Space wrap>
               {onOpenZaloNotify && (
                 <Button type="primary" icon={<MessageOutlined />} onClick={() => onOpenZaloNotify(candidate)}>
-                  Chọn TK Zalo &amp; Gửi / Copy tin nhắn mẫu
+                  Nhắn Zalo
                 </Button>
               )}
               <Button icon={<PhoneOutlined />} href={`tel:${candidate.phone}`}>Gọi điện thoại ({String(candidate.phone)})</Button>
@@ -162,7 +162,7 @@ export function InterviewDetailDrawer({
           <Space size={6} wrap>
             {canManage && onOpenZaloNotify && (
               <Button size="small" type="primary" ghost icon={<MessageOutlined />} onClick={() => onOpenZaloNotify(interview)}>
-                Gửi Zalo / Tin nhắn mẫu
+                Nhắn Zalo
               </Button>
             )}
             {Boolean(interview.meet_link) && <Button size="small" type="primary" icon={<VideoCameraOutlined />} href={String(interview.meet_link)} target="_blank">Mở Google Meet</Button>}

@@ -88,6 +88,11 @@ describe('Giai đoạn 1 & 2: 6 Điểm GPS, 3 Ca Chuẩn, Xoay PIN, Google Form
     expect(getRsvp.json().data.candidate_name).toBe('Nguyễn Ngọc Mai');
     const confirmRsvp = await t.app.inject({ method: 'POST', url: `/api/public/rsvp/${token}`, headers: web, payload: { action: 'CONFIRM' } });
     expect(confirmRsvp.json().data.status).toBe('CONFIRMED');
+    // Sau khi đã xác nhận hoặc từ chối, khóa không cho thao tác lại trừ khi HR dời lịch hoặc gửi lại lịch
+    const blockedRsvp = await t.app.inject({ method: 'POST', url: `/api/public/rsvp/${token}`, headers: web, payload: { action: 'RESCHEDULE', reason: 'Thử đổi lại ngay khi đã xác nhận' } });
+    expect(blockedRsvp.statusCode).toBe(400);
+    // HR gửi lại lời mời phỏng vấn qua Zalo -> mở khóa để ứng viên phản hồi lại
+    await t.app.inject({ method: 'POST', url: `/api/admin/interviews/${ivId}/send-zalo`, headers: hr, payload: {} });
     const reschedRsvp = await t.app.inject({ method: 'POST', url: `/api/public/rsvp/${token}`, headers: web, payload: { action: 'RESCHEDULE', reason: 'Xin dời sang ca chiều vì bận thi học kỳ' } });
     expect(reschedRsvp.json().data.status).toBe('RESCHEDULE_NEEDED');
 
@@ -109,11 +114,14 @@ describe('Giai đoạn 1 & 2: 6 Điểm GPS, 3 Ca Chuẩn, Xoay PIN, Google Form
     expect(t.db.interviews.get(ivId)?.status).toBe('NO_SHOW');
   });
 
-  it('5. Cấu hình tài khoản Zalo HR mã hóa AES-256, nhắc lịch 5–15p & Đồng bộ Google Sheet Form chống trùng lặp 100%', async () => {
+  it('5. Cấu hình tài khoản Zalo HR đăng nhập QR, nhắc lịch 5–15p & Đồng bộ Google Sheet Form chống trùng lặp 100%', async () => {
     const hr = await t.loginHeaders('hr');
+    const qrRes = await t.app.inject({ method: 'POST', url: '/api/admin/recruitment/zalo-qr-session', headers: hr, payload: {} });
+    expect(qrRes.statusCode).toBe(200);
+    expect(qrRes.json().data.session_token).toContain('zalo_qr_session_');
     const accRes = await t.app.inject({
       method: 'POST', url: '/api/admin/recruitment/zalo-accounts', headers: hr,
-      payload: { zalo_name: 'HR Ụm Bò Milk - Kim Ngân', zalo_phone: '0901222333', zalo_id: 'zalo_hr_ngan', access_token: 'secret_cookie_token_xyz987', is_default: true },
+      payload: { zalo_name: 'HR Ụm Bò Milk - Kim Ngân', zalo_phone: '0901222333', zalo_id: 'zalo_hr_ngan', access_token: qrRes.json().data.session_token, is_default: true },
     });
     expect(accRes.statusCode).toBe(201);
     const zaloAccId = accRes.json().data.id as string;

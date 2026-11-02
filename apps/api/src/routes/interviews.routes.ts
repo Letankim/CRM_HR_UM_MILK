@@ -159,19 +159,19 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       const overlaps = findInterviewTimeOverlaps(ctx, { startAt: nextStart, durationMinutes: nextDuration, rawInterviewers: nextInterviewers, excludeInterviewId: id });
       if (overlaps.interviewerConflicts.length > 0) throw Errors.fieldValidation('scheduled_at', 'DUPLICATE_VALUE', overlaps.interviewerConflicts[0]!.message, nextStart);
       const nextMeet = body.meet_link ?? before.meet_link;
-      const nextStatus = body.reschedule_requested ? 'RESCHEDULE_NEEDED' : body.candidate_confirmed ? 'CONFIRMED' : before.status;
+      const isTimeChanged = Boolean(body.scheduled_at && body.scheduled_at.slice(0, 16) !== before.start_at.slice(0, 16));
+      const nextStatus = body.reschedule_requested ? 'RESCHEDULE_NEEDED' : body.candidate_confirmed ? 'CONFIRMED' : isTimeChanged ? 'SCHEDULED' : before.status;
       const updatedConfirm = await ctx.db.interviews.update(id, body.version, {
         start_at: nextStart, end_at: new Date(win.endMs).toISOString(), duration_minutes: nextDuration, meet_link: nextMeet,
-        interviewer_id: nextInterviewers.join(', '), status: nextStatus, candidate_confirmed: body.candidate_confirmed ?? before.candidate_confirmed,
-        reschedule_requested: body.reschedule_requested ?? before.reschedule_requested, reschedule_reason: body.reschedule_reason ?? before.reschedule_reason,
+        interviewer_id: nextInterviewers.join(', '), status: nextStatus,
+        candidate_confirmed: body.candidate_confirmed ?? (isTimeChanged ? false : before.candidate_confirmed),
+        reschedule_requested: body.reschedule_requested ?? (isTimeChanged ? false : before.reschedule_requested),
+        reschedule_reason: body.reschedule_reason ?? before.reschedule_reason,
         zalo_account_id: body.zalo_account_id ?? before.zalo_account_id, candidate_zalo_id: body.candidate_zalo_id ?? before.candidate_zalo_id,
         ...(body.comment ? { comment: body.comment } : {}),
       }, actorId);
       if (cand && (body.zalo_account_id || body.candidate_zalo_id)) {
-        await ctx.db.candidates.update(cand.id, cand.version, {
-          zalo_account_id: body.zalo_account_id || cand.zalo_account_id,
-          candidate_zalo_id: body.candidate_zalo_id || cand.candidate_zalo_id,
-        }, actorId);
+        await ctx.db.candidates.update(cand.id, cand.version, { zalo_account_id: body.zalo_account_id || cand.zalo_account_id, candidate_zalo_id: body.candidate_zalo_id || cand.candidate_zalo_id }, actorId);
       }
       const allRelatedIds = Array.from(new Set([...before.interviewer_id.split(',').map((s) => s.trim()), ...nextInterviewers].filter(Boolean)));
       const updatedUserIds = await notifyInterviewParticipants(ctx, actorId, {

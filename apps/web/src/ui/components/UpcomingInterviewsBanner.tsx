@@ -166,7 +166,7 @@ export function UpcomingInterviewsBanner({
               <Flex justify="flex-end" gap={6} wrap>
                 {canManage && onOpenZaloNotify && (
                   <Button size="small" icon={<MessageOutlined style={{ color: '#2563EB' }} />} onClick={() => onOpenZaloNotify(item.raw)}>
-                    Zalo / Mẫu tin
+                    Nhắn Zalo
                   </Button>
                 )}
                 {item.meetLink && (

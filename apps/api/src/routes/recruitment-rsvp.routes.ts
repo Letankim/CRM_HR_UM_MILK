@@ -173,7 +173,12 @@ export async function recruitmentRsvpRoutes(app: FastifyInstance, ctx: AppContex
     if (!iv) throw Errors.notFound('Lịch phỏng vấn', id);
     const cand = ctx.db.candidates.get(iv.candidate_id) ?? ctx.db.candidates.find((c) => c.candidate_code === iv.candidate_id);
     const token = iv.rsvp_token || createRsvpToken({ interviewId: iv.id, candidateId: cand?.id ?? iv.candidate_id });
-    if (!iv.rsvp_token) await ctx.db.interviews.update(iv.id, iv.version, { rsvp_token: token }, request.auth!.user.id);
+    await ctx.db.interviews.update(iv.id, iv.version, {
+      rsvp_token: token,
+      status: 'SCHEDULED',
+      candidate_confirmed: false,
+      reschedule_requested: false,
+    }, request.auth!.user.id);
     const rsvpUrl = `${ctx.env.API_PUBLIC_ORIGIN || 'http://localhost:3000'}/rsvp/${token}`;
     const branchName = ctx.db.branches.get(iv.branch_id || cand?.branch_pref || '')?.name ?? 'Ụm Bò Milk';
     const zaloRes = sendZaloInterviewInvite({ phone: cand?.phone ?? '', candidateName: cand?.full_name ?? iv.candidate_id, branchName, startAt: iv.start_at, meetLink: iv.meet_link, rsvpUrl });
@@ -195,6 +200,9 @@ export async function recruitmentRsvpRoutes(app: FastifyInstance, ctx: AppContex
 
   app.post('/api/public/rsvp/:token', async (request) => {
     const { token } = request.params as { token: string }, body = zRsvpActionBody.parse(request.body ?? {}), iv = resolveInterviewByRsvpToken(ctx, token);
+    if (iv.status !== 'SCHEDULED') {
+      throw Errors.badRequest('Bạn đã phản hồi lịch phỏng vấn này trước đó. Nếu cần thay đổi, vui lòng chờ bộ phận Nhân sự cập nhật và gửi lại lịch mới.');
+    }
     const cand = ctx.db.candidates.get(iv.candidate_id) ?? ctx.db.candidates.find((c) => c.candidate_code === iv.candidate_id);
     if (body.action === 'CONFIRM') {
       const updated = await ctx.db.interviews.update(iv.id, iv.version, { candidate_confirmed: true, reschedule_requested: false, status: 'CONFIRMED' }, 'candidate-rsvp');

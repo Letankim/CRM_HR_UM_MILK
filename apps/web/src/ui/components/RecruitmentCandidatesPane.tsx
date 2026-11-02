@@ -182,7 +182,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
                 detailTooltip="Xem chi tiết hồ sơ ứng viên" onViewDetail={() => setViewingCand(r)}
                 menuItems={[
                   ...(canManageRec ? [{ key: 'vip', icon: r.is_vip ? <StarFilled style={{ color: '#D97706' }} /> : <StarOutlined />, label: r.is_vip ? 'Gỡ nhãn Ưu tiên VIP' : 'Gắn nhãn Ưu tiên VIP (Đầu bảng)', onClick: () => toggleVipMut.mutate(r) }] : []),
-                  ...(onOpenZaloNotify ? [{ key: 'zalo', icon: <MessageOutlined style={{ color: '#2563EB' }} />, label: 'Gửi thông báo Zalo & Copy tin nhắn mẫu', onClick: () => onOpenZaloNotify(r) }] : []),
+                  ...(onOpenZaloNotify ? [{ key: 'zalo', icon: <MessageOutlined style={{ color: '#2563EB' }} />, label: 'Nhắn Zalo', onClick: () => onOpenZaloNotify(r) }] : []),
                   ...(canManageRec && r.status === 'NEW' ? [{ key: 'contacted', icon: <CheckCircleOutlined style={{ color: '#2563EB' }} />, label: 'Đánh dấu Đã liên hệ ứng viên', onClick: () => promptContacted([r]) }] : []),
                   ...(canManageIv ? [{ key: 'interview', icon: <CalendarOutlined />, label: checkHasIv(r) ? 'Chỉnh sửa lịch phỏng vấn' : 'Đặt lịch phỏng vấn', onClick: () => onScheduleInterview(String(r.id)) }] : []),
                   ...(canManageRec && r.status !== 'REJECTED' && r.status !== 'HIRED' ? [{ key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối hồ sơ ứng viên', onClick: () => promptRejectCandidate([r]) }] : []),

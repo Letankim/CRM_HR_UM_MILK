@@ -1,218 +1,216 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, App, Button, Checkbox, Col, Flex, Form, Input, Modal, Row, Segmented, Select, Space, Tag } from 'antd';
-import { BellOutlined, CloseOutlined, CopyOutlined, ExportOutlined, LockOutlined, MessageOutlined, SendOutlined, SettingOutlined } from '@ant-design/icons';
+import { App, Button, Col, Form, Input, Modal, Radio, Row, Select, Space, Switch, Tag } from 'antd';
+import { CloseOutlined, CopyOutlined, SettingOutlined, SendOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { SYSTEM_CONFIG } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import type { ZaloHrAccountItem } from './ZaloHrAccountsModal';
 
 export interface ZaloNotifyTarget {
-  candidateId?: string; interviewId?: string; candidateName: string; candidateCode?: string;
-  candidatePhone?: string; candidateZaloId?: string; zaloAccountId?: string; positionLabel?: string;
-  branchName?: string; interviewTime?: string; meetLink?: string; rsvpUrl?: string;
-  candidateConfirmed?: boolean; defaultTemplateType?: 'GREETING' | 'INVITE' | 'REMINDER' | 'PASS';
+  candidateId?: string;
+  interviewId?: string;
+  candidateName: string;
+  candidateCode?: string;
+  candidatePhone: string;
+  candidateZaloId?: string;
+  zaloAccountId?: string;
+  positionLabel?: string;
+  branchName?: string;
+  interviewTime?: string;
+  meetLink?: string;
+  rsvpUrl?: string;
+  candidateConfirmed?: boolean;
+  defaultTemplateType?: 'GREETING' | 'INVITE' | 'REMINDER' | 'PASS';
 }
 
 interface Props {
-  target: ZaloNotifyTarget | null; accounts: ZaloHrAccountItem[]; currentUserId?: string;
-  onClose: () => void; onOpenAccountsConfig: () => void;
+  target: ZaloNotifyTarget | null;
+  accounts: ZaloHrAccountItem[];
+  currentUserId?: string;
+  onClose: () => void;
+  onOpenAccountsConfig: () => void;
 }
 
-function interpolateTemplate(tpl: string, t: ZaloNotifyTarget, acc?: ZaloHrAccountItem): string {
+function renderLocalPreview(
+  tpl: string,
+  target: ZaloNotifyTarget,
+  acc?: ZaloHrAccountItem,
+): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-  return (tpl || '')
-    .replace(/\{candidate_name\}/g, t.candidateName || 'Bạn').replace(/\{candidate_code\}/g, t.candidateCode || 'UV')
-    .replace(/\{position\}/g, t.positionLabel || 'Nhân viên Cửa hàng').replace(/\{branch_name\}/g, t.branchName || 'Ụm Bò Milk')
-    .replace(/\{brand_name\}/g, 'Ụm Bò Milk').replace(/\{interview_time\}/g, t.interviewTime || 'theo lịch hẹn')
-    .replace(/\{meet_link\}/g, t.meetLink || 'https://meet.google.com/umb-milk-hr').replace(/\{rsvp_url\}/g, t.rsvpUrl || `${origin}/nv/login`)
-    .replace(/\{hr_zalo_name\}/g, acc?.zalo_name || 'HR Ụm Bò Milk').replace(/\{hr_zalo_phone\}/g, acc?.zalo_phone || '0901000002')
+  return tpl
+    .replace(/\{candidate_name\}/g, target.candidateName || 'Bạn')
+    .replace(/\{candidate_code\}/g, target.candidateCode || 'UV')
+    .replace(/\{position\}/g, target.positionLabel || 'Nhân viên Cửa hàng')
+    .replace(/\{branch_name\}/g, target.branchName || SYSTEM_CONFIG.brandName)
+    .replace(/\{brand_name\}/g, SYSTEM_CONFIG.brandName)
+    .replace(/\{interview_time\}/g, target.interviewTime || 'theo lịch hẹn')
+    .replace(/\{meet_link\}/g, target.meetLink || 'https://meet.google.com/umb-milk-hr')
+    .replace(/\{rsvp_url\}/g, target.rsvpUrl || `${origin}/rsvp/xac-nhan`)
+    .replace(/\{hr_zalo_name\}/g, acc?.zalo_name || `HR ${SYSTEM_CONFIG.brandName}`)
+    .replace(/\{hr_zalo_phone\}/g, acc?.zalo_phone || '0901000002')
     .replace(/\{minutes_left\}/g, '10');
 }
 
 export function ZaloCandidateNotifyModal({ target, accounts, currentUserId, onClose, onOpenAccountsConfig }: Props) {
-  const qc = useQueryClient(), { message } = App.useApp(), [form] = Form.useForm();
-  const [templateType, setTemplateType] = useState<'GREETING' | 'INVITE' | 'REMINDER' | 'PASS'>('INVITE');
-  const selectedAccId = Form.useWatch('zalo_account_id', form) as string | undefined;
-  const selectedAcc = useMemo(() => accounts.find((a) => a.id === selectedAccId) ?? accounts[0], [accounts, selectedAccId]);
+  const qc = useQueryClient(), { message } = App.useApp();
+  const [selectedAccId, setSelectedAccId] = useState<string>('');
+  const [candZaloId, setCandZaloId] = useState<string>('');
+  const [tplType, setTplType] = useState<'GREETING' | 'INVITE' | 'REMINDER' | 'PASS'>('INVITE');
+  const [msgText, setMsgText] = useState<string>('');
+  const [markConfirmed, setMarkConfirmed] = useState<boolean>(false);
+
+  const selectedAcc = useMemo(
+    () => accounts.find((a) => a.id === selectedAccId) ?? accounts[0],
+    [accounts, selectedAccId],
+  );
 
   useEffect(() => {
     if (!target) return;
-    const initialTpl = target.defaultTemplateType ?? (target.interviewId ? 'INVITE' : 'GREETING');
-    setTemplateType(initialTpl);
     const preferredAcc =
       (target.zaloAccountId ? accounts.find((a) => a.id === target.zaloAccountId) : undefined)
       ?? (currentUserId ? accounts.find((a) => a.owner_user_id === currentUserId && a.is_default) ?? accounts.find((a) => a.owner_user_id === currentUserId) : undefined)
       ?? accounts.find((a) => a.is_default)
       ?? accounts[0];
+    const nextAccId = preferredAcc?.id ?? '';
+    const nextTpl = target.defaultTemplateType ?? (target.interviewId ? 'INVITE' : 'GREETING');
+    setSelectedAccId(nextAccId);
+    setCandZaloId(target.candidateZaloId || target.candidatePhone || '');
+    setTplType(nextTpl);
+    setMarkConfirmed(Boolean(target.candidateConfirmed));
     const rawTpl =
-      initialTpl === 'GREETING' ? preferredAcc?.greeting_template
-      : initialTpl === 'REMINDER' ? preferredAcc?.reminder_template
-      : initialTpl === 'PASS' ? preferredAcc?.pass_template
+      nextTpl === 'GREETING' ? preferredAcc?.greeting_template
+      : nextTpl === 'REMINDER' ? preferredAcc?.reminder_template
+      : nextTpl === 'PASS' ? preferredAcc?.pass_template
       : preferredAcc?.invite_template;
-    form.setFieldsValue({
-      zalo_account_id: preferredAcc?.id,
-      candidate_zalo_id: target.candidateZaloId || target.candidatePhone || '',
-      mark_confirmed: target.candidateConfirmed ?? true,
-      message: interpolateTemplate(rawTpl || '', target, preferredAcc),
-    });
-  }, [target, accounts, currentUserId, form]);
+    setMsgText(renderLocalPreview(rawTpl || '', target, preferredAcc));
+  }, [target, accounts, currentUserId]);
 
-  const applyTemplateType = (nextType: 'GREETING' | 'INVITE' | 'REMINDER' | 'PASS', acc?: ZaloHrAccountItem) => {
-    setTemplateType(nextType);
+  const handleAccountOrTplChange = (nextAccId: string, nextTpl: 'GREETING' | 'INVITE' | 'REMINDER' | 'PASS') => {
+    const acc = accounts.find((a) => a.id === nextAccId) ?? selectedAcc;
+    setSelectedAccId(nextAccId);
+    setTplType(nextTpl);
     if (!target) return;
-    const a = acc ?? selectedAcc;
     const rawTpl =
-      nextType === 'GREETING' ? a?.greeting_template
-      : nextType === 'REMINDER' ? a?.reminder_template
-      : nextType === 'PASS' ? a?.pass_template
-      : a?.invite_template;
-    form.setFieldValue('message', interpolateTemplate(rawTpl || '', target, a));
+      nextTpl === 'GREETING' ? acc?.greeting_template
+      : nextTpl === 'REMINDER' ? acc?.reminder_template
+      : nextTpl === 'PASS' ? acc?.pass_template
+      : acc?.invite_template;
+    setMsgText(renderLocalPreview(rawTpl || '', target, acc));
   };
 
   const sendMut = useMutation({
-    mutationFn: (payload: { mode: 'SEND' | 'COPY_AND_SAVE'; values: Record<string, unknown> }) =>
+    mutationFn: (mode: 'SEND' | 'COPY_AND_SAVE') =>
       api.post<{ zalo_chat_url: string; message: string }>('/admin/recruitment/zalo-send', {
         candidate_id: target?.candidateId,
         interview_id: target?.interviewId,
-        zalo_account_id: payload.values.zalo_account_id,
-        candidate_zalo_id: payload.values.candidate_zalo_id,
-        template_type: templateType,
-        message: payload.values.message,
-        mark_confirmed: payload.values.mark_confirmed,
-        mode: payload.mode,
+        zalo_account_id: selectedAcc?.id || selectedAccId,
+        candidate_zalo_id: candZaloId.trim() || target?.candidatePhone || '',
+        template_type: tplType,
+        message: msgText,
+        mark_confirmed: target?.interviewId ? markConfirmed : undefined,
+        mode,
       }),
-    onSuccess: (res, vars) => {
+    onSuccess: async (res, mode) => {
+      try {
+        await navigator.clipboard.writeText(msgText);
+      } catch { /* ignore */ }
       qc.invalidateQueries({ queryKey: ['candidates'] });
       qc.invalidateQueries({ queryKey: ['interviews'] });
-      if (vars.mode === 'COPY_AND_SAVE') {
-        void navigator.clipboard?.writeText(String(vars.values.message || res?.message || ''));
-        message.success('Đã sao chép tin nhắn mẫu, lưu ID Zalo ứng viên và mở cửa sổ chat Zalo');
-        if (res?.zalo_chat_url) window.open(res.zalo_chat_url, '_blank');
+      if (mode === 'COPY_AND_SAVE') {
+        message.success('Đã sao chép tin nhắn mẫu vào bộ nhớ tạm và lưu ID Zalo ứng viên');
       } else {
-        message.success('Đã gửi thông báo Zalo tới ứng viên và lưu ID Zalo để tự động nhắc lịch phỏng vấn');
+        message.success(`Đã gửi tin nhắn Zalo cho ứng viên ${target?.candidateName ?? ''}`);
+        onClose();
       }
-      onClose();
     },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Gửi thông báo Zalo thất bại'),
+    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác gửi Zalo thất bại'),
   });
-
-  const handleCopyOnly = async () => {
-    const msg = String(form.getFieldValue('message') || '');
-    await navigator.clipboard?.writeText(msg);
-    message.success('Đã sao chép nội dung tin nhắn mẫu vào bộ nhớ tạm');
-  };
 
   return (
     <Modal
-      width={720}
-      open={Boolean(target)}
-      destroyOnHidden
-      title={target ? `Gửi Thông báo Zalo & Tin nhắn mẫu: ${target.candidateName}${target.candidateCode ? ` (${target.candidateCode})` : ''}` : 'Gửi thông báo Zalo'}
-      footer={null}
-      onCancel={onClose}
+      width={840} style={{ maxWidth: 'calc(100vw - 24px)' }} open={Boolean(target)} destroyOnHidden onCancel={onClose}
+      title={target ? `Nhắn Zalo: ${target.candidateName}${target.candidateCode ? ` (${target.candidateCode})` : ''}` : 'Nhắn Zalo'}
+      footer={[
+        <Button key="cancel" icon={<CloseOutlined />} onClick={onClose}>
+          Đóng
+        </Button>,
+        <Button key="copy" icon={<CopyOutlined />} loading={sendMut.isPending} onClick={() => sendMut.mutate('COPY_AND_SAVE')}>
+          Sao chép tin nhắn
+        </Button>,
+        <Button key="send" type="primary" icon={<SendOutlined />} loading={sendMut.isPending} onClick={() => sendMut.mutate('SEND')}>
+          Gửi Zalo
+        </Button>,
+      ]}
     >
       {target && (
-        <Form form={form} layout="vertical" onFinish={(v) => sendMut.mutate({ mode: 'SEND', values: v })}>
-          <Space direction="vertical" size={10} style={{ width: '100%' }}>
-            <Alert
-              type="info"
-              showIcon
-              icon={<BellOutlined />}
-              message="Lưu liên kết Tài khoản Zalo HR & ID Zalo Ứng viên để tự động nhắc lịch phỏng vấn"
-              description="Khi chọn tài khoản Zalo và lưu/gửi cho ứng viên, hệ thống sẽ gắn ID Zalo của ứng viên và tài khoản Zalo phụ trách vào lịch phỏng vấn. Khi còn 5–15 phút tới giờ phỏng vấn (nếu ứng viên đã xác nhận), hệ thống tự động gửi tin nhắn nhắc nhở qua Zalo."
-            />
-
-            <Row gutter={12}>
-              <Col span={15}>
-                <Form.Item
-                  name="zalo_account_id"
-                  label={
-                    <Space size={6}>
-                      <span>Tài khoản Zalo gửi thông báo (theo nhân sự)</span>
-                      <Tag color="success" icon={<LockOutlined />} style={{ margin: 0 }}>AES-256</Tag>
-                    </Space>
-                  }
-                  rules={[{ required: true, message: 'Vui lòng chọn tài khoản Zalo' }]}
-                >
-                  <Select
-                    options={accounts.map((a) => ({
-                      value: a.id,
-                      label: `${a.zalo_name} (${a.zalo_phone}) — Sở hữu: ${a.owner_display_name}`,
-                    }))}
-                    onChange={(val) => {
-                      const nextAcc = accounts.find((a) => a.id === val);
-                      applyTemplateType(templateType, nextAcc);
-                    }}
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={9}>
-                <Form.Item
-                  name="candidate_zalo_id"
-                  label="ID Zalo / SĐT Zalo của Ứng viên"
-                  rules={[{ required: true, message: 'Nhập ID hoặc SĐT Zalo ứng viên' }]}
-                >
-                  <Input prefix={<MessageOutlined style={{ color: '#2563EB' }} />} placeholder="0909888777 hoặc UID Zalo" />
-                </Form.Item>
-              </Col>
-            </Row>
-
-            <Flex justify="space-between" align="center" wrap gap={8}>
-              <Segmented
-                value={templateType}
-                options={[
-                  { value: 'GREETING', label: '1. Kết bạn & Sàng lọc' },
-                  { value: 'INVITE', label: '2. Mời phỏng vấn & RSVP' },
-                  { value: 'REMINDER', label: '3. Nhắc lịch phỏng vấn' },
-                  { value: 'PASS', label: '4. Báo Đạt phỏng vấn' },
-                ]}
-                onChange={(v) => applyTemplateType(v as 'GREETING' | 'INVITE' | 'REMINDER' | 'PASS')}
-              />
-              <Button size="small" icon={<SettingOutlined />} onClick={onOpenAccountsConfig}>
-                Cấu hình TK Zalo
-              </Button>
-            </Flex>
-
-            <Form.Item
-              name="message"
-              label="Nội dung tin nhắn Zalo (có thể chỉnh sửa trực tiếp hoặc sao chép nhanh)"
-              rules={[{ required: true, message: 'Nhập nội dung tin nhắn Zalo' }]}
-              style={{ marginBottom: 4 }}
-            >
-              <Input.TextArea rows={4} />
-            </Form.Item>
-
-            {target.interviewId && (
-              <Form.Item name="mark_confirmed" valuePropName="checked" style={{ marginBottom: 4 }}>
-                <Checkbox>
-                  Đánh dấu <b>Ứng viên đã xác nhận lịch phỏng vấn</b> (Tự động gửi tin nhắn Zalo nhắc lịch trước 5–15 phút)
-                </Checkbox>
+        <Form layout="vertical">
+          <Row gutter={12}>
+            <Col xs={24} md={14}>
+              <Form.Item
+                label={
+                  <Space size={8}>
+                    <span>Tài khoản Zalo HR gửi đi</span>
+                    <Button size="small" type="link" icon={<SettingOutlined />} onClick={onOpenAccountsConfig} style={{ padding: 0, height: 'auto' }}>
+                      Quản lý TK Zalo
+                    </Button>
+                  </Space>
+                }
+              >
+                <Select
+                  value={selectedAcc?.id}
+                  onChange={(v) => handleAccountOrTplChange(v, tplType)}
+                  options={accounts.map((a) => ({
+                    value: a.id,
+                    label: `${a.zalo_name} (${a.zalo_phone}) — ${a.owner_display_name}`,
+                  }))}
+                />
               </Form.Item>
-            )}
+            </Col>
+            <Col xs={24} md={10}>
+              <Form.Item label="SĐT / ID Zalo của ứng viên (Lưu để nhắc lịch)">
+                <Input
+                  value={candZaloId}
+                  onChange={(e) => setCandZaloId(e.target.value)}
+                  placeholder="Nhập SĐT hoặc ID Zalo ứng viên..."
+                />
+              </Form.Item>
+            </Col>
+          </Row>
 
-            <Flex justify="space-between" align="center" wrap gap={8} style={{ paddingTop: 6, borderTop: '1px solid #E5E7EB' }}>
-              <Button icon={<CopyOutlined />} onClick={handleCopyOnly}>
-                Sao chép tin nhắn mẫu
-              </Button>
-              <Space wrap>
-                <Button icon={<CloseOutlined />} onClick={onClose}>Hủy bỏ</Button>
-                <Button
-                  icon={<ExportOutlined />}
-                  loading={sendMut.isPending}
-                  onClick={async () => {
-                    const values = await form.validateFields();
-                    sendMut.mutate({ mode: 'COPY_AND_SAVE', values });
-                  }}
-                >
-                  Sao chép, Lưu ID &amp; Mở Zalo
-                </Button>
-                <Button type="primary" htmlType="submit" icon={<SendOutlined />} loading={sendMut.isPending}>
-                  Gửi qua Zalo đã chọn &amp; Lưu ID nhắc lịch
-                </Button>
+          <Form.Item label="Chọn mẫu tin nhắn Zalo">
+            <Radio.Group
+              value={tplType}
+              buttonStyle="solid"
+              onChange={(e) => handleAccountOrTplChange(selectedAcc?.id || '', e.target.value)}
+              style={{ width: '100%', display: 'flex' }}
+            >
+              <Radio.Button value="GREETING" style={{ flex: 1, textAlign: 'center' }}>Chào &amp; Kết bạn</Radio.Button>
+              <Radio.Button value="INVITE" style={{ flex: 1, textAlign: 'center' }}>Mời phỏng vấn</Radio.Button>
+              <Radio.Button value="REMINDER" style={{ flex: 1, textAlign: 'center' }}>Nhắc trước giờ PV</Radio.Button>
+              <Radio.Button value="PASS" style={{ flex: 1, textAlign: 'center' }}>Báo Đạt phỏng vấn</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+
+          <Form.Item label="Nội dung tin nhắn gửi ứng viên (có thể chỉnh sửa trước khi gửi hoặc sao chép)">
+            <Input.TextArea rows={5} value={msgText} onChange={(e) => setMsgText(e.target.value)} />
+          </Form.Item>
+
+          {target.interviewId && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '8px 12px' }}>
+              <Space size={8} wrap>
+                <Tag color="blue" style={{ margin: 0 }}>Lịch hẹn: {target.interviewTime || 'Đã xếp lịch'}</Tag>
+                <span style={{ fontSize: 12, color: '#475569' }}>
+                  Khi ứng viên xác nhận tham gia, hệ thống sẽ tự động gửi tin nhắn Zalo nhắc lịch trước giờ phỏng vấn 5–15 phút.
+                </span>
               </Space>
-            </Flex>
-          </Space>
+              <Space size={6}>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>Đã xác nhận lịch:</span>
+                <Switch size="small" checked={markConfirmed} onChange={setMarkConfirmed} />
+              </Space>
+            </div>
+          )}
         </Form>
       )}
     </Modal>
