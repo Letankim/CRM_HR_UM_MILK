@@ -97,8 +97,8 @@ export function SelfShiftActionPanel({ shift, todayDate, size = 'large', showInc
     body = (
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
         {rejectedAlert}
-        <Alert type="info" showIcon message={`Chưa đến giờ kết thúc ca (${endAt}) — không được ra ca sớm.`} description={`Bạn có thể Ra ca từ ${endAt} đến tối đa ${lateHours} giờ sau giờ kết thúc ca.`} />
-        <Tooltip title={`Chưa đến giờ kết thúc ca (${endAt}) — không được ra ca sớm`}>
+        <Alert type="info" showIcon message={`Bạn có thể Ra ca từ ${endAt} đến tối đa ${lateHours} giờ sau giờ kết thúc ca.`} />
+        <Tooltip title={`Bạn có thể Ra ca từ ${endAt} đến tối đa ${lateHours} giờ sau giờ kết thúc ca`}>
           <Button type="primary" size={size} block disabled icon={<LockOutlined />}>Ra ca (mở lúc {endAt})</Button>
         </Tooltip>
       </Space>

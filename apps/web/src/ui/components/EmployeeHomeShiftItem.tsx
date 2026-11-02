@@ -47,7 +47,7 @@ export function EmployeeHomeShiftItem({ shift: s, events, todayDate, nowHm, late
       <Space size={6} wrap>
         {rejectedTag}
         <Tag color="processing" style={{ margin: 0 }}>Đã vào ca</Tag>
-        <Tooltip title={`Chưa đến giờ kết thúc ca (${endAt}) — không được ra ca sớm`}>
+        <Tooltip title={`Bạn có thể Ra ca từ ${endAt} đến tối đa ${lateHours} giờ sau giờ kết thúc ca`}>
           <Button size="small" disabled icon={<LockOutlined />}>Ra ca từ {endAt}</Button>
         </Tooltip>
       </Space>
