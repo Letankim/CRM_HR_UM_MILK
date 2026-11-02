@@ -10,6 +10,7 @@ import {
 import {
   DEFAULT_ZALO_TEMPLATES, ensureInterviewRsvpUrl, recordZaloDeliveryLog, renderZaloMessageTemplate, resolveZaloAccountByIdOrDefault,
 } from './zalo-hr.service.js';
+import { sendRealZaloMessageIfConnected } from './zalo-qr-session.service.js';
 
 /** Cửa sổ nhắc trước giờ phỏng vấn: từ 1 đến 15 phút trước khi bắt đầu (bắt trọn mốc 5–15 phút). */
 export const INTERVIEW_REMINDER_WINDOW_MINUTES = 15;
@@ -101,10 +102,9 @@ export async function sweepUpcomingInterviewReminders(ctx: AppContext, nowMs = D
             interviewTime: `${win.startHm} – ${win.endHm} (${win.dateVi})`, meetLink: iv.meet_link, rsvpUrl: rsvp.url,
             hrZaloName: zaloAcc.dto.zalo_name, hrZaloPhone: zaloAcc.dto.zalo_phone, minutesLeft: minsLeft,
           });
+          await sendRealZaloMessageIfConnected(zaloAcc.rowId, zaloAcc.secret, candZaloId, zaloMsg);
           await ctx.db.interviews.update(iv.id, iv.version, {
-            zalo_reminder_sent_at: nowIso(),
-            zalo_account_id: iv.zalo_account_id || zaloAcc.dto.id,
-            candidate_zalo_id: candZaloId,
+            zalo_reminder_sent_at: nowIso(), zalo_account_id: iv.zalo_account_id || zaloAcc.dto.id, candidate_zalo_id: candZaloId,
           }, actorId);
           await recordZaloDeliveryLog(ctx, {
             channel: 'ZALO_REMINDER', recipientId: candZaloId, branchId: branchId || 'ALL',
