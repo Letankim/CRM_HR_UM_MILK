@@ -125,7 +125,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
   const checkHasIv = (r: Record<string, unknown> | null) => Boolean(r && (scheduledCandidateIds?.has(String(r.id)) || scheduledCandidateIds?.has(String(r.candidate_code)) || r.status === 'INTERVIEW_SCHEDULED'));
 
   const exportCands = (list: Record<string, unknown>[]) =>
-    exportToExcel({ fileName: 'Danh_sach_ung_vien_26_cot.xls', sheetTitle: 'Danh sách Hồ sơ Ứng viên Tuyển dụng (Chuẩn 26 cột Google Form)', rows: list, columns: CANDIDATE_26_EXCEL_COLUMNS });
+    exportToExcel({ fileName: 'Danh_sach_ung_vien.xls', sheetTitle: 'Danh sách Hồ sơ Ứng viên Tuyển dụng', rows: list, columns: CANDIDATE_26_EXCEL_COLUMNS });
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
