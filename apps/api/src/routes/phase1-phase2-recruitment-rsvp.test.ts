@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEMO_PIN, SHIFT_DEFINITIONS } from '../data/memory-seed.js';
 import { isPinRotationRequiredInWindow, parsePinHistory } from './auth.routes.js';
-import { sweepExpiredNoShowInterviews, INTERVIEW_REMINDER_WINDOW_MINUTES } from '../services/interview-reminder.service.js';
+import { sweepExpiredNoShowInterviews, sweepUpcomingInterviewReminders, INTERVIEW_REMINDER_WINDOW_MINUTES } from '../services/interview-reminder.service.js';
 import { buildTestApp, type TestAppContext } from '../test-utils/build-test-app.js';
 
 let t: TestAppContext;
@@ -147,10 +147,7 @@ describe('Giai đoạn 1 & 2: 6 Điểm GPS, 3 Ca Chuẩn, Xoay PIN, Google Form
     expect(t.db.candidates.get(goodCand.id)?.status).toBe('CONTACTED');
 
     // Chấm điểm phỏng vấn theo Rubric 13 điểm đạt tuyệt đối 13/13 -> PASS + sinh mã UBM_NV0000xx
-    const perfectScores = {
-      s1_punctuality: 2, s2_grooming: 1, s3_voice_smile: 2, s4_shift_commitment: 2,
-      s5_honesty_discipline: 2, s6_teamwork: 1, s7_fnb_operation: 1, s8_hygiene_safety: 1, s9_incident_handling: 1,
-    };
+    const perfectScores = { s1_punctuality: 2, s2_grooming: 1, s3_voice_smile: 2, s4_shift_commitment: 2, s5_honesty_discipline: 2, s6_teamwork: 1, s7_fnb_operation: 1, s8_hygiene_safety: 1, s9_incident_handling: 1 };
     const decidePass = await t.app.inject({
       method: 'POST', url: `/api/admin/interviews/${ivId}/decision`, headers: hr,
       payload: { rubric_block: 'STORE', rubric_scores: perfectScores, red_flags: [], create_employee: true, comment: 'Xuất sắc 13/13 điểm' },
@@ -180,5 +177,42 @@ describe('Giai đoạn 1 & 2: 6 Điểm GPS, 3 Ca Chuẩn, Xoay PIN, Google Form
     expect(swept).toBeGreaterThanOrEqual(1);
     expect(t.db.interviews.get(ivId)?.status).toBe('NO_SHOW');
     expect(t.db.candidates.get(candId)?.status).toBe('CONTACTED');
+  });
+
+  it('5. Cấu hình tài khoản Zalo HR mã hóa AES-256 trên Sheet theo người & lưu ID Zalo tự động nhắc lịch phỏng vấn', async () => {
+    const hr = await t.loginHeaders('hr');
+    const accRes = await t.app.inject({
+      method: 'POST', url: '/api/admin/recruitment/zalo-accounts', headers: hr,
+      payload: { zalo_name: 'HR Ụm Bò Milk - Kim Ngân', zalo_phone: '0901222333', zalo_id: 'zalo_hr_ngan', access_token: 'secret_cookie_token_xyz987', is_default: true },
+    });
+    expect(accRes.statusCode).toBe(201);
+    const zaloAccId = accRes.json().data.id as string;
+    const rawSetting = t.db.systemSettings.get(zaloAccId)!;
+    expect(rawSetting.value.startsWith('enc:v1:')).toBe(true);
+    expect(rawSetting.value).not.toContain('secret_cookie_token_xyz987');
+
+    const candRes = await t.app.inject({
+      method: 'POST', url: '/api/admin/candidates', headers: hr,
+      payload: { full_name: 'Lê Hoàng Thảo', phone: '0915888777', applied_position: 'BARISTA', applied_branch_id: t.db.branches.all()[0]!.id },
+    });
+    const candId = candRes.json().data.id as string;
+    const ivRes = await t.app.inject({
+      method: 'POST', url: '/api/admin/interviews', headers: hr,
+      payload: { candidate_id: candId, interviewer_ids: ['hr'], scheduled_at: '2027-09-10T10:00:00+07:00', duration_minutes: 30 },
+    });
+    const ivId = ivRes.json().data.id as string;
+
+    const sendRes = await t.app.inject({
+      method: 'POST', url: '/api/admin/recruitment/zalo-send', headers: hr,
+      payload: { candidate_id: candId, interview_id: ivId, zalo_account_id: zaloAccId, candidate_zalo_id: 'zalo_uv_0915888777', template_type: 'INVITE', mark_confirmed: true, mode: 'SEND' },
+    });
+    expect(sendRes.statusCode).toBe(200);
+    expect(t.db.interviews.get(ivId)).toMatchObject({ zalo_account_id: zaloAccId, candidate_zalo_id: 'zalo_uv_0915888777', candidate_confirmed: true, status: 'CONFIRMED' });
+
+    const before10MinsMs = Date.parse('2027-09-10T09:50:00+07:00');
+    const reminded = await sweepUpcomingInterviewReminders(t.ctx, before10MinsMs);
+    expect(reminded).toBeGreaterThanOrEqual(1);
+    expect(Boolean(t.db.interviews.get(ivId)?.zalo_reminder_sent_at)).toBe(true);
+    expect(t.db.deliveryLogs.find((d) => d.channel === 'ZALO_REMINDER' && d.recipient_user_id === 'zalo_uv_0915888777')).toBeDefined();
   });
 });

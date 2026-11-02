@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, Flex, Space, Tag } from 'antd';
-import { BellOutlined, ClockCircleOutlined, EditOutlined, EyeOutlined, VideoCameraOutlined } from '@ant-design/icons';
+import { BellOutlined, ClockCircleOutlined, EditOutlined, EyeOutlined, MessageOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
 interface UpcomingInterviewsBannerProps {
@@ -10,6 +10,7 @@ interface UpcomingInterviewsBannerProps {
   canManage: boolean;
   onViewDetail: (iv: Record<string, unknown>) => void;
   onEvaluate: (iv: Record<string, unknown>) => void;
+  onOpenZaloNotify?: (iv: Record<string, unknown>) => void;
 }
 
 interface EnrichedUpcomingItem {
@@ -38,6 +39,7 @@ export function UpcomingInterviewsBanner({
   canManage,
   onViewDetail,
   onEvaluate,
+  onOpenZaloNotify,
 }: UpcomingInterviewsBannerProps) {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -162,6 +164,11 @@ export function UpcomingInterviewsBanner({
                 </div>
               </div>
               <Flex justify="flex-end" gap={6} wrap>
+                {canManage && onOpenZaloNotify && (
+                  <Button size="small" icon={<MessageOutlined style={{ color: '#2563EB' }} />} onClick={() => onOpenZaloNotify(item.raw)}>
+                    Zalo / Mẫu tin
+                  </Button>
+                )}
                 {item.meetLink && (
                   <Button size="small" type="primary" ghost icon={<VideoCameraOutlined />} href={item.meetLink} target="_blank">
                     Vào phòng họp

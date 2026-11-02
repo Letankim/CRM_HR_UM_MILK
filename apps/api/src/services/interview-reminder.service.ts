@@ -1,32 +1,23 @@
 import { ROLE_LABELS, STAFF_GROUP_LABELS, SYSTEM_CONFIG, type StaffGroup } from '@umbm/shared';
 import type { AppContext } from '../context.js';
+import { nowIso } from '../lib/time.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { resolveUserPersonalRealEmail, webOrigin } from './account-email-dispatcher.js';
 import { isSyntheticDemoEmail } from './email.service.js';
 import {
-  parseInterviewWindowMs,
-  parseRawInterviewers,
-  resolveInterviewerLabel,
-  resolveInterviewerRecipients,
+  parseInterviewWindowMs, parseRawInterviewers, resolveInterviewerLabel, resolveInterviewerRecipients,
 } from './interview-schedule-helper.js';
+import {
+  DEFAULT_ZALO_TEMPLATES, ensureInterviewRsvpUrl, recordZaloDeliveryLog, renderZaloMessageTemplate, resolveZaloAccountByIdOrDefault,
+} from './zalo-hr.service.js';
 
 /** Cửa sổ nhắc trước giờ phỏng vấn: từ 1 đến 15 phút trước khi bắt đầu (bắt trọn mốc 5–15 phút). */
 export const INTERVIEW_REMINDER_WINDOW_MINUTES = 15;
 /** Quá 30 phút kể từ giờ bắt đầu mà vẫn ở trạng thái SCHEDULED -> tự động chuyển NO_SHOW và thu hồi slot. */
 export const INTERVIEW_NO_SHOW_GRACE_MINUTES = 30;
-
 let activeReminderSweep: Promise<number> | null = null;
 
-/**
- * Quét các lịch phỏng vấn đã qua `start_at + 30 phút` nhưng vẫn ở trạng thái `SCHEDULED` (chưa xác nhận / chưa hoàn tất):
- * - Tự động chuyển `status = 'NO_SHOW'`, giải phóng slot và đưa ứng viên về `CONTACTED`.
- * - Gửi thông báo cảnh báo cho bộ phận Nhân sự (HR).
- */
-export async function sweepExpiredNoShowInterviews(
-  ctx: AppContext,
-  nowMs = Date.now(),
-  actorId = 'interview-reminder',
-): Promise<number> {
+export async function sweepExpiredNoShowInterviews(ctx: AppContext, nowMs = Date.now(), actorId = 'interview-reminder'): Promise<number> {
   const graceMs = INTERVIEW_NO_SHOW_GRACE_MINUTES * 60_000;
   const expired = ctx.db.interviews.all().filter((iv) => {
     if (iv.status !== 'SCHEDULED' || iv.decision !== 'PENDING') return false;
@@ -97,6 +88,32 @@ export async function sweepUpcomingInterviewReminders(ctx: AppContext, nowMs = D
       const posLabel = cand ? (cand.position || STAFF_GROUP_LABELS[cand.staff_group as StaffGroup] || cand.staff_group) : 'Ứng viên tuyển dụng';
       const interviewerLabel = resolveInterviewerLabel(ctx, iv.interviewer_id) || 'Hội đồng phỏng vấn', minsLeft = Math.max(1, Math.ceil(diff / 60_000));
 
+      // Nếu ứng viên đã xác nhận lịch phỏng vấn: tự động gửi tin nhắn nhắc nhở qua tài khoản Zalo HR đã gắn
+      let zaloNote = '';
+      const isConfirmed = Boolean(iv.candidate_confirmed || iv.status === 'CONFIRMED');
+      const candZaloId = iv.candidate_zalo_id || cand?.candidate_zalo_id || cand?.phone || '';
+      if (isConfirmed && candZaloId && !iv.zalo_reminder_sent_at) {
+        const zaloAcc = await resolveZaloAccountByIdOrDefault(ctx, iv.zalo_account_id || cand?.zalo_account_id, iv.created_by);
+        if (zaloAcc) {
+          const rsvp = ensureInterviewRsvpUrl(ctx, iv.id, cand?.id ?? iv.candidate_id, iv.rsvp_token);
+          const zaloMsg = renderZaloMessageTemplate(zaloAcc.dto.reminder_template || DEFAULT_ZALO_TEMPLATES.reminder, {
+            candidateName: candName, candidateCode: candCode, position: posLabel, branchName,
+            interviewTime: `${win.startHm} – ${win.endHm} (${win.dateVi})`, meetLink: iv.meet_link, rsvpUrl: rsvp.url,
+            hrZaloName: zaloAcc.dto.zalo_name, hrZaloPhone: zaloAcc.dto.zalo_phone, minutesLeft: minsLeft,
+          });
+          await ctx.db.interviews.update(iv.id, iv.version, {
+            zalo_reminder_sent_at: nowIso(),
+            zalo_account_id: iv.zalo_account_id || zaloAcc.dto.id,
+            candidate_zalo_id: candZaloId,
+          }, actorId);
+          await recordZaloDeliveryLog(ctx, {
+            channel: 'ZALO_REMINDER', recipientId: candZaloId, branchId: branchId || 'ALL',
+            summary: `[${zaloAcc.dto.zalo_name} -> ${candZaloId}] ${zaloMsg}`, actorId,
+          });
+          zaloNote = ` Đã tự động gửi tin nhắn nhắc Zalo tới ID Zalo ${candZaloId} qua ${zaloAcc.dto.zalo_name}.`;
+        }
+      }
+
       const panelRecipients = resolveInterviewerRecipients(ctx, parseRawInterviewers(undefined, iv.interviewer_id));
       const relatedUserIds = new Set<string>(panelRecipients.userIds);
       for (const hrUser of ctx.db.users.filter((u) => u.status === 'ACTIVE' && u.role === 'HR')) {
@@ -107,7 +124,7 @@ export async function sweepUpcomingInterviewReminders(ctx: AppContext, nowMs = D
 
       const targetUserList = Array.from(relatedUserIds);
       const title = `Nhắc lịch phỏng vấn sau ${minsLeft} phút: ${candDisplay}`;
-      const body = `Cuộc phỏng vấn ứng viên ${candDisplay} (${posLabel} · ${branchName}) sẽ diễn ra lúc ${win.startHm} – ${win.endHm} (${win.dateVi}). Hội đồng: ${interviewerLabel}.${iv.meet_link ? ` Phòng họp: ${iv.meet_link}` : ''}`;
+      const body = `Cuộc phỏng vấn ứng viên ${candDisplay} (${posLabel} · ${branchName}) sẽ diễn ra lúc ${win.startHm} – ${win.endHm} (${win.dateVi}). Hội đồng: ${interviewerLabel}.${iv.meet_link ? ` Phòng họp: ${iv.meet_link}.` : ''}${zaloNote}`;
 
       const notif = await ctx.db.notifications.insert({
         recipient_user_id: targetUserList.join(','), recipient_role: targetUserList.length === 0 ? 'HR' : '',
@@ -119,6 +136,7 @@ export async function sweepUpcomingInterviewReminders(ctx: AppContext, nowMs = D
       const wsPayload = {
         kind: 'INTERVIEW_REMINDER', id: notif.id, interviewId: iv.id, code: candCode || iv.id,
         title, summary: body, priority: 'HIGH', scheduled_at: iv.start_at, minutes_left: minsLeft, meet_link: iv.meet_link,
+        zalo_reminded: Boolean(zaloNote),
       };
       if (targetUserList.length > 0) ctx.realtime()?.toTargets({ userIds: targetUserList }, SocketEvents.NOTIFICATION, wsPayload);
       else ctx.realtime()?.toTargets({ roles: ['HR'] }, SocketEvents.NOTIFICATION, wsPayload);
@@ -135,7 +153,7 @@ export async function sweepUpcomingInterviewReminders(ctx: AppContext, nowMs = D
           subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Nhắc lịch phỏng vấn sắp bắt đầu sau ${minsLeft} phút: ${candDisplay}`,
           recipientName: `${u.display_name || u.username} (${ROLE_LABELS[u.role]})`,
           referenceCode: `REM-INT-${candCode || iv.id.slice(-6)}`,
-          summary: `Cuộc phỏng vấn ứng viên ${candDisplay} (${posLabel} · ${branchName}) sẽ bắt đầu sau khoảng ${minsLeft} phút nữa (${win.startHm} – ${win.endHm} ngày ${win.dateVi}).`,
+          summary: `Cuộc phỏng vấn ứng viên ${candDisplay} (${posLabel} · ${branchName}) sẽ bắt đầu sau khoảng ${minsLeft} phút nữa (${win.startHm} – ${win.endHm} ngày ${win.dateVi}).${zaloNote}`,
           metadata: [
             { label: 'Ứng viên phỏng vấn', value: candDisplay },
             { label: 'Vị trí & Chi nhánh', value: `${posLabel} · ${branchName}` },

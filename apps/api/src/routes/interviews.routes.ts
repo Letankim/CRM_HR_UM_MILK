@@ -17,6 +17,7 @@ import {
   findInterviewTimeOverlaps, notifyInterviewParticipants, parseInterviewWindowMs,
   parseRawInterviewers, resolveInterviewerLabel, resolveInterviewerRecipients,
 } from '../services/interview-schedule-helper.js';
+import { ensureInterviewRsvpUrl, listHrZaloAccounts, resolveZaloAccountByIdOrDefault } from '../services/zalo-hr.service.js';
 import { resolveStaffGroupLabel } from './employee-mapper.js';
 
 const zCreateInterviewBody = z.object({
@@ -24,6 +25,8 @@ const zCreateInterviewBody = z.object({
   interviewer_ids: z.array(z.string().trim()).optional(), scheduled_at: z.string().trim().optional(),
   start_at: z.string().trim().optional(), duration_minutes: z.coerce.number().int().min(5).max(240).default(30),
   meet_link: z.string().optional().default(''),
+  zalo_account_id: z.string().trim().optional().default(''),
+  candidate_zalo_id: z.string().trim().optional().default(''),
 });
 
 const zEvaluateInterviewBody = z.object({
@@ -37,6 +40,7 @@ const zEvaluateInterviewBody = z.object({
   reschedule_reason: z.string().trim().optional(), scheduled_at: z.string().trim().optional(),
   interviewer_ids: z.array(z.string().trim()).optional(), interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
   duration_minutes: z.coerce.number().int().min(5).max(240).optional(), meet_link: z.string().trim().optional(),
+  zalo_account_id: z.string().trim().optional(), candidate_zalo_id: z.string().trim().optional(),
 });
 
 const zDeleteBody = z.object({ version: z.coerce.number().int().min(1).optional() });
@@ -49,24 +53,24 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       status: z.string().trim().optional(), experience_track: z.string().trim().optional(),
     }).parse(request.query ?? {});
 
+    const zaloAccounts = await listHrZaloAccounts(ctx);
+    const zaloMap = new Map(zaloAccounts.map((a) => [a.id, a]));
+    const defaultZalo = zaloAccounts.find((a) => a.is_default && a.status === 'ACTIVE') ?? zaloAccounts[0];
+
     const items = ctx.db.interviews.all().map((iv) => {
       const cand = ctx.db.candidates.get(iv.candidate_id) ?? ctx.db.candidates.find((c) => c.candidate_code === iv.candidate_id);
       const branchId = iv.branch_id || cand?.branch_pref || '', branch = ctx.db.branches.get(branchId);
-      const track: InterviewExperienceTrack = iv.decision !== 'PENDING'
-        ? (iv.experience_track || inferCandidateExperienceTrack(cand?.experience_note))
-        : (iv.experience_track === 'EXPERIENCED' ? 'EXPERIENCED' : inferCandidateExperienceTrack(cand?.experience_note));
-      const rawIvIds = parseRawInterviewers(undefined, iv.interviewer_id);
-      const resolvedUserIds = resolveInterviewerRecipients(ctx, rawIvIds).userIds;
+      const track: InterviewExperienceTrack = iv.decision !== 'PENDING' ? (iv.experience_track || inferCandidateExperienceTrack(cand?.experience_note)) : (iv.experience_track === 'EXPERIENCED' ? 'EXPERIENCED' : inferCandidateExperienceTrack(cand?.experience_note));
+      const resolvedUserIds = resolveInterviewerRecipients(ctx, parseRawInterviewers(undefined, iv.interviewer_id)).userIds;
+      const effZaloAccId = iv.zalo_account_id || cand?.zalo_account_id || defaultZalo?.id || '', zaloAcc = effZaloAccId ? zaloMap.get(effZaloAccId) : defaultZalo;
+      const effCandZaloId = iv.candidate_zalo_id || cand?.candidate_zalo_id || cand?.phone || '';
+      const rsvp = ensureInterviewRsvpUrl(ctx, iv.id, cand?.id ?? iv.candidate_id, iv.rsvp_token);
       return {
-        ...iv, experience_track: track,
-        experienceTrackLabel: INTERVIEW_EXPERIENCE_TRACK_LABELS[track],
-        experienceTrackShortLabel: INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS[track],
-        candidateExperienceNote: cand?.experience_note ?? '', branch_id: branchId,
-        branchName: branch?.name ?? (branchId || 'Chưa phân chi nhánh'), scheduled_at: iv.start_at,
-        candidateName: cand?.full_name ?? iv.candidate_id, candidateCode: cand?.candidate_code ?? '',
-        candidatePhone: cand?.phone ?? '', candidateEmail: cand?.email ?? '',
-        positionLabel: cand ? resolveStaffGroupLabel(ctx, cand.staff_group, cand.position) : '',
-        interviewerLabel: resolveInterviewerLabel(ctx, iv.interviewer_id), interviewerUserIds: resolvedUserIds,
+        ...iv, experience_track: track, experienceTrackLabel: INTERVIEW_EXPERIENCE_TRACK_LABELS[track], experienceTrackShortLabel: INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS[track],
+        candidateExperienceNote: cand?.experience_note ?? '', branch_id: branchId, branchName: branch?.name ?? (branchId || 'Chưa phân chi nhánh'), scheduled_at: iv.start_at,
+        candidateName: cand?.full_name ?? iv.candidate_id, candidateCode: cand?.candidate_code ?? '', candidatePhone: cand?.phone ?? '', candidateEmail: cand?.email ?? '',
+        positionLabel: cand ? resolveStaffGroupLabel(ctx, cand.staff_group, cand.position) : '', interviewerLabel: resolveInterviewerLabel(ctx, iv.interviewer_id), interviewerUserIds: resolvedUserIds,
+        zalo_account_id: effZaloAccId, candidate_zalo_id: effCandZaloId, zaloAccountName: zaloAcc?.zalo_name ?? '', zaloAccountPhone: zaloAcc?.zalo_phone ?? '', rsvpUrl: rsvp.url,
       };
     }).filter((item) =>
       (!query.branch_id || query.branch_id === 'ALL' || item.branch_id === query.branch_id)
@@ -77,7 +81,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     return sendPaginated(request, 'Lấy danh sách lịch phỏng vấn thành công', paginateAndSort(items, {
       page: query.page, perPage: query.per_page ?? 20, defaultSortBy: 'created_at', defaultSortOrder: 'desc',
       allowedSortFields: ['created_at', 'start_at', 'score', 'decision'], q: query.q,
-      searchExtractor: (i) => [i.candidateName, i.candidateCode, i.candidatePhone, i.interviewerLabel, i.branchName, i.comment, i.experienceTrackLabel],
+      searchExtractor: (i) => [i.candidateName, i.candidateCode, i.candidatePhone, i.interviewerLabel, i.branchName, i.comment, i.experienceTrackLabel, i.zaloAccountName, i.candidate_zalo_id],
       filters: { branch_id: query.branch_id, status: query.status, decision: query.decision, experience_track: query.experience_track },
     }));
   });
@@ -106,14 +110,22 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
 
     const meetLink = body.meet_link || 'https://meet.google.com/umb-milk-hr', actorId = request.auth!.user.id;
     const initialTrack = inferCandidateExperienceTrack(cand.experience_note);
+    const zaloAcc = await resolveZaloAccountByIdOrDefault(ctx, body.zalo_account_id || cand.zalo_account_id, actorId);
+    const candZaloId = body.candidate_zalo_id || cand.candidate_zalo_id || cand.phone || '';
     const created = await ctx.db.interviews.insert({
       candidate_id: cand.id, branch_id: cand.branch_pref, start_at: startAt, end_at: new Date(win.endMs).toISOString(),
       duration_minutes: body.duration_minutes, meet_link: meetLink, interviewer_id: rawInterviewers.join(', '),
       status: 'SCHEDULED', candidate_confirmed: true, reschedule_requested: false, reschedule_reason: '',
       appearance_score: 0, attitude_score: 0, skill_score: 0, score: 0, comment: '', decision: 'PENDING',
       calendar_event_id: `CAL-${Date.now()}`, decided_at: '', experience_track: initialTrack,
+      zalo_account_id: zaloAcc?.dto.id ?? body.zalo_account_id ?? '',
+      candidate_zalo_id: candZaloId,
     }, actorId);
-    await ctx.db.candidates.update(cand.id, cand.version, { status: 'INTERVIEW_SCHEDULED' }, actorId);
+    await ctx.db.candidates.update(cand.id, cand.version, {
+      status: 'INTERVIEW_SCHEDULED',
+      zalo_account_id: zaloAcc?.dto.id || cand.zalo_account_id,
+      candidate_zalo_id: candZaloId,
+    }, actorId);
 
     const notifiedUsers = await notifyInterviewParticipants(ctx, actorId, {
       rawIds: rawInterviewers, branchId: cand.branch_pref, interviewId: created.id, code: cand.candidate_code, kind: 'INTERVIEW_SCHEDULED',
@@ -122,23 +134,20 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     });
     queueInterviewEmails(ctx, { candidate: cand, interview: created, interviewerUserIds: notifiedUsers, actorId });
     void sweepUpcomingInterviewReminders(ctx).catch(() => undefined);
-    await ctx.audit.record(auditContext(request), { action: 'interview.create', entity: 'INTERVIEWS', entityId: created.id, after: { candidate_id: created.candidate_id, start_at: created.start_at, interviewers: rawInterviewers, notified_users: notifiedUsers } });
+    await ctx.audit.record(auditContext(request), { action: 'interview.create', entity: 'INTERVIEWS', entityId: created.id, after: { candidate_id: created.candidate_id, start_at: created.start_at, interviewers: rawInterviewers, zalo_account_id: created.zalo_account_id } });
     reply.code(201);
     const slotWarn = overlaps.slotOverlaps.length > 0 ? ` (Lưu ý: ${overlaps.slotOverlaps[0]!.message})` : '';
     return sendSuccess(request, `Đã đặt lịch phỏng vấn và gửi thông báo tới tất cả người tham gia phỏng vấn thành công${slotWarn}`, { ...created, slotOverlaps: overlaps.slotOverlaps });
   });
 
   app.put('/api/admin/interviews/:id/evaluate', { preHandler: requirePermission('interview.manage') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const body = zEvaluateInterviewBody.parse(request.body);
-    const before = ctx.db.interviews.get(id);
+    const { id } = request.params as { id: string }, body = zEvaluateInterviewBody.parse(request.body), before = ctx.db.interviews.get(id);
     if (!before) throw Errors.notFound('Lịch phỏng vấn', id);
     const cand = ctx.db.candidates.get(before.candidate_id) ?? ctx.db.candidates.find((c) => c.candidate_code === before.candidate_id);
     const actorId = request.auth!.user.id;
 
-    if (body.reschedule_requested !== undefined || body.candidate_confirmed !== undefined || body.scheduled_at || body.interviewer_ids || body.interviewer_id || body.duration_minutes !== undefined || body.meet_link !== undefined) {
-      const nextStart = body.scheduled_at || before.start_at;
-      const nextDuration = body.duration_minutes ?? (before.duration_minutes || 30);
+    if (body.reschedule_requested !== undefined || body.candidate_confirmed !== undefined || body.scheduled_at || body.interviewer_ids || body.interviewer_id || body.duration_minutes !== undefined || body.meet_link !== undefined || body.zalo_account_id !== undefined || body.candidate_zalo_id !== undefined) {
+      const nextStart = body.scheduled_at || before.start_at, nextDuration = body.duration_minutes ?? (before.duration_minutes || 30);
       const win = parseInterviewWindowMs(nextStart, nextDuration);
       if (!win) throw Errors.fieldValidation('scheduled_at', 'INVALID_VALUE', 'Thời gian phỏng vấn không hợp lệ', nextStart);
       const slotLocal = `${win.dateStr} ${win.startHm}`;
@@ -148,17 +157,22 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       const nextInterviewers = parseRawInterviewers(body.interviewer_ids, body.interviewer_id, before.interviewer_id);
       if (nextInterviewers.length === 0) throw Errors.fieldValidation('interviewer_id', 'REQUIRED_FIELD', 'Vui lòng chọn ít nhất 1 người phỏng vấn', '');
       const overlaps = findInterviewTimeOverlaps(ctx, { startAt: nextStart, durationMinutes: nextDuration, rawInterviewers: nextInterviewers, excludeInterviewId: id });
-      if (overlaps.interviewerConflicts.length > 0) {
-        throw Errors.fieldValidation('scheduled_at', 'DUPLICATE_VALUE', overlaps.interviewerConflicts[0]!.message, nextStart);
-      }
+      if (overlaps.interviewerConflicts.length > 0) throw Errors.fieldValidation('scheduled_at', 'DUPLICATE_VALUE', overlaps.interviewerConflicts[0]!.message, nextStart);
       const nextMeet = body.meet_link ?? before.meet_link;
       const nextStatus = body.reschedule_requested ? 'RESCHEDULE_NEEDED' : body.candidate_confirmed ? 'CONFIRMED' : before.status;
       const updatedConfirm = await ctx.db.interviews.update(id, body.version, {
         start_at: nextStart, end_at: new Date(win.endMs).toISOString(), duration_minutes: nextDuration, meet_link: nextMeet,
         interviewer_id: nextInterviewers.join(', '), status: nextStatus, candidate_confirmed: body.candidate_confirmed ?? before.candidate_confirmed,
         reschedule_requested: body.reschedule_requested ?? before.reschedule_requested, reschedule_reason: body.reschedule_reason ?? before.reschedule_reason,
+        zalo_account_id: body.zalo_account_id ?? before.zalo_account_id, candidate_zalo_id: body.candidate_zalo_id ?? before.candidate_zalo_id,
         ...(body.comment ? { comment: body.comment } : {}),
       }, actorId);
+      if (cand && (body.zalo_account_id || body.candidate_zalo_id)) {
+        await ctx.db.candidates.update(cand.id, cand.version, {
+          zalo_account_id: body.zalo_account_id || cand.zalo_account_id,
+          candidate_zalo_id: body.candidate_zalo_id || cand.candidate_zalo_id,
+        }, actorId);
+      }
       const allRelatedIds = Array.from(new Set([...before.interviewer_id.split(',').map((s) => s.trim()), ...nextInterviewers].filter(Boolean)));
       const updatedUserIds = await notifyInterviewParticipants(ctx, actorId, {
         rawIds: allRelatedIds, branchId: before.branch_id || cand?.branch_pref || 'ALL', interviewId: id, code: cand?.candidate_code || id, kind: 'INTERVIEW_UPDATED',
@@ -167,7 +181,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       });
       if (cand) queueInterviewEmails(ctx, { candidate: cand, interview: updatedConfirm, isUpdate: true, interviewerUserIds: updatedUserIds, actorId });
       void sweepUpcomingInterviewReminders(ctx).catch(() => undefined);
-      await ctx.audit.record(auditContext(request), { action: 'interview.update_status', entity: 'INTERVIEWS', entityId: id, before: { start_at: before.start_at, interviewer_id: before.interviewer_id, status: before.status }, after: { start_at: updatedConfirm.start_at, interviewer_id: updatedConfirm.interviewer_id, status: updatedConfirm.status } });
+      await ctx.audit.record(auditContext(request), { action: 'interview.update_status', entity: 'INTERVIEWS', entityId: id, before: { start_at: before.start_at, status: before.status }, after: { start_at: updatedConfirm.start_at, status: updatedConfirm.status } });
       return sendSuccess(request, 'Đã cập nhật lịch phỏng vấn và gửi thông báo đến những người liên quan', { ...updatedConfirm, slotOverlaps: overlaps.slotOverlaps });
     }
 
@@ -178,32 +192,18 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     const track: InterviewExperienceTrack = body.experience_track ?? before.experience_track ?? inferCandidateExperienceTrack(cand?.experience_note);
     const rawBody = (request.body ?? {}) as Record<string, unknown>;
     const hasComponentScores = rawBody.appearance_score !== undefined || rawBody.attitude_score !== undefined || rawBody.skill_score !== undefined;
-    const recalcScore = body.experience_track
-      ? computeInterviewWeightedScore(body.experience_track, body.appearance_score, body.attitude_score, body.skill_score)
-      : Number(((body.appearance_score + body.attitude_score + body.skill_score) / 3).toFixed(1));
+    const recalcScore = body.experience_track ? computeInterviewWeightedScore(body.experience_track, body.appearance_score, body.attitude_score, body.skill_score) : Number(((body.appearance_score + body.attitude_score + body.skill_score) / 3).toFixed(1));
     const computedScore = eval13 && !hasComponentScores ? eval13.normalizedScore100 : hasComponentScores ? recalcScore : (body.score ?? recalcScore);
     const updated = await ctx.db.interviews.update(id, body.version, {
-      status: 'COMPLETED', experience_track: track, rubric_block: block,
-      score_13: eval13 ? eval13.totalScore13 : before.score_13,
+      status: 'COMPLETED', experience_track: track, rubric_block: block, score_13: eval13 ? eval13.totalScore13 : before.score_13,
       rubric_details_json: eval13 ? JSON.stringify({ block, scores: body.rubric_scores ?? {}, redFlags: body.red_flags ?? [], totalScore13: eval13.totalScore13, isPerfect13: eval13.isPerfect13 }) : before.rubric_details_json,
-      score: computedScore, appearance_score: body.appearance_score,
-      attitude_score: body.attitude_score, skill_score: body.skill_score, decision: normalizedDecision,
-      comment: body.comment || body.result_note || '', decided_at: nowIso(),
+      score: computedScore, appearance_score: body.appearance_score, attitude_score: body.attitude_score, skill_score: body.skill_score,
+      decision: normalizedDecision, comment: body.comment || body.result_note || '', decided_at: nowIso(),
     }, actorId);
-    if (cand && normalizedDecision !== 'HOLD') {
-      await ctx.db.candidates.update(cand.id, cand.version, { status: normalizedDecision === 'PASS' ? 'HIRED' : 'REJECTED' }, actorId);
-    }
-    await ctx.audit.record(auditContext(request), { action: 'interview.evaluate', entity: 'INTERVIEWS', entityId: id, before: { decision: before.decision }, after: { decision: updated.decision, score: updated.score, experience_track: track } });
+    if (cand && normalizedDecision !== 'HOLD') await ctx.db.candidates.update(cand.id, cand.version, { status: normalizedDecision === 'PASS' ? 'HIRED' : 'REJECTED' }, actorId);
+    await ctx.audit.record(auditContext(request), { action: 'interview.evaluate', entity: 'INTERVIEWS', entityId: id, before: { decision: before.decision }, after: { decision: updated.decision, score: updated.score } });
     const trackLabel = INTERVIEW_EXPERIENCE_TRACK_LABELS[track];
-    return sendSuccess(
-      request,
-      normalizedDecision === 'PASS'
-        ? `Đã chấm ĐẠT phỏng vấn (${trackLabel} · ${computedScore} điểm) và chuyển ứng viên sang bước Tiếp nhận thử việc`
-        : normalizedDecision === 'HOLD'
-          ? `Đã lưu kết quả phỏng vấn (${trackLabel} · ${computedScore} điểm) ở trạng thái Cân nhắc thêm`
-          : `Đã cập nhật kết quả phỏng vấn (${trackLabel} · ${computedScore} điểm): Không đạt`,
-      updated,
-    );
+    return sendSuccess(request, normalizedDecision === 'PASS' ? `Đã chấm ĐẠT phỏng vấn (${trackLabel} · ${computedScore} điểm) và chuyển ứng viên sang bước Tiếp nhận thử việc` : normalizedDecision === 'HOLD' ? `Đã lưu kết quả phỏng vấn (${trackLabel} · ${computedScore} điểm) ở trạng thái Cân nhắc thêm` : `Đã cập nhật kết quả phỏng vấn (${trackLabel} · ${computedScore} điểm): Không đạt`, updated);
   });
 
   app.delete('/api/admin/interviews/:id', { preHandler: requirePermission('interview.manage') }, async (request) => {

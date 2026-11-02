@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Form, Space, Tag } from 'antd';
-import { CalendarOutlined, CheckCircleOutlined, CloseCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined } from '@ant-design/icons';
+import { CalendarOutlined, CheckCircleOutlined, CloseCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, MessageOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
@@ -27,9 +27,10 @@ interface Props {
   branches: { value: string; label: string }[];
   scheduledCandidateIds?: Set<string>;
   onScheduleInterview: (candidateId: string) => void;
+  onOpenZaloNotify?: (cand: Record<string, unknown>) => void;
 }
 
-export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onScheduleInterview }: Props) {
+export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onScheduleInterview, onOpenZaloNotify }: Props) {
   const qc = useQueryClient(), { message, modal } = App.useApp();
   const canManageRec = usePermissionGuard({ perms: ['candidate.manage'] });
   const canManageIv = usePermissionGuard({ perms: ['interview.manage'] });
@@ -170,6 +171,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
               <RowActionButtons
                 detailTooltip="Xem chi tiết hồ sơ ứng viên" onViewDetail={() => setViewingCand(r)}
                 menuItems={[
+                  ...(onOpenZaloNotify ? [{ key: 'zalo', icon: <MessageOutlined style={{ color: '#2563EB' }} />, label: 'Gửi thông báo Zalo & Copy tin nhắn mẫu', onClick: () => onOpenZaloNotify(r) }] : []),
                   ...(canManageRec && r.status === 'NEW' ? [{ key: 'contacted', icon: <CheckCircleOutlined style={{ color: '#2563EB' }} />, label: 'Đánh dấu Đã liên hệ ứng viên', onClick: () => promptContacted([r]) }] : []),
                   ...(canManageIv ? [{ key: 'interview', icon: <CalendarOutlined />, label: checkHasIv(r) ? 'Chỉnh sửa lịch phỏng vấn' : 'Đặt lịch phỏng vấn', onClick: () => onScheduleInterview(String(r.id)) }] : []),
                   ...(canManageRec && r.status !== 'REJECTED' && r.status !== 'HIRED' ? [{ key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối hồ sơ ứng viên', onClick: () => promptRejectCandidate([r]) }] : []),
@@ -198,6 +200,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
         candidate={liveViewingCand} hasInterview={checkHasIv(liveViewingCand)}
         onClose={() => setViewingCand(null)} onScheduleInterview={onScheduleInterview}
         onEdit={openEditCand} onMarkContacted={(c) => promptContacted([c])} onReject={(c) => promptRejectCandidate([c])}
+        onOpenZaloNotify={onOpenZaloNotify}
       />
       {decisionModalElement}
     </Space>

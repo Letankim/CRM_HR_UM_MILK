@@ -3,7 +3,7 @@
 import { Button, Card, Col, Descriptions, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'antd';
 import type { FormInstance } from 'antd';
 import {
-  CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined,
+  BellOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined,
   CloseOutlined, EditOutlined, MailOutlined, MessageOutlined, PhoneOutlined, PlusOutlined, SaveOutlined, VideoCameraOutlined,
 } from '@ant-design/icons';
 import { INTERVIEW_RUBRICS, type InterviewExperienceTrack } from '@umbm/shared';
@@ -22,24 +22,11 @@ export const CANDIDATE_STATUS_OPTIONS = [
 ];
 
 export function CandidateFormModal({
-  open,
-  editingCand,
-  form,
-  branches,
-  jobPositionOptions,
-  shiftPrefOptions,
-  loading,
-  onClose,
-  onFinish,
+  open, editingCand, form, branches, jobPositionOptions, shiftPrefOptions, loading, onClose, onFinish,
 }: {
-  open: boolean;
-  editingCand: Record<string, unknown> | null;
-  form: FormInstance;
-  branches: { value: string; label: string }[];
-  jobPositionOptions: { value: string; label: string }[];
-  shiftPrefOptions: { value: string; label: string }[];
-  loading: boolean;
-  onClose: () => void;
+  open: boolean; editingCand: Record<string, unknown> | null; form: FormInstance;
+  branches: { value: string; label: string }[]; jobPositionOptions: { value: string; label: string }[];
+  shiftPrefOptions: { value: string; label: string }[]; loading: boolean; onClose: () => void;
   onFinish: (values: Record<string, unknown>) => void;
 }) {
   const watchedStatus = Form.useWatch('status', form);
@@ -81,21 +68,12 @@ export function CandidateFormModal({
 }
 
 export function CandidateDetailDrawer({
-  candidate,
-  hasInterview,
-  onClose,
-  onScheduleInterview,
-  onEdit,
-  onMarkContacted,
-  onReject,
+  candidate, hasInterview, onClose, onScheduleInterview, onEdit, onMarkContacted, onReject, onOpenZaloNotify,
 }: {
-  candidate: Record<string, unknown> | null;
-  hasInterview: boolean;
-  onClose: () => void;
-  onScheduleInterview: (candidateId: string) => void;
-  onEdit: (cand: Record<string, unknown>) => void;
-  onMarkContacted: (cand: Record<string, unknown>) => void;
-  onReject: (cand: Record<string, unknown>) => void;
+  candidate: Record<string, unknown> | null; hasInterview: boolean; onClose: () => void;
+  onScheduleInterview: (candidateId: string) => void; onEdit: (cand: Record<string, unknown>) => void;
+  onMarkContacted: (cand: Record<string, unknown>) => void; onReject: (cand: Record<string, unknown>) => void;
+  onOpenZaloNotify?: (cand: Record<string, unknown>) => void;
 }) {
   return (
     <BaseDetailDrawer
@@ -105,6 +83,11 @@ export function CandidateDetailDrawer({
       extra={
         candidate ? (
           <Space size={6} wrap>
+            {onOpenZaloNotify && (
+              <GuardButton size="small" type="primary" ghost icon={<MessageOutlined />} perms={['candidate.manage', 'interview.manage']} onClick={() => onOpenZaloNotify(candidate)}>
+                Gửi Zalo / Tin nhắn mẫu
+              </GuardButton>
+            )}
             {candidate.status === 'NEW' && (
               <GuardButton size="small" icon={<CheckCircleOutlined />} perms={['candidate.manage']} onClick={() => onMarkContacted(candidate)}>
                 Đã liên hệ
@@ -127,9 +110,14 @@ export function CandidateDetailDrawer({
     >
       {candidate && (
         <Space direction="vertical" size={14} style={{ width: '100%' }}>
-          <Card size="small" title="Kênh liên hệ tích hợp">
+          <Card size="small" title="Kênh liên hệ tích hợp & Tin nhắn mẫu Zalo">
             <Space wrap>
-              <Button type="primary" icon={<PhoneOutlined />} href={`tel:${candidate.phone}`}>Gọi điện thoại ({String(candidate.phone)})</Button>
+              {onOpenZaloNotify && (
+                <Button type="primary" icon={<MessageOutlined />} onClick={() => onOpenZaloNotify(candidate)}>
+                  Chọn TK Zalo &amp; Gửi / Copy tin nhắn mẫu
+                </Button>
+              )}
+              <Button icon={<PhoneOutlined />} href={`tel:${candidate.phone}`}>Gọi điện thoại ({String(candidate.phone)})</Button>
               <Button icon={<MessageOutlined />} href={`https://zalo.me/${candidate.phone}`} target="_blank">Mở chat Zalo ({String(candidate.phone)})</Button>
               {Boolean(candidate.email) && <Button icon={<MailOutlined />} href={`mailto:${candidate.email}`}>Gửi Email ({String(candidate.email)})</Button>}
             </Space>
@@ -138,13 +126,15 @@ export function CandidateDetailDrawer({
             <Descriptions.Item label="Mã ứng viên"><Tag color="geekblue">{String(candidate.candidate_code)}</Tag></Descriptions.Item>
             <Descriptions.Item label="Họ và tên">{String(candidate.full_name)}</Descriptions.Item>
             <Descriptions.Item label="Số điện thoại">{String(candidate.phone)}</Descriptions.Item>
+            <Descriptions.Item label="ID / SĐT Zalo đã lưu"><Tag color="blue">{String(candidate.candidateZaloId || candidate.candidate_zalo_id || candidate.phone)}</Tag></Descriptions.Item>
+            <Descriptions.Item label="TK Zalo HR phụ trách" span={2}>{String(candidate.zaloAccountName || 'Mặc định theo nhân sự HR')}</Descriptions.Item>
             <Descriptions.Item label="Email">{String(candidate.email || 'Chưa cập nhật')}</Descriptions.Item>
             <Descriptions.Item label="Năm sinh / Giới tính">{String(candidate.birth_year || '—')} / {String(candidate.gender || '—')}</Descriptions.Item>
             <Descriptions.Item label="Ca đăng ký">{String(candidate.shiftPrefLabel || candidate.shift_pref || '—')}</Descriptions.Item>
             <Descriptions.Item label="Vị trí ứng tuyển">{String(candidate.positionLabel)}</Descriptions.Item>
             <Descriptions.Item label="Chi nhánh nguyện vọng">{String(candidate.branchName)}</Descriptions.Item>
             <Descriptions.Item label="Trạng thái sàng lọc"><StatusTag value={String(candidate.stage)} /></Descriptions.Item>
-            <Descriptions.Item label="Kinh nghiệm ứng viên">{String(candidate.experience_note || 'Chưa ghi nhận')}</Descriptions.Item>
+            <Descriptions.Item label="Kinh nghiệm ứng viên" span={2}>{String(candidate.experience_note || 'Chưa ghi nhận')}</Descriptions.Item>
             <Descriptions.Item label="Ghi chú HR" span={2}>{String(candidate.hr_note || '—')}</Descriptions.Item>
           </Descriptions>
         </Space>
@@ -154,17 +144,11 @@ export function CandidateDetailDrawer({
 }
 
 export function InterviewDetailDrawer({
-  interview,
-  canManage,
-  onClose,
-  onReschedule,
-  onEvaluate,
+  interview, canManage, onClose, onReschedule, onEvaluate, onOpenZaloNotify,
 }: {
-  interview: Record<string, unknown> | null;
-  canManage: boolean;
-  onClose: () => void;
-  onReschedule: (iv: Record<string, unknown>) => void;
-  onEvaluate: (iv: Record<string, unknown>) => void;
+  interview: Record<string, unknown> | null; canManage: boolean; onClose: () => void;
+  onReschedule: (iv: Record<string, unknown>) => void; onEvaluate: (iv: Record<string, unknown>) => void;
+  onOpenZaloNotify?: (iv: Record<string, unknown>) => void;
 }) {
   const track: InterviewExperienceTrack = interview?.experience_track === 'EXPERIENCED' ? 'EXPERIENCED' : 'INEXPERIENCED';
   const rubric = INTERVIEW_RUBRICS[track];
@@ -176,6 +160,11 @@ export function InterviewDetailDrawer({
       extra={
         interview ? (
           <Space size={6} wrap>
+            {canManage && onOpenZaloNotify && (
+              <Button size="small" type="primary" ghost icon={<MessageOutlined />} onClick={() => onOpenZaloNotify(interview)}>
+                Gửi Zalo / Tin nhắn mẫu
+              </Button>
+            )}
             {Boolean(interview.meet_link) && <Button size="small" type="primary" icon={<VideoCameraOutlined />} href={String(interview.meet_link)} target="_blank">Mở Google Meet</Button>}
             {canManage && <Button size="small" icon={<ClockCircleOutlined />} onClick={() => { onClose(); onReschedule(interview); }}>Chỉnh sửa lịch</Button>}
             {canManage && <Button size="small" icon={<EditOutlined />} onClick={() => { onClose(); onEvaluate(interview); }}>Chấm điểm HR</Button>}
@@ -187,6 +176,17 @@ export function InterviewDetailDrawer({
         <Descriptions size="small" bordered column={2}>
           <Descriptions.Item label="Ứng viên">{String(interview.candidateName)} {interview.candidateCode ? <Tag color="geekblue">{String(interview.candidateCode)}</Tag> : null}</Descriptions.Item>
           <Descriptions.Item label="Số điện thoại">{String(interview.candidatePhone || '—')}</Descriptions.Item>
+          <Descriptions.Item label="ID Zalo ứng viên"><Tag color="blue">{String(interview.candidate_zalo_id || interview.candidatePhone || '—')}</Tag></Descriptions.Item>
+          <Descriptions.Item label="TK Zalo HR nhắc lịch">{String(interview.zaloAccountName || 'Mặc định HR')}</Descriptions.Item>
+          <Descriptions.Item label="Nhắc lịch Zalo tự động" span={2}>
+            {interview.zalo_reminder_sent_at ? (
+              <Tag color="success" icon={<CheckCircleOutlined />}>Đã tự động gửi Zalo nhắc lịch lúc {String(interview.zalo_reminder_sent_at).slice(0, 16).replace('T', ' ')}</Tag>
+            ) : interview.candidate_confirmed ? (
+              <Tag color="processing" icon={<BellOutlined />}>Sẽ tự động gửi tin nhắn Zalo nhắc ứng viên trước 5–15 phút</Tag>
+            ) : (
+              <Tag color="default">Chờ ứng viên xác nhận để bật tự động nhắc Zalo</Tag>
+            )}
+          </Descriptions.Item>
           <Descriptions.Item label="Vị trí ứng tuyển">{String(interview.positionLabel || '—')}</Descriptions.Item>
           <Descriptions.Item label="Chi nhánh">{String(interview.branchName || '—')}</Descriptions.Item>
           <Descriptions.Item label="Phân loại chấm điểm" span={2}>

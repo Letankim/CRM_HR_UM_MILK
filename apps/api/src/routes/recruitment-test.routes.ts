@@ -10,7 +10,9 @@ import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { resolveShiftLabel, resolveStaffGroupLabel } from './employee-mapper.js';
 import { interviewRoutes } from './interviews.routes.js';
 import { recruitmentRsvpRoutes } from './recruitment-rsvp.routes.js';
+import { recruitmentZaloRoutes } from './recruitment-zalo.routes.js';
 import { testBankRoutes } from './test-bank.routes.js';
+import { listHrZaloAccounts } from '../services/zalo-hr.service.js';
 
 const zCandidateListQuery = zListQueryBase.extend({
   branch_id: z.string().trim().optional(),
@@ -59,13 +61,21 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
     if (query.refresh === '1' || query.refresh === 'true') {
       await ctx.db.candidates.refreshIfIdle();
     }
-    const items = ctx.db.candidates.all().map((c) => ({
-      ...c,
-      stage: c.status,
-      branchName: ctx.db.branches.get(c.branch_pref)?.name ?? (c.branch_pref || 'Chưa chọn chi nhánh'),
-      positionLabel: resolveStaffGroupLabel(ctx, c.staff_group, c.position),
-      shiftPrefLabel: resolveShiftLabel(ctx, c.shift_pref, c.branch_pref),
-    }));
+    const zaloAccounts = await listHrZaloAccounts(ctx);
+    const zaloMap = new Map(zaloAccounts.map((a) => [a.id, a]));
+    const items = ctx.db.candidates.all().map((c) => {
+      const zaloAcc = c.zalo_account_id ? zaloMap.get(c.zalo_account_id) : undefined;
+      return {
+        ...c,
+        stage: c.status,
+        branchName: ctx.db.branches.get(c.branch_pref)?.name ?? (c.branch_pref || 'Chưa chọn chi nhánh'),
+        positionLabel: resolveStaffGroupLabel(ctx, c.staff_group, c.position),
+        shiftPrefLabel: resolveShiftLabel(ctx, c.shift_pref, c.branch_pref),
+        candidateZaloId: c.candidate_zalo_id || c.phone,
+        zaloAccountName: zaloAcc?.zalo_name ?? '',
+        zaloAccountPhone: zaloAcc?.zalo_phone ?? '',
+      };
+    });
     return sendPaginated(
       request,
       'Lấy danh sách ứng viên tuyển dụng thành công',
@@ -163,5 +173,6 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
 
   await interviewRoutes(app, ctx);
   await recruitmentRsvpRoutes(app, ctx);
+  await recruitmentZaloRoutes(app, ctx);
   await testBankRoutes(app, ctx);
 }

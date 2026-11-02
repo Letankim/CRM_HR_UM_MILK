@@ -19,6 +19,7 @@ export const zCandidate = zSystemColumns.extend({
   is_vip: zBool.default(false), vip_rank: z.coerce.number().int().default(0),
   ai_score_14: z.coerce.number().default(0), ai_qualified: zBool.default(true),
   red_flag_reason: z.string().default(''), form_payload_json: z.string().default('{}'),
+  candidate_zalo_id: z.string().default(''), zalo_account_id: z.string().default(''), zalo_last_sent_at: z.string().default(''),
 });
 export type Candidate = z.infer<typeof zCandidate>;
 
@@ -36,6 +37,7 @@ export const zInterview = zSystemColumns.extend({
   experience_track: z.preprocess((v) => (v === 'EXPERIENCED' ? 'EXPERIENCED' : 'INEXPERIENCED'), z.enum(['INEXPERIENCED', 'EXPERIENCED'])).default('INEXPERIENCED'),
   rubric_block: z.string().default('STORE'), score_13: z.coerce.number().default(0),
   rubric_details_json: z.string().default('{}'), rsvp_token: z.string().default(''),
+  candidate_zalo_id: z.string().default(''), zalo_account_id: z.string().default(''), zalo_reminder_sent_at: z.string().default(''),
 });
 export type Interview = z.infer<typeof zInterview>;
 

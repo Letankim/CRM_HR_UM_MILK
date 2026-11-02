@@ -26,6 +26,7 @@ type DefaultedInsertKeys =
   | 'probation_cycle_days' | 'probation_work_days' | 'probation_off_days'
   | 'is_vip' | 'vip_rank' | 'ai_score_14' | 'ai_qualified' | 'ai_summary' | 'red_flag_reason' | 'form_payload_json'
   | 'rubric_block' | 'score_13' | 'rubric_details_json' | 'rsvp_token'
+  | 'candidate_zalo_id' | 'zalo_account_id' | 'zalo_last_sent_at' | 'zalo_reminder_sent_at'
   | 'late_fine_tier' | 'late_fine_vnd' | 'pink_ratio_percent' | 'uniform_verified'
   | 'ot_daily_allowance_vnd' | 'manual_base_add_vnd' | 'manual_ot_add_vnd' | 'manual_bonus_vnd'
   | 'manual_advance_deduct_vnd' | 'manual_kpi_deduct_vnd' | 'manual_uniform_deduct_vnd'

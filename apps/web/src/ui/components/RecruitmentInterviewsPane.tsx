@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Space, Tag } from 'antd';
-import { CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, VideoCameraOutlined } from '@ant-design/icons';
+import { BellOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, MessageOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import {
@@ -21,6 +21,7 @@ import { InterviewDetailDrawer } from './RecruitmentSubModals';
 import { RowActionButtons } from './RowActionButtons';
 import { UpcomingInterviewsBanner } from './UpcomingInterviewsBanner';
 import { useWorkflowDecisionModal } from './WorkflowDecisionModal';
+import type { ZaloHrAccountItem } from './ZaloHrAccountsModal';
 
 const INTERVIEW_STATUS_OPTIONS = [
   { value: 'ALL', label: 'Tất cả trạng thái lịch' }, { value: 'SCHEDULED', label: 'Đã xếp lịch' },
@@ -44,17 +45,19 @@ const FAIL_SUGGESTIONS = [
 interface Props {
   branches: { value: string; label: string }[];
   interviewerOptions?: { value: string; label: string }[];
+  zaloAccounts?: ZaloHrAccountItem[];
   allInterviews?: Record<string, unknown>[];
   externalEditTarget?: Record<string, unknown> | null;
   onClearExternalEdit?: () => void;
   onOpenScheduleModal: () => void;
+  onOpenZaloNotify?: (iv: Record<string, unknown>) => void;
 }
 
 const getTrack = (r: Record<string, unknown>): InterviewExperienceTrack =>
   r.experience_track === 'EXPERIENCED' ? 'EXPERIENCED' : 'INEXPERIENCED';
 
 export function RecruitmentInterviewsPane({
-  branches, interviewerOptions = [], allInterviews = [], externalEditTarget, onClearExternalEdit, onOpenScheduleModal,
+  branches, interviewerOptions = [], zaloAccounts = [], allInterviews = [], externalEditTarget, onClearExternalEdit, onOpenScheduleModal, onOpenZaloNotify,
 }: Props) {
   const qc = useQueryClient();
   const canManageRec = usePermissionGuard({ perms: ['interview.manage'] });
@@ -127,7 +130,7 @@ export function RecruitmentInterviewsPane({
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <UpcomingInterviewsBanner interviews={bannerInterviews} canManage={canManageRec} onViewDetail={setViewingIv} onEvaluate={setEvalTarget} />
+      <UpcomingInterviewsBanner interviews={bannerInterviews} canManage={canManageRec} onViewDetail={setViewingIv} onEvaluate={setEvalTarget} onOpenZaloNotify={onOpenZaloNotify} />
       <FilterToolbar searchPlaceholder="Tìm ứng viên, người phỏng vấn..." searchValue={q} onSearchChange={(v) => { setQ(v); setPage(1); }}
         selects={[
           { key: 'branch', value: branchFilter, width: 175, options: [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branches], onChange: (v) => { setBranchFilter(v); setPage(1); } },
@@ -181,7 +184,7 @@ export function RecruitmentInterviewsPane({
           { title: 'Chi nhánh', dataIndex: 'branchName', width: 155, ellipsis: true },
           { title: 'Người phỏng vấn', dataIndex: 'interviewerLabel', ellipsis: true, render: (v: string, r) => v || String(r.interviewer_id ?? '') },
           { title: 'Thời gian phỏng vấn', dataIndex: 'scheduled_at', width: 165, render: (v: string, r) => <span className="num" style={{ fontWeight: 600 }}>{String(v).slice(0, 16).replace('T', ' ')} ({String(r.duration_minutes ?? 30)}p)</span> },
-          { title: 'Xác nhận', dataIndex: 'status', width: 130, render: (_, r) => r.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />}>Cần đổi lịch</Tag> : r.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã xác nhận</Tag> : <Tag color="default">Chờ xác nhận</Tag> },
+          { title: 'Xác nhận & Nhắc Zalo', dataIndex: 'status', width: 175, render: (_, r) => <Space size={4} wrap>{r.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>Cần đổi lịch</Tag> : r.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã xác nhận</Tag> : <Tag color="default" style={{ margin: 0 }}>Chờ xác nhận</Tag>}{r.zalo_reminder_sent_at ? <Tag color="blue" icon={<BellOutlined />} style={{ margin: 0 }}>Đã nhắc Zalo</Tag> : r.candidate_confirmed ? <Tag color="cyan" style={{ margin: 0 }}>Tự nhắc Zalo</Tag> : null}</Space> },
           { title: 'Kết quả HR', dataIndex: 'decision', width: 165, render: (v: string, r) => <Space size={4}><StatusTag value={v} />{v !== 'PENDING' && <Tag color="blue" className="num">{String(r.score)}đ</Tag>}</Space> },
           {
             title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
@@ -189,6 +192,7 @@ export function RecruitmentInterviewsPane({
               <RowActionButtons
                 detailTooltip="Xem chi tiết lịch phỏng vấn" onViewDetail={() => setViewingIv(r)}
                 menuItems={canManageRec ? [
+                  ...(onOpenZaloNotify ? [{ key: 'zalo', icon: <MessageOutlined style={{ color: '#2563EB' }} />, label: 'Gửi thông báo Zalo & Copy tin nhắn mẫu', onClick: () => onOpenZaloNotify(r) }] : []),
                   ...(r.meet_link ? [{ key: 'meet', icon: <VideoCameraOutlined style={{ color: '#2563EB' }} />, label: 'Mở phòng họp Google Meet', onClick: () => window.open(String(r.meet_link), '_blank') }] : []),
                   { key: 'eval', icon: <EditOutlined style={{ color: '#2563EB' }} />, label: 'Chấm điểm & Ra quyết định HR', onClick: () => setEvalTarget(r) },
                   { key: 'resched', icon: <ClockCircleOutlined style={{ color: '#D97706' }} />, label: 'Chỉnh sửa / Đổi lịch phỏng vấn', onClick: () => setReschedTarget(r) },
@@ -200,9 +204,9 @@ export function RecruitmentInterviewsPane({
         ]}
       />
 
-      <InterviewDetailDrawer interview={liveViewingIv} canManage={canManageRec} onClose={() => setViewingIv(null)} onReschedule={setReschedTarget} onEvaluate={setEvalTarget} />
+      <InterviewDetailDrawer interview={liveViewingIv} canManage={canManageRec} onClose={() => setViewingIv(null)} onReschedule={setReschedTarget} onEvaluate={setEvalTarget} onOpenZaloNotify={onOpenZaloNotify} />
       <InterviewEvaluateModal target={evalTarget} loading={putMut.isPending} onClose={() => setEvalTarget(null)} onSubmit={(id, body) => putMut.mutate({ url: `/admin/interviews/${id}/evaluate`, body })} />
-      <InterviewRescheduleModal target={reschedTarget} interviewerOptions={interviewerOptions} existingInterviews={bannerInterviews} loading={putMut.isPending} onClose={() => setReschedTarget(null)} onSubmit={(id, body) => putMut.mutate({ url: `/admin/interviews/${id}/evaluate`, body })} />
+      <InterviewRescheduleModal target={reschedTarget} interviewerOptions={interviewerOptions} zaloAccounts={zaloAccounts} existingInterviews={bannerInterviews} loading={putMut.isPending} onClose={() => setReschedTarget(null)} onSubmit={(id, body) => putMut.mutate({ url: `/admin/interviews/${id}/evaluate`, body })} />
       {decisionModalElement}
     </Space>
   );

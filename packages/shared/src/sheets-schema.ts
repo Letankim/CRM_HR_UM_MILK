@@ -23,8 +23,8 @@ export const SPREADSHEETS = {
   HR: {
     title: 'UMBM_HR',
     tabs: {
-      CANDIDATES: cols('source_row', 'full_name', 'phone', 'position', 'branch_pref', 'status', 'hr_note', 'candidate_code', 'source_channel', 'email', 'birth_year', 'gender', 'staff_group', 'shift_pref', 'experience_note', 'cv_file_id', 'assigned_hr_id', 'contacted_at', 'is_vip', 'vip_rank', 'ai_score_14', 'ai_qualified', 'red_flag_reason', 'form_payload_json'),
-      INTERVIEWS: cols('candidate_id', 'start_at', 'end_at', 'meet_link', 'interviewer_id', 'status', 'score', 'comment', 'decision', 'branch_id', 'duration_minutes', 'calendar_event_id', 'candidate_confirmed', 'reschedule_requested', 'reschedule_reason', 'appearance_score', 'attitude_score', 'skill_score', 'decided_at', 'experience_track', 'rubric_block', 'score_13', 'rubric_details_json', 'rsvp_token'),
+      CANDIDATES: cols('source_row', 'full_name', 'phone', 'position', 'branch_pref', 'status', 'hr_note', 'candidate_code', 'source_channel', 'email', 'birth_year', 'gender', 'staff_group', 'shift_pref', 'experience_note', 'cv_file_id', 'assigned_hr_id', 'contacted_at', 'is_vip', 'vip_rank', 'ai_score_14', 'ai_qualified', 'red_flag_reason', 'form_payload_json', 'candidate_zalo_id', 'zalo_account_id', 'zalo_last_sent_at'),
+      INTERVIEWS: cols('candidate_id', 'start_at', 'end_at', 'meet_link', 'interviewer_id', 'status', 'score', 'comment', 'decision', 'branch_id', 'duration_minutes', 'calendar_event_id', 'candidate_confirmed', 'reschedule_requested', 'reschedule_reason', 'appearance_score', 'attitude_score', 'skill_score', 'decided_at', 'experience_track', 'rubric_block', 'score_13', 'rubric_details_json', 'rsvp_token', 'candidate_zalo_id', 'zalo_account_id', 'zalo_reminder_sent_at'),
       EMPLOYEES: cols(
         'employee_code', 'full_name', 'phone', 'branch_id', 'staff_group', 'stage', 'probation_start',
         'probation_end', 'official_from', 'status', 'user_id', 'candidate_id', 'email', 'date_of_birth',

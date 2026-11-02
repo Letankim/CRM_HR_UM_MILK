@@ -3,10 +3,11 @@
 import { useEffect, useMemo } from 'react';
 import { Col, Form, Input, InputNumber, Modal, Row, Select } from 'antd';
 import type { FormInstance } from 'antd';
-import { CalendarOutlined, CloseOutlined, SaveOutlined } from '@ant-design/icons';
+import { CalendarOutlined, CloseOutlined, MessageOutlined, SaveOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
 import { detectClientInterviewOverlaps, InterviewOverlapAlert } from './interview-overlap-utils';
+import type { ZaloHrAccountItem } from './ZaloHrAccountsModal';
 
 interface InterviewCreateModalProps {
   open: boolean;
@@ -14,21 +15,35 @@ interface InterviewCreateModalProps {
   candidates: Record<string, unknown>[];
   scheduledCandidateIds: Set<string>;
   interviewerOptions: { value: string; label: string }[];
+  zaloAccounts?: ZaloHrAccountItem[];
   existingInterviews: Record<string, unknown>[];
   loading: boolean;
   onCancel: () => void;
-  onSubmit: (payload: { candidate_id: string; interviewer_ids: string[]; scheduled_at: string; duration_minutes: number; meet_link?: string }) => void;
+  onSubmit: (payload: {
+    candidate_id: string; interviewer_ids: string[]; scheduled_at: string;
+    duration_minutes: number; meet_link?: string; zalo_account_id?: string; candidate_zalo_id?: string;
+  }) => void;
 }
 
 export function InterviewCreateModal({
-  open, form, candidates, scheduledCandidateIds, interviewerOptions, existingInterviews, loading, onCancel, onSubmit,
+  open, form, candidates, scheduledCandidateIds, interviewerOptions, zaloAccounts = [], existingInterviews, loading, onCancel, onSubmit,
 }: InterviewCreateModalProps) {
+  const selectedCandId = Form.useWatch('candidate_id', form) as string | undefined;
   const selectedDate = Form.useWatch('interview_date', form) as string | undefined;
   const selectedSlot = Form.useWatch('interview_slot', form) as string | undefined;
   const selectedDuration = Form.useWatch('duration_minutes', form) as number | undefined;
   const selectedInterviewers = Form.useWatch('interviewer_ids', form) as string[] | undefined;
   const todayStr = dayjs().format('YYYY-MM-DD');
   const nowTimeStr = dayjs().format('HH:mm');
+
+  useEffect(() => {
+    if (!open || !selectedCandId) return;
+    const cand = candidates.find((c) => String(c.id) === selectedCandId);
+    if (cand) {
+      form.setFieldValue('candidate_zalo_id', String(cand.candidate_zalo_id || cand.phone || ''));
+      if (cand.zalo_account_id) form.setFieldValue('zalo_account_id', String(cand.zalo_account_id));
+    }
+  }, [open, selectedCandId, candidates, form]);
 
   const overlap = useMemo(() => (open ? detectClientInterviewOverlaps({
     existingInterviews, dateStr: selectedDate, slotHm: selectedSlot, durationMinutes: selectedDuration ?? 30,
@@ -45,6 +60,7 @@ export function InterviewCreateModal({
         candidate_id: v.candidate_id, interviewer_ids: v.interviewer_ids,
         scheduled_at: `${v.interview_date}T${v.interview_slot}:00+07:00`,
         duration_minutes: Number(v.duration_minutes || 30), meet_link: v.meet_link,
+        zalo_account_id: v.zalo_account_id, candidate_zalo_id: v.candidate_zalo_id,
       })}>
         <InterviewOverlapAlert interviewerConflicts={overlap.interviewerConflicts} slotOverlaps={overlap.slotOverlaps}
           rangeLabel={overlap.rangeLabel} dateStr={selectedDate} />
@@ -82,6 +98,16 @@ export function InterviewCreateModal({
               <InputNumber min={5} max={240} step={5} style={{ width: '100%' }} suffix="phút" />
             </Form.Item>
           </Col>
+          <Col span={14}>
+            <Form.Item name="zalo_account_id" label="Tài khoản Zalo HR phụ trách nhắc lịch">
+              <Select allowClear placeholder="Chọn tài khoản Zalo HR" options={zaloAccounts.map((a) => ({ value: a.id, label: `${a.zalo_name} (${a.zalo_phone}) — ${a.owner_display_name}` }))} />
+            </Form.Item>
+          </Col>
+          <Col span={10}>
+            <Form.Item name="candidate_zalo_id" label="ID Zalo / SĐT Zalo ứng viên">
+              <Input prefix={<MessageOutlined style={{ color: '#2563EB' }} />} placeholder="0909888777 hoặc UID Zalo" />
+            </Form.Item>
+          </Col>
         </Row>
         <Form.Item name="meet_link" label="Link Google Meet / Calendar">
           <Input placeholder="https://meet.google.com/umb-milk-hr" />
@@ -94,6 +120,7 @@ export function InterviewCreateModal({
 interface InterviewRescheduleModalProps {
   target: Record<string, unknown> | null;
   interviewerOptions: { value: string; label: string }[];
+  zaloAccounts?: ZaloHrAccountItem[];
   existingInterviews: Record<string, unknown>[];
   loading: boolean;
   onClose: () => void;
@@ -101,7 +128,7 @@ interface InterviewRescheduleModalProps {
 }
 
 export function InterviewRescheduleModal({
-  target, interviewerOptions, existingInterviews, loading, onClose, onSubmit,
+  target, interviewerOptions, zaloAccounts = [], existingInterviews, loading, onClose, onSubmit,
 }: InterviewRescheduleModalProps) {
   const [form] = Form.useForm();
   const reschedDate = Form.useWatch('interview_date', form) as string | undefined;
@@ -125,8 +152,10 @@ export function InterviewRescheduleModal({
       interview_slot: startParsed.isValid() ? startParsed.format('HH:mm') : '09:30',
       duration_minutes: Number(target.duration_minutes || 30),
       meet_link: String(target.meet_link || 'https://meet.google.com/umb-milk-hr'),
+      zalo_account_id: String(target.zalo_account_id || zaloAccounts[0]?.id || ''),
+      candidate_zalo_id: String(target.candidate_zalo_id || target.candidatePhone || ''),
     });
-  }, [target, interviewerOptions, todayStr, form]);
+  }, [target, interviewerOptions, zaloAccounts, todayStr, form]);
 
   const overlap = useMemo(() => (target ? detectClientInterviewOverlaps({
     existingInterviews, dateStr: reschedDate, slotHm: reschedSlot, durationMinutes: reschedDuration ?? 30,
@@ -135,7 +164,7 @@ export function InterviewRescheduleModal({
   [target, existingInterviews, reschedDate, reschedSlot, reschedDuration, reschedInterviewers, interviewerOptions]);
 
   return (
-    <Modal width={660} open={Boolean(target)} forceRender destroyOnHidden
+    <Modal width={680} open={Boolean(target)} forceRender destroyOnHidden
       title={target ? `Chỉnh sửa / Đổi lịch Phỏng vấn: ${String(target.candidateName)}` : 'Chỉnh sửa lịch phỏng vấn'}
       okText="Lưu cập nhật" cancelText="Hủy bỏ"
       okButtonProps={{ icon: <SaveOutlined />, loading, disabled: overlap.interviewerConflicts.length > 0 }}
@@ -146,6 +175,7 @@ export function InterviewRescheduleModal({
           version: target.version, interviewer_ids: v.interviewer_ids, duration_minutes: Number(v.duration_minutes || 30),
           meet_link: v.meet_link, candidate_confirmed: Boolean(v.candidate_confirmed),
           reschedule_requested: Boolean(v.reschedule_requested), reschedule_reason: v.reschedule_reason,
+          zalo_account_id: v.zalo_account_id, candidate_zalo_id: v.candidate_zalo_id,
           scheduled_at: `${v.interview_date}T${v.interview_slot}:00+07:00`,
         });
       }}>
@@ -156,8 +186,10 @@ export function InterviewRescheduleModal({
           <Col span={8}><Form.Item name="interview_date" label="Ngày phỏng vấn" rules={[{ required: true }]}><DateStringPicker minDate={todayStr} /></Form.Item></Col>
           <Col span={8}><Form.Item name="interview_slot" label="Giờ bắt đầu" rules={[{ required: true }]}><TimeSelect minTime={reschedDate === todayStr ? nowTimeStr : undefined} /></Form.Item></Col>
           <Col span={8}><Form.Item name="duration_minutes" label="Thời lượng" rules={[{ required: true }]}><InputNumber min={5} max={240} step={5} style={{ width: '100%' }} suffix="phút" /></Form.Item></Col>
+          <Col span={14}><Form.Item name="zalo_account_id" label="Tài khoản Zalo HR nhắc lịch"><Select allowClear options={zaloAccounts.map((a) => ({ value: a.id, label: `${a.zalo_name} (${a.zalo_phone}) — ${a.owner_display_name}` }))} /></Form.Item></Col>
+          <Col span={10}><Form.Item name="candidate_zalo_id" label="ID Zalo / SĐT Zalo ứng viên"><Input prefix={<MessageOutlined style={{ color: '#2563EB' }} />} placeholder="0909888777 hoặc UID Zalo" /></Form.Item></Col>
           <Col span={24}><Form.Item name="meet_link" label="Link Google Meet / Calendar"><Input placeholder="https://meet.google.com/umb-milk-hr" /></Form.Item></Col>
-          <Col span={12}><Form.Item name="candidate_confirmed" label="Trạng thái xác nhận"><Select options={[{ value: true, label: 'Ứng viên đã xác nhận tham gia' }, { value: false, label: 'Chưa xác nhận' }]} /></Form.Item></Col>
+          <Col span={12}><Form.Item name="candidate_confirmed" label="Trạng thái xác nhận"><Select options={[{ value: true, label: 'Ứng viên đã xác nhận tham gia (Tự nhắc Zalo 5–15p)' }, { value: false, label: 'Chưa xác nhận' }]} /></Form.Item></Col>
           <Col span={12}><Form.Item name="reschedule_requested" label="Yêu cầu đổi lịch"><Select options={[{ value: false, label: 'Giữ lịch bình thường' }, { value: true, label: 'Ứng viên xin đổi lịch phỏng vấn' }]} /></Form.Item></Col>
           <Col span={24}><Form.Item name="reschedule_reason" label="Lý do đổi lịch / Ghi chú chỉnh sửa"><Input.TextArea rows={2} placeholder="Ví dụ: Ứng viên bận lịch thi ở trường buổi sáng, xin dời sang 14:30..." /></Form.Item></Col>
         </Row>
