@@ -44,7 +44,6 @@ export function payslipLines(s: PayrollSnapshotItem): PayslipLine[] {
 
 const sumRows = (rows: PayrollSnapshotItem[], f: (r: PayrollSnapshotItem) => number) => rows.reduce((s, r) => s + f(r), 0);
 
-/** Xuất Bảng lương tổng hợp chuẩn kế toán (kèm trạng thái ký xác nhận & thanh toán) */
 export function exportPayrollSheet(period: PayPeriodRow, rows: PayrollSnapshotItem[]) {
   exportToExcel({
     fileName: `Bang_Luong_${period.period_code}_${dayjs().format('YYYYMMDD')}.xls`,
