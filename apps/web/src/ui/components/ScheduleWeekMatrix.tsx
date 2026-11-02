@@ -183,9 +183,9 @@ export function ScheduleWeekMatrix({ todayDate, selectedBranchId = 'ALL', assign
                                   <Button
                                     size="small" type="link" icon={<EyeOutlined />}
                                     onClick={(e) => { e.stopPropagation(); onViewAttendance(item); }}
-                                    style={{ padding: 0, height: 18, fontSize: 11, fontWeight: 600 }}
+                                    style={{ padding: 0, height: 18, fontSize: 11, fontWeight: 600, maxWidth: '100%' }}
                                   >
-                                    Chi tiết điểm danh
+                                    Điểm danh
                                   </Button>
                                 </div>
                               )}

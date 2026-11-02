@@ -25,7 +25,7 @@ export function EmployeeHomeShiftItem({ shift: s, events, todayDate, nowHm, late
   const rejectedCode = !pendingCode && s.rejectedAdjustmentCode && !(inEv && s.rejectedAdjustmentPunchType === 'CHECK_IN')
     ? String(s.rejectedAdjustmentCode) : '';
   const rejectedTag = rejectedCode ? <Tag color="red" style={{ margin: 0 }}>Từ chối {rejectedCode}</Tag> : null;
-  const detailBtn = <Button size="small" icon={<EyeOutlined />} onClick={() => onViewAttendance(String(s.id))}>Chi tiết điểm danh</Button>;
+  const detailBtn = <Button size="small" icon={<EyeOutlined />} onClick={() => onViewAttendance(String(s.id))}>Điểm danh</Button>;
 
   let action: ReactNode;
   if (s.status === 'DRAFT') {

@@ -60,7 +60,7 @@ export function SelfShiftActionPanel({ shift, todayDate, size = 'large', showInc
   if (!isApproved) {
     body = <Alert type="warning" showIcon message="Ca đăng ký này đang chờ Quản lý cửa hàng hoặc HR phê duyệt. Chỉ được phép chấm công Vào/Ra ca sau khi ca đã chuyển sang Đã phân ca chính thức." />;
   } else if (isDone) {
-    body = <Alert type="success" showIcon message="Bạn đã hoàn thành đầy đủ ca làm việc này." action={<Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => onViewAttendance(id)}>Chi tiết điểm danh</Button>} />;
+    body = <Alert type="success" showIcon message="Bạn đã hoàn thành đầy đủ ca làm việc này." action={<Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => onViewAttendance(id)}>Điểm danh</Button>} />;
   } else if (pendingAdj) {
     const actName = pendingPunch === 'CHECK_IN' || (!pendingPunch && !hasIn) ? 'Vào ca' : pendingPunch === 'CHECK_OUT' || (!pendingPunch && hasIn) ? 'Ra ca' : 'bổ sung công';
     const desc = actName === 'Vào ca'

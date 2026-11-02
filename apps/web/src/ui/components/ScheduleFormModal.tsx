@@ -165,7 +165,7 @@ export function ScheduleFormModal({
             )}
             <Space wrap size={8}>
               <Button icon={<CloseOutlined />} onClick={onClose}>{canEditFields ? 'Hủy bỏ' : 'Đóng'}</Button>
-              {editing && onViewAttendance && canViewShiftAttendanceDetail(editing) && <Button type="primary" ghost icon={<EyeOutlined />} onClick={() => onViewAttendance(editing)}>Xem chi tiết điểm danh</Button>}
+              {editing && onViewAttendance && canViewShiftAttendanceDetail(editing) && <Button type="primary" ghost icon={<EyeOutlined />} onClick={() => onViewAttendance(editing)}>Điểm danh</Button>}
               {isEditingAbsent && <Button danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công</Button>}
               {isApprovedNonDraft && <GuardButton type="primary" icon={<SaveOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={canModifyShift} loading={saveMutation.isPending} onClick={() => saveMutation.mutate(form.getFieldsValue())}>Lưu ghi chú</GuardButton>}
               {canEditFields && editing?.status === 'DRAFT' && <GuardButton type="primary" icon={<CheckOutlined />} perms={['schedule.propose', 'schedule.publish']} allowed={canEditFields} loading={saveMutation.isPending} onClick={async () => { const vals = await form.validateFields(); saveMutation.mutate({ ...vals, status: 'PUBLISHED' }); }}>Duyệt &amp; Phát hành ca</GuardButton>}
@@ -174,14 +174,14 @@ export function ScheduleFormModal({
           </Flex>
         ) : (
           <Space wrap size={8}>
-            {editing && onViewAttendance && canViewShiftAttendanceDetail(editing) && <Button type="primary" ghost icon={<EyeOutlined />} onClick={() => onViewAttendance(editing)}>Xem chi tiết điểm danh</Button>}
+            {editing && onViewAttendance && canViewShiftAttendanceDetail(editing) && <Button type="primary" ghost icon={<EyeOutlined />} onClick={() => onViewAttendance(editing)}>Điểm danh</Button>}
             {isEditingAbsent && <Button type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công</Button>}
             <Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
           </Space>
         )
       }
     >
-      {editing && onViewAttendance && editing.status === 'COMPLETED' && <Alert type="success" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca làm việc này đã hoàn thành." action={<Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => onViewAttendance(editing)}>Xem chi tiết điểm danh</Button>} />}
+      {editing && onViewAttendance && editing.status === 'COMPLETED' && <Alert type="success" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca làm việc này đã hoàn thành." action={<Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => onViewAttendance(editing)}>Điểm danh</Button>} />}
       {isLocked && <Alert type="info" showIcon style={{ marginTop: 8, marginBottom: 8 }} message={`Ca làm việc này thuộc kỳ lương đã chốt (${editing?.lockedByPeriodCode || 'Đã phê duyệt'}), đã khóa chỉnh sửa và xóa để bảo toàn dữ liệu bảng lương.`} />}
       {!isLocked && editing?.status === 'DRAFT' && <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca đăng ký đang chờ Quản lý cửa hàng hoặc HR phê duyệt. Nhân sự phân công đã được khóa cố định; bấm 'Duyệt & Phát hành ca' để phát hành chính thức." />}
       {surplusPreview && <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message={surplusPreview.isNew ? `Cảnh báo dư định biên tại ${surplusPreview.branchLabel}: Khung ca này hiện đã có ${surplusPreview.currentCount}/${surplusPreview.maxStaff} nhân sự (định biên ${surplusPreview.minStaff}–${surplusPreview.maxStaff}). Nếu phân thêm sẽ Dư +${surplusPreview.surplusDiff} nhân sự (${surplusPreview.projectedCount}/${surplusPreview.maxStaff}).` : `Cảnh báo dư định biên tại ${surplusPreview.branchLabel}: Khung ca này đang có ${surplusPreview.projectedCount}/${surplusPreview.maxStaff} nhân sự — Dư +${surplusPreview.surplusDiff} nhân sự so với định biên tối đa (${surplusPreview.minStaff}–${surplusPreview.maxStaff}).`} />}
