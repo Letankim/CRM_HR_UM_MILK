@@ -29,16 +29,12 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
   const qc = useQueryClient();
   const { message } = App.useApp();
   const [activeTab, setActiveTab] = useState<UserProfileTabKey>(initialTab);
-  const [draftQrBase64, setDraftQrBase64] = useState('');
-  const [removeQr, setRemoveQr] = useState(false);
   const [infoForm] = Form.useForm();
   const [pwdForm] = Form.useForm();
 
   useEffect(() => {
     if (open) {
       setActiveTab(initialTab);
-      setDraftQrBase64('');
-      setRemoveQr(false);
     }
   }, [open, initialTab]);
 
@@ -59,8 +55,6 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
   useEffect(() => {
     if (!open || !profileQ.data) return;
     const d = profileQ.data;
-    setDraftQrBase64('');
-    setRemoveQr(false);
     infoForm.setFieldsValue({
       display_name: d.displayName,
       phone: d.phone,
@@ -75,12 +69,7 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
   }, [open, profileQ.data, infoForm]);
 
   const updateInfoMut = useMutation({
-    mutationFn: (body: Record<string, unknown>) =>
-      api.put('/auth/profile', {
-        ...body,
-        ...(draftQrBase64 ? { bank_qr_base64: draftQrBase64 } : {}),
-        ...(removeQr ? { remove_bank_qr: true } : {}),
-      }),
+    mutationFn: (body: Record<string, unknown>) => api.put('/auth/profile', body),
     onSuccess: () => {
       message.success('Đã cập nhật thông tin cá nhân & ngân hàng thành công');
       ['me', 'auth-profile', 'my-attendance', 'employees', 'accounts', 'payroll-snapshots'].forEach((k) =>
@@ -173,14 +162,8 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
                   <Col xs={24} sm={8}><Form.Item name="bank_account_holder" label="Chủ tài khoản"><Input placeholder="NGUYEN VAN A" /></Form.Item></Col>
                 </Row>
                 {p?.employeeId && (
-                  <Form.Item label="Mã QR ngân hàng" style={{ marginBottom: 4 }}>
-                    <ProfileBankQrUploader
-                      currentQrUrl={p.bankQrUrl}
-                      draftQrBase64={draftQrBase64}
-                      removeQr={removeQr}
-                      onChangeDraft={setDraftQrBase64}
-                      onToggleRemove={setRemoveQr}
-                    />
+                  <Form.Item label="Nhận diện nhanh từ ảnh QR ngân hàng" style={{ marginBottom: 4 }}>
+                    <ProfileBankQrUploader />
                   </Form.Item>
                 )}
               </Form>

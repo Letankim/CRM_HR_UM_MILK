@@ -13,6 +13,7 @@ import { EmployeeAccountLinkFields, type EmployeeAccountMode } from './EmployeeA
 import { EmployeePersonalFields } from './EmployeePersonalFields';
 import type { EmployeeRowItem } from './employee-table-columns';
 import { JobPositionsManagerModal, useJobPositions } from './JobPositionsManagerModal';
+import { ProfileBankQrUploader } from './ProfileBankQrUploader';
 import { SALARY_FIELD_DEFAULTS, SalaryProfileFields } from './SalaryProfileFields';
 
 interface EmployeeFormValues {
@@ -201,6 +202,7 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
                       <Col span={8}><Form.Item name="bank_account_number" label="Số tài khoản"><Input placeholder="Nhập số tài khoản" /></Form.Item></Col>
                       <Col span={8}><Form.Item name="bank_account_holder" label="Chủ tài khoản"><Input placeholder="Tự động lấy theo họ tên" /></Form.Item></Col>
                     </Row>
+                    <Form.Item label="Nhận diện nhanh từ ảnh QR ngân hàng" style={{ marginBottom: 4 }}><ProfileBankQrUploader /></Form.Item>
                   </>
                 ),
               },

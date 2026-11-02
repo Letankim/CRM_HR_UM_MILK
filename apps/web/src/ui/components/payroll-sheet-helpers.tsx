@@ -113,7 +113,7 @@ export function PayrollConfirmationCell({
             style={{ marginTop: 4, fontSize: 11, height: 22, padding: '0 6px' }}
             onClick={(e) => { e.stopPropagation(); onOpenQrPay(row); }}
           >
-            {isPaid ? 'Xem QR & CT' : row.bankQrUrl ? 'Quét QR & TT' : 'Thông tin CK & TT'}
+            {isPaid ? 'Xem QR & CT' : row.bankAccountNumber ? 'Quét QR & TT' : 'Thông tin CK & TT'}
           </Button>
         )}
       </div>

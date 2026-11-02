@@ -1,10 +1,11 @@
 /**
  * Bộ giải mã ảnh Mã QR Ngân hàng trên trình duyệt (Mục 4.3):
- * 1. Sử dụng Web API BarcodeDetector (qr_code) để quét trực tiếp chuỗi EMVCo TLV từ ảnh QR tải lên.
- * 2. Giải mã cấu trúc TLV Napas247 (30 mã BIN ngân hàng Việt Nam) qua `parseVietQrEmvcoPayload`.
- * 3. Dự phòng trích xuất thông tin ngân hàng từ chuỗi văn bản OCR / tên tệp qua `extractBankAccountFromOcrText`.
+ * 1. Vẽ ảnh lên Canvas HTML5 và quét ma trận điểm ảnh bằng `jsqr` (hoạt động trên 100% trình duyệt).
+ * 2. Kết hợp Web API `BarcodeDetector` (nếu trình duyệt hỗ trợ).
+ * 3. Giải mã cấu trúc TLV Napas247 (30 mã BIN ngân hàng Việt Nam) qua `parseVietQrEmvcoPayload`.
  */
 
+import jsQR from 'jsqr';
 import {
   extractBankAccountFromOcrText,
   parseVietQrEmvcoPayload,
@@ -48,11 +49,48 @@ async function loadImageElement(dataUrl: string): Promise<HTMLImageElement | nul
   });
 }
 
-async function detectQrRawValueFromBrowser(file?: File, dataUrl?: string): Promise<string | null> {
+function scanQrWithJsQrAtScale(img: HTMLImageElement, maxSide: number): string | null {
+  if (typeof document === 'undefined') return null;
+  const naturalW = img.naturalWidth || img.width || 0;
+  const naturalH = img.naturalHeight || img.height || 0;
+  if (naturalW <= 0 || naturalH <= 0) return null;
+
+  const scale = Math.min(1, maxSide / Math.max(naturalW, naturalH));
+  const w = Math.max(1, Math.round(naturalW * scale));
+  const h = Math.max(1, Math.round(naturalH * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const code = jsQR(imageData.data, w, h, { inversionAttempts: 'attemptBoth' });
+  return code?.data?.trim() || null;
+}
+
+async function detectQrRawValueFromImage(file?: File, dataUrl?: string): Promise<string | null> {
   if (typeof window === 'undefined') return null;
+
+  // 1. Quét bằng jsQR trên Canvas ở nhiều độ phân giải để bắt chính xác cả ảnh chụp màn hình dài lẫn ảnh QR cắt sát
+  if (dataUrl) {
+    const img = await loadImageElement(dataUrl);
+    if (img) {
+      for (const maxSide of [1200, 800, 1600, 500]) {
+        const hit = scanQrWithJsQrAtScale(img, maxSide);
+        if (hit) return hit;
+      }
+    }
+  }
+
+  // 2. Dự phòng bằng BarcodeDetector gốc của trình duyệt nếu có
   const Detector = (window as unknown as { BarcodeDetector?: BarcodeDetectorConstructor }).BarcodeDetector;
   if (!Detector) return null;
-
   try {
     const detector = new Detector({ formats: ['qr_code'] });
     if (file && typeof createImageBitmap === 'function') {
@@ -65,55 +103,25 @@ async function detectQrRawValueFromBrowser(file?: File, dataUrl?: string): Promi
         bitmap.close?.();
       }
     }
-    if (dataUrl) {
-      const img = await loadImageElement(dataUrl);
-      if (img) {
-        const hits = await detector.detect(img);
-        const val = hits.find((h) => h.rawValue?.trim())?.rawValue?.trim();
-        if (val) return val;
-      }
-    }
   } catch {
     return null;
   }
   return null;
 }
 
-async function extractAsciiHintFromFile(file?: File): Promise<string> {
-  if (!file || typeof file.arrayBuffer !== 'function') return '';
-  try {
-    const buf = await file.arrayBuffer();
-    const bytes = new Uint8Array(buf.slice(0, 65536));
-    let ascii = '';
-    for (let i = 0; i < bytes.length; i += 1) {
-      const c = bytes[i]!;
-      if (c >= 32 && c <= 126) ascii += String.fromCharCode(c);
-      else if (ascii.length > 0 && ascii[ascii.length - 1] !== ' ') ascii += ' ';
-    }
-    return ascii;
-  } catch {
-    return '';
-  }
-}
-
 /**
- * Tự động nhận diện thông tin Ngân hàng, Số tài khoản, Chủ tài khoản từ tệp ảnh QR hoặc chuỗi dữ liệu.
+ * Tự động nhận diện thông tin Ngân hàng, Số tài khoản, Chủ tài khoản từ tệp ảnh QR.
+ * Chỉ giải mã trên trình duyệt để điền vào form, không lưu trữ tệp ảnh QR.
  */
 export async function decodeVietQrFromImage(params: {
   file?: File;
   dataUrl?: string;
   fallbackText?: string;
 }): Promise<ParsedVietQrResult | null> {
-  const qrRaw = await detectQrRawValueFromBrowser(params.file, params.dataUrl);
+  const qrRaw = await detectQrRawValueFromImage(params.file, params.dataUrl);
   if (qrRaw) {
     const parsed = decodeVietQrPayloadOrText(qrRaw);
     if (parsed) return parsed;
-  }
-
-  const asciiHint = await extractAsciiHintFromFile(params.file);
-  if (asciiHint.includes('000201')) {
-    const parsedFromBytes = decodeVietQrPayloadOrText(asciiHint);
-    if (parsedFromBytes) return parsedFromBytes;
   }
 
   const fileHint = [params.fallbackText ?? '', params.file?.name ?? ''].join(' ').trim();

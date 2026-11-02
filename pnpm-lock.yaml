@@ -102,6 +102,9 @@ importers:
       dayjs:
         specifier: ^1.11.13
         version: 1.11.23
+      jsqr:
+        specifier: ^1.4.0
+        version: 1.4.0
       next:
         specifier: ^15.0.3
         version: 15.5.28(@types/node@22.20.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -1421,6 +1424,9 @@ packages:
 
   json2mq@0.2.0:
     resolution: {integrity: sha512-SzoRg7ux5DWTII9J2qkrZrqV1gt+rTaoufMxEzXbS26Uid0NwaJd123HcoB80TgubEppxxIGdNxCx50fEoEWQA==}
+
+  jsqr@1.4.0:
+    resolution: {integrity: sha512-dxLob7q65Xg2DvstYkRpkYtmKm2sPJ9oFhrhmudT1dZvNFFTlroai3AWSpLey/w5vMcLBXRgOJsbXpdN9HzU/A==}
 
   jszip@3.10.2:
     resolution: {integrity: sha512-3l+rb15IOWtUhU0H5MFqES/T6Kh7abYwjosBey/vD6hDt8zoEffkSC5Ws5SGtgVw3gBx2NEbhTeSW1+kWkpyTQ==}
@@ -3257,6 +3263,8 @@ snapshots:
   json2mq@0.2.0:
     dependencies:
       string-convert: 0.2.1
+
+  jsqr@1.4.0: {}
 
   jszip@3.10.2:
     dependencies:
