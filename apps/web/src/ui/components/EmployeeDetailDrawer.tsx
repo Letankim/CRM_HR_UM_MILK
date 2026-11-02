@@ -147,7 +147,7 @@ export function EmployeeDetailDrawer({
             {
               key: 'contracts',
               forceRender: true,
-              label: <span><FileProtectOutlined /> Hợp đồng Điện tử &amp; Đánh giá TV</span>,
+              label: <span><FileProtectOutlined /> Hợp đồng &amp; Đánh giá thử việc</span>,
               children: <EmployeeContractStorePanel employee={employee} canManage={canManage} />,
             },
             {

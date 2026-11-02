@@ -43,7 +43,7 @@ const SECTIONS: Record<string, string> = {
   lich: 'Lịch làm việc của bạn', 'nghi-phep': 'Đăng ký Nghỉ OFF',
   'doi-ca': 'Nhường ca / Đổi ca nội bộ', 'diem-danh': 'Điểm danh GPS & Camera trực tiếp của bạn',
   cong: 'Bảng công cá nhân & Phiếu bổ sung công', 'bai-kiem-tra': 'Bài kiểm tra Nghiệp vụ (TEST)',
-  'hop-dong': 'Kho Hợp đồng Lao động Điện tử (4 tệp PDF) & Điểm Tín nhiệm (100đ)',
+  'hop-dong': 'Hợp đồng lao động & Điểm tín nhiệm chuyên cần',
   'ban-tin': 'Bản tin Nội bộ & Chính sách Quy định Công ty', 'thong-bao': 'Trung tâm Thông báo & Hộp thư Cá nhân', them: 'Tiện ích mở rộng của bạn',
 };
 const SECTION_ALIASES: Record<string, string> = { 'cong-cua-toi': 'cong', 'bang-cong': 'cong', 'cham-cong': 'diem-danh', 'lich-lam-viec': 'lich', 'don-nghi': 'nghi-phep', 'kiem-tra': 'bai-kiem-tra' };
@@ -93,7 +93,7 @@ export default function EmployeeSection() {
 
   const isEmpRole = session.data ? isEmployeeRole(session.data.user.role) : true;
   const moreOptionCards = [
-    { title: 'Hợp đồng lao động (4 tệp PDF) & Tín nhiệm', desc: 'Xem kho hợp đồng lao động điện tử và điểm tín nhiệm chuyên cần 100đ', icon: <FileProtectOutlined />, action: () => router.push('/nv/hop-dong') },
+    { title: 'Hợp đồng lao động & Điểm tín nhiệm', desc: 'Xem hợp đồng lao động cá nhân và theo dõi điểm tín nhiệm chuyên cần', icon: <FileProtectOutlined />, action: () => router.push('/nv/hop-dong') },
     { title: 'Ca đã làm & Thu nhập hiện tại', desc: 'Xem đã làm bao nhiêu ca, tiền nhận được & lọc theo ngày/tuần', icon: <DollarOutlined />, action: () => router.push('/nv/thu-nhap') },
     { title: 'Phiếu lương cá nhân', desc: 'Xem chi tiết bảng lương & xác nhận thực lĩnh', icon: <FileTextOutlined />, action: () => router.push('/nv/phieu-luong') },
     { title: 'Bài kiểm tra Nghiệp vụ', desc: 'Làm bài kiểm tra quy chuẩn pha chế SOP & nội quy', icon: <BookOutlined />, action: () => router.push('/nv/bai-kiem-tra') },

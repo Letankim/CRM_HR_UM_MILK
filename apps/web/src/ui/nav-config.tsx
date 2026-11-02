@@ -88,8 +88,8 @@ export const BACKOFFICE_NAV: NavGroup[] = [
       },
       {
         key: '/admin/employees?section=contracts',
-        label: 'Hợp đồng & Đánh giá Thử việc',
-        breadcrumbTitle: 'Kho Hợp đồng Lao động (4 tệp PDF) & Đánh giá Thử việc',
+        label: 'Hợp đồng & Đánh giá thử việc',
+        breadcrumbTitle: 'Hợp đồng Lao động & Đánh giá Thử việc',
         icon: <FileProtectOutlined />,
         perms: ['employee.read', 'employee.manage'],
       },

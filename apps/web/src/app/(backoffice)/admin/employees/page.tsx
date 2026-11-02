@@ -118,9 +118,9 @@ function EmployeesView() {
           onChange={(val) => updateUrlParam('section', String(val))}
           options={[
             { value: 'employees', label: <span><IdcardOutlined /> Hồ sơ Nhân sự</span> },
-            { value: 'contracts', label: <span><FileProtectOutlined /> Quản lý Hợp đồng Lao động (4 tệp PDF) &amp; Đánh giá TV</span> },
+            { value: 'contracts', label: <span><FileProtectOutlined /> Hợp đồng &amp; Đánh giá thử việc</span> },
             ...(can('candidate.manage', 'interview.manage') ? [{ value: 'recruitment', label: <span><SolutionOutlined /> Tuyển dụng &amp; Phỏng vấn</span> }] : []),
-            ...(can('test.manage') ? [{ value: 'tests', label: <span><BookOutlined /> Ngân hàng Đề &amp; Thi TEST (120 câu)</span> }] : []),
+            ...(can('test.manage') ? [{ value: 'tests', label: <span><BookOutlined /> Ngân hàng Đề &amp; Thi TEST</span> }] : []),
           ]}
         />
       </div>

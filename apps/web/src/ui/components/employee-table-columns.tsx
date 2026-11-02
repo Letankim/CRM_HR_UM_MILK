@@ -150,8 +150,8 @@ export function buildEmployeeColumns({
         const pts = r.attendanceCreditPoints ?? 100;
         return (
           <Space direction="vertical" size={3}>
-            <Tag color={cnt > 0 ? 'blue' : 'default'} icon={<FileProtectOutlined />} style={{ margin: 0, fontWeight: 600 }}>
-              Hợp đồng: {cnt}/4 tệp
+            <Tag color={cnt > 0 ? 'geekblue' : 'default'} icon={<FileProtectOutlined />} style={{ margin: 0, fontWeight: 600 }}>
+              {cnt > 0 ? `Đã lưu ${cnt} hợp đồng` : 'Chưa có hợp đồng'}
             </Tag>
             <Tag color={pts >= 95 ? 'success' : pts >= 80 ? 'warning' : 'error'} icon={<CheckCircleOutlined />} style={{ margin: 0 }}>
               Tín nhiệm: {pts}/100đ
@@ -204,7 +204,7 @@ export function buildEmployeeColumns({
       align: 'right',
       render: (_, r) => {
         const menuItems: { key: string; icon?: React.ReactNode; label: string; danger?: boolean; onClick: () => void }[] = [
-          { key: 'contracts', icon: <FileProtectOutlined style={{ color: '#2563EB' }} />, label: 'Quản lý Hợp đồng Lao động (4 tệp PDF)', onClick: () => onViewDetail(r) },
+          { key: 'contracts', icon: <FileProtectOutlined style={{ color: '#2563EB' }} />, label: 'Hợp đồng & Đánh giá thử việc', onClick: () => onViewDetail(r) },
         ];
         if (canManage) menuItems.push({ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa hồ sơ & Lương', onClick: () => onEdit(r) });
         if (canPromote && r.stage === 'PROBATION') menuItems.push({ key: 'promote', icon: <RiseOutlined />, label: 'Chuyển lên Chính thức', onClick: () => onPromoteOfficial(r) });
