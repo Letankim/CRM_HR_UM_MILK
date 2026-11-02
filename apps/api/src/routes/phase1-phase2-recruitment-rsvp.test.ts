@@ -100,6 +100,12 @@ describe('Giai đoạn 1 & 2: 6 Điểm GPS, 3 Ca Chuẩn, Xoay PIN, Google Form
     const decidePass = await t.app.inject({ method: 'POST', url: `/api/admin/interviews/${ivId}/decision`, headers: hr, payload: { rubric_block: 'STORE', rubric_scores: perfectScores, red_flags: [], create_employee: true, comment: 'Xuất sắc 13/13 điểm' } });
     expect(decidePass.json().data).toMatchObject({ decision: 'PASS', score_13: 13, isPerfect13: true });
     expect(decidePass.json().data.suggested_employee_code).toMatch(/^UBM_NV\d{6}$/);
+    const ob = decidePass.json().data.onboarding;
+    expect(ob).toMatchObject({ employee_code: decidePass.json().data.suggested_employee_code, user_status: 'ACTIVE', temporary_pin: '246810', probation_cycle_days: 12, probation_work_days: 7, probation_off_days: 5 });
+    const createdEmp = t.db.employees.get(ob.employee_id)!;
+    const createdUser = t.db.users.get(ob.user_id)!;
+    expect(createdEmp).toMatchObject({ employee_code: ob.employee_code, stage: 'PROBATION', status: 'ACTIVE', probation_cycle_days: 12, permanent_address: 'TP. Hồ Chí Minh' });
+    expect(createdUser).toMatchObject({ status: 'ACTIVE', role: 'THU_VIEC', must_change_pin: true, employee_id: ob.employee_code });
   });
 
   it('4. Tự động chuyển lịch phỏng vấn quá 30 phút chưa tham gia sang NO_SHOW và cửa sổ nhắc lịch 15 phút', async () => {

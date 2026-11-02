@@ -10,6 +10,7 @@ import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { createRsvpToken, scoreCandidateForm14, sendZaloInterviewInvite, verifyRsvpToken } from '../services/candidate-form-scorer.js';
+import { autoOnboardPassedCandidate } from '../services/interview-onboarding.service.js';
 import { getRecruitmentFormSheetConfig, saveRecruitmentFormSheetConfig, syncRecruitmentFormFromGoogleSheet } from '../services/recruitment-form-sync.service.js';
 import { resolveStaffGroupLabel } from './employee-mapper.js';
 
@@ -147,24 +148,17 @@ export async function recruitmentRsvpRoutes(app: FastifyInstance, ctx: AppContex
       rubric_details_json: JSON.stringify({ block, scores: body.rubric_scores ?? {}, redFlags, totalScore13: eval13.totalScore13, isPerfect13: eval13.isPerfect13 }),
     }, actorId);
 
-    let suggestedEmployeeCode = '';
     if (cand && finalDecision !== 'HOLD') {
       await ctx.db.candidates.update(cand.id, cand.version, { status: finalDecision === 'PASS' ? 'HIRED' : 'REJECTED' }, actorId);
     }
-    if (finalDecision === 'PASS') {
-      const maxSeq = ctx.db.employees.all(true).reduce((m, e) => Math.max(m, parseEmployeeCodeSeq(e.employee_code)), 0);
-      suggestedEmployeeCode = formatUbmEmployeeCode(maxSeq + 1);
-      if (body.create_employee && cand) {
-        await ctx.db.employees.insert({
-          employee_code: suggestedEmployeeCode, full_name: cand.full_name, phone: cand.phone, email: cand.email,
-          branch_id: before.branch_id || cand.branch_pref, staff_group: cand.staff_group || 'BARISTA',
-          position_title: cand.position || 'Pha chế', stage: 'PROBATION', status: 'ACTIVE', candidate_id: cand.id,
-          default_shift_code: cand.shift_pref || 'CA_SANG', employment_type: 'PROBATION',
-        }, actorId);
-      }
-    }
+    const onboarding = finalDecision === 'PASS' && cand && body.create_employee !== false
+      ? await autoOnboardPassedCandidate(ctx, { candidate: cand, interview: updated, actorId })
+      : null;
+    const suggestedEmployeeCode = onboarding?.employee_code
+      || (finalDecision === 'PASS' ? formatUbmEmployeeCode(ctx.db.employees.all(true).reduce((m, e) => Math.max(m, parseEmployeeCodeSeq(e.employee_code)), 0) + 1) : '');
     return sendSuccess(request, finalDecision === 'PASS' ? `Đã chấm ĐẠT phỏng vấn (${eval13.totalScore13}/13 điểm)` : 'Đã lưu kết quả đánh giá phỏng vấn', {
-      ...updated, isPerfect13: eval13.isPerfect13, hasRedFlag: eval13.hasRedFlag, suggested_employee_code: suggestedEmployeeCode,
+      ...updated, isPerfect13: eval13.isPerfect13, hasRedFlag: eval13.hasRedFlag,
+      onboarding, suggested_employee_code: suggestedEmployeeCode, onboarded_employee_code: onboarding?.employee_code ?? '', temporary_pin: onboarding?.temporary_pin ?? '',
     });
   });
 

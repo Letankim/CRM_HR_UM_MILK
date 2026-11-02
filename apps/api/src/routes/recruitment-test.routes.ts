@@ -7,13 +7,13 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
+import { buildCandidateFormUpdate, parseCandidateFormPayload } from '../services/interview-onboarding.service.js';
+import { listHrZaloAccounts } from '../services/zalo-hr.service.js';
 import { resolveShiftLabel, resolveStaffGroupLabel } from './employee-mapper.js';
 import { interviewRoutes } from './interviews.routes.js';
 import { recruitmentRsvpRoutes } from './recruitment-rsvp.routes.js';
 import { recruitmentZaloRoutes } from './recruitment-zalo.routes.js';
 import { testBankRoutes } from './test-bank.routes.js';
-import { scoreCandidateForm14 } from '../services/candidate-form-scorer.js';
-import { listHrZaloAccounts } from '../services/zalo-hr.service.js';
 
 const zCandidateListQuery = zListQueryBase.extend({
   branch_id: z.string().trim().optional(),
@@ -21,6 +21,27 @@ const zCandidateListQuery = zListQueryBase.extend({
   staff_group: z.string().trim().optional(),
   refresh: z.enum(['0', '1', 'true', 'false']).optional(),
 });
+
+const zGoogleFormExtra = {
+  timestamp: z.string().trim().optional(),
+  education: z.string().trim().optional(),
+  school_or_major: z.string().trim().optional(),
+  hometown: z.string().trim().optional(),
+  current_address: z.string().trim().optional(),
+  citizen_id: z.string().trim().optional(),
+  employment_type: z.string().trim().optional(),
+  can_rotate_branch: z.string().trim().optional(),
+  fnb_skills: z.string().trim().optional(),
+  incident_answer: z.string().trim().optional(),
+  commitment_months: z.string().trim().optional(),
+  expected_salary: z.union([z.string(), z.number()]).optional(),
+  expected_salary_vnd: z.coerce.number().optional(),
+  start_date_available: z.string().trim().optional(),
+  facebook_link: z.string().trim().optional(),
+  uniform_gps_consent: z.string().trim().optional(),
+  self_intro: z.string().trim().optional(),
+  form_payload: z.record(z.unknown()).optional(),
+};
 
 const zCreateCandidateBody = z.object({
   full_name: z.string().trim().min(2, 'Họ tên ứng viên tối thiểu 2 ký tự'),
@@ -36,6 +57,7 @@ const zCreateCandidateBody = z.object({
   experience_note: z.string().max(400).optional().default(''),
   source_channel: z.string().default('WEB'),
   hr_note: z.string().max(400).optional().default(''),
+  ...zGoogleFormExtra,
 });
 
 const zUpdateCandidateBody = z.object({
@@ -43,7 +65,9 @@ const zUpdateCandidateBody = z.object({
   full_name: z.string().trim().min(2).optional(),
   phone: z.string().trim().optional(),
   email: z.string().trim().optional(),
+  applied_branch_id: z.string().trim().optional(),
   branch_pref: z.string().trim().optional(),
+  applied_position: z.string().optional(),
   staff_group: z.string().optional(),
   shift_pref: z.string().optional(),
   birth_year: z.string().optional(),
@@ -52,6 +76,7 @@ const zUpdateCandidateBody = z.object({
   source_channel: z.string().optional(),
   status: z.enum(['NEW', 'CONTACTED', 'INTERVIEW_SCHEDULED', 'HIRED', 'REJECTED']).optional(),
   hr_note: z.string().max(400).optional(),
+  ...zGoogleFormExtra,
 });
 
 const zDeleteBody = z.object({ version: z.coerce.number().int().min(1).optional() });
@@ -59,22 +84,21 @@ const zDeleteBody = z.object({ version: z.coerce.number().int().min(1).optional(
 export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/candidates', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
     const query = zCandidateListQuery.parse(request.query);
-    if (query.refresh === '1' || query.refresh === 'true') {
-      await ctx.db.candidates.refreshIfIdle();
-    }
+    if (query.refresh === '1' || query.refresh === 'true') await ctx.db.candidates.refreshIfIdle();
     const zaloAccounts = await listHrZaloAccounts(ctx);
     const zaloMap = new Map(zaloAccounts.map((a) => [a.id, a]));
     const branches = ctx.db.branches.all();
     const items = ctx.db.candidates.all().map((c) => {
       const zaloAcc = c.zalo_account_id ? zaloMap.get(c.zalo_account_id) : undefined;
-      const computedAi = !c.ai_score_14 && !c.form_payload_json
-        ? scoreCandidateForm14({ full_name: c.full_name, phone: c.phone, email: c.email, birth_year: c.birth_year, gender: c.gender, shift_pref: c.shift_pref, branch_pref: c.branch_pref, experience_note: c.experience_note, self_intro: c.hr_note }, branches)
-        : null;
+      const formPayload = parseCandidateFormPayload(c, branches);
+      const onboardedEmp = ctx.db.employees.find((e) => e.candidate_id === c.id || Boolean(c.phone && e.phone === c.phone));
       return {
+        ...formPayload,
         ...c,
-        ai_score_14: c.ai_score_14 || computedAi?.ai_score_14 || 0,
-        ai_qualified: c.ai_score_14 ? c.ai_qualified : Boolean(computedAi?.ai_qualified),
-        red_flag_reason: c.red_flag_reason || computedAi?.red_flag_reason || '',
+        form_payload: formPayload,
+        ai_score_14: c.ai_score_14 || formPayload.ai_score_14 || 0,
+        ai_qualified: c.ai_score_14 ? c.ai_qualified : Boolean(formPayload.ai_qualified),
+        red_flag_reason: c.red_flag_reason || formPayload.red_flag_reason || '',
         stage: c.status,
         branchName: ctx.db.branches.get(c.branch_pref)?.name ?? (c.branch_pref || 'Chưa chọn chi nhánh'),
         positionLabel: resolveStaffGroupLabel(ctx, c.staff_group, c.position),
@@ -82,26 +106,19 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
         candidateZaloId: c.candidate_zalo_id || c.phone,
         zaloAccountName: zaloAcc?.zalo_name ?? '',
         zaloAccountPhone: zaloAcc?.zalo_phone ?? '',
+        onboardedEmployeeCode: onboardedEmp?.employee_code ?? '',
       };
     });
     return sendPaginated(
       request,
       'Lấy danh sách ứng viên tuyển dụng thành công',
       paginateAndSort(items, {
-        page: query.page,
-        perPage: query.per_page,
-        sortBy: query.sort_by,
-        sortOrder: query.sort_order,
-        defaultSortBy: 'created_at',
-        defaultSortOrder: 'desc',
-        allowedSortFields: ['created_at', 'full_name', 'status', 'candidate_code'],
+        page: query.page, perPage: query.per_page, sortBy: query.sort_by, sortOrder: query.sort_order,
+        defaultSortBy: 'created_at', defaultSortOrder: 'desc',
+        allowedSortFields: ['created_at', 'full_name', 'status', 'candidate_code', 'ai_score_14'],
         q: query.q,
-        searchExtractor: (i) => [i.candidate_code, i.full_name, i.phone, i.email, i.branchName, i.positionLabel, i.hr_note],
-        filters: {
-          branch_id: query.branch_id,
-          status: query.status,
-          staff_group: query.staff_group,
-        },
+        searchExtractor: (i) => [i.candidate_code, i.full_name, i.phone, i.email, i.branchName, i.positionLabel, i.hr_note, i.hometown, i.education, i.school_or_major],
+        filters: { branch_id: query.branch_id, status: query.status, staff_group: query.staff_group },
         filterPredicates: {
           branch_id: (item, val) => item.branch_pref === val,
           status: (item, val) => item.status === val,
@@ -123,18 +140,24 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
     }
     const branchId = body.branch_pref || body.applied_branch_id || '';
     const staffGroup = body.applied_position || body.staff_group || 'BARISTA';
+    const formCalc = buildCandidateFormUpdate({ ...body, phone, branch_pref: branchId, staff_group: staffGroup }, null, ctx.db.branches.all());
     const created = await ctx.db.candidates.insert({
       candidate_code: `UV${String(ctx.db.candidates.all(true).length + 1).padStart(4, '0')}`,
       source_row: `WEB-${Date.now()}`,
       full_name: body.full_name, phone, email: body.email,
       position: resolveStaffGroupLabel(ctx, staffGroup, staffGroup),
       staff_group: staffGroup, branch_pref: branchId, shift_pref: body.shift_pref,
-      status: 'NEW', source_channel: body.source_channel, birth_year: body.birth_year, gender: body.gender,
-      experience_note: body.experience_note, hr_note: body.hr_note, cv_file_id: '', assigned_hr_id: request.auth!.user.username, contacted_at: nowIso(),
+      status: formCalc.red_flag_reason ? 'REJECTED' : 'NEW',
+      source_channel: body.source_channel, birth_year: body.birth_year, gender: body.gender,
+      experience_note: body.experience_note || formCalc.scored.experience_note,
+      hr_note: body.hr_note || formCalc.red_flag_reason, cv_file_id: '',
+      assigned_hr_id: request.auth!.user.username, contacted_at: nowIso(),
+      ai_score_14: formCalc.ai_score_14, ai_qualified: formCalc.ai_qualified,
+      red_flag_reason: formCalc.red_flag_reason, form_payload_json: formCalc.form_payload_json,
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'candidate.create', entity: 'CANDIDATES', entityId: created.id, after: { candidate_code: created.candidate_code, full_name: created.full_name } });
     reply.code(201);
-    return sendSuccess(request, 'Đã tiếp nhận hồ sơ ứng viên mới thành công', created);
+    return sendSuccess(request, 'Đã tiếp nhận hồ sơ ứng viên mới thành công', { ...formCalc.scored, ...created, form_payload: formCalc.scored });
   });
 
   app.put('/api/admin/candidates/:id', { preHandler: requirePermission('candidate.manage') }, async (request) => {
@@ -150,23 +173,27 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
     if (body.email && (ctx.db.candidates.find((c) => c.id !== id && c.email.trim().toLowerCase() === body.email!.trim().toLowerCase()) || ctx.db.employees.find((e) => e.email.trim().toLowerCase() === body.email!.trim().toLowerCase()))) {
       throw Errors.fieldValidation('email', 'DUPLICATE_VALUE', `Địa chỉ email ${body.email} đã tồn tại ở hồ sơ khác`, body.email);
     }
-    const staffGroup = body.staff_group ?? before.staff_group;
-    const nextStatus = body.status ?? before.status;
+    const staffGroup = body.applied_position ?? body.staff_group ?? before.staff_group;
+    const branchId = body.branch_pref ?? body.applied_branch_id ?? before.branch_pref;
+    const formCalc = buildCandidateFormUpdate({ ...body, phone: phone || before.phone, branch_pref: branchId, staff_group: staffGroup }, before, ctx.db.branches.all());
+    const nextStatus = body.status ?? (formCalc.red_flag_reason ? 'REJECTED' : before.status);
     const updated = await ctx.db.candidates.update(id, body.version, {
       full_name: body.full_name ?? before.full_name, phone: phone || before.phone, email: body.email ?? before.email,
-      branch_pref: body.branch_pref ?? before.branch_pref, staff_group: staffGroup,
+      branch_pref: branchId, staff_group: staffGroup,
       position: resolveStaffGroupLabel(ctx, staffGroup, before.position),
       shift_pref: body.shift_pref ?? before.shift_pref,
       birth_year: body.birth_year ?? before.birth_year,
       gender: body.gender ?? before.gender,
-      experience_note: body.experience_note ?? before.experience_note,
+      experience_note: body.experience_note ?? formCalc.scored.experience_note ?? before.experience_note,
       source_channel: body.source_channel ?? before.source_channel,
       status: nextStatus,
       contacted_at: nextStatus === 'CONTACTED' && !before.contacted_at ? nowIso() : before.contacted_at,
       hr_note: body.hr_note ?? before.hr_note,
+      ai_score_14: formCalc.ai_score_14, ai_qualified: formCalc.ai_qualified,
+      red_flag_reason: formCalc.red_flag_reason, form_payload_json: formCalc.form_payload_json,
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'candidate.update', entity: 'CANDIDATES', entityId: id, before: { status: before.status }, after: { status: updated.status } });
-    return sendSuccess(request, 'Đã cập nhật hồ sơ ứng viên thành công', updated);
+    return sendSuccess(request, 'Đã cập nhật hồ sơ ứng viên thành công', { ...formCalc.scored, ...updated, form_payload: formCalc.scored });
   });
 
   app.delete('/api/admin/candidates/:id', { preHandler: requirePermission('candidate.manage') }, async (request) => {

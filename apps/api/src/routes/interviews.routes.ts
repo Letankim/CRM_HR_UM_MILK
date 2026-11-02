@@ -13,20 +13,16 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { queueInterviewEmails } from '../services/action-email-dispatcher.js';
 import { sweepUpcomingInterviewReminders } from '../services/interview-reminder.service.js';
-import {
-  findInterviewTimeOverlaps, notifyInterviewParticipants, parseInterviewWindowMs,
-  parseRawInterviewers, resolveInterviewerLabel, resolveInterviewerRecipients,
-} from '../services/interview-schedule-helper.js';
+import { findInterviewTimeOverlaps, notifyInterviewParticipants, parseInterviewWindowMs, parseRawInterviewers, resolveInterviewerLabel, resolveInterviewerRecipients } from '../services/interview-schedule-helper.js';
 import { ensureInterviewRsvpUrl, listHrZaloAccounts, resolveZaloAccountByIdOrDefault } from '../services/zalo-hr.service.js';
+import { autoOnboardPassedCandidate } from '../services/interview-onboarding.service.js';
 import { resolveStaffGroupLabel } from './employee-mapper.js';
 
 const zCreateInterviewBody = z.object({
   candidate_id: z.string().trim().min(1), interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
   interviewer_ids: z.array(z.string().trim()).optional(), scheduled_at: z.string().trim().optional(),
   start_at: z.string().trim().optional(), duration_minutes: z.coerce.number().int().min(5).max(240).default(30),
-  meet_link: z.string().optional().default(''),
-  zalo_account_id: z.string().trim().optional().default(''),
-  candidate_zalo_id: z.string().trim().optional().default(''),
+  meet_link: z.string().optional().default(''), zalo_account_id: z.string().trim().optional().default(''), candidate_zalo_id: z.string().trim().optional().default(''),
 });
 
 const zEvaluateInterviewBody = z.object({
@@ -36,11 +32,10 @@ const zEvaluateInterviewBody = z.object({
   appearance_score: z.coerce.number().min(0).max(100).default(90), attitude_score: z.coerce.number().min(0).max(100).default(90),
   skill_score: z.coerce.number().min(0).max(100).default(85), decision: z.enum(['PENDING', 'PASS', 'FAIL', 'PASSED', 'FAILED', 'HOLD']).default('PASS'),
   comment: z.string().trim().optional(), result_note: z.string().trim().optional(),
-  candidate_confirmed: z.boolean().optional(), reschedule_requested: z.boolean().optional(),
-  reschedule_reason: z.string().trim().optional(), scheduled_at: z.string().trim().optional(),
-  interviewer_ids: z.array(z.string().trim()).optional(), interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(),
-  duration_minutes: z.coerce.number().int().min(5).max(240).optional(), meet_link: z.string().trim().optional(),
-  zalo_account_id: z.string().trim().optional(), candidate_zalo_id: z.string().trim().optional(),
+  candidate_confirmed: z.boolean().optional(), reschedule_requested: z.boolean().optional(), reschedule_reason: z.string().trim().optional(),
+  scheduled_at: z.string().trim().optional(), interviewer_ids: z.array(z.string().trim()).optional(),
+  interviewer_id: z.union([z.string().trim(), z.array(z.string().trim())]).optional(), duration_minutes: z.coerce.number().int().min(5).max(240).optional(),
+  meet_link: z.string().trim().optional(), zalo_account_id: z.string().trim().optional(), candidate_zalo_id: z.string().trim().optional(),
 });
 
 const zDeleteBody = z.object({ version: z.coerce.number().int().min(1).optional() });
@@ -65,12 +60,15 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       const effZaloAccId = iv.zalo_account_id || cand?.zalo_account_id || defaultZalo?.id || '', zaloAcc = effZaloAccId ? zaloMap.get(effZaloAccId) : defaultZalo;
       const effCandZaloId = iv.candidate_zalo_id || cand?.candidate_zalo_id || cand?.phone || '';
       const rsvp = ensureInterviewRsvpUrl(ctx, iv.id, cand?.id ?? iv.candidate_id, iv.rsvp_token);
+      const onboardedEmp = cand ? ctx.db.employees.find((e) => e.candidate_id === cand.id || Boolean(cand.phone && e.phone === cand.phone)) : undefined;
+      const inferredBlock: InterviewRubricBlock = iv.rubric_block === 'OFFICE' || cand?.staff_group === 'OFFICE' ? 'OFFICE' : 'STORE';
       return {
-        ...iv, experience_track: track, experienceTrackLabel: INTERVIEW_EXPERIENCE_TRACK_LABELS[track], experienceTrackShortLabel: INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS[track],
+        ...iv, rubric_block: inferredBlock, experience_track: track, experienceTrackLabel: INTERVIEW_EXPERIENCE_TRACK_LABELS[track], experienceTrackShortLabel: INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS[track],
         candidateExperienceNote: cand?.experience_note ?? '', branch_id: branchId, branchName: branch?.name ?? (branchId || 'Chưa phân chi nhánh'), scheduled_at: iv.start_at,
         candidateName: cand?.full_name ?? iv.candidate_id, candidateCode: cand?.candidate_code ?? '', candidatePhone: cand?.phone ?? '', candidateEmail: cand?.email ?? '',
         positionLabel: cand ? resolveStaffGroupLabel(ctx, cand.staff_group, cand.position) : '', interviewerLabel: resolveInterviewerLabel(ctx, iv.interviewer_id), interviewerUserIds: resolvedUserIds,
         zalo_account_id: effZaloAccId, candidate_zalo_id: effCandZaloId, zaloAccountName: zaloAcc?.zalo_name ?? '', zaloAccountPhone: zaloAcc?.zalo_phone ?? '', rsvpUrl: rsvp.url,
+        onboardedEmployeeCode: onboardedEmp?.employee_code ?? '', onboardedEmployeeId: onboardedEmp?.id ?? '',
       };
     }).filter((item) =>
       (!query.branch_id || query.branch_id === 'ALL' || item.branch_id === query.branch_id)
@@ -100,13 +98,9 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!win) throw Errors.fieldValidation('scheduled_at', 'INVALID_VALUE', 'Thời gian bắt đầu phỏng vấn không hợp lệ', startAt);
 
     const overlaps = findInterviewTimeOverlaps(ctx, { startAt, durationMinutes: body.duration_minutes, rawInterviewers });
-    if (overlaps.interviewerConflicts.length > 0) {
-      throw Errors.fieldValidation('scheduled_at', 'DUPLICATE_VALUE', overlaps.interviewerConflicts[0]!.message, startAt);
-    }
+    if (overlaps.interviewerConflicts.length > 0) throw Errors.fieldValidation('scheduled_at', 'DUPLICATE_VALUE', overlaps.interviewerConflicts[0]!.message, startAt);
     const slotLocal = `${win.dateStr} ${win.startHm}`;
-    if (slotLocal < dayjs().format('YYYY-MM-DD HH:mm')) {
-      throw Errors.fieldValidation('scheduled_at', 'OUT_OF_RANGE', 'Không được chọn thời gian phỏng vấn trong quá khứ', startAt);
-    }
+    if (slotLocal < dayjs().format('YYYY-MM-DD HH:mm')) throw Errors.fieldValidation('scheduled_at', 'OUT_OF_RANGE', 'Không được chọn thời gian phỏng vấn trong quá khứ', startAt);
 
     const meetLink = body.meet_link || 'https://meet.google.com/umb-milk-hr', actorId = request.auth!.user.id;
     const initialTrack = inferCandidateExperienceTrack(cand.experience_note);
@@ -118,14 +112,9 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       status: 'SCHEDULED', candidate_confirmed: true, reschedule_requested: false, reschedule_reason: '',
       appearance_score: 0, attitude_score: 0, skill_score: 0, score: 0, comment: '', decision: 'PENDING',
       calendar_event_id: `CAL-${Date.now()}`, decided_at: '', experience_track: initialTrack,
-      zalo_account_id: zaloAcc?.dto.id ?? body.zalo_account_id ?? '',
-      candidate_zalo_id: candZaloId,
+      zalo_account_id: zaloAcc?.dto.id ?? body.zalo_account_id ?? '', candidate_zalo_id: candZaloId,
     }, actorId);
-    await ctx.db.candidates.update(cand.id, cand.version, {
-      status: 'INTERVIEW_SCHEDULED',
-      zalo_account_id: zaloAcc?.dto.id || cand.zalo_account_id,
-      candidate_zalo_id: candZaloId,
-    }, actorId);
+    await ctx.db.candidates.update(cand.id, cand.version, { status: 'INTERVIEW_SCHEDULED', zalo_account_id: zaloAcc?.dto.id || cand.zalo_account_id, candidate_zalo_id: candZaloId }, actorId);
 
     const notifiedUsers = await notifyInterviewParticipants(ctx, actorId, {
       rawIds: rawInterviewers, branchId: cand.branch_pref, interviewId: created.id, code: cand.candidate_code, kind: 'INTERVIEW_SCHEDULED',
@@ -145,6 +134,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!before) throw Errors.notFound('Lịch phỏng vấn', id);
     const cand = ctx.db.candidates.get(before.candidate_id) ?? ctx.db.candidates.find((c) => c.candidate_code === before.candidate_id);
     const actorId = request.auth!.user.id;
+    const effVersion = before.updated_by === 'interview-reminder' && before.version === body.version + 1 ? before.version : body.version;
 
     if (body.reschedule_requested !== undefined || body.candidate_confirmed !== undefined || body.scheduled_at || body.interviewer_ids || body.interviewer_id || body.duration_minutes !== undefined || body.meet_link !== undefined || body.zalo_account_id !== undefined || body.candidate_zalo_id !== undefined) {
       const nextStart = body.scheduled_at || before.start_at, nextDuration = body.duration_minutes ?? (before.duration_minutes || 30);
@@ -161,7 +151,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       const nextMeet = body.meet_link ?? before.meet_link;
       const isTimeChanged = Boolean(body.scheduled_at && body.scheduled_at.slice(0, 16) !== before.start_at.slice(0, 16));
       const nextStatus = body.reschedule_requested ? 'RESCHEDULE_NEEDED' : body.candidate_confirmed ? 'CONFIRMED' : isTimeChanged ? 'SCHEDULED' : before.status;
-      const updatedConfirm = await ctx.db.interviews.update(id, body.version, {
+      const updatedConfirm = await ctx.db.interviews.update(id, effVersion, {
         start_at: nextStart, end_at: new Date(win.endMs).toISOString(), duration_minutes: nextDuration, meet_link: nextMeet,
         interviewer_id: nextInterviewers.join(', '), status: nextStatus,
         candidate_confirmed: body.candidate_confirmed ?? (isTimeChanged ? false : before.candidate_confirmed),
@@ -186,24 +176,32 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     }
 
     const hasRubric13 = Boolean(body.rubric_scores || (body.red_flags && body.red_flags.length > 0));
-    const block: InterviewRubricBlock = body.rubric_block ?? ((before.rubric_block === 'OFFICE' ? 'OFFICE' : 'STORE') as InterviewRubricBlock);
+    const block: InterviewRubricBlock = body.rubric_block ?? ((before.rubric_block === 'OFFICE' || cand?.staff_group === 'OFFICE' ? 'OFFICE' : 'STORE') as InterviewRubricBlock);
     const eval13 = hasRubric13 ? evaluateInterviewRubric13(block, body.rubric_scores ?? {}, body.red_flags ?? []) : null;
-    const normalizedDecision = eval13?.hasRedFlag ? 'FAIL' : (body.decision === 'PASSED' || body.decision === 'PASS' ? 'PASS' : body.decision === 'HOLD' ? 'HOLD' : 'FAIL');
+    const rawDecision = body.decision === 'PASSED' || body.decision === 'PASS' ? 'PASS' : body.decision === 'HOLD' ? 'HOLD' : 'FAIL';
+    const normalizedDecision = eval13?.hasRedFlag ? 'FAIL' : (eval13 && !eval13.passed && rawDecision === 'PASS' ? eval13.autoDecision : rawDecision);
     const track: InterviewExperienceTrack = body.experience_track ?? before.experience_track ?? inferCandidateExperienceTrack(cand?.experience_note);
     const rawBody = (request.body ?? {}) as Record<string, unknown>;
     const hasComponentScores = rawBody.appearance_score !== undefined || rawBody.attitude_score !== undefined || rawBody.skill_score !== undefined;
     const recalcScore = body.experience_track ? computeInterviewWeightedScore(body.experience_track, body.appearance_score, body.attitude_score, body.skill_score) : Number(((body.appearance_score + body.attitude_score + body.skill_score) / 3).toFixed(1));
     const computedScore = eval13 && !hasComponentScores ? eval13.normalizedScore100 : hasComponentScores ? recalcScore : (body.score ?? recalcScore);
-    const updated = await ctx.db.interviews.update(id, body.version, {
+    const updated = await ctx.db.interviews.update(id, effVersion, {
       status: 'COMPLETED', experience_track: track, rubric_block: block, score_13: eval13 ? eval13.totalScore13 : before.score_13,
       rubric_details_json: eval13 ? JSON.stringify({ block, scores: body.rubric_scores ?? {}, redFlags: body.red_flags ?? [], totalScore13: eval13.totalScore13, isPerfect13: eval13.isPerfect13 }) : before.rubric_details_json,
       score: computedScore, appearance_score: body.appearance_score, attitude_score: body.attitude_score, skill_score: body.skill_score,
       decision: normalizedDecision, comment: body.comment || body.result_note || '', decided_at: nowIso(),
     }, actorId);
     if (cand && normalizedDecision !== 'HOLD') await ctx.db.candidates.update(cand.id, cand.version, { status: normalizedDecision === 'PASS' ? 'HIRED' : 'REJECTED' }, actorId);
-    await ctx.audit.record(auditContext(request), { action: 'interview.evaluate', entity: 'INTERVIEWS', entityId: id, before: { decision: before.decision }, after: { decision: updated.decision, score: updated.score } });
+    const onboarding = cand && normalizedDecision === 'PASS' ? await autoOnboardPassedCandidate(ctx, { candidate: cand, interview: updated, actorId }) : null;
+    await ctx.audit.record(auditContext(request), { action: 'interview.evaluate', entity: 'INTERVIEWS', entityId: id, before: { decision: before.decision }, after: { decision: updated.decision, score: updated.score, onboarded: onboarding?.employee_code } });
     const trackLabel = INTERVIEW_EXPERIENCE_TRACK_LABELS[track];
-    return sendSuccess(request, normalizedDecision === 'PASS' ? `Đã chấm ĐẠT phỏng vấn (${trackLabel} · ${computedScore} điểm) và chuyển ứng viên sang bước Tiếp nhận thử việc` : normalizedDecision === 'HOLD' ? `Đã lưu kết quả phỏng vấn (${trackLabel} · ${computedScore} điểm) ở trạng thái Cân nhắc thêm` : `Đã cập nhật kết quả phỏng vấn (${trackLabel} · ${computedScore} điểm): Không đạt`, updated);
+    const passMsg = onboarding
+      ? `Đã chấm ĐẠT phỏng vấn (${eval13 ? `${eval13.totalScore13}/13 điểm` : `${computedScore} điểm`}) — Tự động khởi tạo Mã NV ${onboarding.employee_code}, Tài khoản ACTIVE, Mã PIN 6 số tạm thời (${onboarding.temporary_pin}) và kích hoạt thử việc 12 ngày`
+      : `Đã chấm ĐẠT phỏng vấn (${trackLabel} · ${computedScore} điểm) và chuyển ứng viên sang bước Tiếp nhận thử việc`;
+    return sendSuccess(request, normalizedDecision === 'PASS' ? passMsg : normalizedDecision === 'HOLD' ? `Đã lưu kết quả phỏng vấn (${trackLabel} · ${computedScore} điểm) ở trạng thái Cân nhắc thêm` : `Đã cập nhật kết quả phỏng vấn (${trackLabel} · ${computedScore} điểm): Không đạt`, {
+      ...updated, isPerfect13: eval13?.isPerfect13 ?? false, hasRedFlag: eval13?.hasRedFlag ?? false,
+      onboarding, suggested_employee_code: onboarding?.employee_code ?? '', onboarded_employee_code: onboarding?.employee_code ?? '', temporary_pin: onboarding?.temporary_pin ?? '',
+    });
   });
 
   app.delete('/api/admin/interviews/:id', { preHandler: requirePermission('interview.manage') }, async (request) => {

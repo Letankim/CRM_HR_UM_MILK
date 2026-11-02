@@ -14,6 +14,7 @@ import { FilterToolbar } from './FilterToolbar';
 import { usePermissionGuard } from './GuardButton';
 import { useJobPositions } from './JobPositionsManagerModal';
 import { RecruitmentFormSheetSyncModal } from './RecruitmentFormSheetSyncModal';
+import { buildCandidateFormInitials, CANDIDATE_26_EXCEL_COLUMNS } from './CandidateFormModal';
 import { CANDIDATE_STATUS_OPTIONS, CandidateDetailDrawer, CandidateFormModal } from './RecruitmentSubModals';
 import { RowActionButtons } from './RowActionButtons';
 import { useWorkflowDecisionModal } from './WorkflowDecisionModal';
@@ -109,13 +110,13 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
 
   const openCreateCand = () => {
     setEditingCand(null); candForm.resetFields();
-    candForm.setFieldsValue({ applied_position: 'BARISTA', applied_branch_id: branches[0]?.value, shift_pref: 'CA_SANG', expected_salary_vnd: 6500000, birth_year: '2004', gender: 'Nữ' });
+    candForm.setFieldsValue(buildCandidateFormInitials(null, branches[0]?.value));
     setCandModal(true);
   };
 
   const openEditCand = (r: Record<string, unknown>) => {
     setEditingCand(r);
-    candForm.setFieldsValue({ full_name: r.full_name, phone: r.phone, email: r.email, applied_branch_id: r.branch_pref, applied_position: r.staff_group, shift_pref: r.shift_pref || 'CA_SANG', birth_year: r.birth_year || '2004', gender: r.gender || '', experience_note: r.experience_note || '', status: r.status, hr_note: r.hr_note });
+    candForm.setFieldsValue(buildCandidateFormInitials(r));
     setCandModal(true);
   };
 
@@ -124,10 +125,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
   const checkHasIv = (r: Record<string, unknown> | null) => Boolean(r && (scheduledCandidateIds?.has(String(r.id)) || scheduledCandidateIds?.has(String(r.candidate_code)) || r.status === 'INTERVIEW_SCHEDULED'));
 
   const exportCands = (list: Record<string, unknown>[]) =>
-    exportToExcel({
-      fileName: 'Danh_sach_ung_vien.xls', sheetTitle: 'Danh sách Hồ sơ Ứng viên Tuyển dụng', rows: list,
-      columns: [{ header: 'Mã UV', key: 'candidate_code' }, { header: 'Họ và tên', key: 'full_name' }, { header: 'Số điện thoại', key: 'phone' }, { header: 'Điểm AI (14đ)', key: 'ai_score_14' }, { header: 'Vị trí', key: 'positionLabel' }, { header: 'Chi nhánh nguyện vọng', key: 'branchName' }, { header: 'Ca đăng ký', key: 'shiftPrefLabel' }, { header: 'Giai đoạn', key: 'stage' }, { header: 'Ghi chú HR', key: 'hr_note' }],
-    });
+    exportToExcel({ fileName: 'Danh_sach_ung_vien_26_cot.xls', sheetTitle: 'Danh sách Hồ sơ Ứng viên Tuyển dụng (Chuẩn 26 cột Google Form)', rows: list, columns: CANDIDATE_26_EXCEL_COLUMNS });
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
