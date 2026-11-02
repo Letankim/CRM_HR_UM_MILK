@@ -11,6 +11,7 @@ import {
   DollarOutlined,
   EnvironmentOutlined,
   FileDoneOutlined,
+  FileProtectOutlined,
   IdcardOutlined,
   NotificationOutlined,
   SafetyCertificateOutlined,
@@ -84,6 +85,13 @@ export const BACKOFFICE_NAV: NavGroup[] = [
         breadcrumbTitle: 'Hồ sơ Nhân sự & Chuyển Chính thức',
         icon: <IdcardOutlined />,
         perms: ['employee.read'],
+      },
+      {
+        key: '/admin/employees?section=contracts',
+        label: 'Hợp đồng & Đánh giá Thử việc',
+        breadcrumbTitle: 'Kho Hợp đồng Lao động (4 tệp PDF) & Đánh giá Thử việc',
+        icon: <FileProtectOutlined />,
+        perms: ['employee.read', 'employee.manage'],
       },
       {
         key: '/admin/employees?section=recruitment',

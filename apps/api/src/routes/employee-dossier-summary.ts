@@ -1,6 +1,16 @@
-import { EMPLOYEE_STAGE_LABELS, ROLE_LABELS, type Employee } from '@umbm/shared';
+import { CONTRACT_TYPE_LABELS, EMPLOYEE_STAGE_LABELS, ROLE_LABELS, type Employee, type EmployeeContractItem } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { resolveShiftLabel } from './employee-mapper.js';
+
+function parseContractsSafe(raw?: string | null): EmployeeContractItem[] {
+  if (!raw || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as EmployeeContractItem[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 function resolveActorInfo(ctx: AppContext, rawActor: string, fallbackName = '') {
   const actor = (rawActor || '').trim();
@@ -103,6 +113,11 @@ export function buildEmployeeDossierSummary(e: Employee, ctx: AppContext) {
 
   const leaveRequestsCount = ctx.db.leaveRequests.filter((l) => isEmp(l.employee_id)).length;
   const swapRequestsCount = ctx.db.shiftSwaps.filter((s) => isEmp(s.requester_id) || isEmp(s.peer_id)).length;
+  const contracts = parseContractsSafe(e.contracts_json).map((c) => ({
+    ...c,
+    contractTypeLabel: CONTRACT_TYPE_LABELS[c.contractType] ?? c.contractType,
+  }));
+  const attendanceCreditPoints = typeof e.attendance_credit_points === 'number' && e.attendance_credit_points > 0 ? e.attendance_credit_points : 100;
 
   return {
     probationHoursCompleted,
@@ -115,5 +130,15 @@ export function buildEmployeeDossierSummary(e: Employee, ctx: AppContext) {
     leaveRequestsCount,
     swapRequestsCount,
     stageHistory,
+    contracts,
+    contractsCount: contracts.length,
+    attendanceCreditPoints,
+    attendance_credit_points: attendanceCreditPoints,
+    probationMeetDone: Boolean(e.probation_meet_done),
+    probation_meet_done: Boolean(e.probation_meet_done),
+    probationMeetNote: e.probation_meet_note || '',
+    probation_meet_note: e.probation_meet_note || '',
+    emergencyLeaveGrantCount: Number(e.emergency_leave_grant_count) || 0,
+    emergency_leave_grant_count: Number(e.emergency_leave_grant_count) || 0,
   };
 }

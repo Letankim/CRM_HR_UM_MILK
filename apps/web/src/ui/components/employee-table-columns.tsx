@@ -2,8 +2,9 @@
 
 import { Space, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { DeleteOutlined, EditOutlined, RiseOutlined, UserOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, DeleteOutlined, EditOutlined, FileProtectOutlined, RiseOutlined, UserOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import type { EmployeeContractItem } from '@umbm/shared';
 import { exportToExcel } from '@/lib/export-excel';
 import { StatusTag } from '../StatusTag';
 import type { SalaryProfile } from './payroll-types';
@@ -31,6 +32,8 @@ export interface EmployeeRowItem {
   recentShifts?: { id: string; work_date: string; shift_code: string; shiftLabel: string; branchName?: string; start_at: string; end_at: string; scheduled_hours: number; status: string; note?: string; assignedByName?: string; assignedByRoleLabel?: string }[];
   testBestScorePercent?: number; testPassed?: boolean; testAssignedCount?: number; testAttemptsCount?: number;
   leaveRequestsCount?: number; swapRequestsCount?: number;
+  contracts?: EmployeeContractItem[]; contractsCount?: number;
+  attendanceCreditPoints?: number; probationMeetDone?: boolean; probationMeetNote?: string; emergencyLeaveGrantCount?: number;
   stageHistory?: { id: string; fromStage: string; fromStageLabel: string; toStage: string; toStageLabel: string; effectiveFrom: string; decidedBy: string; decidedBySub?: string; decidedByRoleLabel?: string; probationHoursCompleted: number; testScorePercent: number; evaluationSummary: string; note: string; fromBranchName?: string; toBranchName?: string; fromShiftLabel?: string; toShiftLabel?: string; createdAt?: string }[];
   note?: string; version: number; created_at: string; updated_at: string;
 }
@@ -51,6 +54,8 @@ export function exportEmployeesExcel(rows: EmployeeRowItem[], canSeeSalary = tru
       { header: 'Khối vị trí', key: 'staffGroupLabel' },
       { header: 'Giai đoạn', key: 'stageLabel' },
       { header: 'Ca mặc định', key: 'defaultShiftLabel' },
+      { header: 'Số tệp Hợp đồng PDF', render: (r) => r.contractsCount ?? 0 },
+      { header: 'Điểm Tín nhiệm (100đ)', render: (r) => r.attendanceCreditPoints ?? 100 },
       ...(canSeeSalary
         ? [
             { header: 'Hình thức lương', render: (r: EmployeeRowItem) => r.salaryRateTypeLabel ?? r.salaryStatusLabel },
@@ -100,9 +105,7 @@ export function buildEmployeeColumns({
           <Typography.Text strong style={{ fontSize: 13 }}>{r.fullName}</Typography.Text>
           <div style={{ marginTop: 3 }}>
             <Space size={6} wrap>
-              <Tag color="geekblue" style={{ margin: 0, borderRadius: 2, fontSize: 11, fontWeight: 600 }}>
-                {r.employeeCode}
-              </Tag>
+              <Tag color="geekblue" style={{ margin: 0, borderRadius: 2, fontSize: 11, fontWeight: 600 }}>{r.employeeCode}</Tag>
               <span style={{ fontSize: 12, color: '#64748B' }}>{r.staffGroupLabel}</span>
             </Space>
           </div>
@@ -133,14 +136,29 @@ export function buildEmployeeColumns({
         <div>
           <StatusTag value={r.stage} />
           <div style={{ fontSize: 11, color: '#64748B', marginTop: 3 }}>
-            {r.stage === 'OFFICIAL' && r.officialFrom
-              ? `Chính thức: ${r.officialFrom}`
-              : r.probationStart
-                ? `Thử việc: ${r.probationStart}`
-                : `Chu kỳ ${r.probationCycleDays} ngày`}
+            {r.stage === 'OFFICIAL' && r.officialFrom ? `Chính thức: ${r.officialFrom}` : r.probationStart ? `Thử việc: ${r.probationStart}` : `Chu kỳ ${r.probationCycleDays} ngày`}
           </div>
         </div>
       ),
+    },
+    {
+      title: 'Hợp đồng & Tín nhiệm',
+      key: 'contractsAndCredit',
+      width: 165,
+      render: (_, r) => {
+        const cnt = r.contractsCount ?? (r.contracts?.length ?? 0);
+        const pts = r.attendanceCreditPoints ?? 100;
+        return (
+          <Space direction="vertical" size={3}>
+            <Tag color={cnt > 0 ? 'blue' : 'default'} icon={<FileProtectOutlined />} style={{ margin: 0, fontWeight: 600 }}>
+              Hợp đồng: {cnt}/4 tệp
+            </Tag>
+            <Tag color={pts >= 95 ? 'success' : pts >= 80 ? 'warning' : 'error'} icon={<CheckCircleOutlined />} style={{ margin: 0 }}>
+              Tín nhiệm: {pts}/100đ
+            </Tag>
+          </Space>
+        );
+      },
     },
     {
       title: 'Lương cá nhân',
@@ -169,9 +187,7 @@ export function buildEmployeeColumns({
         r.username ? (
           <div>
             <Space size={4} wrap>
-              <Tag color="blue" style={{ margin: 0, borderRadius: 2, fontSize: 11, fontWeight: 600 }}>
-                <UserOutlined /> @{r.username}
-              </Tag>
+              <Tag color="blue" style={{ margin: 0, borderRadius: 2, fontSize: 11, fontWeight: 600 }}><UserOutlined /> @{r.username}</Tag>
               {r.accountStatus && <StatusTag value={r.accountStatus} />}
             </Space>
             {r.userRoleLabel && <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>{r.userRoleLabel}</div>}
@@ -187,16 +203,12 @@ export function buildEmployeeColumns({
       fixed: 'right',
       align: 'right',
       render: (_, r) => {
-        const menuItems = [];
-        if (canManage) {
-          menuItems.push({ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa hồ sơ & Lương', onClick: () => onEdit(r) });
-        }
-        if (canPromote && r.stage === 'PROBATION') {
-          menuItems.push({ key: 'promote', icon: <RiseOutlined />, label: 'Chuyển lên Chính thức', onClick: () => onPromoteOfficial(r) });
-        }
-        if (canManage) {
-          menuItems.push({ key: 'delete', icon: <DeleteOutlined />, label: 'Xóa hồ sơ nhân sự', danger: true, onClick: () => onDelete(r) });
-        }
+        const menuItems: { key: string; icon?: React.ReactNode; label: string; danger?: boolean; onClick: () => void }[] = [
+          { key: 'contracts', icon: <FileProtectOutlined style={{ color: '#2563EB' }} />, label: 'Quản lý Hợp đồng Lao động (4 tệp PDF)', onClick: () => onViewDetail(r) },
+        ];
+        if (canManage) menuItems.push({ key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa hồ sơ & Lương', onClick: () => onEdit(r) });
+        if (canPromote && r.stage === 'PROBATION') menuItems.push({ key: 'promote', icon: <RiseOutlined />, label: 'Chuyển lên Chính thức', onClick: () => onPromoteOfficial(r) });
+        if (canManage) menuItems.push({ key: 'delete', icon: <DeleteOutlined />, label: 'Xóa hồ sơ nhân sự', danger: true, onClick: () => onDelete(r) });
         return <RowActionButtons onViewDetail={() => onViewDetail(r)} menuItems={menuItems} loading={processingId === r.id} />;
       },
     },

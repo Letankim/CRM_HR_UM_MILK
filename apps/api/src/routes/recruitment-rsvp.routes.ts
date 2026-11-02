@@ -10,12 +10,23 @@ import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { createRsvpToken, scoreCandidateForm14, sendZaloInterviewInvite, verifyRsvpToken } from '../services/candidate-form-scorer.js';
+import { getRecruitmentFormSheetConfig, saveRecruitmentFormSheetConfig, syncRecruitmentFormFromGoogleSheet } from '../services/recruitment-form-sync.service.js';
 import { resolveStaffGroupLabel } from './employee-mapper.js';
 
 const zSyncFormBody = z.union([
   z.array(z.record(z.unknown())),
   z.object({ rows: z.array(z.record(z.unknown())).optional(), items: z.array(z.record(z.unknown())).optional() }),
 ]);
+const zFormSheetConfigBody = z.object({
+  sheet_url: z.string().trim().min(5, 'Vui lòng nhập đường dẫn Google Sheet Form tuyển dụng'),
+  tab_name: z.string().trim().max(120).optional().default('FROM_NHAN_VIEN'),
+  hourly_auto_sync: z.boolean().optional().default(true),
+  sync_interval_minutes: z.coerce.number().int().min(15).max(1440).optional().default(60),
+});
+const zSyncSheetBody = z.object({
+  sheet_url: z.string().trim().optional(),
+  rows: z.array(z.record(z.unknown())).optional(),
+});
 const zVipBody = z.object({ version: z.coerce.number().int().min(1).optional(), is_vip: z.boolean(), vip_rank: z.coerce.number().int().min(0).max(999).optional() });
 const zDecisionBody = z.object({
   version: z.coerce.number().int().min(1).optional(), rubric_block: z.enum(INTERVIEW_RUBRIC_BLOCKS).optional(),
@@ -37,6 +48,24 @@ function resolveInterviewByRsvpToken(ctx: AppContext, token: string) {
 }
 
 export async function recruitmentRsvpRoutes(app: FastifyInstance, ctx: AppContext) {
+  app.get('/api/admin/candidates/form-sync-config', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
+    return sendSuccess(request, 'Lấy cấu hình đồng bộ Google Sheet Form tuyển dụng thành công', getRecruitmentFormSheetConfig(ctx));
+  });
+
+  app.put('/api/admin/candidates/form-sync-config', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
+    const body = zFormSheetConfigBody.parse(request.body ?? {});
+    const saved = await saveRecruitmentFormSheetConfig(ctx, body, request.auth!.user.id);
+    await ctx.audit.record(auditContext(request), { action: 'candidate.form_sync_config', entity: 'SYSTEM_SETTINGS', entityId: 'RECRUITMENT_FORM_SHEET_CONFIG', after: saved });
+    return sendSuccess(request, 'Đã lưu cấu hình đường dẫn Google Sheet Form và chế độ tự động đồng bộ hàng giờ', saved);
+  });
+
+  app.post('/api/admin/candidates/sync-google-sheet', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
+    const body = zSyncSheetBody.parse(request.body ?? {});
+    const res = await syncRecruitmentFormFromGoogleSheet(ctx, { actorId: request.auth!.user.id, sheetUrl: body.sheet_url, customRows: body.rows });
+    await ctx.audit.record(auditContext(request), { action: 'candidate.sync_google_sheet', entity: 'CANDIDATES', entityId: 'SHEET_SYNC', after: { newCount: res.newCount, skippedCount: res.skippedCount } });
+    return sendSuccess(request, res.message, res);
+  });
+
   app.post('/api/admin/candidates/sync-form', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request, reply) => {
     const parsedBody = zSyncFormBody.parse(request.body ?? {});
     const rawRows = Array.isArray(parsedBody) ? parsedBody : (parsedBody.rows ?? parsedBody.items ?? []);

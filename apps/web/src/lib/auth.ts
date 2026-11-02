@@ -27,6 +27,9 @@ export function canAccessPath(user: PublicUser, pathname: string, section?: stri
     if (effectiveSection === 'tests') {
       return user.permissions.includes('test.manage');
     }
+    if (effectiveSection === 'contracts') {
+      return user.permissions.includes('employee.read') || user.permissions.includes('employee.manage');
+    }
     return user.permissions.includes('employee.read');
   }
   if (path.startsWith('/admin/accounts')) {

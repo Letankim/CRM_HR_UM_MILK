@@ -7,6 +7,7 @@ import { sendSuccess } from '../lib/response.js';
 import { sweepDueScheduledAnnouncements } from '../services/announcement-scheduler.service.js';
 import { listRegisteredMonthlySpreadsheets } from '../services/backup-targets.helper.js';
 import { sweepUpcomingInterviewReminders } from '../services/interview-reminder.service.js';
+import { syncRecruitmentFormFromGoogleSheet } from '../services/recruitment-form-sync.service.js';
 
 const zBackupStart = z.object({
   kind: z.enum(['DAILY', 'CRITICAL', 'PRE_OPERATION', 'WEEKLY', 'MONTHLY']),
@@ -99,8 +100,13 @@ export async function internalRoutes(app: FastifyInstance, ctx: AppContext) {
       case 'reconcile': {
         const publishedAnnouncements = await sweepDueScheduledAnnouncements(ctx, 'cron-reconciler');
         const interviewReminders = await sweepUpcomingInterviewReminders(ctx, Date.now(), 'cron-reconciler');
+        const formSync = await syncRecruitmentFormFromGoogleSheet(ctx, { actorId: 'cron-reconciler' }).catch(() => null);
         const report = await ctx.reconciliation.scanAndRepair({ autoFix: true, actorId: 'cron-reconciler' });
-        return sendSuccess(request, 'Thực thi cron đối soát tự động thành công', { ...report, publishedAnnouncements, interviewReminders });
+        return sendSuccess(request, 'Thực thi cron đối soát tự động thành công', { ...report, publishedAnnouncements, interviewReminders, formSync });
+      }
+      case 'recruitment-form-sync': {
+        const res = await syncRecruitmentFormFromGoogleSheet(ctx, { actorId: 'cron-form-sync' });
+        return sendSuccess(request, res.message, res);
       }
       case 'publish-announcements': {
         const publishedAnnouncements = await sweepDueScheduledAnnouncements(ctx, 'cron-announcements');

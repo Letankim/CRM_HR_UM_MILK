@@ -12,6 +12,7 @@ import { interviewRoutes } from './interviews.routes.js';
 import { recruitmentRsvpRoutes } from './recruitment-rsvp.routes.js';
 import { recruitmentZaloRoutes } from './recruitment-zalo.routes.js';
 import { testBankRoutes } from './test-bank.routes.js';
+import { scoreCandidateForm14 } from '../services/candidate-form-scorer.js';
 import { listHrZaloAccounts } from '../services/zalo-hr.service.js';
 
 const zCandidateListQuery = zListQueryBase.extend({
@@ -63,10 +64,17 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
     }
     const zaloAccounts = await listHrZaloAccounts(ctx);
     const zaloMap = new Map(zaloAccounts.map((a) => [a.id, a]));
+    const branches = ctx.db.branches.all();
     const items = ctx.db.candidates.all().map((c) => {
       const zaloAcc = c.zalo_account_id ? zaloMap.get(c.zalo_account_id) : undefined;
+      const computedAi = !c.ai_score_14 && !c.form_payload_json
+        ? scoreCandidateForm14({ full_name: c.full_name, phone: c.phone, email: c.email, birth_year: c.birth_year, gender: c.gender, shift_pref: c.shift_pref, branch_pref: c.branch_pref, experience_note: c.experience_note, self_intro: c.hr_note }, branches)
+        : null;
       return {
         ...c,
+        ai_score_14: c.ai_score_14 || computedAi?.ai_score_14 || 0,
+        ai_qualified: c.ai_score_14 ? c.ai_qualified : Boolean(computedAi?.ai_qualified),
+        red_flag_reason: c.red_flag_reason || computedAi?.red_flag_reason || '',
         stage: c.status,
         branchName: ctx.db.branches.get(c.branch_pref)?.name ?? (c.branch_pref || 'Chưa chọn chi nhánh'),
         positionLabel: resolveStaffGroupLabel(ctx, c.staff_group, c.position),
