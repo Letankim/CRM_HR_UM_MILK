@@ -39,8 +39,11 @@ function buildPdfLineItems(mapped: ReturnType<typeof mapSnapshot>, slip?: Paysli
     });
   }
   if (mapped.kpiBonusVnd > 0) lines.push({ label: 'Thưởng hiệu suất (KPI / Doanh số)', detail: 'Khoản thưởng được phê duyệt trong kỳ', amountVnd: mapped.kpiBonusVnd });
+  if ((mapped.manualBaseAddVnd ?? 0) > 0) lines.push({ label: 'Lương cơ bản bổ sung (+)', detail: 'Khoản cộng bổ sung Kế toán đối soát', amountVnd: mapped.manualBaseAddVnd });
+  if ((mapped.manualOtAddVnd ?? 0) > 0) lines.push({ label: 'Tiền OT phát sinh thêm (+)', detail: 'Khoản cộng tăng ca Kế toán đối soát', amountVnd: mapped.manualOtAddVnd });
+  if ((mapped.manualBonusVnd ?? 0) > 0) lines.push({ label: 'Thưởng hiệu quả bổ sung (+)', detail: 'Khoản thưởng bổ sung Kế toán đối soát', amountVnd: mapped.manualBonusVnd });
   if (mapped.positiveAdjustmentsVnd > 0) lines.push({ label: 'Điều chỉnh cộng thêm (+)', detail: 'Khoản bổ sung lương đã phê duyệt', amountVnd: mapped.positiveAdjustmentsVnd });
-  const totalDed = mapped.approvedDeductionsVnd + mapped.advanceDeductionVnd;
+  const totalDed = mapped.approvedDeductionsVnd + mapped.advanceDeductionVnd + (mapped.manualAdvanceDeductVnd ?? 0) + (mapped.manualKpiDeductVnd ?? 0) + (mapped.manualUniformDeductVnd ?? 0);
   if (totalDed > 0) lines.push({ label: 'Khấu trừ & tạm ứng (-)', detail: 'Khoản khấu trừ đã được phê duyệt', amountVnd: -totalDed });
   if (slip && slip.net_vnd !== mapped.netVnd) {
     const diff = slip.net_vnd - mapped.netVnd;

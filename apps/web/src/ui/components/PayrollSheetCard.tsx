@@ -59,12 +59,8 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
   });
 
   const bulkPayMut = useMutation({
-    mutationFn: (p: { ids: string[]; payment_reference?: string }) =>
-      api.post<{ count: number }>('/admin/payroll/payslips/bulk-pay', { ids: p.ids, payslip_ids: p.ids, payment_reference: p.payment_reference }),
-    onSuccess: (res) => {
-      message.success(`Đã đánh dấu Đã thanh toán cho ${res.count} phiếu lương đã chọn`);
-      ['payroll-snapshots', 'payroll-periods', 'payroll-periods-report'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
-    },
+    mutationFn: (p: { ids: string[]; payment_reference?: string }) => api.post<{ count: number }>('/admin/payroll/payslips/bulk-pay', { ids: p.ids, payslip_ids: p.ids, payment_reference: p.payment_reference }),
+    onSuccess: (res) => { message.success(`Đã đánh dấu Đã thanh toán cho ${res.count} phiếu lương đã chọn`); ['payroll-snapshots', 'payroll-periods', 'payroll-periods-report'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] })); },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Đánh dấu thanh toán hàng loạt thất bại'),
   });
 
@@ -78,8 +74,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
     }
   };
 
-  const rows = snapshotsQ.data?.data ?? [];
-  const totalCount = snapshotsQ.data?.meta.pagination.total ?? rows.length;
+  const rows = snapshotsQ.data?.data ?? [], totalCount = snapshotsQ.data?.meta.pagination.total ?? rows.length;
   const freshPeriod = snapshotsQ.data?.meta.filters?.period as PayPeriodRow | undefined;
   useEffect(() => {
     if (freshPeriod && (freshPeriod.version !== period.version || freshPeriod.confirmed_count !== period.confirmed_count || freshPeriod.paid_count !== period.paid_count || freshPeriod.disputed_count !== period.disputed_count)) {
@@ -87,12 +82,8 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
     }
   }, [freshPeriod, period.version, period.confirmed_count, period.paid_count, period.disputed_count, qc]);
 
-  const summary = (snapshotsQ.data?.meta.filters?.summary ?? {}) as Record<string, number>;
-  const totalMissing = Number(summary.totalMissingPunches ?? 0);
-  const allMissingShifts = useMemo(
-    () => (Array.isArray((summary as Record<string, unknown>).allMissingShifts) ? ((summary as Record<string, unknown>).allMissingShifts as MissingShiftDetailItem[]) : rows.flatMap((r) => r.missingShifts ?? [])),
-    [summary, rows],
-  );
+  const summary = (snapshotsQ.data?.meta.filters?.summary ?? {}) as Record<string, number>, totalMissing = Number(summary.totalMissingPunches ?? 0);
+  const allMissingShifts = useMemo(() => (Array.isArray((summary as Record<string, unknown>).allMissingShifts) ? ((summary as Record<string, unknown>).allMissingShifts as MissingShiftDetailItem[]) : rows.flatMap((r) => r.missingShifts ?? [])), [summary, rows]);
 
   return (
     <Card
@@ -179,13 +170,15 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
           {
             title: 'Thao tác', key: 'act', width: 92, align: 'right', fixed: 'right',
             render: (_, r) => {
-              const canAdj = canManage && period.status !== 'PAID' && r.payslipStatus !== 'PAID' && !r.employeeConfirmedAt && r.canAdjust !== false;
+              const isLocked = period.status === 'PAID' || r.payslipStatus === 'PAID' || Boolean(r.employeeConfirmedAt || r.employeeSignatureUrl);
+              const canEditManual6 = canManual6 && (period.status === 'DRAFT' || period.status === 'RECONCILE') && !isLocked && r.canEditManualColumns !== false;
+              const canAdj = canManage && period.status !== 'APPROVED' && !isLocked && r.canAdjust !== false;
               return (
                 <RowActionButtons
                   detailTooltip="Xem chi tiết phiếu lương" onViewDetail={() => onOpenPayslip(r)}
                   menuItems={[
                     { key: 'pdf', icon: <FilePdfOutlined />, label: 'Xuất phiếu lương', onClick: () => void downloadSinglePdf(r) },
-                    ...(canManual6 && period.status !== 'PAID' && r.payslipStatus !== 'PAID' ? [{ key: 'manual6', icon: <CalculatorOutlined />, label: 'Nhập tay 6 cột Kế toán', onClick: () => setManualTarget(r) }] : []),
+                    ...(canEditManual6 ? [{ key: 'manual6', icon: <CalculatorOutlined />, label: 'Nhập tay 6 cột Kế toán', onClick: () => setManualTarget(r) }] : []),
                     ...(isFinance && r.employeeConfirmedAt ? [{ key: 'qr', icon: <QrcodeOutlined />, label: 'Mã QR Ngân hàng & Đánh dấu Đã TT', onClick: () => setQrPayTarget(r) }] : []),
                     ...(canAdj ? [{ key: 'adjust', icon: <EditOutlined />, label: 'Điều chỉnh phiếu lương (+ / -)', onClick: () => onOpenPayslip(r) }] : []),
                   ]}

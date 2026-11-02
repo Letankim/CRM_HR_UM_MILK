@@ -123,7 +123,7 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext, viewerRole?: st
   const disputeTicket = slip ? ctx.db.supportTickets.filter((t) => t.related_entity_type === 'PAYSLIP' && t.related_entity_id === slip.id).slice(-1)[0] : undefined;
   const periodStatus = period?.status ?? 'DRAFT';
   const isPaid = periodStatus === 'PAID' || slip?.status === 'PAID';
-  const isConfirmed = Boolean(slip?.employee_confirmed_at);
+  const isConfirmed = Boolean(slip?.employee_confirmed_at || slip?.employee_signature_file_id);
   const payerId = slip?.paid_by || period?.paid_by || '';
   const paidByName = payerId ? (ctx.db.users.get(payerId)?.display_name || ctx.db.users.find((u) => u.username === payerId)?.display_name || payerId) : '';
   const confirmationStatus: 'CONFIRMED' | 'DISPUTED' | 'PENDING' | 'NOT_ISSUED' = isConfirmed
@@ -140,12 +140,15 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext, viewerRole?: st
       : confirmationStatus === 'PENDING'
         ? (slip?.dispute_status === 'RESOLVED' ? 'Đã phản hồi · Chờ xác nhận' : isPaid ? 'Đã thanh toán' : 'Chờ nhân sự xác nhận')
         : 'Chưa phát hành';
-  const canAdjust = !isPaid && !isConfirmed;
+  const canAdjust = !isPaid && !isConfirmed && periodStatus !== 'APPROVED';
+  const canEditManualColumns = (periodStatus === 'DRAFT' || periodStatus === 'RECONCILE') && !isPaid && !isConfirmed;
   const adjustLockReason = isPaid
     ? 'Kỳ lương đã chuyển sang Đã thanh toán nên đã khóa toàn bộ dữ liệu, không thể điều chỉnh.'
     : isConfirmed
-      ? 'Nhân sự đã xác nhận đồng ý phiếu lương này nên đã khóa điều chỉnh.'
-      : '';
+      ? 'Nhân sự đã ký tay xác nhận phiếu lương này nên đã niêm phong chống gian lận, không thể điều chỉnh.'
+      : periodStatus === 'APPROVED'
+        ? 'Kỳ lương đã được Ban Quản trị ký phê duyệt. Nếu cần sửa, vui lòng trả kỳ lương về bước Đối soát.'
+        : '';
 
   return {
     id: s.id, periodId: s.period_id, periodCode: s.period_code, periodStatus,
@@ -176,7 +179,10 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext, viewerRole?: st
     mealAllowanceVnd: s.meal_allowance_vnd, transportAllowanceVnd: s.transport_allowance_vnd,
     attendanceBonusVnd: s.attendance_bonus_vnd, kpiBonusVnd: s.kpi_bonus_vnd, otherAllowancesVnd: s.other_allowances_vnd,
     positiveAdjustmentsVnd: s.positive_adjustments_vnd, approvedDeductionsVnd: s.approved_deductions_vnd,
-    advanceDeductionVnd: s.advance_deduction_vnd, grossVnd: s.gross_vnd, netVnd: s.net_vnd,
+    advanceDeductionVnd: s.advance_deduction_vnd,
+    manualBaseAddVnd: s.manual_base_add_vnd ?? 0, manualOtAddVnd: s.manual_ot_add_vnd ?? 0, manualBonusVnd: s.manual_bonus_vnd ?? 0,
+    manualAdvanceDeductVnd: s.manual_advance_deduct_vnd ?? 0, manualKpiDeductVnd: s.manual_kpi_deduct_vnd ?? 0, manualUniformDeductVnd: s.manual_uniform_deduct_vnd ?? 0,
+    grossVnd: s.gross_vnd, netVnd: s.net_vnd,
     bankName: emp?.bank_name || s.bank_name, bankAccountNumber: emp?.bank_account_number || s.bank_account_number,
     bankAccountHolder: emp?.bank_account_holder || s.bank_account_holder || s.full_name,
     hasEmployeeBankQr: viewerRole === 'FINANCE' ? Boolean(emp?.bank_qr_file_id) : false,
@@ -190,7 +196,7 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext, viewerRole?: st
     paidByName: isPaid ? paidByName : '', paymentReference: slip?.payment_reference || '',
     payslipId: slip?.id ?? '', payslipCode: slip?.payslip_code ?? '', payslipRevision: slip?.revision ?? 0, payslipStatus: slip?.status ?? '',
     viewedByEmployeeAt: slip?.viewed_by_employee_at || null, employeeConfirmedAt: slip?.employee_confirmed_at || null,
-    confirmationStatus, confirmationLabel, canAdjust, adjustLockReason,
+    confirmationStatus, confirmationLabel, canAdjust, canEditManualColumns, adjustLockReason,
     disputeStatus: isConfirmed ? 'NONE' : (slip?.dispute_status ?? 'NONE'),
     disputeReason: slip?.dispute_reason ?? '',
     disputeTicketId: disputeTicket?.id ?? '', disputeTicketCode: disputeTicket?.ticket_code ?? '',

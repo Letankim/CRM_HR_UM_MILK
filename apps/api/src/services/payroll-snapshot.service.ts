@@ -1,11 +1,5 @@
 import { createHash } from 'node:crypto';
-import {
-  OPERATION_SETTING_KEYS,
-  PAYROLL_ITEM_TYPE_LABELS,
-  SYSTEM_CONFIG,
-  parsePartitionRegistry,
-  type PayPeriod,
-} from '@umbm/shared';
+import { OPERATION_SETTING_KEYS, PAYROLL_ITEM_TYPE_LABELS, SYSTEM_CONFIG, parsePartitionRegistry, type PayPeriod } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { nowIso } from '../lib/time.js';
 import { SocketEvents } from '../realtime/realtime.js';
@@ -29,14 +23,11 @@ function computePeriodDirtySig(ctx: AppContext, period: PayPeriod): string {
     sumVer(rows.filter((r) => r.work_date >= period.from_date && r.work_date <= period.to_date));
   return [
     'v5', ctx.db.partitionMonth, period.version, period.from_date, period.to_date,
-    sumVer(ctx.db.employees.all(true)),
-    sumVer(ctx.db.payRates.all(true)),
-    inRange(ctx.db.shiftAssignments.all(true)),
-    inRange(ctx.db.attendanceEvents.all(true)),
-    inRange(ctx.db.attendanceAdjustments.all(true)),
+    sumVer(ctx.db.employees.all(true)), sumVer(ctx.db.payRates.all(true)),
+    inRange(ctx.db.shiftAssignments.all(true)), inRange(ctx.db.attendanceEvents.all(true)), inRange(ctx.db.attendanceAdjustments.all(true)),
     sumVer(ctx.db.leaveRequests.all(true).filter((l) => l.leave_date >= period.from_date && l.leave_date <= period.to_date)),
-    sumVer(ctx.db.shiftSwaps.all(true)),
-    sumVer(ctx.db.payrollItems.all(true).filter((i) => i.period_id === period.id)),
+    sumVer(ctx.db.shiftSwaps.all(true)), sumVer(ctx.db.payrollItems.all(true).filter((i) => i.period_id === period.id)),
+    sumVer(ctx.db.payrollSnapshots.all(true).filter((s) => s.period_id === period.id)),
   ].join('|');
 }
 
@@ -137,8 +128,12 @@ async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, 
       items: empItems.map((i) => ({ id: i.id, type: i.item_type, label: PAYROLL_ITEM_TYPE_LABELS[i.item_type], title: i.title, direction: i.direction, amount: i.total_amount_vnd })),
     });
 
+    const existing = existingSnaps.find((s) => s.employee_id === emp.id || (emp.employee_code && s.employee_code === emp.employee_code));
+    const mAdd = (existing?.manual_base_add_vnd ?? 0) + (existing?.manual_ot_add_vnd ?? 0) + (existing?.manual_bonus_vnd ?? 0);
+    const mDed = (existing?.manual_advance_deduct_vnd ?? 0) + (existing?.manual_kpi_deduct_vnd ?? 0) + (existing?.manual_uniform_deduct_vnd ?? 0);
+    const finalGross = r.gross + mAdd, finalNet = Math.max(0, finalGross - r.deductions - r.advance - mDed);
     const dataHash = createHash('sha256')
-      .update(`${period.id}:${emp.id}:${emp.stage}:${emp.branch_id}:${r.primaryProfile?.id ?? ''}:${r.primaryProfile?.rate_type ?? ''}:${r.primaryProfile?.amount_vnd ?? 0}:${r.primaryProfile?.probation_percent ?? 0}:${r.gross}:${r.net}:${r.approvedHours}:${r.otHours}:${r.swapCount}:${r.paidSwapCount}:${r.swapPay}:${workSummary.lateCount}:${workSummary.leaveOffCount}:${emp.bank_name}:${emp.bank_account_number}:${adjustmentsJson}`)
+      .update(`${period.id}:${emp.id}:${emp.stage}:${emp.branch_id}:${r.primaryProfile?.id ?? ''}:${r.primaryProfile?.rate_type ?? ''}:${r.primaryProfile?.amount_vnd ?? 0}:${r.primaryProfile?.probation_percent ?? 0}:${finalGross}:${finalNet}:${mAdd}:${mDed}:${r.approvedHours}:${r.otHours}:${r.swapCount}:${r.paidSwapCount}:${r.swapPay}:${workSummary.lateCount}:${workSummary.leaveOffCount}:${emp.bank_name}:${emp.bank_account_number}:${adjustmentsJson}`)
       .digest('hex').slice(0, 16);
 
     const payload = {
@@ -155,14 +150,13 @@ async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, 
       other_allowances_vnd: r.otherAllowances, positive_adjustments_vnd: r.positiveAdj,
       approved_deductions_vnd: r.deductions, advance_deduction_vnd: r.advance,
       late_count: workSummary.lateCount, late_minutes_total: workSummary.lateMinutesTotal,
-      gross_vnd: r.gross, net_vnd: r.net, data_hash: dataHash,
+      gross_vnd: finalGross, net_vnd: finalNet, data_hash: dataHash,
       bank_name: emp.bank_name, bank_account_number: emp.bank_account_number, bank_account_holder: emp.bank_account_holder,
       snapshot_at: nowIso(),
     };
 
-    const existing = existingSnaps.find((s) => s.employee_id === emp.id || (emp.employee_code && s.employee_code === emp.employee_code));
     if (existing) {
-      if (existing.data_hash !== dataHash || existing.pay_rate_id !== payload.pay_rate_id || existing.rate_vnd !== payload.rate_vnd) {
+      if (existing.data_hash !== dataHash || existing.pay_rate_id !== payload.pay_rate_id || existing.rate_vnd !== payload.rate_vnd || existing.gross_vnd !== finalGross || existing.net_vnd !== finalNet) {
         toBatchUpdate.push({ id: existing.id, expectedVersion: existing.version, patch: payload });
       }
     } else {
@@ -172,9 +166,9 @@ async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, 
 
     totals.hours += r.approvedHours;
     totals.ot += r.otHours;
-    totals.gross += r.gross;
-    totals.deduct += r.deductions + r.advance;
-    totals.net += r.net;
+    totals.gross += finalGross;
+    totals.deduct += r.deductions + r.advance + mDed;
+    totals.net += finalNet;
   }
 
   for (const stale of existingSnaps.filter((s) => !keepEmpIds.has(s.employee_id))) {

@@ -67,8 +67,8 @@ export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { s
 
   const effStatus = periodStatus ?? s?.periodStatus ?? 'DRAFT';
   const isPaid = effStatus === 'PAID' || s?.payslipStatus === 'PAID';
-  const isConfirmed = Boolean(s?.employeeConfirmedAt);
-  const canAdjustSlip = Boolean(s && canManage && !isPaid && !isConfirmed && s.canAdjust !== false);
+  const isConfirmed = Boolean(s?.employeeConfirmedAt || s?.employeeSignatureUrl);
+  const canAdjustSlip = Boolean(s && canManage && !isPaid && !isConfirmed && effStatus !== 'APPROVED' && s.canAdjust !== false);
   const lines = s ? payslipLines(s) : [];
 
   return (

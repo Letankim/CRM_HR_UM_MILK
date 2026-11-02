@@ -186,7 +186,7 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
           run: async (s) => {
             s.period = await ctx.db.payPeriods.update(id, current.version, {
               status: body.target_status,
-              ...(body.target_status === 'RECONCILE' ? { reconciled_by: actorId, reconciled_at: now } : {}),
+              ...(body.target_status === 'RECONCILE' ? { reconciled_by: actorId, reconciled_at: now, approved_by: '', approved_at: '', admin_signature_file_id: '', admin_signed_by: '', admin_signed_at: '' } : {}),
               ...(body.target_status === 'APPROVED' ? { approved_by: actorId, approved_at: now } : {}),
               ...(body.target_status === 'PUBLISHED' ? { published_by: actorId, published_at: now } : {}),
               ...(body.target_status === 'PAID' ? { paid_by: actorId, paid_at: now } : {}),

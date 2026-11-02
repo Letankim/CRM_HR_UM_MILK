@@ -37,6 +37,12 @@ export function payslipLines(s: PayrollSnapshotItem): PayslipLine[] {
     lines.push({ label: a.label, detail: a.code === 'ALLOWANCE_SWAP' ? swapDetail : 'Theo hồ sơ lương / khoản mục đã duyệt', amount: a.amount });
   }
   if (s.kpiBonusVnd > 0) lines.push({ label: 'Thưởng KPI / Doanh số', detail: 'Khoản thưởng đã duyệt trong kỳ', amount: s.kpiBonusVnd });
+  const mBase = Number(s.manualBaseAddVnd ?? s.manual_base_add_vnd ?? 0);
+  const mOt = Number(s.manualOtAddVnd ?? s.manual_ot_add_vnd ?? 0);
+  const mBonus = Number(s.manualBonusVnd ?? s.manual_bonus_vnd ?? 0);
+  if (mBase > 0) lines.push({ label: 'Lương cơ bản bổ sung (+)', detail: 'Khoản cộng bổ sung Kế toán đối soát', amount: mBase });
+  if (mOt > 0) lines.push({ label: 'Tiền OT phát sinh thêm (+)', detail: 'Khoản cộng tăng ca Kế toán đối soát', amount: mOt });
+  if (mBonus > 0) lines.push({ label: 'Thưởng hiệu quả bổ sung (+)', detail: 'Khoản thưởng bổ sung Kế toán đối soát', amount: mBonus });
   if (s.positiveAdjustmentsVnd > 0) lines.push({ label: 'Điều chỉnh cộng', detail: 'Khoản bổ sung đã duyệt', amount: s.positiveAdjustmentsVnd });
   if (deductionsOf(s) > 0) lines.push({ label: 'Khấu trừ & tạm ứng đã duyệt', detail: 'Chỉ áp dụng khoản đã phê duyệt', amount: -deductionsOf(s) });
   return lines;

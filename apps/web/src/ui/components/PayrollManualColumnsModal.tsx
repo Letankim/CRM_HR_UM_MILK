@@ -75,6 +75,15 @@ export function PayrollManualColumnsModal({
     },
   });
 
+  const isLocked = Boolean(
+    row &&
+      (row.employeeConfirmedAt ||
+        row.employeeSignatureUrl ||
+        row.payslipStatus === 'PAID' ||
+        row.canEditManualColumns === false ||
+        (row.periodStatus && row.periodStatus !== 'DRAFT' && row.periodStatus !== 'RECONCILE')),
+  );
+
   return (
     <Modal
       width={720}
@@ -95,19 +104,34 @@ export function PayrollManualColumnsModal({
           <Button icon={<CloseOutlined />} onClick={onClose}>
             Đóng
           </Button>
-          <Button type="primary" icon={<SaveOutlined />} loading={saveMut.isPending} onClick={() => form.submit()}>
-            Lưu 6 cột Kế toán &amp; Tính lại Thực lĩnh
-          </Button>
+          {!isLocked && (
+            <Button type="primary" icon={<SaveOutlined />} loading={saveMut.isPending} onClick={() => form.submit()}>
+              Lưu 6 cột Kế toán &amp; Tính lại Thực lĩnh
+            </Button>
+          )}
         </Space>
       }
     >
       {row && (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message="Cơ chế Bán tự động (Hybrid Payroll): 3 cột cộng (+) và 3 cột khấu trừ (-) do Kế toán nhập tay được cộng/trừ trực tiếp vào Thực lĩnh của kỳ lương."
-          />
+          {isLocked ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="Đã khóa chống gian lận — Không được phép sửa 6 cột nhập tay"
+              description={
+                row.employeeConfirmedAt || row.employeeSignatureUrl
+                  ? 'Nhân sự đã ký tay xác nhận phiếu lương nên số liệu đã niêm phong chống gian lận, Kế toán không thể chỉnh sửa.'
+                  : 'Chỉ được phép nhập tay 6 cột Kế toán khi kỳ lương đang ở bước Nháp hoặc Đối soát (trước khi Ban Quản trị ký phê duyệt).'
+              }
+            />
+          ) : (
+            <Alert
+              type="info"
+              showIcon
+              message="Cơ chế Bán tự động (Hybrid Payroll): 3 cột cộng (+) và 3 cột khấu trừ (-) do Kế toán nhập tay được cộng/trừ trực tiếp vào Thực lĩnh của kỳ lương."
+            />
+          )}
           <Descriptions size="small" bordered column={2}>
             <Descriptions.Item label="Nhân sự">
               <strong>{row.fullName}</strong> <Tag color="geekblue">{row.employeeCode}</Tag>
@@ -128,7 +152,7 @@ export function PayrollManualColumnsModal({
             </Descriptions.Item>
           </Descriptions>
 
-          <Form form={form} layout="vertical" onFinish={(v) => saveMut.mutate(v)}>
+          <Form form={form} layout="vertical" disabled={isLocked} onFinish={(v) => !isLocked && saveMut.mutate(v)}>
             <Row gutter={12}>
               <Col xs={24} sm={12}>
                 <Form.Item name="manual_base_add_vnd" label="1. Lương cơ bản bổ sung (+ VNĐ)">

@@ -40,8 +40,11 @@ export async function applyPayslipAdjustment(
   if (period.status === 'PAID' || slip?.status === 'PAID') {
     throw Errors.conflict('Kỳ lương đã chuyển sang Đã thanh toán nên đã khóa toàn bộ dữ liệu, không thể điều chỉnh.');
   }
-  if (slip?.employee_confirmed_at) {
-    throw Errors.conflict(`Nhân sự ${snap.full_name} (${snap.employee_code}) đã xác nhận đồng ý phiếu lương nên không thể điều chỉnh.`);
+  if (slip?.employee_confirmed_at || slip?.employee_signature_file_id) {
+    throw Errors.conflict(`Nhân sự ${snap.full_name} (${snap.employee_code}) đã ký tay xác nhận phiếu lương nên số liệu đã niêm phong chống gian lận, Kế toán không thể điều chỉnh.`);
+  }
+  if (period.status === 'APPROVED') {
+    throw Errors.conflict('Kỳ lương đã được Ban Quản trị ký phê duyệt. Không được tự ý điều chỉnh số liệu trước khi phát hành; nếu cần sửa, vui lòng trả kỳ lương về bước Đối soát để Ban Quản trị ký duyệt lại.');
   }
 
   if (period.status === 'DRAFT' || period.status === 'RECONCILE') {

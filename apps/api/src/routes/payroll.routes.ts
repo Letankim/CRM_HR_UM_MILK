@@ -34,35 +34,41 @@ const zManualColumnsBody = z.object({
   manual_uniform_deduct_vnd: z.coerce.number().min(0, 'Trừ phí đồng phục không được âm').optional(),
 });
 
-/** Kỳ lương chỉ cho phép thay đổi khoản mục khi đang Nháp hoặc Đối soát (chưa phê duyệt snapshot) */
+/** Kỳ lương chỉ cho phép thay đổi khoản mục / 6 cột nhập tay khi đang Nháp hoặc Đối soát (chưa phê duyệt snapshot) */
 export function assertPeriodEditable(period: PayPeriod) {
   if (period.status !== 'DRAFT' && period.status !== 'RECONCILE') {
-    throw Errors.conflict('Kỳ lương đã phê duyệt / phát hành, không được thêm, sửa hoặc xóa khoản mục. Sau khi phát hành, vui lòng tạo phiên bản điều chỉnh phiếu lương.');
+    throw Errors.conflict('Kỳ lương đã phê duyệt / phát hành, không được thêm, sửa, xóa khoản mục hoặc sửa 6 cột nhập tay Kế toán.');
+  }
+}
+
+/** Khóa chống gian lận: Cấm sửa khoản mục hoặc 6 cột nhập tay nếu nhân sự đã ký xác nhận hoặc đã thanh toán phiếu lương */
+export function assertEmployeePayslipNotSigned(ctx: AppContext, periodId: string, employeeId: string, snapshotId?: string) {
+  const emp = ctx.db.employees.get(employeeId);
+  const empCode = emp?.employee_code?.trim().toUpperCase() ?? '';
+  const slip = ctx.db.payslips.find(
+    (p) =>
+      p.status !== 'REVISED' &&
+      Boolean(
+        (snapshotId && p.snapshot_id === snapshotId) ||
+          (p.period_id === periodId && (p.employee_id === employeeId || (empCode && p.employee_code.trim().toUpperCase() === empCode))),
+      ),
+  );
+  if (slip?.status === 'PAID') {
+    throw Errors.conflict('Phiếu lương của nhân sự này đã thanh toán, không được phép chỉnh sửa số liệu.');
+  }
+  if (slip?.employee_confirmed_at || slip?.employee_signature_file_id) {
+    throw Errors.conflict('Nhân sự đã ký tay xác nhận phiếu lương. Dữ liệu đã niêm phong chống gian lận, Kế toán không được phép chỉnh sửa.');
   }
 }
 
 export function mapPayrollItem(item: PayrollItem, ctx: AppContext) {
-  const emp = ctx.db.employees.get(item.employee_id);
-  const period = ctx.db.payPeriods.get(item.period_id);
+  const emp = ctx.db.employees.get(item.employee_id), period = ctx.db.payPeriods.get(item.period_id);
   return {
-    id: item.id,
-    periodId: item.period_id,
-    periodName: period?.name ?? '',
-    employeeId: item.employee_id,
-    employeeCode: emp?.employee_code ?? '',
-    employeeName: emp?.full_name ?? 'Nhân sự đã xóa',
-    itemType: item.item_type,
-    itemTypeLabel: PAYROLL_ITEM_TYPE_LABELS[item.item_type],
-    direction: item.direction,
-    title: item.title,
-    quantity: item.quantity,
-    unitAmountVnd: item.unit_amount_vnd,
-    totalAmountVnd: item.total_amount_vnd,
-    workDate: item.work_date || null,
-    approvalStatus: item.approval_status,
-    note: item.note,
-    version: item.version,
-    created_at: item.created_at,
+    id: item.id, periodId: item.period_id, periodName: period?.name ?? '', employeeId: item.employee_id,
+    employeeCode: emp?.employee_code ?? '', employeeName: emp?.full_name ?? 'Nhân sự đã xóa',
+    itemType: item.item_type, itemTypeLabel: PAYROLL_ITEM_TYPE_LABELS[item.item_type], direction: item.direction,
+    title: item.title, quantity: item.quantity, unitAmountVnd: item.unit_amount_vnd, totalAmountVnd: item.total_amount_vnd,
+    workDate: item.work_date || null, approvalStatus: item.approval_status, note: item.note, version: item.version, created_at: item.created_at,
   };
 }
 
@@ -93,27 +99,16 @@ export async function payrollRoutes(app: FastifyInstance, ctx: AppContext) {
     assertPeriodEditable(period);
     const emp = ctx.db.employees.get(body.employee_id);
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Nhân sự không tồn tại', body.employee_id);
+    assertEmployeePayslipNotSigned(ctx, period.id, emp.id);
 
     const actorId = request.auth!.user.id;
     const created = await ctx.db.payrollItems.insert(
       {
-        period_id: period.id,
-        employee_id: emp.id,
-        branch_id: emp.branch_id,
-        work_date: body.work_date || period.to_date,
-        item_type: body.item_type,
-        category_code: body.item_type.split('_')[0] ?? 'BONUS',
-        title: body.title,
-        direction: resolveDirection(body.item_type),
-        quantity: body.quantity,
-        unit_amount_vnd: body.unit_amount_vnd,
-        total_amount_vnd: Math.round(body.quantity * body.unit_amount_vnd),
-        source_ref_id: '',
-        policy_version: 'v5.1',
-        approval_status: 'APPROVED',
-        approved_by: actorId,
-        approved_at: nowIso(),
-        note: body.note,
+        period_id: period.id, employee_id: emp.id, branch_id: emp.branch_id, work_date: body.work_date || period.to_date,
+        item_type: body.item_type, category_code: body.item_type.split('_')[0] ?? 'BONUS', title: body.title,
+        direction: resolveDirection(body.item_type), quantity: body.quantity, unit_amount_vnd: body.unit_amount_vnd,
+        total_amount_vnd: Math.round(body.quantity * body.unit_amount_vnd), source_ref_id: '', policy_version: 'v5.1',
+        approval_status: 'APPROVED', approved_by: actorId, approved_at: nowIso(), note: body.note,
       },
       actorId,
     );
@@ -130,10 +125,9 @@ export async function payrollRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!before) throw Errors.notFound('Không tìm thấy khoản thưởng / điều chỉnh');
     const period = ctx.db.payPeriods.get(before.period_id);
     if (period) assertPeriodEditable(period);
+    assertEmployeePayslipNotSigned(ctx, before.period_id, before.employee_id);
     const { version, period_id: _ignored, ...patch } = body;
-    const nextQty = patch.quantity ?? before.quantity;
-    const nextUnit = patch.unit_amount_vnd ?? before.unit_amount_vnd;
-    const nextType = patch.item_type ?? before.item_type;
+    const nextQty = patch.quantity ?? before.quantity, nextUnit = patch.unit_amount_vnd ?? before.unit_amount_vnd, nextType = patch.item_type ?? before.item_type;
     const actorId = request.auth!.user.id;
     const updated = await ctx.db.payrollItems.update(
       id,
@@ -153,6 +147,7 @@ export async function payrollRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!before) throw Errors.notFound('Không tìm thấy khoản thưởng / điều chỉnh');
     const period = ctx.db.payPeriods.get(before.period_id);
     if (period) assertPeriodEditable(period);
+    assertEmployeePayslipNotSigned(ctx, before.period_id, before.employee_id);
     const actorId = request.auth!.user.id;
     await ctx.db.payrollItems.softDelete(id, body.version ?? before.version, actorId);
     if (period) await recalculatePeriodSnapshots(ctx, period, actorId);
@@ -165,6 +160,7 @@ export async function payrollRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!snap) throw Errors.notFound('Snapshot lương nhân sự', id);
     const period = ctx.db.payPeriods.get(snap.period_id);
     if (period) assertPeriodEditable(period);
+    assertEmployeePayslipNotSigned(ctx, snap.period_id, snap.employee_id, snap.id);
     const nextBaseAdd = Math.round(body.manual_base_add_vnd ?? snap.manual_base_add_vnd ?? 0);
     const nextOtAdd = Math.round(body.manual_ot_add_vnd ?? snap.manual_ot_add_vnd ?? 0);
     const nextBonus = Math.round(body.manual_bonus_vnd ?? snap.manual_bonus_vnd ?? 0);

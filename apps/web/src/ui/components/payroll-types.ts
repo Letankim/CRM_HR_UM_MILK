@@ -147,6 +147,7 @@ export interface PayrollSnapshotItem {
   confirmationStatus?: 'NOT_ISSUED' | 'PENDING' | 'DISPUTED' | 'CONFIRMED';
   confirmationLabel?: string;
   canAdjust?: boolean;
+  canEditManualColumns?: boolean;
   adjustLockReason?: string;
   disputeStatus?: string;
   disputeReason?: string;
@@ -207,5 +208,7 @@ export const MONEY_INPUT_PROPS = {
   },
 };
 export const allowancesOf = (r: PayrollSnapshotItem) => r.mealAllowanceVnd + r.transportAllowanceVnd + r.otherAllowancesVnd + r.shiftSwapAllowanceVnd;
-export const bonusesOf = (r: PayrollSnapshotItem) => r.attendanceBonusVnd + r.kpiBonusVnd + r.positiveAdjustmentsVnd;
-export const deductionsOf = (r: PayrollSnapshotItem) => r.approvedDeductionsVnd + r.advanceDeductionVnd;
+export const bonusesOf = (r: PayrollSnapshotItem) =>
+  r.attendanceBonusVnd + r.kpiBonusVnd + r.positiveAdjustmentsVnd + Number(r.manualBaseAddVnd ?? r.manual_base_add_vnd ?? 0) + Number(r.manualOtAddVnd ?? r.manual_ot_add_vnd ?? 0) + Number(r.manualBonusVnd ?? r.manual_bonus_vnd ?? 0);
+export const deductionsOf = (r: PayrollSnapshotItem) =>
+  r.approvedDeductionsVnd + r.advanceDeductionVnd + Number(r.manualAdvanceDeductVnd ?? r.manual_advance_deduct_vnd ?? 0) + Number(r.manualKpiDeductVnd ?? r.manual_kpi_deduct_vnd ?? 0) + Number(r.manualUniformDeductVnd ?? r.manual_uniform_deduct_vnd ?? 0);
