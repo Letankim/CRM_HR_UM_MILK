@@ -67,7 +67,7 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
       } catch { /* ignore */ }
     };
     void checkQrStatus();
-    const poll = setInterval(checkQrStatus, 800);
+    const poll = setInterval(checkQrStatus, 5000);
     return () => { active = false; clearInterval(poll); };
   }, [open, activeTab, editing, qrSession.session_id, qrSession.status, qrSession.saved_account]);
 
