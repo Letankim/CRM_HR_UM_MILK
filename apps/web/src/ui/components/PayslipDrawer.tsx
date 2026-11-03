@@ -146,7 +146,7 @@ export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { s
           {s && canManage && (
             canAdjustSlip ? (
               <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => setRevModal(true)}>
-                {effStatus === 'PUBLISHED' && !isAdmin ? 'Trình Quản trị điều chỉnh (+ / -)' : 'Điều chỉnh lương (+ / -)'}
+                Điều chỉnh
               </Button>
             ) : isPaid ? (
               <Tag color="blue" icon={<LockOutlined />} style={{ margin: 0, borderRadius: 2 }}>Đã thanh toán</Tag>
