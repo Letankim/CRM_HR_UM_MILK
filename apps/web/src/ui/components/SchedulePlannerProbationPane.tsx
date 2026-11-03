@@ -157,7 +157,7 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
           { title: 'Chi nhánh', dataIndex: 'branchName', width: 170, ellipsis: true },
           { title: 'Chu kỳ', width: 140, render: (_, r) => <strong className="num">{fmtDm(r.cycleStart)} – {fmtDm(r.cycleEnd)}</strong> },
           { title: 'Ca đã xếp', width: 100, render: (_, r) => <Tag color={r.existingCount >= r.workRequired ? 'green' : 'blue'} style={{ margin: 0 }}>{r.existingCount}/{r.workRequired}</Tag> },
-          { title: 'Đã làm xong', width: 130, render: (_, r) => <Tag color={r.readyForOfficial ? 'success' : 'processing'} style={{ margin: 0, fontWeight: r.readyForOfficial ? 600 : 400 }}>{r.completedCount}/{r.workRequired} ca{r.readyForOfficial ? ' · Đủ ĐK' : ''}</Tag> },
+          { title: 'Đã làm xong', width: 175, render: (_, r) => <Tag color={r.readyForOfficial ? 'success' : 'processing'} style={{ margin: 0, fontWeight: r.readyForOfficial ? 600 : 400, whiteSpace: 'nowrap' }}>{r.completedCount}/{r.workRequired} ca{r.readyForOfficial ? ' · Đủ điều kiện' : ''}</Tag> },
           { title: 'Ngày OFF', width: 95, render: (_, r) => <Tag color={r.offRequests.length > r.offLimit ? 'red' : 'default'} style={{ margin: 0 }}>{r.offRequests.length}/{r.offLimit}</Tag> },
           {
             title: 'Cảnh báo', width: 110,
