@@ -94,7 +94,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       const attendanceStatusLabel = isDone ? 'Đã hoàn thành ca'
         : isPendingApproval ? 'Chờ CH / HR duyệt phân ca'
         : pendingLabel ? pendingLabel
-        : isAbsentShift ? 'Vắng mặt (Quá giờ ca — Cần bổ sung công)'
+        : isAbsentShift ? 'Vắng mặt'
         : inEv ? (isForgotCheckout ? `Quên Ra ca (Vào ${inTimeHm} — Cần bổ sung công)` : isWithinCheckoutGrace ? `Đã vào ca (${inTimeHm} · Còn hạn Ra ca đến ${win.graceDeadlineHm})` : `Đã vào ca (${inTimeHm})`)
         : base.pendingSwapCode ? `Chờ duyệt đổi ca (${base.pendingSwapCode})`
         : base.pendingLeaveCode ? `Chờ duyệt nghỉ (${base.pendingLeaveCode})` : 'Chưa điểm danh';

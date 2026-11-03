@@ -131,7 +131,7 @@ export function describeSelfShiftState(s: Record<string, unknown>, todayDate: st
   if (s.status === 'DRAFT') return 'Chờ CH / HR duyệt phân ca';
   if (s.status === 'COMPLETED' || (hasIn && hasOut)) return 'Đã hoàn thành ca';
   if (s.pendingAdjustmentCode) return formatPendingShiftLabel(String(s.pendingAdjustmentCode), s.pendingAdjustmentPunchType, hasIn);
-  if (exp) return 'Vắng mặt (Quá giờ ca — Cần bù công)';
+  if (exp) return 'Vắng mặt';
   if (hasIn && Boolean(s.isForgotCheckout)) return `Quên Ra ca (Quá ${lateHours} giờ sau giờ kết thúc — Cần gửi phiếu lỗi)`;
   if (hasIn && Boolean(s.isWithinCheckoutGrace)) return `Đã vào ca (Còn hạn Ra ca đến ${String(s.checkoutGraceDeadlineHm || '')})`;
   if (hasIn && isBeforeShiftEnd(s, todayDate, nowHm)) return `Đã vào ca (Ra ca từ ${String(s.endAt || '12:00')})`;

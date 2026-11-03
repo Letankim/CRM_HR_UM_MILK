@@ -44,7 +44,7 @@ export function mapShiftAssignment(a: ShiftAssignment, ctx: AppContext, shiftEve
   else if (effectiveStatus === 'COMPLETED') { attendanceStatusLabel = 'Đã hoàn thành ca'; attendanceStatusColor = 'green'; }
   else if (effectiveStatus === 'ON_LEAVE' || a.day_type === 'OFF') { attendanceStatusLabel = 'Nghỉ phép OFF'; attendanceStatusColor = 'default'; }
   else if (activeReqs.pendingAdjustmentCode) { attendanceStatusLabel = formatPendingAdjustmentLabel(activeReqs.pendingAdjustmentCode, activeReqs.pendingAdjustmentPunchType); attendanceStatusColor = 'orange'; }
-  else if (effectiveStatus === 'ABSENT') { attendanceStatusLabel = 'Vắng mặt (Quá giờ ca — Cần bổ sung công)'; attendanceStatusColor = 'red'; }
+  else if (effectiveStatus === 'ABSENT') { attendanceStatusLabel = 'Vắng mặt'; attendanceStatusColor = 'red'; }
   else if (shiftEvents?.inHm) {
     if (win.isCheckoutLocked) { attendanceStatusLabel = `Quên Ra ca (Vào ${shiftEvents.inHm} — Cần bổ sung công)`; attendanceStatusColor = 'volcano'; }
     else if (win.isWithinCheckoutGrace) { attendanceStatusLabel = `Đã vào ca (${shiftEvents.inHm} · Còn hạn Ra ca đến ${win.graceDeadlineHm})`; attendanceStatusColor = 'processing'; }

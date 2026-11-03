@@ -39,7 +39,7 @@ export function EmployeeHomeShiftItem({ shift: s, events, todayDate, nowHm, late
       </Button>
     );
   } else if (s.status === 'ABSENT' || Boolean(s.isAbsentShift)) {
-    action = <Space size={6} wrap>{rejectedTag}<Tag color="red" style={{ margin: 0 }}>Vắng mặt (Quá giờ ca)</Tag><Link href="/nv/cong"><Button size="small" danger icon={<FormOutlined />}>{rejectedCode ? 'Gửi lại bù công' : 'Bổ sung công'}</Button></Link></Space>;
+    action = <Space size={6} wrap>{rejectedTag}<Tag color="red" style={{ margin: 0 }}>Vắng mặt</Tag><Link href="/nv/cong"><Button size="small" danger icon={<FormOutlined />}>{rejectedCode ? 'Gửi lại bù công' : 'Bổ sung công'}</Button></Link></Space>;
   } else if (Boolean(s.isForgotCheckout)) {
     action = <Space size={6} wrap>{rejectedTag}<Tag color="volcano" style={{ margin: 0 }}>Quên Ra ca (quá {lateHours} giờ sau giờ kết thúc ca)</Tag><Link href="/nv/cong"><Button size="small" danger icon={<FormOutlined />}>{rejectedCode ? 'Gửi lại phiếu Ra ca' : 'Gửi phiếu lỗi Ra ca'}</Button></Link></Space>;
   } else if (inEv && !outEv && isBeforeShiftEnd(s, todayDate, nowHm)) {

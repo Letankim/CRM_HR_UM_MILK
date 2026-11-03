@@ -156,7 +156,7 @@ export function QuickAbsentAdjustmentModal({
                 <strong>{shiftLabel}</strong>
                 <Tag color="red" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{startAt} – {endAt}</Tag>
                 <Tag color="volcano" style={{ margin: 0 }}>
-                  {inferAdjustmentPunchType(shift) === 'CHECK_OUT' ? 'Trạng thái: Quên Ra ca — Cần xác nhận giờ Ra ca' : 'Trạng thái: Vắng mặt — Cần bổ sung công'}
+                  {inferAdjustmentPunchType(shift) === 'CHECK_OUT' ? 'Trạng thái: Quên Ra ca — Cần xác nhận giờ Ra ca' : 'Trạng thái: Vắng mặt'}
                 </Tag>
               </Space>
             </Descriptions.Item>
