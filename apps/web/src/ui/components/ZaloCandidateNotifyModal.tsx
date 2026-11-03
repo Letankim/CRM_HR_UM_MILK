@@ -2,28 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { App, Button, Col, Form, Input, Modal, Radio, Row, Select, Space, Switch, Tag } from 'antd';
-import { CloseOutlined, CopyOutlined, SettingOutlined, SendOutlined } from '@ant-design/icons';
+import { CloseOutlined, CopyOutlined, LinkOutlined, SettingOutlined, SendOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { SYSTEM_CONFIG } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
-import type { ZaloHrAccountItem } from './ZaloHrAccountsModal';
+import type { ZaloHrAccountItem } from './zalo-accounts-types';
+import { renderLocalPreview, type ZaloNotifyTarget } from './zalo-notify-preview';
 
-export interface ZaloNotifyTarget {
-  candidateId?: string;
-  interviewId?: string;
-  candidateName: string;
-  candidateCode?: string;
-  candidatePhone: string;
-  candidateZaloId?: string;
-  zaloAccountId?: string;
-  positionLabel?: string;
-  branchName?: string;
-  interviewTime?: string;
-  meetLink?: string;
-  rsvpUrl?: string;
-  candidateConfirmed?: boolean;
-  defaultTemplateType?: 'GREETING' | 'INVITE' | 'REMINDER' | 'PASS';
-}
+export type { ZaloNotifyTarget } from './zalo-notify-preview';
 
 interface Props {
   target: ZaloNotifyTarget | null;
@@ -33,26 +18,6 @@ interface Props {
   onOpenAccountsConfig: () => void;
 }
 
-function renderLocalPreview(
-  tpl: string, target: ZaloNotifyTarget, acc?: ZaloHrAccountItem, isGreeting = false,
-): string {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-  const rendered = tpl
-    .replace(/\{candidate_name\}/g, target.candidateName || 'Bạn')
-    .replace(/\{candidate_code\}/g, target.candidateCode || 'UV')
-    .replace(/\{position\}/g, target.positionLabel || 'Nhân viên Cửa hàng')
-    .replace(/\{branch_name\}/g, target.branchName || SYSTEM_CONFIG.brandName)
-    .replace(/\{brand_name\}/g, SYSTEM_CONFIG.brandName)
-    .replace(/\{interview_time\}/g, target.interviewTime || 'theo lịch hẹn')
-    .replace(/\{meet_link\}/g, target.meetLink || 'https://meet.google.com/umb-milk-hr')
-    .replace(/\{rsvp_url\}/g, target.rsvpUrl || `${origin}/rsvp/xac-nhan`)
-    .replace(/\{hr_zalo_name\}/g, acc?.zalo_name || `HR ${SYSTEM_CONFIG.brandName}`)
-    .replace(/\{hr_zalo_phone\}/g, acc?.zalo_phone || '0901000002')
-    .replace(/\{minutes_left\}/g, '10')
-    .trim();
-  return isGreeting && rendered.length > 150 ? rendered.slice(0, 150).trim() : rendered;
-}
-
 export function ZaloCandidateNotifyModal({ target, accounts, currentUserId, onClose, onOpenAccountsConfig }: Props) {
   const qc = useQueryClient(), { message } = App.useApp();
   const [selectedAccId, setSelectedAccId] = useState<string>('');
@@ -60,6 +25,8 @@ export function ZaloCandidateNotifyModal({ target, accounts, currentUserId, onCl
   const [tplType, setTplType] = useState<'GREETING' | 'INVITE' | 'REMINDER' | 'PASS'>('INVITE');
   const [msgText, setMsgText] = useState<string>('');
   const [markConfirmed, setMarkConfirmed] = useState<boolean>(false);
+  const [rsvpUrl, setRsvpUrl] = useState<string>('');
+  const effTarget = target ? { ...target, rsvpUrl: rsvpUrl || target.rsvpUrl } : null;
 
   const selectedAcc = useMemo(
     () => accounts.find((a) => a.id === selectedAccId) ?? accounts[0],
@@ -79,6 +46,7 @@ export function ZaloCandidateNotifyModal({ target, accounts, currentUserId, onCl
     setCandZaloId(target.candidateZaloId || target.candidatePhone || '');
     setTplType(nextTpl);
     setMarkConfirmed(Boolean(target.candidateConfirmed));
+    setRsvpUrl(target.rsvpUrl || '');
     const rawTpl =
       nextTpl === 'GREETING' ? preferredAcc?.greeting_template
       : nextTpl === 'REMINDER' ? preferredAcc?.reminder_template
@@ -87,18 +55,31 @@ export function ZaloCandidateNotifyModal({ target, accounts, currentUserId, onCl
     setMsgText(renderLocalPreview(rawTpl || '', target, preferredAcc, nextTpl === 'GREETING'));
   }, [target, accounts, currentUserId]);
 
-  const handleAccountOrTplChange = (nextAccId: string, nextTpl: 'GREETING' | 'INVITE' | 'REMINDER' | 'PASS') => {
+  const handleAccountOrTplChange = (nextAccId: string, nextTpl: 'GREETING' | 'INVITE' | 'REMINDER' | 'PASS', urlOverride?: string) => {
     const acc = accounts.find((a) => a.id === nextAccId) ?? selectedAcc;
     setSelectedAccId(nextAccId);
     setTplType(nextTpl);
-    if (!target) return;
+    if (!effTarget) return;
     const rawTpl =
       nextTpl === 'GREETING' ? acc?.greeting_template
       : nextTpl === 'REMINDER' ? acc?.reminder_template
       : nextTpl === 'PASS' ? acc?.pass_template
       : acc?.invite_template;
-    setMsgText(renderLocalPreview(rawTpl || '', target, acc, nextTpl === 'GREETING'));
+    setMsgText(renderLocalPreview(rawTpl || '', urlOverride ? { ...effTarget, rsvpUrl: urlOverride } : effTarget, acc, nextTpl === 'GREETING'));
   };
+
+  const renewLinkMut = useMutation({
+    mutationFn: () => api.post<{ rsvp_url: string }>(`/admin/interviews/${target?.interviewId}/rsvp-link`, {}),
+    onSuccess: (res) => {
+      const oldUrl = rsvpUrl || target?.rsvpUrl || '';
+      setRsvpUrl(res.rsvp_url);
+      if (oldUrl && msgText.includes(oldUrl)) setMsgText(msgText.split(oldUrl).join(res.rsvp_url));
+      else if (target) handleAccountOrTplChange(selectedAcc?.id || '', tplType === 'GREETING' ? 'INVITE' : tplType, res.rsvp_url);
+      qc.invalidateQueries({ queryKey: ['interviews'] });
+      message.success('Đã tạo link xác nhận mới (hiệu lực 7 ngày) và cập nhật vào nội dung tin nhắn');
+    },
+    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Tạo link xác nhận mới thất bại'),
+  });
 
   const sendMut = useMutation({
     mutationFn: (mode: 'SEND' | 'COPY_AND_SAVE') =>
@@ -182,6 +163,7 @@ export function ZaloCandidateNotifyModal({ target, accounts, currentUserId, onCl
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                <Button size="small" icon={<LinkOutlined />} loading={renewLinkMut.isPending} onClick={() => renewLinkMut.mutate()}>Tạo link xác nhận mới</Button>
                 <span style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', whiteSpace: 'nowrap' }}>Đã xác nhận lịch:</span>
                 <Switch size="small" checked={markConfirmed} onChange={setMarkConfirmed} />
               </div>

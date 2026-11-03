@@ -13,6 +13,7 @@ import { resolveShiftLabel, resolveStaffGroupLabel } from './employee-mapper.js'
 import { interviewRoutes } from './interviews.routes.js';
 import { recruitmentRsvpRoutes } from './recruitment-rsvp.routes.js';
 import { recruitmentZaloRoutes } from './recruitment-zalo.routes.js';
+import { recruitmentRsvpLinkRoutes } from './recruitment-rsvp-link.routes.js';
 import { testBankRoutes } from './test-bank.routes.js';
 
 const zCandidateListQuery = zListQueryBase.extend({
@@ -206,5 +207,6 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
   await interviewRoutes(app, ctx);
   await recruitmentRsvpRoutes(app, ctx);
   await recruitmentZaloRoutes(app, ctx);
+  await recruitmentRsvpLinkRoutes(app, ctx);
   await testBankRoutes(app, ctx);
 }

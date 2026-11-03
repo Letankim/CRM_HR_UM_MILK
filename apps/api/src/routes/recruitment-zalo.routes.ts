@@ -95,9 +95,29 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
       pass_template: body.pass_template || DEFAULT_ZALO_TEMPLATES.pass,
     };
 
+    const label = `${ownerUser.display_name} (@${ownerUser.username}) — ${secret.zalo_name} (${phone})`;
+    const duplicated = ctx.db.systemSettings.filter((s) => s.category === ZALO_HR_SETTING_CATEGORY && s.note === ownerUser.id).find((r) => {
+      const dec = decryptZaloPayload(ctx, r.value);
+      return Boolean(dec && (dec.zalo_phone === phone || (body.zalo_id && dec.zalo_id === body.zalo_id)));
+    });
+    if (duplicated) {
+      const prev = decryptZaloPayload(ctx, duplicated.value), fresh = ctx.db.systemSettings.get(duplicated.id) ?? duplicated;
+      const merged: StoredZaloAccountSecret = {
+        ...secret, zalo_id: prev?.zalo_id || secret.zalo_id,
+        access_token: prev?.access_token?.startsWith('{') ? prev.access_token : secret.access_token,
+        greeting_template: body.greeting_template || prev?.greeting_template || secret.greeting_template,
+        invite_template: body.invite_template || prev?.invite_template || secret.invite_template,
+        reminder_template: body.reminder_template || prev?.reminder_template || secret.reminder_template,
+        pass_template: body.pass_template || prev?.pass_template || secret.pass_template,
+      };
+      await ctx.db.systemSettings.update(fresh.id, fresh.version, { label, value: encryptZaloPayload(ctx, merged) }, actor.id);
+      const refreshed = await listHrZaloAccounts(ctx);
+      return sendSuccess(request, `Tài khoản Zalo "${secret.zalo_name}" đã được liên kết trước đó, hệ thống đã cập nhật lại thông tin`, refreshed.find((a) => a.id === duplicated.id) ?? refreshed[0]);
+    }
+
     const created = await ctx.db.systemSettings.insert({
       key: `ZALO_ACC_${ownerUser.id}_${Date.now()}`, category: ZALO_HR_SETTING_CATEGORY,
-      label: `${ownerUser.display_name} (@${ownerUser.username}) — ${secret.zalo_name} (${phone})`,
+      label,
       note: ownerUser.id, value_type: 'ENCRYPTED_JSON', value: encryptZaloPayload(ctx, secret),
     }, actor.id);
 
@@ -193,7 +213,7 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
     if (activeIv) {
       const resetForNewInvite = body.template_type === 'INVITE' && body.mark_confirmed === undefined;
       await ctx.db.interviews.update(activeIv.id, activeIv.version, {
-        candidate_zalo_id: body.candidate_zalo_id, zalo_account_id: zaloResolved.dto.id, rsvp_token: activeIv.rsvp_token || rsvp.token,
+        candidate_zalo_id: body.candidate_zalo_id, zalo_account_id: zaloResolved.dto.id, rsvp_token: rsvp.token,
         candidate_confirmed: body.mark_confirmed !== undefined ? body.mark_confirmed : resetForNewInvite ? false : activeIv.candidate_confirmed,
         reschedule_requested: resetForNewInvite ? false : activeIv.reschedule_requested,
         status: body.mark_confirmed === true ? 'CONFIRMED' : resetForNewInvite ? 'SCHEDULED' : activeIv.status,

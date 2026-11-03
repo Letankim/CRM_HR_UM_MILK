@@ -3,7 +3,7 @@ import { ROLE_LABELS, SYSTEM_CONFIG, normalizePhone } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { nowIso } from '../lib/time.js';
 import { webOrigin } from './account-email-dispatcher.js';
-import { createRsvpToken } from './candidate-form-scorer.js';
+import { createRsvpToken, verifyRsvpToken } from './candidate-form-scorer.js';
 
 export const ZALO_HR_SETTING_CATEGORY = 'ZALO_HR_ACCOUNT';
 const ENCRYPTION_PREFIX = 'enc:v1:';
@@ -186,10 +186,14 @@ export function renderZaloMessageTemplate(
     .replace(/\{minutes_left\}/g, String(vars.minutesLeft ?? 10));
 }
 
-export function ensureInterviewRsvpUrl(ctx: AppContext, interviewId: string, candidateId: string, existingToken?: string): { token: string; url: string } {
-  const token = existingToken || createRsvpToken({ interviewId, candidateId });
+/** Dùng lại link xác nhận còn hạn; tự cấp link mới khi link cũ đã hết hạn (7 ngày) hoặc khi HR yêu cầu tạo mới (`forceNew`). */
+export function ensureInterviewRsvpUrl(
+  ctx: AppContext, interviewId: string, candidateId: string, existingToken?: string, options?: { forceNew?: boolean },
+): { token: string; url: string; renewed: boolean } {
+  const reusable = Boolean(existingToken) && !options?.forceNew && verifyRsvpToken(existingToken as string).valid;
+  const token = reusable ? (existingToken as string) : createRsvpToken({ interviewId, candidateId });
   const base = (webOrigin(ctx) || ctx.env.API_PUBLIC_ORIGIN || 'http://localhost:3000').replace(/\/$/, '');
-  return { token, url: `${base}/rsvp/${token}` };
+  return { token, url: `${base}/rsvp/${token}`, renewed: !reusable };
 }
 
 export async function recordZaloDeliveryLog(

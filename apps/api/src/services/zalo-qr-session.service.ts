@@ -153,13 +153,13 @@ export async function startZaloQrLoginSession(
         const zaloId = String(ownId || `zalo_${zaloPhone}`);
         const credsJson = capturedCreds ? JSON.stringify(capturedCreds) : `zalo_session_${zaloId}_${Date.now()}`;
 
-        const saved = await persistConfirmedZaloSession(ctx, state, { zaloId, zaloName, zaloPhone, credentialsJson: credsJson });
-        if (saved) zaloApiClients.set(saved.id, api);
         state.zalo_id = zaloId;
         state.zalo_name = zaloName;
         state.zalo_phone = zaloPhone;
-        state.saved_account = saved;
         state.status = 'CONFIRMED';
+        const saved = await persistConfirmedZaloSession(ctx, state, { zaloId, zaloName, zaloPhone, credentialsJson: credsJson });
+        if (saved) zaloApiClients.set(saved.id, api);
+        state.saved_account = saved;
       })
       .catch(() => {
         clearTimeout(timer);

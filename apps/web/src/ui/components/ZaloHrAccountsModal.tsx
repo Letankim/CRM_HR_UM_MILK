@@ -9,14 +9,9 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, ApiClientError } from '@/lib/api';
 import { applyApiFormErrors } from '@/lib/form-error';
+import { TEMPLATE_VARS, type QrSessionDto, type ZaloHrAccountItem } from './zalo-accounts-types';
 
-export interface ZaloHrAccountItem {
-  id: string; setting_key: string; owner_user_id: string; owner_username: string; owner_display_name: string;
-  owner_role_label: string; zalo_name: string; zalo_phone: string; zalo_id: string; has_credentials: boolean;
-  masked_credentials: string; encrypted_preview: string; is_default: boolean; status: 'ACTIVE' | 'INACTIVE';
-  greeting_template: string; invite_template: string; reminder_template: string; pass_template: string;
-  updated_at: string; version: number;
-}
+export type { ZaloHrAccountItem } from './zalo-accounts-types';
 
 interface Props {
   open: boolean; accounts: ZaloHrAccountItem[];
@@ -24,13 +19,6 @@ interface Props {
   userOptions: { value: string; label: string }[]; currentUserId?: string; onClose: () => void;
 }
 
-interface QrSessionDto {
-  session_id: string; qr_image?: string; qr_url: string; session_token: string;
-  status: 'PENDING' | 'SCANNED' | 'CONFIRMED' | 'DECLINED' | 'EXPIRED'; expires_in: number;
-  scanned_display_name?: string; scanned_avatar?: string; zalo_name?: string; zalo_phone?: string;
-}
-
-const TEMPLATE_VARS = ['{candidate_name}', '{candidate_code}', '{position}', '{branch_name}', '{interview_time}', '{meet_link}', '{rsvp_url}', '{hr_zalo_name}', '{hr_zalo_phone}'];
 
 export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOptions, currentUserId, onClose }: Props) {
   const qc = useQueryClient(), { message } = App.useApp(), [accForm] = Form.useForm(), [tplForm] = Form.useForm();
@@ -63,18 +51,26 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
     return () => clearInterval(timer);
   }, [open, activeTab, qrSession.status]);
   useEffect(() => {
-    if (!open || activeTab !== 'accounts' || qrSession.session_id === 'zqr_init' || qrSession.status === 'CONFIRMED' || qrSession.status === 'DECLINED' || secondsLeft <= 0) return;
+    if (!open || activeTab !== 'accounts' || editing || qrSession.session_id === 'zqr_init') return;
+    const finished = qrSession.status === 'DECLINED' || qrSession.status === 'EXPIRED' || (qrSession.status === 'CONFIRMED' && Boolean(qrSession.saved_account));
+    if (finished || (secondsLeft <= 0 && qrSession.status === 'PENDING')) return;
     const poll = setInterval(async () => {
       try {
         const st = await api.get<QrSessionDto>(`/admin/recruitment/zalo-qr-session/${qrSession.session_id}`);
         setQrSession((prev) => ({ ...prev, ...st }));
         if (st.scanned_display_name) accForm.setFieldValue('zalo_name', st.scanned_display_name);
+        if (st.zalo_name) accForm.setFieldValue('zalo_name', st.zalo_name);
         if (st.zalo_phone) accForm.setFieldValue('zalo_phone', st.zalo_phone);
-        if (st.status === 'CONFIRMED') { message.success(`Đã quét mã QR trên điện thoại và liên kết Zalo "${st.zalo_name || st.scanned_display_name || ''}" thành công!`); qc.invalidateQueries({ queryKey: ['recruitment-zalo-accounts'] }); }
+        if (st.status === 'CONFIRMED' && st.saved_account) {
+          const saved = st.saved_account;
+          qc.setQueryData<{ items: ZaloHrAccountItem[] }>(['recruitment-zalo-accounts'], (old) => old ? { ...old, items: [saved, ...old.items.filter((a) => a.id !== saved.id)] } : old);
+          setEditing(saved); qc.invalidateQueries({ queryKey: ['recruitment-zalo-accounts'] });
+          message.success(`Đã liên kết Zalo "${saved.zalo_name}" thành công, tài khoản đã hiển thị trong danh sách`);
+        }
       } catch { /* ignore polling error */ }
-    }, 2200);
+    }, 1000);
     return () => clearInterval(poll);
-  }, [open, activeTab, qrSession.session_id, qrSession.status, secondsLeft]);
+  }, [open, activeTab, editing, qrSession.session_id, qrSession.status, qrSession.saved_account, secondsLeft]);
 
   const startEdit = (item: ZaloHrAccountItem) => {
     setEditing(item); setQrSession((p) => ({ ...p, status: 'CONFIRMED' })); setActiveTab('accounts');
@@ -129,7 +125,7 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
                       <Col xs={24} md={8}>
                         <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: 4, padding: 12, textAlign: 'center' }}>
                           <Tag color={isConfirmed ? 'success' : isScanned ? 'warning' : 'processing'} icon={isConfirmed ? <CheckCircleOutlined /> : isScanned ? <MobileOutlined /> : <QrcodeOutlined />} style={{ marginBottom: 6, fontWeight: 600 }}>
-                            {isConfirmed ? 'Đã xác thực QR Zalo' : isScanned ? `Đã quét: ${qrSession.scanned_display_name || 'Chờ xác nhận ĐT'}` : `Quét mã QR bằng Zalo (${mm}:${ss})`}
+                            {isConfirmed ? (qrSession.saved_account || editing ? 'Đã xác thực QR Zalo' : 'Đã đăng nhập, đang lưu tài khoản...') : isScanned ? `Đã quét: ${qrSession.scanned_display_name || 'Chờ xác nhận ĐT'}` : `Quét mã QR bằng Zalo (${mm}:${ss})`}
                           </Tag>
                           <div style={{ fontSize: 12, color: '#475569', marginBottom: 8 }}>
                             {isScanned ? 'Vui lòng bấm nút "Đăng nhập" trên ứng dụng Zalo điện thoại để hoàn tất.' : 'Mở ứng dụng Zalo trên điện thoại và quét mã QR bên dưới để đăng nhập.'}
