@@ -27,8 +27,14 @@ export function dataUrlToBlob(dataUrl: string, fallbackMime = 'application/pdf')
   try {
     const idx = dataUrl.indexOf(';base64,');
     if (idx < 0) return null;
-    const mime = dataUrl.slice(5, idx).trim() || fallbackMime;
-    const raw = window.atob(dataUrl.slice(idx + 8).replace(/\s+/g, ''));
+    const b64 = dataUrl.slice(idx + 8).replace(/\s+/g, '');
+    let mime = dataUrl.slice(5, idx).trim() || fallbackMime;
+    if (b64.startsWith('iVBORw0KGgo')) mime = 'image/png';
+    else if (b64.startsWith('/9j/')) mime = 'image/jpeg';
+    else if (b64.startsWith('UklGR')) mime = 'image/webp';
+    else if (b64.startsWith('R0lGOD')) mime = 'image/gif';
+    else if (b64.startsWith('JVBERi0')) mime = 'application/pdf';
+    const raw = window.atob(b64);
     const u8 = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i++) u8[i] = raw.charCodeAt(i);
     return { blob: new Blob([u8], { type: mime }), mime };
@@ -91,17 +97,18 @@ export function ContractPreviewModal({
   const targetId = contractItem?.id || 'electronic';
 
   const detailQ = useQuery({
-    queryKey: ['employee-contract-detail', employee?.id, targetId],
-    enabled: open && Boolean(employee?.id), retry: false,
+    queryKey: ['employee-contract-detail', employee?.id, targetId, contractItem?.fileName, contractItem?.uploadedAt],
+    enabled: open && Boolean(employee?.id), retry: false, staleTime: 0,
     queryFn: () => api.get<ContractDetailResponse>(`/admin/employees/${employee!.id}/contracts/${targetId}`),
   });
 
   const activeContract = detailQ.data?.contract ?? contractItem;
   const dataUrl = detailQ.data?.dataUrl ?? null;
-  const actualMime = (dataUrl?.match(/^data:([^;]+);base64,/)?.[1] || detailQ.data?.actualMimeType || activeContract?.mimeType || 'application/pdf').toLowerCase();
+  const parsedPreview = dataUrl ? dataUrlToBlob(dataUrl, detailQ.data?.actualMimeType || activeContract?.mimeType || 'application/pdf') : null;
+  const actualMime = (parsedPreview?.mime || detailQ.data?.actualMimeType || activeContract?.mimeType || 'application/pdf').toLowerCase();
   const rawFileName = activeContract?.fileName || `${employee?.employeeCode || 'NV'}_Hop_dong_lao_dong.pdf`;
   const fileName = ensureFileExtensionForMime(rawFileName, actualMime);
-  const isImage = actualMime.startsWith('image/');
+  const isImage = actualMime.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(fileName);
   const isWord = actualMime.includes('word') || /\.(doc|docx)$/i.test(fileName);
 
   useEffect(() => {
@@ -128,20 +135,18 @@ export function ContractPreviewModal({
     const parsed = dataUrlToBlob(dataUrl, actualMime);
     if (!parsed) return;
     const tabUrl = URL.createObjectURL(parsed.blob);
-    window.open(tabUrl, '_blank', 'noopener,noreferrer');
+    window.open(tabUrl, '_blank');
     window.setTimeout(() => URL.revokeObjectURL(tabUrl), 300_000);
   };
 
   return (
     <Modal
       width="min(940px, 95vw)" style={{ top: 18 }} open={open && Boolean(employee)} destroyOnHidden onCancel={onClose}
-      title={<span>Xem &amp; Tải về Hợp đồng Lao động: <b>{fileName}</b>{employee ? ` — ${employee.fullName} (${employee.employeeCode})` : ''}</span>}
+      title={<span>Xem &amp; Tải về Hợp đồng Lao động{employee ? ` — ${employee.fullName} (${employee.employeeCode})` : ''}</span>}
       footer={
-        <Space wrap>
-          <Button icon={<ExportOutlined />} onClick={handleOpenNewTab} disabled={!dataUrl || detailQ.isLoading}>Mở xem trong tab mới</Button>
-          <Button type="primary" icon={<DownloadOutlined />} onClick={handleDownloadFile} disabled={!dataUrl || detailQ.isLoading}>Tải hợp đồng về máy ({fileName})</Button>
-          <Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
-        </Space>
+        <Button icon={<CloseOutlined />} onClick={onClose}>
+          Đóng
+        </Button>
       }
     >
       <Spin spinning={detailQ.isLoading} tip="Đang đồng bộ tệp hợp đồng từ Google Drive...">

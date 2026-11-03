@@ -120,7 +120,7 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
     const contractId = `ctr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, fileDiskName = `${contractId}_${safeName}`;
     const localBackupPath = `storage/contracts/${safeCode}/${fileDiskName}`;
     await saveContractToDisk(ctx, safeCode, fileDiskName, buffer);
-    let driveFileId = `drv_${contractId}`;
+    let driveFileId = `local_${contractId}`;
     if (ctx.google.uploadDriveMedia) {
       try {
         const up = await ctx.google.uploadDriveMedia({ rootFolder: DRIVE_FOLDERS.EMPLOYEE_DOCUMENTS, folderSegments: [safeCode], fileName: `${safeCode}_${body.contract_type}_${safeName}`, mimeType: check.detectedMime, data: buffer });
@@ -130,7 +130,8 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
     putContractCache([contractId, driveFileId], buffer, check.detectedMime);
     const actor = request.auth!.user;
     const item: EmployeeContractItem = { id: contractId, contractType: body.contract_type, fileName: body.file_name, mimeType: check.detectedMime, sizeBytes: buffer.length, driveFileId, localBackupPath, uploadedBy: actor.username || actor.id, uploadedAt: nowIso(), note: body.note };
-    const nextContracts = [...parseEmployeeContracts(emp.contracts_json), item];
+    const existing = parseEmployeeContracts(emp.contracts_json).filter((c) => !c.driveFileId?.startsWith('drv_ctr_'));
+    const nextContracts = [item, ...existing];
     await ctx.db.employees.update(emp.id, emp.version, { contracts_json: JSON.stringify(nextContracts) }, actor.id);
     await ctx.audit.record(auditContext(request), { action: 'employee.contract.upload', entity: 'EMPLOYEES', entityId: emp.id, after: { contractId: item.id, contractType: item.contractType, fileName: item.fileName, sizeBytes: item.sizeBytes, driveFileId: item.driveFileId } });
     reply.code(201);

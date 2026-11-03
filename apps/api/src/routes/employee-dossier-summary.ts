@@ -6,7 +6,8 @@ function parseContractsSafe(raw?: string | null): EmployeeContractItem[] {
   if (!raw || !raw.trim()) return [];
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as EmployeeContractItem[]) : [];
+    if (!Array.isArray(parsed)) return [];
+    return (parsed as EmployeeContractItem[]).slice().sort((a, b) => (b.uploadedAt || '').localeCompare(a.uploadedAt || ''));
   } catch {
     return [];
   }

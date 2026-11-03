@@ -28,7 +28,8 @@ export function parseEmployeeContracts(raw?: string | null): EmployeeContractIte
   if (!raw?.trim()) return [];
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as EmployeeContractItem[]) : [];
+    if (!Array.isArray(parsed)) return [];
+    return (parsed as EmployeeContractItem[]).slice().sort((a, b) => (b.uploadedAt || '').localeCompare(a.uploadedAt || ''));
   } catch {
     return [];
   }
@@ -50,7 +51,7 @@ export async function deleteContractFromDisk(ctx: AppContext, safeCode: string, 
 export async function syncEmployeeContractsWithDrive(ctx: AppContext, emp: Employee): Promise<EmployeeContractItem[]> {
   const items = parseEmployeeContracts(emp.contracts_json);
   if (!ctx.google.listDriveFolderFiles) return items;
-  const needsHeal = items.length === 0 || items.some((c) => !c.driveFileId || c.driveFileId.startsWith('drv_'));
+  const needsHeal = items.length === 0 || items.some((c) => !c.driveFileId || c.driveFileId.startsWith('drv_ctr_'));
   if (!needsHeal) return items;
 
   const safeCode = emp.employee_code.replace(/[^a-zA-Z0-9_-]/g, '');
@@ -78,9 +79,10 @@ export async function syncEmployeeContractsWithDrive(ctx: AppContext, emp: Emplo
     }
   } else {
     for (const item of items) {
-      if (!item.driveFileId || item.driveFileId.startsWith('drv_')) {
+      if (contractRamCache.has(item.id)) continue;
+      if (!item.driveFileId || item.driveFileId.startsWith('drv_ctr_')) {
         const safeName = item.fileName.replace(/[^a-zA-Z0-9._-]/g, '_').toLowerCase();
-        const matched = empDriveFiles.find((f) => safeName && f.name.toLowerCase().includes(safeName)) ?? empDriveFiles[0];
+        const matched = empDriveFiles.find((f) => safeName && f.name.toLowerCase().includes(safeName));
         if (matched?.id) {
           item.driveFileId = matched.id;
           if (matched.mimeType && matched.mimeType !== 'application/octet-stream') item.mimeType = matched.mimeType;
@@ -187,8 +189,7 @@ export async function resolveContractFileBuffer(ctx: AppContext, emp: Employee, 
     const folderFiles = await ctx.google.listDriveFolderFiles({ rootFolder: DRIVE_FOLDERS.EMPLOYEE_DOCUMENTS, folderSegments: [safeCode] });
     const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_').toLowerCase();
     const matched = folderFiles.find((f) => safeName && f.name.toLowerCase().includes(safeName))
-      ?? folderFiles.find((f) => f.name.toUpperCase().includes(safeCode.toUpperCase()))
-      ?? folderFiles[0];
+      ?? (target?.driveFileId?.startsWith('drv_ctr_') ? folderFiles.find((f) => f.name.toUpperCase().includes(safeCode.toUpperCase())) : undefined);
     if (matched?.id) {
       const driveBuf = await ctx.google.downloadDriveFile(matched.id);
       if (driveBuf && driveBuf.length > 0) {
