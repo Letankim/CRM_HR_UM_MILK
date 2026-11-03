@@ -11,7 +11,7 @@ import dayjs from 'dayjs';
 import { CONTRACT_MAX_SIZE_BYTES, CONTRACT_TYPE_LABELS, verifyContractMagicBytes, type ContractType, type EmployeeContractItem } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { StatusTag } from '../StatusTag';
-import { ContractPreviewModal } from './ContractPreviewModal';
+import { ContractPreviewModal, downloadEmployeeContractDirect } from './ContractPreviewModal';
 import type { EmployeeRowItem } from './employee-table-columns';
 import { useWorkflowDecisionModal } from './WorkflowDecisionModal';
 
@@ -160,8 +160,8 @@ export function EmployeeContractStorePanel({ employee, canManage = false }: { em
             <Tag color={contracts.length > 0 ? 'geekblue' : 'default'} style={{ margin: 0, fontWeight: 600 }}>{contracts.length} văn bản</Tag>
             {contracts.length > 0 && (
               <>
-                <Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewState({ open: true, item: contracts[0]!, autoDownload: false })}>Xem hợp đồng</Button>
-                <Button size="small" icon={<DownloadOutlined />} onClick={() => setPreviewState({ open: true, item: contracts[0]!, autoDownload: true })}>Tải về</Button>
+                <Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewState({ open: true, item: contracts[0]! })}>Xem hợp đồng</Button>
+                <Button size="small" icon={<DownloadOutlined />} onClick={() => void downloadEmployeeContractDirect(employee, contracts[0]!, message)}>Tải về</Button>
               </>
             )}
           </Space>
@@ -198,7 +198,7 @@ export function EmployeeContractStorePanel({ employee, canManage = false }: { em
               { title: 'Tên tệp hợp đồng (Bấm để xem)', key: 'file', render: (_, r) => <div><Typography.Link strong onClick={() => setPreviewState({ open: true, item: r, autoDownload: false })}>{r.fileName}</Typography.Link><div style={{ fontSize: 11, color: '#64748B' }}>Dung lượng: {fmtSizeKb(r.sizeBytes)}</div></div> },
               { title: 'Ghi chú / Số hợp đồng', dataIndex: 'note', ellipsis: true, render: (v: string) => v || '—' },
               { title: 'Ngày tải lên', dataIndex: 'uploadedAt', width: 135, render: (v: string) => <span className="num" style={{ fontSize: 12 }}>{v ? dayjs(v).format('HH:mm DD/MM/YYYY') : '—'}</span> },
-              { title: 'Thao tác', key: 'act', width: canManage ? 210 : 165, align: 'right' as const, render: (_: unknown, r: EmployeeContractItem) => <Space size={4} onClick={(e) => e.stopPropagation()}><Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewState({ open: true, item: r, autoDownload: false })}>Xem</Button><Button size="small" icon={<DownloadOutlined />} onClick={() => setPreviewState({ open: true, item: r, autoDownload: true })}>Tải về</Button>{canManage && <Popconfirm title="Xóa văn bản hợp đồng này?" okText="Xóa" cancelText="Hủy" onConfirm={() => deleteMut.mutate(r.id)}><Button size="small" danger icon={<DeleteOutlined />} loading={deleteMut.isPending} /></Popconfirm>}</Space> },
+              { title: 'Thao tác', key: 'act', width: canManage ? 210 : 165, align: 'right' as const, render: (_: unknown, r: EmployeeContractItem) => <Space size={4} onClick={(e) => e.stopPropagation()}><Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewState({ open: true, item: r })}>Xem</Button><Button size="small" icon={<DownloadOutlined />} onClick={() => void downloadEmployeeContractDirect(employee, r, message)}>Tải về</Button>{canManage && <Popconfirm title="Xóa văn bản hợp đồng này?" okText="Xóa" cancelText="Hủy" onConfirm={() => deleteMut.mutate(r.id)}><Button size="small" danger icon={<DeleteOutlined />} loading={deleteMut.isPending} /></Popconfirm>}</Space> },
             ]}
           />
         )}

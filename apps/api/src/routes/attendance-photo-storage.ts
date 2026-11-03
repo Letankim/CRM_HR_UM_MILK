@@ -174,13 +174,17 @@ export async function loadAttendancePhotoBuffer(ctx: AppContext, fileId: string)
   if (!safeId) return null;
   const ramHit = photoRamCache.get(safeId) ?? photoRamCache.get(sanitizeFileId(fileId));
   if (ramHit) { putPhotoCache(safeId, ramHit); return ramHit; }
-  const cachePath = join(getLocalPhotosDir(ctx), `${safeId}.jpg`);
-  if (existsSync(cachePath)) {
-    try { const buf = readFileSync(cachePath); putPhotoCache(safeId, buf); return buf; } catch { /* fallback drive */ }
+  for (const dir of [getLocalPhotosDir(ctx), join(process.cwd(), 'apps', 'api', 'storage', 'attendance-photos')]) {
+    for (const ext of ['jpg', 'png']) {
+      const p = join(dir, `${safeId}.${ext}`);
+      if (existsSync(p)) {
+        try { const buf = readFileSync(p); putPhotoCache(safeId, buf); return buf; } catch { /* next */ }
+      }
+    }
   }
   if (ctx.google.downloadDriveFile && !safeId.startsWith('local_')) {
     const buf = await ctx.google.downloadDriveFile(safeId);
-    if (buf) { savePhotoLocally(ctx, safeId, buf); return buf; }
+    if (buf && buf.length > 0) { savePhotoLocally(ctx, safeId, buf); return buf; }
   }
   return null;
 }

@@ -121,16 +121,16 @@ export async function loadPayrollMediaBuffer(ctx: AppContext, fileId?: string | 
   const ram = mediaRamCache.get(safeKey);
   if (ram) return ram;
 
-  const dir = getLocalMediaDir(ctx);
-  for (const candidate of [`${safeKey}.png`, `${safeKey}.jpg`]) {
-    const p = join(dir, candidate);
-    if (existsSync(p)) {
-      try {
-        const buffer = readFileSync(p);
-        const { mimeType } = detectImageMime(buffer);
-        putMediaCache(ctx, safeKey, buffer, mimeType);
-        return { buffer, mimeType };
-      } catch { /* fallback drive */ }
+  for (const dir of [getLocalMediaDir(ctx), join(process.cwd(), 'apps', 'api', 'storage', 'payroll-media')]) {
+    for (const candidate of [`${safeKey}.png`, `${safeKey}.jpg`]) {
+      const p = join(dir, candidate);
+      if (existsSync(p)) {
+        try {
+          const buffer = readFileSync(p), { mimeType } = detectImageMime(buffer);
+          putMediaCache(ctx, safeKey, buffer, mimeType);
+          return { buffer, mimeType };
+        } catch { /* fallback drive */ }
+      }
     }
   }
   const driveKey = localToDriveAlias.get(safeKey) ?? safeKey;

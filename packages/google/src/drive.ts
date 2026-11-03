@@ -155,6 +155,40 @@ export async function listChildFolders(drive: drive_v3.Drive, parentId: string):
   return out;
 }
 
+export async function listFolderFiles(
+  drive: drive_v3.Drive,
+  parentId: string,
+): Promise<{ id: string; name: string; mimeType: string; sizeBytes: number; createdTime: string }[]> {
+  const res = await withRetry(() =>
+    drive.files.list({
+      q: `mimeType!='${FOLDER_MIME}' and '${escapeQuery(parentId)}' in parents and trashed=false`,
+      orderBy: 'createdTime desc',
+      fields: 'files(id,name,mimeType,size,createdTime)',
+      pageSize: 50,
+    }),
+  );
+  return (res.data.files ?? [])
+    .filter((f): f is { id: string; name?: string | null; mimeType?: string | null; size?: string | null; createdTime?: string | null } => Boolean(f.id))
+    .map((f) => ({ id: f.id, name: f.name ?? '', mimeType: f.mimeType ?? 'application/octet-stream', sizeBytes: Number(f.size ?? 0), createdTime: f.createdTime ?? '' }));
+}
+
+export async function findExistingFolderPath(drive: drive_v3.Drive, rootId: string, segments: string[]): Promise<string | null> {
+  const cache = getFolderCache(drive);
+  let current = rootId;
+  for (const seg of segments) {
+    const cacheKey = `${current}::${seg}`;
+    const hit = cache.resolved.get(cacheKey);
+    if (hit) { current = hit; continue; }
+    const q = `mimeType='${FOLDER_MIME}' and name='${escapeQuery(seg)}' and '${escapeQuery(current)}' in parents and trashed=false`;
+    const found = await withRetry(() => drive.files.list({ q, fields: 'files(id,name)', pageSize: 1 }));
+    const existing = found.data.files?.[0]?.id;
+    if (!existing) return null;
+    cache.resolved.set(cacheKey, existing);
+    current = existing;
+  }
+  return current;
+}
+
 /** Đưa vào thùng rác (khôi phục được trong 30 ngày) thay vì xóa vĩnh viễn. */
 export async function trashFile(drive: drive_v3.Drive, fileId: string): Promise<void> {
   await withRetry(() => drive.files.update({ fileId, requestBody: { trashed: true } }));

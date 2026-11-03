@@ -1,6 +1,3 @@
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
@@ -13,6 +10,17 @@ import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { findLinkedEmployeeForUser, mapEmployeeRecord } from './employee-mapper.js';
+import {
+  deleteContractFromDisk,
+  evictContractCache,
+  parseEmployeeContracts,
+  putContractCache,
+  resolveContractFileBuffer,
+  saveContractToDisk,
+  syncEmployeeContractsWithDrive,
+} from './employee-contract-storage.js';
+
+export { parseEmployeeContracts } from './employee-contract-storage.js';
 
 const zUploadContractBody = z.object({
   contract_type: z.enum(CONTRACT_TYPES, { errorMap: () => ({ message: 'Loại hợp đồng phải là Hợp đồng Thử việc hoặc Hợp đồng Chính thức' }) }).default('PROBATION_CONTRACT'),
@@ -34,59 +42,10 @@ const zMeetEvaluationBody = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
-export function parseEmployeeContracts(raw?: string | null): EmployeeContractItem[] {
-  if (!raw?.trim()) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as EmployeeContractItem[]) : [];
-  } catch { return []; }
-}
-
 function findEmployeeOrThrow(ctx: AppContext, idOrCode: string): Employee {
   const clean = idOrCode.trim(), emp = ctx.db.employees.get(clean) ?? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === clean.toUpperCase());
   if (!emp) throw Errors.notFound('Không tìm thấy hồ sơ nhân sự');
   return emp;
-}
-
-function buildFallbackContractPdf(emp: Employee, target?: EmployeeContractItem | null): Buffer {
-  const safeAscii = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').replace(/[()\\]/g, '');
-  const cLabel = target?.contractType === 'OFFICIAL_CONTRACT' ? 'HOP DONG LAO DONG CHINH THUC' : 'HOP DONG THU VIEC & DAO TAO';
-  const stream = [
-    'BT', '/F1 16 Tf', '50 760 Td', '(CONG TY TNHH UM BO MILK VIET NAM - HE THONG NHAN SU) Tj',
-    '/F1 13 Tf', '0 -28 Td', `(${cLabel}) Tj`, '/F1 11 Tf',
-    '0 -26 Td', `(Ho va ten nhan su: ${safeAscii(emp.full_name)} - Ma NV: ${safeAscii(emp.employee_code)}) Tj`,
-    '0 -20 Td', `(Tep hop dong: ${safeAscii(target?.fileName || 'Hop_dong_lao_dong.pdf')}) Tj`,
-    '0 -20 Td', `(Thoi gian luu tru: ${safeAscii(target?.uploadedAt || emp.probation_start || emp.created_at || '')}) Tj`,
-    '0 -20 Td', `(So hop dong / Ghi chu: ${safeAscii(target?.note || 'Ho so hop dong nhan su hop le')}) Tj`,
-    '0 -28 Td', '(Van ban hop dong lao dong da duoc xac thuc va luu tru tren he thong Um Bo Milk HR.) Tj', 'ET',
-  ].join('\n');
-  const pdf = [
-    '%PDF-1.4', '1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj', '2 0 obj <</Type /Pages /Kids [3 0 R] /Count 1>> endobj',
-    '3 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources <</Font <</F1 4 0 R>>>> /Contents 5 0 R>> endobj',
-    '4 0 obj <</Type /Font /Subtype /Type1 /BaseFont /Helvetica>> endobj',
-    `5 0 obj <</Length ${stream.length}>> stream\n${stream}\nendstream endobj`,
-    'xref', '0 6', '0000000000 65535 f ', '0000000009 00000 n ', '0000000056 00000 n ',
-    '0000000111 00000 n ', '0000000212 00000 n ', '0000000280 00000 n ',
-    'trailer <</Size 6 /Root 1 0 R>>', 'startxref', '400', '%%EOF',
-  ].join('\n');
-  return Buffer.from(pdf, 'utf-8');
-}
-
-async function resolveContractFileBuffer(ctx: AppContext, emp: Employee, target?: EmployeeContractItem | null): Promise<{ buffer: Buffer; mime: string }> {
-  const safeCode = emp.employee_code.replace(/[^a-zA-Z0-9_-]/g, '');
-  const filePart = target?.localBackupPath?.split('/').pop() || '';
-  const candidates = filePart ? [
-    join(ctx.env.LOCAL_STORAGE_DIR || './storage', 'contracts', safeCode, filePart),
-    join(process.cwd(), 'apps', 'api', 'storage', 'contracts', safeCode, filePart),
-    join(process.cwd(), 'storage', 'contracts', safeCode, filePart),
-    ...(target?.localBackupPath ? [join(process.cwd(), target.localBackupPath), join(process.cwd(), 'apps', 'api', target.localBackupPath)] : []),
-  ] : [];
-  for (const p of candidates) {
-    if (existsSync(p)) {
-      try { return { buffer: await readFile(p), mime: target?.mimeType || 'application/pdf' }; } catch { /* next */ }
-    }
-  }
-  return { buffer: buildFallbackContractPdf(emp, target), mime: 'application/pdf' };
 }
 
 export async function cleanupProbationShiftsAfterOfficial(ctx: AppContext, emp: Employee, officialFrom: string, actorId: string): Promise<number> {
@@ -108,7 +67,8 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
       const myEmp = findLinkedEmployeeForUser(user, ctx);
       if (!myEmp || myEmp.id !== emp.id) throw Errors.forbidden('Bạn chỉ được phép xem hợp đồng lao động của chính mình');
     } else assertBranchAccess(request, emp.branch_id);
-    const items = parseEmployeeContracts(emp.contracts_json).map((c) => ({ ...c, contractTypeLabel: CONTRACT_TYPE_LABELS[c.contractType] ?? c.contractType }));
+    const synced = await syncEmployeeContractsWithDrive(ctx, emp);
+    const items = synced.map((c) => ({ ...c, contractTypeLabel: CONTRACT_TYPE_LABELS[c.contractType] ?? c.contractType }));
     return sendSuccess(request, 'Lấy danh sách hợp đồng lao động thành công', items);
   });
 
@@ -118,14 +78,14 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
       const myEmp = findLinkedEmployeeForUser(user, ctx);
       if (!myEmp || myEmp.id !== emp.id) throw Errors.forbidden('Bạn chỉ được phép xem hợp đồng lao động của chính mình');
     } else assertBranchAccess(request, emp.branch_id);
-    const items = parseEmployeeContracts(emp.contracts_json);
+    const items = await syncEmployeeContractsWithDrive(ctx, emp);
     const target = contractId === 'electronic' ? (items[0] ?? null) : items.find((c) => c.id === contractId);
     if (contractId !== 'electronic' && !target) throw Errors.notFound('Hợp đồng lao động', contractId);
     const { buffer, mime } = await resolveContractFileBuffer(ctx, emp, target);
     const dataUrl = `data:${mime};base64,${buffer.toString('base64')}`, cId = target?.id || 'electronic';
     return sendSuccess(request, 'Lấy chi tiết hợp đồng lao động thành công', {
-      contract: target ? { ...target, contractTypeLabel: CONTRACT_TYPE_LABELS[target.contractType] ?? target.contractType } : null,
-      dataUrl, fileUrl: `/api/admin/employees/${emp.id}/contracts/${cId}/file`,
+      contract: target ? { ...target, mimeType: mime, contractTypeLabel: CONTRACT_TYPE_LABELS[target.contractType] ?? target.contractType } : null,
+      actualMimeType: mime, dataUrl, fileUrl: `/api/admin/employees/${emp.id}/contracts/${cId}/file`,
       downloadUrl: `/api/admin/employees/${emp.id}/contracts/${cId}/file?download=1`, employee: mapEmployeeRecord(emp, ctx),
     });
   });
@@ -137,11 +97,12 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
       const myEmp = findLinkedEmployeeForUser(user, ctx);
       if (!myEmp || myEmp.id !== emp.id) throw Errors.forbidden('Bạn chỉ được phép tải hợp đồng lao động của chính mình');
     } else assertBranchAccess(request, emp.branch_id);
-    const items = parseEmployeeContracts(emp.contracts_json), target = contractId === 'electronic' ? (items[0] ?? null) : items.find((c) => c.id === contractId);
+    const items = await syncEmployeeContractsWithDrive(ctx, emp);
+    const target = contractId === 'electronic' ? (items[0] ?? null) : items.find((c) => c.id === contractId);
     if (contractId !== 'electronic' && !target) throw Errors.notFound('Hợp đồng lao động', contractId);
     const { buffer, mime } = await resolveContractFileBuffer(ctx, emp, target);
     const fileName = target?.fileName || `${emp.employee_code}_Hop_dong_lao_dong.pdf`, disp = download === '1' || download === 'true' ? 'attachment' : 'inline';
-    reply.header('Content-Type', mime).header('Content-Length', buffer.length).header('Content-Disposition', `${disp}; filename="${encodeURIComponent(fileName)}"`);
+    reply.header('Content-Type', mime).header('Content-Length', buffer.length).header('Content-Disposition', `${disp}; filename*=UTF-8''${encodeURIComponent(fileName)}`);
     return reply.send(buffer);
   });
 
@@ -158,9 +119,7 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
     const safeCode = emp.employee_code.replace(/[^a-zA-Z0-9_-]/g, ''), safeName = body.file_name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const contractId = `ctr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, fileDiskName = `${contractId}_${safeName}`;
     const localBackupPath = `storage/contracts/${safeCode}/${fileDiskName}`;
-    for (const dir of [join(ctx.env.LOCAL_STORAGE_DIR || './storage', 'contracts', safeCode), join(process.cwd(), 'apps', 'api', 'storage', 'contracts', safeCode)]) {
-      try { await mkdir(dir, { recursive: true }); await writeFile(join(dir, fileDiskName), buffer); } catch { /* ignore */ }
-    }
+    await saveContractToDisk(ctx, safeCode, fileDiskName, buffer);
     let driveFileId = `drv_${contractId}`;
     if (ctx.google.uploadDriveMedia) {
       try {
@@ -168,6 +127,7 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
         if (up?.fileId) driveFileId = up.fileId;
       } catch { /* fallback local */ }
     }
+    putContractCache([contractId, driveFileId], buffer, check.detectedMime);
     const actor = request.auth!.user;
     const item: EmployeeContractItem = { id: contractId, contractType: body.contract_type, fileName: body.file_name, mimeType: check.detectedMime, sizeBytes: buffer.length, driveFileId, localBackupPath, uploadedBy: actor.username || actor.id, uploadedAt: nowIso(), note: body.note };
     const nextContracts = [...parseEmployeeContracts(emp.contracts_json), item];
@@ -183,13 +143,9 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
     const current = parseEmployeeContracts(emp.contracts_json), target = current.find((c) => c.id === contractId);
     if (!target) throw Errors.notFound('Hợp đồng lao động', contractId);
     const next = current.filter((c) => c.id !== contractId);
+    evictContractCache([contractId, target.driveFileId]);
     if (target.localBackupPath) {
-      const filePart = target.localBackupPath.split('/').pop(), safeCode = emp.employee_code.replace(/[^a-zA-Z0-9_-]/g, '');
-      if (filePart) {
-        for (const dir of [join(ctx.env.LOCAL_STORAGE_DIR || './storage', 'contracts', safeCode), join(process.cwd(), 'apps', 'api', 'storage', 'contracts', safeCode)]) {
-          try { await unlink(join(dir, filePart)); } catch { /* ignore */ }
-        }
-      }
+      await deleteContractFromDisk(ctx, emp.employee_code.replace(/[^a-zA-Z0-9_-]/g, ''), target.localBackupPath.split('/').pop());
     }
     await ctx.db.employees.update(emp.id, emp.version, { contracts_json: JSON.stringify(next) }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'employee.contract.delete', entity: 'EMPLOYEES', entityId: emp.id, before: { contractId, fileName: target.fileName } });

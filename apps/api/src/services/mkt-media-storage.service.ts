@@ -69,10 +69,12 @@ export function readMediaMetaCache(ctx: AppContext, key: string): CachedMktMedia
   if (!key) return null;
   const ramHit = mktMediaMetaRamCache.get(key);
   if (ramHit) return ramHit;
-  try {
-    const metaPath = join(getLocalMktMediaDir(ctx), `${key}.meta.json`);
-    if (existsSync(metaPath)) { const p = JSON.parse(readFileSync(metaPath, 'utf8')) as CachedMktMediaMeta; if (p && typeof p === 'object') { mktMediaMetaRamCache.set(key, p); return p; } }
-  } catch { /* ignore corrupt meta */ }
+  for (const dir of [getLocalMktMediaDir(ctx), join(process.cwd(), 'apps', 'api', 'storage', 'mkt-media')]) {
+    try {
+      const metaPath = join(dir, `${key}.meta.json`);
+      if (existsSync(metaPath)) { const p = JSON.parse(readFileSync(metaPath, 'utf8')) as CachedMktMediaMeta; if (p && typeof p === 'object') { mktMediaMetaRamCache.set(key, p); return p; } }
+    } catch { /* ignore */ }
+  }
   return null;
 }
 
@@ -87,10 +89,12 @@ export function readMediaCache(ctx: AppContext, key: string): Buffer | null {
   if (!key) return null;
   const ramHit = mktMediaRamCache.get(key);
   if (ramHit) { putMediaRamCache(key, ramHit); return ramHit; }
-  try {
-    const diskPath = join(getLocalMktMediaDir(ctx), `${key}.bin`);
-    if (existsSync(diskPath)) { const buf = readFileSync(diskPath); if (buf.length > 0) { putMediaRamCache(key, buf); return buf; } }
-  } catch { /* fallback drive */ }
+  for (const dir of [getLocalMktMediaDir(ctx), join(process.cwd(), 'apps', 'api', 'storage', 'mkt-media')]) {
+    try {
+      const diskPath = join(dir, `${key}.bin`);
+      if (existsSync(diskPath)) { const buf = readFileSync(diskPath); if (buf.length > 0) { putMediaRamCache(key, buf); return buf; } }
+    } catch { /* fallback drive */ }
+  }
   return null;
 }
 

@@ -1,4 +1,4 @@
-import { clearDriveFolderCache, createGoogleClients, downloadFile, ensureFolderPath, getFileMeta, isAuthRevokedError, uploadFile } from '@umbm/google';
+import { clearDriveFolderCache, createGoogleClients, downloadFile, ensureFolderPath, findExistingFolderPath, getFileMeta, isAuthRevokedError, listFolderFiles, uploadFile } from '@umbm/google';
 import { DRIVE_FOLDERS } from '@umbm/shared';
 import { readFileSync } from 'node:fs';
 import { AuthService } from './auth/auth.service.js';
@@ -47,23 +47,11 @@ async function main() {
     if (env.EMAIL_ENABLED) {
       mailSender = async (payload) => {
         if (smtpSender) {
-          try {
-            await smtpSender(payload);
-            return;
-          } catch (smtpErr) {
-            try {
-              await clients.sendMail({ ...payload, fromName: env.EMAIL_FROM_NAME, fromAddress: env.EMAIL_FROM_ADDRESS });
-              return;
-            } catch {
-              throw smtpErr;
-            }
+          try { await smtpSender(payload); return; } catch (smtpErr) {
+            try { await clients.sendMail({ ...payload, fromName: env.EMAIL_FROM_NAME, fromAddress: env.EMAIL_FROM_ADDRESS }); return; } catch { throw smtpErr; }
           }
         }
-        await clients.sendMail({
-          ...payload,
-          fromName: env.EMAIL_FROM_NAME,
-          fromAddress: env.EMAIL_FROM_ADDRESS,
-        });
+        await clients.sendMail({ ...payload, fromName: env.EMAIL_FROM_NAME, fromAddress: env.EMAIL_FROM_ADDRESS });
       };
     }
     const uploadToDriveFolder = async (params: { rootFolder: string; folderSegments?: string[]; fileName: string; mimeType: string; data: Buffer }) => {
@@ -108,16 +96,25 @@ async function main() {
         try { return await getFileMeta(clients.drive, fileId); } catch { return null; }
       },
       async downloadDriveFile(fileId) {
-        try {
-          return await downloadFile(clients.drive, fileId);
-        } catch {
+        try { return await downloadFile(clients.drive, fileId); } catch {
           try {
             const exp = await clients.drive.files.export({ fileId, mimeType: 'application/pdf' }, { responseType: 'arraybuffer' });
             return Buffer.from(exp.data as ArrayBuffer);
-          } catch {
-            return null;
-          }
+          } catch { return null; }
         }
+      },
+      async listDriveFolderFiles(params) {
+        if (!env.DRIVE_ROOT_FOLDER_ID) return [];
+        try {
+          const segs = [params.rootFolder, ...(params.folderSegments ?? []).filter(Boolean)];
+          const folderId = await findExistingFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, segs);
+          if (folderId) {
+            const files = await listFolderFiles(clients.drive, folderId);
+            if (files.length > 0) return files;
+          }
+          const rootSubId = await findExistingFolderPath(clients.drive, env.DRIVE_ROOT_FOLDER_ID, [params.rootFolder]);
+          return rootSubId ? await listFolderFiles(clients.drive, rootSubId) : [];
+        } catch { return []; }
       },
     };
   } else {

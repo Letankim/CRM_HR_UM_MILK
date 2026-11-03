@@ -16,6 +16,7 @@ export interface GoogleStatus {
   uploadDriveMedia?: (params: { rootFolder: string; folderSegments?: string[]; fileName: string; mimeType: string; data: Buffer }) => Promise<{ fileId: string }>;
   getDriveFileMeta?: (fileId: string) => Promise<{ name: string; mimeType: string; sizeBytes: number } | null>;
   downloadDriveFile?: (fileId: string) => Promise<Buffer | null>;
+  listDriveFolderFiles?: (params: { rootFolder: string; folderSegments?: string[] }) => Promise<{ id: string; name: string; mimeType: string; sizeBytes: number; createdTime: string }[]>;
 }
 
 /** Các phụ thuộc dùng chung, truyền vào từng nhóm route (dependency injection thủ công). */
