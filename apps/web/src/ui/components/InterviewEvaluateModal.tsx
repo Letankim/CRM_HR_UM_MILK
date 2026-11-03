@@ -108,8 +108,8 @@ export function InterviewEvaluateModal({ target, loading, onClose, onSubmit }: I
       <FireworksCanvasOverlay active={showFireworks} />
       <Modal
         width={940} style={{ maxWidth: 'calc(100vw - 24px)', top: 20 }} open={Boolean(target)} forceRender destroyOnHidden
-        title={target ? `${isScored ? 'Chỉnh sửa Điểm Phỏng vấn Rubric' : 'Phiếu Chấm điểm Phỏng vấn Rubric Chuyên biệt'} (Thang 13 điểm): ${String(target.candidateName)}` : 'Đánh giá phỏng vấn'}
-        okText={isScored ? (eval13.passed && !hasEmp ? 'Lưu chỉnh sửa & Khởi tạo Nhân viên' : 'Lưu chỉnh sửa điểm phỏng vấn') : (eval13.passed ? 'Duyệt ĐẠT & Khởi tạo Nhân viên (UBM_NV)' : 'Lưu kết quả phỏng vấn')} cancelText="Hủy bỏ"
+        title={target ? `${isScored ? 'Chỉnh sửa Điểm Phỏng vấn' : 'Phiếu Đánh giá Phỏng vấn'} (Thang 13 điểm): ${String(target.candidateName)}` : 'Đánh giá phỏng vấn'}
+        okText={isScored ? (eval13.passed && !hasEmp ? 'Lưu & Khởi tạo Nhân sự' : 'Lưu điểm phỏng vấn') : (eval13.passed ? 'Duyệt ĐẠT & Khởi tạo Nhân sự' : 'Lưu kết quả phỏng vấn')} cancelText="Hủy bỏ"
         okButtonProps={{ icon: eval13.passed && !hasEmp ? <UserAddOutlined /> : <SaveOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }}
         onCancel={onClose} onOk={() => form.submit()}
       >
@@ -178,22 +178,22 @@ export function InterviewEvaluateModal({ target, loading, onClose, onSubmit }: I
           </Row>
 
           <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 4, padding: '8px 12px', marginBottom: 12, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontWeight: 600, color: '#DC2626', fontSize: 12 }}><FlagOutlined /> Cờ loại trực tiếp (Red Flag — Dính bất kỳ tiêu chí nào tự động chuyển REJECTED):</span>
+            <span style={{ fontWeight: 600, color: '#DC2626', fontSize: 12 }}><FlagOutlined /> Tiêu chuẩn loại trực tiếp (Tự động đánh giá Không đạt nếu vi phạm):</span>
             <Checkbox.Group value={redFlags} options={INTERVIEW_RED_FLAGS.map((rf) => ({ label: rf.label, value: rf.key }))} onChange={(vals) => { const nextFlags = vals.map(String); setRedFlags(nextFlags); applyRubricSync(rubricBlock, rubricScores, nextFlags); }} />
           </div>
 
           {eval13.hasRedFlag ? (
-            <Alert style={{ marginBottom: 12 }} type="error" showIcon message="Ứng viên dính tiêu chí Loại trực tiếp (Red Flag) — Hệ thống tự động chuyển trạng thái thành REJECTED (Không đạt)." />
+            <Alert style={{ marginBottom: 12 }} type="error" showIcon message="Ứng viên không đạt do vi phạm tiêu chuẩn loại trực tiếp trong buổi phỏng vấn." />
           ) : eval13.passed ? (
-            <Alert style={{ marginBottom: 12 }} type="success" showIcon message="Mục 2.5 — Đủ điều kiện ĐẠT (>= 12/13đ): Khi xác nhận duyệt, hệ thống tự động (1) Sinh mã NV UBM_NV000001 · (2) Tạo bản ghi NHAN_VIEN_MASTER · (3) Tạo tài khoản TAI_KHOAN_NHAN_VIEN (ACTIVE) · (4) Cấp mã PIN 6 số tạm thời & kích hoạt thử việc 12 ngày." />
+            <Alert style={{ marginBottom: 12 }} type="success" showIcon message="Ứng viên đủ điều kiện ĐẠT: Khi xác nhận duyệt, hệ thống sẽ tự động tạo hồ sơ nhân sự mới, kích hoạt tài khoản đăng nhập và bắt đầu quá trình thử việc." />
           ) : (
-            <Alert style={{ marginBottom: 12 }} type="warning" showIcon message={`Tổng điểm hiện tại (${eval13.totalScore13}/13đ) chưa đạt ngưỡng PASS (>= 12/13 điểm).`} />
+            <Alert style={{ marginBottom: 12 }} type="warning" showIcon message={`Tổng điểm hiện tại (${eval13.totalScore13}/13đ) chưa đạt ngưỡng yêu cầu (từ 12/13 điểm trở lên).`} />
           )}
 
           <Row gutter={12}>
             <Col xs={24} md={8}>
               <Form.Item name="decision" label="Quyết định phê duyệt của HR" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
-                <Select disabled={eval13.hasRedFlag} options={[{ value: 'PASS', label: eval13.passed ? 'Đạt phỏng vấn (>= 12/13đ) — Khởi tạo NV' : 'Đạt phỏng vấn (Yêu cầu >= 12/13đ)', disabled: !eval13.passed }, { value: 'HOLD', label: 'Cân nhắc thêm (HOLD)' }, { value: 'FAIL', label: 'Không đạt / Từ chối (REJECTED)' }]} />
+                <Select disabled={eval13.hasRedFlag} options={[{ value: 'PASS', label: eval13.passed ? 'Đạt phỏng vấn — Khởi tạo nhân sự' : 'Đạt phỏng vấn (Yêu cầu >= 12/13đ)', disabled: !eval13.passed }, { value: 'HOLD', label: 'Cân nhắc thêm' }, { value: 'FAIL', label: 'Không đạt / Từ chối' }]} />
               </Form.Item>
             </Col>
             <Col xs={24} md={16}>

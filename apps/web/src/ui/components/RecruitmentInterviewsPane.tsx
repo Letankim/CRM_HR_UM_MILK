@@ -80,19 +80,19 @@ export function RecruitmentInterviewsPane({
       const ob = res?.onboarding as Record<string, unknown> | undefined;
       if (isEval && ob?.employee_code) {
         modal.success({
-          width: 560, title: 'Đã phê duyệt ĐẠT phỏng vấn & Khởi tạo Nhân sự Tự động (Mục 2.5)', okText: 'Đã hiểu',
+          width: 540, title: 'Phê duyệt ĐẠT phỏng vấn & Khởi tạo Nhân sự thành công', okText: 'Đã hiểu',
           content: (
             <Descriptions size="small" bordered column={1} style={{ marginTop: 8 }}>
-              <Descriptions.Item label="1. Mã nhân viên duy nhất"><Tag color="geekblue" style={{ fontWeight: 700 }}>{String(ob.employee_code)}</Tag></Descriptions.Item>
-              <Descriptions.Item label="2. Bản ghi NHAN_VIEN_MASTER"><Tag color="success">Đã khởi tạo Hồ sơ Nhân sự (Đang thử việc)</Tag></Descriptions.Item>
-              <Descriptions.Item label="3. Tài khoản TAI_KHOAN_NHAN_VIEN"><b>{String(ob.username)}</b> · Trạng thái: <Tag color="success">ACTIVE</Tag></Descriptions.Item>
-              <Descriptions.Item label="4. Mã PIN 6 số tạm thời"><Tag color="gold" style={{ fontWeight: 700, fontSize: 13 }}>{String(ob.temporary_pin)}</Tag> (Yêu cầu đổi PIN lần đầu)</Descriptions.Item>
-              <Descriptions.Item label="Quy chế thử việc kích hoạt"><b>{String(ob.probation_cycle_days ?? 12)} ngày</b> ({String(ob.probation_work_days ?? 7)} ngày làm + {String(ob.probation_off_days ?? 5)} ngày nghỉ · {String(ob.probation_start)} đến {String(ob.probation_end)})</Descriptions.Item>
+              <Descriptions.Item label="Mã nhân viên"><Tag color="geekblue" style={{ fontWeight: 700 }}>{String(ob.employee_code)}</Tag></Descriptions.Item>
+              <Descriptions.Item label="Hồ sơ nhân sự"><Tag color="success">Đang thử việc</Tag></Descriptions.Item>
+              <Descriptions.Item label="Tài khoản đăng nhập"><b>{String(ob.username)}</b> · Trạng thái: <Tag color="success">Đang hoạt động</Tag></Descriptions.Item>
+              <Descriptions.Item label="Mã PIN 6 số tạm thời"><Tag color="gold" style={{ fontWeight: 700, fontSize: 13 }}>{String(ob.temporary_pin)}</Tag> (Yêu cầu đổi PIN lần đầu)</Descriptions.Item>
+              <Descriptions.Item label="Thời gian thử việc"><b>{String(ob.probation_cycle_days ?? 12)} ngày</b> ({String(ob.probation_work_days ?? 7)} ngày làm + {String(ob.probation_off_days ?? 5)} ngày nghỉ · {String(ob.probation_start)} đến {String(ob.probation_end)})</Descriptions.Item>
             </Descriptions>
           ),
         });
       } else {
-        message.success(isEval ? 'Đã lưu kết quả chấm điểm phỏng vấn Rubric' : 'Đã cập nhật lịch phỏng vấn thành công');
+        message.success(isEval ? 'Đã lưu kết quả đánh giá phỏng vấn' : 'Đã cập nhật lịch phỏng vấn thành công');
       }
     },
     onError: (e, vars) => { vars.onError?.(e); message.error(e instanceof ApiClientError ? (e.details[0]?.message || e.message) : 'Cập nhật thất bại'); },
@@ -144,12 +144,12 @@ export function RecruitmentInterviewsPane({
               eligibleFilter: (x: Record<string, unknown>) => x.decision === 'PENDING',
               onClick: (sel: Record<string, unknown>[], clr: () => void) =>
                 promptDecision({
-                  title: `Duyệt Đạt phỏng vấn & Khởi tạo Nhân viên tự động (${sel.length} ứng viên)`,
-                  subtitle: 'Hệ thống sẽ tự động sinh mã UBM_NV000001, tạo hồ sơ NHAN_VIEN_MASTER, tạo tài khoản TAI_KHOAN_NHAN_VIEN (ACTIVE) và cấp mã PIN 6 số tạm thời (thử việc 12 ngày).',
+                  title: `Duyệt Đạt phỏng vấn & Khởi tạo Nhân viên (${sel.length} ứng viên)`,
+                  subtitle: 'Hệ thống sẽ tự động tạo hồ sơ nhân sự, tài khoản đăng nhập và cấp mã PIN tạm thời cho nhân viên thử việc.',
                   required: true, noteLabel: 'Nhận xét đánh giá phỏng vấn của HR', suggestions: PASS_SUGGESTIONS, okText: 'Xác nhận Đạt & Khởi tạo NV',
                   onConfirm: async (note) => {
                     for (const r of sel) await api.put(`/admin/interviews/${r.id}/evaluate`, { version: r.version, experience_track: getTrack(r), decision: 'PASS', appearance_score: 95, attitude_score: 95, skill_score: 92, comment: note });
-                    clr(); message.success('Đã duyệt Đạt phỏng vấn và khởi tạo hồ sơ nhân viên + tài khoản ACTIVE thành công'); refreshAll();
+                    clr(); message.success('Đã duyệt Đạt phỏng vấn và khởi tạo hồ sơ nhân sự thành công'); refreshAll();
                   },
                 }),
             },
@@ -159,7 +159,7 @@ export function RecruitmentInterviewsPane({
               onClick: (sel: Record<string, unknown>[], clr: () => void) =>
                 promptDecision({
                   title: `Đánh dấu Không đạt phỏng vấn (${sel.length} ứng viên)`,
-                  subtitle: 'Hồ sơ ứng viên tương ứng sẽ được cập nhật sang trạng thái Chưa phù hợp (REJECTED).',
+                  subtitle: 'Hồ sơ ứng viên tương ứng sẽ được cập nhật sang trạng thái Chưa phù hợp.',
                   required: true, danger: true, noteLabel: 'Lý do từ chối / Kết quả chưa đạt phỏng vấn', suggestions: FAIL_SUGGESTIONS, okText: 'Xác nhận Không đạt',
                   onConfirm: async (note) => {
                     for (const r of sel) await api.put(`/admin/interviews/${r.id}/evaluate`, { version: r.version, experience_track: getTrack(r), decision: 'FAIL', appearance_score: 50, attitude_score: 50, skill_score: 50, comment: note });
