@@ -85,10 +85,10 @@ export function AdminApprovePeriodModal({ open, period, onClose, onSuccess }: { 
           <Space direction="vertical" size={8} style={{ width: '100%' }}>
             <div style={{ fontSize: 12, color: '#64748B' }}>Người đại diện Ban Quản trị ký duyệt</div>
             <Input value={signerName} onChange={(e) => setSignerName(e.target.value)} placeholder="Họ tên Quản trị viên ký duyệt" />
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={(e) => void handlePickFile(e)} />
             <Flex justify="space-between" align="center" wrap gap={6}>
-              <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={(e) => void handlePickFile(e)} />
               <Button size="small" icon={<UploadOutlined />} onClick={() => fileRef.current?.click()}>
-                {previewUrl ? 'Đổi ảnh chữ ký Quản trị' : 'Tải ảnh chữ ký Quản trị lên'}
+                {previewUrl ? 'Đổi chữ ký' : 'Tải chữ ký'}
               </Button>
               {sigCfgQ.data?.fileId && !customSigBase64 && <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Lấy từ Cấu hình HT</Tag>}
             </Flex>
@@ -187,10 +187,10 @@ export function FinancePublishPeriodModal({
           <Space direction="vertical" size={8} style={{ width: '100%' }}>
             <div style={{ fontSize: 12, color: '#64748B' }}>Họ tên Kế toán ký phát hành phiếu lương</div>
             <Input value={signerName} onChange={(e) => setSignerName(e.target.value)} placeholder="Nhập họ tên Kế toán" />
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={(e) => void handlePickFile(e)} />
             <Flex justify="space-between" align="center" wrap gap={6}>
-              <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={(e) => void handlePickFile(e)} />
               <Button size="small" type={previewUrl ? 'default' : 'primary'} ghost={!previewUrl} icon={<UploadOutlined />} onClick={() => fileRef.current?.click()}>
-                {previewUrl ? 'Đổi ảnh chữ ký Kế toán từ máy' : 'Tải ảnh chữ ký Kế toán từ máy lên (*)'}
+                {previewUrl ? 'Đổi chữ ký' : 'Tải chữ ký'}
               </Button>
               {finSigQ.data?.fileId && !sigBase64 && <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Lấy từ Chữ ký đã lưu</Tag>}
             </Flex>

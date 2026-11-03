@@ -102,15 +102,17 @@ export function FinancePayrollSignaturePanel({ onSaved }: { onSaved?: () => void
               <Button size="small" icon={<ReloadOutlined />} loading={q.isFetching} onClick={() => void q.refetch()}>Làm mới</Button>
             </Flex>
             {isFinance && (
-              <Space size={8} wrap>
+              <>
                 <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={(e) => void handlePickFile(e)} />
-                <Button icon={<UploadOutlined />} onClick={() => fileRef.current?.click()}>
-                  {previewSrc ? 'Chọn ảnh chữ ký khác từ máy' : 'Tải ảnh chữ ký Kế toán từ máy'}
-                </Button>
-                <Button type="primary" icon={<SaveOutlined />} disabled={!draftBase64} loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
-                  Lưu chữ ký Kế toán
-                </Button>
-              </Space>
+                <Flex gap={8} align="center" wrap>
+                  <Button icon={<UploadOutlined />} onClick={() => fileRef.current?.click()}>
+                    {previewSrc ? 'Đổi chữ ký' : 'Tải chữ ký'}
+                  </Button>
+                  <Button type="primary" icon={<SaveOutlined />} disabled={!draftBase64} loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
+                    Lưu chữ ký Kế toán
+                  </Button>
+                </Flex>
+              </>
             )}
           </Space>
         </Col>

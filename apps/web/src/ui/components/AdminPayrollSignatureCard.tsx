@@ -100,13 +100,17 @@ export function AdminPayrollSignatureCard() {
                 {draftBase64 && <Tag color="blue" style={{ margin: 0 }}>Đã chọn ảnh mới — Nhấn Lưu để áp dụng</Tag>}
               </Space>
               {isAdmin && (
-                <Space size={8}>
+                <>
                   <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }} onChange={(e) => void handlePickFile(e)} />
-                  <Button icon={<UploadOutlined />} onClick={() => fileRef.current?.click()}>Tải ảnh chữ ký từ máy</Button>
-                  <Button type="primary" icon={<SaveOutlined />} disabled={!draftBase64} loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
-                    Lưu chữ ký Quản trị
-                  </Button>
-                </Space>
+                  <Flex gap={8} align="center" wrap>
+                    <Button icon={<UploadOutlined />} onClick={() => fileRef.current?.click()}>
+                      {previewSrc ? 'Đổi chữ ký' : 'Tải chữ ký'}
+                    </Button>
+                    <Button type="primary" icon={<SaveOutlined />} disabled={!draftBase64} loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
+                      Lưu chữ ký Quản trị
+                    </Button>
+                  </Flex>
+                </>
               )}
             </Flex>
           </Space>
