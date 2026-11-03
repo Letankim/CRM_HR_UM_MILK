@@ -21,10 +21,15 @@ interface Props { rows: PlannerProbationItem[]; onSelect?: (row: PlannerProbatio
 export function SchedulePlannerProbationGantt({ rows, onSelect }: Props) {
   const range = useMemo(() => {
     if (rows.length === 0) return null;
-    const start = rows.reduce((m, r) => (dayjs(r.cycleStart).isBefore(m) ? dayjs(r.cycleStart) : m), dayjs(rows[0]!.cycleStart)).startOf('day');
-    const end = rows.reduce((m, r) => (dayjs(r.cycleEnd).isAfter(m) ? dayjs(r.cycleEnd) : m), dayjs(rows[0]!.cycleEnd)).startOf('day');
+    const today0 = dayjs().startOf('day');
+    // Chỉ lấy các chu kỳ còn hiệu lực hoặc vừa kết thúc trong 14 ngày gần đây để khung thời gian luôn gọn, nhìn được ngay.
+    const recent = rows.filter((r) => !dayjs(r.cycleEnd).isBefore(today0.subtract(14, 'day')));
+    const base = recent.length > 0 ? recent : rows;
+    const minStart = base.reduce((m, r) => (dayjs(r.cycleStart).isBefore(m) ? dayjs(r.cycleStart) : m), dayjs(base[0]!.cycleStart)).startOf('day');
+    const maxEnd = base.reduce((m, r) => (dayjs(r.cycleEnd).isAfter(m) ? dayjs(r.cycleEnd) : m), dayjs(base[0]!.cycleEnd)).startOf('day');
+    const start = minStart.isAfter(today0) ? today0 : minStart, end = maxEnd.isBefore(today0) ? today0 : maxEnd;
     const days = Array.from({ length: end.diff(start, 'day') + 1 }, (_, i) => start.add(i, 'day'));
-    return { start, days };
+    return { start, end, days };
   }, [rows]);
 
   if (!range) return <Empty description="Không có nhân viên thử việc nào đang hoạt động" />;
@@ -53,7 +58,9 @@ export function SchedulePlannerProbationGantt({ rows, onSelect }: Props) {
           </div>
           {rows.map((r) => {
             const s = dayjs(r.cycleStart).startOf('day'), e = dayjs(r.cycleEnd).startOf('day');
-            const left = s.diff(range.start, 'day') * DAY_W, width = (e.diff(s, 'day') + 1) * DAY_W;
+            const vs = s.isBefore(range.start) ? range.start : s, ve = e.isAfter(range.end) ? range.end : e;
+            const hasBar = !vs.isAfter(ve);
+            const left = vs.diff(range.start, 'day') * DAY_W, width = (ve.diff(vs, 'day') + 1) * DAY_W;
             const shiftDates = new Set((r.existingShifts ?? []).map((x) => dayjs(x.workDate).format('YYYY-MM-DD')));
             const offDates = new Set(r.offRequests.filter((o) => o.status !== 'REJECTED' && o.status !== 'CANCELLED').map((o) => dayjs(o.leaveDate).format('YYYY-MM-DD')));
             return (
@@ -64,9 +71,10 @@ export function SchedulePlannerProbationGantt({ rows, onSelect }: Props) {
                 </div>
                 <div style={{ position: 'relative', width: totalW, flexShrink: 0 }}>
                   {todayIdx >= 0 && todayIdx < range.days.length && <div style={{ position: 'absolute', left: todayIdx * DAY_W + DAY_W / 2, top: 0, bottom: 0, width: 2, background: '#DC2626', zIndex: 3 }} />}
+                  {hasBar ? (
                   <Tooltip title={`${r.employeeName}: ${fmtDm(r.cycleStart)} – ${fmtDm(r.cycleEnd)} · Đã xếp ${r.existingCount}/${r.workRequired} ca · Đã làm xong ${r.completedCount}/${r.workRequired} ca · OFF ${r.offRequests.length}/${r.offLimit}`}>
                     <div style={{ position: 'absolute', left, width, top: 8, height: ROW_H - 16, background: r.readyForOfficial ? '#DCFCE7' : '#DBEAFE', border: `1px solid ${r.readyForOfficial ? '#86EFAC' : '#93C5FD'}`, borderRadius: 4, display: 'flex' }}>
-                      {Array.from({ length: e.diff(s, 'day') + 1 }, (_, i) => s.add(i, 'day')).map((d) => (
+                      {Array.from({ length: ve.diff(vs, 'day') + 1 }, (_, i) => vs.add(i, 'day')).map((d) => (
                         <div key={d.valueOf()} style={{ width: DAY_W, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {shiftDates.has(d.format('YYYY-MM-DD')) && <span style={{ width: DAY_W - 14, height: 12, borderRadius: 2, background: r.readyForOfficial ? '#16A34A' : '#2563EB' }} />}
                           {offDates.has(d.format('YYYY-MM-DD')) && <span style={{ width: DAY_W - 14, height: 12, borderRadius: 2, background: '#F59E0B' }} />}
@@ -74,6 +82,7 @@ export function SchedulePlannerProbationGantt({ rows, onSelect }: Props) {
                       ))}
                     </div>
                   </Tooltip>
+                  ) : <span style={{ position: 'absolute', left: 12, top: 12, fontSize: 12, color: '#94A3B8' }}>Chu kỳ cũ, nằm ngoài khung thời gian đang hiển thị</span>}
                 </div>
                 {r.readyForOfficial && <Tag color="success" style={{ position: 'sticky', right: 8, alignSelf: 'center', margin: 0, zIndex: 2 }}>Đủ ĐK</Tag>}
               </div>
