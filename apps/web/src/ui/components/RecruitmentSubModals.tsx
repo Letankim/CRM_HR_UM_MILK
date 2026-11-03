@@ -156,7 +156,7 @@ export function InterviewDetailDrawer({
             {canManage && onOpenZaloNotify && <Button size="small" type="primary" ghost icon={<MessageOutlined />} onClick={() => onOpenZaloNotify(interview)}>Nhắn Zalo</Button>}
             {Boolean(interview.meet_link) && <Button size="small" type="primary" icon={<VideoCameraOutlined />} href={String(interview.meet_link)} target="_blank">Mở Google Meet</Button>}
             {canManage && <Button size="small" icon={<ClockCircleOutlined />} onClick={() => { onClose(); onReschedule(interview); }}>Chỉnh sửa lịch</Button>}
-            {canManage && <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => { onClose(); onEvaluate(interview); }}>Chấm điểm phỏng vấn</Button>}
+            {canManage && <Button size="small" type={interview.decision && interview.decision !== 'PENDING' ? 'default' : 'primary'} icon={<EditOutlined />} onClick={() => { onClose(); onEvaluate(interview); }}>{interview.decision && interview.decision !== 'PENDING' ? 'Chỉnh sửa điểm' : 'Chấm điểm phỏng vấn'}</Button>}
           </Space>
         ) : null
       }

@@ -180,13 +180,13 @@ export function RecruitmentInterviewsPane({
           { title: 'Thời gian phỏng vấn', dataIndex: 'scheduled_at', width: 155, render: (v: string, r) => <span className="num" style={{ fontWeight: 600 }}>{String(v).slice(0, 16).replace('T', ' ')} ({String(r.duration_minutes ?? 30)}p)</span> },
           { title: 'Xác nhận & Nhắc Zalo', dataIndex: 'status', width: 205, render: (_, r) => <Space size={4} style={{ whiteSpace: 'nowrap' }}>{r.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>Cần đổi lịch</Tag> : r.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã xác nhận</Tag> : <Tag color="default" style={{ margin: 0 }}>Chờ xác nhận</Tag>}{r.zalo_reminder_sent_at ? <Tag color="blue" icon={<BellOutlined />} style={{ margin: 0 }}>Đã nhắc Zalo</Tag> : r.candidate_confirmed ? <Tag color="cyan" style={{ margin: 0 }}>Tự nhắc Zalo</Tag> : null}</Space> },
           {
-            title: 'Chấm Rubric (13đ) & Khởi tạo NV', dataIndex: 'decision', width: 235,
+            title: 'Chấm Rubric (13đ) & Khởi tạo NV', dataIndex: 'decision', width: 255,
             render: (v: string, r) => (
               <Space size={4} wrap onClick={(e) => e.stopPropagation()}>
                 <StatusTag value={v} />
                 {v !== 'PENDING' ? (
-                  <><Tag color={Number(r.score_13 || 0) >= 12 ? 'success' : 'blue'} icon={Number(r.score_13 || 0) === 13 ? <TrophyOutlined /> : undefined} className="num" style={{ margin: 0, fontWeight: 600 }}>{Number(r.score_13 || 0) > 0 ? `${r.score_13}/13đ` : `${r.score}đ`}</Tag>{Boolean(r.onboardedEmployeeCode) && <Tag color="geekblue" style={{ margin: 0, fontWeight: 600 }}>{String(r.onboardedEmployeeCode)}</Tag>}</>
-                ) : canManageRec ? <Button size="small" type="primary" ghost icon={<EditOutlined />} onClick={() => setEvalTarget(r)}>Chấm Rubric 13đ</Button> : null}
+                  <><Tag color={Number(r.score_13 || 0) >= 12 ? 'success' : 'blue'} icon={Number(r.score_13 || 0) === 13 ? <TrophyOutlined /> : undefined} className="num" style={{ margin: 0, fontWeight: 600 }}>{Number(r.score_13 || 0) > 0 ? `${r.score_13}/13đ` : `${r.score}đ`}</Tag>{Boolean(r.onboardedEmployeeCode) && <Tag color="geekblue" style={{ margin: 0, fontWeight: 600 }}>{String(r.onboardedEmployeeCode)}</Tag>}{canManageRec && <Button size="small" icon={<EditOutlined />} onClick={() => setEvalTarget(r)}>Chỉnh sửa</Button>}</>
+                ) : canManageRec ? <Button size="small" type="primary" ghost icon={<EditOutlined />} onClick={() => setEvalTarget(r)}>Chấm điểm</Button> : null}
               </Space>
             ),
           },
@@ -196,7 +196,7 @@ export function RecruitmentInterviewsPane({
               <RowActionButtons
                 detailTooltip="Xem chi tiết lịch phỏng vấn" onViewDetail={() => setViewingIv(r)}
                 menuItems={canManageRec ? [
-                  { key: 'eval', icon: <EditOutlined style={{ color: '#2563EB' }} />, label: 'Chấm điểm Rubric (13đ) & Duyệt NV', onClick: () => setEvalTarget(r) },
+                  { key: 'eval', icon: <EditOutlined style={{ color: '#2563EB' }} />, label: r.decision && r.decision !== 'PENDING' ? 'Chỉnh sửa điểm phỏng vấn' : 'Chấm điểm Rubric (13đ) & Duyệt NV', onClick: () => setEvalTarget(r) },
                   ...(onOpenZaloNotify ? [{ key: 'zalo', icon: <MessageOutlined style={{ color: '#2563EB' }} />, label: 'Nhắn Zalo', onClick: () => onOpenZaloNotify(r) }] : []),
                   ...(r.meet_link ? [{ key: 'meet', icon: <VideoCameraOutlined style={{ color: '#2563EB' }} />, label: 'Mở phòng họp Google Meet', onClick: () => window.open(String(r.meet_link), '_blank') }] : []),
                   { key: 'resched', icon: <ClockCircleOutlined style={{ color: '#D97706' }} />, label: 'Chỉnh sửa / Đổi lịch phỏng vấn', onClick: () => setReschedTarget(r) },

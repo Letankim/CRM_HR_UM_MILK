@@ -1,16 +1,10 @@
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
-  CONTRACT_MAX_SIZE_BYTES,
-  CONTRACT_TYPE_LABELS,
-  CONTRACT_TYPES,
-  DRIVE_FOLDERS,
-  isEmployeeRole,
-  verifyContractMagicBytes,
-  type Employee,
-  type EmployeeContractItem,
+  CONTRACT_MAX_SIZE_BYTES, CONTRACT_TYPE_LABELS, CONTRACT_TYPES, DRIVE_FOLDERS,
+  isEmployeeRole, verifyContractMagicBytes, type Employee, type EmployeeContractItem,
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
@@ -58,9 +52,7 @@ function findEmployeeOrThrow(ctx: AppContext, idOrCode: string): Employee {
 
 export async function cleanupProbationShiftsAfterOfficial(ctx: AppContext, emp: Employee, officialFrom: string, actorId: string): Promise<number> {
   const isEmp = (eid: string) => eid === emp.id || eid === emp.employee_code;
-  const stale = ctx.db.shiftAssignments.filter(
-    (a) => isEmp(a.employee_id) && a.employee_stage === 'PROBATION' && a.work_date >= officialFrom && a.status !== 'COMPLETED',
-  );
+  const stale = ctx.db.shiftAssignments.filter((a) => isEmp(a.employee_id) && a.employee_stage === 'PROBATION' && a.work_date >= officialFrom && a.status !== 'COMPLETED');
   let removed = 0;
   for (const s of stale) {
     if (ctx.db.attendanceEvents.find((e) => e.assignment_id === s.id)) continue;
@@ -87,15 +79,42 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
     return sendSuccess(request, 'Lấy danh sách hợp đồng lao động điện tử thành công', items);
   });
 
+  app.get('/api/admin/employees/:id/contracts/:contractId', { preHandler: requireAuth() }, async (request) => {
+    const { id, contractId } = request.params as { id: string; contractId: string }, user = request.auth!.user;
+    const emp = findEmployeeOrThrow(ctx, id);
+    if (isEmployeeRole(user.role)) {
+      const myEmp = findLinkedEmployeeForUser(user, ctx);
+      if (!myEmp || myEmp.id !== emp.id) throw Errors.forbidden('Bạn chỉ được phép xem hợp đồng lao động điện tử của chính mình');
+    } else {
+      assertBranchAccess(request, emp.branch_id);
+    }
+    const items = parseEmployeeContracts(emp.contracts_json);
+    const target = contractId === 'electronic' ? (items[0] ?? null) : items.find((c) => c.id === contractId);
+    if (contractId !== 'electronic' && !target) throw Errors.notFound('Hợp đồng lao động điện tử', contractId);
+    let dataUrl: string | null = null;
+    if (target?.localBackupPath) {
+      const filePart = target.localBackupPath.split('/').pop();
+      const safeCode = emp.employee_code.replace(/[^a-zA-Z0-9_-]/g, '');
+      if (filePart) {
+        try {
+          const buf = await readFile(join(ctx.env.LOCAL_STORAGE_DIR || './storage', 'contracts', safeCode, filePart));
+          dataUrl = `data:${target.mimeType || 'application/pdf'};base64,${buf.toString('base64')}`;
+        } catch { /* ignore ephemeral disk miss */ }
+      }
+    }
+    return sendSuccess(request, 'Lấy chi tiết hợp đồng lao động điện tử thành công', {
+      contract: target ? { ...target, contractTypeLabel: CONTRACT_TYPE_LABELS[target.contractType] ?? target.contractType } : null,
+      dataUrl,
+      employee: mapEmployeeRecord(emp, ctx),
+    });
+  });
+
   app.post('/api/admin/employees/:id/contracts', { preHandler: requirePermission('employee.manage') }, async (request, reply) => {
     const { id } = request.params as { id: string }, body = zUploadContractBody.parse(request.body ?? {});
     const emp = findEmployeeOrThrow(ctx, id);
     assertBranchAccess(request, emp.branch_id);
-
     const rawPayload = (body.data_url || body.base64 || body.file_base64 || '').trim();
-    if (!rawPayload) {
-      throw Errors.fieldValidation('data_url', 'REQUIRED_FIELD', 'Vui lòng chọn tệp hợp đồng lao động điện tử để tải lên', '');
-    }
+    if (!rawPayload) throw Errors.fieldValidation('data_url', 'REQUIRED_FIELD', 'Vui lòng chọn tệp hợp đồng lao động điện tử để tải lên', '');
     const b64Part = rawPayload.includes(';base64,') ? rawPayload.split(';base64,')[1]! : rawPayload.replace(/^data:[^,]+,/, '');
     const buffer = Buffer.from(b64Part.replace(/\s+/g, ''), 'base64');
     const check = verifyContractMagicBytes(new Uint8Array(buffer), body.file_name);
@@ -104,78 +123,46 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
       throw Errors.fieldValidation('data_url', code, check.message, body.file_name);
     }
 
-    const safeCode = emp.employee_code.replace(/[^a-zA-Z0-9_-]/g, '');
-    const safeName = body.file_name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const safeCode = emp.employee_code.replace(/[^a-zA-Z0-9_-]/g, ''), safeName = body.file_name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const contractId = `ctr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const localBackupPath = `storage/contracts/${safeCode}/${contractId}_${safeName}`;
     const localDir = join(ctx.env.LOCAL_STORAGE_DIR || './storage', 'contracts', safeCode);
-    try {
-      await mkdir(localDir, { recursive: true });
-      await writeFile(join(localDir, `${contractId}_${safeName}`), buffer);
-    } catch { /* ignore ephemeral disk write error */ }
+    try { await mkdir(localDir, { recursive: true }); await writeFile(join(localDir, `${contractId}_${safeName}`), buffer); } catch { /* ignore */ }
 
     let driveFileId = `drv_${contractId}`;
     if (ctx.google.uploadDriveMedia) {
       try {
-        const up = await ctx.google.uploadDriveMedia({
-          rootFolder: DRIVE_FOLDERS.EMPLOYEE_DOCUMENTS,
-          folderSegments: [safeCode],
-          fileName: `${safeCode}_${body.contract_type}_${safeName}`,
-          mimeType: check.detectedMime,
-          data: buffer,
-        });
+        const up = await ctx.google.uploadDriveMedia({ rootFolder: DRIVE_FOLDERS.EMPLOYEE_DOCUMENTS, folderSegments: [safeCode], fileName: `${safeCode}_${body.contract_type}_${safeName}`, mimeType: check.detectedMime, data: buffer });
         if (up?.fileId) driveFileId = up.fileId;
       } catch { /* fallback local backup */ }
     }
 
     const actor = request.auth!.user;
     const item: EmployeeContractItem = {
-      id: contractId,
-      contractType: body.contract_type,
-      fileName: body.file_name,
-      mimeType: check.detectedMime,
-      sizeBytes: buffer.length,
-      driveFileId,
-      localBackupPath,
-      uploadedBy: actor.username || actor.id,
-      uploadedAt: nowIso(),
-      note: body.note,
+      id: contractId, contractType: body.contract_type, fileName: body.file_name, mimeType: check.detectedMime,
+      sizeBytes: buffer.length, driveFileId, localBackupPath, uploadedBy: actor.username || actor.id, uploadedAt: nowIso(), note: body.note,
     };
     const nextContracts = [...parseEmployeeContracts(emp.contracts_json), item];
     await ctx.db.employees.update(emp.id, emp.version, { contracts_json: JSON.stringify(nextContracts) }, actor.id);
-    await ctx.audit.record(auditContext(request), {
-      action: 'employee.contract.upload', entity: 'EMPLOYEES', entityId: emp.id,
-      after: { contractId: item.id, contractType: item.contractType, fileName: item.fileName, sizeBytes: item.sizeBytes, driveFileId: item.driveFileId },
-    });
+    await ctx.audit.record(auditContext(request), { action: 'employee.contract.upload', entity: 'EMPLOYEES', entityId: emp.id, after: { contractId: item.id, contractType: item.contractType, fileName: item.fileName, sizeBytes: item.sizeBytes, driveFileId: item.driveFileId } });
     reply.code(201);
-    return sendSuccess(request, `Đã tải lên ${CONTRACT_TYPE_LABELS[body.contract_type]} thành công`, {
-      ...item,
-      contractTypeLabel: CONTRACT_TYPE_LABELS[body.contract_type],
-      contracts: nextContracts,
-    });
+    return sendSuccess(request, `Đã tải lên ${CONTRACT_TYPE_LABELS[body.contract_type]} thành công`, { ...item, contractTypeLabel: CONTRACT_TYPE_LABELS[body.contract_type], contracts: nextContracts });
   });
 
   app.delete('/api/admin/employees/:id/contracts/:contractId', { preHandler: requirePermission('employee.manage') }, async (request) => {
     const { id, contractId } = request.params as { id: string; contractId: string };
     const emp = findEmployeeOrThrow(ctx, id);
     assertBranchAccess(request, emp.branch_id);
-    const current = parseEmployeeContracts(emp.contracts_json);
-    const target = current.find((c) => c.id === contractId);
+    const current = parseEmployeeContracts(emp.contracts_json), target = current.find((c) => c.id === contractId);
     if (!target) throw Errors.notFound('Hợp đồng lao động điện tử', contractId);
     const next = current.filter((c) => c.id !== contractId);
     if (target.localBackupPath) {
-      const filePart = target.localBackupPath.split('/').pop();
-      const safeCode = emp.employee_code.replace(/[^a-zA-Z0-9_-]/g, '');
-      if (filePart) {
-        try { await unlink(join(ctx.env.LOCAL_STORAGE_DIR || './storage', 'contracts', safeCode, filePart)); } catch { /* ignore */ }
-      }
+      const filePart = target.localBackupPath.split('/').pop(), safeCode = emp.employee_code.replace(/[^a-zA-Z0-9_-]/g, '');
+      if (filePart) { try { await unlink(join(ctx.env.LOCAL_STORAGE_DIR || './storage', 'contracts', safeCode, filePart)); } catch { /* ignore */ } }
     }
     const actorId = request.auth!.user.id;
     await ctx.db.employees.update(emp.id, emp.version, { contracts_json: JSON.stringify(next) }, actorId);
-    await ctx.audit.record(auditContext(request), {
-      action: 'employee.contract.delete', entity: 'EMPLOYEES', entityId: emp.id,
-      before: { contractId, fileName: target.fileName },
-    });
+    await ctx.audit.record(auditContext(request), { action: 'employee.contract.delete', entity: 'EMPLOYEES', entityId: emp.id, before: { contractId, fileName: target.fileName } });
     return sendSuccess(request, 'Đã xóa hợp đồng lao động điện tử khỏi hồ sơ nhân sự', { id: contractId, contracts: next });
   });
 
@@ -183,36 +170,18 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
     const { id } = request.params as { id: string }, body = zGrantEmergencyLeaveBody.parse(request.body ?? {});
     const emp = findEmployeeOrThrow(ctx, id);
     assertBranchAccess(request, emp.branch_id);
-    const actorId = request.auth!.user.id;
-    const updated = await ctx.db.employees.update(emp.id, emp.version, { emergency_leave_grant_count: body.grant_count }, actorId);
-    await ctx.audit.record(auditContext(request), {
-      action: 'employee.grant_emergency_leave', entity: 'EMPLOYEES', entityId: emp.id,
-      after: { emergency_leave_grant_count: updated.emergency_leave_grant_count, note: body.note },
-    });
-    return sendSuccess(request, `Đã cấp ${body.grant_count} lượt quyền xin nghỉ đột xuất cho ${updated.full_name}`, {
-      ...mapEmployeeRecord(updated, ctx),
-      emergency_leave_grant_count: updated.emergency_leave_grant_count,
-      emergencyLeaveGrantCount: updated.emergency_leave_grant_count,
-    });
+    const updated = await ctx.db.employees.update(emp.id, emp.version, { emergency_leave_grant_count: body.grant_count }, request.auth!.user.id);
+    await ctx.audit.record(auditContext(request), { action: 'employee.grant_emergency_leave', entity: 'EMPLOYEES', entityId: emp.id, after: { emergency_leave_grant_count: updated.emergency_leave_grant_count, note: body.note } });
+    return sendSuccess(request, `Đã cấp ${body.grant_count} lượt quyền xin nghỉ đột xuất cho ${updated.full_name}`, { ...mapEmployeeRecord(updated, ctx), emergency_leave_grant_count: updated.emergency_leave_grant_count, emergencyLeaveGrantCount: updated.emergency_leave_grant_count });
   });
 
   app.post('/api/admin/employees/:id/meet-evaluation', { preHandler: requirePermission('employee.manage', 'employee.promote', 'interview.manage') }, async (request) => {
     const { id } = request.params as { id: string }, body = zMeetEvaluationBody.parse(request.body ?? {});
     const emp = findEmployeeOrThrow(ctx, id);
     assertBranchAccess(request, emp.branch_id);
-    const actorId = request.auth!.user.id;
     const meetNote = (body.probation_meet_note ?? body.note ?? 'Đã hoàn tất đánh giá vấn đáp Google Meet cuối kỳ thử việc').trim();
-    const updated = await ctx.db.employees.update(emp.id, emp.version, { probation_meet_done: body.probation_meet_done, probation_meet_note: meetNote }, actorId);
-    await ctx.audit.record(auditContext(request), {
-      action: 'employee.meet_evaluation', entity: 'EMPLOYEES', entityId: emp.id,
-      after: { probation_meet_done: updated.probation_meet_done, probation_meet_note: updated.probation_meet_note },
-    });
-    return sendSuccess(request, `Đã ghi nhận kết quả vấn đáp Google Meet cho ${updated.full_name}`, {
-      ...mapEmployeeRecord(updated, ctx),
-      probation_meet_done: updated.probation_meet_done,
-      probation_meet_note: updated.probation_meet_note,
-      probationMeetDone: updated.probation_meet_done,
-      probationMeetNote: updated.probation_meet_note,
-    });
+    const updated = await ctx.db.employees.update(emp.id, emp.version, { probation_meet_done: body.probation_meet_done, probation_meet_note: meetNote }, request.auth!.user.id);
+    await ctx.audit.record(auditContext(request), { action: 'employee.meet_evaluation', entity: 'EMPLOYEES', entityId: emp.id, after: { probation_meet_done: updated.probation_meet_done, probation_meet_note: updated.probation_meet_note } });
+    return sendSuccess(request, `Đã ghi nhận kết quả vấn đáp Google Meet cho ${updated.full_name}`, { ...mapEmployeeRecord(updated, ctx), probation_meet_done: updated.probation_meet_done, probation_meet_note: updated.probation_meet_note, probationMeetDone: updated.probation_meet_done, probationMeetNote: updated.probation_meet_note });
   });
 }

@@ -175,8 +175,8 @@ export function UpcomingInterviewsBanner({
                   </Button>
                 )}
                 {canManage && (
-                  <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => onEvaluate(item.raw)}>
-                    Chấm điểm
+                  <Button size="small" type={item.raw.decision && item.raw.decision !== 'PENDING' ? 'default' : 'primary'} icon={<EditOutlined />} onClick={() => onEvaluate(item.raw)}>
+                    {item.raw.decision && item.raw.decision !== 'PENDING' ? 'Chỉnh sửa điểm' : 'Chấm điểm'}
                   </Button>
                 )}
                 <Button size="small" icon={<EyeOutlined />} onClick={() => onViewDetail(item.raw)}>

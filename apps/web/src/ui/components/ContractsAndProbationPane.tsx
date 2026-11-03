@@ -3,18 +3,19 @@
 import { useMemo, useState } from 'react';
 import { App, Button, Space, Tag, Typography } from 'antd';
 import {
-  CheckCircleOutlined, CloudUploadOutlined, DownloadOutlined, FileProtectOutlined,
-  FileTextOutlined, PlusCircleOutlined, RiseOutlined, VideoCameraOutlined,
+  CheckCircleOutlined, CloudUploadOutlined, DownloadOutlined, EditOutlined, EyeOutlined,
+  FileProtectOutlined, FileTextOutlined, PlusCircleOutlined, RiseOutlined, VideoCameraOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { CONTRACT_TYPE_LABELS, EMPLOYEE_STAGE_OPTIONS } from '@umbm/shared';
+import { CONTRACT_TYPE_LABELS, EMPLOYEE_STAGE_OPTIONS, type EmployeeContractItem } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
 import { BaseDetailDrawer } from './BaseDetailDrawer';
+import { ContractPreviewModal } from './ContractPreviewModal';
 import { DataTableCard } from './DataTableCard';
 import { ContractUploadModal, EmployeeContractStorePanel } from './EmployeeContractStorePanel';
 import { PromoteOfficialModal } from './EmployeeDossierHistoryTab';
@@ -42,6 +43,7 @@ export function ContractsAndProbationPane({ branches }: { branches: { value: str
   const [detailEmp, setDetailEmp] = useState<EmployeeRowItem | null>(null);
   const [uploadPresetEmp, setUploadPresetEmp] = useState<EmployeeRowItem | null>(null), [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [promotingRow, setPromotingRow] = useState<EmployeeRowItem | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<{ emp: EmployeeRowItem; item: EmployeeContractItem | null } | null>(null);
 
   const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
   if (debouncedQ) params.set('q', debouncedQ);
@@ -63,7 +65,7 @@ export function ContractsAndProbationPane({ branches }: { branches: { value: str
 
   const liveDetailEmp = detailEmp ? (allRows.find((x) => x.id === detailEmp.id) ?? detailEmp) : null;
   const employeeOptions = useMemo(() => allRows.map((r) => ({ value: r.id, label: `${r.employeeCode} — ${r.fullName} (${r.branchName})`, stage: r.stage })), [allRows]);
-  const refreshAll = () => ['employees', 'employee-contracts', 'accounts'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
+  const refreshAll = () => ['employees', 'employee-contracts', 'employee-contract-detail', 'accounts'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
 
   const promoteSingle = useMutation({
     mutationFn: (input: { row: EmployeeRowItem; official_from: string; evaluation_summary: string }) =>
@@ -84,17 +86,20 @@ export function ContractsAndProbationPane({ branches }: { branches: { value: str
       ],
     });
 
-  const promptMeetEval = (targets: EmployeeRowItem[], clear?: () => void) =>
+  const promptMeetEval = (targets: EmployeeRowItem[], clear?: () => void) => {
+    const isEdit = targets.length === 1 && Boolean(targets[0]?.probationMeetDone);
     promptDecision({
-      title: targets.length > 1 ? `Ghi nhận hoàn tất Vấn đáp Google Meet (${targets.length} nhân sự)` : `Ghi nhận kết quả Vấn đáp Google Meet: ${targets[0]?.fullName ?? ''}`,
-      subtitle: 'Xác nhận nhân sự đã hoàn thành buổi vấn đáp đánh giá thử việc.',
-      required: true, noteLabel: 'Nhận xét đánh giá buổi vấn đáp', okText: 'Xác nhận hoàn tất',
+      title: targets.length > 1 ? `Ghi nhận hoàn tất Vấn đáp Google Meet (${targets.length} nhân sự)` : `${isEdit ? 'Chỉnh sửa' : 'Ghi nhận'} kết quả Vấn đáp Google Meet: ${targets[0]?.fullName ?? ''}`,
+      subtitle: 'Xác nhận hoặc cập nhật đánh giá buổi vấn đáp thử việc.',
+      required: true, noteLabel: 'Nhận xét đánh giá buổi vấn đáp', okText: 'Lưu kết quả vấn đáp',
+      initialNote: targets.length === 1 ? (targets[0]?.probationMeetNote || '') : '',
       suggestions: ['Hoàn thành tốt buổi vấn đáp Google Meet, nắm vững quy trình SOP và nội quy cửa hàng'],
       onConfirm: async (note) => {
         for (const r of targets) await api.post(`/admin/employees/${r.id}/meet-evaluation`, { probation_meet_done: true, note });
-        message.success(`Đã ghi nhận hoàn tất Vấn đáp Google Meet cho ${targets.length} nhân sự`); clear?.(); refreshAll();
+        message.success(`Đã lưu kết quả Vấn đáp Google Meet cho ${targets.length} nhân sự`); clear?.(); refreshAll();
       },
     });
+  };
 
   const promptGrantLeave = (targets: EmployeeRowItem[], clear?: () => void) =>
     promptDecision({
@@ -138,13 +143,20 @@ export function ContractsAndProbationPane({ branches }: { branches: { value: str
           { title: 'Nhân sự & Vị trí', key: 'emp', width: 215, render: (_, r) => <div><Typography.Text strong>{r.fullName}</Typography.Text><div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>{r.staffGroupLabel} · {r.branchName}</div></div> },
           { title: 'Giai đoạn & Thời hạn', key: 'stage', width: 170, render: (_, r) => <div><StatusTag value={r.stage} /><div style={{ fontSize: 11, color: '#64748B', marginTop: 3 }}>{r.stage === 'OFFICIAL' && r.officialFrom ? `Chính thức: ${r.officialFrom}` : r.probationStart ? `Thử việc: ${r.probationStart}` : `Chu kỳ ${r.probationCycleDays} ngày`}</div></div> },
           {
-            title: 'Hợp đồng Lao động đã lưu', key: 'contracts',
+            title: 'Hợp đồng Lao động', key: 'contracts',
             render: (_, r) => {
               const list = r.contracts ?? [];
-              return list.length === 0 ? <Tag color="default">Chưa tải lên hợp đồng</Tag> : (
-                <Space size={4} wrap>
-                  <Tag color="geekblue" icon={<FileProtectOutlined />} style={{ margin: 0, fontWeight: 600 }}>{list.length} văn bản</Tag>
-                  {list.slice(0, 2).map((c) => <Tag key={c.id} color={c.contractType === 'OFFICIAL_CONTRACT' ? 'green' : 'gold'} icon={<FileTextOutlined />} style={{ margin: 0 }}>{CONTRACT_TYPE_LABELS[c.contractType] || c.contractType}</Tag>)}
+              return (
+                <Space size={4} wrap onClick={(e) => e.stopPropagation()}>
+                  {list.length > 0 ? (
+                    <>
+                      <Tag color="geekblue" icon={<FileProtectOutlined />} style={{ margin: 0, fontWeight: 600 }}>{list.length} văn bản</Tag>
+                      {list.slice(0, 2).map((c) => <Tag key={c.id} color={c.contractType === 'OFFICIAL_CONTRACT' ? 'green' : 'gold'} icon={<FileTextOutlined />} style={{ margin: 0, cursor: 'pointer' }} onClick={() => setPreviewTarget({ emp: r, item: c })}>{CONTRACT_TYPE_LABELS[c.contractType] || c.contractType}</Tag>)}
+                    </>
+                  ) : (
+                    <Tag color={r.stage === 'OFFICIAL' ? 'green' : 'gold'} icon={<FileTextOutlined />} style={{ margin: 0 }}>{r.stage === 'OFFICIAL' ? 'HĐ Chính thức (Điện tử)' : 'HĐ Thử việc (Điện tử)'}</Tag>
+                  )}
+                  <Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewTarget({ emp: r, item: list[0] ?? null })}>Xem hợp đồng</Button>
                 </Space>
               );
             },
@@ -160,9 +172,10 @@ export function ContractsAndProbationPane({ branches }: { branches: { value: str
               <RowActionButtons
                 detailTooltip="Xem chi tiết hợp đồng & đánh giá thử việc" onViewDetail={() => setDetailEmp(r)}
                 menuItems={[
-                  ...(canManage ? [{ key: 'upload', icon: <CloudUploadOutlined style={{ color: '#2563EB' }} />, label: 'Tải lên hợp đồng mới', onClick: () => { setUploadPresetEmp(r); setUploadModalOpen(true); } }] : []),
+                  { key: 'preview', icon: <EyeOutlined style={{ color: '#2563EB' }} />, label: r.stage === 'OFFICIAL' ? 'Xem Hợp đồng Chính thức' : 'Xem Hợp đồng Thử việc', onClick: () => setPreviewTarget({ emp: r, item: r.contracts?.[0] ?? null }) },
+                  ...(canManage ? [{ key: 'upload', icon: <CloudUploadOutlined style={{ color: '#2563EB' }} />, label: (r.contractsCount ?? r.contracts?.length ?? 0) > 0 ? 'Tải thêm / Cập nhật tệp hợp đồng' : 'Tải lên hợp đồng mới', onClick: () => { setUploadPresetEmp(r); setUploadModalOpen(true); } }] : []),
                   ...(canManage && r.stage === 'PROBATION' ? [
-                    { key: 'meet', icon: <VideoCameraOutlined style={{ color: '#2563EB' }} />, label: 'Ghi nhận kết quả Vấn đáp Meet', onClick: () => promptMeetEval([r]) },
+                    { key: 'meet', icon: r.probationMeetDone ? <EditOutlined style={{ color: '#2563EB' }} /> : <VideoCameraOutlined style={{ color: '#2563EB' }} />, label: r.probationMeetDone ? 'Chỉnh sửa kết quả Vấn đáp Meet' : 'Ghi nhận kết quả Vấn đáp Meet', onClick: () => promptMeetEval([r]) },
                     { key: 'leave', icon: <PlusCircleOutlined />, label: 'Cấp 1 lượt nghỉ đột xuất', onClick: () => promptGrantLeave([r]) },
                   ] : []),
                   ...(canPromote && r.stage === 'PROBATION' ? [{ key: 'promote', icon: <RiseOutlined style={{ color: '#16A34A' }} />, label: 'Chuyển lên Chính thức', onClick: () => setPromotingRow(r) }] : []),
@@ -178,6 +191,7 @@ export function ContractsAndProbationPane({ branches }: { branches: { value: str
         onClose={() => setDetailEmp(null)}
         extra={liveDetailEmp && (
           <Space size={6} wrap>
+            <Button size="small" icon={<EyeOutlined />} onClick={() => setPreviewTarget({ emp: liveDetailEmp, item: liveDetailEmp.contracts?.[0] ?? null })}>Xem hợp đồng</Button>
             {canManage && <Button size="small" type="primary" ghost icon={<CloudUploadOutlined />} onClick={() => { setUploadPresetEmp(liveDetailEmp); setUploadModalOpen(true); }}>Tải lên hợp đồng</Button>}
             {canPromote && liveDetailEmp.stage === 'PROBATION' && <Button size="small" type="primary" icon={<RiseOutlined />} onClick={() => setPromotingRow(liveDetailEmp)}>Chuyển Chính thức</Button>}
           </Space>
@@ -186,6 +200,7 @@ export function ContractsAndProbationPane({ branches }: { branches: { value: str
         {liveDetailEmp && <EmployeeContractStorePanel employee={liveDetailEmp} canManage={canManage} />}
       </BaseDetailDrawer>
 
+      <ContractPreviewModal open={Boolean(previewTarget)} employee={previewTarget?.emp ?? null} contractItem={previewTarget?.item ?? null} onClose={() => setPreviewTarget(null)} />
       <ContractUploadModal open={uploadModalOpen} presetEmployee={uploadPresetEmp} employeeOptions={employeeOptions} onClose={() => { setUploadModalOpen(false); setUploadPresetEmp(null); }} />
       <PromoteOfficialModal employee={promotingRow} loading={promoteSingle.isPending} onClose={() => setPromotingRow(null)} onConfirm={(v) => promotingRow && promoteSingle.mutate({ row: promotingRow, ...v })} />
       {decisionModalElement}

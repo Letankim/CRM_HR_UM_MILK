@@ -48,6 +48,7 @@ export function InterviewEvaluateModal({ target, loading, onClose, onSubmit }: I
 
   const criteria13 = rubricBlock === 'OFFICE' ? OFFICE_RUBRIC_CRITERIA_13 : STORE_RUBRIC_CRITERIA_13;
   const eval13 = useMemo(() => evaluateInterviewRubric13(rubricBlock, rubricScores, redFlags), [rubricBlock, rubricScores, redFlags]);
+  const isScored = Boolean(target?.decision && target.decision !== 'PENDING'), hasEmp = Boolean(target?.onboardedEmployeeCode);
   const triggerFireworks = () => { setShowFireworks(true); window.setTimeout(() => setShowFireworks(false), 4300); };
 
   useEffect(() => {
@@ -106,9 +107,9 @@ export function InterviewEvaluateModal({ target, loading, onClose, onSubmit }: I
       <FireworksCanvasOverlay active={showFireworks} />
       <Modal
         width={940} style={{ maxWidth: 'calc(100vw - 24px)', top: 20 }} open={Boolean(target)} forceRender destroyOnHidden
-        title={target ? `Phiếu Chấm điểm Phỏng vấn Rubric Chuyên biệt (Thang 13 điểm): ${String(target.candidateName)}` : 'Đánh giá phỏng vấn'}
-        okText={eval13.passed ? 'Duyệt ĐẠT & Khởi tạo Nhân viên (UBM_NV)' : 'Lưu kết quả phỏng vấn'} cancelText="Hủy bỏ"
-        okButtonProps={{ icon: eval13.passed ? <UserAddOutlined /> : <SaveOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }}
+        title={target ? `${isScored ? 'Chỉnh sửa Điểm Phỏng vấn Rubric' : 'Phiếu Chấm điểm Phỏng vấn Rubric Chuyên biệt'} (Thang 13 điểm): ${String(target.candidateName)}` : 'Đánh giá phỏng vấn'}
+        okText={isScored ? (eval13.passed && !hasEmp ? 'Lưu chỉnh sửa & Khởi tạo Nhân viên' : 'Lưu chỉnh sửa điểm phỏng vấn') : (eval13.passed ? 'Duyệt ĐẠT & Khởi tạo Nhân viên (UBM_NV)' : 'Lưu kết quả phỏng vấn')} cancelText="Hủy bỏ"
+        okButtonProps={{ icon: eval13.passed && !hasEmp ? <UserAddOutlined /> : <SaveOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }}
         onCancel={onClose} onOk={() => form.submit()}
       >
         <Form
