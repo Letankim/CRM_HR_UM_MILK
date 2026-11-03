@@ -32,6 +32,15 @@ export function parseQuestions(raw: unknown): QuestionRow[] {
   }
 }
 
+export function getDefaultTestDueDateTime(): { due_date: string; due_time: string } {
+  const now = dayjs();
+  if (now.hour() === 23 && now.minute() >= 30) {
+    return { due_date: now.add(1, 'day').format('YYYY-MM-DD'), due_time: '17:00' };
+  }
+  const due_time = now.hour() < 17 ? '17:00' : now.hour() < 22 ? '22:00' : '23:30';
+  return { due_date: now.format('YYYY-MM-DD'), due_time };
+}
+
 export function TestAssignmentFormModal({
   open, editing, form, loading, tests, employees, onClose, onSubmit,
 }: {
@@ -41,6 +50,9 @@ export function TestAssignmentFormModal({
 }) {
   const empSelect = useEmployeeSearchSelect({ initialOptions: employees, enabled: open });
   const watchedTestId = Form.useWatch('test_id', form);
+  const watchedDueDate = Form.useWatch('due_date', form) as string | undefined;
+  const todayStr = dayjs().format('YYYY-MM-DD'), nowTimeStr = dayjs().format('HH:mm');
+  const defaultDue = getDefaultTestDueDateTime();
   const selectedTest = tests.find((t) => String(t.id) === String(watchedTestId)) ?? tests[0];
   const totalBankQuestions = Math.max(1, Number(selectedTest?.questionsCount ?? selectedTest?.total_questions ?? 25));
   const empOptions = editing?.employee_id && !empSelect.options.some((e) => e.value === String(editing.employee_id))
@@ -58,7 +70,7 @@ export function TestAssignmentFormModal({
       cancelButtonProps={{ icon: <CloseOutlined /> }}
       onCancel={onClose} onOk={() => form.submit()}
     >
-      <Form form={form} layout="vertical" initialValues={{ due_date: '2026-10-30', due_time: '17:00', max_attempts: 3, exam_sample_size: 25, reset_attempts: false }} onFinish={onSubmit}>
+      <Form form={form} layout="vertical" initialValues={{ due_date: defaultDue.due_date, due_time: defaultDue.due_time, max_attempts: 3, exam_sample_size: 25, reset_attempts: false }} onFinish={onSubmit}>
         <Form.Item name="test_id" label="Bộ đề kiểm tra" rules={[{ required: true, message: 'Vui lòng chọn bộ đề kiểm tra' }]}>
           <Select
             showSearch optionFilterProp="label" placeholder="Chọn bộ đề kiểm tra"
@@ -84,8 +96,8 @@ export function TestAssignmentFormModal({
         <Row gutter={12}>
           <Col xs={12} sm={6}><Form.Item name="exam_sample_size" label={<span style={{ whiteSpace: 'nowrap' }}>Số câu Random / đề</span>} rules={[{ required: true, message: 'Nhập số câu' }]}><InputNumber min={1} max={totalBankQuestions} style={{ width: '100%' }} suffix={`/${totalBankQuestions} câu`} /></Form.Item></Col>
           <Col xs={12} sm={6}><Form.Item name="max_attempts" label={<span style={{ whiteSpace: 'nowrap' }}>Số lần thi tối đa</span>} rules={[{ required: true, message: 'Nhập số lần thi' }]}><InputNumber min={1} max={20} style={{ width: '100%' }} suffix="lần" /></Form.Item></Col>
-          <Col xs={12} sm={6}><Form.Item name="due_date" label={<span style={{ whiteSpace: 'nowrap' }}>Ngày hạn nộp</span>} rules={[{ required: true, message: 'Chọn ngày hạn nộp' }]}><DateStringPicker /></Form.Item></Col>
-          <Col xs={12} sm={6}><Form.Item name="due_time" label={<span style={{ whiteSpace: 'nowrap' }}>Giờ hạn nộp</span>} rules={[{ required: true, message: 'Chọn giờ hạn nộp' }]}><TimeSelect /></Form.Item></Col>
+          <Col xs={12} sm={6}><Form.Item name="due_date" label={<span style={{ whiteSpace: 'nowrap' }}>Ngày hạn nộp</span>} rules={[{ required: true, message: 'Chọn ngày hạn nộp' }, { validator: async (_, v) => { if (v && String(v) < todayStr) throw new Error('Không chọn ngày quá khứ'); } }]}><DateStringPicker minDate={todayStr} /></Form.Item></Col>
+          <Col xs={12} sm={6}><Form.Item name="due_time" label={<span style={{ whiteSpace: 'nowrap' }}>Giờ hạn nộp</span>} rules={[{ required: true, message: 'Chọn giờ hạn nộp' }, { validator: async (_, v) => { if (watchedDueDate === todayStr && v && String(v) < nowTimeStr) throw new Error('Chọn giờ từ hiện tại trở đi'); } }]}><TimeSelect minTime={watchedDueDate === todayStr ? nowTimeStr : undefined} /></Form.Item></Col>
         </Row>
         {editing && (
           <Form.Item name="reset_attempts" label="Đặt lại số lượt đã thi về 0" valuePropName="checked">
@@ -124,7 +136,7 @@ export function TestDetailDrawer({
     <>
       <BaseDetailDrawer
         open={Boolean(viewingTest)}
-        title={viewingTest ? `Chi tiết Bộ đề: ${viewingTest.code} — ${viewingTest.title}` : 'Chi tiết bộ đề'}
+        title={viewingTest ? `Chi tiết Bộ đề — ${viewingTest.code}` : 'Chi tiết bộ đề'}
         onClose={onCloseTest}
         extra={
           canManage && viewingTest ? (

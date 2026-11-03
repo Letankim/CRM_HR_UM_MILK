@@ -79,12 +79,15 @@ export function QuickDetailProvider({ children }: { children: ReactNode }) {
         }}
         title={
           <Flex justify="space-between" align="center" gap={12} style={{ paddingRight: 28 }}>
-            <Space size={8}>
-              <EyeOutlined style={{ color: '#2563EB', fontSize: 16 }} />
-              <span style={{ fontSize: 16, fontWeight: 700 }}>{spec?.title ?? 'Chi tiết bản ghi'}</span>
-            </Space>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+              <EyeOutlined style={{ color: '#2563EB', fontSize: 16, flexShrink: 0 }} />
+              <span style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.35, wordBreak: 'break-word' }}>
+                {spec?.title ?? 'Chi tiết bản ghi'}
+              </span>
+            </div>
             <Button
               size="small"
+              style={{ flexShrink: 0 }}
               icon={expanded ? <CompressOutlined /> : <ExpandOutlined />}
               onClick={() => setExpanded((v) => !v)}
             >

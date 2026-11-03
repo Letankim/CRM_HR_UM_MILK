@@ -51,15 +51,15 @@ const PHUC_VU_TOPICS: readonly [string, string, string, string, string][] = [
 
 const NOI_QUY_TOPICS: readonly [string, string, string, string, string][] = [
   ['Cổng điểm danh GPS trên ứng dụng chỉ mở trước giờ bắt đầu ca làm việc bao nhiêu phút?', 'Mở trước giờ bắt đầu ca đúng 30 phút', 'Mở trước 5 giờ sáng cho mọi ca', 'Mở bất kỳ lúc nào trong tuần', 'Chỉ mở sau khi ca đã kết thúc'],
-  ['Nếu quá bao nhiêu giờ kể từ giờ bắt đầu ca mà nhân viên chưa Check-IN thì hệ thống tự chuyển ABSENT?', 'Quá 3 giờ kể từ giờ bắt đầu ca chưa Check-IN sẽ tự động chuyển Vắng mặt (ABSENT)', 'Quá 12 giờ đêm', 'Quá 5 phút', 'Không bao giờ chuyển ABSENT'],
+  ['Nếu quá bao nhiêu giờ kể từ giờ bắt đầu ca mà nhân viên chưa điểm danh vào ca thì hệ thống tự chuyển trạng thái Vắng mặt?', 'Quá 3 giờ kể từ giờ bắt đầu ca chưa điểm danh vào ca sẽ tự động chuyển Vắng mặt', 'Quá 12 giờ đêm', 'Quá 5 phút', 'Không bao giờ chuyển Vắng mặt'],
   ['Nhân sự Chính thức bắt buộc mặc đồng phục gì khi chụp ảnh Camera điểm danh Vào/Ra ca?', 'Áo phông hồng Ụm Bò Milk + tạp dề + mũ/băng đô gọn gàng (tỷ lệ màu hồng đạt tối thiểu 10% khung hình)', 'Áo khoác đen che kín toàn bộ đồng phục', 'Đồ ngủ ở nhà', 'Không cần mặc đồng phục khi điểm danh'],
   ['Mức phạt đi trễ theo quy định 4 bậc khi nhân viên vào ca trễ từ 6 đến 15 phút (Tầng 1) là?', 'Phạt 15.000đ trực tiếp vào kỳ lương', 'Không bị phạt', 'Phạt 500.000đ', 'Trừ 100% lương cả tháng'],
   ['Mức phạt đi trễ khi nhân viên vào ca trễ từ 16 đến 30 phút (Tầng 2) là bao nhiêu?', 'Phạt 30.000đ', 'Phạt 5.000đ', 'Phạt 10.000đ', 'Không tính phạt'],
   ['Mức phạt đi trễ khi nhân viên vào ca trễ từ 31 đến 45 phút (Tầng 3) là bao nhiêu?', 'Phạt 50.000đ', 'Phạt 15.000đ', 'Phạt 20.000đ', 'Cảnh cáo miệng không trừ tiền'],
   ['Nếu nhân viên vào ca trễ trên 45 phút (Tầng 4) và không có phiếu bổ sung công hợp lệ thì sao?', 'Phạt 50% tiền lương của ca làm việc đó', 'Chỉ nhắc nhở nhẹ', 'Được thưởng thêm phụ cấp', 'Phạt 5.000đ'],
-  ['Mỗi lần hoàn thành 1 ca làm việc hợp lệ (Check-IN & Check-OUT đúng quy chuẩn), nhân viên được cộng mấy điểm chuyên cần?', 'Được cộng +2 điểm tích lũy chuyên cần (Attendance Credit)', 'Không được cộng điểm nào', 'Được cộng 100 điểm', 'Bị trừ 1 điểm'],
-  ['Để gửi Phiếu bổ sung công cả ngày (FULL_SHIFT) và giới hạn số lần gửi trong tuần là như thế nào?', 'Tối đa 1 phiếu/tuần và cần tiêu tốn 5 điểm tích lũy chuyên cần cho phiếu bù công cả ngày', 'Gửi không giới hạn 20 phiếu/tuần miễn phí', 'Không cần ảnh minh chứng', 'Tự động duyệt ngay không cần HR'],
-  ['Phiếu bổ sung công đang ở trạng thái PENDING nếu sau bao nhiêu phút không được phê duyệt sẽ tự động REJECTED?', 'Tự động chuyển sang REJECTED sau 30 phút và xóa vĩnh viễn bản ghi REJECTED sau 7 ngày', 'Giữ nguyên PENDING suốt 1 năm', 'Tự động chuyển sang APPROVED sau 5 phút', 'Xóa ngay sau 10 giây'],
+  ['Mỗi lần hoàn thành 1 ca làm việc hợp lệ (Điểm danh Vào & Ra ca đúng quy chuẩn), nhân viên được cộng mấy điểm chuyên cần?', 'Được cộng +2 điểm tích lũy chuyên cần', 'Không được cộng điểm nào', 'Được cộng 100 điểm', 'Bị trừ 1 điểm'],
+  ['Để gửi Phiếu bổ sung công cả ngày và giới hạn số lần gửi trong tuần là như thế nào?', 'Tối đa 1 phiếu/tuần và cần tiêu tốn 5 điểm tích lũy chuyên cần cho phiếu bù công cả ngày', 'Gửi không giới hạn 20 phiếu/tuần miễn phí', 'Không cần ảnh minh chứng', 'Tự động duyệt ngay không cần Nhân sự'],
+  ['Phiếu bổ sung công đang ở trạng thái Chờ duyệt nếu sau bao nhiêu phút không được phê duyệt sẽ tự động Từ chối?', 'Tự động chuyển sang Từ chối sau 30 phút và xóa vĩnh viễn bản ghi sau 7 ngày', 'Giữ nguyên Chờ duyệt suốt 1 năm', 'Tự động chuyển sang Đã duyệt sau 5 phút', 'Xóa ngay sau 10 giây'],
 ];
 
 const VARIANT_SUFFIXES = [

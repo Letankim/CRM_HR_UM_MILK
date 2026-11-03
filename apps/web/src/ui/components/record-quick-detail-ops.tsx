@@ -108,7 +108,7 @@ export function buildOpsQuickDetailSpec(kind: OpsQuickDetailKind, r: Rec): Quick
       };
     case 'employeeTestAssignment':
       return {
-        title: `Chi tiết Bài Kiểm tra Nghiệp vụ — ${s(r.testTitle)}`,
+        title: 'Chi tiết Bài kiểm tra Nghiệp vụ',
         fields: [
           { label: 'Mã giao bài', value: <span className="mono">{s(r.assignment_code)}</span> },
           { label: 'Kết quả hiện tại', value: r.passed ? <Tag color="green">Đã đạt yêu cầu</Tag> : <StatusTag value={String(r.status || 'ASSIGNED')} /> },

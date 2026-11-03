@@ -100,7 +100,8 @@ export async function testingCertsRoutes(app: FastifyInstance, ctx: AppContext) 
       if (!emp) throw Errors.notFound('Nhân sự', rawEmpId);
       return emp;
     });
-    const now = nowIso(), closeAt = body.close_at || body.due_at || '2026-11-30T23:59:59+07:00', actorId = request.auth!.user.id;
+    const now = nowIso(), closeAt = body.close_at || body.due_at || new Date(Date.now() + 3 * 86_400_000).toISOString(), actorId = request.auth!.user.id;
+    if (new Date(closeAt).getTime() < Date.now() - 60_000) throw Errors.fieldValidation('due_date', 'INVALID_DATE', 'Hạn nộp bài kiểm tra không được nằm trong quá khứ', closeAt);
     const bankTotal = Math.max(1, parseRawQuestions(test.questions_json).length || test.total_questions || 1);
     const sampleSize = resolveAsgSampleSize({ exam_sample_size: body.exam_sample_size }, resolveBankSampleSize(test, bankTotal), bankTotal);
     const createdList = await Promise.all(resolvedEmps.map((emp) => ctx.db.testAssignments.insert({ test_id: test.id, employee_id: emp.id, branch_id: emp.branch_id, open_at: now, close_at: closeAt, assigned_by: actorId, status: 'ASSIGNED', max_attempts: body.max_attempts ?? test.max_attempts, exam_sample_size: sampleSize, attempts_used: 0, best_score_percent: 0, passed: false, note: body.note ?? '' }, actorId)));

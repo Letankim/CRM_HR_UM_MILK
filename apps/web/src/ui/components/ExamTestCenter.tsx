@@ -31,7 +31,7 @@ export function AttemptReviewModal({ attempt, onClose }: { attempt: Record<strin
   return (
     <Modal
       open={Boolean(attempt)} width="90vw" style={{ top: 24, maxWidth: 1440 }} onCancel={onClose} destroyOnHidden
-      title={attempt ? `Chi tiết Bài làm Lần #${attempt.attempt_no ?? 1} — ${attempt.testTitle ?? 'Đề kiểm tra'}` : 'Chi tiết bài làm'}
+      title={attempt ? `Chi tiết Bài làm Lần #${attempt.attempt_no ?? 1}` : 'Chi tiết bài làm'}
       footer={<Button type="primary" icon={<CloseOutlined />} onClick={onClose}>Đóng kết quả</Button>}
     >
       {attempt && (

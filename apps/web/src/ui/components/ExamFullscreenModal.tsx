@@ -126,9 +126,9 @@ export function ExamFullscreenModal({ attempt, testRecord, onClose, onSubmitted 
   return createPortal(
     <div onContextMenu={(e) => e.preventDefault()} style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', zIndex: 9999, background: '#F8FAFC', display: 'flex', flexDirection: 'column', overflow: 'hidden', userSelect: 'none' }}>
       <div style={{ background: '#0F172A', color: '#FFFFFF', padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, borderBottom: '1px solid #1E293B' }}>
-        <Space size={10} wrap>
+        <Space size={8} wrap>
           <Tag color="blue" icon={<LockOutlined />} style={{ margin: 0, fontWeight: 700, padding: '2px 8px' }}>PHÒNG THI TOÀN MÀN HÌNH</Tag>
-          <Typography.Text style={{ color: '#FFFFFF', fontWeight: 700, fontSize: 16 }}>{String(attempt.testTitle ?? testRecord?.title ?? 'Đề kiểm tra nghiệp vụ')}</Typography.Text>
+          <Typography.Text style={{ color: '#FFFFFF', fontWeight: 700, fontSize: 15 }}>Bài kiểm tra Nghiệp vụ</Typography.Text>
           <Tag color="geekblue" style={{ margin: 0 }}>Lượt thi #{String(attempt.attempt_no ?? 1)}</Tag>
         </Space>
         <Space size={12} wrap>
@@ -159,7 +159,7 @@ export function ExamFullscreenModal({ attempt, testRecord, onClose, onSubmitted 
                           const active = selectedVal === String(optIdx);
                           return (
                             <div key={optIdx} onClick={() => setAnswers((prev) => ({ ...prev, [q.id]: String(optIdx) }))} style={{ padding: '10px 12px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${active ? BRAND.primary : '#E5E7EB'}`, background: active ? '#EFF6FF' : '#FFFFFF' }}>
-                              <Radio value={String(optIdx)} style={{ fontWeight: active ? 600 : 400 }}>{String.fromCharCode(65 + optIdx)}. {opt}</Radio>
+                              <Radio value={String(optIdx)} style={{ fontWeight: active ? 600 : 400, whiteSpace: 'normal', alignItems: 'flex-start', lineHeight: 1.5 }}>{String.fromCharCode(65 + optIdx)}. {opt}</Radio>
                             </div>
                           );
                         })}

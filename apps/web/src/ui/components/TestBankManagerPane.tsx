@@ -15,7 +15,7 @@ import { SelectableTable } from './BulkActionBar';
 import { AttemptHistoryTable, AttemptReviewModal } from './ExamTestCenter';
 import { useJobPositions } from './JobPositionsManagerModal';
 import { RowActionButtons } from './RowActionButtons';
-import { DEFAULT_QUESTIONS, parseQuestions, TestAssignmentFormModal, TestDetailDrawer, type QuestionRow } from './TestBankModals';
+import { DEFAULT_QUESTIONS, getDefaultTestDueDateTime, parseQuestions, TestAssignmentFormModal, TestDetailDrawer, type QuestionRow } from './TestBankModals';
 
 export function TestBankManagerPane({ tests, assignments, attempts = [], employees, canManage = true }: { tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts?: Record<string, unknown>[]; employees: { value: string; label: string }[]; canManage?: boolean }) {
   const qc = useQueryClient(), { message, modal } = App.useApp(), { options: jobPositionOptions } = useJobPositions();
@@ -51,13 +51,15 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
   const openCreateAssignment = (defaultTestId?: string) => {
     setEditingAssignment(null); asgForm.resetFields();
     const matchedTest = tests.find((t) => String(t.id) === String(defaultTestId ?? tests[0]?.id));
-    asgForm.setFieldsValue({ test_id: defaultTestId ?? (tests[0] ? String(tests[0].id) : undefined), max_attempts: Number(matchedTest?.max_attempts ?? 3), exam_sample_size: Number(matchedTest?.exam_sample_size ?? matchedTest?.examSampleSize ?? matchedTest?.questionsCount ?? 25), due_date: '2026-10-30', due_time: '17:00', note: '' });
+    const defDue = getDefaultTestDueDateTime();
+    asgForm.setFieldsValue({ test_id: defaultTestId ?? (tests[0] ? String(tests[0].id) : undefined), max_attempts: Number(matchedTest?.max_attempts ?? 3), exam_sample_size: Number(matchedTest?.exam_sample_size ?? matchedTest?.examSampleSize ?? matchedTest?.questionsCount ?? 25), due_date: defDue.due_date, due_time: defDue.due_time, note: '' });
     setAsgModal(true);
   };
   const openEditAssignment = (record: Record<string, unknown>) => {
     setEditingAssignment(record);
-    const parsed = dayjs(String(record.close_at || '2026-10-30T17:00:00'));
-    asgForm.setFieldsValue({ test_id: String(record.test_id || ''), employee_id: String(record.employee_id || ''), max_attempts: Number(record.max_attempts ?? 3), exam_sample_size: Number(record.exam_sample_size ?? record.examSampleSize ?? 25), due_date: parsed.isValid() ? parsed.format('YYYY-MM-DD') : '2026-10-30', due_time: parsed.isValid() ? parsed.format('HH:mm') : '17:00', reset_attempts: false, note: String(record.note || '') });
+    const defDue = getDefaultTestDueDateTime(), parsed = dayjs(String(record.close_at || ''));
+    const validFuture = parsed.isValid() && parsed.format('YYYY-MM-DD') >= defDue.due_date;
+    asgForm.setFieldsValue({ test_id: String(record.test_id || ''), employee_id: String(record.employee_id || ''), max_attempts: Number(record.max_attempts ?? 3), exam_sample_size: Number(record.exam_sample_size ?? record.examSampleSize ?? 25), due_date: validFuture ? parsed.format('YYYY-MM-DD') : defDue.due_date, due_time: validFuture ? parsed.format('HH:mm') : defDue.due_time, reset_attempts: false, note: String(record.note || '') });
     setAsgModal(true);
   };
 
