@@ -90,14 +90,13 @@ describe('Kỳ lương 5 bước, Snapshot, Phiếu lương & Điều chỉnh (A
   it('Đối soát ca thiếu Vào/Ra tính toàn bộ ca chưa hoàn thành trong kỳ (kể cả ngày cuối kỳ 31/10) và tự động cập nhật ngay khi HR xóa ca', async () => {
     const hr = await t.loginHeaders('hr');
     const nv1 = empByCode('NV0001');
-    const createdShift = await t.app.inject({
-      method: 'POST',
-      url: '/api/admin/schedules',
-      headers: hr,
-      payload: { employee_id: nv1.id, branch_id: nv1.branch_id, work_date: '2026-10-31', shift_code: 'CA_CHIEU', status: 'PUBLISHED', day_type: 'WORK', scheduled_hours: 5 },
-    });
-    expect(createdShift.statusCode).toBe(201);
-    const shiftId = createdShift.json().data.id;
+    const createdShiftRow = await t.db.shiftAssignments.insert({
+      schedule_week_id: 'WK-2026-10', employee_id: nv1.id, branch_id: nv1.branch_id, work_date: '2026-10-31',
+      shift_template_id: '', start_at: '12:00', end_at: '17:00', status: 'PUBLISHED', source: 'MANUAL',
+      employee_stage: nv1.stage, day_type: 'WORK', shift_code: 'CA_CHIEU', scheduled_hours: 5,
+      swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: '', note: '', linked_assignment_id: '',
+    }, 'hr');
+    const shiftId = createdShiftRow.id;
 
     const snapsBefore = (await t.app.inject({ method: 'GET', url: `/api/admin/payroll/periods/${periodId}/snapshots`, headers: fin })).json().data.snapshots;
     const nv1Before = snapsBefore.find((s: { employeeCode: string }) => s.employeeCode === 'NV0001');

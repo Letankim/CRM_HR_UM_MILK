@@ -76,7 +76,7 @@ export function ScheduleMonthCalendar({ todayDate, selectedBranchId = 'ALL', ass
               );
               return (
                 <div style={{ padding: '2px 0' }}>
-                  {canEdit && (
+                  {canEdit && dateStr >= effectiveToday.format('YYYY-MM-DD') && (
                     <div style={{ textAlign: 'right', marginBottom: 2 }}>
                       <Button
                         type="text"

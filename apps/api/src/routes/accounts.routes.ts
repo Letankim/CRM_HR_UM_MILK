@@ -9,6 +9,7 @@ import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
 import { queueAccountCreatedEmail } from '../services/action-email-dispatcher.js';
+import { runBackgroundSideEffect } from '../services/background-write.js';
 import { healBranchConsistency, resolveSingleBranchId, syncEmployeeFromAccount } from './account-employee-sync.js';
 import { accountActionRoutes } from './accounts-actions.routes.js';
 import { assertUniquePersonalIdentifiers, findLinkedEmployeeForUser, resolveStaffGroupLabel } from './employee-mapper.js';
@@ -90,8 +91,10 @@ export async function accountRoutes(app: FastifyInstance, ctx: AppContext) {
     const query = zAccountListQuery.parse(request.query);
     if (query.refresh === '1' || query.refresh === 'true') {
       await Promise.all([ctx.db.users.refreshIfIdle(), ctx.db.employees.refreshIfIdle(), ctx.db.branches.refreshIfIdle()]);
+      await healBranchConsistency(ctx);
+    } else {
+      await runBackgroundSideEffect(() => healBranchConsistency(ctx));
     }
-    await healBranchConsistency(ctx);
     const branchMap = new Map(ctx.db.branches.all().map((b) => [b.id, b]));
     const mapped = ctx.db.users.all().map((u) => mapAccountRecord(u, ctx, branchMap));
 

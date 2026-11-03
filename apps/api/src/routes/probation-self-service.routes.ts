@@ -14,6 +14,7 @@ import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js'
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import {
   assertMaxShiftsPerDay,
+  assertShiftNotInPast,
   employeeShiftsOnDate,
   isCountedWorkShift,
   matchEmp,
@@ -146,6 +147,7 @@ export function registerProbationSelfServiceRoutes(app: FastifyInstance, ctx: Ap
     const shiftsOnWorkDate = employeeShiftsOnDate(ctx, emp, body.work_date);
     const targetShift = shiftsOnWorkDate.find((s) => s.status !== 'COMPLETED' && !ctx.db.attendanceEvents.find((e) => e.assignment_id === s.id));
     if (!targetShift) throw Errors.fieldValidation('work_date', 'INVALID_VALUE', `Không tìm thấy ca làm việc chưa điểm danh vào ngày ${vi(body.work_date)} để hoán đổi`, body.work_date);
+    assertShiftNotInPast(body.off_date, targetShift.start_at, 'off_date');
     if (employeeShiftsOnDate(ctx, emp, body.off_date).some((s) => s.shift_code === targetShift.shift_code)) {
       throw Errors.fieldValidation('off_date', 'DUPLICATE_VALUE', `Ngày ${vi(body.off_date)} đã có ca làm việc trùng khung ca`, body.off_date);
     }
@@ -166,7 +168,7 @@ export function registerProbationSelfServiceRoutes(app: FastifyInstance, ctx: Ap
           decided_by: user.id, decision_reason: 'Tự đổi ngày làm sang ngày OFF trong chu kỳ thử việc', decided_at: now,
         }, user.id);
 
-    await recalculateOpenPeriods(ctx, user.id);
+    await runBackgroundSideEffect(() => recalculateOpenPeriods(ctx, user.id));
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'SHIFT_UPDATED', message: `${emp.full_name} tự đổi ngày làm ${vi(body.work_date)} sang ${vi(body.off_date)}`, actorId: user.id });
     return sendSuccess(request, `Đã hoán đổi ca làm việc từ ngày ${vi(body.work_date)} sang ngày ${vi(body.off_date)} thành công`, {
       shift: mapShiftAssignment(updatedShift, ctx), leave: updatedLeave, fromWorkDate: body.work_date, toWorkDate: body.off_date,
@@ -183,6 +185,7 @@ export function registerProbationSelfServiceRoutes(app: FastifyInstance, ctx: Ap
     assertMaxShiftsPerDay(ctx, { emp, workDate: body.work_date, maxPerDay: settings.maxShiftsPerDay, field: 'work_date', isSelf: true });
     const tpl = findBranchShiftTemplate(ctx, body.shift_code, emp.branch_id);
     const startAt = tpl?.start_time || '07:00', endAt = tpl?.end_time || '12:00';
+    assertShiftNotInPast(body.work_date, startAt);
     assertNoDuplicateOrOverlappingEmployeeShift(ctx, { emp, workDate: body.work_date, shiftCode: body.shift_code, startAt, endAt });
 
     const isEmp = matchEmp(emp);

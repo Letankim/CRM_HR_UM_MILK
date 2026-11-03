@@ -40,6 +40,7 @@ export interface ScheduleWeekMatrixProps extends ScheduleCellHandlers {
 export function ScheduleWeekMatrix({ todayDate, selectedBranchId = 'ALL', assignments, canEdit, hideStaffingBadge = false, isPartialFilter = false, onAddAtCell, onEditItem, onViewAttendance, weekStart, onWeekStartChange }: ScheduleWeekMatrixProps) {
   const { rules, branchCodeById } = useStaffingRules(!hideStaffingBadge);
   const effectiveToday = todayDate || dayjs().format('YYYY-MM-DD');
+  const nowHm = dayjs().format('HH:mm');
   const currentWeekMonday = getMonday(dayjs(effectiveToday));
   const isCurrentWeek = weekStart.format('YYYY-MM-DD') === currentWeekMonday.format('YYYY-MM-DD');
   const days = Array.from({ length: 7 }, (_, idx) => weekStart.add(idx, 'day'));
@@ -52,6 +53,7 @@ export function ScheduleWeekMatrix({ todayDate, selectedBranchId = 'ALL', assign
       .map((s, idx) => ({
         code: s.code,
         label: s.name.replace(/\s*\([^)]*\)\s*/g, '').trim(),
+        startTime: s.startTime || '07:00',
         time: `${s.startTime} – ${s.endTime}`,
         color: SHIFT_COLORS[idx % SHIFT_COLORS.length]!,
       }));
@@ -60,6 +62,7 @@ export function ScheduleWeekMatrix({ todayDate, selectedBranchId = 'ALL', assign
         rows.push({
           code: a.shiftCode,
           label: (a.shiftLabel || a.shiftCode).replace(/\s*\([^)]*\)\s*/g, '').trim(),
+          startTime: a.startAt || '07:00',
           time: `${a.startAt || '07:00'} – ${a.endAt || '12:00'}`,
           color: SHIFT_COLORS[rows.length % SHIFT_COLORS.length]!,
         });
@@ -192,7 +195,7 @@ export function ScheduleWeekMatrix({ todayDate, selectedBranchId = 'ALL', assign
                             </div>
                           </Tooltip>
                         ))}
-                        {canEdit && <Button type="dashed" size="small" block icon={<PlusOutlined />} onClick={() => onAddAtCell(dateStr, shift.code)} style={{ fontSize: 11 }}>Phân ca</Button>}
+                        {canEdit && (dateStr > effectiveToday || (dateStr === effectiveToday && shift.startTime > nowHm)) && <Button type="dashed" size="small" block icon={<PlusOutlined />} onClick={() => onAddAtCell(dateStr, shift.code)} style={{ fontSize: 11 }}>Phân ca</Button>}
                       </Space>
                     </td>
                   );

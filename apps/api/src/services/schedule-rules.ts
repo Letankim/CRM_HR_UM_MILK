@@ -3,6 +3,31 @@ import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs } from '../lib/time.js';
 import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
+import { getVnNowDateAndHm } from './shift-absent-scanner.js';
+
+/**
+ * Chặn tạo mới hoặc dời ca làm việc vào ngày/giờ trong quá khứ:
+ * chỉ cho phép xếp ca từ thời điểm hiện tại trở về tương lai.
+ */
+export function assertShiftNotInPast(workDate: string, startAt = '', field = 'work_date'): void {
+  const { todayStr, nowHm } = getVnNowDateAndHm();
+  if (workDate < todayStr) {
+    throw Errors.fieldValidation(
+      field,
+      'OUT_OF_RANGE',
+      `Không thể tạo hoặc xếp ca làm việc trong quá khứ (${dayjs(workDate).format('DD/MM/YYYY')}). Chỉ được tạo ca từ ngày giờ hiện tại trở về tương lai.`,
+      workDate,
+    );
+  }
+  if (workDate === todayStr && startAt && nowHm >= startAt) {
+    throw Errors.fieldValidation(
+      'shift_code',
+      'OUT_OF_RANGE',
+      `Khung ca (${startAt}) ngày hôm nay đã bắt đầu hoặc đã qua giờ hiện tại (${nowHm}). Chỉ được tạo ca từ ngày giờ hiện tại trở về tương lai.`,
+      startAt,
+    );
+  }
+}
 
 /**
  * Quy tắc lịch làm việc dùng chung: số ca tối đa / ngày, chu kỳ thử việc 12 ngày,

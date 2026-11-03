@@ -9,6 +9,7 @@ import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
+import { runBackgroundSideEffect, tolerantWrite } from '../services/background-write.js';
 import { findLinkedEmployeeForUser, mapEmployeeRecord } from './employee-mapper.js';
 import {
   deleteContractFromDisk,
@@ -121,19 +122,30 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
     const localBackupPath = `storage/contracts/${safeCode}/${fileDiskName}`;
     await saveContractToDisk(ctx, safeCode, fileDiskName, buffer);
     let driveFileId = `local_${contractId}`;
-    if (ctx.google.uploadDriveMedia) {
-      try {
-        const up = await ctx.google.uploadDriveMedia({ rootFolder: DRIVE_FOLDERS.EMPLOYEE_DOCUMENTS, folderSegments: [safeCode], fileName: `${safeCode}_${body.contract_type}_${safeName}`, mimeType: check.detectedMime, data: buffer });
-        if (up?.fileId) driveFileId = up.fileId;
-      } catch { /* fallback local */ }
-    }
     putContractCache([contractId, driveFileId], buffer, check.detectedMime);
-    const actor = request.auth!.user;
+    const actor = request.auth!.user, reqAudit = auditContext(request);
     const item: EmployeeContractItem = { id: contractId, contractType: body.contract_type, fileName: body.file_name, mimeType: check.detectedMime, sizeBytes: buffer.length, driveFileId, localBackupPath, uploadedBy: actor.username || actor.id, uploadedAt: nowIso(), note: body.note };
     const existing = parseEmployeeContracts(emp.contracts_json).filter((c) => !c.driveFileId?.startsWith('drv_ctr_'));
     const nextContracts = [item, ...existing];
     await ctx.db.employees.update(emp.id, emp.version, { contracts_json: JSON.stringify(nextContracts) }, actor.id);
-    await ctx.audit.record(auditContext(request), { action: 'employee.contract.upload', entity: 'EMPLOYEES', entityId: emp.id, after: { contractId: item.id, contractType: item.contractType, fileName: item.fileName, sizeBytes: item.sizeBytes, driveFileId: item.driveFileId } });
+    await runBackgroundSideEffect(async () => {
+      if (ctx.google.uploadDriveMedia) {
+        try {
+          const up = await ctx.google.uploadDriveMedia({ rootFolder: DRIVE_FOLDERS.EMPLOYEE_DOCUMENTS, folderSegments: [safeCode], fileName: `${safeCode}_${body.contract_type}_${safeName}`, mimeType: check.detectedMime, data: buffer });
+          if (up?.fileId) {
+            driveFileId = up.fileId;
+            item.driveFileId = driveFileId;
+            putContractCache([contractId, driveFileId], buffer, check.detectedMime);
+            const cur = ctx.db.employees.get(emp.id);
+            if (cur) {
+              const curList = parseEmployeeContracts(cur.contracts_json).map((c) => (c.id === contractId ? { ...c, driveFileId } : c));
+              await tolerantWrite(() => ctx.db.employees.update(cur.id, cur.version, { contracts_json: JSON.stringify(curList) }, actor.id));
+            }
+          }
+        } catch { /* fallback local */ }
+      }
+      await ctx.audit.record(reqAudit, { action: 'employee.contract.upload', entity: 'EMPLOYEES', entityId: emp.id, after: { contractId: item.id, contractType: item.contractType, fileName: item.fileName, sizeBytes: item.sizeBytes, driveFileId: item.driveFileId } });
+    });
     reply.code(201);
     return sendSuccess(request, `Đã tải lên ${CONTRACT_TYPE_LABELS[body.contract_type]} thành công`, { ...item, contractTypeLabel: CONTRACT_TYPE_LABELS[body.contract_type], contracts: nextContracts });
   });

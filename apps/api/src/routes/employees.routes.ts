@@ -10,6 +10,7 @@ import { sendPaginated, sendSuccess } from '../lib/response.js';
 import { dayjs } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
 import { queueEmployeeOnboardedEmail } from '../services/action-email-dispatcher.js';
+import { runBackgroundSideEffect } from '../services/background-write.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { today } from '../services/salary-profile.service.js';
 import { assertAmountInRange, newProfileRow } from '../services/salary-profile.writer.js';
@@ -79,8 +80,10 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
     if (query.branch_id && query.branch_id !== 'ALL') assertBranchAccess(request, query.branch_id);
     if (query.refresh === '1' || query.refresh === 'true') {
       await Promise.all([ctx.db.employees.refreshIfIdle(), ctx.db.users.refreshIfIdle(), ctx.db.branches.refreshIfIdle(), ctx.db.payRates.refreshIfIdle()]);
+      await healBranchConsistency(ctx);
+    } else {
+      await runBackgroundSideEffect(() => healBranchConsistency(ctx));
     }
-    await healBranchConsistency(ctx);
     const perms = request.auth!.permissions;
     const canSeeSalary = perms.has('payroll.read') || perms.has('employee.manage') || perms.has('system.config');
     const canSeePersonal = perms.has('employee.manage') || perms.has('system.config');
@@ -195,10 +198,12 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
       ],
       resultSelector: (s) => s.emp!,
     });
-    await recalculateOpenPeriods(ctx, actorId);
-    await ctx.audit.record(auditContext(request), {
-      action: 'employee.create', entity: 'EMPLOYEES', entityId: created.id,
-      after: { employee_code: created.employee_code, stage: created.stage, user_id: created.user_id, salary_rate_type: body.salary?.rate_type ?? null },
+    await runBackgroundSideEffect(async () => {
+      await recalculateOpenPeriods(ctx, actorId);
+      await ctx.audit.record(auditContext(request), {
+        action: 'employee.create', entity: 'EMPLOYEES', entityId: created.id,
+        after: { employee_code: created.employee_code, stage: created.stage, user_id: created.user_id, salary_rate_type: body.salary?.rate_type ?? null },
+      });
     });
     const onboardSecret = created.user_id ? (body.link_user_id ? (body.initial_pin && body.initial_pin.length >= 6 ? body.initial_pin : undefined) : (body.create_account ? effectiveCreatePin : undefined)) : undefined;
     queueEmployeeOnboardedEmail(ctx, created, request.auth?.user.email, onboardSecret);

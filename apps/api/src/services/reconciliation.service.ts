@@ -1,6 +1,7 @@
 import type { SagaStatus } from '@umbm/shared';
 import type { Database } from '../data/database.js';
 import { nowIso } from '../lib/time.js';
+import { runBackgroundSideEffect } from './background-write.js';
 import { scanUniqueKeys, scanUserInvariants, type ReconciliationIssue, type ReconciliationReport } from './reconciliation-scan.js';
 import { scanSystemTables } from './reconciliation-system-scan.js';
 
@@ -36,19 +37,6 @@ export class ReconciliationService {
    */
   async executeSaga<TContext, TResult>(options: SagaOptions<TContext, TResult>): Promise<TResult> {
     const completedSteps: { step: SagaStep<TContext>; completedAt: string }[] = [];
-    const journalRow = await this.db.operationJournal.insert(
-      {
-        saga_key: options.sagaKey,
-        operation: options.operation,
-        actor_id: options.actorId,
-        status: 'PENDING',
-        steps_json: '[]',
-        error: '',
-        completed_at: '',
-      },
-      options.actorId,
-    );
-
     const ctx = options.initialContext;
 
     try {
@@ -57,15 +45,20 @@ export class ReconciliationService {
         completedSteps.push({ step, completedAt: nowIso() });
       }
 
-      await this.db.operationJournal.update(
-        journalRow.id,
-        journalRow.version,
-        {
-          status: 'COMMITTED',
-          steps_json: JSON.stringify(completedSteps.map((s) => ({ name: s.step.name, at: s.completedAt }))),
-          completed_at: nowIso(),
-        },
-        options.actorId,
+      const stepsJson = JSON.stringify(completedSteps.map((s) => ({ name: s.step.name, at: s.completedAt })));
+      await runBackgroundSideEffect(() =>
+        this.db.operationJournal.insert(
+          {
+            saga_key: options.sagaKey,
+            operation: options.operation,
+            actor_id: options.actorId,
+            status: 'COMMITTED',
+            steps_json: stepsJson,
+            error: '',
+            completed_at: nowIso(),
+          },
+          options.actorId,
+        ),
       );
 
       return options.resultSelector(ctx);
@@ -89,10 +82,11 @@ export class ReconciliationService {
           ? `${errorMsg} | Lỗi hoàn tác: ${compensationErrors.join('; ')}`
           : errorMsg;
 
-      await this.db.operationJournal.update(
-        journalRow.id,
-        journalRow.version,
+      const journalRow = await this.db.operationJournal.insert(
         {
+          saga_key: options.sagaKey,
+          operation: options.operation,
+          actor_id: options.actorId,
           status: finalStatus,
           steps_json: JSON.stringify(completedSteps.map((s) => ({ name: s.step.name, at: s.completedAt }))),
           error: combinedError.slice(0, 1500),

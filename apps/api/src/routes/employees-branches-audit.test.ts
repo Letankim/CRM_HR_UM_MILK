@@ -145,7 +145,7 @@ describe('AI-TAB-04, 16, 17, 18, 29: Hồ sơ Nhân sự, Cô lập Chi nhánh &
     expect(accListRes.json().data[0].employeeName).toBe('Lê Hoàng Minh Anh');
 
     // Tạo 1 ca làm việc cho nhân sự tại CN01, sau đó đổi chi nhánh bên Tài khoản sang CN02 -> Lịch ca & Hồ sơ nhân sự tự động chuyển sang CN02, Quản lý CN01 (store1) không còn thấy
-    await app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hrHeaders, payload: { employee_id: promoted.id, work_date: '2026-10-25', shift_code: 'CA_SANG' } });
+    await app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hrHeaders, payload: { employee_id: promoted.id, work_date: '2027-10-25', shift_code: 'CA_SANG' } });
     const cn2 = db.branches.all()[1]!.id;
     const curUser = db.users.get(standaloneUser.id)!;
     const updAccBranchRes = await app.inject({

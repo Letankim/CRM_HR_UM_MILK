@@ -100,25 +100,30 @@ export function ScheduleFormModal({
     });
   }, [baseEmployees, editing, existingAssignments, watchedDate, watchedShiftCode, curShiftMeta]);
 
+  const todayStr = dayjs().format('YYYY-MM-DD'), nowHm = dayjs().format('HH:mm');
   const availableShiftOptions = useMemo(() => {
-    if (!watchedEmpId || !watchedDate) return shiftOptions;
+    if (!watchedDate) return shiftOptions.map((opt) => ({ ...opt, disabled: false }));
     return shiftOptions.map((opt) => {
-      const conflict = existingAssignments.find((a) =>
+      if (watchedDate === todayStr && watchedDayType !== 'OFF' && (!editing || editing.workDate !== todayStr || editing.shiftCode !== opt.value) && opt.startTime <= nowHm) {
+        return { ...opt, disabled: true, label: `${opt.label} — Đã qua giờ bắt đầu (${opt.startTime})` };
+      }
+      const conflict = watchedEmpId ? existingAssignments.find((a) =>
         a.id !== editing?.id && a.employeeId === watchedEmpId && a.workDate === watchedDate && a.dayType !== 'OFF' && a.status !== 'ON_LEAVE' &&
         (a.shiftCode === opt.value || isTimeOverlap(opt.startTime, opt.endTime, a.startAt, a.endAt)),
-      );
-      return conflict ? { ...opt, disabled: true, label: `${opt.label} — Đã trùng ${conflict.shiftLabel}` } : opt;
+      ) : undefined;
+      return conflict ? { ...opt, disabled: true, label: `${opt.label} — Đã trùng ${conflict.shiftLabel}` } : { ...opt, disabled: false };
     });
-  }, [shiftOptions, existingAssignments, editing?.id, watchedEmpId, watchedDate]);
+  }, [shiftOptions, existingAssignments, editing, watchedEmpId, watchedDate, watchedDayType, todayStr, nowHm]);
 
   useEffect(() => {
     if (!open || shiftOptions.length === 0 || editing) return;
     const curShift = form.getFieldValue('shift_code');
-    if (!curShift || !shiftOptions.some((o) => o.value === curShift)) {
-      const nextShift = shiftOptions[0]!.value;
+    const valid = availableShiftOptions.find((o) => !o.disabled);
+    if (!curShift || !availableShiftOptions.some((o) => o.value === curShift && !o.disabled)) {
+      const nextShift = (valid ?? shiftOptions[0])!.value;
       form.setFieldsValue({ shift_code: nextShift, scheduled_hours: hoursMap[nextShift] ?? 5 });
     }
-  }, [open, editing, selectedEmpBranchId, shiftOptions, hoursMap, form]);
+  }, [open, editing, selectedEmpBranchId, shiftOptions, availableShiftOptions, hoursMap, form]);
 
   useEffect(() => {
     if (!open) return;
@@ -126,7 +131,11 @@ export function ScheduleFormModal({
       form.setFieldsValue({ employee_id: editing.employeeId, work_date: editing.workDate, shift_code: editing.shiftCode, status: editing.status, day_type: editing.dayType, scheduled_hours: editing.scheduledHours, note: editing.note });
     } else {
       form.resetFields();
-      const targetDate = presetDate || dayjs().format('YYYY-MM-DD'), targetShift = presetShiftCode || 'CA_SANG';
+      const hasFutureToday = shiftOptions.length === 0 || shiftOptions.some((s) => s.startTime > nowHm);
+      const minDefaultDate = hasFutureToday ? todayStr : dayjs().add(1, 'day').format('YYYY-MM-DD');
+      const targetDate = presetDate && presetDate >= todayStr ? presetDate : minDefaultDate;
+      const validPresetShift = presetShiftCode && (targetDate > todayStr || !shiftOptions.find((s) => s.value === presetShiftCode && s.startTime <= nowHm)) ? presetShiftCode : undefined;
+      const targetShift = validPresetShift || (targetDate === todayStr ? shiftOptions.find((s) => s.startTime > nowHm)?.value : undefined) || shiftOptions[0]?.value || 'CA_SANG';
       const firstFreeEmp = baseEmployees.find((e) => !existingAssignments.some((a) => a.employeeId === e.value && a.workDate === targetDate && a.shiftCode === targetShift));
       form.setFieldsValue({ employee_id: firstFreeEmp?.value ?? baseEmployees[0]?.value, work_date: targetDate, shift_code: targetShift, status: 'PUBLISHED', day_type: 'WORK', scheduled_hours: hoursMap[targetShift] ?? 5 });
     }
@@ -192,7 +201,7 @@ export function ScheduleFormModal({
           <Select showSearch disabled={Boolean(editing) || !canEditFields} options={employeeSelectOptions} loading={!editing && empSelect.loading} onSearch={editing ? undefined : empSelect.onSearch} filterOption={editing ? undefined : empSelect.filterOption} onDropdownVisibleChange={editing ? undefined : empSelect.onDropdownVisibleChange} placeholder="Tìm và chọn nhân sự phân công..." />
         </Form.Item>
         <Row gutter={12}>
-          <Col span={12}><Form.Item name="work_date" label="Ngày làm việc" rules={[{ required: true }]}><DateStringPicker disabled={!canEditFields} /></Form.Item></Col>
+          <Col span={12}><Form.Item name="work_date" label="Ngày làm việc" rules={[{ required: true }]}><DateStringPicker disabled={!canEditFields} minDate={todayStr} /></Form.Item></Col>
           <Col span={12}><Form.Item name="shift_code" label="Khung ca làm việc (theo chi nhánh)" rules={[{ required: true }]}><Select disabled={!canEditFields} options={availableShiftOptions} /></Form.Item></Col>
         </Row>
         <Row gutter={12}>

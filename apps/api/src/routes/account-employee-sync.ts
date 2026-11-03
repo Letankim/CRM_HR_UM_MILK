@@ -143,7 +143,7 @@ export async function syncEmployeeFromAccount(ctx: AppContext, params: SyncEmplo
     empPatch.stage = 'PROBATION';
   }
   const updatedEmp = await ctx.db.employees.update(targetEmp.id, targetEmp.version, empPatch, actorId);
-  await cascadeEmployeeBranchChange(ctx, updatedEmp, updatedEmp.branch_id, actorId);
+  if (targetEmp.branch_id !== updatedEmp.branch_id) await cascadeEmployeeBranchChange(ctx, updatedEmp, updatedEmp.branch_id, actorId);
   return updatedEmp.employee_code;
 }
 

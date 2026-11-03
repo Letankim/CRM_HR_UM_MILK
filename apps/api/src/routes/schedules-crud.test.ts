@@ -29,9 +29,16 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
     const emp = db.employees.all()[0]!;
     const branchId = emp.branch_id;
 
+    const pastRes = await app.inject({
+      method: 'POST', url: '/api/admin/schedules', headers,
+      payload: { branch_id: branchId, employee_id: emp.id, work_date: '2025-10-20', shift_code: 'CA_TOI', status: 'DRAFT', day_type: 'WORK', note: 'Phân ca quá khứ' },
+    });
+    expect(pastRes.statusCode).toBe(400);
+    expect(pastRes.json().errors.details[0]).toMatchObject({ field: 'work_date', code: 'OUT_OF_RANGE' });
+
     const createRes = await app.inject({
       method: 'POST', url: '/api/admin/schedules', headers,
-      payload: { branch_id: branchId, employee_id: emp.id, work_date: '2026-10-26', shift_code: 'CA_TOI', status: 'DRAFT', day_type: 'WORK', note: 'Phân ca tối cuối tuần' },
+      payload: { branch_id: branchId, employee_id: emp.id, work_date: '2027-10-26', shift_code: 'CA_TOI', status: 'DRAFT', day_type: 'WORK', note: 'Phân ca tối cuối tuần' },
     });
     expect(createRes.statusCode).toBe(201);
     const created = createRes.json().data;
@@ -52,7 +59,7 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
     expect(bulkPub.statusCode).toBe(200);
     expect(bulkPub.json().data.processedCount).toBe(1);
 
-    const listRes = await app.inject({ method: 'GET', url: `/api/admin/schedules?from_date=2026-10-01&to_date=2026-10-31`, headers });
+    const listRes = await app.inject({ method: 'GET', url: `/api/admin/schedules?from_date=2027-10-01&to_date=2027-10-31`, headers });
     expect(listRes.statusCode).toBe(200);
     expect(listRes.json().data.length).toBeGreaterThanOrEqual(1);
   });
@@ -63,11 +70,11 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
     const branch = db.branches.get(emp.branch_id) ?? db.branches.all()[0]!;
     const createRes = await app.inject({
       method: 'POST', url: '/api/admin/schedules', headers: hrHeaders,
-      payload: { branch_id: branch.id, employee_id: emp.id, work_date: '2026-10-20', shift_code: 'CA_SANG', status: 'PUBLISHED', day_type: 'WORK' },
+      payload: { branch_id: branch.id, employee_id: emp.id, work_date: '2027-10-20', shift_code: 'CA_SANG', status: 'PUBLISHED', day_type: 'WORK' },
     });
     const shiftId = createRes.json().data.id as string;
 
-    await sweepExpiredShiftsAndMarkAbsent(db, 'test-scanner', { nowDate: '2026-10-20', nowHm: '12:30' });
+    await sweepExpiredShiftsAndMarkAbsent(db, 'test-scanner', { nowDate: '2027-10-20', nowHm: '12:30' });
     expect(db.shiftAssignments.get(shiftId)?.status).toBe('ABSENT');
 
     const lockedCheckIn = await app.inject({
@@ -78,7 +85,7 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
 
     const adjRes = await app.inject({
       method: 'POST', url: '/api/admin/attendance/adjustments', headers: hrHeaders,
-      payload: { employee_id: emp.id, work_date: '2026-10-20', shift_code: 'CA_SANG', kind: 'FORGOT_CHECK_IN', requested_hours: 5, reason: 'Quên điểm danh vào ca sáng' },
+      payload: { employee_id: emp.id, work_date: '2027-10-20', shift_code: 'CA_SANG', kind: 'FORGOT_CHECK_IN', requested_hours: 5, reason: 'Quên điểm danh vào ca sáng' },
     });
     expect(adjRes.statusCode).toBe(201);
     const adj = adjRes.json().data;
@@ -94,7 +101,7 @@ describe('Lịch làm việc (HR-07, STR-03) & CRUD Khung ca', () => {
     expect(db.shiftAssignments.get(shiftId)?.status).toBe('PUBLISHED');
     expect(db.attendanceEvents.find((e) => e.assignment_id === shiftId && e.type === 'CHECK_IN')).toBeTruthy();
 
-    const outAdj = (await app.inject({ method: 'POST', url: '/api/admin/attendance/adjustments', headers: hrHeaders, payload: { employee_id: emp.id, work_date: '2026-10-20', shift_code: 'CA_SANG', kind: 'FORGOT_CHECK_OUT', reason: 'Quên điểm danh ra ca sáng' } })).json().data;
+    const outAdj = (await app.inject({ method: 'POST', url: '/api/admin/attendance/adjustments', headers: hrHeaders, payload: { employee_id: emp.id, work_date: '2027-10-20', shift_code: 'CA_SANG', kind: 'FORGOT_CHECK_OUT', reason: 'Quên điểm danh ra ca sáng' } })).json().data;
     expect(outAdj.punch_type).toBe('CHECK_OUT');
     const outDecide = await app.inject({ method: 'POST', url: `/api/admin/attendance/adjustments/${outAdj.id}/decide`, headers: hrHeaders, payload: { version: outAdj.version, action: 'HR_APPROVE', decision_reason: 'HR duyệt minh chứng ra ca' } });
     expect(outDecide.statusCode).toBe(200);
