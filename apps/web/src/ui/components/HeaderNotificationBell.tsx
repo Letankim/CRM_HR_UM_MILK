@@ -1,6 +1,6 @@
 'use client';
 
-import { BellOutlined, CheckOutlined, DesktopOutlined, MutedOutlined, ReloadOutlined, RightOutlined, SoundOutlined } from '@ant-design/icons';
+import { BellOutlined, CheckOutlined, DesktopOutlined, MutedOutlined, ReloadOutlined, SoundOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Button, Flex, List, Popover, Space, Spin, Switch, Tag, Tooltip, Typography } from 'antd';
 import dayjs from 'dayjs';
@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import {
-  buildNotificationCenterUrl, dispatchOsDesktopNotification,
+  buildNotificationCenterUrl, dispatchOsDesktopNotification, isUserOutsideCurrentTab,
   shouldTriggerFloatingPopup, useDesktopNotifications, type FloatingNotifPayload,
 } from '@/lib/desktop-notification';
 import { useTrackUnreadNotifications } from '@/lib/notification-sound';
@@ -28,7 +28,7 @@ export function HeaderNotificationBell({
   userId, portal, soundEnabled, setSoundEnabled, playTestSound,
 }: HeaderNotificationBellProps) {
   const router = useRouter(), qc = useQueryClient();
-  const { message, notification } = App.useApp();
+  const { message } = App.useApp();
   const [open, setOpen] = useState(false);
 
   const defaultCenterHref = portal === 'backoffice' ? '/admin/notifications' : '/nv/thong-bao';
@@ -45,32 +45,6 @@ export function HeaderNotificationBell({
 
   const { desktopEnabled, permission, toggleDesktopEnabled, requestPermissionNow } = useDesktopNotifications(portal, handleNavigateToNotif);
 
-  const showZaloBottomRightCard = useCallback((item: HeaderNotifItem) => {
-    const floatKey = `umbm-zalo-float-${item.id || Date.now()}`, targetUrl = buildNotificationCenterUrl(portal, item.id);
-    void dispatchOsDesktopNotification(item, portal, handleNavigateToNotif);
-    if (!desktopEnabled) return;
-    const onCardClick = () => { notification.destroy(floatKey); handleNavigateToNotif(item.id, targetUrl); };
-    notification.open({
-      key: floatKey, placement: 'bottomRight', duration: 9,
-      style: { border: '1px solid #93C5FD', borderRadius: 4, background: '#FFFFFF', padding: '12px 14px' },
-      message: (
-        <div onClick={onCardClick} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, paddingRight: 12 }}>
-          <Tag color="blue" style={{ margin: 0, fontSize: 10, fontWeight: 700, lineHeight: '16px', paddingInline: 5 }}>{item.code || 'THÔNG BÁO'}</Tag>
-          <span style={{ fontWeight: 700, fontSize: 13, color: '#0F172A' }}>{item.title}</span>
-        </div>
-      ),
-      description: (
-        <div onClick={onCardClick} style={{ cursor: 'pointer', marginTop: 2 }}>
-          <div style={{ fontSize: 12, color: '#334155', lineHeight: 1.45, marginBottom: 6 }}>{item.body || item.targetLabel}</div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: '#2563EB', fontWeight: 600 }}>
-            <span style={{ color: '#64748B', fontWeight: 400 }}>{item.targetLabel || 'Hệ thống Ụm Bò Milk HR'}</span>
-            <span>Nhấn để mở mục Thông báo <RightOutlined style={{ fontSize: 10 }} /></span>
-          </div>
-        </div>
-      ),
-    });
-  }, [desktopEnabled, handleNavigateToNotif, notification, portal]);
-
   const markAllMut = useMutation({
     mutationFn: () => api.post('/notifications/mark-all-read', {}),
     onSuccess: () => { message.success('Đã đánh dấu đã đọc tất cả thông báo'); void qc.invalidateQueries({ queryKey: ['notifications'] }); },
@@ -82,30 +56,36 @@ export function HeaderNotificationBell({
   const unreadKeys = useMemo(() => notifItems.filter((n) => n.readStatus === 'UNREAD').map((n) => `ntf:${n.id}`), [notifItems]);
 
   useTrackUnreadNotifications(userId, unreadKeys, notifsQ.isSuccess, (newKeys) => {
-    for (const item of notifItems.filter((n) => newKeys.includes(`ntf:${n.id}`)).slice(0, 2)) {
-      if (shouldTriggerFloatingPopup(item.id)) showZaloBottomRightCard(item);
+    const newlyArrived = notifItems.filter((n) => newKeys.includes(`ntf:${n.id}`));
+    const firstNew = newlyArrived[0];
+    if (!firstNew) return;
+    if (isUserOutsideCurrentTab()) {
+      for (const item of newlyArrived.slice(0, 2)) {
+        if (shouldTriggerFloatingPopup(item.id)) {
+          void dispatchOsDesktopNotification(item, portal, handleNavigateToNotif);
+        }
+      }
+    } else {
+      message.info({ key: `rt-${portal}-bell-toast`, content: `Thông báo mới: ${firstNew.title}` });
     }
   });
 
   const popoverContent = (
-    <div style={{ width: 468, maxWidth: 'calc(100vw - 32px)' }}>
+    <div style={{ width: 456, maxWidth: 'calc(100vw - 32px)' }}>
       <Flex justify="space-between" align="center" wrap="wrap" gap={6} style={{ paddingBottom: 8, borderBottom: `1px solid ${BRAND.border}` }}>
         <Space size={6}>
           <Typography.Text strong style={{ fontSize: 13 }}>Thông báo đã nhận ({notifTotal})</Typography.Text>
           {unreadCount > 0 && <Tag color="red" style={{ margin: 0, borderRadius: 2, fontSize: 11, fontWeight: 600 }}>{badgeText} chưa đọc</Tag>}
         </Space>
         <Space size={4} wrap>
-          <Tooltip title="Nghe thử chuông & Xem thử thông báo nổi góc dưới phải">
-            <Button
-              size="small" type="text" icon={soundEnabled ? <SoundOutlined style={{ color: BRAND.primary }} /> : <MutedOutlined />}
-              onClick={() => { playTestSound(); showZaloBottomRightCard(notifItems[0] ?? { id: '', code: 'HT-TEST', title: 'Thông báo nổi góc dưới bên phải (Như Zalo)', body: 'Khi có thông báo mới, hộp thoại sẽ nổi ở góc dưới phải màn hình ngay cả khi bạn đang ở tab khác.', targetLabel: 'Hệ thống Ụm Bò Milk HR', readStatus: 'UNREAD' }); }}
-            />
+          <Tooltip title="Nghe thử chuông thông báo">
+            <Button size="small" type="text" icon={soundEnabled ? <SoundOutlined style={{ color: BRAND.primary }} /> : <MutedOutlined />} onClick={playTestSound} />
           </Tooltip>
           <Switch size="small" checked={soundEnabled} onChange={setSoundEnabled} checkedChildren="Chuông" unCheckedChildren="Tắt" />
-          <Tooltip title={permission === 'denied' ? 'Trình duyệt đang chặn thông báo — vui lòng bật quyền thông báo trên thanh địa chỉ trình duyệt' : 'Bật/tắt thông báo nổi góc dưới bên phải màn hình như Zalo (kể cả khi ở tab khác)'}>
-            <Switch size="small" checked={desktopEnabled && permission !== 'denied'} onChange={(val) => void toggleDesktopEnabled(val)} checkedChildren="Góc phải" unCheckedChildren="Tắt nổi" />
+          <Tooltip title={permission === 'denied' ? 'Trình duyệt đang chặn thông báo — vui lòng bật quyền thông báo trên thanh địa chỉ trình duyệt' : 'Thông báo nổi góc dưới phải màn hình máy tính khi bạn đang ở tab khác / ngoài ứng dụng'}>
+            <Switch size="small" checked={desktopEnabled && permission !== 'denied'} onChange={(val) => void toggleDesktopEnabled(val)} checkedChildren="Ngoài Tab" unCheckedChildren="Tắt" />
           </Tooltip>
-          {permission === 'default' && <Button size="small" type="link" icon={<DesktopOutlined />} style={{ paddingInline: 4 }} onClick={() => void requestPermissionNow()}>Cấp quyền ngoài Tab</Button>}
+          {permission === 'default' && <Button size="small" type="link" icon={<DesktopOutlined />} style={{ paddingInline: 4 }} onClick={() => void requestPermissionNow()}>Cấp quyền</Button>}
           {unreadCount > 0 && <Tooltip title="Đánh dấu tất cả thông báo là đã đọc"><Button size="small" type="text" icon={<CheckOutlined />} loading={markAllMut.isPending} onClick={() => markAllMut.mutate()}>Đọc hết</Button></Tooltip>}
           <Button size="small" type="text" icon={<ReloadOutlined />} loading={notifsQ.isFetching} onClick={() => void notifsQ.refetch()}>Làm mới</Button>
         </Space>

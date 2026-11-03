@@ -75,13 +75,20 @@ export function buildNotificationCenterUrl(portal: 'backoffice' | 'employee', no
   return notifId ? `${base}?highlight=${encodeURIComponent(notifId)}` : base;
 }
 
+export function isUserOutsideCurrentTab(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.visibilityState !== 'visible' || !document.hasFocus();
+}
+
 export async function dispatchOsDesktopNotification(
   item: FloatingNotifPayload,
   portal: 'backoffice' | 'employee',
   onClickNavigate: (notifId: string, targetUrl: string) => void,
+  options?: { forceWhenVisible?: boolean },
 ): Promise<boolean> {
   if (typeof window === 'undefined' || !('Notification' in window)) return false;
   if (!getDesktopNotifEnabled() || window.Notification.permission !== 'granted') return false;
+  if (!options?.forceWhenVisible && !isUserOutsideCurrentTab()) return false;
   const targetUrl = buildNotificationCenterUrl(portal, item.id);
   const title = `[Ụm Bò Milk HR] ${item.title}`;
   const body = [item.code ? `[${item.code}]` : '', item.body || item.targetLabel || 'Bạn có thông báo mới trên hệ thống'].filter(Boolean).join(' ');

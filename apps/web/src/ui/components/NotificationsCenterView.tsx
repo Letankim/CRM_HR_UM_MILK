@@ -108,8 +108,8 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
       </Space>
       <Space size={6} style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #E5E7EB', background: '#F8FAFC' }}>
         <DesktopOutlined style={{ color: desktopEnabled ? '#2563EB' : '#64748B' }} />
-        <span style={{ fontSize: 12, fontWeight: 600 }}>Nổi góc dưới phải (Zalo):</span>
-        <Switch size="small" checked={desktopEnabled && permission !== 'denied'} onChange={(val) => { void toggleDesktopEnabled(val); message.success(val ? 'Đã bật thông báo nổi góc dưới bên phải màn hình' : 'Đã tắt thông báo nổi góc màn hình'); }} checkedChildren="Bật" unCheckedChildren="Tắt" />
+        <span style={{ fontSize: 12, fontWeight: 600 }}>Thông báo khi ở Tab khác:</span>
+        <Switch size="small" checked={desktopEnabled && permission !== 'denied'} onChange={(val) => { void toggleDesktopEnabled(val); message.success(val ? 'Đã bật thông báo góc màn hình khi ở tab khác' : 'Đã tắt thông báo khi ở tab khác'); }} checkedChildren="Bật" unCheckedChildren="Tắt" />
         {permission === 'default' && <Button size="small" type="link" style={{ padding: 0, height: 'auto' }} onClick={() => void requestPermissionNow()}>Cấp quyền trình duyệt</Button>}
       </Space>
       <Button size="small" icon={<SoundOutlined />} onClick={playTestSound}>Nghe thử chuông</Button>

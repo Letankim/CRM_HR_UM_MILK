@@ -143,20 +143,14 @@ export function ContractsAndProbationPane({ branches }: { branches: { value: str
           { title: 'Nhân sự & Vị trí', key: 'emp', width: 215, render: (_, r) => <div><Typography.Text strong>{r.fullName}</Typography.Text><div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>{r.staffGroupLabel} · {r.branchName}</div></div> },
           { title: 'Giai đoạn & Thời hạn', key: 'stage', width: 170, render: (_, r) => <div><StatusTag value={r.stage} /><div style={{ fontSize: 11, color: '#64748B', marginTop: 3 }}>{r.stage === 'OFFICIAL' && r.officialFrom ? `Chính thức: ${r.officialFrom}` : r.probationStart ? `Thử việc: ${r.probationStart}` : `Chu kỳ ${r.probationCycleDays} ngày`}</div></div> },
           {
-            title: 'Hợp đồng Lao động', key: 'contracts',
+            title: 'Hợp đồng Lao động đã lưu', key: 'contracts',
             render: (_, r) => {
               const list = r.contracts ?? [];
-              return (
+              return list.length === 0 ? <Tag color="default">Chưa tải lên hợp đồng</Tag> : (
                 <Space size={4} wrap onClick={(e) => e.stopPropagation()}>
-                  {list.length > 0 ? (
-                    <>
-                      <Tag color="geekblue" icon={<FileProtectOutlined />} style={{ margin: 0, fontWeight: 600 }}>{list.length} văn bản</Tag>
-                      {list.slice(0, 2).map((c) => <Tag key={c.id} color={c.contractType === 'OFFICIAL_CONTRACT' ? 'green' : 'gold'} icon={<FileTextOutlined />} style={{ margin: 0, cursor: 'pointer' }} onClick={() => setPreviewTarget({ emp: r, item: c })}>{CONTRACT_TYPE_LABELS[c.contractType] || c.contractType}</Tag>)}
-                    </>
-                  ) : (
-                    <Tag color={r.stage === 'OFFICIAL' ? 'green' : 'gold'} icon={<FileTextOutlined />} style={{ margin: 0 }}>{r.stage === 'OFFICIAL' ? 'HĐ Chính thức (Điện tử)' : 'HĐ Thử việc (Điện tử)'}</Tag>
-                  )}
-                  <Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewTarget({ emp: r, item: list[0] ?? null })}>Xem hợp đồng</Button>
+                  <Tag color="geekblue" icon={<FileProtectOutlined />} style={{ margin: 0, fontWeight: 600 }}>{list.length} văn bản</Tag>
+                  {list.slice(0, 2).map((c) => <Tag key={c.id} color={c.contractType === 'OFFICIAL_CONTRACT' ? 'green' : 'gold'} icon={<FileTextOutlined />} style={{ margin: 0, cursor: 'pointer' }} onClick={() => setPreviewTarget({ emp: r, item: c })}>{CONTRACT_TYPE_LABELS[c.contractType] || c.contractType}</Tag>)}
+                  <Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewTarget({ emp: r, item: list[0]! })}>Xem hợp đồng</Button>
                 </Space>
               );
             },
@@ -172,7 +166,7 @@ export function ContractsAndProbationPane({ branches }: { branches: { value: str
               <RowActionButtons
                 detailTooltip="Xem chi tiết hợp đồng & đánh giá thử việc" onViewDetail={() => setDetailEmp(r)}
                 menuItems={[
-                  { key: 'preview', icon: <EyeOutlined style={{ color: '#2563EB' }} />, label: r.stage === 'OFFICIAL' ? 'Xem Hợp đồng Chính thức' : 'Xem Hợp đồng Thử việc', onClick: () => setPreviewTarget({ emp: r, item: r.contracts?.[0] ?? null }) },
+                  ...((r.contracts?.length ?? 0) > 0 ? [{ key: 'preview', icon: <EyeOutlined style={{ color: '#2563EB' }} />, label: 'Xem hợp đồng đã tải lên', onClick: () => setPreviewTarget({ emp: r, item: r.contracts![0]! }) }] : []),
                   ...(canManage ? [{ key: 'upload', icon: <CloudUploadOutlined style={{ color: '#2563EB' }} />, label: (r.contractsCount ?? r.contracts?.length ?? 0) > 0 ? 'Tải thêm / Cập nhật tệp hợp đồng' : 'Tải lên hợp đồng mới', onClick: () => { setUploadPresetEmp(r); setUploadModalOpen(true); } }] : []),
                   ...(canManage && r.stage === 'PROBATION' ? [
                     { key: 'meet', icon: r.probationMeetDone ? <EditOutlined style={{ color: '#2563EB' }} /> : <VideoCameraOutlined style={{ color: '#2563EB' }} />, label: r.probationMeetDone ? 'Chỉnh sửa kết quả Vấn đáp Meet' : 'Ghi nhận kết quả Vấn đáp Meet', onClick: () => promptMeetEval([r]) },
@@ -191,7 +185,7 @@ export function ContractsAndProbationPane({ branches }: { branches: { value: str
         onClose={() => setDetailEmp(null)}
         extra={liveDetailEmp && (
           <Space size={6} wrap>
-            <Button size="small" icon={<EyeOutlined />} onClick={() => setPreviewTarget({ emp: liveDetailEmp, item: liveDetailEmp.contracts?.[0] ?? null })}>Xem hợp đồng</Button>
+            {(liveDetailEmp.contracts?.length ?? 0) > 0 && <Button size="small" icon={<EyeOutlined />} onClick={() => setPreviewTarget({ emp: liveDetailEmp, item: liveDetailEmp.contracts![0]! })}>Xem hợp đồng</Button>}
             {canManage && <Button size="small" type="primary" ghost icon={<CloudUploadOutlined />} onClick={() => { setUploadPresetEmp(liveDetailEmp); setUploadModalOpen(true); }}>Tải lên hợp đồng</Button>}
             {canPromote && liveDetailEmp.stage === 'PROBATION' && <Button size="small" type="primary" icon={<RiseOutlined />} onClick={() => setPromotingRow(liveDetailEmp)}>Chuyển Chính thức</Button>}
           </Space>

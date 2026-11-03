@@ -155,7 +155,12 @@ export function EmployeeContractStorePanel({ employee, canManage = false }: { em
         <Descriptions.Item label="Giờ công & Điểm TEST"><Space size={4}><Tag color="blue" style={{ margin: 0 }}>Công: {employee.probationHoursCompleted ?? 0}h</Tag><Tag color={employee.testPassed ? 'success' : 'default'} style={{ margin: 0 }}>TEST: {employee.testBestScorePercent ?? 0}%</Tag></Space></Descriptions.Item>
         <Descriptions.Item label="Đánh giá vấn đáp Google Meet"><Space size={4} wrap>{employee.probationMeetDone ? <Tag color="success" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã hoàn tất vấn đáp</Tag> : <Tag color="default" style={{ margin: 0 }}>Chưa vấn đáp</Tag>}{employee.probationMeetNote && <span style={{ fontSize: 12, color: '#475569' }}>({employee.probationMeetNote})</span>}</Space></Descriptions.Item>
         <Descriptions.Item label="Quyền nghỉ đột xuất (Thử việc)"><Tag color="cyan" style={{ margin: 0 }}>Đã cấp: {employee.emergencyLeaveGrantCount ?? 0} lượt</Tag></Descriptions.Item>
-        <Descriptions.Item label="Hợp đồng lao động"><Space size={6} wrap><Tag color={contracts.length > 0 ? 'geekblue' : 'gold'} style={{ margin: 0, fontWeight: 600 }}>{contracts.length > 0 ? `${contracts.length} văn bản đính kèm` : 'Bản điện tử chuẩn'}</Tag><Button size="small" type="link" icon={<EyeOutlined />} style={{ padding: 0, height: 'auto' }} onClick={() => setPreviewState({ open: true, item: contracts[0] ?? null })}>Xem hợp đồng</Button></Space></Descriptions.Item>
+        <Descriptions.Item label="Tổng số hợp đồng lưu trữ">
+          <Space size={6} wrap>
+            <Tag color={contracts.length > 0 ? 'geekblue' : 'default'} style={{ margin: 0, fontWeight: 600 }}>{contracts.length} văn bản</Tag>
+            {contracts.length > 0 && <Button size="small" type="link" icon={<EyeOutlined />} style={{ padding: 0, height: 'auto' }} onClick={() => setPreviewState({ open: true, item: contracts[0]! })}>Xem hợp đồng</Button>}
+          </Space>
+        </Descriptions.Item>
       </Descriptions>
 
       {employee.stage === 'PROBATION' && canManage && (
@@ -173,12 +178,10 @@ export function EmployeeContractStorePanel({ employee, canManage = false }: { em
 
       <Card
         size="small" title={<span><FileProtectOutlined /> Danh sách Hợp đồng Lao động ({contracts.length})</span>}
-        extra={<Space size={6} wrap><Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewState({ open: true, item: contracts[0] ?? null })}>{employee.stage === 'OFFICIAL' ? 'Xem Hợp đồng Chính thức' : 'Xem Hợp đồng Thử việc'}</Button>{canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setUploadOpen(true)}>{contracts.length > 0 ? 'Tải thêm / Cập nhật tệp HĐ' : 'Tải lên hợp đồng'}</Button>}</Space>}
+        extra={canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setUploadOpen(true)}>{contracts.length > 0 ? 'Tải thêm / Cập nhật tệp HĐ' : 'Tải lên hợp đồng'}</Button>}
       >
         {contracts.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có tệp hợp đồng scan/PDF đính kèm. Bạn có thể xem trực tiếp Văn bản Hợp đồng Điện tử chuẩn của nhân sự.">
-            <Button size="small" type="primary" icon={<EyeOutlined />} onClick={() => setPreviewState({ open: true, item: null })}>Xem Văn bản {employee.stage === 'OFFICIAL' ? 'Hợp đồng Chính thức' : 'Hợp đồng Thử việc (12 ngày)'}</Button>
-          </Empty>
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có văn bản hợp đồng lao động nào được tải lên cho nhân sự này." />
         ) : (
           <Table<EmployeeContractItem>
             size="small" rowKey="id" pagination={false} dataSource={contracts}
