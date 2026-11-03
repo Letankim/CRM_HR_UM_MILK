@@ -1,7 +1,7 @@
 'use client';
 
-import { Button, Flex, Form, Input, InputNumber, Modal, Segmented, Space, Tag, Typography } from 'antd';
-import { CloseOutlined, MinusCircleOutlined, PlusCircleOutlined, SaveOutlined } from '@ant-design/icons';
+import { Alert, Button, Flex, Form, Input, InputNumber, Modal, Segmented, Space, Tag, Typography } from 'antd';
+import { CloseOutlined, MinusCircleOutlined, PlusCircleOutlined, SaveOutlined, SendOutlined } from '@ant-design/icons';
 import { useEffect, useState } from 'react';
 import { fmtVnd, MONEY_INPUT_PROPS } from './payroll-types';
 
@@ -11,6 +11,7 @@ export function PayslipAdjustModal({
   open,
   employeeLabel,
   currentNetVnd,
+  requiresAdminApproval = false,
   loading,
   onClose,
   onSubmit,
@@ -18,6 +19,7 @@ export function PayslipAdjustModal({
   open: boolean;
   employeeLabel: string;
   currentNetVnd: number;
+  requiresAdminApproval?: boolean;
   loading: boolean;
   onClose: () => void;
   onSubmit: (payload: { delta_vnd: number; reason: string }) => void;
@@ -43,13 +45,22 @@ export function PayslipAdjustModal({
       open={open}
       onCancel={onClose}
       onOk={() => form.submit()}
-      okText="Lưu điều chỉnh lương"
+      okText={requiresAdminApproval ? 'Gửi trình Quản trị duyệt điều chỉnh' : 'Lưu điều chỉnh lương'}
       cancelText="Hủy bỏ"
-      okButtonProps={{ icon: <SaveOutlined />, danger: direction === 'DEDUCT' }}
+      okButtonProps={{ icon: requiresAdminApproval ? <SendOutlined /> : <SaveOutlined />, danger: direction === 'DEDUCT' }}
       cancelButtonProps={{ icon: <CloseOutlined /> }}
       confirmLoading={loading}
       destroyOnHidden
     >
+      {requiresAdminApproval && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 14 }}
+          message="Kỳ lương đã phát hành cho nhân sự — Cần Ban Quản trị phê duyệt điều chỉnh cá nhân"
+          description="Khi Kế toán điều chỉnh phiếu lương cá nhân sau khi kỳ lương đã được Quản trị duyệt và gửi xuống nhân sự, phiếu điều chỉnh sẽ ở trạng thái Chờ Quản trị duyệt. Sau khi Ban Quản trị phê duyệt, phiếu lương của nhân sự mới được cập nhật thực lĩnh mới."
+        />
+      )}
       <Form
         form={form}
         layout="vertical"

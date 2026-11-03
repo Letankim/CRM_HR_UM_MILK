@@ -171,7 +171,14 @@ describe('Phát hành phiếu lương, hiển thị Cổng Nhân viên & Gửi E
       payload: { delta_vnd: 45000, reason: 'Bổ sung phụ cấp cho nhân sự chưa xác nhận' },
     });
     expect(allowUnconfirmedAdj.statusCode).toBe(201);
-    expect(allowUnconfirmedAdj.json().data.netVnd).toBe(nv1Snap.netVnd + 45000);
+    expect(allowUnconfirmedAdj.json().data.pendingRevision).toMatchObject({ status: 'PENDING', delta_vnd: 45000 });
+    const adm = await t.loginHeaders('admin');
+    const approveAdj = await t.app.inject({
+      method: 'POST', url: `/api/admin/payroll/revisions/${allowUnconfirmedAdj.json().data.pendingRevision.id}/decision`, headers: adm,
+      payload: { action: 'APPROVE' },
+    });
+    expect(approveAdj.statusCode).toBe(200);
+    expect(approveAdj.json().data.netVnd).toBe(nv1Snap.netVnd + 45000);
   });
 
   it('Chuyển PUBLISHED -> PAID khóa toàn bộ 100% (không ai điều chỉnh hay thắc mắc được nữa), đồng bộ PAID & nút Gửi lại Email', async () => {

@@ -120,6 +120,16 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext, viewerRole?: st
   const slip = ctx.db.payslips.find(
     (p) => p.status !== 'REVISED' && (p.snapshot_id === s.id || (p.period_id === s.period_id && (p.employee_id === s.employee_id || p.employee_code.trim().toUpperCase() === s.employee_code.trim().toUpperCase()))),
   );
+  const empRevs = ctx.db.payslipRevisions
+    .filter((r) => r.period_id === s.period_id && (r.employee_id === s.employee_id || Boolean(s.employee_code && r.employee_id === s.employee_code)))
+    .sort((a, b) => a.revision - b.revision)
+    .map((r) => ({
+      ...r,
+      statusLabel: r.status === 'PENDING' ? 'Chờ Ban Quản trị duyệt' : r.status === 'REJECTED' ? 'Đã từ chối' : 'Đã phê duyệt',
+      createdByName: ctx.db.users.get(r.created_reason_by)?.display_name || r.created_reason_by,
+      approvedByName: r.approved_by ? (ctx.db.users.get(r.approved_by)?.display_name || r.approved_by) : '',
+    }));
+  const pendingRevision = empRevs.find((r) => r.status === 'PENDING') ?? null;
   const disputeTicket = slip ? ctx.db.supportTickets.filter((t) => t.related_entity_type === 'PAYSLIP' && t.related_entity_id === slip.id).slice(-1)[0] : undefined;
   const periodStatus = period?.status ?? 'DRAFT';
   const isPaid = periodStatus === 'PAID' || slip?.status === 'PAID';
@@ -200,6 +210,7 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext, viewerRole?: st
     disputeStatus: isConfirmed ? 'NONE' : (slip?.dispute_status ?? 'NONE'),
     disputeReason: slip?.dispute_reason ?? '',
     disputeTicketId: disputeTicket?.id ?? '', disputeTicketCode: disputeTicket?.ticket_code ?? '',
+    revisions: empRevs, pendingRevision,
     version: s.version,
   };
 }

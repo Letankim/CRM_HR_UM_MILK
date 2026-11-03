@@ -155,11 +155,15 @@ describe('Kỳ lương 5 bước, Snapshot, Phiếu lương & Điều chỉnh (A
     expect(forbidden.statusCode).toBe(403);
   });
 
-  it('Sai lệch sau phát hành tạo phiếu điều chỉnh mới, giữ nguyên phiếu gốc, rồi thanh toán', async () => {
+  it('Sai lệch sau phát hành: Kế toán lập điều chỉnh cá nhân bắt buộc Ban Quản trị duyệt mới cập nhật phiếu lương, rồi thanh toán', async () => {
     const original = t.db.payslips.find((p) => p.period_id === periodId && p.employee_code === 'NV0002')!;
     const rev = await t.app.inject({ method: 'POST', url: `/api/admin/payroll/payslips/${original.id}/revisions`, headers: fin, payload: { version: original.version, delta_vnd: 50000, reason: 'Bổ sung giờ công bị sót' } });
     expect(rev.statusCode).toBe(201);
-    expect(rev.json().data).toMatchObject({ revision: 2, netVnd: original.net_vnd + 50000 });
+    expect(rev.json().data.pendingRevision).toMatchObject({ status: 'PENDING', delta_vnd: 50000, after_amount_vnd: original.net_vnd + 50000 });
+    const adm = await t.loginHeaders('admin');
+    const approved = await t.app.inject({ method: 'POST', url: `/api/admin/payroll/revisions/${rev.json().data.pendingRevision.id}/decision`, headers: adm, payload: { action: 'APPROVE' } });
+    expect(approved.statusCode).toBe(200);
+    expect(approved.json().data).toMatchObject({ revision: 2, netVnd: original.net_vnd + 50000 });
     expect(t.db.payslips.get(original.id)!).toMatchObject({ status: 'REVISED', net_vnd: original.net_vnd });
     const latest = t.db.payPeriods.get(periodId)!;
     const paid = await t.app.inject({ method: 'POST', url: `/api/admin/payroll/periods/${periodId}/transition`, headers: fin, payload: { version: latest.version, target_status: 'PAID' } });

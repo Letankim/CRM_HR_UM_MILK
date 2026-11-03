@@ -141,7 +141,7 @@ export const zPayslipRevision = zSystemColumns.extend({
   before_amount_vnd: z.coerce.number().default(0),
   after_amount_vnd: z.coerce.number().default(0),
   details_json: z.string().default('{}'),
-  status: z.enum(['APPROVED', 'REJECTED']).default('APPROVED'),
+  status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).default('APPROVED'),
   approved_by: z.string().default(''),
   approved_at: z.string().default(''),
 });

@@ -134,14 +134,24 @@ describe('Luồng 3 chữ ký lương (Kế toán -> Quản trị -> Kế toán 
       payload: { delta_vnd: 150000, reason: 'Cộng thêm phụ cấp hỗ trợ kiểm kê kho' },
     });
     expect(addRes.statusCode).toBe(201);
+    const approveAdd = await t.app.inject({
+      method: 'POST', url: `/api/admin/payroll/revisions/${addRes.json().data.pendingRevision.id}/decision`, headers: adminH,
+      payload: { action: 'APPROVE' },
+    });
+    expect(approveAdd.statusCode).toBe(200);
 
     const deductRes = await t.app.inject({
       method: 'POST', url: `/api/admin/payroll/payslips/${nv2SnapshotId}/revisions`, headers: finH,
       payload: { delta_vnd: -50000, reason: 'Khấu trừ tạm ứng đồng phục' },
     });
     expect(deductRes.statusCode).toBe(201);
-    expect(deductRes.json().data.netVnd).toBe(baseNet + 100000);
-    nv2PayslipId = deductRes.json().data.id;
+    const approveDeduct = await t.app.inject({
+      method: 'POST', url: `/api/admin/payroll/revisions/${deductRes.json().data.pendingRevision.id}/decision`, headers: adminH,
+      payload: { action: 'APPROVE' },
+    });
+    expect(approveDeduct.statusCode).toBe(200);
+    expect(approveDeduct.json().data.netVnd).toBe(baseNet + 100000);
+    nv2PayslipId = approveDeduct.json().data.id;
   });
 
   it('6. Nhân viên bị chặn upload ảnh, bắt buộc ký tay trực tiếp (DIRECT_CANVAS) -> Chỉ Kế toán xem được Mã QR, Quản trị bị ẩn hoàn toàn', async () => {

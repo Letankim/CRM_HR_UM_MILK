@@ -119,6 +119,14 @@ export function buildPayslipPayload(ctx: AppContext, period: PayPeriod, s: Payro
 export function mapPayslip(p: Payslip, ctx?: AppContext) {
   let breakdown: Record<string, unknown> = {};
   try { breakdown = JSON.parse(p.breakdown_json || '{}'); } catch { breakdown = {}; }
+  if (ctx) {
+    const snap = ctx.db.payrollSnapshots.get(p.snapshot_id)
+      ?? ctx.db.payrollSnapshots.find((s) => s.period_id === p.period_id && (s.employee_id === p.employee_id || s.employee_code.trim().toUpperCase() === p.employee_code.trim().toUpperCase()));
+    if (snap) {
+      const liveSnap = mapSnapshot(snap, ctx);
+      breakdown = { ...breakdown, ...liveSnap, netVnd: p.net_vnd, grossVnd: p.gross_vnd };
+    }
+  }
   const period = ctx?.db.payPeriods.get(p.period_id);
   const adminSigId = p.admin_signature_file_id || period?.admin_signature_file_id || '';
   const financeSigId = p.finance_signature_file_id || period?.finance_signature_file_id || '';
@@ -146,6 +154,8 @@ export function mapPayslip(p: Payslip, ctx?: AppContext) {
     paidAt: p.paid_at || period?.paid_at || null,
     paidByName,
     paymentReference: p.payment_reference || '',
+    revisions: Array.isArray(breakdown.revisions) ? breakdown.revisions : [],
+    pendingRevision: breakdown.pendingRevision ?? null,
     breakdown, version: p.version,
   };
 }
@@ -166,4 +176,4 @@ export async function syncPayslipConfirmNotifications(
   }
 }
 
-export { applyPayslipAdjustment } from './payslip-adjustment.service.js';
+export { applyPayslipAdjustment, decidePayslipRevision } from './payslip-adjustment.service.js';

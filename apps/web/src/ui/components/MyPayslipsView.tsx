@@ -1,8 +1,8 @@
 'use client';
 
-import { Alert, App, Button, Card, Col, Descriptions, Empty, Form, Grid, Input, List, Modal, Row, Select, Space, Spin, Tag } from 'antd';
+import { Alert, App, Button, Card, Col, Empty, Form, Grid, Input, List, Modal, Row, Select, Space, Spin, Tag } from 'antd';
 import {
-  CheckCircleOutlined, CloseOutlined, CustomerServiceOutlined, EditOutlined,
+  CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, CustomerServiceOutlined, EditOutlined,
   ExclamationCircleOutlined, FilePdfOutlined, FileTextOutlined, LockOutlined, ReloadOutlined, SendOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -13,9 +13,8 @@ import { api, ApiClientError } from '@/lib/api';
 import { downloadBase64File, type ExportFilePayload } from '@/lib/payroll-file-helpers';
 import { BaseDetailDrawer } from '@/ui/components/BaseDetailDrawer';
 import { EmployeeSignaturePadModal } from '@/ui/components/EmployeeSignaturePadModal';
-import { fmtVnd, type PayrollSnapshotItem } from '@/ui/components/payroll-types';
-import { payslipLines } from '@/ui/components/PayslipDrawer';
-import { PayslipSignatureBoxes } from '@/ui/components/PayslipSignatureBoxes';
+import { fmtVnd, type PayrollSnapshotItem, type PayslipRevisionItem } from '@/ui/components/payroll-types';
+import { PayslipDetailTabs } from '@/ui/components/PayslipDetailTabs';
 import { TicketDetailDrawer } from '@/ui/components/TicketDetailDrawer';
 import type { LinkedPayslipTicketSummary, TicketAssigneeOption } from '@/ui/components/ticket-types';
 import { StatusTag } from '@/ui/StatusTag';
@@ -29,7 +28,9 @@ export interface MyPayslip {
   adminSignatureUrl?: string | null; adminSignedBy?: string; adminSignedAt?: string | null;
   financeSignatureUrl?: string | null; financeSignedBy?: string; financeSignedAt?: string | null;
   employeeSignatureUrl?: string | null; paidAt?: string | null; paymentReference?: string;
-  linkedTicket?: LinkedPayslipTicketSummary | null; breakdown: PayrollSnapshotItem;
+  linkedTicket?: LinkedPayslipTicketSummary | null;
+  revisions?: PayslipRevisionItem[]; pendingRevision?: PayslipRevisionItem | null;
+  breakdown: PayrollSnapshotItem;
 }
 
 export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
@@ -98,11 +99,32 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
   const open = openId ? items.find((x) => x.id === openId) ?? null : null;
   const isConfirmed = Boolean(open?.employeeConfirmedAt);
   const isPaid = open?.status === 'PAID';
-  const baseLines = open?.breakdown?.segments ? payslipLines(open.breakdown) : [];
-  const revisionDelta = open?.breakdown ? open.netVnd - open.breakdown.netVnd : 0;
-  const lines = revisionDelta !== 0 && open ? [...baseLines, { label: 'Điều chỉnh sau phát hành', detail: `Phiếu điều chỉnh lần ${open.revision}`, amount: revisionDelta }] : baseLines;
+  const pendingRev = open?.pendingRevision ?? open?.breakdown?.pendingRevision ?? null;
   const hasActiveTicket = Boolean(open?.linkedTicket && open.linkedTicket.status !== 'CLOSED');
   const deptAssignees = (assigneesQ.data ?? []).filter((a) => !selectedDept || a.department === selectedDept);
+
+  const enrichedSnap: PayrollSnapshotItem | null = open
+    ? {
+        ...open.breakdown,
+        payslipCode: open.payslipCode,
+        payslipRevision: open.revision,
+        payslipStatus: open.status,
+        grossVnd: open.grossVnd ?? open.breakdown?.grossVnd ?? 0,
+        netVnd: open.netVnd ?? open.breakdown?.netVnd ?? 0,
+        approvedHours: open.approvedHours ?? open.breakdown?.approvedHours ?? 0,
+        totalShiftsCount: open.totalShiftsCount ?? open.breakdown?.totalShiftsCount ?? 0,
+        adminSignatureUrl: open.adminSignatureUrl ?? open.breakdown?.adminSignatureUrl,
+        adminSignedBy: open.adminSignedBy ?? open.breakdown?.adminSignedBy,
+        adminSignedAt: open.adminSignedAt ?? open.breakdown?.adminSignedAt,
+        financeSignatureUrl: open.financeSignatureUrl ?? open.breakdown?.financeSignatureUrl,
+        financeSignedBy: open.financeSignedBy ?? open.breakdown?.financeSignedBy,
+        financeSignedAt: open.financeSignedAt ?? open.breakdown?.financeSignedAt,
+        employeeSignatureUrl: open.employeeSignatureUrl ?? open.breakdown?.employeeSignatureUrl,
+        employeeConfirmedAt: open.employeeConfirmedAt ?? open.breakdown?.employeeConfirmedAt,
+        revisions: open.revisions ?? open.breakdown?.revisions ?? [],
+        pendingRevision: pendingRev,
+      }
+    : null;
 
   const content = query.isLoading ? (
     <div style={{ padding: 24, textAlign: 'center' }}><Spin /></div>
@@ -115,29 +137,46 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
   ) : (
     <List
       dataSource={items}
-      renderItem={(p) => (
-        <List.Item style={{ padding: '12px 14px', cursor: 'pointer', minHeight: 56 }} onClick={() => setOpenId(p.id)}>
-          <List.Item.Meta
-            avatar={<FileTextOutlined style={{ fontSize: 20, color: BRAND.primary }} />}
-            title={
-              <Space size={6} wrap>
-                <span style={{ fontWeight: 600 }}>{p.periodName}</span>
-                <StatusTag value={p.status || 'PUBLISHED'} label={p.statusLabel} />
-                {p.revision > 1 && <Tag color="blue" style={{ margin: 0, borderRadius: 2 }}>Điều chỉnh lần {p.revision}</Tag>}
-                {p.employeeConfirmedAt ? (
-                  <Tag color="green" style={{ margin: 0, borderRadius: 2 }}>Đã ký xác nhận</Tag>
-                ) : p.disputeStatus === 'OPEN' ? (
-                  <Tag color="volcano" style={{ margin: 0, borderRadius: 2 }}>Đang thắc mắc{p.linkedTicket ? ` (${p.linkedTicket.ticketCode})` : ''}</Tag>
-                ) : (
-                  <Tag color="gold" style={{ margin: 0, borderRadius: 2 }}>Chờ bạn ký xác nhận</Tag>
-                )}
-              </Space>
-            }
-            description={`${p.payslipCode} · ${dayjs(p.fromDate).format('DD/MM')} - ${dayjs(p.toDate).format('DD/MM/YYYY')} · ${p.totalShiftsCount} ca · ${p.approvedHours} giờ`}
-          />
-          <div className="num" style={{ fontWeight: 700, color: '#15803D', fontSize: 15 }}>{fmtVnd(p.netVnd)}</div>
-        </List.Item>
-      )}
+      renderItem={(p) => {
+        const pPending = p.pendingRevision ?? p.breakdown?.pendingRevision;
+        return (
+          <List.Item style={{ padding: '12px 14px', cursor: 'pointer', minHeight: 64 }} onClick={() => setOpenId(p.id)}>
+            <List.Item.Meta
+              avatar={<FileTextOutlined style={{ fontSize: 20, color: BRAND.primary }} />}
+              title={
+                <Space size={6} wrap>
+                  <span style={{ fontWeight: 600 }}>{p.periodName}</span>
+                  <StatusTag value={p.status || 'PUBLISHED'} label={p.statusLabel} />
+                  {p.revision > 1 && <Tag color="blue" style={{ margin: 0, borderRadius: 2 }}>Điều chỉnh lần #{p.revision}</Tag>}
+                  {pPending ? (
+                    <Tag color="orange" icon={<ClockCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>Chờ Quản trị duyệt điều chỉnh ({pPending.delta_vnd >= 0 ? '+' : ''}{fmtVnd(pPending.delta_vnd)})</Tag>
+                  ) : p.employeeConfirmedAt ? (
+                    <Tag color="green" style={{ margin: 0, borderRadius: 2 }}>Đã ký xác nhận</Tag>
+                  ) : p.disputeStatus === 'OPEN' ? (
+                    <Tag color="volcano" style={{ margin: 0, borderRadius: 2 }}>Đang thắc mắc{p.linkedTicket ? ` (${p.linkedTicket.ticketCode})` : ''}</Tag>
+                  ) : (
+                    <Tag color="gold" style={{ margin: 0, borderRadius: 2 }}>Chờ bạn ký xác nhận</Tag>
+                  )}
+                </Space>
+              }
+              description={
+                <div>
+                  <div>{p.payslipCode} · Kỳ: {dayjs(p.fromDate).format('DD/MM')} - {dayjs(p.toDate).format('DD/MM/YYYY')} · {p.breakdown?.branchName || 'Chi nhánh'} · {p.breakdown?.rateTypeLabel || 'Theo giờ'} ({fmtVnd(p.breakdown?.rateVnd || 0)}/{p.breakdown?.unitLabel || 'giờ'})</div>
+                  <Space size={8} wrap style={{ marginTop: 4 }}>
+                    <Tag color="blue" style={{ margin: 0 }}>Công: {p.totalShiftsCount} ca ({p.approvedHours} giờ)</Tag>
+                    <Tag color="cyan" style={{ margin: 0 }}>Thu nhập: {fmtVnd(p.grossVnd)}</Tag>
+                    {p.totalDeductionsVnd > 0 && <Tag color="red" style={{ margin: 0 }}>Khấu trừ: -{fmtVnd(p.totalDeductionsVnd)}</Tag>}
+                  </Space>
+                </div>
+              }
+            />
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 11, color: '#64748B' }}>Thực lĩnh</div>
+              <div className="num" style={{ fontWeight: 800, color: '#15803D', fontSize: 16 }}>{fmtVnd(p.netVnd)}</div>
+            </div>
+          </List.Item>
+        );
+      }}
     />
   );
 
@@ -153,16 +192,14 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
           open && (
             <Space size={6} wrap>
               <Button size="small" icon={<FilePdfOutlined style={{ color: '#DC2626' }} />} loading={downloadingPdf} onClick={() => void handleDownloadPdf(open.id)}>Xuất phiếu lương</Button>
-              {open.linkedTicket && (
-                <Button size="small" icon={<CustomerServiceOutlined />} onClick={() => setTicketDrawerId(open.linkedTicket!.id)}>Phiếu hỗ trợ ({open.linkedTicket.ticketCode})</Button>
-              )}
+              {open.linkedTicket && <Button size="small" icon={<CustomerServiceOutlined />} onClick={() => setTicketDrawerId(open.linkedTicket!.id)}>Phiếu hỗ trợ ({open.linkedTicket.ticketCode})</Button>}
               {isPaid ? (
                 <Tag color="green" icon={<LockOutlined />} style={{ margin: 0, borderRadius: 2, padding: '2px 8px' }}>Đã thanh toán lương</Tag>
               ) : isConfirmed ? (
                 <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0, borderRadius: 2, padding: '2px 8px' }}>Đã ký tay xác nhận</Tag>
               ) : (
                 <>
-                  <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => setSignModal(true)}>Ký tay xác nhận phiếu lương</Button>
+                  <Button size="small" type="primary" icon={<EditOutlined />} disabled={Boolean(pendingRev)} onClick={() => setSignModal(true)}>Ký tay xác nhận phiếu lương</Button>
                   <Button size="small" danger icon={<ExclamationCircleOutlined />} onClick={() => { form.resetFields(); form.setFieldsValue({ target_department: open.linkedTicket?.department || 'FINANCE', assignee_user_id: '' }); setDisputeModal(true); }}>Gửi thắc mắc</Button>
                 </>
               )}
@@ -170,38 +207,23 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
           )
         }
       >
-        {open && (
+        {open && enrichedSnap && (
           <>
             {isPaid ? (
-              <Alert type="success" showIcon style={{ marginBottom: 12 }} message={`Phiếu lương này ĐÃ THANH TOÁN chuyển khoản${open.paidAt ? ` lúc ${dayjs(open.paidAt).format('HH:mm DD/MM/YYYY')}` : ''}${open.paymentReference ? ` (${open.paymentReference})` : ''}.`} />
+              <Alert type="success" showIcon style={{ marginBottom: 10 }} message={`Phiếu lương này ĐÃ THANH TOÁN chuyển khoản${open.paidAt ? ` lúc ${dayjs(open.paidAt).format('HH:mm DD/MM/YYYY')}` : ''}${open.paymentReference ? ` (${open.paymentReference})` : ''}.`} />
             ) : isConfirmed ? (
-              <Alert type="success" showIcon style={{ marginBottom: 12 }} message={`Bạn đã ký tay xác nhận phiếu lương lúc ${dayjs(open.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')} — Đã gửi chữ ký & Mã QR Ngân hàng tới Bộ phận Kế toán để chi trả.`} />
+              <Alert type="success" showIcon style={{ marginBottom: 10 }} message={`Bạn đã ký tay xác nhận phiếu lương lúc ${dayjs(open.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')} — Đã gửi chữ ký & Mã QR Ngân hàng tới Bộ phận Kế toán để chi trả.`} />
             ) : (open.disputeStatus === 'OPEN' || open.disputeStatus === 'RESOLVED') ? (
-              <Alert type={open.disputeStatus === 'RESOLVED' ? 'success' : 'warning'} showIcon style={{ marginBottom: 12 }} message={open.linkedTicket ? `Phiếu hỗ trợ ${open.linkedTicket.ticketCode} — ${open.linkedTicket.departmentLabel} · ${open.linkedTicket.statusLabel}` : 'Đã gửi thắc mắc đối chiếu'} description={open.disputeReason} action={open.linkedTicket ? <Button size="small" type="primary" ghost icon={<CustomerServiceOutlined />} onClick={() => setTicketDrawerId(open.linkedTicket!.id)}>Xem phản hồi ({open.linkedTicket.messageCount})</Button> : undefined} />
-            ) : (
-              <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Phiếu lương đã có đủ chữ ký của Ban Quản trị và Kế toán. Nếu số liệu hợp lý, vui lòng bấm 'Ký tay xác nhận phiếu lương' để ký trực tiếp nhận lương." />
-            )}
-            <Descriptions column={1} size="small" bordered style={{ marginBottom: 10 }}>
-              <Descriptions.Item label="Mã phiếu">{open.payslipCode}</Descriptions.Item>
-              <Descriptions.Item label="Trạng thái">{open.statusLabel}{open.employeeConfirmedAt ? ` · Đã ký lúc ${dayjs(open.employeeConfirmedAt).format('HH:mm DD/MM/YYYY')}` : ''}</Descriptions.Item>
-              <Descriptions.Item label="Hình thức lương">{open.breakdown?.rateTypeLabel ?? 'Theo hồ sơ lương cá nhân'}</Descriptions.Item>
-            </Descriptions>
-            {lines.map((l, i) => (
-              <div key={`${l.label}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderBottom: `1px solid ${BRAND.border}` }}>
-                <div><div style={{ fontWeight: 600 }}>{l.label}</div><div style={{ fontSize: 12, color: BRAND.textSecondary }}>{l.detail}</div></div>
-                <div className="num" style={{ fontWeight: 600, color: l.amount < 0 ? '#DC2626' : undefined, whiteSpace: 'nowrap' }}>{fmtVnd(l.amount)}</div>
-              </div>
-            ))}
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}><span>Tổng thu nhập</span><strong className="num">{fmtVnd(open.grossVnd)}</strong></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderTop: `1px solid ${BRAND.border}` }}><strong>THỰC LĨNH</strong><strong className="num" style={{ color: '#15803D', fontSize: 16 }}>{fmtVnd(open.netVnd)}</strong></div>
-            <PayslipSignatureBoxes adminSignatureUrl={open.adminSignatureUrl} adminSignedBy={open.adminSignedBy} adminSignedAt={open.adminSignedAt} financeSignatureUrl={open.financeSignatureUrl} financeSignedBy={open.financeSignedBy} financeSignedAt={open.financeSignedAt} employeeSignatureUrl={open.employeeSignatureUrl} employeeName={open.fullName || open.breakdown?.fullName || 'Nhân sự'} employeeConfirmedAt={open.employeeConfirmedAt} />
+              <Alert type={open.disputeStatus === 'RESOLVED' ? 'success' : 'warning'} showIcon style={{ marginBottom: 10 }} message={open.linkedTicket ? `Phiếu hỗ trợ ${open.linkedTicket.ticketCode} — ${open.linkedTicket.departmentLabel} · ${open.linkedTicket.statusLabel}` : 'Đã gửi thắc mắc đối chiếu'} description={open.disputeReason} action={open.linkedTicket ? <Button size="small" type="primary" ghost icon={<CustomerServiceOutlined />} onClick={() => setTicketDrawerId(open.linkedTicket!.id)}>Xem phản hồi ({open.linkedTicket.messageCount})</Button> : undefined} />
+            ) : !pendingRev ? (
+              <Alert type="info" showIcon style={{ marginBottom: 10 }} message="Phiếu lương đã có đủ chữ ký của Ban Quản trị và Kế toán. Nếu số liệu hợp lý, vui lòng bấm 'Ký tay xác nhận phiếu lương' để ký trực tiếp nhận lương." />
+            ) : null}
+            <PayslipDetailTabs snapshot={enrichedSnap} revisions={enrichedSnap.revisions} pendingRevision={pendingRev} />
           </>
         )}
       </BaseDetailDrawer>
 
-      {open && (
-        <EmployeeSignaturePadModal open={signModal} payslipCode={open.payslipCode} periodName={open.periodName} netVnd={open.netVnd} loading={signMut.isPending} onClose={() => setSignModal(false)} onConfirmSign={(png) => signMut.mutate({ id: open.id, signature_base64: png })} />
-      )}
+      {open && <EmployeeSignaturePadModal open={signModal} payslipCode={open.payslipCode} periodName={open.periodName} netVnd={open.netVnd} loading={signMut.isPending} onClose={() => setSignModal(false)} onConfirmSign={(png) => signMut.mutate({ id: open.id, signature_base64: png })} />}
 
       <Modal width={640} title="Gửi Phiếu Hỗ Trợ / Thắc Mắc Phiếu Lương" open={disputeModal} onCancel={() => setDisputeModal(false)} onOk={() => form.submit()} okText="Tạo phiếu & Gửi thắc mắc" cancelText="Hủy bỏ" okButtonProps={{ icon: <SendOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} confirmLoading={disputeMut.isPending} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={(v) => open && disputeMut.mutate({ id: open.id, reason: String(v.reason || ''), target_department: (v.target_department || 'FINANCE') as TicketDepartment, assignee_user_id: String(v.assignee_user_id || '') })}>

@@ -71,6 +71,8 @@ export async function employeeDirectSignPayslip(
   if (!period || (period.status !== 'PUBLISHED' && period.status !== 'PAID')) throw Errors.forbidden('Phiếu lương chưa được phát hành');
   if (slip.employee_confirmed_at) return slip;
   if (period.status === 'PAID' || slip.status === 'PAID') throw Errors.conflict('Phiếu lương này đã thanh toán hoàn tất.');
+  const hasPendingRev = Boolean(ctx.db.payslipRevisions.find((r) => r.period_id === slip.period_id && (r.employee_id === slip.employee_id || r.employee_id === slip.employee_code) && r.status === 'PENDING'));
+  if (hasPendingRev) throw Errors.conflict('Phiếu lương này đang có điều chỉnh của Kế toán chờ Ban Quản trị phê duyệt. Vui lòng đợi Quản trị duyệt xong trước khi ký xác nhận.');
 
   const savedSig = await persistPayrollMedia(ctx, {
     base64: params.signatureBase64,

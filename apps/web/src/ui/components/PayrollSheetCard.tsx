@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { App, Button, Card, Flex, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { Alert, App, Button, Card, Flex, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { CalculatorOutlined, CheckCircleOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FilePdfOutlined, FileZipOutlined, MessageOutlined, QrcodeOutlined, SearchOutlined, WarningOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -84,6 +84,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
 
   const summary = (snapshotsQ.data?.meta.filters?.summary ?? {}) as Record<string, number>, totalMissing = Number(summary.totalMissingPunches ?? 0);
   const allMissingShifts = useMemo(() => (Array.isArray((summary as Record<string, unknown>).allMissingShifts) ? ((summary as Record<string, unknown>).allMissingShifts as MissingShiftDetailItem[]) : rows.flatMap((r) => r.missingShifts ?? [])), [summary, rows]);
+  const pendingRevRows = useMemo(() => rows.filter((r) => Boolean(r.pendingRevision)), [rows]);
 
   return (
     <Card
@@ -91,6 +92,13 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
       title={<Typography.Text strong>Bảng lương chi tiết từng nhân sự ({totalCount})</Typography.Text>}
       extra={totalMissing > 0 ? <Button size="small" danger icon={<EyeOutlined />} onClick={() => { setInspectEmp(null); setMissingModalOpen(true); }}>Có {totalMissing} ca thiếu Vào/Ra · Xem chi tiết</Button> : null}
     >
+      {pendingRevRows.length > 0 && (
+        <Alert
+          type="warning" showIcon style={{ marginBottom: 12 }}
+          message={`Có ${pendingRevRows.length} phiếu lương cá nhân được Kế toán điều chỉnh sau phát hành đang chờ Ban Quản trị phê duyệt`}
+          description={<Space size={[8, 6]} wrap>{pendingRevRows.map((r) => <Button key={r.id} size="small" type="primary" ghost onClick={() => onOpenPayslip(r)}>{r.fullName} ({r.employeeCode}: {r.pendingRevision!.delta_vnd >= 0 ? '+' : ''}{fmtVnd(r.pendingRevision!.delta_vnd)})</Button>)}</Space>}
+        />
+      )}
       <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '12px 16px', marginBottom: 14 }}>
         <Flex justify="space-between" align="center" wrap gap={12}>
           <Space size={10} wrap>
@@ -109,14 +117,11 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
           ...(canPay && period.status === 'PUBLISHED'
             ? [{
                 key: 'bulk-pay', label: 'Đánh dấu Đã thanh toán đã chọn', icon: <CheckCircleOutlined />, loading: bulkPayMut.isPending,
-                onClick: (items: PayrollSnapshotItem[]) =>
-                  promptDecision({
-                    title: `Xác nhận thanh toán hàng loạt (${items.length} phiếu lương)`,
-                    subtitle: `Kỳ lương: ${period.name} · Tổng thực lĩnh đã chọn: ${fmtVnd(sum(items, (r) => r.netVnd))}`,
-                    required: false, noteLabel: 'Mã chứng từ / Ghi chú xác nhận chuyển khoản hàng loạt',
-                    placeholder: 'Ví dụ: UNC-202610-BATCH01 — Đã chuyển khoản lương qua VietQR...', okText: 'Xác nhận Đã thanh toán',
-                    onConfirm: async (note) => { await bulkPayMut.mutateAsync({ ids: items.map((r) => r.payslipId || r.id), payment_reference: note || undefined }); clear(); },
-                  }),
+                onClick: (items: PayrollSnapshotItem[]) => promptDecision({
+                  title: `Xác nhận thanh toán hàng loạt (${items.length} phiếu lương)`, subtitle: `Kỳ lương: ${period.name} · Tổng thực lĩnh đã chọn: ${fmtVnd(sum(items, (r) => r.netVnd))}`,
+                  required: false, noteLabel: 'Mã chứng từ / Ghi chú xác nhận chuyển khoản hàng loạt', placeholder: 'Ví dụ: UNC-202610-BATCH01 — Đã chuyển khoản lương qua VietQR...', okText: 'Xác nhận Đã thanh toán',
+                  onConfirm: async (note) => { await bulkPayMut.mutateAsync({ ids: items.map((r) => r.payslipId || r.id), payment_reference: note || undefined }); clear(); },
+                }),
               }]
             : []),
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (items) => exportPayrollSheet(period, items) },

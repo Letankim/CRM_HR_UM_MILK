@@ -10,7 +10,7 @@ import { auditContext, requireAuth, requirePermission } from '../plugins/auth-co
 import { runBackgroundSideEffect, tolerantWrite } from '../services/background-write.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { employeeDirectSignPayslip, notifyFinancePayslipConfirmed } from '../services/payslip-sign-payment.service.js';
-import { applyPayslipAdjustment, ensurePublishedPeriodPayslips, generatePayslips, mapPayslip } from '../services/payslip.service.js';
+import { applyPayslipAdjustment, decidePayslipRevision, ensurePublishedPeriodPayslips, generatePayslips, mapPayslip } from '../services/payslip.service.js';
 import { emitAndEmailTicketEvent, mapSupportTicket, upsertPayslipDisputeTicket } from '../services/ticket-notification.service.js';
 import { findAllLinkedEmployeesForUser } from './employee-mapper.js';
 import { validateAssigneeForDepartment } from './tickets.routes.js';
@@ -55,11 +55,7 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
     if (period.status !== 'PUBLISHED' && period.status !== 'PAID') {
       throw Errors.badRequest('Chỉ gửi thông báo & Email phiếu lương cho kỳ đã Phát hành hoặc Đã thanh toán');
     }
-    const slips = await generatePayslips(ctx, period, request.auth!.user.id, {
-      actorEmail: request.auth?.user.email,
-      isPaid: period.status === 'PAID',
-      forceEmail: true,
-    });
+    const slips = await generatePayslips(ctx, period, request.auth!.user.id, { actorEmail: request.auth?.user.email, isPaid: period.status === 'PAID', forceEmail: true });
     return sendSuccess(request, `Đã đồng bộ phiếu lương và gửi thông báo kèm Email cho ${slips.length} nhân sự trong kỳ ${period.name}`, { count: slips.length });
   });
 
@@ -72,16 +68,30 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!periodId || !employeeId) return sendSuccess(request, 'Chưa có lịch sử điều chỉnh phiếu lương', []);
     const revs = ctx.db.payslipRevisions
       .filter((r) => r.period_id === periodId && (r.employee_id === employeeId || Boolean(snap && r.employee_id === snap.employee_code)))
-      .sort((a, b) => a.revision - b.revision);
+      .sort((a, b) => a.revision - b.revision)
+      .map((r) => ({
+        ...r,
+        statusLabel: r.status === 'PENDING' ? 'Chờ Ban Quản trị duyệt' : r.status === 'REJECTED' ? 'Đã từ chối' : 'Đã phê duyệt',
+        createdByName: ctx.db.users.get(r.created_reason_by)?.display_name || r.created_reason_by,
+        approvedByName: r.approved_by ? (ctx.db.users.get(r.approved_by)?.display_name || r.approved_by) : '',
+      }));
     return sendSuccess(request, 'Lấy lịch sử điều chỉnh phiếu lương thành công', revs);
   });
 
   app.post('/api/admin/payroll/payslips/:id/revisions', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = zRevisionBody.parse(request.body);
-    const out = await applyPayslipAdjustment(ctx, id, body, request.auth!.user.id, request.auth?.user.email);
+    const out = await applyPayslipAdjustment(ctx, id, body, request.auth!.user.id, request.auth?.user.email, request.auth?.user.role);
     await ctx.audit.record(auditContext(request), { action: 'payslip.revision', entity: out.entity, entityId: out.entityId, before: out.before, after: out.after });
     reply.code(201);
+    return sendSuccess(request, out.message, out.data);
+  });
+
+  app.post('/api/admin/payroll/revisions/:id/decision', { preHandler: requirePermission('system.config', 'payroll.manage') }, async (request) => {
+    const { id } = request.params as { id: string };
+    const body = z.object({ action: z.enum(['APPROVE', 'REJECT']), note: z.string().trim().max(300).optional() }).parse(request.body);
+    const out = await decidePayslipRevision(ctx, id, body, request.auth!.user);
+    await ctx.audit.record(auditContext(request), { action: `payslip.revision.${body.action.toLowerCase()}`, entity: out.entity, entityId: out.entityId, after: { action: body.action, note: body.note } });
     return sendSuccess(request, out.message, out.data);
   });
 
@@ -139,6 +149,9 @@ export async function payslipRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!period || (period.status !== 'PUBLISHED' && period.status !== 'PAID')) throw Errors.forbidden('Phiếu lương chưa được phát hành');
     if (slip.employee_confirmed_at) return sendSuccess(request, 'Phiếu lương này đã được bạn xác nhận đồng ý trước đó', mapPayslipWithTicket(ctx, slip));
     if (period.status === 'PAID' || slip.status === 'PAID') throw Errors.conflict('Kỳ lương đã chuyển sang Đã thanh toán nên đã khóa hoàn tất.');
+    if (ctx.db.payslipRevisions.find((r) => r.period_id === slip.period_id && (r.employee_id === slip.employee_id || r.employee_id === slip.employee_code) && r.status === 'PENDING')) {
+      throw Errors.conflict('Phiếu lương này đang có điều chỉnh của Kế toán chờ Ban Quản trị phê duyệt. Vui lòng đợi Quản trị duyệt xong trước khi xác nhận.');
+    }
     const now = nowIso();
     const updated = await ctx.db.payslips.update(slip.id, slip.version, { viewed_by_employee_at: slip.viewed_by_employee_at || now, employee_confirmed_at: now, dispute_status: 'NONE' }, user.id);
     const openTck = ctx.db.supportTickets.find((t) => t.related_entity_type === 'PAYSLIP' && t.related_entity_id === slip.id && t.status !== 'CLOSED');

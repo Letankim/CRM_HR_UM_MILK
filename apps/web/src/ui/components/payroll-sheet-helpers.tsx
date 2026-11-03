@@ -24,13 +24,20 @@ export const LOG_STATUS_COLORS: Record<ShiftPayrollLog['status'], string> = {
 
 /** Dựng các dòng phiếu lương (dùng chung cho Drawer và Xuất Excel phiếu lương) */
 export function payslipLines(s: PayrollSnapshotItem): PayslipLine[] {
-  const lines: PayslipLine[] = s.segments.map((seg) => ({
-    label: `Lương ${seg.stage === 'PROBATION' ? `thử việc (${seg.percent}%)` : 'chính thức'}`,
-    detail: `${seg.quantity} ${seg.unit} x ${fmtVnd(seg.unitRateVnd)} (${dayjs(seg.fromDate).format('DD/MM')} - ${dayjs(seg.toDate).format('DD/MM')}, ${seg.hours} giờ)`,
-    amount: seg.amountVnd,
-  }));
+  const segs = s.segments ?? [];
+  const lines: PayslipLine[] = segs.length > 0
+    ? segs.map((seg) => ({
+        label: `Lương ${seg.stage === 'PROBATION' ? `thử việc (${seg.percent}%)` : 'chính thức'}`,
+        detail: `${seg.quantity} ${seg.unit} x ${fmtVnd(seg.unitRateVnd)} (${dayjs(seg.fromDate).format('DD/MM')} - ${dayjs(seg.toDate).format('DD/MM')}, ${seg.hours} giờ)`,
+        amount: seg.amountVnd,
+      }))
+    : [{
+        label: `Lương cơ bản (${s.stageLabel || 'Theo hồ sơ'})`,
+        detail: `${s.approvedHours ?? 0} giờ · Đơn giá ${fmtVnd(s.rateVnd || 0)}/${s.unitLabel || 'giờ'}${s.probationPercent ? ` (Thử việc ${s.probationPercent}%)` : ''} · ${s.totalShiftsCount ?? 0} ca`,
+        amount: s.baseSalaryVnd || 0,
+      }];
   if (s.otPayVnd > 0) lines.push({ label: 'Tăng ca (OT)', detail: `${s.otHours} giờ x ${fmtVnd(s.otRateVnd)}`, amount: s.otPayVnd });
-  for (const a of s.allowanceLines) {
+  for (const a of s.allowanceLines ?? []) {
     const swapDetail = s.paidSwapCount !== undefined && s.paidSwapCount !== s.shiftSwapCount
       ? `${s.paidSwapCount}/${s.shiftSwapCount} ca nhận đổi có phụ cấp`
       : `${s.paidSwapCount ?? s.shiftSwapCount} ca nhận đổi có phụ cấp`;
@@ -43,8 +50,15 @@ export function payslipLines(s: PayrollSnapshotItem): PayslipLine[] {
   if (mBase > 0) lines.push({ label: 'Lương cơ bản bổ sung (+)', detail: 'Khoản cộng bổ sung Kế toán đối soát', amount: mBase });
   if (mOt > 0) lines.push({ label: 'Tiền OT phát sinh thêm (+)', detail: 'Khoản cộng tăng ca Kế toán đối soát', amount: mOt });
   if (mBonus > 0) lines.push({ label: 'Thưởng hiệu quả bổ sung (+)', detail: 'Khoản thưởng bổ sung Kế toán đối soát', amount: mBonus });
-  if (s.positiveAdjustmentsVnd > 0) lines.push({ label: 'Điều chỉnh cộng', detail: 'Khoản bổ sung đã duyệt', amount: s.positiveAdjustmentsVnd });
-  if (deductionsOf(s) > 0) lines.push({ label: 'Khấu trừ & tạm ứng đã duyệt', detail: 'Chỉ áp dụng khoản đã phê duyệt', amount: -deductionsOf(s) });
+  if (s.positiveAdjustmentsVnd > 0) lines.push({ label: 'Điều chỉnh cộng (+)', detail: 'Khoản điều chỉnh phiếu lương đã được Ban Quản trị duyệt', amount: s.positiveAdjustmentsVnd });
+  const mAdv = Number(s.manualAdvanceDeductVnd ?? s.manual_advance_deduct_vnd ?? 0);
+  const mKpi = Number(s.manualKpiDeductVnd ?? s.manual_kpi_deduct_vnd ?? 0);
+  const mUni = Number(s.manualUniformDeductVnd ?? s.manual_uniform_deduct_vnd ?? 0);
+  if (mAdv > 0) lines.push({ label: 'Khấu trừ tạm ứng (-)', detail: 'Khoản tạm ứng Kế toán đối soát', amount: -mAdv });
+  if (mKpi > 0) lines.push({ label: 'Khấu trừ KPI / Phạt (-)', detail: 'Khoản trừ KPI Kế toán đối soát', amount: -mKpi });
+  if (mUni > 0) lines.push({ label: 'Khấu trừ đồng phục (-)', detail: 'Khoản trừ đồng phục Kế toán đối soát', amount: -mUni });
+  const otherDed = (s.approvedDeductionsVnd || 0) + (s.advanceDeductionVnd || 0);
+  if (otherDed > 0) lines.push({ label: 'Khấu trừ & điều chỉnh trừ (-)', detail: 'Khoản khấu trừ / điều chỉnh phiếu lương đã duyệt', amount: -otherDed });
   return lines;
 }
 
@@ -138,16 +152,27 @@ export function PayrollConfirmationCell({
     );
   }
   if (periodStatus === 'PUBLISHED' || isPaid || row.confirmationStatus === 'PENDING') {
+    const pRev = row.pendingRevision;
     return (
       <div>
         <Space size={4} wrap>
-          <Tag color={isPaid ? 'blue' : row.disputeStatus === 'RESOLVED' ? 'cyan' : 'gold'} icon={isPaid ? <LockOutlined /> : <ClockCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>
-            {isPaid ? 'Đã thanh toán' : row.disputeStatus === 'RESOLVED' ? 'Đã phản hồi · Chờ ký' : 'Chờ NV ký tay'}
-          </Tag>
+          {pRev ? (
+            <Tag color="orange" icon={<ClockCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>
+              Chờ Quản trị duyệt ĐC ({pRev.delta_vnd >= 0 ? '+' : ''}{fmtVnd(pRev.delta_vnd)})
+            </Tag>
+          ) : (
+            <Tag color={isPaid ? 'blue' : row.disputeStatus === 'RESOLVED' ? 'cyan' : 'gold'} icon={isPaid ? <LockOutlined /> : <ClockCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>
+              {isPaid ? 'Đã thanh toán' : row.disputeStatus === 'RESOLVED' ? 'Đã phản hồi · Chờ ký' : 'Chờ NV ký tay'}
+            </Tag>
+          )}
           {(row.payslipRevision ?? 0) > 1 && <Tag color="blue" style={{ margin: 0, borderRadius: 2 }}>ĐC #{row.payslipRevision}</Tag>}
         </Space>
         {row.viewedByEmployeeAt && <div className="num" style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>Đã xem: {dayjs(row.viewedByEmployeeAt).format('HH:mm DD/MM')}</div>}
-        {!isPaid && <div style={{ fontSize: 11, color: '#2563EB', marginTop: 1 }}>Còn điều chỉnh được</div>}
+        {pRev ? (
+          <div style={{ fontSize: 11, color: '#D97706', marginTop: 1, fontWeight: 600 }}>Cần Quản trị duyệt ĐC #{pRev.revision}</div>
+        ) : !isPaid ? (
+          <div style={{ fontSize: 11, color: '#2563EB', marginTop: 1 }}>Còn điều chỉnh được</div>
+        ) : null}
       </div>
     );
   }
