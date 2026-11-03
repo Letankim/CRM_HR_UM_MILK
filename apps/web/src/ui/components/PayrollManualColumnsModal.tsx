@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 import { Alert, App, Button, Col, Descriptions, Form, InputNumber, Modal, Row, Space, Tag } from 'antd';
 import { CalculatorOutlined, CloseOutlined, SaveOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, ApiClientError } from '@/lib/api';
+import { api } from '@/lib/api';
+import { applyApiFormErrors } from '@/lib/form-error';
 import { fmtVnd, MONEY_INPUT_PROPS, type PayrollSnapshotItem } from './payroll-types';
 
 export interface ManualColumnsFormValues {
@@ -71,7 +72,7 @@ export function PayrollManualColumnsModal({
       onClose();
     },
     onError: (e) => {
-      message.error(e instanceof ApiClientError ? e.message : 'Không thể lưu 6 cột nhập tay Kế toán');
+      message.error(applyApiFormErrors(form, e, { fallbackMessage: 'Không thể lưu 6 cột nhập tay Kế toán' }));
     },
   });
 

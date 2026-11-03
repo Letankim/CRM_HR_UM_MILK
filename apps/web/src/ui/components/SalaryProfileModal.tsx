@@ -5,7 +5,8 @@ import { CloseOutlined, SaveOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect } from 'react';
-import { api, ApiClientError } from '@/lib/api';
+import { api } from '@/lib/api';
+import { applyApiFormErrors, clearChangedFieldErrors } from '@/lib/form-error';
 import type { SalaryProfile } from './payroll-types';
 import { SALARY_FIELD_DEFAULTS, SalaryProfileFields } from './SalaryProfileFields';
 
@@ -72,12 +73,7 @@ export function SalaryProfileModal({ open, mode, employee, base, employees, onCl
       onClose();
     },
     onError: (err) => {
-      if (err instanceof ApiClientError) {
-        if (err.details.length > 0) form.setFields(err.details.map((d) => ({ name: d.field.split('.'), errors: [d.message] })));
-        message.error(err.message);
-      } else {
-        message.error('Không thể lưu mức lương, vui lòng thử lại');
-      }
+      message.error(applyApiFormErrors(form, err, { fallbackMessage: 'Không thể lưu mức lương, vui lòng thử lại' }));
     },
   });
 
@@ -95,7 +91,7 @@ export function SalaryProfileModal({ open, mode, employee, base, employees, onCl
       confirmLoading={mut.isPending}
       forceRender
     >
-      <Form form={form} layout="vertical" style={{ marginTop: 12 }}>
+      <Form form={form} layout="vertical" style={{ marginTop: 12 }} onValuesChange={(changed) => clearChangedFieldErrors(form, changed)}>
         {!employee && (
           <Form.Item name="employee_id" label="Nhân sự" rules={[{ required: true, message: 'Vui lòng chọn nhân sự' }]}>
             <Select showSearch optionFilterProp="label" options={employees} placeholder="Tìm theo mã hoặc họ tên nhân sự" />

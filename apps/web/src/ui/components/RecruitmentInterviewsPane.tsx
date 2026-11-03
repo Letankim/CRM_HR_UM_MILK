@@ -72,7 +72,7 @@ export function RecruitmentInterviewsPane({
   const refreshAll = () => ['candidates', 'interviews', 'employees', 'accounts', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
 
   const putMut = useMutation({
-    mutationFn: ({ url, body }: { url: string; body: unknown }) => api.put<Record<string, unknown>>(url, body),
+    mutationFn: ({ url, body }: { url: string; body: unknown; onError?: (e: unknown) => void }) => api.put<Record<string, unknown>>(url, body),
     onSuccess: (res, vars) => {
       const isEval = typeof vars.body === 'object' && vars.body !== null && 'decision' in vars.body;
       setEvalTarget(null); setReschedTarget(null); refreshAll();
@@ -95,7 +95,7 @@ export function RecruitmentInterviewsPane({
         message.success(isEval ? 'Đã lưu kết quả chấm điểm phỏng vấn Rubric' : 'Đã cập nhật lịch phỏng vấn thành công');
       }
     },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Cập nhật thất bại'),
+    onError: (e, vars) => { vars.onError?.(e); message.error(e instanceof ApiClientError ? (e.details[0]?.message || e.message) : 'Cập nhật thất bại'); },
   });
 
   const delMut = useMutation({
@@ -209,8 +209,8 @@ export function RecruitmentInterviewsPane({
       />
 
       <InterviewDetailDrawer interview={liveViewingIv} canManage={canManageRec} onClose={() => setViewingIv(null)} onReschedule={setReschedTarget} onEvaluate={setEvalTarget} onOpenZaloNotify={onOpenZaloNotify} />
-      <InterviewEvaluateModal target={evalTarget} loading={putMut.isPending} onClose={() => setEvalTarget(null)} onSubmit={(id, body) => putMut.mutate({ url: `/admin/interviews/${id}/evaluate`, body })} />
-      <InterviewRescheduleModal target={reschedTarget} interviewerOptions={interviewerOptions} zaloAccounts={zaloAccounts} existingInterviews={bannerInterviews} loading={putMut.isPending} onClose={() => setReschedTarget(null)} onSubmit={(id, body) => putMut.mutate({ url: `/admin/interviews/${id}/evaluate`, body })} />
+      <InterviewEvaluateModal target={evalTarget} loading={putMut.isPending} onClose={() => setEvalTarget(null)} onSubmit={(id, body, onError) => putMut.mutate({ url: `/admin/interviews/${id}/evaluate`, body, onError })} />
+      <InterviewRescheduleModal target={reschedTarget} interviewerOptions={interviewerOptions} zaloAccounts={zaloAccounts} existingInterviews={bannerInterviews} loading={putMut.isPending} onClose={() => setReschedTarget(null)} onSubmit={(id, body, onError) => putMut.mutate({ url: `/admin/interviews/${id}/evaluate`, body, onError })} />
       {decisionModalElement}
     </Space>
   );

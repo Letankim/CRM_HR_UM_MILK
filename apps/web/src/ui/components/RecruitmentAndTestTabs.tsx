@@ -7,8 +7,9 @@ import dayjs from 'dayjs';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { ROLE_LABELS } from '@umbm/shared';
-import { api, ApiClientError } from '@/lib/api';
+import { api } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
+import { applyApiFormErrors } from '@/lib/form-error';
 import { useEmployeeSearchSelect } from '../hooks/useEmployeeSearchSelect';
 import { InterviewCreateModal } from './InterviewScheduleModals';
 import { RecruitmentCandidatesPane } from './RecruitmentCandidatesPane';
@@ -93,7 +94,7 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
       message.success('Đã đặt lịch phỏng vấn thành công');
       setIvModal(false); setRecSubTab('interviews'); refreshAll();
     },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Đặt lịch phỏng vấn thất bại'),
+    onError: (e) => message.error(applyApiFormErrors(ivForm, e, { fallbackMessage: 'Đặt lịch phỏng vấn thất bại' })),
   });
 
   const openScheduleForCandidate = (candidateId?: string) => {

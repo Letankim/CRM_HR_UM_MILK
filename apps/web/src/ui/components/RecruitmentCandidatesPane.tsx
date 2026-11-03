@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
+import { applyApiFormErrors } from '@/lib/form-error';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { StatusTag } from '../StatusTag';
@@ -14,7 +15,7 @@ import { FilterToolbar } from './FilterToolbar';
 import { usePermissionGuard } from './GuardButton';
 import { useJobPositions } from './JobPositionsManagerModal';
 import { RecruitmentFormSheetSyncModal } from './RecruitmentFormSheetSyncModal';
-import { buildCandidateFormInitials, CANDIDATE_26_EXCEL_COLUMNS } from './CandidateFormModal';
+import { buildCandidateFormInitials, CANDIDATE_26_EXCEL_COLUMNS, resolveCandidateFieldTab } from './CandidateFormModal';
 import { CANDIDATE_STATUS_OPTIONS, CandidateDetailDrawer, CandidateFormModal } from './RecruitmentSubModals';
 import { RowActionButtons } from './RowActionButtons';
 import { useWorkflowDecisionModal } from './WorkflowDecisionModal';
@@ -40,7 +41,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
   const [q, setQ] = useState(''), debouncedQ = useDebouncedValue(q, 400);
   const [branchFilter, setBranchFilter] = useState('ALL'), [positionFilter, setPositionFilter] = useState('ALL'), [statusFilter, setStatusFilter] = useState('ALL');
   const [page, setPage] = useState(1), [perPage, setPerPage] = useState(10);
-  const [candModal, setCandModal] = useState(false), [sheetConfigOpen, setSheetConfigOpen] = useState(false);
+  const [candModal, setCandModal] = useState(false), [candTab, setCandTab] = useState('personal'), [sheetConfigOpen, setSheetConfigOpen] = useState(false);
   const [editingCand, setEditingCand] = useState<Record<string, unknown> | null>(null), [viewingCand, setViewingCand] = useState<Record<string, unknown> | null>(null);
   const [candForm] = Form.useForm();
   const watchedCandBranchId = Form.useWatch('applied_branch_id', candForm);
@@ -76,7 +77,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
   const saveMut = useMutation({
     mutationFn: ({ url, method, body }: { url: string; method: 'POST' | 'PUT'; body: unknown }) => (method === 'POST' ? api.post(url, body) : api.put(url, body)),
     onSuccess: () => { message.success('Đã lưu hồ sơ ứng viên thành công'); setCandModal(false); refreshAll(); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu hồ sơ ứng viên thất bại'),
+    onError: (e) => message.error(applyApiFormErrors(candForm, e, { fallbackMessage: 'Lưu hồ sơ ứng viên thất bại', onFieldTabSwitch: (_, f) => setCandTab(resolveCandidateFieldTab(f)) })),
   });
 
   const delMut = useMutation({
@@ -198,7 +199,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
       <CandidateFormModal
         open={candModal} editingCand={editingCand} form={candForm} branches={branches}
         jobPositionOptions={jobPositionOptions} shiftPrefOptions={shiftPrefOptions} loading={saveMut.isPending}
-        onClose={() => setCandModal(false)}
+        activeTab={candTab} onTabChange={setCandTab} onClose={() => setCandModal(false)}
         onFinish={(v) => {
           if (editingCand) saveMut.mutate({ url: `/admin/candidates/${editingCand.id}`, method: 'PUT', body: { ...v, branch_pref: v.applied_branch_id, staff_group: v.applied_position, version: editingCand.version } });
           else saveMut.mutate({ url: '/admin/candidates', method: 'POST', body: v });

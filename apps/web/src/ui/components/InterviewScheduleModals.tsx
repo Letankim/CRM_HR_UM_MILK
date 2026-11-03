@@ -5,6 +5,7 @@ import { Col, Form, Input, InputNumber, Modal, Row, Select } from 'antd';
 import type { FormInstance } from 'antd';
 import { CalendarOutlined, CloseOutlined, MessageOutlined, SaveOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { applyApiFormErrors, clearChangedFieldErrors } from '@/lib/form-error';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
 import { detectClientInterviewOverlaps, InterviewOverlapAlert } from './interview-overlap-utils';
 import type { ZaloHrAccountItem } from './ZaloHrAccountsModal';
@@ -124,7 +125,7 @@ interface InterviewRescheduleModalProps {
   existingInterviews: Record<string, unknown>[];
   loading: boolean;
   onClose: () => void;
-  onSubmit: (id: string, body: Record<string, unknown>) => void;
+  onSubmit: (id: string, body: Record<string, unknown>, onError?: (e: unknown) => void) => void;
 }
 
 export function InterviewRescheduleModal({
@@ -169,7 +170,7 @@ export function InterviewRescheduleModal({
       okText="Lưu cập nhật" cancelText="Hủy bỏ"
       okButtonProps={{ icon: <SaveOutlined />, loading, disabled: overlap.interviewerConflicts.length > 0 }}
       cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onClose} onOk={() => form.submit()}>
-      <Form form={form} layout="vertical" onFinish={(v) => {
+      <Form form={form} layout="vertical" onValuesChange={(changed) => clearChangedFieldErrors(form, changed)} onFinish={(v) => {
         if (!target) return;
         onSubmit(String(target.id), {
           version: target.version, interviewer_ids: v.interviewer_ids, duration_minutes: Number(v.duration_minutes || 30),
@@ -177,7 +178,7 @@ export function InterviewRescheduleModal({
           reschedule_requested: Boolean(v.reschedule_requested), reschedule_reason: v.reschedule_reason,
           zalo_account_id: v.zalo_account_id, candidate_zalo_id: v.candidate_zalo_id,
           scheduled_at: `${v.interview_date}T${v.interview_slot}:00+07:00`,
-        });
+        }, (e) => { applyApiFormErrors(form, e); });
       }}>
         <InterviewOverlapAlert interviewerConflicts={overlap.interviewerConflicts} slotOverlaps={overlap.slotOverlaps}
           rangeLabel={overlap.rangeLabel} dateStr={reschedDate} />

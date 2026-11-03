@@ -7,6 +7,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
+import { applyApiFormErrors } from '@/lib/form-error';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { useEmployeeSearchSelect } from '../hooks/useEmployeeSearchSelect';
 import { StatusTag } from '../StatusTag';
@@ -63,13 +64,13 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
   const saveBankMut = useMutation({
     mutationFn: async () => { const vals = await bankForm.validateFields(); const payload = { ...vals, exam_sample_size: Math.min(questions.length, Math.max(1, Number(vals.exam_sample_size ?? questions.length))), questions_json: JSON.stringify(questions) }; return editingTest ? api.put(`/admin/tests/bank/${editingTest.id}`, { ...payload, version: editingTest.version }) : api.post('/admin/tests/bank', payload); },
     onSuccess: () => { message.success(editingTest ? 'Đã cập nhật bộ đề kiểm tra' : 'Đã tạo bộ đề kiểm tra mới'); setBankModal(false); refresh(); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu bộ đề thất bại'),
+    onError: (e) => message.error(applyApiFormErrors(bankForm, e, { fallbackMessage: 'Lưu bộ đề thất bại', onFieldTabSwitch: (_, f) => setModalTab(f === 'questions_json' ? 'questions' : 'config') })),
   });
   const delBankMut = useMutation({ mutationFn: (r: Record<string, unknown>) => api.delete(`/admin/tests/bank/${r.id}`, { version: r.version }), onSuccess: () => { message.success('Đã xóa bộ đề kiểm tra'); refresh(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa bộ đề thất bại') });
   const assignMut = useMutation({
     mutationFn: (v: Record<string, unknown>) => { const closeAt = `${v.due_date}T${v.due_time}:00+07:00`, sampleSize = Number(v.exam_sample_size ?? 25); return editingAssignment ? api.put(`/admin/tests/assignments/${editingAssignment.id}`, { version: editingAssignment.version, test_id: v.test_id, employee_id: v.employee_id, max_attempts: Number(v.max_attempts ?? 3), exam_sample_size: sampleSize, close_at: closeAt, reset_attempts: Boolean(v.reset_attempts), note: v.note ?? '' }) : api.post('/admin/tests/assignments', { test_id: v.test_id, employee_ids: v.employee_ids, max_attempts: Number(v.max_attempts ?? 3), exam_sample_size: sampleSize, close_at: closeAt, note: v.note ?? '' }); },
     onSuccess: () => { message.success(editingAssignment ? 'Đã cập nhật đợt giao bài kiểm tra thành công' : 'Đã giao bài kiểm tra cho nhân sự'); setAsgModal(false); setEditingAssignment(null); setSubTab('assignments'); refresh(); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu đợt giao bài thất bại'),
+    onError: (e) => message.error(applyApiFormErrors(asgForm, e, { fallbackMessage: 'Lưu đợt giao bài thất bại' })),
   });
   const delAsgMut = useMutation({ mutationFn: (r: Record<string, unknown>) => api.delete(`/admin/tests/assignments/${r.id}`, { version: r.version }), onSuccess: () => { message.success('Đã thu hồi đợt giao bài'); refresh(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thu hồi thất bại') });
   const delAttemptMut = useMutation({ mutationFn: (r: Record<string, unknown>) => api.delete(`/admin/tests/attempts/${r.id}`, { version: r.version }), onSuccess: () => { message.success('Đã xóa phiên làm bài và cập nhật lại số lượt thi'); refresh(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa phiên làm bài thất bại') });

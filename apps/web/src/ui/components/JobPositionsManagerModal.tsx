@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 import { STAFF_GROUP_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
+import { applyApiFormErrors } from '@/lib/form-error';
 import { SelectableTable } from './BulkActionBar';
 import { GuardButton, usePermissionGuard } from './GuardButton';
 import { RowActionButtons } from './RowActionButtons';
@@ -60,7 +61,7 @@ export function JobPositionsTableCard({ canManage = true }: { canManage?: boolea
     mutationFn: (v: Record<string, unknown>) =>
       editing ? api.put(`/admin/job-positions/${editing.code}`, v) : api.post('/admin/job-positions', v),
     onSuccess: () => { message.success(editing ? 'Đã cập nhật vị trí công việc' : 'Đã thêm vị trí công việc mới'); setFormOpen(false); setEditing(null); refresh(); },
-    onError: onErr('Lưu vị trí công việc thất bại'),
+    onError: (e) => message.error(applyApiFormErrors(form, e, { fallbackMessage: 'Lưu vị trí công việc thất bại' })),
   });
 
   const delMut = useMutation({

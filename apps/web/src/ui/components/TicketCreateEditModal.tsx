@@ -8,7 +8,8 @@ import {
   TICKET_CATEGORY_OPTIONS, TICKET_DEPARTMENT_OPTIONS, TICKET_PRIORITY_OPTIONS,
   type TicketCategory, type TicketDepartment,
 } from '@umbm/shared';
-import { api, ApiClientError } from '@/lib/api';
+import { api } from '@/lib/api';
+import { applyApiFormErrors, clearChangedFieldErrors } from '@/lib/form-error';
 import { DEFAULT_DEPT_BY_CATEGORY, type SupportTicketItem, type TicketAssigneeOption } from './ticket-types';
 
 interface SimplePayslipOption {
@@ -111,7 +112,7 @@ export function TicketCreateEditModal({
       onSaved?.(saved);
       onClose();
     },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Không thể lưu phiếu hỗ trợ, vui lòng kiểm tra lại'),
+    onError: (e) => message.error(applyApiFormErrors(form, e, { fallbackMessage: 'Không thể lưu phiếu hỗ trợ, vui lòng kiểm tra lại' })),
   });
 
   return (
@@ -134,7 +135,7 @@ export function TicketCreateEditModal({
       confirmLoading={saveMut.isPending}
       destroyOnHidden
     >
-      <Form form={form} layout="vertical" style={{ marginTop: 8 }} onFinish={(v) => saveMut.mutate(v)}>
+      <Form form={form} layout="vertical" style={{ marginTop: 8 }} onFinish={(v) => saveMut.mutate(v)} onValuesChange={(changed) => clearChangedFieldErrors(form, changed)}>
         <Row gutter={12}>
           <Col xs={24} sm={14}>
             <Form.Item name="category" label="Phân loại vấn đề cần hỗ trợ" rules={[{ required: true, message: 'Vui lòng chọn phân loại' }]}>

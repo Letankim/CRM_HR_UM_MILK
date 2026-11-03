@@ -6,7 +6,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect } from 'react';
 import { PAYROLL_ITEM_TYPE_OPTIONS } from '@umbm/shared';
-import { api, ApiClientError } from '@/lib/api';
+import { api } from '@/lib/api';
+import { applyApiFormErrors, clearChangedFieldErrors } from '@/lib/form-error';
 import { DateStringPicker } from './DateTimePickers';
 import { MONEY_INPUT_PROPS, type PayPeriodRow } from './payroll-types';
 
@@ -23,8 +24,7 @@ export function CreatePeriodModal({ open, onClose }: { open: boolean; onClose: (
       onClose();
     },
     onError: (e) => {
-      if (e instanceof ApiClientError && e.details.length > 0) form.setFields(e.details.map((d) => ({ name: d.field, errors: [d.message] })));
-      message.error(e instanceof ApiClientError ? e.message : 'Tạo kỳ lương thất bại');
+      message.error(applyApiFormErrors(form, e, { fallbackMessage: 'Tạo kỳ lương thất bại' }));
     },
   });
 
@@ -118,7 +118,7 @@ export function PayrollItemModal({
       qc.invalidateQueries({ queryKey: ['payroll-periods'] });
       onClose();
     },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Không thể lưu khoản thưởng / điều chỉnh'),
+    onError: (e) => message.error(applyApiFormErrors(form, e, { fallbackMessage: 'Không thể lưu khoản thưởng / điều chỉnh' })),
   });
 
   return (
@@ -182,7 +182,7 @@ export function RevenueInputModal({
       void qc.invalidateQueries({ queryKey: ['payroll-revenue-inputs'] });
       onClose();
     },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu doanh thu đối chiếu thất bại'),
+    onError: (e) => message.error(applyApiFormErrors(form, e, { fallbackMessage: 'Lưu doanh thu đối chiếu thất bại' })),
   });
 
   return (

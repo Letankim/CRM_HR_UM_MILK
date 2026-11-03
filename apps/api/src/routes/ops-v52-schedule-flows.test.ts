@@ -168,7 +168,8 @@ describe('Ops V5.2 — Chốt lịch tuần & tự động sắp ca theo ca mặ
     const emp = t.db.employees.find((e) => e.employee_code === 'NV0002')!;
     const nv2 = { ...web, cookie: (await t.login('0901000002', DEMO_PIN, 'employee')).cookie };
     const workDate = day(0);
-    const sh = (await t.app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hr, payload: { employee_id: emp.id, work_date: workDate, shift_code: 'CA_TOI', status: 'PUBLISHED' } })).json().data;
+    const sh = (await t.app.inject({ method: 'POST', url: '/api/admin/schedules', headers: hr, payload: { employee_id: emp.id, work_date: day(3), shift_code: 'CA_TOI', status: 'PUBLISHED' } })).json().data;
+    await t.db.shiftAssignments.update(sh.id, sh.version, { work_date: workDate, start_at: `${workDate}T17:00:00+07:00`, end_at: `${workDate}T22:00:00+07:00` }, 'test');
     const noPhoto = await t.app.inject({ method: 'POST', url: '/api/admin/attendance/adjustments', headers: nv2, payload: { employee_id: emp.id, assignment_id: sh.id, work_date: workDate, shift_code: 'CA_TOI', punch_type: 'CHECK_IN', reason: 'Lỗi GPS khi vào ca' } });
     expect(noPhoto.statusCode).toBe(400);
     const img = 'data:image/jpeg;base64,dGVzdF9ldmlkZW5jZV9waG90bw==';

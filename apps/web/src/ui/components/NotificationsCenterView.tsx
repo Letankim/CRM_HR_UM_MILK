@@ -13,6 +13,7 @@ import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { useDesktopNotifications } from '@/lib/desktop-notification';
 import { exportToExcel } from '@/lib/export-excel';
+import { applyApiFormErrors } from '@/lib/form-error';
 import { useNotificationSound } from '@/lib/notification-sound';
 import { PageHeader } from '../PageHeader';
 import { DataTableCard } from './DataTableCard';
@@ -57,7 +58,7 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
   const readMut = useMutation({ mutationFn: (id: string) => api.post(`/notifications/${id}/read`, {}), onSuccess: refreshAll });
   const markAllMut = useMutation({ mutationFn: (ids?: string[]) => api.post('/notifications/mark-all-read', { ids }), onSuccess: () => { message.success('Đã đánh dấu đã đọc các thông báo'); refreshAll(); } });
   const delMut = useMutation({ mutationFn: (id: string) => api.delete(`/notifications/${id}`), onSuccess: () => { message.success('Đã xóa thông báo thành công'); refreshAll(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Xóa thông báo thất bại') });
-  const sendMut = useMutation({ mutationFn: (body: Record<string, unknown>) => api.post('/notifications', body), onSuccess: () => { message.success('Đã phát hành và gửi thông báo thành công'); setSendOpen(false); sendForm.resetFields(); refreshAll(); }, onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Gửi thông báo thất bại') });
+  const sendMut = useMutation({ mutationFn: (body: Record<string, unknown>) => api.post('/notifications', body), onSuccess: () => { message.success('Đã phát hành và gửi thông báo thành công'); setSendOpen(false); sendForm.resetFields(); refreshAll(); }, onError: (e) => message.error(applyApiFormErrors(sendForm, e, { fallbackMessage: 'Gửi thông báo thất bại' })) });
 
   const handleOpenDetail = (record: NotificationItem) => {
     const nowIso = new Date().toISOString();

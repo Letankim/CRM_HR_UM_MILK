@@ -5,8 +5,9 @@ import { CloseOutlined, ContactsOutlined, DollarOutlined, IdcardOutlined, PlusOu
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { EMPLOYEE_STATUS_OPTIONS, EMPLOYMENT_TYPE_OPTIONS } from '@umbm/shared';
-import { api, ApiClientError } from '@/lib/api';
+import { api } from '@/lib/api';
 import { generateEmployeeCode, generatePin6 } from '@/lib/auto-generate';
+import { applyApiFormErrors, clearChangedFieldErrors } from '@/lib/form-error';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { DateStringPicker } from './DateTimePickers';
 import { EmployeeAccountLinkFields, type EmployeeAccountMode } from './EmployeeAccountLinkFields';
@@ -114,19 +115,17 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
       onClose();
     },
     onError: (err) => {
-      if (err instanceof ApiClientError) {
-        if (err.details.length > 0) {
-          form.setFields(err.details.map((d) => ({ name: d.field.split('.') as never, errors: [d.message] })));
-          const f = err.details[0]?.field ?? '';
-          if (['email', 'citizen_id', 'tax_code'].includes(f)) setActiveTab('personal');
-          else if (['bank_account_number', 'bank_name'].includes(f) || f.startsWith('salary')) setActiveTab('salary');
-          else if (['username', 'link_user_id', 'initial_pin'].includes(f)) setActiveTab('account');
-          else setActiveTab('basic');
-        }
-        message.error(err.message);
-      } else {
-        message.error('Không thể lưu hồ sơ nhân sự, vui lòng thử lại');
-      }
+      message.error(
+        applyApiFormErrors(form, err, {
+          fallbackMessage: 'Không thể lưu hồ sơ nhân sự, vui lòng thử lại',
+          onFieldTabSwitch: (raw, f) => {
+            if (['email', 'citizen_id', 'tax_code', 'date_of_birth', 'permanent_address', 'current_address', 'emergency_contact_phone', 'resigned_at', 'resign_reason'].includes(f)) setActiveTab('personal');
+            else if (['bank_account_number', 'bank_name', 'bank_account_holder'].includes(f) || raw.startsWith('salary')) setActiveTab('salary');
+            else if (['username', 'link_user_id', 'initial_pin'].includes(f)) setActiveTab('account');
+            else setActiveTab('basic');
+          },
+        }),
+      );
     },
   });
 
@@ -140,13 +139,17 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
         title={editing ? `Chỉnh sửa Hồ sơ Nhân sự — ${editing.fullName} (${editing.employeeCode})` : 'Tiếp nhận Hồ sơ Nhân sự mới'}
         open={open} onCancel={onClose}
         onOk={() => form.validateFields().then((v) => saveMutation.mutate(v)).catch((e: { errorFields?: { name: (string | number)[] }[] }) => {
-          if (['initial_pin', 'username', 'link_user_id'].includes(String(e?.errorFields?.[0]?.name[0] ?? ''))) setActiveTab('account');
+          const f = String(e?.errorFields?.[0]?.name[0] ?? '');
+          if (['initial_pin', 'username', 'link_user_id'].includes(f)) setActiveTab('account');
+          else if (['email', 'citizen_id', 'tax_code'].includes(f)) setActiveTab('personal');
+          else if (f === 'salary' || ['bank_account_number', 'bank_name'].includes(f)) setActiveTab('salary');
+          else setActiveTab('basic');
         })}
         okText={editing ? 'Lưu cập nhật' : 'Lưu hồ sơ & Liên kết TK'} cancelText="Hủy bỏ"
         okButtonProps={{ icon: editing ? <SaveOutlined /> : <PlusOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
         confirmLoading={saveMutation.isPending} width="70vw" forceRender
       >
-        <Form<EmployeeFormValues> form={form} layout="vertical" style={{ marginTop: 8 }}>
+        <Form<EmployeeFormValues> form={form} layout="vertical" style={{ marginTop: 8 }} onValuesChange={(changed) => clearChangedFieldErrors(form, changed)}>
           <Tabs
             activeKey={activeTab} onChange={setActiveTab}
             items={[

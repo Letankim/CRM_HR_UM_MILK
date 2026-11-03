@@ -16,64 +16,37 @@ import { recruitmentZaloRoutes } from './recruitment-zalo.routes.js';
 import { testBankRoutes } from './test-bank.routes.js';
 
 const zCandidateListQuery = zListQueryBase.extend({
-  branch_id: z.string().trim().optional(),
-  status: z.string().trim().optional(),
-  staff_group: z.string().trim().optional(),
-  refresh: z.enum(['0', '1', 'true', 'false']).optional(),
+  branch_id: z.string().trim().optional(), status: z.string().trim().optional(),
+  staff_group: z.string().trim().optional(), refresh: z.enum(['0', '1', 'true', 'false']).optional(),
 });
 
+const optStr = z.string().trim().optional();
 const zGoogleFormExtra = {
-  timestamp: z.string().trim().optional(),
-  education: z.string().trim().optional(),
-  school_or_major: z.string().trim().optional(),
-  hometown: z.string().trim().optional(),
-  current_address: z.string().trim().optional(),
-  citizen_id: z.string().trim().optional(),
-  employment_type: z.string().trim().optional(),
-  can_rotate_branch: z.string().trim().optional(),
-  fnb_skills: z.string().trim().optional(),
-  incident_answer: z.string().trim().optional(),
-  commitment_months: z.string().trim().optional(),
-  expected_salary: z.union([z.string(), z.number()]).optional(),
-  expected_salary_vnd: z.coerce.number().optional(),
-  start_date_available: z.string().trim().optional(),
-  facebook_link: z.string().trim().optional(),
-  uniform_gps_consent: z.string().trim().optional(),
-  self_intro: z.string().trim().optional(),
-  form_payload: z.record(z.unknown()).optional(),
+  timestamp: optStr, education: optStr, school_or_major: optStr, hometown: optStr, current_address: optStr,
+  citizen_id: optStr, employment_type: optStr, can_rotate_branch: optStr, fnb_skills: optStr, incident_answer: optStr,
+  commitment_months: optStr, expected_salary: z.union([z.string(), z.number()]).optional(),
+  expected_salary_vnd: z.coerce.number().optional(), start_date_available: optStr, facebook_link: optStr,
+  uniform_gps_consent: optStr, self_intro: optStr, form_payload: z.record(z.unknown()).optional(),
 };
 
 const zCreateCandidateBody = z.object({
   full_name: z.string().trim().min(2, 'Họ tên ứng viên tối thiểu 2 ký tự'),
   phone: z.string().trim().min(9),
   email: z.string().trim().email('Email ứng viên không hợp lệ').or(z.literal('')).optional().default(''),
-  applied_branch_id: z.string().trim().optional(),
-  branch_pref: z.string().trim().optional(),
-  applied_position: z.string().optional(),
-  staff_group: z.string().default('BARISTA'),
-  shift_pref: z.string().default('CA_SANG'),
-  birth_year: z.string().default('2003'),
-  gender: z.string().default(''),
-  experience_note: z.string().max(400).optional().default(''),
-  source_channel: z.string().default('WEB'),
+  applied_branch_id: optStr, branch_pref: optStr, applied_position: z.string().optional(),
+  staff_group: z.string().default('BARISTA'), shift_pref: z.string().default('CA_SANG'),
+  birth_year: z.string().default('2003'), gender: z.string().default(''),
+  experience_note: z.string().max(400).optional().default(''), source_channel: z.string().default('WEB'),
   hr_note: z.string().max(400).optional().default(''),
   ...zGoogleFormExtra,
 });
 
 const zUpdateCandidateBody = z.object({
-  version: z.coerce.number().int().min(1),
-  full_name: z.string().trim().min(2).optional(),
-  phone: z.string().trim().optional(),
-  email: z.string().trim().optional(),
-  applied_branch_id: z.string().trim().optional(),
-  branch_pref: z.string().trim().optional(),
-  applied_position: z.string().optional(),
-  staff_group: z.string().optional(),
-  shift_pref: z.string().optional(),
-  birth_year: z.string().optional(),
-  gender: z.string().optional(),
-  experience_note: z.string().max(400).optional(),
-  source_channel: z.string().optional(),
+  version: z.coerce.number().int().min(1), full_name: z.string().trim().min(2).optional(),
+  phone: optStr, email: optStr, applied_branch_id: optStr, branch_pref: optStr,
+  applied_position: z.string().optional(), staff_group: z.string().optional(),
+  shift_pref: z.string().optional(), birth_year: z.string().optional(), gender: z.string().optional(),
+  experience_note: z.string().max(400).optional(), source_channel: z.string().optional(),
   status: z.enum(['NEW', 'CONTACTED', 'INTERVIEW_SCHEDULED', 'HIRED', 'REJECTED']).optional(),
   hr_note: z.string().max(400).optional(),
   ...zGoogleFormExtra,
@@ -132,11 +105,25 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
     const body = zCreateCandidateBody.parse(request.body);
     const phone = normalizePhone(body.phone);
     if (!phone) throw Errors.fieldValidation('phone', 'INVALID_PHONE', 'Số điện thoại ứng viên không hợp lệ (10 số bắt đầu bằng 0)', body.phone);
-    if (ctx.db.candidates.find((c) => c.phone === phone) || ctx.db.employees.find((e) => e.phone === phone)) {
-      throw Errors.fieldValidation('phone', 'DUPLICATE_VALUE', `Số điện thoại ${phone} đã tồn tại trong danh sách ứng viên hoặc nhân sự`, body.phone);
+    const dupCandPhone = ctx.db.candidates.find((c) => c.phone === phone);
+    const dupEmpPhone = ctx.db.employees.find((e) => e.phone === phone);
+    if (dupCandPhone || dupEmpPhone) {
+      const owner = dupCandPhone ? `ứng viên ${dupCandPhone.full_name} (${dupCandPhone.candidate_code})` : `nhân sự ${dupEmpPhone!.full_name} (${dupEmpPhone!.employee_code})`;
+      throw Errors.fieldValidation('phone', 'DUPLICATE_VALUE', `Số điện thoại ${phone} đã tồn tại ở hồ sơ ${owner}`, body.phone);
     }
-    if (body.email && (ctx.db.candidates.find((c) => c.email.trim().toLowerCase() === body.email.trim().toLowerCase()) || ctx.db.employees.find((e) => e.email.trim().toLowerCase() === body.email.trim().toLowerCase()))) {
-      throw Errors.fieldValidation('email', 'DUPLICATE_VALUE', `Địa chỉ email ${body.email} đã tồn tại trong danh sách ứng viên hoặc nhân sự`, body.email);
+    if (body.email) {
+      const em = body.email.trim().toLowerCase();
+      const dupCandEmail = ctx.db.candidates.find((c) => c.email.trim().toLowerCase() === em);
+      const dupEmpEmail = ctx.db.employees.find((e) => e.email.trim().toLowerCase() === em);
+      if (dupCandEmail || dupEmpEmail) {
+        throw Errors.fieldValidation('email', 'DUPLICATE_VALUE', `Địa chỉ email ${body.email} đã tồn tại ở hồ sơ khác`, body.email);
+      }
+    }
+    if (body.citizen_id?.trim()) {
+      const cid = body.citizen_id.trim();
+      if (ctx.db.employees.find((e) => e.citizen_id.trim() === cid)) {
+        throw Errors.fieldValidation('citizen_id', 'DUPLICATE_VALUE', `Số CCCD ${cid} đã tồn tại ở hồ sơ khác`, body.citizen_id);
+      }
     }
     const branchId = body.branch_pref || body.applied_branch_id || '';
     const staffGroup = body.applied_position || body.staff_group || 'BARISTA';
@@ -166,12 +153,22 @@ export async function recruitmentTestRoutes(app: FastifyInstance, ctx: AppContex
     const before = ctx.db.candidates.get(id);
     if (!before) throw Errors.notFound('Hồ sơ ứng viên', id);
     const phone = body.phone ? normalizePhone(body.phone) : before.phone;
-    if (body.phone && !phone) throw Errors.fieldValidation('phone', 'INVALID_PHONE', 'Số điện thoại không hợp lệ', body.phone);
-    if (body.phone && (ctx.db.candidates.find((c) => c.id !== id && c.phone === phone) || ctx.db.employees.find((e) => e.phone === phone))) {
+    if (body.phone && !phone) throw Errors.fieldValidation('phone', 'INVALID_PHONE', 'Số điện thoại không hợp lệ (10 số bắt đầu bằng 0)', body.phone);
+    const isSelfEmp = (e: { candidate_id: string; phone: string }) => e.candidate_id === id || Boolean(before.phone && e.phone === before.phone && phone === before.phone);
+    if (body.phone && (ctx.db.candidates.find((c) => c.id !== id && c.phone === phone) || ctx.db.employees.find((e) => !isSelfEmp(e) && e.phone === phone))) {
       throw Errors.fieldValidation('phone', 'DUPLICATE_VALUE', `Số điện thoại ${phone} đã tồn tại ở hồ sơ khác`, body.phone);
     }
-    if (body.email && (ctx.db.candidates.find((c) => c.id !== id && c.email.trim().toLowerCase() === body.email!.trim().toLowerCase()) || ctx.db.employees.find((e) => e.email.trim().toLowerCase() === body.email!.trim().toLowerCase()))) {
-      throw Errors.fieldValidation('email', 'DUPLICATE_VALUE', `Địa chỉ email ${body.email} đã tồn tại ở hồ sơ khác`, body.email);
+    if (body.email) {
+      const em = body.email.trim().toLowerCase();
+      if (ctx.db.candidates.find((c) => c.id !== id && c.email.trim().toLowerCase() === em) || ctx.db.employees.find((e) => !isSelfEmp(e) && e.email.trim().toLowerCase() === em)) {
+        throw Errors.fieldValidation('email', 'DUPLICATE_VALUE', `Địa chỉ email ${body.email} đã tồn tại ở hồ sơ khác`, body.email);
+      }
+    }
+    if (body.citizen_id?.trim()) {
+      const cid = body.citizen_id.trim();
+      if (ctx.db.employees.find((e) => !isSelfEmp(e) && e.citizen_id.trim() === cid)) {
+        throw Errors.fieldValidation('citizen_id', 'DUPLICATE_VALUE', `Số CCCD ${cid} đã tồn tại ở hồ sơ khác`, body.citizen_id);
+      }
     }
     const staffGroup = body.applied_position ?? body.staff_group ?? before.staff_group;
     const branchId = body.branch_pref ?? body.applied_branch_id ?? before.branch_pref;

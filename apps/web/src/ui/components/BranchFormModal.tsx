@@ -12,8 +12,9 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { BRANCH_STATUS_OPTIONS } from '@umbm/shared';
-import { api, ApiClientError } from '@/lib/api';
+import { api } from '@/lib/api';
 import { generateBranchCode } from '@/lib/auto-generate';
+import { applyApiFormErrors, clearChangedFieldErrors } from '@/lib/form-error';
 import { getAccurateDeviceLocation, saveDeviceGpsAnchor } from '@/lib/geolocation';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
 
@@ -94,14 +95,12 @@ export function BranchFormModal({
       onClose();
     },
     onError: (err) => {
-      if (err instanceof ApiClientError) {
-        if (err.details.length > 0) {
-          form.setFields(err.details.map((d) => ({ name: d.field as keyof BranchFormValues, errors: [d.message] })));
-        }
-        message.error(err.message);
-      } else {
-        message.error('Lưu cấu hình chi nhánh thất bại');
-      }
+      message.error(
+        applyApiFormErrors(form, err, {
+          fallbackMessage: 'Lưu cấu hình chi nhánh thất bại',
+          onFieldTabSwitch: (_, f) => setActiveTab(['lat', 'lng', 'radius_m', 'max_accuracy_m'].includes(f) ? 'gps' : 'info'),
+        }),
+      );
     },
   });
 
@@ -126,6 +125,7 @@ export function BranchFormModal({
       <Form<BranchFormValues>
         form={form}
         layout="vertical"
+        onValuesChange={(changed) => clearChangedFieldErrors(form, changed)}
         initialValues={{
           lat: 10.7769,
           lng: 106.7009,

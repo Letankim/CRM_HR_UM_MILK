@@ -7,6 +7,7 @@ import dayjs from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
 import { SHIFT_ASSIGNMENT_STATUS_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
+import { applyApiFormErrors, clearChangedFieldErrors } from '@/lib/form-error';
 import { useEmployeeSearchSelect } from '../hooks/useEmployeeSearchSelect';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { evaluateBranchShiftSurplusPreview, useStaffingRules } from '../hooks/useStaffingRules';
@@ -147,10 +148,7 @@ export function ScheduleFormModal({
     mutationFn: (values: ScheduleFormValues) => editing ? api.put(`/admin/schedules/${editing.id}`, isApprovedNonDraft ? { version: editing.version, note: values.note ?? '' } : { ...values, employee_id: editing.employeeId, version: editing.version }) : api.post('/admin/schedules', values),
     onSuccess: () => { message.success(isApprovedNonDraft ? 'Đã cập nhật ghi chú phân ca thành công' : editing ? 'Đã cập nhật phân công ca làm việc' : 'Đã xếp lịch ca làm việc thành công'); invalidateAll(); onClose(); },
     onError: (err) => {
-      if (err instanceof ApiClientError) {
-        if (err.details.length > 0) form.setFields(err.details.map((d) => ({ name: d.field as keyof ScheduleFormValues, errors: [d.message] })));
-        message.error(err.message);
-      } else message.error('Không thể lưu lịch phân ca');
+      message.error(applyApiFormErrors(form, err, { fallbackMessage: 'Không thể lưu lịch phân ca' }));
     },
   });
 
@@ -196,7 +194,7 @@ export function ScheduleFormModal({
       {surplusPreview && <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message={surplusPreview.isNew ? `Cảnh báo dư định biên tại ${surplusPreview.branchLabel}: Khung ca này hiện đã có ${surplusPreview.currentCount}/${surplusPreview.maxStaff} nhân sự (định biên ${surplusPreview.minStaff}–${surplusPreview.maxStaff}). Nếu phân thêm sẽ Dư +${surplusPreview.surplusDiff} nhân sự (${surplusPreview.projectedCount}/${surplusPreview.maxStaff}).` : `Cảnh báo dư định biên tại ${surplusPreview.branchLabel}: Khung ca này đang có ${surplusPreview.projectedCount}/${surplusPreview.maxStaff} nhân sự — Dư +${surplusPreview.surplusDiff} nhân sự so với định biên tối đa (${surplusPreview.minStaff}–${surplusPreview.maxStaff}).`} />}
       {hasPendingAdj && <Alert type="warning" showIcon style={{ marginTop: 8, marginBottom: 8 }} message={`Ca làm việc này đã gửi Phiếu bổ sung công (${editing?.pendingAdjustmentCode || 'Chờ duyệt'}) và đang chờ Cửa hàng / HR phê duyệt.`} />}
       {isEditingAbsent && <Alert type="error" showIcon style={{ marginTop: 8, marginBottom: 8 }} message="Ca làm việc này đang ở trạng thái Vắng mặt (Cần bổ sung công). Bạn có thể tạo phiếu bổ sung công trực tiếp từ chi tiết ca này." action={<Button size="small" type="primary" danger icon={<FileAddOutlined />} onClick={() => setQuickAdjOpen(true)}>Tạo phiếu bổ sung công</Button>} />}
-      <Form<ScheduleFormValues> form={form} layout="vertical" disabled={!canModifyShift} style={{ marginTop: 12 }} onValuesChange={(changed) => { if (changed.shift_code && hoursMap[changed.shift_code]) form.setFieldValue('scheduled_hours', hoursMap[changed.shift_code]); }}>
+      <Form<ScheduleFormValues> form={form} layout="vertical" disabled={!canModifyShift} style={{ marginTop: 12 }} onValuesChange={(changed) => { clearChangedFieldErrors(form, changed); if (changed.shift_code && hoursMap[changed.shift_code]) form.setFieldValue('scheduled_hours', hoursMap[changed.shift_code]); }}>
         <Form.Item name="employee_id" label="Nhân sự phân công" rules={[{ required: true, message: 'Vui lòng chọn nhân sự' }]}>
           <Select showSearch disabled={Boolean(editing) || !canEditFields} options={employeeSelectOptions} loading={!editing && empSelect.loading} onSearch={editing ? undefined : empSelect.onSearch} filterOption={editing ? undefined : empSelect.filterOption} onDropdownVisibleChange={editing ? undefined : empSelect.onDropdownVisibleChange} placeholder="Tìm và chọn nhân sự phân công..." />
         </Form.Item>

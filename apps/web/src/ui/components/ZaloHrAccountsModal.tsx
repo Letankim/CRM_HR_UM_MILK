@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, ApiClientError } from '@/lib/api';
+import { applyApiFormErrors } from '@/lib/form-error';
 
 export interface ZaloHrAccountItem {
   id: string; setting_key: string; owner_user_id: string; owner_username: string; owner_display_name: string;
@@ -83,7 +84,7 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
   const saveAccMut = useMutation({
     mutationFn: (v: Record<string, unknown>) => editing ? api.put(`/admin/recruitment/zalo-accounts/${editing.id}`, { ...editing, ...v, access_token: qrSession.session_token }) : api.post('/admin/recruitment/zalo-accounts', { ...defaultTemplates, ...v, access_token: qrSession.session_token, zalo_id: `zalo_${String(v.zalo_phone || '').trim()}` }),
     onSuccess: () => { message.success(editing ? 'Đã cập nhật thông tin tài khoản Zalo thành công' : 'Đã lưu tài khoản Zalo tuyển dụng thành công'); qc.invalidateQueries({ queryKey: ['recruitment-zalo-accounts'] }); resetToCreate(); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu tài khoản Zalo thất bại'),
+    onError: (e) => message.error(applyApiFormErrors(accForm, e, { fallbackMessage: 'Lưu tài khoản Zalo thất bại' })),
   });
 
   const saveTplMut = useMutation({
@@ -93,7 +94,7 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
       return api.put(`/admin/recruitment/zalo-accounts/${target.id}`, { owner_user_id: target.owner_user_id, zalo_name: target.zalo_name, zalo_phone: target.zalo_phone, is_default: target.is_default, status: target.status, ...v });
     },
     onSuccess: () => { message.success('Đã lưu cấu hình mẫu tin nhắn Zalo tuyển dụng thành công'); qc.invalidateQueries({ queryKey: ['recruitment-zalo-accounts'] }); },
-    onError: (e) => message.error(e instanceof ApiClientError || e instanceof Error ? e.message : 'Lưu mẫu tin nhắn thất bại'),
+    onError: (e) => message.error(applyApiFormErrors(tplForm, e, { fallbackMessage: 'Lưu mẫu tin nhắn thất bại' })),
   });
 
   const delMut = useMutation({

@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { exportToExcel } from '@/lib/export-excel';
+import { applyApiFormErrors } from '@/lib/form-error';
 import { StatusTag } from '@/ui/StatusTag';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { SelectableTable } from './BulkActionBar';
@@ -51,7 +52,7 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
   const saveShift = useMutation({
     mutationFn: (values: Record<string, unknown>) => editingShift ? api.put(`/admin/shift-templates/${editingShift.id}`, { ...values, version: editingShift.version }) : api.post('/admin/shift-templates', values),
     onSuccess: () => { message.success(editingShift ? 'Đã cập nhật mẫu ca làm việc' : 'Đã thêm mẫu ca làm việc mới'); setShiftModalOpen(false); setEditingShift(null); qc.invalidateQueries({ queryKey: ['shift-templates'] }); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu mẫu ca thất bại'),
+    onError: (e) => message.error(applyApiFormErrors(shiftForm, e, { fallbackMessage: 'Lưu mẫu ca thất bại' })),
   });
 
   const deleteShift = useMutation({
@@ -63,7 +64,7 @@ export function ShiftTemplatesCard({ canConfig }: { canConfig: boolean }) {
   const saveRule = useMutation({
     mutationFn: (v: Record<string, unknown>) => editingRule ? api.put(`/admin/staffing-rules/${editingRule.id}`, { ...v, version: editingRule.version }) : api.post('/admin/staffing-rules', v),
     onSuccess: () => { message.success(editingRule ? 'Đã cập nhật định biên nhân sự theo ca' : 'Đã thêm quy tắc định biên nhân sự theo ca'); setRuleModalOpen(false); setEditingRule(null); qc.invalidateQueries({ queryKey: ['staffing-rules'] }); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu định biên thất bại'),
+    onError: (e) => message.error(applyApiFormErrors(ruleForm, e, { fallbackMessage: 'Lưu định biên thất bại' })),
   });
 
   const deleteRule = useMutation({

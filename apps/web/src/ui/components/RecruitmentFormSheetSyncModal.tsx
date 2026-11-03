@@ -5,7 +5,8 @@ import { CheckCircleOutlined, ClockCircleOutlined, CloudSyncOutlined, LinkOutlin
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect } from 'react';
-import { api, ApiClientError } from '@/lib/api';
+import { api } from '@/lib/api';
+import { applyApiFormErrors } from '@/lib/form-error';
 
 export interface RecruitmentFormSheetConfigDto {
   sheet_url: string;
@@ -56,7 +57,7 @@ export function RecruitmentFormSheetSyncModal({ open, onClose, onSynced }: Props
       message.success('Đã lưu cấu hình đường dẫn Google Sheet Form và chế độ tự động đồng bộ hàng giờ');
       void qc.invalidateQueries({ queryKey: ['recruitment-form-sync-config'] });
     },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Lưu cấu hình thất bại'),
+    onError: (e) => message.error(applyApiFormErrors(form, e, { fallbackMessage: 'Lưu cấu hình thất bại' })),
   });
 
   const syncNowMut = useMutation({
@@ -73,7 +74,7 @@ export function RecruitmentFormSheetSyncModal({ open, onClose, onSynced }: Props
       void qc.invalidateQueries({ queryKey: ['candidates'] });
       onSynced?.();
     },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Đồng bộ Google Sheet Form thất bại'),
+    onError: (e) => message.error(applyApiFormErrors(form, e, { fallbackMessage: 'Đồng bộ Google Sheet Form thất bại' })),
   });
 
   const cfg = cfgQ.data;

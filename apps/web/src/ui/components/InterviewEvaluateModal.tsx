@@ -9,13 +9,14 @@ import {
   INTERVIEW_RUBRIC_BLOCK_LABELS, INTERVIEW_RUBRICS, OFFICE_RUBRIC_CRITERIA_13, STORE_RUBRIC_CRITERIA_13,
   type InterviewExperienceTrack, type InterviewRubricBlock,
 } from '@umbm/shared';
+import { applyApiFormErrors, clearChangedFieldErrors } from '@/lib/form-error';
 import { FireworksCanvasOverlay } from './FireworksCanvasOverlay';
 
 interface InterviewEvaluateModalProps {
   target: Record<string, unknown> | null;
   loading: boolean;
   onClose: () => void;
-  onSubmit: (id: string, body: Record<string, unknown>) => void;
+  onSubmit: (id: string, body: Record<string, unknown>, onError?: (e: unknown) => void) => void;
 }
 
 const DEFAULT_COMMENTS = new Set([
@@ -115,6 +116,7 @@ export function InterviewEvaluateModal({ target, loading, onClose, onSubmit }: I
         <Form
           form={form} layout="vertical"
           onValuesChange={(changed, all) => {
+            clearChangedFieldErrors(form, changed);
             const track = (all.experience_track as InterviewExperienceTrack) || 'INEXPERIENCED';
             if ('experience_track' in changed && DEFAULT_COMMENTS.has(String(all.comment || '').trim())) form.setFieldValue('comment', INTERVIEW_RUBRICS[track].defaultComment);
           }}
@@ -128,7 +130,7 @@ export function InterviewEvaluateModal({ target, loading, onClose, onSubmit }: I
               ...v, decision: finalDecision, experience_track: track, rubric_block: rubricBlock, rubric_scores: rubricScores,
               red_flags: redFlags, score_13: eval13.totalScore13, appearance_score: pillars.appearance,
               attitude_score: pillars.attitude, skill_score: pillars.skill, score: eval13.hasRedFlag ? 0 : weighted, version: target.version,
-            });
+            }, (e) => { applyApiFormErrors(form, e); });
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '10px 12px', marginBottom: 12 }}>

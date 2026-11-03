@@ -5,8 +5,9 @@ import { CloseOutlined, SafetyCertificateOutlined, SaveOutlined, SettingOutlined
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ROLE_OPTIONS, getAllowedExtraPermissionsForRole, isEmployeeRole, type Permission, type Role } from '@umbm/shared';
-import { api, ApiClientError } from '@/lib/api';
+import { api } from '@/lib/api';
 import { generateAccountSecret, generateUsername } from '@/lib/auto-generate';
+import { applyApiFormErrors, clearChangedFieldErrors } from '@/lib/form-error';
 import { applyEmployeeDiffsToAccountForm, computeEmployeeToAccountDiffs } from '@/lib/linked-entity-sync';
 import { useLinkedEntityDetail } from '../hooks/useLinkedEntityDetail';
 import type { AccountRowItem } from './AccountDetailDrawer';
@@ -123,10 +124,16 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
       onClose();
     },
     onError: (err) => {
-      if (err instanceof ApiClientError) {
-        if (err.details.length > 0) form.setFields(err.details.map((d) => ({ name: d.field as keyof AccountFormValues, errors: [d.message] })));
-        message.error(err.message);
-      } else message.error('Không thể lưu tài khoản, vui lòng thử lại');
+      message.error(
+        applyApiFormErrors(form, err, {
+          fallbackMessage: 'Không thể lưu tài khoản, vui lòng thử lại',
+          onFieldTabSwitch: (_, f) => {
+            if (['employee_id', 'branch_scope'].includes(f)) setActiveTab('link');
+            else if (f === 'extra_permissions') setActiveTab('permissions');
+            else setActiveTab('login');
+          },
+        }),
+      );
     },
   });
 
@@ -138,7 +145,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
       okText={editing ? 'Lưu cập nhật' : 'Tạo tài khoản'} cancelText="Hủy bỏ"
       okButtonProps={{ icon: editing ? <SaveOutlined /> : <UserAddOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}
     >
-      <Form<AccountFormValues> form={form} layout="vertical" style={{ marginTop: 8 }}>
+      <Form<AccountFormValues> form={form} layout="vertical" style={{ marginTop: 8 }} onValuesChange={(changed) => clearChangedFieldErrors(form, changed)}>
         <Tabs
           activeKey={activeTab} onChange={setActiveTab}
           items={[

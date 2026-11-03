@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
+import { applyApiFormErrors } from '@/lib/form-error';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
 import { SelectableTable } from './BulkActionBar';
@@ -66,13 +67,13 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
   const bkpQ = useQuery({ queryKey: ['backups', bkpParams], queryFn: () => api.list<Record<string, unknown>>(`/admin/backups?${bkpParams}`), enabled: mode === 'governance' && canBackupOrMaint, retry: false });
 
   const refreshAll = () => ['policies', 'maintenance', 'backups', 'mkt-comms', 'nv-comms', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-  const onErr = (fallback: string) => (e: unknown) => message.error(e instanceof ApiClientError ? e.message : fallback);
+  const onErr = (fallback: string) => (e: unknown) => message.error(applyApiFormErrors(polForm, e, { fallbackMessage: fallback }));
   const postMut = useMutation({
     mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body),
-    onSuccess: (_res, vars) => { message.success(vars.url.endsWith('/broadcast') ? 'Đã phát thông báo phổ biến chính sách tới toàn công ty' : 'Đã thực thi thao tác thành công'); refreshAll(); },
+    onSuccess: (_res, vars) => { message.success(vars.url.endsWith('/broadcast') ? 'Đã phát thông báo phổ biến chính sách tới toàn công ty' : 'Đã thực thi thao tác thành công'); setPolModal(false); refreshAll(); },
     onError: onErr('Thao tác thất bại'),
   });
-  const putMut = useMutation({ mutationFn: ({ url, body }: { url: string; body: unknown }) => api.put(url, body), onSuccess: () => { message.success('Đã lưu cập nhật thành công'); refreshAll(); }, onError: onErr('Cập nhật thất bại') });
+  const putMut = useMutation({ mutationFn: ({ url, body }: { url: string; body: unknown }) => api.put(url, body), onSuccess: () => { message.success('Đã lưu cập nhật thành công'); setPolModal(false); refreshAll(); }, onError: onErr('Cập nhật thất bại') });
   const delMut = useMutation({ mutationFn: ({ url, body }: { url: string; body: unknown }) => api.delete(url, body), onSuccess: () => { message.success('Đã xóa bản ghi thành công'); refreshAll(); }, onError: onErr('Xóa thất bại') });
 
   const openCreatePolicy = () => {
@@ -209,7 +210,7 @@ export function SystemGovernanceAndCommsTabs({ mode = 'governance' }: { mode?: '
           ...(can('system.config', 'integration.read') ? [{ key: 'operations', label: <span><SettingOutlined /> Cấu hình vận hành &amp; Dữ liệu tháng</span>, children: <OperationsAndPartitionPane /> }] : []),
         ]} />
       </Card>
-      <PolicyFormModal open={polModal} editing={editingPol} form={polForm} isAdmin={isAdmin} loading={postMut.isPending || putMut.isPending} onClose={() => setPolModal(false)} onSubmit={(v) => { if (editingPol) putMut.mutate({ url: `/admin/policies/${editingPol.id}`, body: { ...v, version: editingPol.version, owner_override_approved: true } }); else postMut.mutate({ url: '/admin/policies', body: v }); setPolModal(false); }} />
+      <PolicyFormModal open={polModal} editing={editingPol} form={polForm} isAdmin={isAdmin} loading={postMut.isPending || putMut.isPending} onClose={() => setPolModal(false)} onSubmit={(v) => { if (editingPol) putMut.mutate({ url: `/admin/policies/${editingPol.id}`, body: { ...v, version: editingPol.version, owner_override_approved: true } }); else postMut.mutate({ url: '/admin/policies', body: v }); }} />
       <GovernanceDetailDrawer record={viewing} kind="policy" onClose={() => setViewing(null)} onEdit={canEditViewing && canManagePolicies ? openEditPolicy : undefined} onBroadcast={canEditViewing && canManagePolicies ? (r) => postMut.mutate({ url: `/admin/policies/${r.id}/broadcast`, body: {} }) : undefined} />
       <BackupDetailDrawer record={viewingBackup} onClose={() => setViewingBackup(null)} />
     </>

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Col, Form, Input, InputNumber, Modal, Row, Select, Tabs } from 'antd';
 import type { FormInstance } from 'antd';
 import { CalendarOutlined, CloseOutlined, PlusOutlined, SaveOutlined, SolutionOutlined, UserOutlined } from '@ant-design/icons';
+import { clearChangedFieldErrors } from '@/lib/form-error';
 import { MONEY_INPUT_PROPS } from './payroll-types';
 
 export const CANDIDATE_STATUS_OPTIONS = [
@@ -92,16 +93,33 @@ export function buildCandidateFormInitials(r?: Record<string, unknown> | null, d
   };
 }
 
+export function resolveCandidateFieldTab(field: string): string {
+  if (['applied_branch_id', 'branch_pref', 'applied_position', 'staff_group', 'shift_pref', 'employment_type', 'can_rotate_branch', 'commitment_months', 'expected_salary_vnd', 'start_date_available', 'source_channel'].includes(field)) {
+    return 'job';
+  }
+  if (['experience_note', 'fnb_skills', 'incident_answer', 'uniform_gps_consent', 'self_intro', 'status', 'hr_note'].includes(field)) {
+    return 'experience';
+  }
+  return 'personal';
+}
+
 export function CandidateFormModal({
-  open, editingCand, form, branches, jobPositionOptions, shiftPrefOptions, loading, onClose, onFinish,
+  open, editingCand, form, branches, jobPositionOptions, shiftPrefOptions, loading, activeTab: controlledTab, onTabChange, onClose, onFinish,
 }: {
   open: boolean; editingCand: Record<string, unknown> | null; form: FormInstance;
   branches: { value: string; label: string }[]; jobPositionOptions: { value: string; label: string }[];
-  shiftPrefOptions: { value: string; label: string }[]; loading: boolean; onClose: () => void;
-  onFinish: (values: Record<string, unknown>) => void;
+  shiftPrefOptions: { value: string; label: string }[]; loading: boolean;
+  activeTab?: string; onTabChange?: (tab: string) => void;
+  onClose: () => void; onFinish: (values: Record<string, unknown>) => void;
 }) {
-  const [activeTab, setActiveTab] = useState('personal');
+  const [innerTab, setInnerTab] = useState('personal');
+  const activeTab = controlledTab ?? innerTab;
+  const setActiveTab = (tab: string) => { setInnerTab(tab); onTabChange?.(tab); };
   const watchedStatus = Form.useWatch('status', form);
+
+  useEffect(() => {
+    if (open) setActiveTab('personal');
+  }, [open]);
 
   return (
     <Modal
@@ -114,11 +132,10 @@ export function CandidateFormModal({
     >
       <Form
         form={form} layout="vertical" onFinish={onFinish}
+        onValuesChange={(changed) => clearChangedFieldErrors(form, changed)}
         onFinishFailed={({ errorFields }) => {
           const firstField = String(errorFields[0]?.name?.[0] ?? '');
-          if (['applied_branch_id', 'applied_position', 'shift_pref'].includes(firstField)) setActiveTab('job');
-          else if (['hr_note', 'status'].includes(firstField)) setActiveTab('experience');
-          else setActiveTab('personal');
+          setActiveTab(resolveCandidateFieldTab(firstField));
         }}
       >
         <Tabs

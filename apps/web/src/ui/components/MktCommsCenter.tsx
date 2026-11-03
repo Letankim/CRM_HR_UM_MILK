@@ -5,9 +5,10 @@ import { AudioOutlined, BellOutlined, CalendarOutlined, CheckCircleOutlined, Clo
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useMemo, useState } from 'react';
-import { api, ApiClientError } from '@/lib/api';
+import { api } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
 import { exportToExcel } from '@/lib/export-excel';
+import { applyApiFormErrors } from '@/lib/form-error';
 import { useClientPagination } from '../hooks/useClientPagination';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { StatusTag } from '../StatusTag';
@@ -49,10 +50,11 @@ export function MktCommsCenter() {
   const mktQ = useQuery({ queryKey: ['mkt-comms'], queryFn: () => api.get<MktCommsPayload>('/admin/comms'), retry: false });
   const data = mktQ.data;
   const refresh = () => ['mkt-comms', 'nv-comms', 'notifications', 'job-positions'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-  const onErr = (fb: string) => (e: unknown) => message.error(e instanceof ApiClientError ? e.message : fb);
+  const activeForm = ancModal ? ancForm : audModal ? audForm : cmpModal ? cmpForm : medModal ? medForm : undefined;
+  const onErr = (fb: string) => (e: unknown) => message.error(applyApiFormErrors(activeForm, e, { fallbackMessage: fb }));
 
-  const postMut = useMutation({ mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body), onSuccess: () => { message.success('Đã thực hiện thao tác thành công'); refresh(); }, onError: onErr('Thao tác thất bại') });
-  const putMut = useMutation({ mutationFn: ({ url, body }: { url: string; body: unknown }) => api.put(url, body), onSuccess: () => { message.success('Đã lưu cập nhật thành công'); refresh(); }, onError: onErr('Cập nhật thất bại') });
+  const postMut = useMutation({ mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body), onSuccess: () => { message.success('Đã thực hiện thao tác thành công'); setAncModal(false); setAudModal(false); setCmpModal(false); refresh(); }, onError: onErr('Thao tác thất bại') });
+  const putMut = useMutation({ mutationFn: ({ url, body }: { url: string; body: unknown }) => api.put(url, body), onSuccess: () => { message.success('Đã lưu cập nhật thành công'); setAncModal(false); setAudModal(false); setCmpModal(false); refresh(); }, onError: onErr('Cập nhật thất bại') });
   const delMut = useMutation({ mutationFn: ({ url, body }: { url: string; body: unknown }) => api.delete(url, body), onSuccess: () => { message.success('Đã xóa bản ghi thành công'); refresh(); }, onError: onErr('Xóa thất bại') });
 
   const openCreateAnc = (presetAudienceKey = 'ALL|ALL', presetStatus = 'SENT') => {
@@ -198,9 +200,9 @@ export function MktCommsCenter() {
           }] : []),
         ]}
       />
-      <MktAnnouncementModal open={ancModal} editing={editingAnc} form={ancForm} campaigns={data?.campaigns ?? []} audienceGroups={data?.audienceGroups ?? []} mediaAssets={data?.mediaAssets ?? []} loading={postMut.isPending || putMut.isPending} onClose={() => setAncModal(false)} onSubmit={(v) => { if (editingAnc) putMut.mutate({ url: `/mkt/announcements/${editingAnc.id}`, body: { ...v, version: editingAnc.version } }); else postMut.mutate({ url: '/mkt/announcements', body: v }); setAncModal(false); }} />
-      <MktAudienceModal open={audModal} editing={editingAud} form={audForm} branches={branchOptions} jobPositionOptions={jobPositionOptions} loading={postMut.isPending || putMut.isPending} onClose={() => setAudModal(false)} onSubmit={(v) => { if (editingAud) putMut.mutate({ url: `/mkt/audience-groups/${encodeURIComponent(String(editingAud.id))}`, body: v }); else postMut.mutate({ url: '/mkt/audience-groups', body: v }); setAudModal(false); }} />
-      <MktCampaignModal open={cmpModal} editing={editingCmp} form={cmpForm} loading={postMut.isPending || putMut.isPending} onClose={() => setCmpModal(false)} onSubmit={(v) => { if (editingCmp) putMut.mutate({ url: `/mkt/campaigns/${editingCmp.id}`, body: { ...v, version: editingCmp.version } }); else postMut.mutate({ url: '/mkt/campaigns', body: v }); setCmpModal(false); }} />
+      <MktAnnouncementModal open={ancModal} editing={editingAnc} form={ancForm} campaigns={data?.campaigns ?? []} audienceGroups={data?.audienceGroups ?? []} mediaAssets={data?.mediaAssets ?? []} loading={postMut.isPending || putMut.isPending} onClose={() => setAncModal(false)} onSubmit={(v) => { if (editingAnc) putMut.mutate({ url: `/mkt/announcements/${editingAnc.id}`, body: { ...v, version: editingAnc.version } }); else postMut.mutate({ url: '/mkt/announcements', body: v }); }} />
+      <MktAudienceModal open={audModal} editing={editingAud} form={audForm} branches={branchOptions} jobPositionOptions={jobPositionOptions} loading={postMut.isPending || putMut.isPending} onClose={() => setAudModal(false)} onSubmit={(v) => { if (editingAud) putMut.mutate({ url: `/mkt/audience-groups/${encodeURIComponent(String(editingAud.id))}`, body: v }); else postMut.mutate({ url: '/mkt/audience-groups', body: v }); }} />
+      <MktCampaignModal open={cmpModal} editing={editingCmp} form={cmpForm} loading={postMut.isPending || putMut.isPending} onClose={() => setCmpModal(false)} onSubmit={(v) => { if (editingCmp) putMut.mutate({ url: `/mkt/campaigns/${editingCmp.id}`, body: { ...v, version: editingCmp.version } }); else postMut.mutate({ url: '/mkt/campaigns', body: v }); }} />
       <MktMediaModal open={medModal} editing={editingMed} form={medForm} loading={postMut.isPending || putMut.isPending} onClose={() => { setMedModal(false); setEditingMed(null); medForm.resetFields(); }} onSubmit={async (v) => { try { if (editingMed) await putMut.mutateAsync({ url: `/mkt/media/${editingMed.id}`, body: { ...v, version: editingMed.version } }); else await postMut.mutateAsync({ url: '/mkt/media', body: v }); setMedModal(false); setEditingMed(null); medForm.resetFields(); } catch { /* handled */ } }} />
       <JobPositionsManagerModal open={posModal} onClose={() => setPosModal(false)} />
       <GovernanceDetailDrawer record={liveViewingAnc} kind="announcement" mediaPool={data?.mediaAssets} onClose={() => setViewingAnc(null)} onEdit={liveViewingAnc && canManage && canEditRow(liveViewingAnc) ? openEditAnc : undefined} />
