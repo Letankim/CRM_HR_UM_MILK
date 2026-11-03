@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { App, Button, Card, Col, Descriptions, Empty, Form, Input, Modal, Popconfirm, Row, Select, Space, Table, Tag, Typography } from 'antd';
 import {
-  CheckCircleOutlined, CloseOutlined, CloudUploadOutlined, DeleteOutlined, EditOutlined, EyeOutlined,
+  CheckCircleOutlined, CloseOutlined, CloudUploadOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined,
   FilePdfOutlined, FileProtectOutlined, FileTextOutlined, PlusCircleOutlined, PlusOutlined, VideoCameraOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -119,7 +119,7 @@ export function ContractUploadModal({
 export function EmployeeContractStorePanel({ employee, canManage = false }: { employee: EmployeeRowItem; canManage?: boolean }) {
   const qc = useQueryClient(), { message } = App.useApp(), { promptDecision, decisionModalElement } = useWorkflowDecisionModal();
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [previewState, setPreviewState] = useState<{ open: boolean; item: EmployeeContractItem | null }>({ open: false, item: null });
+  const [previewState, setPreviewState] = useState<{ open: boolean; item: EmployeeContractItem | null; autoDownload?: boolean }>({ open: false, item: null, autoDownload: false });
 
   const contractsQ = useQuery({
     queryKey: ['employee-contracts', employee.id], retry: false,
@@ -158,7 +158,12 @@ export function EmployeeContractStorePanel({ employee, canManage = false }: { em
         <Descriptions.Item label="Tổng số hợp đồng lưu trữ">
           <Space size={6} wrap>
             <Tag color={contracts.length > 0 ? 'geekblue' : 'default'} style={{ margin: 0, fontWeight: 600 }}>{contracts.length} văn bản</Tag>
-            {contracts.length > 0 && <Button size="small" type="link" icon={<EyeOutlined />} style={{ padding: 0, height: 'auto' }} onClick={() => setPreviewState({ open: true, item: contracts[0]! })}>Xem hợp đồng</Button>}
+            {contracts.length > 0 && (
+              <>
+                <Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewState({ open: true, item: contracts[0]!, autoDownload: false })}>Xem hợp đồng</Button>
+                <Button size="small" icon={<DownloadOutlined />} onClick={() => setPreviewState({ open: true, item: contracts[0]!, autoDownload: true })}>Tải về</Button>
+              </>
+            )}
           </Space>
         </Descriptions.Item>
       </Descriptions>
@@ -181,23 +186,25 @@ export function EmployeeContractStorePanel({ employee, canManage = false }: { em
         extra={canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setUploadOpen(true)}>{contracts.length > 0 ? 'Tải thêm / Cập nhật tệp HĐ' : 'Tải lên hợp đồng'}</Button>}
       >
         {contracts.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có văn bản hợp đồng lao động nào được tải lên cho nhân sự này." />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có văn bản hợp đồng lao động nào được tải lên cho nhân sự này.">
+            {canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setUploadOpen(true)}>Tải lên hợp đồng cho nhân sự này</Button>}
+          </Empty>
         ) : (
           <Table<EmployeeContractItem>
             size="small" rowKey="id" pagination={false} dataSource={contracts}
-            onRow={(r) => ({ onClick: () => setPreviewState({ open: true, item: r }), style: { cursor: 'pointer' } })}
+            onRow={(r) => ({ onClick: () => setPreviewState({ open: true, item: r, autoDownload: false }), style: { cursor: 'pointer' } })}
             columns={[
               { title: 'Loại hợp đồng', dataIndex: 'contractType', width: 195, render: (v: ContractType) => <Tag color={v === 'OFFICIAL_CONTRACT' ? 'green' : 'gold'} icon={<FileTextOutlined />} style={{ margin: 0 }}>{CONTRACT_TYPE_LABELS[v] || v}</Tag> },
-              { title: 'Tên tệp hợp đồng', key: 'file', render: (_, r) => <div><Typography.Text strong>{r.fileName}</Typography.Text><div style={{ fontSize: 11, color: '#64748B' }}>Dung lượng: {fmtSizeKb(r.sizeBytes)}</div></div> },
+              { title: 'Tên tệp hợp đồng (Bấm để xem)', key: 'file', render: (_, r) => <div><Typography.Link strong onClick={() => setPreviewState({ open: true, item: r, autoDownload: false })}>{r.fileName}</Typography.Link><div style={{ fontSize: 11, color: '#64748B' }}>Dung lượng: {fmtSizeKb(r.sizeBytes)}</div></div> },
               { title: 'Ghi chú / Số hợp đồng', dataIndex: 'note', ellipsis: true, render: (v: string) => v || '—' },
-              { title: 'Ngày tải lên', dataIndex: 'uploadedAt', width: 140, render: (v: string) => <span className="num" style={{ fontSize: 12 }}>{v ? dayjs(v).format('HH:mm DD/MM/YYYY') : '—'}</span> },
-              { title: 'Thao tác', key: 'act', width: canManage ? 130 : 90, align: 'right' as const, render: (_: unknown, r: EmployeeContractItem) => <Space size={4} onClick={(e) => e.stopPropagation()}><Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewState({ open: true, item: r })}>Xem</Button>{canManage && <Popconfirm title="Xóa văn bản hợp đồng này?" okText="Xóa" cancelText="Hủy" onConfirm={() => deleteMut.mutate(r.id)}><Button size="small" danger icon={<DeleteOutlined />} loading={deleteMut.isPending} /></Popconfirm>}</Space> },
+              { title: 'Ngày tải lên', dataIndex: 'uploadedAt', width: 135, render: (v: string) => <span className="num" style={{ fontSize: 12 }}>{v ? dayjs(v).format('HH:mm DD/MM/YYYY') : '—'}</span> },
+              { title: 'Thao tác', key: 'act', width: canManage ? 210 : 165, align: 'right' as const, render: (_: unknown, r: EmployeeContractItem) => <Space size={4} onClick={(e) => e.stopPropagation()}><Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewState({ open: true, item: r, autoDownload: false })}>Xem</Button><Button size="small" icon={<DownloadOutlined />} onClick={() => setPreviewState({ open: true, item: r, autoDownload: true })}>Tải về</Button>{canManage && <Popconfirm title="Xóa văn bản hợp đồng này?" okText="Xóa" cancelText="Hủy" onConfirm={() => deleteMut.mutate(r.id)}><Button size="small" danger icon={<DeleteOutlined />} loading={deleteMut.isPending} /></Popconfirm>}</Space> },
             ]}
           />
         )}
       </Card>
 
-      <ContractPreviewModal open={previewState.open} employee={employee} contractItem={previewState.item} onClose={() => setPreviewState({ open: false, item: null })} />
+      <ContractPreviewModal open={previewState.open} employee={employee} contractItem={previewState.item} autoDownload={previewState.autoDownload} onClose={() => setPreviewState({ open: false, item: null, autoDownload: false })} />
       <ContractUploadModal open={uploadOpen} presetEmployee={employee} onClose={() => setUploadOpen(false)} />
       {decisionModalElement}
     </Space>
