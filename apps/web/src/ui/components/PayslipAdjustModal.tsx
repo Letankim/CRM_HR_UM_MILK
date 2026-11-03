@@ -45,7 +45,7 @@ export function PayslipAdjustModal({
       open={open}
       onCancel={onClose}
       onOk={() => form.submit()}
-      okText={requiresAdminApproval ? 'Gửi trình Quản trị duyệt điều chỉnh' : 'Lưu điều chỉnh lương'}
+      okText={requiresAdminApproval ? 'Gửi' : 'Lưu điều chỉnh lương'}
       cancelText="Hủy bỏ"
       okButtonProps={{ icon: requiresAdminApproval ? <SendOutlined /> : <SaveOutlined />, danger: direction === 'DEDUCT' }}
       cancelButtonProps={{ icon: <CloseOutlined /> }}

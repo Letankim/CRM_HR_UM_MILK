@@ -199,12 +199,12 @@ export function PayslipDetailTabs({
                   { title: 'Lý do điều chỉnh', dataIndex: 'reason' },
                   ...(isAdmin && onDecideRevision
                     ? [{
-                        title: 'Phê duyệt', key: 'act', width: 155, align: 'right' as const,
+                        title: 'Phê duyệt', key: 'act', width: 175, align: 'right' as const,
                         render: (_: unknown, r: PayslipRevisionItem) =>
                           r.status === 'PENDING' ? (
                             <Space size={4} data-no-row-click>
-                              <Button size="small" type="primary" loading={decidingRevision} onClick={(e) => { e.stopPropagation(); onDecideRevision(r, 'APPROVE'); }}>Duyệt</Button>
-                              <Button size="small" danger loading={decidingRevision} onClick={(e) => { e.stopPropagation(); onDecideRevision(r, 'REJECT'); }}>Từ chối</Button>
+                              <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={decidingRevision} onClick={(e) => { e.stopPropagation(); onDecideRevision(r, 'APPROVE'); }}>Duyệt</Button>
+                              <Button size="small" danger icon={<CloseCircleOutlined />} loading={decidingRevision} onClick={(e) => { e.stopPropagation(); onDecideRevision(r, 'REJECT'); }}>Từ chối</Button>
                             </Space>
                           ) : <span style={{ fontSize: 11, color: '#64748B' }}>{r.approvedByName || '—'}</span>,
                       }]
