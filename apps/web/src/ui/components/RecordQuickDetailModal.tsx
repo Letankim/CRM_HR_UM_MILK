@@ -3,7 +3,7 @@
 import { Button, Descriptions, Flex, Modal, Space } from 'antd';
 import {
   CheckCircleOutlined, CloseCircleOutlined, CloseOutlined,
-  CompressOutlined, ExpandOutlined, EyeOutlined, LinkOutlined,
+  CompressOutlined, ExpandOutlined, EyeOutlined, LinkOutlined, ScheduleOutlined, TrophyOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
@@ -12,6 +12,8 @@ import { buildQuickDetailSpec, type QuickDetailField, type QuickDetailKind } fro
 export interface QuickDetailActionOptions {
   onApprovePlannerOff?: (record: Record<string, unknown>) => void;
   onRejectPlannerOff?: (record: Record<string, unknown>) => void;
+  onPromoteProbation?: (record: Record<string, unknown>) => void;
+  onOpenProbationSchedule?: (record: Record<string, unknown>) => void;
 }
 
 export type ShowQuickDetailFn = (kind: QuickDetailKind, record: unknown, options?: QuickDetailActionOptions) => void;
@@ -53,7 +55,27 @@ export function QuickDetailProvider({ children }: { children: ReactNode }) {
   const isPendingPlannerOff = isPlannerOff && (rawRec.status === 'PENDING' || rawRec.status === 'DRAFT');
   const approveFn = isPendingPlannerOff ? active?.options?.onApprovePlannerOff : undefined;
   const rejectFn = isPendingPlannerOff ? active?.options?.onRejectPlannerOff : undefined;
-  const hasDecisionBtns = Boolean(approveFn || rejectFn);
+  const isPlannerProbation = active?.kind === 'plannerProbation';
+  const promoteFn = isPlannerProbation && Boolean(rawRec.readyForOfficial) ? active?.options?.onPromoteProbation : undefined;
+  const openProbScheduleFn = isPlannerProbation ? active?.options?.onOpenProbationSchedule : undefined;
+  const hasDecisionBtns = Boolean(approveFn || rejectFn || promoteFn || openProbScheduleFn);
+
+  const renderedFields = fields.map((f) => {
+    if (promoteFn && f.label === 'Điều kiện lên chính thức') {
+      return {
+        ...f,
+        value: (
+          <Flex align="center" justify="space-between" wrap gap={10}>
+            <span>{f.value}</span>
+            <Button size="small" type="primary" icon={<TrophyOutlined />} onClick={() => { handleClose(); promoteFn(rawRec); }}>
+              Duyệt chuyển Nhân viên chính thức
+            </Button>
+          </Flex>
+        ),
+      };
+    }
+    return f;
+  });
 
   return (
     <QuickDetailContext.Provider value={showDetail}>
@@ -92,6 +114,16 @@ export function QuickDetailProvider({ children }: { children: ReactNode }) {
             {spec?.externalLink && (
               <Button icon={<LinkOutlined />} href={spec.externalLink.href} target="_blank" rel="noreferrer">
                 {spec.externalLink.label}
+              </Button>
+            )}
+            {openProbScheduleFn && (
+              <Button icon={<ScheduleOutlined />} onClick={() => { handleClose(); openProbScheduleFn(rawRec); }}>
+                {rawRec.isLocked ? 'Xem lịch chu kỳ' : 'Chốt lịch chu kỳ'}
+              </Button>
+            )}
+            {promoteFn && (
+              <Button type="primary" icon={<TrophyOutlined />} onClick={() => { handleClose(); promoteFn(rawRec); }}>
+                Duyệt chuyển Nhân viên chính thức
               </Button>
             )}
             {approveFn && (
@@ -141,7 +173,7 @@ export function QuickDetailProvider({ children }: { children: ReactNode }) {
               },
             }}
           >
-            {fields.map((f, idx) => (
+            {renderedFields.map((f, idx) => (
               <Descriptions.Item key={`${f.label}-${idx}`} label={f.label} span={1}>
                 {f.value}
               </Descriptions.Item>

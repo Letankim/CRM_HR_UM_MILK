@@ -100,6 +100,12 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
     });
   };
 
+  const openProbationDetail = (item: PlannerProbationItem) =>
+    showDetail('plannerProbation', item, {
+      onPromoteProbation: canPromote ? (rec) => openPromoteModal(rec as unknown as PlannerProbationItem) : undefined,
+      onOpenProbationSchedule: !isFinance ? (rec) => setPreview((p) => ({ open: true, seq: p.seq + 1, employeeId: String(rec.employeeId) })) : undefined,
+    });
+
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       {readyRows.length > 0 && (
@@ -122,11 +128,11 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
         </Flex>
       </div>
       {viewMode === 'gantt' && (
-        q.isLoading ? <Card size="small" loading /> : <SchedulePlannerProbationGantt rows={rows} onSelect={(r) => showDetail('plannerProbation', r)} />
+        q.isLoading ? <Card size="small" loading /> : <SchedulePlannerProbationGantt rows={rows} onSelect={openProbationDetail} />
       )}
       {viewMode === 'table' && <Table<PlannerProbationItem>
         size="small" rowKey="employeeId" loading={q.isLoading} dataSource={rows} scroll={{ x: 1260 }}
-        onRow={(r) => buildClickableRowProps(r, (item) => showDetail('plannerProbation', item))}
+        onRow={(r) => buildClickableRowProps(r, openProbationDetail)}
         pagination={rows.length > 10 ? { pageSize: 10, showTotal: (t) => `Tổng ${t} nhân viên thử việc` } : false}
         locale={{ emptyText: 'Không có nhân viên thử việc nào đang hoạt động' }}
         expandable={{
