@@ -8,6 +8,7 @@ import { api, ApiClientError } from '@/lib/api';
 import { BRAND } from '../theme';
 
 export interface SafeExamQuestion { id: string; q?: string; question?: string; options?: string[] }
+const cleanQ = (s?: string) => String(s ?? '').replace(/^\[[A-Z0-9.-]+\]\s*/, '').replace(/\s*\(FULL_SHIFT\)/g, '').replace(/\s*\(ABSENT\)/g, '').trim();
 
 interface Props {
   attempt: Record<string, unknown> | null;
@@ -145,21 +146,26 @@ export function ExamFullscreenModal({ attempt, testRecord, onClose, onSubmitted 
         <Alert type="warning" banner showIcon icon={<WarningOutlined />} message="Chế độ bảo vệ bài thi đang hoạt động: Mọi thao tác bên ngoài đã bị khóa cho đến khi bạn nộp bài." action={<Button size="small" type="primary" icon={<ExpandOutlined />} onClick={() => void requestBrowserFullscreen()}>Phóng to Fullscreen</Button>} />
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
-        <Row gutter={[20, 20]} style={{ maxWidth: 1360, margin: '0 auto' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px' }}>
+        <Row gutter={[12, 12]} style={{ maxWidth: 1360, margin: '0 auto' }}>
           <Col xs={24} lg={17}>
-            <Space direction="vertical" size={14} style={{ width: '100%' }}>
+            <Space direction="vertical" size={10} style={{ width: '100%' }}>
               {questions.map((q, idx) => {
                 const selectedVal = answers[q.id];
                 return (
-                  <Card key={q.id} id={`exam-q-${idx}`} size="small" title={<div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, whiteSpace: 'normal', padding: '2px 0' }}><Tag color={selectedVal !== undefined ? 'blue' : 'default'} style={{ margin: '2px 0 0 0', flexShrink: 0 }}>Câu {idx + 1}/{totalQ}</Tag><span style={{ fontWeight: 600, lineHeight: 1.45, color: BRAND.text }}>{q.q ?? q.question ?? 'Câu hỏi nghiệp vụ'}</span></div>} style={{ borderColor: selectedVal !== undefined ? '#93C5FD' : BRAND.border }}>
+                  <Card
+                    key={q.id} id={`exam-q-${idx}`} size="small"
+                    styles={{ header: { padding: '8px 10px', minHeight: 'auto' }, body: { padding: '8px 10px' } }}
+                    title={<div style={{ whiteSpace: 'normal', lineHeight: 1.5 }}><Tag color={selectedVal !== undefined ? 'blue' : 'default'} style={{ marginInlineEnd: 6, marginBottom: 2 }}>Câu {idx + 1}/{totalQ}</Tag><span style={{ fontWeight: 600, color: BRAND.text }}>{cleanQ(q.q ?? q.question) || 'Câu hỏi nghiệp vụ'}</span></div>}
+                    style={{ borderColor: selectedVal !== undefined ? '#93C5FD' : BRAND.border }}
+                  >
                     <Radio.Group value={selectedVal} onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: String(e.target.value) }))} style={{ width: '100%' }}>
-                      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      <Space direction="vertical" size={6} style={{ width: '100%' }}>
                         {(q.options ?? []).map((opt, optIdx) => {
                           const active = selectedVal === String(optIdx);
                           return (
-                            <div key={optIdx} onClick={() => setAnswers((prev) => ({ ...prev, [q.id]: String(optIdx) }))} style={{ padding: '10px 12px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${active ? BRAND.primary : '#E5E7EB'}`, background: active ? '#EFF6FF' : '#FFFFFF' }}>
-                              <Radio value={String(optIdx)} style={{ fontWeight: active ? 600 : 400, whiteSpace: 'normal', alignItems: 'flex-start', lineHeight: 1.5 }}>{String.fromCharCode(65 + optIdx)}. {opt}</Radio>
+                            <div key={optIdx} onClick={() => setAnswers((prev) => ({ ...prev, [q.id]: String(optIdx) }))} style={{ padding: '7px 10px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${active ? BRAND.primary : '#E5E7EB'}`, background: active ? '#EFF6FF' : '#FFFFFF' }}>
+                              <Radio value={String(optIdx)} style={{ fontWeight: active ? 600 : 400, whiteSpace: 'normal', alignItems: 'flex-start', lineHeight: 1.45 }}>{String.fromCharCode(65 + optIdx)}. {cleanQ(opt)}</Radio>
                             </div>
                           );
                         })}

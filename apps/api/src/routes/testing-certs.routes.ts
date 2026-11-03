@@ -43,12 +43,15 @@ export async function testingCertsRoutes(app: FastifyInstance, ctx: AppContext) 
       const qCount = safeList.length || t.total_questions || 1, sampleSize = resolveBankSampleSize(t, qCount);
       return { ...t, questions_json: includeAnswers ? t.questions_json : JSON.stringify(safeList), duration_min: t.duration_minutes, exam_sample_size: sampleSize, examSampleSize: sampleSize, questionsCount: qCount, staffGroupLabel: resolveStaffGroupLabel(ctx, t.staff_group, t.staff_group) };
     });
+    const nowMs = Date.now();
     const assignments = ctx.db.testAssignments.all().map((a, idx) => {
       const test = ctx.db.testBank.get(a.test_id), emp = resolveEmp(ctx, a.employee_id);
       const bankTotal = test ? (parseRawQuestions(test.questions_json).length || test.total_questions || 1) : 1;
       const bankSample = test ? resolveBankSampleSize(test, bankTotal) : 1;
       const sampleSize = resolveAsgSampleSize(a, bankSample, bankTotal);
-      return { ...a, assignment_code: `TEST-ASG-${idx + 1}`, testTitle: test?.title ?? a.test_id, testCode: test?.code ?? '', durationMinutes: test?.duration_minutes ?? 8, passPercent: test?.pass_percent ?? 80, bankQuestionsCount: bankTotal, exam_sample_size: sampleSize, examSampleSize: sampleSize, employeeName: emp?.full_name ?? a.employee_id, employeeCode: emp?.employee_code ?? '', isMine: isSameEmployee(ctx, request.auth?.user, a.employee_id) };
+      const isOverdue = !a.passed && a.status !== 'PASSED' && Boolean(a.close_at && nowMs > new Date(a.close_at).getTime());
+      const effectiveStatus = a.passed ? 'PASSED' : isOverdue ? 'OVERDUE' : a.status;
+      return { ...a, status: effectiveStatus, isOverdue, assignment_code: `TEST-ASG-${idx + 1}`, testTitle: test?.title ?? a.test_id, testCode: test?.code ?? '', durationMinutes: test?.duration_minutes ?? 8, passPercent: test?.pass_percent ?? 80, bankQuestionsCount: bankTotal, exam_sample_size: sampleSize, examSampleSize: sampleSize, employeeName: emp?.full_name ?? a.employee_id, employeeCode: emp?.employee_code ?? '', isMine: isSameEmployee(ctx, request.auth?.user, a.employee_id) };
     }).reverse();
     const attempts = ctx.db.testAttempts.all().filter((att) => Boolean(att.submitted_at)).reverse().map((att) => {
       const test = ctx.db.testBank.get(att.test_id), emp = resolveEmp(ctx, att.employee_id), asg = ctx.db.testAssignments.get(att.assignment_id);

@@ -8,7 +8,7 @@ import { useEmployeeSearchSelect } from '../hooks/useEmployeeSearchSelect';
 import { BaseDetailDrawer } from './BaseDetailDrawer';
 import { buildClickableRowProps } from './BulkActionBar';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
-import { AttemptHistoryTable } from './ExamTestCenter';
+import { AttemptHistoryTable, resolveAsgStatus } from './ExamTestCenter';
 import { useQuickDetail } from './RecordQuickDetailModal';
 
 export interface QuestionRow {
@@ -186,7 +186,7 @@ export function TestDetailDrawer({
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             <Descriptions size="small" bordered column={2}>
               <Descriptions.Item label="Mã đợt giao bài"><Tag color="geekblue">{String(viewingAssignment.assignment_code)}</Tag></Descriptions.Item>
-              <Descriptions.Item label="Trạng thái"><StatusTag value={String(viewingAssignment.status)} /></Descriptions.Item>
+              <Descriptions.Item label="Trạng thái"><StatusTag value={resolveAsgStatus(viewingAssignment)} /></Descriptions.Item>
               <Descriptions.Item label="Nhân sự nhận đề"><strong>{String(viewingAssignment.employeeName)}</strong></Descriptions.Item>
               <Descriptions.Item label="Số lượt đã thi / Tối đa"><Tag color="blue">{String(viewingAssignment.attempts_used ?? 0)} / {String(viewingAssignment.max_attempts ?? 3)} lần</Tag></Descriptions.Item>
               <Descriptions.Item label="Bộ đề kiểm tra">{String(viewingAssignment.testTitle)}</Descriptions.Item>

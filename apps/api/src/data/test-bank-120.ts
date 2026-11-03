@@ -92,7 +92,7 @@ export function generateUmbm120Questions(): UmbmSopQuestion[] {
         bank.push({
           id: `q${seq}`,
           category: grp.cat,
-          q: v === 0 ? baseQ : `[${grp.prefix}-${idx + 1}.${v + 1}] ${baseQ.replace(/\?$/, '')} (${suffix})?`,
+          q: v === 0 ? baseQ : `${baseQ.replace(/\?$/, '')} (${suffix})?`,
           options: opts as [string, string, string, string],
           answer: ansIdx,
         });

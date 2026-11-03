@@ -18,6 +18,8 @@ import { RowActionButtons } from './RowActionButtons';
 export interface AttemptReviewItem {
   id: string; q: string; options: string[]; selectedAnswer: string; isCorrect: boolean; correctAnswer?: string;
 }
+const cleanQ = (s?: string) => String(s ?? '').replace(/^\[[A-Z0-9.-]+\]\s*/, '').replace(/\s*\(FULL_SHIFT\)/g, '').replace(/\s*\(ABSENT\)/g, '').trim();
+export const resolveAsgStatus = (r: Record<string, unknown>) => r.passed || r.status === 'PASSED' ? 'PASSED' : (r.status === 'OVERDUE' || r.status === 'EXPIRED' || (r.close_at && Date.now() > new Date(String(r.close_at)).getTime())) ? 'OVERDUE' : String(r.status || 'ASSIGNED');
 
 export function formatDurationSec(sec: unknown): string {
   const s = Math.max(1, Number(sec || 0)), m = Math.floor(s / 60), rem = s % 60;
@@ -57,7 +59,8 @@ export function AttemptReviewModal({ attempt, onClose }: { attempt: Record<strin
                 <Col xs={24} lg={items.length > 1 ? 12 : 24} key={item.id}>
                   <Card
                     size="small" style={{ borderColor: item.isCorrect ? '#BBF7D0' : '#FECACA', height: '100%' }}
-                    title={<div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, whiteSpace: 'normal', padding: '2px 0' }}><Tag color={item.isCorrect ? 'green' : 'red'} style={{ margin: '2px 0 0 0', flexShrink: 0 }}>Câu {idx + 1}</Tag><span style={{ fontWeight: 600, lineHeight: 1.45, color: BRAND.text }}>{item.q}</span></div>}
+                    styles={{ header: { padding: '8px 10px', minHeight: 'auto' }, body: { padding: '8px 10px' } }}
+                    title={<div style={{ whiteSpace: 'normal', lineHeight: 1.5 }}><Tag color={item.isCorrect ? 'green' : 'red'} style={{ marginInlineEnd: 6, marginBottom: 2 }}>Câu {idx + 1}</Tag><span style={{ fontWeight: 600, color: BRAND.text }}>{cleanQ(item.q)}</span></div>}
                   >
                     <Space direction="vertical" size={6} style={{ width: '100%' }}>
                       {item.options.map((opt, optIdx) => {
@@ -167,9 +170,9 @@ export function EmployeeTestCenterView({
         { title: 'Số câu hỏi', width: 125, render: (_, r) => <Tag color="purple" style={{ margin: 0, whiteSpace: 'nowrap' }}>Random {String(r.examSampleSize ?? r.exam_sample_size ?? 25)} câu</Tag> },
         { title: 'Thời lượng', dataIndex: 'durationMinutes', width: 95, render: (v: number) => `${v ?? 15} phút` },
         { title: 'Lượt đã thi', width: 105, render: (_, r) => <Tag color="blue" style={{ margin: 0 }}>{`${r.attempts_used ?? 0}/${r.max_attempts ?? 3} lần`}</Tag> },
-        { title: 'Thời gian mở / Hạn nộp', width: 175, render: (_, r) => <div className="num" style={{ fontSize: 12 }}><div>Mở: {r.open_at ? dayjs(String(r.open_at)).format('HH:mm DD/MM') : 'Mở ngay'}</div><div style={{ color: '#64748B' }}>Hạn: {r.close_at ? dayjs(String(r.close_at)).format('HH:mm DD/MM/YYYY') : '—'}</div></div> },
+        { title: 'Thời gian mở / Hạn nộp', width: 175, render: (_, r) => { const ovd = resolveAsgStatus(r) === 'OVERDUE'; return <div className="num" style={{ fontSize: 12 }}><div>Mở: {r.open_at ? dayjs(String(r.open_at)).format('HH:mm DD/MM') : 'Mở ngay'}</div><div style={{ color: ovd ? '#DC2626' : '#64748B', fontWeight: ovd ? 600 : 400 }}>Hạn: {r.close_at ? dayjs(String(r.close_at)).format('HH:mm DD/MM/YYYY') : '—'}</div></div>; } },
         { title: 'Điểm cao nhất', dataIndex: 'best_score_percent', width: 115, render: (v: number) => <Tag color={v >= 80 ? 'green' : 'default'}>{v ?? 0}%</Tag> },
-        { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag value={v} /> },
+        { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (_, r) => <StatusTag value={resolveAsgStatus(r)} /> },
         {
           title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
           render: (_, r) => {

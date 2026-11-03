@@ -162,6 +162,7 @@ export const STATUS_VISUAL_MAP: Record<string, StatusVisual> = {
   SWAPPED: { color: 'warning', label: 'Đã đổi ca' },
   COMPLETED: { color: 'success', label: 'Hoàn thành ca' },
   ABSENT: { color: 'error', label: 'Vắng mặt' },
+  OVERDUE: { color: 'error', label: 'Đã quá hạn' },
   EXPIRED: { color: 'default', label: 'Hết hiệu lực' },
   CANCELLED: { color: 'default', label: 'Đã hủy' },
   RECONCILE: { color: 'processing', label: 'Đang đối soát' },

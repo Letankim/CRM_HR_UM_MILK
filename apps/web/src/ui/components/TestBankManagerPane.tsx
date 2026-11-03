@@ -12,7 +12,7 @@ import { useClientPagination } from '../hooks/useClientPagination';
 import { useEmployeeSearchSelect } from '../hooks/useEmployeeSearchSelect';
 import { StatusTag } from '../StatusTag';
 import { SelectableTable } from './BulkActionBar';
-import { AttemptHistoryTable, AttemptReviewModal } from './ExamTestCenter';
+import { AttemptHistoryTable, AttemptReviewModal, resolveAsgStatus } from './ExamTestCenter';
 import { useJobPositions } from './JobPositionsManagerModal';
 import { RowActionButtons } from './RowActionButtons';
 import { DEFAULT_QUESTIONS, getDefaultTestDueDateTime, parseQuestions, TestAssignmentFormModal, TestDetailDrawer, type QuestionRow } from './TestBankModals';
@@ -133,9 +133,9 @@ export function TestBankManagerPane({ tests, assignments, attempts = [], employe
           { title: 'Bộ đề kiểm tra', dataIndex: 'testTitle', ellipsis: true },
           { title: 'Số câu (Random)', width: 135, render: (_, r) => <Tag color="purple" style={{ margin: 0, whiteSpace: 'nowrap' }}>Random {String(r.examSampleSize ?? r.exam_sample_size ?? 25)}/{String(r.bankQuestionsCount ?? r.examSampleSize ?? 25)} câu</Tag> },
           { title: 'Lượt đã thi', width: 100, render: (_, r) => <Tag color="blue" style={{ margin: 0 }}>{`${r.attempts_used ?? 0}/${r.max_attempts ?? 3} lần`}</Tag> },
-          { title: 'Hạn nộp bài', dataIndex: 'close_at', width: 135, render: (v: string) => <span className="num" style={{ fontSize: 12 }}>{v ? dayjs(v).format('HH:mm DD/MM/YYYY') : '—'}</span> },
+          { title: 'Hạn nộp bài', dataIndex: 'close_at', width: 135, render: (v: string, r) => { const ovd = resolveAsgStatus(r) === 'OVERDUE'; return <span className="num" style={{ fontSize: 12, color: ovd ? '#DC2626' : undefined, fontWeight: ovd ? 600 : 400 }}>{v ? dayjs(v).format('HH:mm DD/MM/YYYY') : '—'}</span>; } },
           { title: 'Điểm cao nhất', dataIndex: 'best_score_percent', width: 110, render: (v: number) => <Tag color={v >= 80 ? 'green' : 'default'}>{v}%</Tag> },
-          { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag value={v} /> },
+          { title: 'Trạng thái', dataIndex: 'status', width: 120, render: (_, r) => <StatusTag value={resolveAsgStatus(r)} /> },
           {
             title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
             render: (_, r) => (

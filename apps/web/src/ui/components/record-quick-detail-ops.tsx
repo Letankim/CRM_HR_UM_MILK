@@ -106,12 +106,13 @@ export function buildOpsQuickDetailSpec(kind: OpsQuickDetailKind, r: Rec): Quick
           { label: 'Loại phân bổ', value: r.isCoverShift ? <Tag color="cyan">Ca điều phối trám lịch OFF</Tag> : <Tag color="blue">Ca chuẩn theo chu kỳ</Tag> },
         ],
       };
-    case 'employeeTestAssignment':
+    case 'employeeTestAssignment': {
+      const ovd = !r.passed && r.status !== 'PASSED' && Boolean(r.status === 'OVERDUE' || r.status === 'EXPIRED' || (r.close_at && Date.now() > new Date(String(r.close_at)).getTime()));
       return {
         title: 'Chi tiết Bài kiểm tra Nghiệp vụ',
         fields: [
           { label: 'Mã giao bài', value: <span className="mono">{s(r.assignment_code)}</span> },
-          { label: 'Kết quả hiện tại', value: r.passed ? <Tag color="green">Đã đạt yêu cầu</Tag> : <StatusTag value={String(r.status || 'ASSIGNED')} /> },
+          { label: 'Kết quả hiện tại', value: r.passed ? <Tag color="green">Đã đạt yêu cầu</Tag> : <StatusTag value={ovd ? 'OVERDUE' : String(r.status || 'ASSIGNED')} /> },
           { label: 'Tên bộ đề kiểm tra', value: <Typography.Text strong>{s(r.testTitle)}</Typography.Text>, span: 2 },
           { label: 'Thời lượng & Lượt làm bài', value: `${s(r.durationMinutes, '15')} phút · Đã làm ${s(r.attempts_used, '0')}/${s(r.max_attempts, '3')} lượt` },
           { label: 'Điểm cao nhất đạt được', value: <span className="num" style={{ fontWeight: 700 }}>{s(r.best_score_percent, '0')}%</span> },
@@ -119,6 +120,7 @@ export function buildOpsQuickDetailSpec(kind: OpsQuickDetailKind, r: Rec): Quick
           { label: 'Ghi chú hướng dẫn', value: s(r.note, 'Hoàn thành bài kiểm tra đúng thời hạn quy định'), span: 2 },
         ],
       };
+    }
     case 'testQuestion': {
       const opts = Array.isArray(r.options) ? (r.options as string[]) : [], ansIdx = typeof r.answer === 'number' ? r.answer : -1;
       return {

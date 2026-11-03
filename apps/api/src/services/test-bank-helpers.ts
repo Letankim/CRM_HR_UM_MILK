@@ -70,12 +70,16 @@ export function parseRawQuestions(rawJson?: string): RawQuestion[] {
   }
 }
 
+export function cleanQuestionText(raw?: string): string {
+  return String(raw ?? '').replace(/^\[[A-Z0-9.-]+\]\s*/, '').replace(/\s*\(FULL_SHIFT\)/g, '').replace(/\s*\(ABSENT\)/g, '').trim();
+}
+
 export function sanitizeQuestionList(list: readonly RawQuestion[]) {
   return list.map((q, i) => ({
     id: q.id || `q${i + 1}`,
     category: q.category ?? 'SOP',
-    q: q.q ?? q.question ?? '',
-    options: Array.isArray(q.options) ? q.options : [],
+    q: cleanQuestionText(q.q ?? q.question),
+    options: Array.isArray(q.options) ? q.options.map((o) => cleanQuestionText(o)) : [],
   }));
 }
 
@@ -118,8 +122,8 @@ export function buildReviewItems(questions: readonly RawQuestion[], answersJson:
     const selected = ansMap[q.id] !== undefined ? String(ansMap[q.id]) : '';
     return {
       id: q.id || `q${i + 1}`,
-      q: q.q ?? q.question ?? '',
-      options: Array.isArray(q.options) ? q.options : [],
+      q: cleanQuestionText(q.q ?? q.question),
+      options: Array.isArray(q.options) ? q.options.map((o) => cleanQuestionText(o)) : [],
       selectedAnswer: selected,
       isCorrect: selected !== '' && selected === expected,
       ...(revealCorrect ? { correctAnswer: expected } : {}),
