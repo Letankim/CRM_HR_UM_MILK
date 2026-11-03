@@ -2,49 +2,40 @@
 
 import { App, Badge, Button, Card, Col, Form, Row, Space, Statistic, Switch, Tag, Typography } from 'antd';
 import {
-  BellOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined,
+  BellOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, DesktopOutlined,
   ExclamationCircleOutlined, FileExcelOutlined, LinkOutlined, MutedOutlined, SoundOutlined, TeamOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
+import { useDesktopNotifications } from '@/lib/desktop-notification';
 import { exportToExcel } from '@/lib/export-excel';
 import { useNotificationSound } from '@/lib/notification-sound';
 import { PageHeader } from '../PageHeader';
 import { DataTableCard } from './DataTableCard';
 import { FilterToolbar } from './FilterToolbar';
 import {
-  NOTIFICATION_CATEGORY_OPTIONS,
-  NOTIFICATION_READ_OPTIONS,
-  NOTIFICATION_SCOPE_OPTIONS,
-  NOTIFICATION_SEVERITY_OPTIONS,
-  NotificationDetailDrawer,
-  type NotificationItem,
-  SendNotificationModal,
+  NOTIFICATION_CATEGORY_OPTIONS, NOTIFICATION_READ_OPTIONS, NOTIFICATION_SCOPE_OPTIONS,
+  NOTIFICATION_SEVERITY_OPTIONS, NotificationDetailDrawer, type NotificationItem, SendNotificationModal,
 } from './NotificationModals';
 import { RowActionButtons } from './RowActionButtons';
 
 export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'backoffice' | 'employee' }) {
-  const router = useRouter();
-  const qc = useQueryClient();
-  const can = useCan();
+  const router = useRouter(), qc = useQueryClient(), can = useCan();
   const canSend = can('notification.send', 'comms.manage', 'system.config');
   const { message, modal } = App.useApp();
   const { soundEnabled, setSoundEnabled, playTestSound } = useNotificationSound();
+  const { desktopEnabled, permission, toggleDesktopEnabled, requestPermissionNow } = useDesktopNotifications(portal);
+  const handledHighlightRef = useRef<string>('');
 
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(12);
-  const [q, setQ] = useState('');
-  const [category, setCategory] = useState('ALL');
-  const [scopeType, setScopeType] = useState('ALL');
-  const [severity, setSeverity] = useState('ALL');
-  const [readStatus, setReadStatus] = useState('ALL');
+  const [page, setPage] = useState(1), [perPage, setPerPage] = useState(12), [q, setQ] = useState('');
+  const [category, setCategory] = useState('ALL'), [scopeType, setScopeType] = useState('ALL');
+  const [severity, setSeverity] = useState('ALL'), [readStatus, setReadStatus] = useState('ALL');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
-  const [viewing, setViewing] = useState<NotificationItem | null>(null);
-  const [sendOpen, setSendOpen] = useState(false);
+  const [viewing, setViewing] = useState<NotificationItem | null>(null), [sendOpen, setSendOpen] = useState(false);
   const [sendForm] = Form.useForm();
 
   const queryParams = new URLSearchParams({
@@ -74,25 +65,35 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
     if (record.readStatus === 'UNREAD') readMut.mutate(record.id);
   };
 
-  const handleExport = (rows: NotificationItem[]) => {
+  const allItems = allStatsQ.data?.data ?? listQ.data?.data ?? [];
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || allItems.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const hlId = (params.get('highlight') || '').trim();
+    if (!hlId || handledHighlightRef.current === hlId) return;
+    const matched = allItems.find((item) => item.id === hlId || item.code === hlId) ?? (listQ.data?.data ?? []).find((item) => item.id === hlId || item.code === hlId);
+    if (matched) {
+      handledHighlightRef.current = hlId;
+      handleOpenDetail(matched);
+      params.delete('highlight');
+      const nextSearch = params.toString();
+      window.history.replaceState(null, '', `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`);
+    }
+  }, [allItems, listQ.data?.data]);
+
+  const handleExport = (rows: NotificationItem[]) =>
     exportToExcel<NotificationItem>({
       fileName: `Danh_Sach_Thong_Bao_${dayjs().format('YYYYMMDD_HHmm')}`,
       sheetTitle: 'DANH SÁCH THÔNG BÁO & BẢN TIN HỆ THỐNG ĐÃ NHẬN',
       columns: [
-        { header: 'Mã thông báo', key: 'code' },
-        { header: 'Phân loại', key: 'categoryLabel' },
-        { header: 'Tiêu đề', key: 'title' },
-        { header: 'Nội dung tóm tắt', key: 'body' },
-        { header: 'Đối tượng nhận', key: 'targetLabel' },
-        { header: 'Mức độ', key: 'severityLabel' },
-        { header: 'Trạng thái', key: 'readStatusLabel' },
-        { header: 'Thời gian nhận', key: 'created_at' },
+        { header: 'Mã thông báo', key: 'code' }, { header: 'Phân loại', key: 'categoryLabel' }, { header: 'Tiêu đề', key: 'title' },
+        { header: 'Nội dung tóm tắt', key: 'body' }, { header: 'Đối tượng nhận', key: 'targetLabel' }, { header: 'Mức độ', key: 'severityLabel' },
+        { header: 'Trạng thái', key: 'readStatusLabel' }, { header: 'Thời gian nhận', key: 'created_at' },
       ],
       rows,
     });
-  };
 
-  const allItems = allStatsQ.data?.data ?? listQ.data?.data ?? [];
   const totalCount = allStatsQ.data?.meta.pagination.total ?? listQ.data?.meta.pagination.total ?? 0;
   const unreadCount = Number(allStatsQ.data?.meta.filters?.unread_count ?? listQ.data?.meta.filters?.unread_count ?? allItems.filter((i) => i.readStatus === 'UNREAD').length);
   const urgentCount = allItems.filter((i) => i.severity === 'CRITICAL' || i.severity === 'WARNING').length;
@@ -102,8 +103,14 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
     <Space size={8} wrap>
       <Space size={6} style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #E5E7EB', background: '#F8FAFC' }}>
         {soundEnabled ? <SoundOutlined style={{ color: '#2563EB' }} /> : <MutedOutlined style={{ color: '#64748B' }} />}
-        <span style={{ fontSize: 12, fontWeight: 600 }}>Chuông thông báo:</span>
-        <Switch size="small" checked={soundEnabled} onChange={(val) => { setSoundEnabled(val); message.success(val ? 'Đã bật âm thanh thông báo' : 'Đã tắt âm thanh thông báo'); }} checkedChildren="Đang bật" unCheckedChildren="Đang tắt" />
+        <span style={{ fontSize: 12, fontWeight: 600 }}>Chuông:</span>
+        <Switch size="small" checked={soundEnabled} onChange={(val) => { setSoundEnabled(val); message.success(val ? 'Đã bật âm thanh thông báo' : 'Đã tắt âm thanh thông báo'); }} checkedChildren="Bật" unCheckedChildren="Tắt" />
+      </Space>
+      <Space size={6} style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #E5E7EB', background: '#F8FAFC' }}>
+        <DesktopOutlined style={{ color: desktopEnabled ? '#2563EB' : '#64748B' }} />
+        <span style={{ fontSize: 12, fontWeight: 600 }}>Nổi góc dưới phải (Zalo):</span>
+        <Switch size="small" checked={desktopEnabled && permission !== 'denied'} onChange={(val) => { void toggleDesktopEnabled(val); message.success(val ? 'Đã bật thông báo nổi góc dưới bên phải màn hình' : 'Đã tắt thông báo nổi góc màn hình'); }} checkedChildren="Bật" unCheckedChildren="Tắt" />
+        {permission === 'default' && <Button size="small" type="link" style={{ padding: 0, height: 'auto' }} onClick={() => void requestPermissionNow()}>Cấp quyền trình duyệt</Button>}
       </Space>
       <Button size="small" icon={<SoundOutlined />} onClick={playTestSound}>Nghe thử chuông</Button>
       <Button size="small" icon={<CheckCircleOutlined />} onClick={() => markAllMut.mutate(undefined)} loading={markAllMut.isPending} disabled={unreadCount === 0}>
@@ -114,16 +121,7 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
 
   return (
     <div>
-      {portal === 'backoffice' ? (
-        <PageHeader
-          title="Trung tâm Thông báo & Hộp thư Hệ thống"
-          extra={soundControlBar}
-        />
-      ) : (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          {soundControlBar}
-        </div>
-      )}
+      {portal === 'backoffice' ? <PageHeader title="Trung tâm Thông báo & Hộp thư Hệ thống" extra={soundControlBar} /> : <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>{soundControlBar}</div>}
 
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
         <Col xs={12} md={6}><Card size="small"><Statistic title="Tổng thông báo đã nhận" value={totalCount} prefix={<BellOutlined />} /></Card></Col>
@@ -133,9 +131,7 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
       </Row>
 
       <FilterToolbar
-        searchPlaceholder="Tìm theo mã, tiêu đề, nội dung, vai trò nhận..."
-        searchValue={q}
-        onSearchChange={(val) => { setQ(val); setPage(1); }}
+        searchPlaceholder="Tìm theo mã, tiêu đề, nội dung, vai trò nhận..." searchValue={q} onSearchChange={(val) => { setQ(val); setPage(1); }}
         selects={[
           { key: 'cat', value: category, width: 215, options: NOTIFICATION_CATEGORY_OPTIONS, onChange: (v) => { setCategory(v); setPage(1); } },
           { key: 'scope', value: scopeType, width: 210, options: NOTIFICATION_SCOPE_OPTIONS, onChange: (v) => { setScopeType(v); setPage(1); } },
@@ -143,19 +139,14 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
           { key: 'read', value: readStatus, width: 170, options: NOTIFICATION_READ_OPTIONS, onChange: (v) => { setReadStatus(v); setPage(1); } },
           { key: 'sort', value: sortOrder, width: 165, options: [{ value: 'desc', label: 'Mới nhất trước' }, { value: 'asc', label: 'Cũ nhất trước' }], onChange: (v) => { setSortOrder(v as 'desc' | 'asc'); setPage(1); } },
         ]}
-        onRefresh={handleManualRefresh}
-        refreshing={listQ.isFetching}
-        onExportExcel={() => handleExport(listQ.data?.data ?? [])}
+        onRefresh={handleManualRefresh} refreshing={listQ.isFetching} onExportExcel={() => handleExport(listQ.data?.data ?? [])}
         primaryActionLabel={canSend ? 'Phát thông báo mới' : undefined}
         onPrimaryAction={canSend ? () => { sendForm.resetFields(); setSendOpen(true); } : undefined}
       />
 
       <DataTableCard<NotificationItem>
-        dataSource={listQ.data?.data ?? []}
-        meta={listQ.data?.meta}
-        loading={listQ.isLoading}
-        codeExtractor={(r) => r.code}
-        onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }}
+        dataSource={listQ.data?.data ?? []} meta={listQ.data?.meta} loading={listQ.isLoading}
+        codeExtractor={(r) => r.code} onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPerPage(nextSize); }}
         onRowClick={handleOpenDetail}
         bulkActions={[
           { key: 'bulk-read', label: 'Đánh dấu đã đọc đã chọn', type: 'primary', icon: <CheckCircleOutlined />, eligibleFilter: (r) => r.readStatus === 'UNREAD', onClick: (rows, clear) => { markAllMut.mutate(rows.map((r) => r.id)); clear(); } },
@@ -164,9 +155,7 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
         ]}
         columns={[
           {
-            title: 'Tiêu đề & Nội dung thông báo',
-            dataIndex: 'title',
-            width: 380,
+            title: 'Tiêu đề & Nội dung thông báo', dataIndex: 'title', width: 380,
             render: (_, r) => (
               <div data-no-row-click style={{ cursor: 'pointer', minWidth: 0 }} onClick={() => handleOpenDetail(r)}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
@@ -186,8 +175,7 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
             title: 'Thao tác', key: 'actions', width: 84, fixed: 'right', align: 'right',
             render: (_, r) => (
               <RowActionButtons
-                detailTooltip="Xem chi tiết thông báo"
-                onViewDetail={() => handleOpenDetail(r)}
+                detailTooltip="Xem chi tiết thông báo" onViewDetail={() => handleOpenDetail(r)}
                 menuItems={[
                   ...(r.readStatus === 'UNREAD' ? [{ key: 'read', icon: <CheckCircleOutlined />, label: 'Đánh dấu đã đọc', onClick: () => readMut.mutate(r.id) }] : []),
                   ...(r.link ? [{ key: 'goto', icon: <LinkOutlined />, label: 'Đi tới màn hình liên quan', onClick: () => router.push(r.link) }] : []),
@@ -201,12 +189,9 @@ export function NotificationsCenterView({ portal = 'backoffice' }: { portal?: 'b
 
       <NotificationDetailDrawer record={viewing} onClose={() => setViewing(null)} onNavigate={(l) => router.push(l)} />
       <SendNotificationModal
-        open={sendOpen}
-        form={sendForm}
-        loading={sendMut.isPending}
+        open={sendOpen} form={sendForm} loading={sendMut.isPending}
         userOptions={(usersQ.data ?? []).map((u) => ({ value: u.id, label: `${u.displayName} (@${u.username}) · ${u.roleLabel}` }))}
-        onClose={() => setSendOpen(false)}
-        onSubmit={(v) => sendMut.mutate(v)}
+        onClose={() => setSendOpen(false)} onSubmit={(v) => sendMut.mutate(v)}
       />
     </div>
   );
