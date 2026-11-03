@@ -60,23 +60,6 @@ export function QuickDetailProvider({ children }: { children: ReactNode }) {
   const openProbScheduleFn = isPlannerProbation ? active?.options?.onOpenProbationSchedule : undefined;
   const hasDecisionBtns = Boolean(approveFn || rejectFn || promoteFn || openProbScheduleFn);
 
-  const renderedFields = fields.map((f) => {
-    if (promoteFn && f.label === 'Điều kiện lên chính thức') {
-      return {
-        ...f,
-        value: (
-          <Flex align="center" justify="space-between" wrap gap={10}>
-            <span>{f.value}</span>
-            <Button size="small" type="primary" icon={<TrophyOutlined />} onClick={() => { handleClose(); promoteFn(rawRec); }}>
-              Duyệt chuyển Nhân viên chính thức
-            </Button>
-          </Flex>
-        ),
-      };
-    }
-    return f;
-  });
-
   return (
     <QuickDetailContext.Provider value={showDetail}>
       {children}
@@ -173,7 +156,7 @@ export function QuickDetailProvider({ children }: { children: ReactNode }) {
               },
             }}
           >
-            {renderedFields.map((f, idx) => (
+            {fields.map((f, idx) => (
               <Descriptions.Item key={`${f.label}-${idx}`} label={f.label} span={1}>
                 {f.value}
               </Descriptions.Item>
