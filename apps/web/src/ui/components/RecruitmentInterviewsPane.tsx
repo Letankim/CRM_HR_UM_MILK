@@ -23,6 +23,7 @@ import { RowActionButtons } from './RowActionButtons';
 import { UpcomingInterviewsBanner } from './UpcomingInterviewsBanner';
 import { useWorkflowDecisionModal } from './WorkflowDecisionModal';
 import type { ZaloHrAccountItem } from './ZaloHrAccountsModal';
+import { computeInterviewTimingNotice } from './zalo-notify-preview';
 
 const INTERVIEW_STATUS_OPTIONS = [
   { value: 'ALL', label: 'Tất cả trạng thái lịch' }, { value: 'SCHEDULED', label: 'Đã xếp lịch' },
@@ -177,7 +178,7 @@ export function RecruitmentInterviewsPane({
           { title: 'Ứng viên & Khối Rubric', dataIndex: 'candidateName', ellipsis: true, render: (v: string, r) => <Space size={4} wrap><span style={{ fontWeight: 600 }}>{v} {r.candidateCode ? `(${String(r.candidateCode)})` : ''}</span><Tag color={r.rubric_block === 'OFFICE' ? 'geekblue' : 'blue'} icon={r.rubric_block === 'OFFICE' ? <BankOutlined /> : <ShopOutlined />} style={{ margin: 0 }}>{r.rubric_block === 'OFFICE' ? 'VP (7 TC)' : 'CH (9 TC)'}</Tag><Tag color={getTrack(r) === 'EXPERIENCED' ? 'purple' : 'cyan'} style={{ margin: 0 }}>{INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS[getTrack(r)]}</Tag></Space> },
           { title: 'Chi nhánh', dataIndex: 'branchName', width: 145, ellipsis: true },
           { title: 'Người phỏng vấn', dataIndex: 'interviewerLabel', width: 150, ellipsis: true, render: (v: string, r) => v || String(r.interviewer_id ?? '') },
-          { title: 'Thời gian phỏng vấn', dataIndex: 'scheduled_at', width: 155, render: (v: string, r) => <span className="num" style={{ fontWeight: 600 }}>{String(v).slice(0, 16).replace('T', ' ')} ({String(r.duration_minutes ?? 30)}p)</span> },
+          { title: 'Thời gian phỏng vấn', dataIndex: 'scheduled_at', width: 225, render: (v: string, r) => { const tm = r.decision === 'PENDING' && r.status !== 'COMPLETED' ? computeInterviewTimingNotice(String(r.start_at || v || '')) : { status: null, shortLabel: '', color: 'blue' as const }; return <Space size={4} wrap onClick={(e) => { if (tm.status === 'PAST' || tm.status === 'SOON') { e.stopPropagation(); if (canManageRec) setReschedTarget(r); } }}><span className="num" style={{ fontWeight: 600 }}>{String(v).slice(0, 16).replace('T', ' ')} ({String(r.duration_minutes ?? 30)}p)</span>{(tm.status === 'PAST' || tm.status === 'SOON') && <Tag color={tm.color} icon={<ClockCircleOutlined />} style={{ margin: 0, cursor: canManageRec ? 'pointer' : 'default' }}>{tm.shortLabel}</Tag>}</Space>; } },
           { title: 'Xác nhận & Nhắc Zalo', dataIndex: 'status', width: 205, render: (_, r) => <Space size={4} style={{ whiteSpace: 'nowrap' }}>{r.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>Cần đổi lịch</Tag> : r.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã xác nhận</Tag> : <Tag color="default" style={{ margin: 0 }}>Chờ xác nhận</Tag>}{r.zalo_reminder_sent_at ? <Tag color="blue" icon={<BellOutlined />} style={{ margin: 0 }}>Đã nhắc Zalo</Tag> : r.candidate_confirmed ? <Tag color="cyan" style={{ margin: 0 }}>Tự nhắc Zalo</Tag> : null}</Space> },
           {
             title: 'Chấm Rubric (13đ) & Khởi tạo NV', dataIndex: 'decision', width: 255,

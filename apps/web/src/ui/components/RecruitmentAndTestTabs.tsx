@@ -121,6 +121,7 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
 
   const openZaloForCandidate = (c: Record<string, unknown>) => {
     const linkedIv = allInterviews.find((iv) => (String(iv.candidate_id) === String(c.id) || String(iv.candidateCode) === String(c.candidate_code)) && iv.status !== 'CANCELLED');
+    const isConf = Boolean(linkedIv?.candidate_confirmed);
     setZaloNotifyTarget({
       candidateId: String(c.id), interviewId: linkedIv ? String(linkedIv.id) : undefined,
       candidateName: String(c.full_name || 'Ứng viên'), candidateCode: String(c.candidate_code || ''),
@@ -128,37 +129,33 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
       zaloAccountId: String(c.zalo_account_id || linkedIv?.zalo_account_id || ''),
       positionLabel: String(c.positionLabel || c.position || ''), branchName: String(c.branchName || ''),
       interviewTime: linkedIv ? String(linkedIv.scheduled_at || linkedIv.start_at || '').slice(0, 16).replace('T', ' ') : undefined,
+      interviewStartAt: linkedIv ? String(linkedIv.start_at || linkedIv.scheduled_at || '') : undefined,
       meetLink: linkedIv ? String(linkedIv.meet_link || '') : undefined,
       rsvpUrl: linkedIv ? String(linkedIv.rsvpUrl || '') : undefined,
-      candidateConfirmed: linkedIv ? Boolean(linkedIv.candidate_confirmed) : true,
-      defaultTemplateType: c.status === 'HIRED' ? 'PASS' : linkedIv ? 'INVITE' : 'GREETING',
+      candidateConfirmed: isConf,
+      defaultTemplateType: c.status === 'HIRED' ? 'PASS' : linkedIv ? (isConf ? 'REMINDER' : 'INVITE') : 'GREETING',
     });
   };
 
   const openZaloForInterview = (iv: Record<string, unknown>) => {
+    const isConf = Boolean(iv.candidate_confirmed);
     setZaloNotifyTarget({
       candidateId: String(iv.candidate_id || ''), interviewId: String(iv.id),
       candidateName: String(iv.candidateName || 'Ứng viên'), candidateCode: String(iv.candidateCode || ''),
       candidatePhone: String(iv.candidatePhone || ''), candidateZaloId: String(iv.candidate_zalo_id || iv.candidatePhone || ''),
       zaloAccountId: String(iv.zalo_account_id || ''), positionLabel: String(iv.positionLabel || ''),
       branchName: String(iv.branchName || ''), interviewTime: String(iv.scheduled_at || iv.start_at || '').slice(0, 16).replace('T', ' '),
+      interviewStartAt: String(iv.start_at || iv.scheduled_at || ''),
       meetLink: String(iv.meet_link || ''), rsvpUrl: String(iv.rsvpUrl || ''),
-      candidateConfirmed: Boolean(iv.candidate_confirmed),
-      defaultTemplateType: iv.decision === 'PASS' ? 'PASS' : 'INVITE',
+      candidateConfirmed: isConf,
+      defaultTemplateType: iv.decision === 'PASS' ? 'PASS' : isConf ? 'REMINDER' : 'INVITE',
     });
   };
 
   const recruitmentPane = (
     <Tabs
-      activeKey={recSubTab}
-      onChange={(k) => setRecSubTab(k as 'candidates' | 'interviews')}
-      tabBarExtraContent={
-        canViewRec ? (
-          <Button size="small" icon={<MessageOutlined style={{ color: '#2563EB' }} />} onClick={() => setZaloConfigOpen(true)}>
-            Tài khoản Zalo HR ({zaloAccounts.length})
-          </Button>
-        ) : null
-      }
+      activeKey={recSubTab} onChange={(k) => setRecSubTab(k as 'candidates' | 'interviews')}
+      tabBarExtraContent={canViewRec ? <Button size="small" icon={<MessageOutlined style={{ color: '#2563EB' }} />} onClick={() => setZaloConfigOpen(true)}>Tài khoản Zalo HR ({zaloAccounts.length})</Button> : null}
       items={[
         {
           key: 'candidates',
@@ -209,6 +206,11 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
         target={zaloNotifyTarget} accounts={zaloAccounts} currentUserId={me?.user.id}
         onClose={() => setZaloNotifyTarget(null)}
         onOpenAccountsConfig={() => { setZaloNotifyTarget(null); setZaloConfigOpen(true); }}
+        onRescheduleInterview={(ivId, candId) => {
+          setZaloNotifyTarget(null);
+          const found = ivId ? allInterviews.find((x) => String(x.id) === ivId) : undefined;
+          if (found) { setRecSubTab('interviews'); setExternalEditIv(found); } else openScheduleForCandidate(candId);
+        }}
       />
     </Card>
   );

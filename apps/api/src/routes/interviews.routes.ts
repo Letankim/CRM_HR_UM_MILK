@@ -52,14 +52,16 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     const zaloMap = new Map(zaloAccounts.map((a) => [a.id, a]));
     const defaultZalo = zaloAccounts.find((a) => a.is_default && a.status === 'ACTIVE') ?? zaloAccounts[0];
 
+    const reqOrigin = String(request.headers['x-umbm-origin'] || request.headers.origin || '').trim();
     const items = ctx.db.interviews.all().map((iv) => {
       const cand = ctx.db.candidates.get(iv.candidate_id) ?? ctx.db.candidates.find((c) => c.candidate_code === iv.candidate_id);
       const branchId = iv.branch_id || cand?.branch_pref || '', branch = ctx.db.branches.get(branchId);
       const track: InterviewExperienceTrack = iv.decision !== 'PENDING' ? (iv.experience_track || inferCandidateExperienceTrack(cand?.experience_note)) : (iv.experience_track === 'EXPERIENCED' ? 'EXPERIENCED' : inferCandidateExperienceTrack(cand?.experience_note));
       const resolvedUserIds = resolveInterviewerRecipients(ctx, parseRawInterviewers(undefined, iv.interviewer_id)).userIds;
-      const effZaloAccId = iv.zalo_account_id || cand?.zalo_account_id || defaultZalo?.id || '', zaloAcc = effZaloAccId ? zaloMap.get(effZaloAccId) : defaultZalo;
+      const zaloAcc = (iv.zalo_account_id ? zaloMap.get(iv.zalo_account_id) : undefined) ?? (cand?.zalo_account_id ? zaloMap.get(cand.zalo_account_id) : undefined) ?? defaultZalo;
+      const effZaloAccId = zaloAcc?.id ?? '';
       const effCandZaloId = iv.candidate_zalo_id || cand?.candidate_zalo_id || cand?.phone || '';
-      const rsvp = ensureInterviewRsvpUrl(ctx, iv.id, cand?.id ?? iv.candidate_id, iv.rsvp_token);
+      const rsvp = ensureInterviewRsvpUrl(ctx, iv.id, cand?.id ?? iv.candidate_id, iv.rsvp_token, { originOverride: reqOrigin });
       const onboardedEmp = cand ? ctx.db.employees.find((e) => e.candidate_id === cand.id || Boolean(cand.phone && e.phone === cand.phone)) : undefined;
       const inferredBlock: InterviewRubricBlock = iv.rubric_block === 'OFFICE' || cand?.staff_group === 'OFFICE' ? 'OFFICE' : 'STORE';
       return {
@@ -109,7 +111,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     const created = await ctx.db.interviews.insert({
       candidate_id: cand.id, branch_id: cand.branch_pref, start_at: startAt, end_at: new Date(win.endMs).toISOString(),
       duration_minutes: body.duration_minutes, meet_link: meetLink, interviewer_id: rawInterviewers.join(', '),
-      status: 'SCHEDULED', candidate_confirmed: true, reschedule_requested: false, reschedule_reason: '',
+      status: 'SCHEDULED', candidate_confirmed: false, reschedule_requested: false, reschedule_reason: '',
       appearance_score: 0, attitude_score: 0, skill_score: 0, score: 0, comment: '', decision: 'PENDING',
       calendar_event_id: `CAL-${Date.now()}`, decided_at: '', experience_track: initialTrack,
       zalo_account_id: zaloAcc?.dto.id ?? body.zalo_account_id ?? '', candidate_zalo_id: candZaloId,

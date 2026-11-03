@@ -43,6 +43,7 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
   const app = Fastify({
     trustProxy: true,
     bodyLimit: 25 * 1024 * 1024,
+    routerOptions: { maxParamLength: 500 },
     genReqId: () => `req_${randomBytes(8).toString('hex')}`,
     logger:
       opts.logger === false

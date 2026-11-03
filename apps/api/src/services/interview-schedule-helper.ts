@@ -54,19 +54,22 @@ export function resolveInterviewerRecipients(ctx: AppContext, rawIds: string[]):
 }
 
 export function resolveInterviewerLabel(ctx: AppContext, rawCsv: string): string {
+  const fallbackHr = ctx.db.users.find((x) => x.role === 'HR' && x.status === 'ACTIVE') ?? ctx.db.users.find((x) => x.role === 'ADMIN' && x.status === 'ACTIVE');
   return rawCsv
     .split(',')
     .map((part) => {
       const id = part.trim();
       if (!id) return '';
       if (LEGACY_INTERVIEWER_MAP[id]) return LEGACY_INTERVIEWER_MAP[id]!.label;
-      const u = ctx.db.users.get(id) ?? ctx.db.users.find((x) => x.username === id);
-      if (u) {
+      const u = ctx.db.users.get(id) ?? ctx.db.users.find((x) => x.username === id) ?? ctx.db.users.all(true).find((x) => x.id === id || x.username === id);
+      if (u && !u.is_deleted) {
         const emp = u.employee_id ? ctx.db.employees.get(u.employee_id) : undefined;
         return emp ? `${emp.full_name} (${ROLE_LABELS[u.role]})` : `${u.display_name || u.username} (${ROLE_LABELS[u.role]})`;
       }
       const emp = ctx.db.employees.get(id) ?? ctx.db.employees.find((e) => e.employee_code === id);
-      return emp ? `${emp.full_name} (${emp.employee_code})` : id;
+      if (emp) return `${emp.full_name} (${emp.employee_code})`;
+      if (fallbackHr) return `${fallbackHr.display_name || fallbackHr.username} (${ROLE_LABELS[fallbackHr.role]})`;
+      return 'Nhân sự Tuyển dụng';
     })
     .filter(Boolean)
     .join(', ');

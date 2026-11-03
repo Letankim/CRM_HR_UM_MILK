@@ -11,7 +11,7 @@ export function middleware(req: NextRequest) {
   const isEmployee = pathname === '/nv' || pathname.startsWith('/nv/');
   const loginUrl = isEmployee ? '/nv/login' : '/login';
 
-  if (pathname === '/login' || pathname === '/nv/login') {
+  if (pathname === '/login' || pathname === '/nv/login' || pathname === '/rsvp' || pathname.startsWith('/rsvp/')) {
     return NextResponse.next();
   }
 

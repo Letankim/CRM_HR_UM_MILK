@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { Zalo, LoginQRCallbackEventType, ThreadType, type API, type Credentials } from 'zca-js';
-import { normalizePhone } from '@umbm/shared';
+import { ROLE_LABELS, normalizePhone } from '@umbm/shared';
 import type { AppContext } from '../context.js';
+import { nowIso } from '../lib/time.js';
 import {
   DEFAULT_ZALO_TEMPLATES, ZALO_HR_SETTING_CATEGORY, decryptZaloPayload, encryptZaloPayload,
   listHrZaloAccounts, type PublicZaloAccountDto, type StoredZaloAccountSecret,
@@ -21,21 +23,13 @@ async function persistConfirmedZaloSession(
   ctx: AppContext,
   state: ZaloQrSessionState,
   params: { zaloId: string; zaloName: string; zaloPhone: string; credentialsJson: string },
+  apiClient?: API,
 ): Promise<PublicZaloAccountDto | null> {
   const actor = ctx.db.users.get(state.actor_id) ?? ctx.db.users.all()[0];
   const owner = ctx.db.users.get(state.owner_user_id) ?? ctx.db.users.find((u) => u.username === state.owner_user_id) ?? actor;
   if (!owner) return null;
 
-  const existingRows = ctx.db.systemSettings.filter((s) => s.category === ZALO_HR_SETTING_CATEGORY && s.note === owner.id);
-  if (state.is_default) {
-    for (const r of existingRows) {
-      const dec = decryptZaloPayload(ctx, r.value);
-      if (dec?.is_default) {
-        await ctx.db.systemSettings.update(r.id, r.version, { value: encryptZaloPayload(ctx, { ...dec, is_default: false }) }, owner.id);
-      }
-    }
-  }
-
+  const existingRows = ctx.db.systemSettings.filter((s) => s.category === ZALO_HR_SETTING_CATEGORY);
   const matchedRow = existingRows.find((r) => {
     const dec = decryptZaloPayload(ctx, r.value);
     return dec && ((params.zaloId && dec.zalo_id === params.zaloId) || (params.zaloPhone && dec.zalo_phone === params.zaloPhone));
@@ -56,29 +50,55 @@ async function persistConfirmedZaloSession(
     pass_template: prevSecret?.pass_template || DEFAULT_ZALO_TEMPLATES.pass,
   };
 
-  let savedId = matchedRow?.id ?? '';
+  const savedId = matchedRow?.id ?? randomUUID();
+  const settingKey = matchedRow?.key ?? `ZALO_ACC_${owner.id}_${Date.now()}`;
+  const label = `${owner.display_name} (@${owner.username}) — ${secret.zalo_name} (${secret.zalo_phone})`;
+  const encryptedValue = encryptZaloPayload(ctx, secret);
+
+  const optimisticDto: PublicZaloAccountDto = {
+    id: savedId, setting_key: settingKey, owner_user_id: owner.id,
+    owner_username: owner.username, owner_display_name: owner.display_name,
+    owner_role_label: ROLE_LABELS[owner.role], zalo_name: secret.zalo_name,
+    zalo_phone: secret.zalo_phone, zalo_id: secret.zalo_id, has_credentials: true,
+    masked_credentials: `AES256••••${secret.access_token.slice(-4)}`,
+    encrypted_preview: `${encryptedValue.slice(0, 28)}...`, is_default: secret.is_default,
+    status: 'ACTIVE', greeting_template: secret.greeting_template,
+    invite_template: secret.invite_template, reminder_template: secret.reminder_template,
+    pass_template: secret.pass_template, updated_at: nowIso(), version: (matchedRow?.version ?? 0) + 1,
+  };
+
+  state.saved_account = optimisticDto;
+  state.status = 'CONFIRMED';
+  if (apiClient) zaloApiClients.set(savedId, apiClient);
+
+  const patches: { id: string; expectedVersion: number; patch: { label?: string; note?: string; value_type?: string; value: string } }[] = [];
+  if (state.is_default) {
+    for (const r of existingRows) {
+      if (r.id === savedId) continue;
+      const dec = decryptZaloPayload(ctx, r.value);
+      if (dec?.is_default) {
+        patches.push({ id: r.id, expectedVersion: r.version, patch: { value: encryptZaloPayload(ctx, { ...dec, is_default: false }) } });
+      }
+    }
+  }
   if (matchedRow) {
     const fresh = ctx.db.systemSettings.get(matchedRow.id) ?? matchedRow;
-    await ctx.db.systemSettings.update(fresh.id, fresh.version, {
-      label: `${owner.display_name} (@${owner.username}) — ${secret.zalo_name} (${secret.zalo_phone})`,
-      note: owner.id,
-      value_type: 'ENCRYPTED_JSON',
-      value: encryptZaloPayload(ctx, secret),
-    }, owner.id);
-  } else {
-    const created = await ctx.db.systemSettings.insert({
-      key: `ZALO_ACC_${owner.id}_${Date.now()}`,
-      category: ZALO_HR_SETTING_CATEGORY,
-      label: `${owner.display_name} (@${owner.username}) — ${secret.zalo_name} (${secret.zalo_phone})`,
-      note: owner.id,
-      value_type: 'ENCRYPTED_JSON',
-      value: encryptZaloPayload(ctx, secret),
-    }, owner.id);
-    savedId = created.id;
+    patches.push({ id: fresh.id, expectedVersion: fresh.version, patch: { label, note: owner.id, value_type: 'ENCRYPTED_JSON', value: encryptedValue } });
   }
 
+  const insertTask = matchedRow
+    ? Promise.resolve(null)
+    : ctx.db.systemSettings.insert({
+        id: savedId, key: settingKey, category: ZALO_HR_SETTING_CATEGORY,
+        label, note: owner.id, value_type: 'ENCRYPTED_JSON', value: encryptedValue,
+      }, owner.id);
+  const batchTask = patches.length > 0 ? ctx.db.systemSettings.batchUpdate(patches, owner.id) : Promise.resolve([]);
+
+  await Promise.all([insertTask, batchTask]);
   const all = await listHrZaloAccounts(ctx);
-  return all.find((a) => a.id === savedId) ?? all[0] ?? null;
+  const finalSaved = all.find((a) => a.id === savedId) ?? optimisticDto;
+  state.saved_account = finalSaved;
+  return finalSaved;
 }
 
 export async function startZaloQrLoginSession(
@@ -94,28 +114,18 @@ export async function startZaloQrLoginSession(
 
   const sessionId = `zqr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const state: ZaloQrSessionState = {
-    session_id: sessionId,
-    owner_user_id: params.ownerUserId || params.actorId,
-    actor_id: params.actorId,
-    is_default: params.isDefault ?? true,
-    status: 'PENDING',
-    qr_image: '',
-    qr_url: `https://id.zalo.me/account/login/qr?token=${sessionId}`,
-    session_token: `zalo_qr_session_${sessionId}`,
-    expires_in: 100,
-    created_at_ms: Date.now(),
+    session_id: sessionId, owner_user_id: params.ownerUserId || params.actorId,
+    actor_id: params.actorId, is_default: params.isDefault ?? true, status: 'PENDING',
+    qr_image: '', qr_url: `https://id.zalo.me/account/login/qr?token=${sessionId}`,
+    session_token: `zalo_qr_session_${sessionId}`, expires_in: 100, created_at_ms: Date.now(),
   };
   qrSessions.set(sessionId, state);
 
-  if (ctx.env.NODE_ENV === 'test') {
-    return state;
-  }
+  if (ctx.env.NODE_ENV === 'test') return state;
 
   await new Promise<void>((resolve) => {
     let settled = false;
-    const finishInit = () => {
-      if (!settled) { settled = true; resolve(); }
-    };
+    const finishInit = () => { if (!settled) { settled = true; resolve(); } };
     const timer = setTimeout(finishInit, 6500);
     let capturedCreds: Credentials | null = null;
     const zalo = new Zalo({ logging: false });
@@ -126,9 +136,7 @@ export async function startZaloQrLoginSession(
           const rawImg = ev.data.image || '';
           state.qr_image = rawImg.startsWith('data:image') ? rawImg : `data:image/png;base64,${rawImg}`;
           state.session_token = ev.data.code || state.session_token;
-          state.abort = () => {
-            try { ev.actions.abort(); } catch { /* ignore */ }
-          };
+          state.abort = () => { try { ev.actions.abort(); } catch { /* ignore */ } };
           clearTimeout(timer);
           finishInit();
         } else if (ev.type === LoginQRCallbackEventType.QRCodeScanned) {
@@ -145,7 +153,10 @@ export async function startZaloQrLoginSession(
         }
       })
       .then(async (api) => {
-        const info = await api.fetchAccountInfo().catch(() => null);
+        const info = await Promise.race([
+          api.fetchAccountInfo().catch(() => null),
+          new Promise<null>((r) => setTimeout(() => r(null), 1500)),
+        ]);
         const profile = (info as { profile?: { userId?: string; displayName?: string; zaloName?: string; phoneNumber?: string } } | null)?.profile;
         const ownId = (typeof api.getOwnId === 'function' ? api.getOwnId() : '') || profile?.userId || '';
         const zaloName = profile?.displayName || profile?.zaloName || state.scanned_display_name || params.fallbackName || 'Zalo Tuyển dụng';
@@ -156,10 +167,7 @@ export async function startZaloQrLoginSession(
         state.zalo_id = zaloId;
         state.zalo_name = zaloName;
         state.zalo_phone = zaloPhone;
-        state.status = 'CONFIRMED';
-        const saved = await persistConfirmedZaloSession(ctx, state, { zaloId, zaloName, zaloPhone, credentialsJson: credsJson });
-        if (saved) zaloApiClients.set(saved.id, api);
-        state.saved_account = saved;
+        await persistConfirmedZaloSession(ctx, state, { zaloId, zaloName, zaloPhone, credentialsJson: credsJson }, api);
       })
       .catch(() => {
         clearTimeout(timer);

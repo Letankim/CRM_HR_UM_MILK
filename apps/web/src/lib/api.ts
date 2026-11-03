@@ -77,7 +77,7 @@ function handleUnauthorizedRedirect(): void {
   markSessionActive(false);
   if (typeof window === 'undefined' || redirectingToLogin) return;
   const pathname = window.location.pathname;
-  if (pathname === '/login' || pathname === '/nv/login') return;
+  if (pathname === '/login' || pathname === '/nv/login' || pathname === '/rsvp' || pathname.startsWith('/rsvp/')) return;
 
   redirectingToLogin = true;
   void fetch(`${BASE}/auth/logout`, {
@@ -110,7 +110,7 @@ async function executeRequestEnvelope<TData, TMeta = Record<string, unknown> | n
     }
   }
 
-  const isAuthEndpoint = path === '/auth/login' || path === '/auth/refresh' || path === '/auth/logout';
+  const isAuthEndpoint = path === '/auth/login' || path === '/auth/refresh' || path === '/auth/logout' || path.startsWith('/public/');
   const isUserMutation = method !== 'GET' && !isAuthEndpoint && !path.endsWith('/read') && !path.endsWith('/mark-all-read');
   if (isUserMutation) markSelfAction();
 

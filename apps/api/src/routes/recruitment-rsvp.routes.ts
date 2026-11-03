@@ -43,7 +43,10 @@ function resolveInterviewByRsvpToken(ctx: AppContext, token: string) {
   const verified = verifyRsvpToken(token);
   if (verified.expired) throw Errors.badRequest('Đường dẫn xác nhận phỏng vấn đã hết hạn hiệu lực 7 ngày');
   const byId = verified.valid && verified.interviewId ? ctx.db.interviews.get(verified.interviewId) : undefined;
-  const iv = byId ?? ctx.db.interviews.find((i) => i.rsvp_token === token);
+  const byCand = !byId && verified.valid && verified.candidateId
+    ? ctx.db.interviews.find((i) => (i.candidate_id === verified.candidateId || i.candidate_id === ctx.db.candidates.get(verified.candidateId!)?.candidate_code) && i.status !== 'CANCELLED')
+    : undefined;
+  const iv = byId ?? byCand ?? ctx.db.interviews.find((i) => i.rsvp_token === token);
   if (!iv) throw Errors.badRequest('Đường dẫn xác nhận phỏng vấn không hợp lệ hoặc đã hết hạn 7 ngày');
   return iv;
 }

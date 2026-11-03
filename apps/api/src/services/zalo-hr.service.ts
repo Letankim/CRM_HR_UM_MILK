@@ -126,13 +126,14 @@ export async function ensureDefaultHrZaloAccounts(ctx: AppContext): Promise<void
 export async function listHrZaloAccounts(ctx: AppContext): Promise<PublicZaloAccountDto[]> {
   await ensureDefaultHrZaloAccounts(ctx);
   const rows = ctx.db.systemSettings.filter((s) => s.category === ZALO_HR_SETTING_CATEGORY);
+  const fallbackOwner = ctx.db.users.find((u) => u.role === 'HR' && u.status === 'ACTIVE') ?? ctx.db.users.find((u) => u.role === 'ADMIN' && u.status === 'ACTIVE') ?? ctx.db.users.all()[0];
   const out: PublicZaloAccountDto[] = [];
   for (const r of rows) {
     const dec = decryptZaloPayload(ctx, r.value);
     if (!dec) continue;
-    const owner = ctx.db.users.get(dec.owner_user_id) ?? ctx.db.users.find((u) => u.username === dec.owner_user_id);
+    const owner = ctx.db.users.get(dec.owner_user_id) ?? ctx.db.users.find((u) => u.username === dec.owner_user_id) ?? fallbackOwner;
     out.push({
-      id: r.id, setting_key: r.key, owner_user_id: owner?.id ?? dec.owner_user_id,
+      id: r.id, setting_key: r.key, owner_user_id: owner?.id ?? 'hr',
       owner_username: owner?.username ?? 'hr', owner_display_name: owner?.display_name ?? 'Nhân sự Tuyển dụng',
       owner_role_label: owner ? ROLE_LABELS[owner.role] : 'Quản lý Nhân sự (HR)',
       zalo_name: dec.zalo_name, zalo_phone: dec.zalo_phone, zalo_id: dec.zalo_id,
@@ -146,18 +147,21 @@ export async function listHrZaloAccounts(ctx: AppContext): Promise<PublicZaloAcc
       updated_at: r.updated_at, version: r.version,
     });
   }
+  if (out.length > 0 && !out.some((a) => a.is_default)) {
+    const firstActive = out.find((a) => a.status === 'ACTIVE') ?? out[0]!;
+    firstActive.is_default = true;
+  }
   return out.sort((a, b) => Number(b.is_default) - Number(a.is_default));
 }
 
 export async function resolveZaloAccountByIdOrDefault(
-  ctx: AppContext, preferredAccountId?: string, preferredUserId?: string,
+  ctx: AppContext, preferredAccountId?: string, _preferredUserId?: string,
 ): Promise<{ rowId: string; secret: StoredZaloAccountSecret; dto: PublicZaloAccountDto } | null> {
   const all = await listHrZaloAccounts(ctx);
   const active = all.filter((a) => a.status === 'ACTIVE');
   const chosen =
-    (preferredAccountId ? all.find((a) => a.id === preferredAccountId || a.zalo_id === preferredAccountId || a.setting_key === preferredAccountId) : undefined)
-    ?? (preferredUserId ? active.find((a) => a.owner_user_id === preferredUserId && a.is_default) ?? active.find((a) => a.owner_user_id === preferredUserId) : undefined)
-    ?? active.find((a) => a.is_default) ?? active[0] ?? all[0];
+    (preferredAccountId ? active.find((a) => a.id === preferredAccountId || a.zalo_id === preferredAccountId || a.setting_key === preferredAccountId) : undefined)
+    ?? active.find((a) => a.is_default) ?? active[0] ?? all.find((a) => a.is_default) ?? all[0];
   if (!chosen) return null;
   const rawRow = ctx.db.systemSettings.get(chosen.id);
   const secret = rawRow ? decryptZaloPayload(ctx, rawRow.value) : null;
@@ -188,11 +192,11 @@ export function renderZaloMessageTemplate(
 
 /** Dùng lại link xác nhận còn hạn; tự cấp link mới khi link cũ đã hết hạn (7 ngày) hoặc khi HR yêu cầu tạo mới (`forceNew`). */
 export function ensureInterviewRsvpUrl(
-  ctx: AppContext, interviewId: string, candidateId: string, existingToken?: string, options?: { forceNew?: boolean },
+  ctx: AppContext, interviewId: string, candidateId: string, existingToken?: string, options?: { forceNew?: boolean; originOverride?: string },
 ): { token: string; url: string; renewed: boolean } {
   const reusable = Boolean(existingToken) && !options?.forceNew && verifyRsvpToken(existingToken as string).valid;
   const token = reusable ? (existingToken as string) : createRsvpToken({ interviewId, candidateId });
-  const base = (webOrigin(ctx) || ctx.env.API_PUBLIC_ORIGIN || 'http://localhost:3000').replace(/\/$/, '');
+  const base = (options?.originOverride || webOrigin(ctx) || ctx.env.API_PUBLIC_ORIGIN || 'http://localhost:3000').replace(/\/$/, '');
   return { token, url: `${base}/rsvp/${token}`, renewed: !reusable };
 }
 

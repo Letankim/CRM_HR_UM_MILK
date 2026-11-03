@@ -2,10 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { App, Avatar, Button, Card, Col, Form, Input, Modal, Popconfirm, QRCode, Row, Select, Space, Switch, Table, Tabs, Tag } from 'antd';
-import {
-  CheckCircleOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FileTextOutlined,
-  MessageOutlined, MobileOutlined, PlusOutlined, QrcodeOutlined, ReloadOutlined, SaveOutlined, UndoOutlined,
-} from '@ant-design/icons';
+import { CheckCircleOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, MessageOutlined, MobileOutlined, PlusOutlined, QrcodeOutlined, ReloadOutlined, SaveOutlined, UndoOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, ApiClientError } from '@/lib/api';
 import { applyApiFormErrors } from '@/lib/form-error';
@@ -19,7 +16,6 @@ interface Props {
   userOptions: { value: string; label: string }[]; currentUserId?: string; onClose: () => void;
 }
 
-
 export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOptions, currentUserId, onClose }: Props) {
   const qc = useQueryClient(), { message } = App.useApp(), [accForm] = Form.useForm(), [tplForm] = Form.useForm();
   const [activeTab, setActiveTab] = useState<'accounts' | 'templates'>('accounts');
@@ -28,23 +24,23 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
   const [secondsLeft, setSecondsLeft] = useState(100);
 
   const qrMut = useMutation({
-    mutationFn: () => api.post<QrSessionDto>('/admin/recruitment/zalo-qr-session', { owner_user_id: accForm.getFieldValue('owner_user_id') || currentUserId || userOptions[0]?.value, zalo_name: accForm.getFieldValue('zalo_name'), zalo_phone: accForm.getFieldValue('zalo_phone'), is_default: Boolean(accForm.getFieldValue('is_default') ?? true) }),
+    mutationFn: () => api.post<QrSessionDto>('/admin/recruitment/zalo-qr-session', { owner_user_id: currentUserId || userOptions[0]?.value, zalo_name: accForm.getFieldValue('zalo_name'), zalo_phone: accForm.getFieldValue('zalo_phone'), is_default: Boolean(accForm.getFieldValue('is_default') ?? true) }),
     onSuccess: (data) => { setQrSession(data); setSecondsLeft(data.expires_in || 100); },
   });
 
   const resetToCreate = () => {
     setEditing(null); accForm.resetFields();
-    accForm.setFieldsValue({ owner_user_id: currentUserId || userOptions[0]?.value, zalo_name: 'HR Ụm Bò Milk - Tuyển dụng', zalo_phone: '0901000002', is_default: true, status: 'ACTIVE' });
+    accForm.setFieldsValue({ owner_user_id: currentUserId || userOptions[0]?.value, zalo_name: '', zalo_phone: '', is_default: true, status: 'ACTIVE' });
     qrMut.mutate();
   };
 
   const loadTemplateForAcc = (acc?: ZaloHrAccountItem) => {
-    const target = acc ?? accounts[0];
+    const target = acc ?? accounts.find((a) => a.is_default) ?? accounts[0];
     setSelectedTplAccId(target?.id ?? '');
     tplForm.setFieldsValue({ greeting_template: target?.greeting_template || defaultTemplates?.greeting || '', invite_template: target?.invite_template || defaultTemplates?.invite || '', reminder_template: target?.reminder_template || defaultTemplates?.reminder || '', pass_template: target?.pass_template || defaultTemplates?.pass || '' });
   };
 
-  useEffect(() => { if (open) { setActiveTab('accounts'); resetToCreate(); loadTemplateForAcc(accounts[0]); } }, [open, currentUserId]);
+  useEffect(() => { if (open) { setActiveTab('accounts'); resetToCreate(); loadTemplateForAcc(accounts.find((a) => a.is_default) ?? accounts[0]); } }, [open, currentUserId]);
   useEffect(() => {
     if (!open || activeTab !== 'accounts' || qrSession.status === 'CONFIRMED') return;
     const timer = setInterval(() => setSecondsLeft((s) => (s > 0 ? s - 1 : 0)), 1000);
@@ -52,11 +48,12 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
   }, [open, activeTab, qrSession.status]);
   useEffect(() => {
     if (!open || activeTab !== 'accounts' || editing || qrSession.session_id === 'zqr_init') return;
-    const finished = qrSession.status === 'DECLINED' || qrSession.status === 'EXPIRED' || (qrSession.status === 'CONFIRMED' && Boolean(qrSession.saved_account));
-    if (finished || (secondsLeft <= 0 && qrSession.status === 'PENDING')) return;
-    const poll = setInterval(async () => {
+    if (qrSession.status === 'DECLINED' || qrSession.status === 'EXPIRED' || (qrSession.status === 'CONFIRMED' && Boolean(qrSession.saved_account))) return;
+    let active = true;
+    const checkQrStatus = async () => {
       try {
         const st = await api.get<QrSessionDto>(`/admin/recruitment/zalo-qr-session/${qrSession.session_id}`);
+        if (!active) return;
         setQrSession((prev) => ({ ...prev, ...st }));
         if (st.scanned_display_name) accForm.setFieldValue('zalo_name', st.scanned_display_name);
         if (st.zalo_name) accForm.setFieldValue('zalo_name', st.zalo_name);
@@ -65,12 +62,14 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
           const saved = st.saved_account;
           qc.setQueryData<{ items: ZaloHrAccountItem[] }>(['recruitment-zalo-accounts'], (old) => old ? { ...old, items: [saved, ...old.items.filter((a) => a.id !== saved.id)] } : old);
           setEditing(saved); qc.invalidateQueries({ queryKey: ['recruitment-zalo-accounts'] });
-          message.success(`Đã liên kết Zalo "${saved.zalo_name}" thành công, tài khoản đã hiển thị trong danh sách`);
+          message.success(`Đã liên kết Zalo "${saved.zalo_name}" thành công và hiển thị ngay trong danh sách`);
         }
-      } catch { /* ignore polling error */ }
-    }, 1000);
-    return () => clearInterval(poll);
-  }, [open, activeTab, editing, qrSession.session_id, qrSession.status, qrSession.saved_account, secondsLeft]);
+      } catch { /* ignore */ }
+    };
+    void checkQrStatus();
+    const poll = setInterval(checkQrStatus, 800);
+    return () => { active = false; clearInterval(poll); };
+  }, [open, activeTab, editing, qrSession.session_id, qrSession.status, qrSession.saved_account]);
 
   const startEdit = (item: ZaloHrAccountItem) => {
     setEditing(item); setQrSession((p) => ({ ...p, status: 'CONFIRMED' })); setActiveTab('accounts');
@@ -78,9 +77,21 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
   };
 
   const saveAccMut = useMutation({
-    mutationFn: (v: Record<string, unknown>) => editing ? api.put(`/admin/recruitment/zalo-accounts/${editing.id}`, { ...editing, ...v, access_token: qrSession.session_token }) : api.post('/admin/recruitment/zalo-accounts', { ...defaultTemplates, ...v, access_token: qrSession.session_token, zalo_id: `zalo_${String(v.zalo_phone || '').trim()}` }),
-    onSuccess: () => { message.success(editing ? 'Đã cập nhật thông tin tài khoản Zalo thành công' : 'Đã lưu tài khoản Zalo tuyển dụng thành công'); qc.invalidateQueries({ queryKey: ['recruitment-zalo-accounts'] }); resetToCreate(); },
+    mutationFn: (v: Record<string, unknown>) => {
+      const targetAcc = editing ?? qrSession.saved_account ?? null;
+      const ownerId = String(v.owner_user_id || targetAcc?.owner_user_id || currentUserId || userOptions[0]?.value || 'hr');
+      return targetAcc
+        ? api.put(`/admin/recruitment/zalo-accounts/${targetAcc.id}`, { ...targetAcc, ...v, owner_user_id: ownerId, access_token: qrSession.session_token })
+        : api.post('/admin/recruitment/zalo-accounts', { ...defaultTemplates, ...v, owner_user_id: ownerId, access_token: qrSession.session_token, zalo_id: `zalo_${String(v.zalo_phone || '').trim()}` });
+    },
+    onSuccess: () => { message.success('Đã lưu cấu hình tài khoản Zalo tuyển dụng thành công'); qc.invalidateQueries({ queryKey: ['recruitment-zalo-accounts'] }); resetToCreate(); },
     onError: (e) => message.error(applyApiFormErrors(accForm, e, { fallbackMessage: 'Lưu tài khoản Zalo thất bại' })),
+  });
+
+  const setDefaultMut = useMutation({
+    mutationFn: (item: ZaloHrAccountItem) => api.put(`/admin/recruitment/zalo-accounts/${item.id}`, { ...item, is_default: true, status: 'ACTIVE' }),
+    onSuccess: (_, item) => { message.success(`Đã chọn "${item.zalo_name}" làm tài khoản Zalo mặc định gửi thông báo`); qc.invalidateQueries({ queryKey: ['recruitment-zalo-accounts'] }); },
+    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Đặt tài khoản mặc định thất bại'),
   });
 
   const saveTplMut = useMutation({
@@ -133,31 +144,23 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
                           <div style={{ background: '#FFFFFF', border: '2px solid #2563EB', borderRadius: 4, padding: 6, display: 'inline-block' }}>
                             {isScanned && qrSession.scanned_avatar ? (
                               <div style={{ width: 164, height: 164, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                                <Avatar src={qrSession.scanned_avatar} size={72} />
-                                <div style={{ fontWeight: 600, fontSize: 13 }}>{qrSession.scanned_display_name}</div>
-                                <Tag color="blue">Chờ xác nhận trên ĐT</Tag>
+                                <Avatar src={qrSession.scanned_avatar} size={72} /><div style={{ fontWeight: 600, fontSize: 13 }}>{qrSession.scanned_display_name}</div><Tag color="blue">Chờ xác nhận trên ĐT</Tag>
                               </div>
-                            ) : qrSession.qr_image ? (
-                              <img src={qrSession.qr_image} alt="Mã QR Đăng nhập Zalo" style={{ width: 164, height: 164, display: 'block' }} />
-                            ) : (
-                              <QRCode value={qrSession.qr_url} size={164} status={qrMut.isPending ? 'loading' : secondsLeft <= 0 ? 'expired' : 'active'} onRefresh={() => qrMut.mutate()} />
-                            )}
+                            ) : qrSession.qr_image ? <img src={qrSession.qr_image} alt="Mã QR Đăng nhập Zalo" style={{ width: 164, height: 164, display: 'block' }} />
+                            : <QRCode value={qrSession.qr_url} size={164} status={qrMut.isPending ? 'loading' : secondsLeft <= 0 ? 'expired' : 'active'} onRefresh={() => qrMut.mutate()} />}
                           </div>
-                          <div style={{ marginTop: 8 }}>
-                            <Button size="small" icon={<ReloadOutlined />} loading={qrMut.isPending} onClick={() => qrMut.mutate()}>Lấy mã QR Zalo mới</Button>
-                          </div>
+                          <div style={{ marginTop: 8 }}><Button size="small" icon={<ReloadOutlined />} loading={qrMut.isPending} onClick={() => qrMut.mutate()}>Lấy mã QR Zalo mới</Button></div>
                         </div>
                       </Col>
                       <Col xs={24} md={16}>
                         <Row gutter={12}>
-                          <Col xs={24} md={12}><Form.Item name="owner_user_id" label="Nhân sự HR phụ trách tài khoản Zalo" rules={[{ required: true }]}><Select options={userOptions} showSearch optionFilterProp="label" placeholder="Chọn nhân sự HR" /></Form.Item></Col>
-                          <Col xs={24} md={12}><Form.Item name="zalo_name" label="Tên hiển thị Zalo tuyển dụng" rules={[{ required: true, message: 'Nhập tên hiển thị Zalo' }]}><Input placeholder="Tự động điền khi quét QR hoặc nhập tên Zalo" /></Form.Item></Col>
-                          <Col xs={24} md={12}><Form.Item name="zalo_phone" label="Số điện thoại đăng ký Zalo" rules={[{ required: true, message: 'Nhập SĐT Zalo' }]}><Input placeholder="0901222333" /></Form.Item></Col>
+                          <Col xs={24} md={24}><Form.Item name="zalo_name" label="Tên hiển thị Zalo tuyển dụng" rules={[{ required: true, message: 'Nhập tên hiển thị Zalo' }]}><Input placeholder="Tự động điền ngay khi quét mã QR trên điện thoại hoặc nhập tên Zalo" /></Form.Item></Col>
+                          <Col xs={24} md={12}><Form.Item name="zalo_phone" label="Số điện thoại đăng ký Zalo" rules={[{ required: true, message: 'Nhập SĐT Zalo' }]}><Input placeholder="Tự động điền khi quét QR hoặc nhập SĐT" /></Form.Item></Col>
                           <Col xs={24} md={12}><Form.Item name="status" label="Trạng thái hoạt động"><Select options={[{ value: 'ACTIVE', label: 'Đang hoạt động' }, { value: 'INACTIVE', label: 'Tạm ngưng' }]} /></Form.Item></Col>
                         </Row>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, paddingTop: 4 }}>
-                          <Form.Item name="is_default" label="Đặt làm Zalo mặc định của nhân sự này" valuePropName="checked" style={{ marginBottom: 0 }}><Switch checkedChildren="Mặc định" unCheckedChildren="Phụ" /></Form.Item>
-                          <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saveAccMut.isPending}>{editing ? 'Lưu cập nhật tài khoản' : 'Lưu cấu hình tài khoản Zalo'}</Button>
+                          <Form.Item name="is_default" label="Đặt làm tài khoản Zalo mặc định gửi thông báo" valuePropName="checked" style={{ marginBottom: 0 }}><Switch checkedChildren="Mặc định" unCheckedChildren="Phụ" /></Form.Item>
+                          <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saveAccMut.isPending}>{editing || qrSession.saved_account ? 'Lưu cập nhật tài khoản' : 'Lưu cấu hình tài khoản Zalo'}</Button>
                         </div>
                       </Col>
                     </Row>
@@ -167,18 +170,12 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
                 <Table<ZaloHrAccountItem>
                   size="small" rowKey="id" pagination={false} dataSource={accounts}
                   columns={[
-                    { title: 'Nhân sự phụ trách', key: 'owner', width: 220, render: (_, r) => <div><div style={{ fontWeight: 600 }}>{r.owner_display_name} (@{r.owner_username})</div><div style={{ fontSize: 11, color: '#64748B' }}>{r.owner_role_label}</div></div> },
-                    { title: 'Tài khoản Zalo đã liên kết', key: 'zalo', render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{r.zalo_name}</span><Tag color="blue" className="num">{r.zalo_phone}</Tag>{r.is_default && <Tag color="gold">Mặc định</Tag>}</Space> },
+                    { title: 'Tài khoản Zalo đã liên kết', key: 'zalo', render: (_, r) => <Space size={6} wrap><span style={{ fontWeight: 600 }}>{r.zalo_name}</span><Tag color="blue" className="num">{r.zalo_phone}</Tag></Space> },
+                    { title: 'Mặc định gửi thông báo', key: 'default', width: 210, render: (_, r) => r.is_default ? <Tag color="gold" icon={<CheckCircleOutlined />} style={{ fontWeight: 600 }}>Đang dùng mặc định</Tag> : <Button size="small" type="primary" ghost loading={setDefaultMut.isPending} onClick={() => setDefaultMut.mutate(r)}>Chọn làm mặc định</Button> },
                     { title: 'Trạng thái', key: 'status', width: 150, render: (_, r) => <Tag color={r.status === 'ACTIVE' ? 'success' : 'default'} icon={<CheckCircleOutlined />}>{r.status === 'ACTIVE' ? 'Đã liên kết QR' : 'Tạm ngưng'}</Tag> },
                     {
                       title: 'Thao tác', key: 'actions', width: 215, align: 'right',
-                      render: (_, r) => (
-                        <Space size={4}>
-                          <Button size="small" icon={<FileTextOutlined />} onClick={() => { loadTemplateForAcc(r); setActiveTab('templates'); }}>Mẫu tin nhắn</Button>
-                          <Button size="small" icon={<EditOutlined />} onClick={() => startEdit(r)}>Sửa</Button>
-                          <Popconfirm title="Xóa tài khoản Zalo này?" okText="Xóa" cancelText="Hủy" onConfirm={() => delMut.mutate(r.id)}><Button size="small" danger icon={<DeleteOutlined />} loading={delMut.isPending} /></Popconfirm>
-                        </Space>
-                      ),
+                      render: (_, r) => <Space size={4}><Button size="small" icon={<FileTextOutlined />} onClick={() => { loadTemplateForAcc(r); setActiveTab('templates'); }}>Mẫu tin nhắn</Button><Button size="small" icon={<EditOutlined />} onClick={() => startEdit(r)}>Sửa</Button><Popconfirm title="Xóa tài khoản Zalo này? Nếu đang là mặc định, hệ thống sẽ tự động chuyển sang tài khoản còn lại." okText="Xóa" cancelText="Hủy" onConfirm={() => delMut.mutate(r.id)}><Button size="small" danger icon={<DeleteOutlined />} loading={delMut.isPending} /></Popconfirm></Space>,
                     },
                   ]}
                 />
@@ -191,7 +188,7 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
             children: (
               <Form form={tplForm} layout="vertical" onFinish={(v) => saveTplMut.mutate(v)}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '10px 12px', marginBottom: 12 }}>
-                  <Space size={8} wrap><span style={{ fontWeight: 600, fontSize: 13 }}>Tài khoản Zalo áp dụng:</span><Select style={{ width: 320 }} value={selectedTplAccId || accounts[0]?.id} onChange={(id) => loadTemplateForAcc(accounts.find((a) => a.id === id))} options={accounts.map((a) => ({ value: a.id, label: `${a.zalo_name} (${a.zalo_phone}) — ${a.owner_display_name}` }))} /></Space>
+                  <Space size={8} wrap><span style={{ fontWeight: 600, fontSize: 13 }}>Tài khoản Zalo áp dụng:</span><Select style={{ width: 320 }} value={selectedTplAccId || accounts[0]?.id} onChange={(id) => loadTemplateForAcc(accounts.find((a) => a.id === id))} options={accounts.map((a) => ({ value: a.id, label: `${a.zalo_name} (${a.zalo_phone})${a.is_default ? ' — Mặc định' : ''}` }))} /></Space>
                   <Space size={4} wrap><span style={{ fontSize: 12, color: '#64748B' }}>Biến tự động:</span>{TEMPLATE_VARS.map((v) => <Tag key={v} color="blue" style={{ margin: 0, fontSize: 11 }}>{v}</Tag>)}</Space>
                 </div>
                 <Row gutter={12}>

@@ -166,7 +166,8 @@ const RSVP_SECRET = process.env.JWT_SECRET || 'umbm-hr-rsvp-jwt-secret-v51';
 export function createRsvpToken(payload: { interviewId: string; candidateId?: string }, ttlDays = 7): string {
   const exp = Math.floor(Date.now() / 1000) + ttlDays * 86_400;
   const headerB64 = Buffer.from('{"t":"J"}').toString('base64url');
-  const bodyB64 = Buffer.from(JSON.stringify({ i: payload.interviewId, e: exp })).toString('base64url');
+  const bodyObj = { i: payload.interviewId || payload.candidateId || '', e: exp };
+  const bodyB64 = Buffer.from(JSON.stringify(bodyObj)).toString('base64url');
   const sig = createHmac('sha256', RSVP_SECRET).update(`${headerB64}.${bodyB64}`).digest('base64url').slice(0, 16);
   return `${headerB64}.${bodyB64}.${sig}`;
 }
@@ -183,7 +184,8 @@ export function verifyRsvpToken(token: string): { valid: boolean; interviewId?: 
     };
     const exp = data.exp ?? data.e;
     if (exp && Math.floor(Date.now() / 1000) > exp) return { valid: false, expired: true };
-    return { valid: true, interviewId: data.interviewId ?? data.i, candidateId: data.candidateId ?? data.c };
+    const id = data.interviewId ?? data.i;
+    return { valid: true, interviewId: id, candidateId: data.candidateId ?? data.c ?? id };
   } catch { return { valid: false }; }
 }
 

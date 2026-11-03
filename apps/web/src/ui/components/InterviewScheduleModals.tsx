@@ -99,20 +99,17 @@ export function InterviewCreateModal({
               <InputNumber min={5} max={240} step={5} style={{ width: '100%' }} suffix="phút" />
             </Form.Item>
           </Col>
-          <Col span={14}>
-            <Form.Item name="zalo_account_id" label="Tài khoản Zalo HR phụ trách nhắc lịch">
-              <Select allowClear placeholder="Chọn tài khoản Zalo HR" options={zaloAccounts.map((a) => ({ value: a.id, label: `${a.zalo_name} (${a.zalo_phone}) — ${a.owner_display_name}` }))} />
-            </Form.Item>
-          </Col>
           <Col span={10}>
             <Form.Item name="candidate_zalo_id" label="ID Zalo / SĐT Zalo ứng viên">
               <Input prefix={<MessageOutlined style={{ color: '#2563EB' }} />} placeholder="0909888777 hoặc UID Zalo" />
             </Form.Item>
           </Col>
+          <Col span={14}>
+            <Form.Item name="meet_link" label="Link Google Meet / Calendar">
+              <Input placeholder="https://meet.google.com/umb-milk-hr" />
+            </Form.Item>
+          </Col>
         </Row>
-        <Form.Item name="meet_link" label="Link Google Meet / Calendar">
-          <Input placeholder="https://meet.google.com/umb-milk-hr" />
-        </Form.Item>
       </Form>
     </Modal>
   );
@@ -143,9 +140,12 @@ export function InterviewRescheduleModal({
     if (!target) return;
     const startParsed = dayjs(String(target.scheduled_at || target.start_at || `${todayStr}T09:30:00`));
     const rawIds = String(target.interviewer_id || '').split(',').map((s) => s.trim()).filter(Boolean);
-    const mappedIds = rawIds.map((raw) => interviewerOptions.find((o) => o.value === raw || o.label.includes(`(@${raw})`))?.value ?? raw);
+    const validIds = rawIds
+      .map((raw) => interviewerOptions.find((o) => o.value === raw || o.label.includes(`(@${raw})`))?.value)
+      .filter((v): v is string => Boolean(v));
+    const defaultZalo = zaloAccounts.find((a) => a.is_default && a.status === 'ACTIVE') ?? zaloAccounts.find((a) => a.is_default) ?? zaloAccounts[0];
     form.setFieldsValue({
-      interviewer_ids: mappedIds,
+      interviewer_ids: validIds.length > 0 ? validIds : (interviewerOptions[0]?.value ? [interviewerOptions[0].value] : []),
       candidate_confirmed: Boolean(target.candidate_confirmed),
       reschedule_requested: Boolean(target.reschedule_requested),
       reschedule_reason: String(target.reschedule_reason || ''),
@@ -153,7 +153,7 @@ export function InterviewRescheduleModal({
       interview_slot: startParsed.isValid() ? startParsed.format('HH:mm') : '09:30',
       duration_minutes: Number(target.duration_minutes || 30),
       meet_link: String(target.meet_link || 'https://meet.google.com/umb-milk-hr'),
-      zalo_account_id: String(target.zalo_account_id || zaloAccounts[0]?.id || ''),
+      zalo_account_id: String(defaultZalo?.id || ''),
       candidate_zalo_id: String(target.candidate_zalo_id || target.candidatePhone || ''),
     });
   }, [target, interviewerOptions, zaloAccounts, todayStr, form]);
@@ -187,9 +187,8 @@ export function InterviewRescheduleModal({
           <Col span={8}><Form.Item name="interview_date" label="Ngày phỏng vấn" rules={[{ required: true }]}><DateStringPicker minDate={todayStr} /></Form.Item></Col>
           <Col span={8}><Form.Item name="interview_slot" label="Giờ bắt đầu" rules={[{ required: true }]}><TimeSelect minTime={reschedDate === todayStr ? nowTimeStr : undefined} /></Form.Item></Col>
           <Col span={8}><Form.Item name="duration_minutes" label="Thời lượng" rules={[{ required: true }]}><InputNumber min={5} max={240} step={5} style={{ width: '100%' }} suffix="phút" /></Form.Item></Col>
-          <Col span={14}><Form.Item name="zalo_account_id" label="Tài khoản Zalo HR nhắc lịch"><Select allowClear options={zaloAccounts.map((a) => ({ value: a.id, label: `${a.zalo_name} (${a.zalo_phone}) — ${a.owner_display_name}` }))} /></Form.Item></Col>
           <Col span={10}><Form.Item name="candidate_zalo_id" label="ID Zalo / SĐT Zalo ứng viên"><Input prefix={<MessageOutlined style={{ color: '#2563EB' }} />} placeholder="0909888777 hoặc UID Zalo" /></Form.Item></Col>
-          <Col span={24}><Form.Item name="meet_link" label="Link Google Meet / Calendar"><Input placeholder="https://meet.google.com/umb-milk-hr" /></Form.Item></Col>
+          <Col span={14}><Form.Item name="meet_link" label="Link Google Meet / Calendar"><Input placeholder="https://meet.google.com/umb-milk-hr" /></Form.Item></Col>
           <Col span={12}><Form.Item name="candidate_confirmed" label="Trạng thái xác nhận"><Select options={[{ value: true, label: 'Ứng viên đã xác nhận tham gia (Tự nhắc Zalo 5–15p)' }, { value: false, label: 'Chưa xác nhận' }]} /></Form.Item></Col>
           <Col span={12}><Form.Item name="reschedule_requested" label="Yêu cầu đổi lịch"><Select options={[{ value: false, label: 'Giữ lịch bình thường' }, { value: true, label: 'Ứng viên xin đổi lịch phỏng vấn' }]} /></Form.Item></Col>
           <Col span={24}><Form.Item name="reschedule_reason" label="Lý do đổi lịch / Ghi chú chỉnh sửa"><Input.TextArea rows={2} placeholder="Ví dụ: Ứng viên bận lịch thi ở trường buổi sáng, xin dời sang 14:30..." /></Form.Item></Col>
