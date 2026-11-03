@@ -49,7 +49,8 @@ export function TestAssignmentFormModal({
 
   return (
     <Modal
-      width={680}
+      width={820}
+      style={{ maxWidth: 'calc(100vw - 24px)' }}
       open={open} forceRender
       title={editing ? `Chỉnh sửa Đợt giao bài — ${editing.assignment_code}` : 'Giao bài kiểm tra nghiệp vụ cho Nhân sự'}
       okText={editing ? 'Lưu cập nhật' : 'Giao bài kiểm tra'} cancelText="Hủy bỏ"
@@ -81,10 +82,10 @@ export function TestAssignmentFormModal({
           </Form.Item>
         )}
         <Row gutter={12}>
-          <Col xs={12} sm={6}><Form.Item name="exam_sample_size" label="Số câu Random / đề" rules={[{ required: true, message: 'Nhập số câu' }]}><InputNumber min={1} max={totalBankQuestions} style={{ width: '100%' }} suffix={`/${totalBankQuestions} câu`} /></Form.Item></Col>
-          <Col xs={12} sm={6}><Form.Item name="max_attempts" label="Số lần thi tối đa" rules={[{ required: true, message: 'Nhập số lần thi' }]}><InputNumber min={1} max={20} style={{ width: '100%' }} suffix="lần" /></Form.Item></Col>
-          <Col xs={12} sm={6}><Form.Item name="due_date" label="Ngày hạn nộp" rules={[{ required: true, message: 'Chọn ngày hạn nộp' }]}><DateStringPicker /></Form.Item></Col>
-          <Col xs={12} sm={6}><Form.Item name="due_time" label="Giờ hạn nộp" rules={[{ required: true, message: 'Chọn giờ hạn nộp' }]}><TimeSelect /></Form.Item></Col>
+          <Col xs={12} sm={6}><Form.Item name="exam_sample_size" label={<span style={{ whiteSpace: 'nowrap' }}>Số câu Random / đề</span>} rules={[{ required: true, message: 'Nhập số câu' }]}><InputNumber min={1} max={totalBankQuestions} style={{ width: '100%' }} suffix={`/${totalBankQuestions} câu`} /></Form.Item></Col>
+          <Col xs={12} sm={6}><Form.Item name="max_attempts" label={<span style={{ whiteSpace: 'nowrap' }}>Số lần thi tối đa</span>} rules={[{ required: true, message: 'Nhập số lần thi' }]}><InputNumber min={1} max={20} style={{ width: '100%' }} suffix="lần" /></Form.Item></Col>
+          <Col xs={12} sm={6}><Form.Item name="due_date" label={<span style={{ whiteSpace: 'nowrap' }}>Ngày hạn nộp</span>} rules={[{ required: true, message: 'Chọn ngày hạn nộp' }]}><DateStringPicker /></Form.Item></Col>
+          <Col xs={12} sm={6}><Form.Item name="due_time" label={<span style={{ whiteSpace: 'nowrap' }}>Giờ hạn nộp</span>} rules={[{ required: true, message: 'Chọn giờ hạn nộp' }]}><TimeSelect /></Form.Item></Col>
         </Row>
         {editing && (
           <Form.Item name="reset_attempts" label="Đặt lại số lượt đã thi về 0" valuePropName="checked">
