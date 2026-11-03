@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import { Alert, App, Button, Card, Flex, Select, Space, Table, Tag, Tooltip } from 'antd';
+import { useMemo, useState } from 'react';
+import { Alert, App, Button, Card, Flex, Segmented, Select, Space, Table, Tag, Tooltip } from 'antd';
 import {
-  CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, LockOutlined,
-  ReloadOutlined, ScheduleOutlined, TrophyOutlined, UnlockOutlined,
+  BarChartOutlined, CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, LockOutlined,
+  ReloadOutlined, ScheduleOutlined, TableOutlined, TrophyOutlined, UnlockOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -15,6 +15,7 @@ import { DateStringPicker } from './DateTimePickers';
 import { PlannerProbationPreviewModal } from './PlannerProbationPreviewModal';
 import { useQuickDetail } from './RecordQuickDetailModal';
 import { PlannerIssuesAlert, PlannerOffTable } from './SchedulePlannerShared';
+import { SchedulePlannerProbationGantt, sortProbationNewestFirst } from './SchedulePlannerProbationGantt';
 import { fmtDm, fmtTs, type PlannerProbationItem } from './schedule-planner-types';
 import { useInvalidatePlanner, usePlannerOffDecision } from './usePlannerOffDecision';
 import { useWorkflowDecisionModal } from './WorkflowDecisionModal';
@@ -58,7 +59,8 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
   const { promptDecision, decisionModalElement: promoteModalElement } = useWorkflowDecisionModal();
 
   const q = useQuery({ queryKey: ['schedule-planner-probation', branchId], queryFn: () => api.get<PlannerProbationItem[]>(`/admin/schedule-planner/probation?branch_id=${encodeURIComponent(branchId)}`) });
-  const rows = q.data ?? [];
+  const rows = useMemo(() => sortProbationNewestFirst(q.data ?? []), [q.data]);
+  const [viewMode, setViewMode] = useState<'table' | 'gantt'>('table');
   const readyRows = rows.filter((r) => r.readyForOfficial);
 
   const promoteMut = useMutation({
@@ -113,10 +115,16 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
             <Select value={branchId} onChange={setBranchId} options={branchOptions} style={{ width: 220 }} />
             <span style={{ color: '#64748B', fontSize: 13 }}>Mỗi chu kỳ thử việc 12 ngày gồm 7 ca làm việc và tối đa 5 ngày nghỉ OFF.</span>
           </Space>
-          <Button icon={<ReloadOutlined />} loading={q.isFetching && !q.isLoading} onClick={() => q.refetch()}>Làm mới</Button>
+          <Space size={8} wrap>
+            <Segmented value={viewMode} onChange={(v) => setViewMode(v as 'table' | 'gantt')} options={[{ value: 'table', icon: <TableOutlined />, label: 'Bảng' }, { value: 'gantt', icon: <BarChartOutlined />, label: 'Biểu đồ Gantt' }]} />
+            <Button icon={<ReloadOutlined />} loading={q.isFetching && !q.isLoading} onClick={() => q.refetch()}>Làm mới</Button>
+          </Space>
         </Flex>
       </div>
-      <Table<PlannerProbationItem>
+      {viewMode === 'gantt' && (
+        q.isLoading ? <Card size="small" loading /> : <SchedulePlannerProbationGantt rows={rows} onSelect={(r) => showDetail('plannerProbation', r)} />
+      )}
+      {viewMode === 'table' && <Table<PlannerProbationItem>
         size="small" rowKey="employeeId" loading={q.isLoading} dataSource={rows} scroll={{ x: 1260 }}
         onRow={(r) => buildClickableRowProps(r, (item) => showDetail('plannerProbation', item))}
         pagination={rows.length > 10 ? { pageSize: 10, showTotal: (t) => `Tổng ${t} nhân viên thử việc` } : false}
@@ -183,7 +191,7 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
             ),
           }] : []),
         ]}
-      />
+      />}
       {offDecision.decisionModalElement}
       {promoteModalElement}
       <PlannerProbationPreviewModal
