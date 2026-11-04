@@ -1,7 +1,7 @@
-import { mondayOfWeek, SYSTEM_CONFIG, type Employee, type ShiftSwap } from '@umbm/shared';
+import { isShiftTimePassed, mondayOfWeek, SYSTEM_CONFIG, type Employee, type ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
-import { nowIso } from '../lib/time.js';
+import { APP_TZ, dayjs, nowIso } from '../lib/time.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { emitScheduleRealtime } from '../routes/account-employee-sync.js';
 import { recalculateOpenPeriods } from './payroll-snapshot.service.js';
@@ -86,6 +86,8 @@ export async function executeHrSupportDispatch(
   if (!workDate) throw Errors.fieldValidation('work_date', 'REQUIRED_FIELD', 'Vui lòng chọn ngày làm việc bên chi nhánh cần hỗ trợ', '');
   if (!shiftCode) throw Errors.fieldValidation('shift_code', 'REQUIRED_FIELD', 'Vui lòng chọn khung ca bên chi nhánh cần hỗ trợ', '');
   const spec = resolveShiftSpec(ctx, shiftCode, from, workDate);
+  const today = dayjs().tz(APP_TZ).format('YYYY-MM-DD'), nowHm = dayjs().tz(APP_TZ).format('HH:mm');
+  if (isShiftTimePassed(workDate, spec.endAt, today, nowHm)) throw Errors.fieldValidation('shift_code', 'INVALID_VALUE', `Khung ca ngày hôm nay đã kết thúc (${spec.endAt}), không thể điều phối`, shiftCode);
   const conflict = ctx.db.shiftAssignments.find((a) => {
     if (a.is_deleted || a.id === from?.id || a.status === 'ABSENT' || a.status === 'ON_LEAVE' || a.day_type === 'OFF') return false;
     const isReq = a.employee_id === requester.id || a.employee_id === requester.employee_code;
@@ -138,6 +140,8 @@ export async function executeHrDispatchClaim(
   const branchId = from?.branch_id || swap.branch_id, workDate = from?.work_date || swap.from_work_date, shiftCode = from?.shift_code || swap.from_shift_code;
   if (!branchId || !workDate || !shiftCode) throw Errors.badRequest('Thông tin ca điều phối không hợp lệ');
   const spec = resolveShiftSpec(ctx, shiftCode, from, workDate);
+  const today = dayjs().tz(APP_TZ).format('YYYY-MM-DD'), nowHm = dayjs().tz(APP_TZ).format('HH:mm');
+  if (isShiftTimePassed(workDate, spec.endAt, today, nowHm)) throw Errors.badRequest(`Ca làm việc này đã kết thúc vào lúc ${spec.endAt}, không thể nhận ca nữa`);
   const conflict = ctx.db.shiftAssignments.find((a) => {
     if (a.is_deleted || a.status === 'ABSENT' || a.status === 'ON_LEAVE' || a.day_type === 'OFF') return false;
     const isReceiver = a.employee_id === receiver.id || a.employee_id === receiver.employee_code;

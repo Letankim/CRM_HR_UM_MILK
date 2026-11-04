@@ -46,6 +46,17 @@ export function validateDispatchDateRange(workDate: string, todayYmd: string): {
   return { valid: false, message: 'Chỉ được phép tạo lệnh điều phối cho tuần hiện tại hoặc tuần kế tiếp (mở từ Thứ 6)' };
 }
 
+/**
+ * Kiểm tra xem khoảng thời gian ca làm việc trong ngày đã kết thúc / đã qua chưa.
+ * - Nếu ngày nhỏ hơn hôm nay: đã qua.
+ * - Nếu ngày là hôm nay và nowHm >= endAt: khoảng thời gian ca đã qua.
+ */
+export function isShiftTimePassed(workDate: string, endAt: string, todayYmd: string, nowHm: string): boolean {
+  if (workDate < todayYmd) return true;
+  if (workDate === todayYmd && endAt && nowHm >= endAt) return true;
+  return false;
+}
+
 export interface OffWindowSettingsInput {
   offWindowOpenWeekday: number;
   offWindowOpenTime: string;

@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { isEmployeeRole, SYSTEM_CONFIG, validateDispatchDateRange, zListQueryBase, type ShiftSwap } from '@umbm/shared';
+import { isEmployeeRole, isShiftTimePassed, SYSTEM_CONFIG, validateDispatchDateRange, zListQueryBase, type ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
-import { nowIso, todayLocal } from '../lib/time.js';
+import { APP_TZ, dayjs, nowIso, todayLocal } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { queueSwapEventEmail } from '../services/action-email-dispatcher.js';
@@ -22,19 +22,21 @@ import { executeHrDispatchClaim, executeHrSupportDispatch, revertSwapSchedule } 
 
 const zCreateSwapBody = z.object({
   kind: z.enum(['SWAP', 'GIVE', 'HR_DISPATCH', 'HR_SUPPORT'], { errorMap: () => ({ message: 'Loại yêu cầu phải là Đổi ca 2 chiều, Nhường ca, Điều phối khẩn cấp hoặc Hỗ trợ liên chi nhánh' }) }).default('GIVE'),
-  requester_id: z.string().trim().optional().default(''), peer_id: z.string().trim().optional().default(''),
-  from_assignment_id: z.string().trim().optional().default(''), to_assignment_id: z.string().trim().optional().default(''),
-  branch_id: z.string().trim().optional().default(''), target_branch_id: z.string().trim().optional().default(''),
-  work_date: z.string().trim().optional().default(''), shift_code: z.string().trim().optional().default(''),
-  reason: z.string().trim().min(2, 'Vui lòng nhập lý do').max(300, 'Lý do tối đa 300 ký tự'),
+  requester_id: z.string().trim().optional().default(''), peer_id: z.string().trim().optional().default(''), from_assignment_id: z.string().trim().optional().default(''),
+  to_assignment_id: z.string().trim().optional().default(''), branch_id: z.string().trim().optional().default(''), target_branch_id: z.string().trim().optional().default(''),
+  work_date: z.string().trim().optional().default(''), shift_code: z.string().trim().optional().default(''), reason: z.string().trim().min(2, 'Vui lòng nhập lý do').max(300, 'Lý do tối đa 300 ký tự'),
 });
 const zPeerRespondBody = z.object({ version: z.coerce.number().int().min(1).optional(), accept: z.boolean().optional().default(true), peer_id: z.string().trim().optional(), peer_note: z.string().trim().max(200).optional().default('') });
-const zWorkflowQuery = zListQueryBase.extend({ branch_id: z.string().trim().optional(), status: z.string().trim().optional(), kind: z.string().trim().optional() });
-const ACTIVE = new Set(['PENDING_PEER', 'PEER_ACCEPTED']);
+const zWorkflowQuery = zListQueryBase.extend({ branch_id: z.string().trim().optional(), status: z.string().trim().optional(), kind: z.string().trim().optional() }), ACTIVE = new Set(['PENDING_PEER', 'PEER_ACCEPTED']);
 
-function assertDispatchDateInRange(workDate: string, field = 'work_date'): void {
-  const check = validateDispatchDateRange(workDate, todayLocal());
+const SHIFT_ENDS: Record<string, string> = { CA_SANG: '12:00', CA_CHIEU: '17:00', CA_TOI: '22:30', HANH_CHINH: '17:30' };
+function assertDispatchDateInRange(ctx: AppContext, workDate: string, shiftCode?: string, field = 'work_date'): void {
+  const today = todayLocal(), check = validateDispatchDateRange(workDate, today);
   if (!check.valid) throw Errors.fieldValidation(field, 'INVALID_VALUE', check.message!, workDate);
+  if (shiftCode && workDate === today) {
+    const endAt = ctx.db.shiftTemplates.find((t) => t.code === shiftCode)?.end_time || SHIFT_ENDS[shiftCode] || '12:00';
+    if (isShiftTimePassed(workDate, endAt, today, dayjs().tz(APP_TZ).format('HH:mm'))) throw Errors.fieldValidation('shift_code', 'INVALID_VALUE', `Khung ca ngày hôm nay đã kết thúc (${endAt}), không thể điều phối`, shiftCode);
+  }
 }
 
 export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
@@ -64,7 +66,7 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
 
     if (body.kind === 'HR_SUPPORT') {
       const workDate = body.work_date || from?.work_date || '';
-      if (workDate) { assertDispatchDateInRange(workDate); assertDateNotLockedByPayroll(ctx.db, workDate, 'điều phối hỗ trợ ca'); }
+      if (workDate) { assertDispatchDateInRange(ctx, workDate, body.shift_code || from?.shift_code); assertDateNotLockedByPayroll(ctx.db, workDate, 'điều phối hỗ trợ ca'); }
       if (!body.target_branch_id) throw Errors.fieldValidation('target_branch_id', 'REQUIRED_FIELD', 'Vui lòng chọn chi nhánh tiếp nhận hỗ trợ', '');
       const created = await executeHrSupportDispatch(ctx, { fromAssignmentId: from?.id, targetBranchId: body.target_branch_id, workDate: body.work_date || undefined, shiftCode: body.shift_code || undefined, reason: body.reason, requesterId: body.requester_id || from?.employee_id }, actor.id);
       reply.code(201);
@@ -75,7 +77,7 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       const workDate = from?.work_date || body.work_date || '', shiftCode = from?.shift_code || body.shift_code || '';
       if (!branchId) throw Errors.fieldValidation('branch_id', 'REQUIRED_FIELD', 'Vui lòng chọn chi nhánh cần điều phối khẩn cấp', '');
       if (!workDate || !shiftCode) throw Errors.fieldValidation(!workDate ? 'work_date' : 'shift_code', 'REQUIRED_FIELD', !workDate ? 'Vui lòng chọn ngày làm việc cần điều phối' : 'Vui lòng chọn khung ca cần điều phối', '');
-      assertDispatchDateInRange(workDate);
+      assertDispatchDateInRange(ctx, workDate, shiftCode);
       assertBranchAccess(request, branchId);
       assertDateNotLockedByPayroll(ctx.db, workDate, 'điều phối ca');
       const requester = (body.requester_id || from?.employee_id) ? findEmp(ctx, body.requester_id || from!.employee_id) : undefined;
@@ -188,8 +190,7 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       ],
     });
     if (body.decision === 'APPROVED') await recalculateOpenPeriods(ctx, actorId);
-    const reqAudit = auditContext(request);
-    await notify(request, updated, 'DECIDED', `Yêu cầu nhường ca ${before.swap_code} đã ${body.decision === 'APPROVED' ? 'được HR phê duyệt' : 'bị HR từ chối'}`, [before.requester_id, before.peer_id], () => ctx.audit.record(reqAudit, { action: 'swap.decide', entity: 'SHIFT_SWAPS', entityId: id, before: { status: before.status }, after: { status: updated.status, allowance_eligible: updated.allowance_eligible, allowance_amount_vnd: updated.allowance_amount_vnd } }));
+    await notify(request, updated, 'DECIDED', `Yêu cầu nhường ca ${before.swap_code} đã ${body.decision === 'APPROVED' ? 'được HR phê duyệt' : 'bị HR từ chối'}`, [before.requester_id, before.peer_id], () => ctx.audit.record(auditContext(request), { action: 'swap.decide', entity: 'SHIFT_SWAPS', entityId: id, before: { status: before.status }, after: { status: updated.status, allowance_eligible: updated.allowance_eligible, allowance_amount_vnd: updated.allowance_amount_vnd } }));
     return sendSuccess(request, body.decision === 'APPROVED' ? 'Đã phê duyệt nhường ca — lịch chính thức đã chuyển sang người nhận' : 'Đã từ chối yêu cầu nhường ca, lịch giữ nguyên', enrichSwapKindLabel(ctx, updated));
   });
 
@@ -204,7 +205,7 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     assertDateNotLockedByPayroll(ctx.db, before.from_work_date, 'hủy yêu cầu đổi / điều động ca');
     const updated = await ctx.db.shiftSwaps.update(id, before.version, { status: 'CANCELLED', decided_at: nowIso(), decision_reason: 'Đã hủy yêu cầu' }, actor.id);
     if (before.kind === 'HR_DISPATCH') { await cancelDispatchAnnouncement(ctx, before.swap_code, actor.id); if (before.status === 'APPROVED') await revertSwapSchedule(ctx, before, actor.id); }
-    if (before.kind === 'HR_SUPPORT') await revertSwapSchedule(ctx, before, actor.id);
+    else if (before.kind === 'HR_SUPPORT') await revertSwapSchedule(ctx, before, actor.id);
     await runBackgroundSideEffect(() => ensureSyncedNotifications(ctx));
     const cancelMsg = before.kind === 'HR_DISPATCH' ? (before.status === 'APPROVED' ? 'Đã hủy lệnh điều phối khẩn cấp và xóa ca đã tạo cho người nhận' : 'Đã hủy lệnh điều phối khẩn cấp') : before.kind === 'HR_SUPPORT' ? 'Đã hủy điều động hỗ trợ liên chi nhánh và hoàn trả lịch gốc' : 'Đã hủy yêu cầu đổi / nhường ca';
     return sendSuccess(request, cancelMsg, enrichSwapKindLabel(ctx, updated));
