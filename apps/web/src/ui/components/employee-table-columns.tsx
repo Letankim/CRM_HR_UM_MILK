@@ -1,6 +1,6 @@
 'use client';
 
-import { Avatar, Space, Tag, Typography } from 'antd';
+import { Avatar, Image, Space, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { CheckCircleOutlined, DeleteOutlined, EditOutlined, FileProtectOutlined, RiseOutlined, UserOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -91,9 +91,11 @@ export function buildEmployeeColumns({
       key: 'employee',
       render: (_, r) => (
         <Space size={10} align="center">
-          <Avatar size={34} src={r.avatarUrl || undefined} style={{ backgroundColor: '#2563EB', flexShrink: 0, fontWeight: 600 }}>
-            {r.fullName.charAt(0).toUpperCase()}
-          </Avatar>
+          {r.avatarUrl ? (
+            <Image src={r.avatarUrl} width={34} height={34} style={{ borderRadius: '50%', objectFit: 'cover', border: '1px solid #CBD5E1', cursor: 'zoom-in' }} preview={{ mask: null }} />
+          ) : (
+            <Avatar size={34} style={{ backgroundColor: '#2563EB', flexShrink: 0, fontWeight: 600 }}>{r.fullName.charAt(0).toUpperCase()}</Avatar>
+          )}
           <div>
             <Typography.Text strong style={{ fontSize: 13 }}>{r.fullName}</Typography.Text>
             <div style={{ marginTop: 2 }}>

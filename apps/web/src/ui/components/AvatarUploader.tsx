@@ -1,12 +1,10 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { Avatar, Button, Flex, message, Popconfirm, Spin, Typography } from 'antd';
-import { CameraOutlined, DeleteOutlined, LoadingOutlined, UploadOutlined, UserOutlined } from '@ant-design/icons';
+import { Avatar, Button, Flex, Image, message, Popconfirm, Spin, Tooltip } from 'antd';
+import { CameraOutlined, DeleteOutlined, EyeOutlined, LoadingOutlined, UserOutlined } from '@ant-design/icons';
 import { compressAvatarFile } from '../../lib/avatar-compressor';
 import { api } from '../../lib/api';
-
-const { Text } = Typography;
 
 export interface AvatarUploaderProps {
   value?: string | null;
@@ -31,6 +29,7 @@ export function AvatarUploader({
 }: AvatarUploaderProps) {
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<string | null>(value ?? null);
+  const [previewVisible, setPreviewVisible] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -44,18 +43,18 @@ export function AvatarUploader({
 
     setLoading(true);
     try {
-      const { dataUrl, approxBytes } = await compressAvatarFile(file, { maxDimension: 400, quality: 0.88 });
+      const { dataUrl } = await compressAvatarFile(file, { maxDimension: 400, quality: 0.88 });
       setPreview(dataUrl);
 
       if (uploadUrl) {
         const res = await api.post<{ fileId: string; url: string }>(uploadUrl, { avatar_base64: dataUrl });
         const finalUrl = res?.url || dataUrl;
         setPreview(finalUrl);
-        message.success(`Đã nén tối ưu (${Math.round(approxBytes / 1024)} KB) và đồng bộ ảnh đại diện lên Google Drive`);
+        message.success('Cập nhật ảnh đại diện thành công');
         onUploaded?.(finalUrl);
       } else {
         onChange?.(dataUrl);
-        message.success(`Đã nén tối ưu ảnh đại diện (${Math.round(approxBytes / 1024)} KB)`);
+        message.success('Đã tải ảnh đại diện');
       }
     } catch (err) {
       message.error((err as Error).message || 'Không thể xử lý ảnh đại diện');
@@ -112,36 +111,52 @@ export function AvatarUploader({
             <Spin indicator={<LoadingOutlined style={{ fontSize: 24, color: '#2563EB' }} spin />} />
           </Flex>
         ) : (
-          <Avatar
-            size={size}
-            src={preview || undefined}
-            icon={!preview && !initialLetter ? <UserOutlined style={{ fontSize: size * 0.45 }} /> : undefined}
-            style={{
-              backgroundColor: preview ? 'transparent' : '#2563EB',
-              color: '#FFFFFF',
-              fontSize: size * 0.38,
-              fontWeight: 600,
-              border: '1px solid #CBD5E1',
-              cursor: disabled ? 'default' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onClick={() => !disabled && !loading && fileInputRef.current?.click()}
-          >
-            {!preview && initialLetter ? initialLetter : null}
-          </Avatar>
+          <Tooltip title={preview ? 'Bấm để xem ảnh phóng to' : undefined}>
+            <Avatar
+              size={size}
+              src={preview || undefined}
+              icon={!preview && !initialLetter ? <UserOutlined style={{ fontSize: size * 0.45 }} /> : undefined}
+              style={{
+                backgroundColor: preview ? 'transparent' : '#2563EB',
+                color: '#FFFFFF',
+                fontSize: size * 0.38,
+                fontWeight: 600,
+                border: '1px solid #CBD5E1',
+                cursor: preview ? 'zoom-in' : disabled ? 'default' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              onClick={() => {
+                if (preview) setPreviewVisible(true);
+                else if (!disabled && !loading) fileInputRef.current?.click();
+              }}
+            >
+              {!preview && initialLetter ? initialLetter : null}
+            </Avatar>
+          </Tooltip>
         )}
       </div>
 
-      <Flex vertical gap={4} style={{ flex: 1 }}>
+      <Flex vertical gap={6} style={{ flex: 1 }}>
         <Flex gap={8} wrap="wrap">
+          {preview && (
+            <Button
+              size="small"
+              icon={<EyeOutlined />}
+              onClick={() => setPreviewVisible(true)}
+              type="default"
+            >
+              Xem ảnh
+            </Button>
+          )}
+
           <Button
             size="small"
             icon={<CameraOutlined />}
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled || loading}
-            type="default"
+            type={preview ? 'default' : 'primary'}
           >
             {preview ? 'Đổi ảnh' : 'Tải ảnh đại diện'}
           </Button>
@@ -159,10 +174,19 @@ export function AvatarUploader({
             </Popconfirm>
           )}
         </Flex>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          Tự động nén chuẩn JPEG và đồng bộ lưu trữ an toàn trên Google Drive
-        </Text>
       </Flex>
+
+      {preview && (
+        <Image
+          wrapperStyle={{ display: 'none' }}
+          preview={{
+            visible: previewVisible,
+            src: preview,
+            onVisibleChange: (vis) => setPreviewVisible(vis),
+          }}
+          src={preview}
+        />
+      )}
     </Flex>
   );
 }
