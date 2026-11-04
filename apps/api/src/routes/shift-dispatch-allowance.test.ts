@@ -1,0 +1,140 @@
+import { describe, expect, it } from 'vitest';
+import { DEMO_PIN } from '../data/memory-seed.js';
+import { buildTestApp } from '../test-utils/build-test-app.js';
+
+describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ', () => {
+  it('HR/Store phát lệnh điều phối ca khẩn cấp lên bảng tin chi nhánh, nhân viên nhận ca được tự động cộng +30.000đ vào kỳ lương', async () => {
+    const { app, db, login, loginHeaders } = await buildTestApp('hr_dsp');
+    const hrHeaders = await loginHeaders('hr');
+    const finHeaders = await loginHeaders('finance');
+
+    // Tìm một ca phân công hợp lệ trong dữ liệu seed
+    const shift = db.shiftAssignments.find((a) => a.status === 'PUBLISHED')!;
+    expect(shift).toBeDefined();
+
+    // 1. HR phát lệnh điều phối khẩn cấp HR_DISPATCH
+    const dispatchRes = await app.inject({
+      method: 'POST',
+      url: '/api/admin/shift-swaps',
+      headers: hrHeaders,
+      payload: {
+        kind: 'HR_DISPATCH',
+        from_assignment_id: shift.id,
+        reason: 'Nhân viên ốm đột xuất, thiếu nhân sự cửa hàng cần điều phối khẩn cấp',
+      },
+    });
+    expect(dispatchRes.statusCode).toBe(201);
+    const dispatchData = dispatchRes.json().data;
+    expect(dispatchData.kind).toBe('HR_DISPATCH');
+    expect(dispatchData.swap_code).toMatch(/^DSP-\d+/);
+    expect(dispatchData.allowance_eligible).toBe(true);
+    expect(dispatchData.allowance_amount_vnd).toBe(30000);
+
+    // 2. Kiểm tra bản tin chi nhánh tự động được đăng tải lên COMMS.ANNOUNCEMENTS
+    const anc = db.announcements.find((a) => a.code === `ANC-DSP-${dispatchData.swap_code}`);
+    expect(anc).toBeDefined();
+    expect(anc!.priority).toBe('URGENT');
+    expect(anc!.audience_scope).toBe('BRANCH');
+    expect(anc!.status).toBe('SENT');
+    expect(anc!.title).toContain('Điều phối khẩn cấp');
+    expect(anc!.title).toContain('+30.000đ');
+
+    // 3. Nhân viên thuộc chi nhánh xem danh sách bản tin nội bộ
+    const nvUsers = db.users.filter((u) => u.role === 'CHINH_THUC');
+    const receiverUser = nvUsers.find((u) => u.employee_id && u.employee_id !== shift.employee_id) || nvUsers[0]!;
+    const empLogin = await login(receiverUser.phone || '0901000002', DEMO_PIN, 'employee');
+    const receiverHeaders = { cookie: empLogin.cookie, 'x-umbm-client': 'web' };
+
+    const commsRes = await app.inject({
+      method: 'GET',
+      url: '/api/announcements',
+      headers: receiverHeaders,
+    });
+    expect(commsRes.statusCode).toBe(200);
+    const commsData = commsRes.json().data;
+    const foundInBulletin = commsData.announcements.find((a: { code: string }) => a.code === `ANC-DSP-${dispatchData.swap_code}`);
+    expect(foundInBulletin).toBeDefined();
+    expect(foundInBulletin.cta_link).toBe('/nv/doi-ca');
+
+    // 4. Tạo kỳ lương mở để tính lương
+    const periodRes = await app.inject({
+      method: 'POST',
+      url: '/api/admin/payroll/periods',
+      headers: finHeaders,
+      payload: { name: 'Kỳ lương Tháng Điều Phối', from_date: '2026-10-01', to_date: '2026-10-31' },
+    });
+    expect(periodRes.statusCode).toBe(201);
+    const periodId = periodRes.json().data.id;
+
+    // 5. Nhân viên nhận ca làm thay khẩn cấp (Claim)
+    const claimRes = await app.inject({
+      method: 'POST',
+      url: `/api/admin/shift-swaps/${dispatchData.id}/claim`,
+      headers: receiverHeaders,
+      payload: { version: dispatchData.version, accept: true, peer_note: 'Tôi sẵn sàng nhận làm thay ca này' },
+    });
+    expect(claimRes.statusCode).toBe(200);
+    expect(claimRes.json().message).toContain('+30.000đ');
+
+    // Kiểm tra bản ghi swap cập nhật thành công
+    const claimedSwap = db.shiftSwaps.get(dispatchData.id)!;
+    expect(claimedSwap.status).toBe('APPROVED');
+    expect(claimedSwap.allowance_eligible).toBe(true);
+    expect(claimedSwap.allowance_amount_vnd).toBe(30000);
+
+    // Kiểm tra ca làm việc đã đổi sang nhân viên nhận ca
+    const updatedShift = db.shiftAssignments.get(shift.id)!;
+    const receiverEmp = db.employees.find((e) => e.user_id === receiverUser.id || e.id === receiverUser.employee_id || e.employee_code === receiverUser.employee_id)!;
+    expect(updatedShift.employee_id).toBe(receiverEmp.id);
+    expect(updatedShift.note).toContain('DSP-');
+
+    // Đánh dấu ca đã hoàn thành để tính vào bảng lương
+    await db.shiftAssignments.update(updatedShift.id, updatedShift.version, { status: 'COMPLETED' }, 'test');
+
+    // Kiểm tra bản tin chi nhánh cập nhật trạng thái đã tiếp nhận
+    const updatedAnc = db.announcements.get(anc!.id)!;
+    expect(updatedAnc.summary).toContain('ĐÃ TIẾP NHẬN');
+
+    // 6. Kiểm tra bảng lương tự động cập nhật phụ cấp +30.000đ
+    const calcRes = await app.inject({
+      method: 'POST',
+      url: `/api/admin/payroll/periods/${periodId}/recalculate`,
+      headers: finHeaders,
+    });
+    expect(calcRes.statusCode).toBe(200);
+
+    const snapshotsRes = await app.inject({
+      method: 'GET',
+      url: `/api/admin/payroll/periods/${periodId}/snapshots`,
+      headers: finHeaders,
+    });
+    expect(snapshotsRes.statusCode).toBe(200);
+    const snapshots = snapshotsRes.json().data.snapshots as Array<Record<string, unknown>>;
+    const receiverSnap = snapshots.find((s) => s.employeeId === receiverEmp.id);
+    expect(receiverSnap).toBeDefined();
+    expect(Number(receiverSnap!.shiftSwapAllowanceVnd)).toBeGreaterThanOrEqual(30000);
+    expect(Number(receiverSnap!.shiftSwapCount)).toBeGreaterThanOrEqual(1);
+
+    // 7. Kiểm tra hủy lệnh điều phối khẩn cấp -> bản tin tự động soft-delete
+    const shift2 = db.shiftAssignments.find((a) => a.id !== shift.id && a.status === 'PUBLISHED')!;
+    const dispatch2 = await app.inject({
+      method: 'POST',
+      url: '/api/admin/shift-swaps',
+      headers: hrHeaders,
+      payload: { kind: 'HR_DISPATCH', from_assignment_id: shift2.id, reason: 'Điều phối thử nghiệm hủy' },
+    });
+    const d2Data = dispatch2.json().data;
+    const anc2 = db.announcements.find((a) => a.code === `ANC-DSP-${d2Data.swap_code}`);
+    expect(anc2).toBeDefined();
+
+    const cancelRes = await app.inject({
+      method: 'POST',
+      url: `/api/admin/shift-swaps/${d2Data.id}/cancel`,
+      headers: hrHeaders,
+      payload: {},
+    });
+    expect(cancelRes.statusCode).toBe(200);
+    expect(db.announcements.get(anc2!.id)).toBeUndefined();
+    expect(db.announcements.all(true).find((a) => a.id === anc2!.id)?.is_deleted).toBe(true);
+  });
+});

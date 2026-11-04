@@ -76,6 +76,10 @@ describe('Điểm danh & Ca làm việc linh hoạt cho Vai trò Nội bộ (HR,
     const shift = mktGet.json().data.shifts.find((s: { shiftCode: string }) => s.shiftCode === 'HANH_CHINH');
     const branch = t.db.branches.find((b) => b.code === 'VAN_PHONG')!;
 
+    // Đảm bảo giờ kết thúc ca trong test chưa qua thời điểm hiện tại và ca ở trạng thái PUBLISHED (độc lập với thời điểm chạy test ngày/đêm)
+    const freshAssign = t.db.shiftAssignments.get(shift.id)!;
+    await t.db.shiftAssignments.update(freshAssign.id, freshAssign.version, { status: 'PUBLISHED', end_at: '23:59' }, 'test');
+
     const checkInRes = await t.app.inject({
       method: 'POST',
       url: '/api/attendance/check',

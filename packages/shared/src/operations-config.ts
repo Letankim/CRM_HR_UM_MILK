@@ -135,7 +135,12 @@ export const WEEKDAY_LABELS: Record<number, string> = {
 };
 export const WEEKDAY_OPTIONS = [1, 2, 3, 4, 5, 6, 7].map((value) => ({ value, label: WEEKDAY_LABELS[value]! }));
 
-export const SHIFT_SWAP_KIND_LABELS = { SWAP: 'Đổi ca 2 chiều', GIVE: 'Nhường ca' } as const;
+export const SHIFT_SWAP_KIND_LABELS = {
+  SWAP: 'Đổi ca 2 chiều',
+  GIVE: 'Nhường ca',
+  HR_DISPATCH: 'Điều phối khẩn cấp (+30k)',
+  HR_SUPPORT: 'Hỗ trợ liên chi nhánh',
+} as const;
 export const PARTITION_TABLE_LABELS: Record<string, string> = {
   SHIFT_ASSIGNMENTS: 'Lịch phân ca', LEAVE_REQUESTS: 'Đơn nghỉ OFF', SHIFT_SWAPS: 'Đổi ca / Nhường ca',
   ATTENDANCE_EVENTS: 'Chấm công Vào/Ra', ATTENDANCE_ADJUSTMENTS: 'Phiếu bổ sung công',

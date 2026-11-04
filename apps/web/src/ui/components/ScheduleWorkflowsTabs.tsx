@@ -144,7 +144,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
         onEditSwapAllowance={wf.canApproveSwap ? (r) => setSwapApproveTarget({ mode: 'edit-allowance', rows: [r] }) : undefined}
       />
       <ShiftSwapApproveModal target={swapApproveTarget} loading={swapApproveMut.isPending} onClose={() => setSwapApproveTarget(null)} onConfirm={(payload) => swapApproveTarget && swapApproveMut.mutate({ target: swapApproveTarget, payload })} />
-      <ScheduleWorkflowModals employees={employees} assignments={assignments} leaveModal={leaveModal} swapModal={swapModal} adjModal={adjModal} submitting={createMut.isPending} onCloseLeave={() => setLeaveModal(false)} onCloseSwap={() => setSwapModal(false)} onCloseAdj={() => setAdjModal(false)} onSubmitAction={(url, body) => !createMut.isPending && createMut.mutate({ url, body, successMsg: url.includes('shift-swaps') ? 'Đã gửi yêu cầu — chờ đồng nghiệp xác nhận' : undefined })} />
+      <ScheduleWorkflowModals employees={employees} assignments={assignments} leaveModal={leaveModal} swapModal={swapModal} adjModal={adjModal} submitting={createMut.isPending} onCloseLeave={() => setLeaveModal(false)} onCloseSwap={() => setSwapModal(false)} onCloseAdj={() => setAdjModal(false)} onSubmitAction={(url, body) => !createMut.isPending && createMut.mutate({ url, body, successMsg: url.includes('shift-swaps') ? ((body as Record<string, unknown> | null)?.kind === 'HR_DISPATCH' ? 'Đã phát lệnh điều phối khẩn cấp lên bảng tin chi nhánh (+30.000đ)' : 'Đã gửi yêu cầu — chờ đồng nghiệp xác nhận') : undefined })} />
       {wf.decisionModalElement}
     </Card>
   );

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { App, Space, Tag } from 'antd';
+import { Alert, App, Space, Tag } from 'antd';
 import { CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, CloseOutlined, DownloadOutlined, StopOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -24,7 +24,8 @@ export function usePeerSwapDecision({ empId, empCode, onSuccess }: { empId: stri
   const { message } = App.useApp();
   const { promptDecision, decisionModalElement } = useWorkflowDecisionModal();
   const isPeer = useCallback((r: Row) => r.peer_id === empId || r.peerCode === empCode, [empId, empCode]);
-  const canRespond = useCallback((r: Row) => r.status === 'PENDING_PEER' && isPeer(r), [isPeer]);
+  const canClaim = useCallback((r: Row) => r.kind === 'HR_DISPATCH' && r.status === 'PENDING_PEER' && r.requester_id !== empId && r.requesterCode !== empCode, [empId, empCode]);
+  const canRespond = useCallback((r: Row) => (r.status === 'PENDING_PEER' && isPeer(r)) || canClaim(r), [isPeer, canClaim]);
 
   const peerRespondMut = useMutation({
     mutationFn: async (vars: { rows: Row[]; accept: boolean; note: string; clear?: () => void }) => {
@@ -37,7 +38,9 @@ export function usePeerSwapDecision({ empId, empCode, onSuccess }: { empId: stri
     },
     onSuccess: (vars) => {
       message.success(
-        vars.accept
+        vars.rows.some((r) => r.kind === 'HR_DISPATCH')
+          ? 'Đã nhận ca điều phối khẩn cấp (+30.000đ). Lịch làm việc và bảng lương của bạn đã được cập nhật ngay lập tức.'
+          : vars.accept
           ? 'Đã xác nhận đồng ý. Lịch được cập nhật ngay hoặc chuyển HR duyệt nếu người nhận vượt 2 ca/ngày.'
           : 'Đã từ chối yêu cầu nhường / đổi ca',
       );
@@ -54,17 +57,20 @@ export function usePeerSwapDecision({ empId, empCode, onSuccess }: { empId: stri
     const code = single ? String(single.swap_code || '') : '';
     const requester = single ? String(single.requesterName || 'đồng nghiệp') : '';
     const isSwap = single ? single.kind === 'SWAP' : false;
+    const isDispatch = single ? single.kind === 'HR_DISPATCH' : false;
     if (accept) {
       promptDecision({
-        title: single ? `${isSwap ? 'Đồng ý đổi ca 2 chiều' : 'Đồng ý nhận ca'} — ${code}` : `Đồng ý ${eligible.length} yêu cầu nhường / đổi ca đã chọn`,
-        subtitle: single ? `Yêu cầu từ ${requester} · Ngày ${single.from_work_date ? dayjs(String(single.from_work_date)).format('DD/MM/YYYY') : '—'} · ${cleanShiftName(single.shiftLabel || single.from_shift_code)}` : undefined,
-        alertNode: renderWorkflowDecisionAlert('swap', eligible),
-        noteLabel: 'Ghi chú phản hồi cho đồng nghiệp',
-        placeholder: 'Nhập ghi chú xác nhận (không bắt buộc)...',
+        title: single ? (isDispatch ? `Nhận ca điều phối khẩn cấp (+30.000đ) — ${code}` : `${isSwap ? 'Đồng ý đổi ca 2 chiều' : 'Đồng ý nhận ca'} — ${code}`) : `Xác nhận nhận ${eligible.length} ca đã chọn`,
+        subtitle: single ? (isDispatch ? `Cần nhân sự làm thay · Ngày ${single.from_work_date ? dayjs(String(single.from_work_date)).format('DD/MM/YYYY') : '—'} · ${cleanShiftName(single.shiftLabel || single.from_shift_code)} · Phụ cấp: +30.000đ/ca` : `Yêu cầu từ ${requester} · Ngày ${single.from_work_date ? dayjs(String(single.from_work_date)).format('DD/MM/YYYY') : '—'} · ${cleanShiftName(single.shiftLabel || single.from_shift_code)}`) : undefined,
+        alertNode: isDispatch ? (
+          <Alert type="success" showIcon message="Phụ cấp thưởng điều phối khẩn cấp: +30.000đ" description="Bạn đang nhận làm thay ca điều phối khẩn cấp từ Cửa hàng. Khi bấm xác nhận, ca này sẽ lập tức được nạp vào lịch làm việc chính thức của bạn và hệ thống tự động cộng +30.000đ vào kỳ lương." style={{ marginBottom: 12 }} />
+        ) : renderWorkflowDecisionAlert('swap', eligible),
+        noteLabel: isDispatch ? 'Ghi chú xác nhận nhận ca' : 'Ghi chú phản hồi cho đồng nghiệp',
+        placeholder: isDispatch ? 'VD: Tôi sẵn sàng nhận làm thay ca này...' : 'Nhập ghi chú xác nhận (không bắt buộc)...',
         required: false,
         maxLength: 200,
-        suggestions: ['Đồng ý nhận ca hỗ trợ đồng nghiệp', 'Đã sắp xếp lịch cá nhân, đồng ý đổi ca'],
-        okText: single ? (isSwap ? 'Đồng ý đổi ca' : 'Đồng ý nhận ca') : `Đồng ý (${eligible.length})`,
+        suggestions: isDispatch ? ['Tôi sẵn sàng nhận làm thay ca này', 'Đã sắp xếp thời gian để hỗ trợ chi nhánh'] : ['Đồng ý nhận ca hỗ trợ đồng nghiệp', 'Đã sắp xếp lịch cá nhân, đồng ý đổi ca'],
+        okText: single ? (isDispatch ? 'Nhận ca làm thay (+30k)' : isSwap ? 'Đồng ý đổi ca' : 'Đồng ý nhận ca') : `Đồng ý (${eligible.length})`,
         onConfirm: async (note) => { await peerRespondMut.mutateAsync({ rows: eligible, accept: true, note, clear }); },
       });
       return;
@@ -84,7 +90,7 @@ export function usePeerSwapDecision({ empId, empCode, onSuccess }: { empId: stri
     });
   }, [canRespond, peerRespondMut, promptDecision]);
 
-  return { isPeer, canRespond, promptRespond, responding: peerRespondMut.isPending, decisionModalElement };
+  return { isPeer, canClaim, canRespond, promptRespond, responding: peerRespondMut.isPending, decisionModalElement };
 }
 
 export interface EmployeeSwapsTableProps {
@@ -119,13 +125,21 @@ export function EmployeeSwapsTable({
     onOk: async () => { await cancelMut.mutateAsync(rows.map((r) => String(r.id))); clear?.(); },
   });
   const busy = isResponding || cancelMut.isPending;
+  const openDispatches = swaps.filter(fallbackPeer.canClaim);
 
   return (
     <>
+      {openDispatches.length > 0 && (
+        <Alert
+          type="warning" showIcon style={{ marginBottom: 12 }}
+          message={<strong>Cửa hàng đang có {openDispatches.length} ca điều phối khẩn cấp cần người làm thay (+30.000đ/ca)</strong>}
+          description="Nhân viên nhận ca làm thay theo diện HR Dispatch sẽ được hệ thống tự động cộng thêm phụ cấp thưởng +30.000đ/ca vào bảng lương kỳ đó. Bấm 'Nhận ca (+30k)' tại bảng bên dưới để nhận ca ngay."
+        />
+      )}
       <SelectableTable<Row>
         size="small" rowKey="id" loading={refreshing} pagination={pag} dataSource={swaps} onRowClick={onViewDetail}
         bulkActions={[
-          { key: 'accept', label: 'Đồng ý đã chọn', type: 'primary', icon: <CheckCircleOutlined />, loading: isResponding, eligibleFilter: canRespond, onClick: (rows, clear) => handleRespond(rows, true, clear) },
+          { key: 'accept', label: 'Đồng ý / Nhận ca đã chọn', type: 'primary', icon: <CheckCircleOutlined />, loading: isResponding, eligibleFilter: canRespond, onClick: (rows, clear) => handleRespond(rows, true, clear) },
           { key: 'reject', label: 'Từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: isResponding, eligibleFilter: canRespond, onClick: (rows, clear) => handleRespond(rows, false, clear) },
           { key: 'cancel', label: 'Hủy yêu cầu đã chọn', danger: true, icon: <StopOutlined />, loading: cancelMut.isPending, eligibleFilter: canCancel, onClick: (rows, clear) => confirmCancel(rows, clear) },
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportSwapsExcel(rows) },
@@ -133,7 +147,7 @@ export function EmployeeSwapsTable({
         locale={{ emptyText: 'Bạn chưa có yêu cầu nhường / đổi ca nào. Bấm "Nhường / Đổi ca" phía trên để gửi yêu cầu cho đồng nghiệp.' }}
         columns={[
           { title: 'Mã đơn', dataIndex: 'swap_code', width: 115, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
-          { title: 'Loại', dataIndex: 'kind', width: 125, render: (v: string, r) => <Tag color={v === 'SWAP' ? 'geekblue' : 'cyan'} style={{ margin: 0 }}>{String(r.kindLabel || '')}</Tag> },
+          { title: 'Loại', dataIndex: 'kind', width: 125, render: (v: string, r) => <Tag color={v === 'SWAP' ? 'geekblue' : v === 'HR_DISPATCH' ? 'gold' : 'cyan'} style={{ margin: 0 }}>{String(r.kindLabel || '')}</Tag> },
           {
             title: 'Ca nhường / đổi', width: 300,
             render: (_, r) => {
@@ -149,7 +163,15 @@ export function EmployeeSwapsTable({
             },
           },
           { title: 'Người gửi', width: 180, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.requesterName || '')}</span>{isRequester(r) && <Tag color="blue" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
-          { title: 'Người nhận', width: 180, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.peerName || '')}</span>{isPeer(r) && <Tag color="cyan" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
+          {
+            title: 'Người nhận', width: 180, ellipsis: true,
+            render: (_, r) => {
+              if (r.kind === 'HR_DISPATCH' && (!r.peer_id || r.status === 'PENDING_PEER')) {
+                return <Tag color="gold" style={{ margin: 0 }}>Đang mở toàn chi nhánh (+30k)</Tag>;
+              }
+              return <Space size={4}><span>{String(r.peerName || '')}</span>{isPeer(r) && <Tag color="cyan" style={{ margin: 0 }}>Bạn</Tag>}</Space>;
+            },
+          },
           { title: 'Trạng thái', dataIndex: 'status', width: 230, render: (v: string, r) => <Space size={4} wrap><StatusTag value={v} label={String(r.statusLabel || '') || undefined} />{renderSwapAllowanceTag(r, true)}</Space> },
           {
             title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
@@ -157,7 +179,9 @@ export function EmployeeSwapsTable({
               <RowActionButtons
                 detailTooltip="Xem chi tiết yêu cầu" onViewDetail={() => onViewDetail(r)} loading={busy}
                 menuItems={[
-                  ...(canRespond(r) ? [
+                  ...(fallbackPeer.canClaim(r) ? [
+                    { key: 'claim', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: 'Nhận ca (+30.000đ)', onClick: () => handleRespond([r], true) },
+                  ] : canRespond(r) ? [
                     { key: 'accept', icon: <CheckCircleOutlined style={{ color: '#16A34A' }} />, label: r.kind === 'SWAP' ? 'Đồng ý đổi ca' : 'Đồng ý nhận ca', onClick: () => handleRespond([r], true) },
                     { key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối', onClick: () => handleRespond([r], false) },
                   ] : []),

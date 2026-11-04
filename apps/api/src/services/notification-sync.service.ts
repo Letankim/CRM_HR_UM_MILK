@@ -3,11 +3,12 @@ import type { AppContext } from '../context.js';
 import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 import { getMatchingUsersForAudience } from '../routes/job-positions-and-audiences.routes.js';
 import { singleFlight, tolerantWrite } from './background-write.js';
+import { deduplicateAdjustmentsAndNotifications, SYNC_ACTOR } from './notification-dedup.service.js';
 import { resolveNotificationEventTime } from './notification-time.js';
 import { syncPayslipConfirmNotifications } from './payslip.service.js';
-import { healOpenPayslipDisputesToTickets, isStaleTicketNotification, syncSupportTicketBellNotifications } from './ticket-notification.service.js';
+import { healOpenPayslipDisputesToTickets, syncSupportTicketBellNotifications } from './ticket-notification.service.js';
 
-const syncInFlight = new WeakMap<object, Promise<void>>(), lastSyncSig = new WeakMap<object, string>(), SYNC_ACTOR = 'system-sync';
+const syncInFlight = new WeakMap<object, Promise<void>>(), lastSyncSig = new WeakMap<object, string>();
 function computeSyncSig(ctx: AppContext): string {
   const sumV = (rows: { version: number }[]) => rows.reduce((acc, r) => acc + r.version, rows.length * 97);
   return [ctx.db.announcements, ctx.db.users, ctx.db.employees, ctx.db.shiftAssignments, ctx.db.leaveRequests, ctx.db.shiftSwaps, ctx.db.attendanceAdjustments, ctx.db.payPeriods, ctx.db.payslips, ctx.db.supportTickets].map((s) => sumV(s.all())).join(':');
@@ -18,54 +19,6 @@ function activePlusRecent<T extends { id: string }>(rows: T[], isActive: (r: T) 
 }
 export function ensureSyncedNotifications(ctx: AppContext): Promise<void> {
   return lastSyncSig.get(ctx.db) === computeSyncSig(ctx) ? Promise.resolve() : singleFlight(syncInFlight, ctx.db, () => runSyncNotifications(ctx));
-}
-
-async function deduplicateAdjustmentsAndNotifications(ctx: AppContext): Promise<void> {
-  const empByCode = new Map(ctx.db.employees.all().map((e) => [e.employee_code, e.id]));
-  const seenAdjKeys = new Set<string>();
-  const adjDeletes: { id: string; expectedVersion: number; patch: { is_deleted: boolean } }[] = [];
-  for (const adj of [...ctx.db.attendanceAdjustments.all()].reverse()) {
-    if (adj.status === 'REJECTED') continue;
-    const eid = empByCode.get(adj.employee_id) ?? adj.employee_id, pType = adj.punch_type || 'FULL_SHIFT';
-    const key = adj.assignment_id ? `asg:${adj.assignment_id}:${pType}` : `emp:${eid}:${adj.work_date}:${adj.shift_code}:${pType}`;
-    if (seenAdjKeys.has(key)) adjDeletes.push({ id: adj.id, expectedVersion: adj.version, patch: { is_deleted: true } });
-    else seenAdjKeys.add(key);
-  }
-  if (adjDeletes.length > 0) await tolerantWrite(() => ctx.db.attendanceAdjustments.batchUpdate(adjDeletes, SYNC_ACTOR));
-
-  const adjBatchCounts = new Map<string, number>();
-  for (const adj of ctx.db.attendanceAdjustments.all()) {
-    if ((adj.status === 'APPROVED' || adj.status === 'REJECTED') && adj.decided_at) adjBatchCounts.set(`${adj.decided_at.slice(0, 16)}_${adj.status}`, (adjBatchCounts.get(`${adj.decided_at.slice(0, 16)}_${adj.status}`) ?? 0) + 1);
-  }
-
-  const seenNotifKeys = new Set<string>();
-  const notifDeletes: { id: string; expectedVersion: number; patch: { is_deleted: boolean } }[] = [];
-  for (const n of [...ctx.db.notifications.all()].reverse()) {
-    const rawAdjId = (n.entity_id || '').replace(/_(STORE_CONFIRMED|APPROVED|REJECTED)$/, '');
-    const adj = n.entity_type.startsWith('ATT_ADJ_') && !n.entity_id.startsWith('BULK_') ? ctx.db.attendanceAdjustments.get(rawAdjId) : undefined;
-    const isResolvedPending =
-      n.entity_type === 'PAYSLIP_SIGNED_ADMIN' || n.entity_type === 'PAYSLIP_PAID' ||
-      (n.entity_type === 'PAYROLL_SUBMIT_ADMIN' && ctx.db.payPeriods.get(n.entity_id)?.status !== 'RECONCILE') ||
-      (n.entity_type === 'PAYROLL_ADMIN_APPROVED' && ctx.db.payPeriods.get(n.entity_id)?.status !== 'APPROVED') ||
-      (n.entity_type === 'PAYSLIP_USER' && !n.entity_id.endsWith('_PAID') && ctx.db.payslips.get(n.entity_id)?.status === 'REVISED') ||
-      (n.entity_type === 'ATT_ADJ_HR' && (!adj || (adj.status !== 'PENDING' && adj.status !== 'STORE_CONFIRMED') || (adj.status === 'STORE_CONFIRMED' && !n.entity_id.endsWith('_STORE_CONFIRMED')))) ||
-      (n.entity_type === 'LEAVE_ROLE' && ctx.db.leaveRequests.get(n.entity_id)?.status !== 'PENDING') ||
-      (n.entity_type === 'SHIFT_DRAFT_ROLE' && ctx.db.shiftAssignments.get(n.entity_id)?.status !== 'DRAFT') ||
-      (n.entity_type === 'SWAP_STORE' && ctx.db.shiftSwaps.get((n.entity_id || '').replace(/_(PENDING_PEER|PEER_ACCEPTED)$/, ''))?.status !== 'PEER_ACCEPTED') ||
-      n.entity_type === 'EMG_STORE' || n.entity_type === 'EMG_USER' ||
-      (n.entity_type === 'PROBATION_READY_HR' && ctx.db.employees.get(n.entity_id)?.stage !== 'PROBATION') ||
-      (n.entity_type === 'USERS_PENDING' && ctx.db.users.get(n.entity_id)?.status !== 'PENDING_ACTIVATION') ||
-      isStaleTicketNotification(ctx, n);
-    const isMergedIntoBulk = n.entity_type === 'ATT_ADJ_USER' && !n.entity_id.startsWith('BULK_') && adj?.decided_at && (adjBatchCounts.get(`${adj.decided_at.slice(0, 16)}_${adj.status}`) ?? 0) > 1;
-    const isSelfPendingLeave = n.entity_type === 'LEAVE_USER' && n.title.includes('Đã tiếp nhận');
-    const dedupKey = n.entity_type && n.entity_id ? `ent:${n.entity_type}:${n.entity_id}` : `txt:${n.category}:${n.recipient_role}:${n.recipient_user_id}:${n.title}:${n.body}`;
-    if (isResolvedPending || isMergedIntoBulk || isSelfPendingLeave || seenNotifKeys.has(dedupKey)) {
-      notifDeletes.push({ id: n.id, expectedVersion: n.version, patch: { is_deleted: true } });
-      continue;
-    }
-    seenNotifKeys.add(dedupKey);
-  }
-  if (notifDeletes.length > 0) await tolerantWrite(() => ctx.db.notifications.batchUpdate(notifDeletes, SYNC_ACTOR));
 }
 
 async function runSyncNotifications(ctx: AppContext): Promise<void> {
@@ -137,6 +90,9 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
   for (const s of activePlusRecent(ctx.db.shiftSwaps.all(), (x) => x.status === 'PENDING_PEER' || x.status === 'PEER_ACCEPTED', 50)) {
     const reqEmp = findEmp(s.requester_id), reqUser = findUserByEmp(s.requester_id), peerUser = findUserByEmp(s.peer_id), swapKey = `${s.id}_${s.status}`, brId = reqEmp?.branch_id || s.branch_id || 'ALL';
     const reqLabel = reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id;
+    if (s.kind === 'HR_DISPATCH' && s.status === 'PENDING_PEER' && !hasKey('DISPATCH_OPEN', s.id)) {
+      await ins({ recipient_user_id: '', recipient_role: 'CHINH_THUC', branch_id: brId, category: 'WORKFLOW', title: `Điều phối khẩn cấp (${s.swap_code}): Cần nhân sự làm thay (+30.000đ)`, body: `Cửa hàng phát lệnh tìm nhân sự làm thay ca ${shiftLabel(s.from_shift_code)} ngày ${s.from_work_date}. Nhận ca được tự động cộng +30.000đ vào kỳ lương.`, link: '/nv/doi-ca', severity: 'WARNING', entity_type: 'DISPATCH_OPEN', entity_id: s.id }, s.created_by);
+    }
     if (s.status === 'PEER_ACCEPTED' && !hasKey('SWAP_STORE', `${s.id}_PEER_ACCEPTED`)) {
       await ins({ recipient_user_id: '', recipient_role: 'HR', branch_id: brId, category: 'WORKFLOW', title: `Yêu cầu nhường ca vượt 2 ca/ngày chờ HR duyệt (${s.swap_code || s.id}): ${reqLabel}`, body: `Người nhận đã đồng ý nhận ${shiftLabel(s.from_shift_code)} ngày ${s.from_work_date} và sẽ làm 3 ca trong ngày — cần HR phê duyệt.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'SWAP_STORE', entity_id: `${s.id}_PEER_ACCEPTED` }, peerUser?.id || s.updated_by);
     }

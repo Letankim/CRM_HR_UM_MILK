@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { SHIFT_SWAP_KIND_LABELS, SHIFT_SWAP_STATUS_LABELS, SYSTEM_CONFIG, type Branch, type ShiftSwap } from '@umbm/shared';
+import { mondayOfWeek, SHIFT_SWAP_KIND_LABELS, SHIFT_SWAP_STATUS_LABELS, SYSTEM_CONFIG, type Branch, type ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
+import { nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
@@ -70,10 +71,11 @@ export function mapShiftSwapRecord(ctx: AppContext, s: ShiftSwap, fallbackBranch
   const branch = (reqEmp ? ctx.db.branches.get(reqEmp.branch_id) : undefined) ?? ctx.db.branches.get(s.branch_id) ?? fallbackBranch;
   const branchId = branch?.id ?? s.branch_id;
   const isApproved = s.status === 'APPROVED';
-  const effAmt = isApproved
+  const isDispatch = s.kind === 'HR_DISPATCH';
+  const effAmt = (isApproved || isDispatch)
     ? (s.allowance_eligible ? Math.max(0, Math.round(Number(s.allowance_amount_vnd ?? 0))) : 0)
     : Math.max(0, Math.round(Number(s.allowance_amount_vnd ?? SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd)));
-  const effEligible = isApproved ? Boolean(s.allowance_eligible && effAmt > 0) : false;
+  const effEligible = (isApproved || isDispatch) ? Boolean(s.allowance_eligible && effAmt > 0) : false;
 
   return {
     ...s,
@@ -94,6 +96,23 @@ export function mapShiftSwapRecord(ctx: AppContext, s: ShiftSwap, fallbackBranch
     allowanceAmountVnd: isApproved ? effAmt : 0,
     allowanceLabel: formatSwapAllowanceSummary({ status: s.status, allowance_eligible: effEligible, allowance_amount_vnd: effAmt }),
   };
+}
+
+export function enrichSwapKindLabel(ctx: AppContext, s: ShiftSwap) {
+  const mapped = mapShiftSwapRecord(ctx, s);
+  const kindLabel = s.kind === 'HR_DISPATCH' ? 'Điều phối khẩn cấp (+30k)' : s.kind === 'HR_SUPPORT' ? 'Hỗ trợ liên chi nhánh' : mapped.kindLabel;
+  return { ...mapped, kindLabel, targetBranchName: (s.target_branch_id ? ctx.db.branches.get(s.target_branch_id)?.name : null) ?? null };
+}
+
+export async function auditOutOfWeekSwaps(ctx: AppContext, actorId = 'system-audit') {
+  const now = nowIso(), cancelled: ShiftSwap[] = [];
+  for (const s of ctx.db.shiftSwaps.all()) {
+    if (s.status === 'CANCELLED' || s.status === 'REJECTED' || !s.from_work_date || !s.to_work_date) continue;
+    if (mondayOfWeek(s.from_work_date) !== mondayOfWeek(s.to_work_date)) {
+      cancelled.push(await ctx.db.shiftSwaps.update(s.id, s.version, { status: 'CANCELLED', decided_by: actorId, decided_at: now, decision_reason: 'Tự động hủy do 2 ca đổi không thuộc cùng 1 tuần làm việc' }, actorId));
+    }
+  }
+  return { cancelledCount: cancelled.length, cancelledIds: cancelled.map((x) => x.id), items: cancelled.map((x) => enrichSwapKindLabel(ctx, x)) };
 }
 
 export function registerShiftSwapAllowanceRoute(app: FastifyInstance, ctx: AppContext): void {
