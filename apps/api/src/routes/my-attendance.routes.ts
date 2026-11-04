@@ -24,6 +24,7 @@ import { mapShiftSwapRecord } from './shift-swap-helpers.js';
 const SHIFT_DEFAULT_HOURS: Record<string, { start: string; end: string; hours: number }> = {
   CA_SANG: { start: '07:00', end: '12:00', hours: 5 }, CA_CHIEU: { start: '12:00', end: '17:00', hours: 5 },
   CA_TOI: { start: '17:00', end: '22:00', hours: 5 }, CA_HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
+  HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
 };
 function getVnDateAndHm(): { todayStr: string; nowHm: string } {
   const vnNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
@@ -41,16 +42,20 @@ export async function ensurePersonalProfile(ctx: AppContext, user: User): Promis
     return existing;
   }
   const firstBranch = ctx.db.branches.all()[0];
-  const scopedBranchId = user.branch_scope && user.branch_scope !== 'ALL' ? user.branch_scope.split(',')[0]?.trim() || firstBranch?.id || '' : firstBranch?.id || '';
+  const officeBranch = ctx.db.branches.find((b) => b.code === 'VAN_PHONG') ?? firstBranch;
+  const isOfficeRole = user.role === 'HR' || user.role === 'FINANCE' || user.role === 'MKT' || user.role === 'ADMIN';
+  const scopedBranchId = user.branch_scope && user.branch_scope !== 'ALL' ? user.branch_scope.split(',')[0]?.trim() || firstBranch?.id || '' : (isOfficeRole ? officeBranch?.id : firstBranch?.id) || '';
   const nextCode = `NV${String(ctx.db.employees.all(true).length + 1).padStart(4, '0')}`;
   const isProb = user.role === 'THU_VIEC';
+  const staffGroup = user.role === 'STORE' ? 'STORE_MANAGER' : (user.role === 'THU_VIEC' || user.role === 'CHINH_THUC' ? 'BARISTA' : 'BACKOFFICE');
+  const defaultShiftCode = isOfficeRole ? 'HANH_CHINH' : 'CA_SANG';
   const createdEmp = await ctx.db.employees.insert({
     employee_code: nextCode, candidate_id: '', user_id: user.id, full_name: user.display_name, phone: user.phone || '', email: user.email || '',
     date_of_birth: '1998-01-01', gender: 'Khác', citizen_id: '', citizen_issue_date: '', permanent_address: 'TP. Hồ Chí Minh', current_address: 'TP. Hồ Chí Minh',
-    emergency_contact_name: '', emergency_contact_phone: '', branch_id: scopedBranchId, staff_group: 'BACKOFFICE', position_title: ROLE_LABELS[user.role] || 'Nhân sự',
-    stage: isProb ? 'PROBATION' : 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: 'CA_SANG', probation_start: '2026-01-01', probation_end: '2026-01-12',
+    emergency_contact_name: '', emergency_contact_phone: '', branch_id: scopedBranchId, staff_group: staffGroup, position_title: ROLE_LABELS[user.role] || 'Nhân sự',
+    stage: isProb ? 'PROBATION' : 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: defaultShiftCode, probation_start: '2026-01-01', probation_end: '2026-01-12',
     probation_cycle_days: 12, probation_work_days: 7, probation_off_days: 5, official_from: '2026-01-13', resigned_at: '', resign_reason: '', status: 'ACTIVE',
-    base_hourly_rate_vnd: 35000, bank_name: 'Techcombank', bank_account_number: '', bank_account_holder: user.display_name.toUpperCase(), tax_code: '',
+    base_hourly_rate_vnd: 0, bank_name: 'Techcombank', bank_account_number: '', bank_account_holder: user.display_name.toUpperCase(), tax_code: '',
     note: 'Hồ sơ nhân sự liên kết tài khoản hệ thống',
   }, user.id);
   await ctx.db.users.update(user.id, user.version, { employee_id: createdEmp.employee_code }, user.id);

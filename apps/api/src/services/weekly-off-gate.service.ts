@@ -34,7 +34,8 @@ export function evaluateEmployeeWeeklyOffGate(ctx: AppContext, emp: Employee): W
   const registeredCount = registeredDates.length, requiredCount = settings.officialWeeklyOffLimit || 2;
   const weekLocked = Boolean(findWeekLock(ctx, emp.branch_id, win.targetWeekStart));
   const isOpen = (win.isOpen || vipWindowActive) && !weekLocked;
-  const gateLocked = emp.stage === 'OFFICIAL' && isOpen && registeredCount < requiredCount;
+  const isBackofficeOrManager = emp.staff_group === 'BACKOFFICE' || emp.staff_group === 'STORE_MANAGER';
+  const gateLocked = emp.stage === 'OFFICIAL' && !isBackofficeOrManager && isOpen && registeredCount < requiredCount;
   const message = gateLocked
     ? `Cổng đăng ký nghỉ OFF tuần ${vi(win.targetWeekStart)} – ${vi(win.targetWeekEnd)} đang mở. Bạn cần đăng ký đủ ${requiredCount} ngày OFF (hiện có ${registeredCount}/${requiredCount}) trước khi sử dụng các chức năng khác.`
     : vipWindowActive

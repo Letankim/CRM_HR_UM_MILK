@@ -9,6 +9,7 @@ import { findLinkedEmployeeForUser, findLinkedUserForEmployee } from './employee
 const SHIFT_FALLBACK: Record<string, { start: string; end: string; hours: number }> = {
   CA_SANG: { start: '07:00', end: '12:00', hours: 5 }, CA_CHIEU: { start: '12:00', end: '17:00', hours: 5 },
   CA_TOI: { start: '17:00', end: '22:00', hours: 5 }, CA_HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
+  HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
 };
 
 export function findBranchShiftTemplate(ctx: AppContext, shiftCode: string, branchId = '') {

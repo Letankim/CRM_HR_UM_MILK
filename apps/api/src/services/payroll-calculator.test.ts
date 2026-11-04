@@ -93,4 +93,33 @@ describe('Bộ tính lương theo Hồ sơ lương cá nhân (FIN-05)', () => {
     expect(mixed.swapPay).toBe(50000);
     expect(mixed.net).toBe(350000);
   });
+
+  it('Hỗ trợ công chuẩn tùy chỉnh từng người (22, 24, 28 ngày) và tính tăng ca OT chuẩn theo giờ', () => {
+    // Nhân viên văn phòng MKT / Finance hưởng lương 11.000.000đ, công chuẩn 22 ngày/tháng, 8h/ngày
+    const officeRate = rate({ rate_type: 'MONTHLY', amount_vnd: 11_000_000, standard_work_days: 22, standard_hours_per_day: 8, ot_multiplier: 1.5 });
+    const officeEmp = emp({ stage: 'OFFICIAL', staff_group: 'BACKOFFICE' });
+
+    // Khi không phân ca lẻ (tự động hưởng trọn tháng trừ ngày nghỉ vắng)
+    const fullMonth = computeEmployeePayroll({
+      emp: officeEmp, profiles: [officeRate], entries: [], items: [], absentCount: 0,
+      periodFromDate: '2026-10-01', periodToDate: '2026-10-31', swapAllowanceVnd: 30000,
+    });
+    expect(fullMonth.officialPay).toBe(11_000_000);
+    expect(fullMonth.gross).toBe(11_000_000);
+
+    // Khi có 2 ngày vắng mặt không phép
+    const withAbsent = computeEmployeePayroll({
+      emp: officeEmp, profiles: [officeRate], entries: [], items: [], absentCount: 2,
+      periodFromDate: '2026-10-01', periodToDate: '2026-10-31', swapAllowanceVnd: 30000,
+    });
+    expect(withAbsent.officialPay).toBe(Math.round((11_000_000 / 22) * 20));
+
+    // Đơn giá OT: 11.000.000 / (22 * 8) = 62.500đ/h * 1.5 = 93.750đ/h
+    const withOt = computeEmployeePayroll({
+      emp: officeEmp, profiles: [officeRate], entries: [work('2026-10-15', 8, { otHours: 4 })], items: [], absentCount: 0,
+      periodFromDate: '2026-10-01', periodToDate: '2026-10-31', swapAllowanceVnd: 30000,
+    });
+    expect(withOt.otRateVnd).toBe(93750);
+    expect(withOt.otPay).toBe(93750 * 4);
+  });
 });

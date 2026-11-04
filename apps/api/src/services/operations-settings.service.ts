@@ -13,6 +13,8 @@ const FIELD_KEYS: Record<Field, string> = {
   officialWeeklyOffLimit: OPERATION_SETTING_KEYS.OFFICIAL_WEEKLY_OFF_LIMIT,
   maxShiftsPerDay: OPERATION_SETTING_KEYS.MAX_SHIFTS_PER_DAY,
   checkoutMaxLateHours: OPERATION_SETTING_KEYS.CHECKOUT_MAX_LATE_HOURS,
+  standardWorkDaysPerMonth: OPERATION_SETTING_KEYS.STANDARD_WORK_DAYS_PER_MONTH,
+  standardHoursPerDay: OPERATION_SETTING_KEYS.STANDARD_HOURS_PER_DAY,
   dataPartitionMonth: OPERATION_SETTING_KEYS.DATA_PARTITION_MONTH,
 };
 
@@ -25,6 +27,8 @@ const FIELD_META: Record<Field, { label: string; category: string }> = {
   officialWeeklyOffLimit: { label: 'Số ngày nghỉ OFF tối đa / tuần (Nhân viên chính thức)', category: 'SCHEDULE' },
   maxShiftsPerDay: { label: 'Số ca tối đa của 1 nhân viên trong 1 ngày', category: 'SCHEDULE' },
   checkoutMaxLateHours: { label: 'Thời hạn tối đa chấm công Ra ca sau giờ kết thúc ca (giờ)', category: 'ATTENDANCE' },
+  standardWorkDaysPerMonth: { label: 'Số ngày công chuẩn mặc định của tháng (ngày)', category: 'PAYROLL' },
+  standardHoursPerDay: { label: 'Số giờ công chuẩn mặc định mỗi ngày/ca (giờ)', category: 'PAYROLL' },
   dataPartitionMonth: { label: 'Phân vùng dữ liệu tháng đang hoạt động', category: 'DATA' },
 };
 

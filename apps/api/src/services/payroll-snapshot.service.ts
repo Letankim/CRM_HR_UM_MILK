@@ -3,6 +3,8 @@ import { OPERATION_SETTING_KEYS, PAYROLL_ITEM_TYPE_LABELS, SYSTEM_CONFIG, parseP
 import type { AppContext } from '../context.js';
 import { nowIso } from '../lib/time.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
+import { getOperationSettings } from './operations-settings.service.js';
 import { computeEmployeePayroll } from './payroll-calculator.js';
 import { collectWorkEntries } from './payroll-work-collector.js';
 import { ensureLegacySalaryProfiles, profilesOf } from './salary-profile.service.js';
@@ -82,10 +84,14 @@ async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, 
     return ctx.db.payPeriods.get(period.id) ?? period;
   }
 
+  const opSettings = getOperationSettings(ctx.db);
   const periodItems = ctx.db.payrollItems.filter((i) => i.period_id === period.id && i.approval_status === 'APPROVED');
   const emps = ctx.db.employees.filter((e) => {
-    if (e.status === 'ACTIVE') return true;
-    return !!ctx.db.shiftAssignments.find((a) => (a.employee_id === e.id || a.employee_id === e.employee_code) && a.work_date >= period.from_date && a.work_date <= period.to_date);
+    const hasShift = !!ctx.db.shiftAssignments.find((a) => (a.employee_id === e.id || a.employee_id === e.employee_code) && a.work_date >= period.from_date && a.work_date <= period.to_date);
+    if (e.note === 'Hồ sơ nhân sự liên kết tài khoản hệ thống' && findLinkedUserForEmployee(e, ctx)?.role === 'ADMIN' && profilesOf(ctx.db, e.id).length === 0 && !hasShift) {
+      return false;
+    }
+    return e.status === 'ACTIVE' || hasShift;
   });
 
   const totals = { hours: 0, ot: 0, gross: 0, deduct: 0, net: 0, unreconciled: 0 };
@@ -104,18 +110,20 @@ async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, 
       entries,
       items: empItems,
       absentCount,
+      leaveOffCount: workSummary.leaveOffCount,
+      periodFromDate: period.from_date,
       periodToDate: period.to_date,
       swapAllowanceVnd: SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd,
+      defaultStandardWorkDays: opSettings.standardWorkDaysPerMonth,
+      defaultStandardHoursPerDay: opSettings.standardHoursPerDay,
     });
     const missingProfile = r.missingProfileShifts > 0 || (entries.length > 0 && !r.primaryProfile);
     if (missingProfile) totals.unreconciled += 1;
 
     const allowanceLines = [
-      { code: 'ALLOWANCE_MEAL', label: 'Phụ cấp ăn ca', amount: r.mealVnd },
-      { code: 'ALLOWANCE_TRANSPORT', label: 'Phụ cấp đi lại', amount: r.transport },
+      { code: 'ALLOWANCE_MEAL', label: 'Phụ cấp ăn ca', amount: r.mealVnd }, { code: 'ALLOWANCE_TRANSPORT', label: 'Phụ cấp đi lại', amount: r.transport },
       { code: 'ALLOWANCE_RESPONSIBILITY', label: 'Phụ cấp trách nhiệm & khác', amount: r.otherAllowances },
-      { code: 'ALLOWANCE_SWAP', label: 'Phụ cấp nhận đổi ca', amount: r.swapPay },
-      { code: 'BONUS_ATTENDANCE', label: 'Thưởng chuyên cần', amount: r.attendanceBonus },
+      { code: 'ALLOWANCE_SWAP', label: 'Phụ cấp nhận đổi ca', amount: r.swapPay }, { code: 'BONUS_ATTENDANCE', label: 'Thưởng chuyên cần', amount: r.attendanceBonus },
     ].filter((l) => l.amount > 0);
 
     const adjustmentsJson = JSON.stringify({
@@ -179,15 +187,9 @@ async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, 
 
   const latest = ctx.db.payPeriods.get(period.id)!;
   const nextSnapshotHash = createHash('sha256').update(`${period.id}:${totals.hours}:${totals.ot}:${totals.gross}:${totals.deduct}:${totals.net}:${totals.unreconciled}`).digest('hex').slice(0, 16);
-  const unchangedPeriod =
-    latest.snapshot_hash === nextSnapshotHash &&
-    latest.total_employees === keepEmpIds.size &&
-    latest.total_approved_hours === totals.hours &&
-    latest.total_ot_hours === totals.ot &&
-    latest.total_gross_vnd === totals.gross &&
-    latest.total_deductions_vnd === totals.deduct &&
-    latest.total_net_vnd === totals.net &&
-    latest.unreconciled_records_count === totals.unreconciled;
+  const unchangedPeriod = latest.snapshot_hash === nextSnapshotHash && latest.total_employees === keepEmpIds.size &&
+    latest.total_approved_hours === totals.hours && latest.total_ot_hours === totals.ot && latest.total_gross_vnd === totals.gross &&
+    latest.total_deductions_vnd === totals.deduct && latest.total_net_vnd === totals.net && latest.unreconciled_records_count === totals.unreconciled;
 
   const finalPeriod = unchangedPeriod
     ? latest

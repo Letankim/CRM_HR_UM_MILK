@@ -12,6 +12,7 @@ import {
 import type { Database } from '../data/database.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs, nowIso } from '../lib/time.js';
+import { getOperationSettings } from './operations-settings.service.js';
 
 /**
  * Dịch vụ Hồ sơ lương cá nhân (effective-dated).
@@ -52,6 +53,7 @@ export function profilesOf(db: Database, employeeId: string): PayRate[] {
 /** Tự động đồng bộ dòng PAY_RATES cho hồ sơ nhân sự cũ / hệ thống có sẵn base_hourly_rate_vnd nhưng chưa có bản ghi PAY_RATES */
 export async function ensureLegacySalaryProfiles(db: Database, actorId = 'system-sync'): Promise<void> {
   const allRates = db.payRates.all(true);
+  const opSettings = getOperationSettings(db);
   for (const emp of db.employees.all()) {
     if ((emp.base_hourly_rate_vnd ?? 0) < 10_000) continue;
     if (allRates.some((r) => matchesEmployeeRef(emp, emp.id, r.employee_id))) continue;
@@ -63,8 +65,8 @@ export async function ensureLegacySalaryProfiles(db: Database, actorId = 'system
       attendance_bonus_vnd: 0, meal_allowance_per_shift_vnd: 0, transport_allowance_vnd: 0,
       responsibility_allowance_vnd: 0, other_allowance_vnd: 0,
       probation_percent: SYSTEM_CONFIG.defaults.probationSalaryPercent,
-      standard_work_days: SYSTEM_CONFIG.defaults.standardWorkDaysPerMonth,
-      standard_hours_per_day: SYSTEM_CONFIG.defaults.standardHoursPerDay,
+      standard_work_days: opSettings.standardWorkDaysPerMonth,
+      standard_hours_per_day: opSettings.standardHoursPerDay,
       status: 'ACTIVE', change_reason: 'Đồng bộ hồ sơ lương ban đầu từ hồ sơ nhân sự', previous_rate_id: '', note: '',
     }, actorId);
   }

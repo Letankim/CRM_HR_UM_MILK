@@ -70,15 +70,27 @@ export function useShiftTemplates(branchId?: string, enabled = true) {
 
   const options: ShiftSelectOption[] = useMemo(() => {
     if (shifts.length === 0) return FALLBACK_SHIFTS;
-    return shifts.map((s) => ({
+    const list: ShiftSelectOption[] = shifts.map((s) => ({
       value: s.code,
       label: `${s.name} (${s.startTime} – ${s.endTime})`,
       name: s.name,
       startTime: s.startTime,
       endTime: s.endTime,
-      standardHours: Number(s.standardHours) || 5,
+      standardHours: Number(s.standardHours) || (s.code.includes('HANH_CHINH') ? 8 : 5),
       branchId: s.branchId ?? 'ALL',
     }));
+    if (!list.some((s) => s.value === 'HANH_CHINH')) {
+      list.push({
+        value: 'HANH_CHINH',
+        label: 'Ca Hành chính (08:30 – 17:30)',
+        name: 'Ca Hành chính',
+        startTime: '08:30',
+        endTime: '17:30',
+        standardHours: 8,
+        branchId: 'ALL',
+      });
+    }
+    return list;
   }, [shifts]);
 
   const endTimeMap = useMemo(() => {

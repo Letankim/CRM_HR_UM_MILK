@@ -4,8 +4,8 @@ import {
   EMPLOYEE_STAGES,
   EMPLOYEE_STAGE_LABELS,
   PAY_RATE_TYPES,
+  ROLE_LABELS,
   SALARY_PROFILE_STATUS_LABELS,
-  STAFF_GROUP_LABELS,
   zListQueryBase,
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
@@ -16,8 +16,11 @@ import { assertBranchAccess, auditContext, filterByBranch, requirePermission } f
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { currentProfile, dayBefore, ensureLegacySalaryProfiles, findEmployeeByIdOrCode, isProfileLocked, mapSalaryProfile, profilesOf, profileStatus } from '../services/salary-profile.service.js';
 import { assertAmountInRange, createSalaryProfile, deleteLatestSalaryProfile } from '../services/salary-profile.writer.js';
-import { resolveStaffGroupLabel } from './employee-mapper.js';
+import { findLinkedEmployeeForUser, findLinkedUserForEmployee, resolveStaffGroupLabel } from './employee-mapper.js';
+import { ensurePersonalProfile } from './my-attendance.routes.js';
 import { zCreateSalaryProfileBody, zUpdateSalaryProfileBody } from './salary-profile.schemas.js';
+
+const INTERNAL_SALARIED_ROLES = new Set(['HR', 'FINANCE', 'MKT', 'STORE']);
 
 const zListQuery = zListQueryBase.extend({
   branch_id: z.string().max(64).optional(),
@@ -35,11 +38,17 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
       await Promise.all([ctx.db.payRates.refreshIfIdle(10_000), ctx.db.employees.refreshIfIdle(10_000)]);
     }
     await ensureLegacySalaryProfiles(ctx.db, request.auth?.user.id ?? 'system');
-    const scoped = filterByBranch(request, ctx.db.employees.all(), (e) => e.branch_id);
-    const rows = scoped.map((e) => {
+    const scoped = filterByBranch(request, ctx.db.employees.all(), (e) => e.branch_id).filter((e) => {
+      if (e.note !== 'Hồ sơ nhân sự liên kết tài khoản hệ thống') return true;
+      const u = findLinkedUserForEmployee(e, ctx);
+      return !(u?.role === 'ADMIN' && profilesOf(ctx.db, e.id).length === 0);
+    });
+    const empRows = scoped.map((e) => {
       const history = profilesOf(ctx.db, e.id);
       const cur = currentProfile(history);
       const status = profileStatus(cur);
+      const linkedUser = findLinkedUserForEmployee(e, ctx);
+      const roleTag = linkedUser && INTERNAL_SALARIED_ROLES.has(linkedUser.role) ? ROLE_LABELS[linkedUser.role] : EMPLOYEE_STAGE_LABELS[e.stage];
       return {
         id: e.id,
         employeeId: e.id,
@@ -48,7 +57,7 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
         branchId: e.branch_id,
         branchName: ctx.db.branches.get(e.branch_id)?.name ?? 'Chưa phân chi nhánh',
         stage: e.stage,
-        stageLabel: EMPLOYEE_STAGE_LABELS[e.stage],
+        stageLabel: roleTag,
         staffGroupLabel: resolveStaffGroupLabel(ctx, e.staff_group, e.position_title),
         officialFrom: e.official_from || null,
         profileStatus: status,
@@ -59,6 +68,25 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
         profile: cur ? mapSalaryProfile(cur, ctx.db) : null,
       };
     });
+    const officeBr = ctx.db.branches.find((b) => b.code === 'VAN_PHONG') ?? ctx.db.branches.all()[0];
+    const unlinkedInternalUsers = filterByBranch(
+      request,
+      ctx.db.users.filter((u) => u.status === 'ACTIVE' && INTERNAL_SALARIED_ROLES.has(u.role) && !findLinkedEmployeeForUser(u, ctx)),
+      (u) => (u.branch_scope && u.branch_scope !== 'ALL' ? u.branch_scope.split(',')[0]?.trim() || officeBr?.id || '' : officeBr?.id || ''),
+    );
+    const internalRows = unlinkedInternalUsers.map((u) => {
+      const bId = u.branch_scope && u.branch_scope !== 'ALL' ? u.branch_scope.split(',')[0]?.trim() || officeBr?.id || '' : officeBr?.id || '';
+      return {
+        id: u.id, employeeId: u.id, employeeCode: u.username.toUpperCase(), fullName: u.display_name,
+        branchId: bId, branchName: ctx.db.branches.get(bId)?.name ?? 'Văn phòng Phú Nhuận',
+        stage: 'OFFICIAL' as const, stageLabel: ROLE_LABELS[u.role],
+        staffGroupLabel: u.role === 'STORE' ? 'Quản lý cửa hàng' : 'Khối văn phòng',
+        officialFrom: '2026-01-13', profileStatus: 'MISSING' as const,
+        profileStatusLabel: SALARY_PROFILE_STATUS_LABELS.MISSING,
+        rateType: null, amountVnd: 0, historyCount: 0, profile: null,
+      };
+    });
+    const rows = [...empRows, ...internalRows];
     const result = paginateAndSort(rows, {
       page: query.page,
       perPage: query.per_page,
@@ -82,7 +110,11 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
   app.get('/api/admin/employees/:id/salary-profiles', { preHandler: requirePermission('payroll.read', 'payroll.manage', 'payroll.publish', 'payroll.pay') }, async (request) => {
     const { id } = request.params as { id: string };
     const emp = findEmployeeByIdOrCode(ctx.db, id);
-    if (!emp) throw Errors.notFound('Không tìm thấy hồ sơ nhân sự');
+    if (!emp) {
+      const u = ctx.db.users.get(id) ?? ctx.db.users.find((x) => x.username.trim().toLowerCase() === id.trim().toLowerCase());
+      if (u) return sendSuccess(request, 'Lấy lịch sử lương của nhân sự thành công', []);
+      throw Errors.notFound('Không tìm thấy hồ sơ nhân sự');
+    }
     assertBranchAccess(request, emp.branch_id);
     const history = profilesOf(ctx.db, emp.id).map((p) => ({ ...mapSalaryProfile(p, ctx.db), locked: isProfileLocked(ctx.db, p.id) }));
     return sendSuccess(request, 'Lấy lịch sử lương của nhân sự thành công', history);
@@ -90,7 +122,11 @@ export async function salaryProfileRoutes(app: FastifyInstance, ctx: AppContext)
 
   app.post('/api/admin/payroll/salary-profiles', { preHandler: requirePermission('payroll.manage', 'system.config') }, async (request, reply) => {
     const body = zCreateSalaryProfileBody.parse(request.body);
-    const emp = findEmployeeByIdOrCode(ctx.db, body.employee_id);
+    let emp = findEmployeeByIdOrCode(ctx.db, body.employee_id);
+    if (!emp) {
+      const u = ctx.db.users.get(body.employee_id) ?? ctx.db.users.find((x) => x.username.trim().toLowerCase() === body.employee_id.trim().toLowerCase());
+      if (u) emp = await ensurePersonalProfile(ctx, u);
+    }
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Nhân sự được chọn không tồn tại', body.employee_id);
     assertBranchAccess(request, emp.branch_id);
     const actorId = request.auth!.user.id;

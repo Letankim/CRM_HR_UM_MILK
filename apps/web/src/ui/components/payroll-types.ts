@@ -55,6 +55,7 @@ export interface PayrollSnapshotItem {
   id: string; periodId: string; periodCode: string; employeeId: string; employeeCode: string; fullName: string;
   branchId?: string; branchName: string; staffGroupLabel: string; stageLabel: string; hasSalaryProfile: boolean;
   rateType: PayRateType; rateTypeLabel: string; unitLabel: string; rateVnd: number; probationPercent: number | null;
+  standardWorkDays?: number; standardHoursPerDay?: number;
   probationHours: number; probationRateVnd: number; probationPayVnd: number;
   officialHours: number; officialRateVnd: number; officialPayVnd: number;
   approvedHours: number; standardHours?: number; actualHours?: number; approvedPayrollHours?: number;

@@ -31,6 +31,8 @@ function exportSalaryExcel(rows: SalaryProfileRow[]) {
       { header: 'Lương chính thức', render: (r) => r.profile?.amountVnd ?? 0, isCurrency: true },
       { header: '% thử việc', render: (r) => (r.profile ? `${r.profile.probationPercent}%` : '') },
       { header: 'Lương thử việc', render: (r) => r.profile?.probationAmountVnd ?? 0, isCurrency: true },
+      { header: 'Công chuẩn/tháng', render: (r) => (r.profile ? `${r.profile.standardWorkDays} ngày` : '') },
+      { header: 'Giờ chuẩn/ngày', render: (r) => (r.profile ? `${r.profile.standardHoursPerDay} giờ` : '') },
       { header: 'Phụ cấp ăn ca/ca', render: (r) => r.profile?.mealAllowancePerShiftVnd ?? 0, isCurrency: true },
       { header: 'Thưởng chuyên cần', render: (r) => r.profile?.attendanceBonusVnd ?? 0, isCurrency: true },
       { header: 'Hiệu lực từ', render: (r) => r.profile?.effectiveFrom ?? '' },
@@ -84,7 +86,7 @@ export function SalaryProfilesTab({ canManage, employeeOptions }: { canManage: b
     () => [
       { title: 'Nhân sự', key: 'emp', render: (_: unknown, r: SalaryProfileRow) => <div><Typography.Text strong>{r.fullName}</Typography.Text><div style={{ fontSize: 12, color: '#64748B' }}>{r.branchName} · {r.stageLabel}{r.officialFrom ? ` từ ${dayjs(r.officialFrom).format('DD/MM/YYYY')}` : ''}</div></div> },
       { title: 'Hình thức', key: 'type', render: (_: unknown, r: SalaryProfileRow) => (r.profile ? <Tag color={r.profile.rateType === 'MONTHLY' ? 'purple' : r.profile.rateType === 'SHIFT' ? 'cyan' : 'blue'} style={{ borderRadius: 2 }}>{r.profile.rateTypeLabel}</Tag> : <Typography.Text type="secondary">—</Typography.Text>) },
-      { title: 'Lương chính thức', key: 'off', align: 'right' as const, render: (_: unknown, r: SalaryProfileRow) => (r.profile ? <span className="num" style={{ fontWeight: 700 }}>{fmtVnd(r.profile.amountVnd)}/{r.profile.unitLabel}</span> : '—') },
+      { title: 'Lương chính thức', key: 'off', align: 'right' as const, render: (_: unknown, r: SalaryProfileRow) => (r.profile ? <span className="num" style={{ fontWeight: 700 }}>{fmtVnd(r.profile.amountVnd)}/{r.profile.unitLabel}{r.profile.rateType === 'MONTHLY' ? <div style={{ fontSize: 11, color: '#64748B', fontWeight: 400 }}>{r.profile.standardWorkDays} ngày công · {r.profile.standardHoursPerDay}h/ngày</div> : null}</span> : '—') },
       { title: 'Lương thử việc', key: 'prob', align: 'right' as const, render: (_: unknown, r: SalaryProfileRow) => (r.profile ? <span className="num">{fmtVnd(r.profile.probationAmountVnd)}/{r.profile.unitLabel}<div style={{ fontSize: 12, color: '#64748B' }}>{r.profile.probationPercent}% lương chính thức</div></span> : '—') },
       { title: 'Phụ cấp / Thưởng cố định', key: 'allw', render: (_: unknown, r: SalaryProfileRow) => (r.profile ? <span style={{ fontSize: 12 }}>Ăn ca {fmtVnd(r.profile.mealAllowancePerShiftVnd)}/ca · Chuyên cần {fmtVnd(r.profile.attendanceBonusVnd)}</span> : '—') },
       { title: 'Hiệu lực', key: 'eff', render: (_: unknown, r: SalaryProfileRow) => (r.profile ? <span>{dayjs(r.profile.effectiveFrom).format('DD/MM/YYYY')}<div style={{ fontSize: 12, color: '#64748B' }}>{r.historyCount} mức lương</div></span> : '—') },

@@ -192,7 +192,7 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
           run: async (s) => {
             if (!body.salary || !s.emp) return;
             const initialFrom = body.salary.effective_from || body.probation_start || dayjs().startOf('month').format('YYYY-MM-DD');
-            await ctx.db.payRates.insert(newProfileRow(s.emp, body.salary, actorId, initialFrom, '', 'Thiết lập lương ban đầu khi tiếp nhận nhân sự'), actorId);
+            await ctx.db.payRates.insert(newProfileRow(s.emp, body.salary, actorId, initialFrom, '', 'Thiết lập lương ban đầu khi tiếp nhận nhân sự', ctx.db), actorId);
           },
         },
       ],

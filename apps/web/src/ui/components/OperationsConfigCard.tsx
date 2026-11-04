@@ -34,6 +34,8 @@ interface OperationsFormValues {
   official_weekly_off_limit: number;
   max_shifts_per_day: number;
   checkout_max_late_hours: number;
+  standard_work_days_per_month: number;
+  standard_hours_per_day: number;
 }
 
 const toFormValues = (s: OperationSettings): OperationsFormValues => ({
@@ -45,6 +47,8 @@ const toFormValues = (s: OperationSettings): OperationsFormValues => ({
   official_weekly_off_limit: s.officialWeeklyOffLimit,
   max_shifts_per_day: s.maxShiftsPerDay,
   checkout_max_late_hours: s.checkoutMaxLateHours,
+  standard_work_days_per_month: s.standardWorkDaysPerMonth,
+  standard_hours_per_day: s.standardHoursPerDay,
 });
 
 const SECTION_STYLE = { fontSize: 13, fontWeight: 600, color: '#0F172A' } as const;
@@ -156,7 +160,7 @@ export function OperationsConfigCard() {
           </Row>
 
           <Divider style={{ margin: '12px 0' }} />
-          <Typography.Text style={SECTION_STYLE}><ClockCircleOutlined /> Lịch &amp; chấm công</Typography.Text>
+          <Typography.Text style={SECTION_STYLE}><ClockCircleOutlined /> Lịch, chấm công &amp; công chuẩn</Typography.Text>
           <Row gutter={16} style={{ marginTop: 8 }}>
             <Col xs={24} md={12}>
               <Form.Item name="max_shifts_per_day" label="Số ca tối đa / nhân viên / ngày" rules={[{ required: true, message: 'Vui lòng nhập số ca tối đa' }]}>
@@ -167,10 +171,20 @@ export function OperationsConfigCard() {
               <Form.Item
                 name="checkout_max_late_hours"
                 label="Thời hạn tối đa chấm công Ra ca sau giờ kết thúc ca (giờ)"
-                help="Không được ra ca sớm trước giờ kết thúc ca; quá thời hạn này nhân viên phải gửi phiếu bổ sung công."
+                help="Quá thời hạn này nhân viên phải gửi phiếu bổ sung công"
                 rules={[{ required: true, message: 'Vui lòng nhập thời hạn chấm công Ra ca' }]}
               >
                 <InputNumber min={0} max={12} precision={0} style={{ width: '100%' }} suffix="giờ" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="standard_work_days_per_month" label="Số ngày công chuẩn của tháng (ngày)" help="Mặc định chia đơn giá ngày cho lương tháng (có thể sửa riêng cho từng NV)" rules={[{ required: true, message: 'Vui lòng nhập số ngày công chuẩn' }]}>
+                <InputNumber min={1} max={31} precision={0} style={{ width: '100%' }} suffix="ngày" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="standard_hours_per_day" label="Số giờ chuẩn / ngày (ca)" help="Mặc định để quy đổi đơn giá giờ tính tăng ca OT (có thể sửa riêng cho từng NV)" rules={[{ required: true, message: 'Vui lòng nhập số giờ chuẩn / ngày' }]}>
+                <InputNumber min={1} max={24} precision={0} style={{ width: '100%' }} suffix="giờ" />
               </Form.Item>
             </Col>
           </Row>

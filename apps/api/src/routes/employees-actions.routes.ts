@@ -112,14 +112,16 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
     if (before.branch_id !== updated.branch_id) await cascadeEmployeeBranchChange(ctx, updated, updated.branch_id, actorId);
     if (salary) {
       const cur = currentProfile(profilesOf(ctx.db, id));
-      const changed = !cur || cur.rate_type !== salary.rate_type || cur.amount_vnd !== Math.round(salary.amount_vnd) || cur.probation_percent !== salary.probation_percent || cur.attendance_bonus_vnd !== salary.attendance_bonus_vnd || cur.meal_allowance_per_shift_vnd !== salary.meal_allowance_per_shift_vnd || cur.transport_allowance_vnd !== salary.transport_allowance_vnd || cur.responsibility_allowance_vnd !== salary.responsibility_allowance_vnd || cur.other_allowance_vnd !== salary.other_allowance_vnd || cur.ot_multiplier !== salary.ot_multiplier || cur.standard_work_days !== salary.standard_work_days || cur.standard_hours_per_day !== salary.standard_hours_per_day;
+      const nextStdDays = salary.standard_work_days ?? cur?.standard_work_days;
+      const nextStdHours = salary.standard_hours_per_day ?? cur?.standard_hours_per_day;
+      const changed = !cur || cur.rate_type !== salary.rate_type || cur.amount_vnd !== Math.round(salary.amount_vnd) || cur.probation_percent !== salary.probation_percent || cur.attendance_bonus_vnd !== salary.attendance_bonus_vnd || cur.meal_allowance_per_shift_vnd !== salary.meal_allowance_per_shift_vnd || cur.transport_allowance_vnd !== salary.transport_allowance_vnd || cur.responsibility_allowance_vnd !== salary.responsibility_allowance_vnd || cur.other_allowance_vnd !== salary.other_allowance_vnd || cur.ot_multiplier !== salary.ot_multiplier || cur.standard_work_days !== nextStdDays || cur.standard_hours_per_day !== nextStdHours;
       if (!cur) {
         await createSalaryProfile(ctx, updated, { ...salary, effective_from: salary.effective_from || updated.probation_start || dayjs().startOf('month').format('YYYY-MM-DD'), change_reason: 'Thiết lập lương từ hồ sơ nhân sự', note: salary.note ?? '' }, actorId);
       } else if (changed && isProfileLocked(ctx.db, cur.id)) {
         const nextFrom = salary.effective_from && salary.effective_from > cur.effective_from ? salary.effective_from : (today() > cur.effective_from ? today() : dayjs(cur.effective_from).add(1, 'day').format('YYYY-MM-DD'));
-        await createSalaryProfile(ctx, updated, { ...salary, effective_from: nextFrom, change_reason: 'Điều chỉnh lương từ hồ sơ nhân sự', note: salary.note ?? '' }, actorId);
+        await createSalaryProfile(ctx, updated, { ...salary, standard_work_days: nextStdDays, standard_hours_per_day: nextStdHours, effective_from: nextFrom, change_reason: 'Điều chỉnh lương từ hồ sơ nhân sự', note: salary.note ?? '' }, actorId);
       } else if (changed) {
-        await ctx.db.payRates.update(cur.id, cur.version, { ...salary, amount_vnd: Math.round(salary.amount_vnd) }, actorId);
+        await ctx.db.payRates.update(cur.id, cur.version, { ...salary, standard_work_days: nextStdDays, standard_hours_per_day: nextStdHours, amount_vnd: Math.round(salary.amount_vnd) }, actorId);
       }
     }
     await runBackgroundSideEffect(async () => { await recalculateOpenPeriods(ctx, actorId); await ctx.audit.record(auditContext(request), { action: 'employee.update', entity: 'EMPLOYEES', entityId: id, before: { full_name: before.full_name, branch_id: before.branch_id, status: before.status, user_id: before.user_id }, after: { full_name: updated.full_name, branch_id: updated.branch_id, status: updated.status, user_id: updated.user_id } }); });

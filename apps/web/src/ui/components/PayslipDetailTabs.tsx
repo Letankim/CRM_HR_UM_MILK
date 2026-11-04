@@ -51,12 +51,8 @@ export function PayslipDetailTabs({
           action={
             isAdmin && onDecideRevision ? (
               <Space direction="vertical" size={6}>
-                <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={decidingRevision} onClick={() => onDecideRevision(pRev, 'APPROVE')}>
-                  Duyệt điều chỉnh
-                </Button>
-                <Button size="small" danger icon={<CloseCircleOutlined />} loading={decidingRevision} onClick={() => onDecideRevision(pRev, 'REJECT')}>
-                  Từ chối điều chỉnh
-                </Button>
+                <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={decidingRevision} onClick={() => onDecideRevision(pRev, 'APPROVE')}>Duyệt điều chỉnh</Button>
+                <Button size="small" danger icon={<CloseCircleOutlined />} loading={decidingRevision} onClick={() => onDecideRevision(pRev, 'REJECT')}>Từ chối điều chỉnh</Button>
               </Space>
             ) : undefined
           }
@@ -86,6 +82,7 @@ export function PayslipDetailTabs({
         <Descriptions.Item label="Hình thức & Đơn giá">
           <strong>{s.rateTypeLabel || 'Theo giờ'}</strong> — <span className="num">{fmtVnd(s.rateVnd || 0)}/{s.unitLabel || 'giờ'}</span>
           {s.probationPercent ? ` (Thử việc ${s.probationPercent}%: ${fmtVnd(s.probationRateVnd || Math.round((s.rateVnd || 0) * s.probationPercent / 100))}/${s.unitLabel || 'giờ'})` : ''}
+          {s.rateType === 'MONTHLY' && s.standardWorkDays ? ` · ${s.standardWorkDays} ngày công chuẩn (${s.standardHoursPerDay || 8}h/ngày)` : ''}
         </Descriptions.Item>
         <Descriptions.Item label="Tài khoản nhận lương">
           {s.bankName || 'Chưa cập nhật ngân hàng'} · <strong className="num">{s.bankAccountNumber || '—'}</strong>{s.bankAccountHolder ? ` (${s.bankAccountHolder})` : ''}

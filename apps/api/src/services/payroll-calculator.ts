@@ -11,38 +11,18 @@ import { isOfficialAt, resolveProfileAt } from './salary-profile.service.js';
  */
 
 export interface WorkEntry {
-  assignmentId: string;
-  date: string;
-  hours: number;
-  otHours: number;
-  isSwap: boolean;
-  swapAllowanceVnd?: number;
+  assignmentId: string; date: string; hours: number; otHours: number; isSwap: boolean; swapAllowanceVnd?: number;
 }
 
 export interface SalarySegment {
-  rateId: string;
-  rateType: PayRate['rate_type'];
-  stage: 'PROBATION' | 'OFFICIAL';
-  percent: number;
-  unitRateVnd: number;
-  quantity: number;
-  unit: 'giờ' | 'ngày' | 'ca';
-  hours: number;
-  amountVnd: number;
-  fromDate: string;
-  toDate: string;
+  rateId: string; rateType: PayRate['rate_type']; stage: 'PROBATION' | 'OFFICIAL'; percent: number;
+  unitRateVnd: number; quantity: number; unit: 'giờ' | 'ngày' | 'ca'; hours: number; amountVnd: number; fromDate: string; toDate: string;
 }
 
 export interface PayrollComputationInput {
-  emp: Employee;
-  profiles: PayRate[];
-  entries: WorkEntry[];
-  items: PayrollItem[];
-  absentCount: number;
-  periodToDate: string;
-  swapAllowanceVnd: number;
-  useDefaultHourlyFallback?: boolean;
-  lateFineVnd?: number;
+  emp: Employee; profiles: PayRate[]; entries: WorkEntry[]; items: PayrollItem[]; absentCount: number;
+  leaveOffCount?: number; periodFromDate?: string; periodToDate: string; swapAllowanceVnd: number;
+  defaultStandardWorkDays?: number; defaultStandardHoursPerDay?: number; useDefaultHourlyFallback?: boolean; lateFineVnd?: number;
 }
 
 const sumItems = (items: PayrollItem[], ...types: PayrollItem['item_type'][]) =>
@@ -59,19 +39,15 @@ export function buildDefaultPayRate(emp: Employee): PayRate {
 
 export function computeEmployeePayroll(input: PayrollComputationInput) {
   const { emp, items } = input;
+  const defaultStdDays = input.defaultStandardWorkDays || SYSTEM_CONFIG.defaults.standardWorkDaysPerMonth;
+  const defaultStdHours = input.defaultStandardHoursPerDay || SYSTEM_CONFIG.defaults.standardHoursPerDay;
   const profiles = input.profiles.length === 0 && input.useDefaultHourlyFallback ? [buildDefaultPayRate(emp)] : input.profiles;
   const entries = [...input.entries].sort((a, b) => a.date.localeCompare(b.date));
   const segments = new Map<string, SalarySegment>();
   const monthlyDaysSeen = new Set<string>();
   const workedDates = new Set<string>();
   const dailyHoursMap = new Map<string, number>();
-  let otHours = 0;
-  let otPay = 0;
-  let meal = 0;
-  let swapCount = 0;
-  let paidSwapCount = 0;
-  let swapAuto = 0;
-  let missingProfileShifts = 0;
+  let otHours = 0, otPay = 0, meal = 0, swapCount = 0, paidSwapCount = 0, swapAuto = 0, missingProfileShifts = 0;
   let lastProfile: PayRate | undefined;
 
   for (const e of entries) {
@@ -94,16 +70,19 @@ export function computeEmployeePayroll(input: PayrollComputationInput) {
     let unit: SalarySegment['unit'] = 'giờ';
     let hourlyEq = base;
     if (profile.rate_type === 'SHIFT') {
+      const stdHours = profile.standard_hours_per_day || defaultStdHours;
       qty = 1;
       unit = 'ca';
-      hourlyEq = base / profile.standard_hours_per_day;
+      hourlyEq = base / stdHours;
     } else if (profile.rate_type === 'MONTHLY') {
+      const stdDays = profile.standard_work_days || defaultStdDays;
+      const stdHours = profile.standard_hours_per_day || defaultStdHours;
       const rawBase = (profile.amount_vnd * percent) / 100;
-      unitRate = rawBase / profile.standard_work_days;
+      unitRate = rawBase / stdDays;
       qty = monthlyDaysSeen.has(`${key}|${e.date}`) ? 0 : 1;
       monthlyDaysSeen.add(`${key}|${e.date}`);
       unit = 'ngày';
-      hourlyEq = rawBase / (profile.standard_work_days * profile.standard_hours_per_day);
+      hourlyEq = rawBase / (stdDays * stdHours);
     }
 
     const seg =
@@ -134,14 +113,36 @@ export function computeEmployeePayroll(input: PayrollComputationInput) {
     otDailyAllowanceSlots += dOt.slots;
   }
 
+  const dTo = (input.periodToDate ?? '').trim().slice(0, 10);
+  const fixedProfile = resolveProfileAt(profiles, dTo) ?? lastProfile ?? profiles.find((p) => !p.effective_to || p.effective_to.trim().slice(0, 10) >= dTo);
+  const isSalariedInternalOrManager = emp.staff_group === 'BACKOFFICE' || emp.staff_group === 'STORE_MANAGER';
+  if (entries.length === 0 && fixedProfile?.rate_type === 'MONTHLY' && isSalariedInternalOrManager) {
+    const stdDays = fixedProfile.standard_work_days || defaultStdDays;
+    const stdHours = fixedProfile.standard_hours_per_day || defaultStdHours;
+    const offDays = Math.max(0, (input.absentCount ?? 0) + (input.leaveOffCount ?? 0));
+    const effectiveDays = Math.max(0, stdDays - offDays);
+    if (effectiveDays > 0) {
+      const official = isOfficialAt(emp, dTo || fixedProfile.effective_from);
+      const percent = official ? 100 : fixedProfile.probation_percent;
+      const stage = official ? 'OFFICIAL' : 'PROBATION';
+      const rawBase = (fixedProfile.amount_vnd * percent) / 100;
+      const unitRate = rawBase / stdDays;
+      const fromD = (input.periodFromDate || fixedProfile.effective_from || dTo).slice(0, 10);
+      segments.set(`${fixedProfile.id}|${stage}`, {
+        rateId: fixedProfile.id, rateType: 'MONTHLY', stage, percent, unitRateVnd: Math.round(unitRate),
+        quantity: effectiveDays, unit: 'ngày', hours: effectiveDays * stdHours, amountVnd: effectiveDays * unitRate,
+        fromDate: fromD, toDate: dTo || fixedProfile.effective_from,
+      });
+    }
+  }
+
   const segList = [...segments.values()].map((s) => ({ ...s, amountVnd: Math.round(s.amountVnd), quantity: Math.round(s.quantity * 100) / 100 }));
   const prob = segList.filter((s) => s.stage === 'PROBATION');
   const off = segList.filter((s) => s.stage === 'OFFICIAL');
   const sum = (arr: SalarySegment[], k: 'hours' | 'amountVnd') => arr.reduce((acc, s) => acc + s[k], 0);
 
-  const dTo = (input.periodToDate ?? '').trim().slice(0, 10);
-  const fixedProfile = resolveProfileAt(profiles, dTo) ?? lastProfile ?? profiles.find((p) => !p.effective_to || p.effective_to.trim().slice(0, 10) >= dTo);
-  const hasWork = workedDates.size > 0 && !!fixedProfile;
+  const totalWorkedDays = workedDates.size || (entries.length === 0 && segList.length > 0 ? segList.reduce((acc, s) => acc + s.quantity, 0) : 0);
+  const hasWork = totalWorkedDays > 0 && !!fixedProfile;
   const transport = hasWork ? fixedProfile!.transport_allowance_vnd : 0;
   const responsibility = hasWork ? fixedProfile!.responsibility_allowance_vnd + fixedProfile!.other_allowance_vnd : 0;
   const attendanceAuto = hasWork && input.absentCount === 0 ? fixedProfile!.attendance_bonus_vnd : 0;
@@ -166,8 +167,10 @@ export function computeEmployeePayroll(input: PayrollComputationInput) {
   return {
     primaryProfile: fixedProfile,
     segments: segList,
-    workedDays: workedDates.size,
-    totalShifts: entries.length - missingProfileShifts,
+    workedDays: totalWorkedDays,
+    totalShifts: entries.length > 0 ? entries.length - missingProfileShifts : totalWorkedDays,
+    standardWorkDays: fixedProfile?.standard_work_days || defaultStdDays,
+    standardHoursPerDay: fixedProfile?.standard_hours_per_day || defaultStdHours,
     missingProfileShifts,
     approvedHours: sum(segList, 'hours'),
     probationHours: sum(prob, 'hours'),

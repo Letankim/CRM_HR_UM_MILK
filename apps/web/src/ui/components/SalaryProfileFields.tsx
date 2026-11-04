@@ -35,6 +35,8 @@ export function SalaryProfileFields({ form, prefix, showEffectiveFrom = true }: 
   const rateType = (Form.useWatch(n('rate_type'), form) as PayRateType | undefined) ?? 'HOURLY';
   const amount = (Form.useWatch(n('amount_vnd'), form) as number | undefined) ?? 0;
   const percent = (Form.useWatch(n('probation_percent'), form) as number | undefined) ?? D.probationSalaryPercent;
+  const standardDays = (Form.useWatch(n('standard_work_days'), form) as number | undefined) ?? D.standardWorkDaysPerMonth;
+  const standardHours = (Form.useWatch(n('standard_hours_per_day'), form) as number | undefined) ?? D.standardHoursPerDay;
   const unit = PAY_RATE_UNIT_LABELS[rateType];
 
   return (
@@ -74,22 +76,55 @@ export function SalaryProfileFields({ form, prefix, showEffectiveFrom = true }: 
           <span>
             Thử việc: <Typography.Text strong>{fmtVnd((amount * percent) / 100)}/{unit}</Typography.Text> ({percent}%) — Chính thức:{' '}
             <Typography.Text strong>{fmtVnd(amount)}/{unit}</Typography.Text>
-            {rateType === 'MONTHLY' && ' — Lương tháng chia theo ngày công thực tế / công chuẩn.'}
+            {rateType === 'MONTHLY' && (
+              <>
+                {' '}— 1 ngày công: <Typography.Text strong>{fmtVnd(standardDays > 0 ? Math.round(amount / standardDays) : 0)}/ngày</Typography.Text> ({standardDays} ngày công chuẩn)
+                {' '}— 1h làm việc: <Typography.Text strong>{fmtVnd(standardDays > 0 && standardHours > 0 ? Math.round(amount / (standardDays * standardHours)) : 0)}/giờ</Typography.Text> ({standardHours}h/ngày)
+              </>
+            )}
           </span>
         }
       />
       <Row gutter={12}>
         {rateType === 'MONTHLY' && (
           <Col span={8}>
-            <Form.Item name={n('standard_work_days')} label="Công chuẩn / tháng" tooltip="Số ngày công tiêu chuẩn trong tháng để chia đơn giá 1 ngày công">
-              <InputNumber min={1} max={31} style={{ width: '100%' }} />
+            <Form.Item
+              name={n('standard_work_days')}
+              label="Công chuẩn / tháng"
+              tooltip="Số ngày công tiêu chuẩn trong tháng của nhân sự này để chia đơn giá 1 ngày công"
+              extra={
+                <span style={{ fontSize: 11, color: '#64748B' }}>
+                  Gợi ý:{' '}
+                  {[22, 24, 26, 28, 30].map((d) => (
+                    <Typography.Link key={d} style={{ marginRight: 6, fontSize: 11 }} onClick={() => form.setFieldValue(n('standard_work_days'), d)}>
+                      {d}n
+                    </Typography.Link>
+                  ))}
+                </span>
+              }
+            >
+              <InputNumber min={1} max={31} style={{ width: '100%' }} suffix="ngày" />
             </Form.Item>
           </Col>
         )}
         {rateType !== 'HOURLY' && (
           <Col span={8}>
-            <Form.Item name={n('standard_hours_per_day')} label="Giờ chuẩn / ngày (ca)" tooltip="Số giờ tiêu chuẩn mỗi ngày/ca để quy đổi ra đơn giá 1 giờ khi tính Tăng ca (OT)">
-              <InputNumber min={1} max={24} style={{ width: '100%' }} />
+            <Form.Item
+              name={n('standard_hours_per_day')}
+              label="Giờ chuẩn / ngày (ca)"
+              tooltip="Số giờ tiêu chuẩn mỗi ngày/ca để quy đổi ra đơn giá 1 giờ khi tính Tăng ca (OT)"
+              extra={
+                <span style={{ fontSize: 11, color: '#64748B' }}>
+                  Gợi ý:{' '}
+                  {[5, 8, 10].map((h) => (
+                    <Typography.Link key={h} style={{ marginRight: 6, fontSize: 11 }} onClick={() => form.setFieldValue(n('standard_hours_per_day'), h)}>
+                      {h}h
+                    </Typography.Link>
+                  ))}
+                </span>
+              }
+            >
+              <InputNumber min={1} max={24} style={{ width: '100%' }} suffix="giờ" />
             </Form.Item>
           </Col>
         )}

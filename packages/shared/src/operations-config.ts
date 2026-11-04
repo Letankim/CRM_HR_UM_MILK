@@ -14,6 +14,8 @@ export const OPERATION_SETTING_KEYS = {
   OFFICIAL_WEEKLY_OFF_LIMIT: 'SCHEDULE_OFFICIAL_WEEKLY_OFF_LIMIT',
   MAX_SHIFTS_PER_DAY: 'SCHEDULE_MAX_SHIFTS_PER_DAY',
   CHECKOUT_MAX_LATE_HOURS: 'ATTENDANCE_CHECKOUT_MAX_LATE_HOURS',
+  STANDARD_WORK_DAYS_PER_MONTH: 'PAYROLL_STANDARD_WORK_DAYS_PER_MONTH',
+  STANDARD_HOURS_PER_DAY: 'PAYROLL_STANDARD_HOURS_PER_DAY',
   DATA_PARTITION_MONTH: 'DATA_PARTITION_ACTIVE_MONTH',
   DATA_PARTITIONS_REGISTRY: 'DATA_PARTITIONS_REGISTRY',
   PAYROLL_ADMIN_SIGNATURE_FILE_ID: 'PAYROLL_ADMIN_SIGNATURE_FILE_ID',
@@ -85,6 +87,8 @@ export interface OperationSettings {
   officialWeeklyOffLimit: number;
   maxShiftsPerDay: number;
   checkoutMaxLateHours: number;
+  standardWorkDaysPerMonth: number;
+  standardHoursPerDay: number;
   dataPartitionMonth: string;
 }
 
@@ -97,6 +101,8 @@ export const DEFAULT_OPERATION_SETTINGS: OperationSettings = {
   officialWeeklyOffLimit: 2,
   maxShiftsPerDay: 2,
   checkoutMaxLateHours: 3,
+  standardWorkDaysPerMonth: 26,
+  standardHoursPerDay: 8,
   dataPartitionMonth: '',
 };
 
@@ -158,6 +164,8 @@ export function normalizeOperationSettings(raw: Partial<Record<keyof OperationSe
     officialWeeklyOffLimit: num(raw.officialWeeklyOffLimit, d.officialWeeklyOffLimit, 0, 7),
     maxShiftsPerDay: num(raw.maxShiftsPerDay, d.maxShiftsPerDay, 1, 4),
     checkoutMaxLateHours: num(raw.checkoutMaxLateHours, d.checkoutMaxLateHours, 0, 12),
+    standardWorkDaysPerMonth: num(raw.standardWorkDaysPerMonth, d.standardWorkDaysPerMonth, 1, 31),
+    standardHoursPerDay: num(raw.standardHoursPerDay, d.standardHoursPerDay, 1, 24),
     dataPartitionMonth: month,
   };
 }

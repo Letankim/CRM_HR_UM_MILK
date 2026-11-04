@@ -2,11 +2,12 @@
 
 import { App, Col, Form, Input, Modal, Row, Select } from 'antd';
 import { CloseOutlined, SaveOutlined } from '@ant-design/icons';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect } from 'react';
 import { api } from '@/lib/api';
 import { applyApiFormErrors, clearChangedFieldErrors } from '@/lib/form-error';
+import type { OperationsConfigResponse } from './OperationsConfigCard';
 import type { SalaryProfile } from './payroll-types';
 import { SALARY_FIELD_DEFAULTS, SalaryProfileFields } from './SalaryProfileFields';
 
@@ -32,6 +33,12 @@ export function SalaryProfileModal({ open, mode, employee, base, employees, onCl
   const { message } = App.useApp();
   const qc = useQueryClient();
 
+  const opSettingsQ = useQuery({
+    queryKey: ['operations-config'],
+    queryFn: () => api.get<OperationsConfigResponse>('/admin/operations-config'),
+    staleTime: 60_000,
+  });
+
   useEffect(() => {
     if (!open) return;
     form.resetFields();
@@ -41,14 +48,21 @@ export function SalaryProfileModal({ open, mode, employee, base, employees, onCl
         : mode === 'ADJUST'
           ? dayjs().add(1, 'month').startOf('month').format('YYYY-MM-DD')
           : dayjs().startOf('month').format('YYYY-MM-DD');
+    const cfg = opSettingsQ.data?.settings;
     const src = base
       ? {
-          rate_type: base.rateType, amount_vnd: base.amountVnd, probation_percent: base.probationPercent, standard_work_days: base.standardWorkDays,
-          standard_hours_per_day: base.standardHoursPerDay, ot_multiplier: base.otMultiplier, attendance_bonus_vnd: base.attendanceBonusVnd,
+          rate_type: base.rateType, amount_vnd: base.amountVnd, probation_percent: base.probationPercent,
+          standard_work_days: base.standardWorkDays ?? cfg?.standardWorkDaysPerMonth ?? SALARY_FIELD_DEFAULTS.standard_work_days,
+          standard_hours_per_day: base.standardHoursPerDay ?? cfg?.standardHoursPerDay ?? SALARY_FIELD_DEFAULTS.standard_hours_per_day,
+          ot_multiplier: base.otMultiplier, attendance_bonus_vnd: base.attendanceBonusVnd,
           meal_allowance_per_shift_vnd: base.mealAllowancePerShiftVnd, transport_allowance_vnd: base.transportAllowanceVnd,
           responsibility_allowance_vnd: base.responsibilityAllowanceVnd, other_allowance_vnd: base.otherAllowanceVnd,
         }
-      : SALARY_FIELD_DEFAULTS;
+      : {
+          ...SALARY_FIELD_DEFAULTS,
+          standard_work_days: cfg?.standardWorkDaysPerMonth ?? SALARY_FIELD_DEFAULTS.standard_work_days,
+          standard_hours_per_day: cfg?.standardHoursPerDay ?? SALARY_FIELD_DEFAULTS.standard_hours_per_day,
+        };
     form.setFieldsValue({
       ...src,
       employee_id: employee?.id,
@@ -56,7 +70,7 @@ export function SalaryProfileModal({ open, mode, employee, base, employees, onCl
       change_reason: mode === 'EDIT' ? base?.changeReason : mode === 'ADJUST' ? 'Điều chỉnh tăng lương định kỳ' : 'Thiết lập lương ban đầu',
       note: mode === 'EDIT' ? base?.note : '',
     });
-  }, [open, mode, base, employee, form]);
+  }, [open, mode, base, employee, form, opSettingsQ.data]);
 
   const mut = useMutation({
     mutationFn: (v: Record<string, unknown>) => {

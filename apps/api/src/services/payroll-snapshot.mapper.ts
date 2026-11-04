@@ -7,6 +7,7 @@ import {
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { resolveStaffGroupLabel } from '../routes/employee-mapper.js';
+import { getOperationSettings } from './operations-settings.service.js';
 import { resolvePayrollMediaUrl } from './payroll-media-storage.js';
 import { collectWorkEntries, type ShiftPayrollLog } from './payroll-work-collector.js';
 import { currentProfile, profilesOf, resolveProfileAt } from './salary-profile.service.js';
@@ -160,6 +161,7 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext, viewerRole?: st
         ? 'Kỳ lương đã được Ban Quản trị ký phê duyệt. Nếu cần sửa, vui lòng trả kỳ lương về bước Đối soát.'
         : '';
 
+  const opSettings = getOperationSettings(ctx.db);
   return {
     id: s.id, periodId: s.period_id, periodCode: s.period_code, periodStatus,
     employeeId: s.employee_id, employeeCode: s.employee_code, fullName: s.full_name,
@@ -169,6 +171,8 @@ export function mapSnapshot(s: PayrollSnapshot, ctx: AppContext, viewerRole?: st
     hasSalaryProfile: Boolean(s.pay_rate_id || rate),
     rateType, rateTypeLabel: rate ? PAY_RATE_TYPE_LABELS[rateType] : 'Chưa thiết lập lương', unitLabel: PAY_RATE_UNIT_LABELS[rateType],
     rateVnd: s.rate_vnd || rate?.amount_vnd || 0, probationPercent: rate?.probation_percent ?? null,
+    standardWorkDays: rate?.standard_work_days ?? opSettings.standardWorkDaysPerMonth,
+    standardHoursPerDay: rate?.standard_hours_per_day ?? opSettings.standardHoursPerDay,
     probationHours: s.probation_hours, probationRateVnd: s.probation_hourly_rate_vnd, probationPayVnd: s.probation_pay_vnd,
     officialHours: s.official_hours, officialRateVnd: s.official_hourly_rate_vnd, officialPayVnd: s.official_pay_vnd,
     approvedHours: s.approved_hours, standardHours, actualHours: s.approved_hours, approvedPayrollHours: s.approved_hours,

@@ -1,8 +1,10 @@
-import type { Employee, PayRate } from '@umbm/shared';
+import { SYSTEM_CONFIG, type Employee, type PayRate } from '@umbm/shared';
 import type { AppContext } from '../context.js';
+import type { Database } from '../data/database.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { MAX_AMOUNT_BY_TYPE, MIN_AMOUNT_BY_TYPE, type SalaryProfileFields } from '../routes/salary-profile.schemas.js';
+import { getOperationSettings } from './operations-settings.service.js';
 import { dayBefore, isProfileLocked, profilesOf, today } from './salary-profile.service.js';
 
 export function assertAmountInRange(rateType: PayRate['rate_type'], amount: number) {
@@ -13,7 +15,10 @@ export function assertAmountInRange(rateType: PayRate['rate_type'], amount: numb
 }
 
 /** Dòng PAY_RATES mới từ dữ liệu form (dùng chung cho tạo hồ sơ nhân sự & điều chỉnh lương) */
-export function newProfileRow(emp: Employee, fields: SalaryProfileFields, actorId: string, effectiveFrom: string, previousId: string, defaultReason: string) {
+export function newProfileRow(emp: Employee, fields: SalaryProfileFields, actorId: string, effectiveFrom: string, previousId: string, defaultReason: string, db?: Database) {
+  const opSettings = db ? getOperationSettings(db) : null;
+  const stdDays = fields.standard_work_days ?? opSettings?.standardWorkDaysPerMonth ?? SYSTEM_CONFIG.defaults.standardWorkDaysPerMonth;
+  const stdHours = fields.standard_hours_per_day ?? opSettings?.standardHoursPerDay ?? SYSTEM_CONFIG.defaults.standardHoursPerDay;
   return {
     employee_id: emp.id,
     rate_type: fields.rate_type,
@@ -32,8 +37,8 @@ export function newProfileRow(emp: Employee, fields: SalaryProfileFields, actorI
     responsibility_allowance_vnd: fields.responsibility_allowance_vnd,
     other_allowance_vnd: fields.other_allowance_vnd,
     probation_percent: fields.probation_percent,
-    standard_work_days: fields.standard_work_days,
-    standard_hours_per_day: fields.standard_hours_per_day,
+    standard_work_days: stdDays,
+    standard_hours_per_day: stdHours,
     status: 'ACTIVE' as const,
     change_reason: fields.change_reason || defaultReason,
     previous_rate_id: previousId,
@@ -82,7 +87,7 @@ export async function createSalaryProfile(ctx: AppContext, emp: Employee, fields
         name: 'INSERT_NEW_PROFILE',
         run: async (s) => {
           s.created = await ctx.db.payRates.insert(
-            newProfileRow(emp, fields, actorId, effectiveFrom, latest?.id ?? '', latest ? 'Điều chỉnh lương' : 'Thiết lập lương ban đầu'),
+            newProfileRow(emp, fields, actorId, effectiveFrom, latest?.id ?? '', latest ? 'Điều chỉnh lương' : 'Thiết lập lương ban đầu', ctx.db),
             actorId,
           );
         },
