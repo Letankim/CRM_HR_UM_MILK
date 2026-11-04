@@ -125,14 +125,14 @@ export function TopHeaderBar({
             size="small"
             className="umbm-header-pill"
             icon={<EnvironmentOutlined style={{ color: BRAND.primary }} />}
-            onClick={() => router.push('/admin/my-attendance')}
+            onClick={() => router.push('/nv/diem-danh')}
             style={{ height: 34, borderRadius: 6, borderColor: BRAND.headerControlBorder, paddingInline: 10, display: 'inline-flex', alignItems: 'center' }}
           >
             Điểm danh
           </Button>
         )}
 
-        {!isMobile && user.role !== 'MKT' && (
+        {!isMobile && (
           <Button
             size="small"
             className="umbm-header-pill"
@@ -158,7 +158,7 @@ export function TopHeaderBar({
                 disabled: true,
               },
               { type: 'divider' },
-              { key: 'my-attendance', icon: <EnvironmentOutlined />, label: 'Điểm danh & Ca làm việc của bạn', onClick: () => router.push('/admin/my-attendance') },
+              { key: 'my-attendance', icon: <EnvironmentOutlined />, label: 'Điểm danh & Ca làm việc của bạn', onClick: () => router.push('/nv/diem-danh') },
               { key: 'profile', icon: <UserOutlined />, label: 'Hồ sơ cá nhân & Cập nhật thông tin', onClick: () => setProfileTab('info') },
               ...(user.role === 'FINANCE' ? [{ key: 'finance-sig', icon: <SafetyCertificateOutlined />, label: 'Tải lên & Cấu hình Chữ ký Kế toán', onClick: () => setProfileTab('signature') }] : []),
               { key: 'password', icon: <KeyOutlined />, label: isEmployeeRole(user.role) ? 'Đổi mã PIN bảo mật (6 số)' : 'Đổi mật khẩu bảo mật', onClick: () => setProfileTab('password') },

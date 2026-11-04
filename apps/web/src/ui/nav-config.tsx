@@ -51,9 +51,9 @@ export const BACKOFFICE_NAV: NavGroup[] = [
         roles: ['ADMIN', 'HR', 'STORE', 'FINANCE', 'MKT'],
       },
       {
-        key: '/admin/my-attendance',
+        key: '/nv/diem-danh',
         label: 'Điểm danh & Ca của bạn',
-        breadcrumbTitle: 'Điểm danh GPS, Ca làm việc & Đơn cá nhân của bạn',
+        breadcrumbTitle: 'Điểm danh GPS & Camera trực tiếp',
         icon: <EnvironmentOutlined />,
         perms: ['self.attendance'],
         roles: ['ADMIN', 'HR', 'STORE', 'FINANCE', 'MKT'],
