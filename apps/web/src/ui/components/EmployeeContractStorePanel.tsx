@@ -84,8 +84,8 @@ export function ContractUploadModal({
     >
       {presetEmployee && (
         <Descriptions size="small" bordered column={2} style={{ marginBottom: 12 }}>
-          <Descriptions.Item label="Họ và tên nhân viên"><strong>{presetEmployee.fullName}</strong></Descriptions.Item>
-          <Descriptions.Item label="Mã số nhân viên"><Tag color="geekblue" style={{ margin: 0, fontWeight: 600 }}>{presetEmployee.employeeCode}</Tag></Descriptions.Item>
+          <Descriptions.Item label="Họ và tên"><strong>{presetEmployee.fullName}</strong></Descriptions.Item>
+          <Descriptions.Item label="MSNV"><Tag color="geekblue" style={{ margin: 0, fontWeight: 600 }}>{presetEmployee.employeeCode}</Tag></Descriptions.Item>
         </Descriptions>
       )}
       <Form form={form} layout="vertical" onFinish={(v) => uploadMut.mutate(v)}>
@@ -156,48 +156,48 @@ export function EmployeeContractStorePanel({ employee, canManage = false }: { em
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Descriptions size="small" bordered column={{ xs: 1, sm: 2, md: 3 }}>
-        <Descriptions.Item label="Họ và tên nhân viên"><strong>{employee.fullName}</strong></Descriptions.Item>
-        <Descriptions.Item label="Mã số nhân viên (MSNV)"><Tag color="geekblue" style={{ margin: 0, fontWeight: 600 }}>{employee.employeeCode}</Tag></Descriptions.Item>
+        <Descriptions.Item label="Họ và tên"><strong>{employee.fullName}</strong></Descriptions.Item>
+        <Descriptions.Item label="MSNV"><Tag color="geekblue" style={{ margin: 0, fontWeight: 600 }}>{employee.employeeCode}</Tag></Descriptions.Item>
         <Descriptions.Item label="Chi nhánh & Vị trí">{employee.branchName} · {employee.staffGroupLabel}</Descriptions.Item>
-        <Descriptions.Item label="Giai đoạn nhân sự"><StatusTag value={employee.stage || 'PROBATION'} /></Descriptions.Item>
-        <Descriptions.Item label="Điểm tín nhiệm chuyên cần"><Tag color={creditPts >= 95 ? 'success' : creditPts >= 80 ? 'warning' : 'error'} style={{ margin: 0, fontWeight: 600 }}>{creditPts}/100 điểm</Tag></Descriptions.Item>
-        <Descriptions.Item label="Giờ công & Điểm TEST"><Space size={4}><Tag color="blue" style={{ margin: 0 }}>Công: {employee.probationHoursCompleted ?? 0}h</Tag><Tag color={employee.testPassed ? 'success' : 'default'} style={{ margin: 0 }}>TEST: {employee.testBestScorePercent ?? 0}%</Tag></Space></Descriptions.Item>
-        <Descriptions.Item label="Đánh giá vấn đáp Google Meet"><Space size={4} wrap>{employee.probationMeetDone ? <Tag color="success" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã hoàn tất vấn đáp</Tag> : <Tag color="default" style={{ margin: 0 }}>Chưa vấn đáp</Tag>}{employee.probationMeetNote && <span style={{ fontSize: 12, color: '#475569' }}>({employee.probationMeetNote})</span>}</Space></Descriptions.Item>
-        <Descriptions.Item label="Quyền nghỉ đột xuất (Thử việc)"><Tag color="cyan" style={{ margin: 0 }}>Đã cấp: {employee.emergencyLeaveGrantCount ?? 0} lượt</Tag></Descriptions.Item>
-        <Descriptions.Item label="Tổng số hợp đồng lưu trữ">
+        <Descriptions.Item label="Giai đoạn"><StatusTag value={employee.stage || 'PROBATION'} /></Descriptions.Item>
+        <Descriptions.Item label="Chuyên cần"><Tag color={creditPts >= 95 ? 'success' : creditPts >= 80 ? 'warning' : 'error'} style={{ margin: 0, fontWeight: 600 }}>{creditPts}/100 điểm</Tag></Descriptions.Item>
+        <Descriptions.Item label="Công & TEST"><Space size={4}><Tag color="blue" style={{ margin: 0 }}>Công: {employee.probationHoursCompleted ?? 0}h</Tag><Tag color={employee.testPassed ? 'success' : 'default'} style={{ margin: 0 }}>TEST: {employee.testBestScorePercent ?? 0}%</Tag></Space></Descriptions.Item>
+        <Descriptions.Item label="Vấn đáp"><Space size={4} wrap>{employee.probationMeetDone ? <Tag color="success" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã vấn đáp</Tag> : <Tag color="default" style={{ margin: 0 }}>Chưa vấn đáp</Tag>}{employee.probationMeetNote && <span style={{ fontSize: 12, color: '#475569' }}>({employee.probationMeetNote})</span>}</Space></Descriptions.Item>
+        <Descriptions.Item label="Nghỉ đột xuất"><Tag color="cyan" style={{ margin: 0 }}>Đã cấp: {employee.emergencyLeaveGrantCount ?? 0} lượt</Tag></Descriptions.Item>
+        <Descriptions.Item label="Số hợp đồng">
           <Tag color={contracts.length > 0 ? 'geekblue' : 'default'} style={{ margin: 0, fontWeight: 600 }}>{contracts.length} văn bản</Tag>
         </Descriptions.Item>
       </Descriptions>
 
       {employee.stage === 'PROBATION' && canManage && (
-        <Card size="small" title="Thao tác Đánh giá Thử việc & Cấp quyền Nghỉ đột xuất">
+        <Card size="small" title="Đánh giá thử việc">
           <Space wrap>
             <Button size="small" type={employee.probationMeetDone ? 'default' : 'primary'} icon={employee.probationMeetDone ? <EditOutlined /> : <VideoCameraOutlined />} onClick={openMeetPrompt}>
-              {employee.probationMeetDone ? 'Chỉnh sửa kết quả Vấn đáp Meet' : 'Ghi nhận kết quả Vấn đáp Meet'}
+              Vấn đáp
             </Button>
             <Button size="small" icon={<PlusCircleOutlined />} onClick={() => promptDecision({ title: `Cấp quyền nghỉ đột xuất: ${employee.fullName}`, subtitle: 'Cho phép nhân sự thử việc gửi 1 đơn xin nghỉ đột xuất hợp lệ trong chu kỳ thử việc.', required: false, noteLabel: 'Lý do cấp quyền nghỉ đột xuất', okText: 'Xác nhận cấp quyền', suggestions: ['Nhân sự có việc cá nhân/lịch học đột xuất đã báo trước với Quản lý'], onConfirm: async (note) => { await api.post(`/admin/employees/${employee.id}/grant-emergency-leave`, { grant_count: 1, note: note || 'HR cấp 1 lượt nghỉ đột xuất' }); message.success(`Đã cấp 1 lượt nghỉ đột xuất cho ${employee.fullName}`); invalidateAll(); } })}>
-              Cấp 1 lượt nghỉ đột xuất
+              Cấp nghỉ đột xuất
             </Button>
           </Space>
         </Card>
       )}
 
       <Card
-        size="small" title={<span><FileProtectOutlined /> Danh sách Hợp đồng Lao động ({contracts.length})</span>}
-        extra={canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setUploadOpen(true)}>{contracts.length > 0 ? 'Tải thêm / Cập nhật tệp HĐ' : 'Tải lên hợp đồng'}</Button>}
+        size="small" title={<span><FileProtectOutlined /> Hợp đồng lao động ({contracts.length})</span>}
+        extra={canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setUploadOpen(true)}>Tải hợp đồng</Button>}
       >
         {contracts.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có văn bản hợp đồng lao động nào được tải lên cho nhân sự này.">
-            {canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setUploadOpen(true)}>Tải lên hợp đồng cho nhân sự này</Button>}
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có văn bản hợp đồng lao động nào được tải lên.">
+            {canManage && <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setUploadOpen(true)}>Tải hợp đồng</Button>}
           </Empty>
         ) : (
           <Table<EmployeeContractItem>
             size="small" rowKey="id" pagination={false} dataSource={contracts}
             onRow={(r) => ({ onClick: () => setPreviewState({ open: true, item: r, autoDownload: false }), style: { cursor: 'pointer' } })}
             columns={[
-              { title: 'Loại hợp đồng', dataIndex: 'contractType', width: 195, render: (v: ContractType) => <Tag color={v === 'OFFICIAL_CONTRACT' ? 'green' : 'gold'} icon={<FileTextOutlined />} style={{ margin: 0 }}>{CONTRACT_TYPE_LABELS[v] || v}</Tag> },
-              { title: 'Tên tệp hợp đồng (Bấm để xem)', key: 'file', render: (_, r) => <div><Typography.Link strong onClick={() => setPreviewState({ open: true, item: r, autoDownload: false })}>{r.fileName}</Typography.Link><div style={{ fontSize: 11, color: '#64748B' }}>Dung lượng: {fmtSizeKb(r.sizeBytes)}</div></div> },
-              { title: 'Ghi chú / Số hợp đồng', dataIndex: 'note', ellipsis: true, render: (v: string) => v || '—' },
+              { title: 'Loại hợp đồng', dataIndex: 'contractType', width: 185, render: (v: ContractType) => <Tag color={v === 'OFFICIAL_CONTRACT' ? 'green' : 'gold'} icon={<FileTextOutlined />} style={{ margin: 0 }}>{CONTRACT_TYPE_LABELS[v] || v}</Tag> },
+              { title: 'Tên tệp', key: 'file', render: (_, r) => <div><Typography.Link strong onClick={() => setPreviewState({ open: true, item: r, autoDownload: false })}>{r.fileName}</Typography.Link><div style={{ fontSize: 11, color: '#64748B' }}>Dung lượng: {fmtSizeKb(r.sizeBytes)}</div></div> },
+              { title: 'Ghi chú', dataIndex: 'note', ellipsis: true, render: (v: string) => v || '—' },
               { title: 'Ngày tải lên', dataIndex: 'uploadedAt', width: 135, render: (v: string) => <span className="num" style={{ fontSize: 12 }}>{v ? dayjs(v).format('HH:mm DD/MM/YYYY') : '—'}</span> },
               { title: 'Thao tác', key: 'act', width: canManage ? 210 : 165, align: 'right' as const, render: (_: unknown, r: EmployeeContractItem) => <Space size={4} onClick={(e) => e.stopPropagation()}><Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewState({ open: true, item: r })}>Xem</Button><Button size="small" icon={<DownloadOutlined />} onClick={() => void downloadEmployeeContractDirect(employee, r, message)}>Tải về</Button>{canManage && <Popconfirm title="Xóa văn bản hợp đồng này?" okText="Xóa" cancelText="Hủy" onConfirm={() => deleteMut.mutate(r.id)}><Button size="small" danger icon={<DeleteOutlined />} loading={deleteMut.isPending} /></Popconfirm>}</Space> },
             ]}

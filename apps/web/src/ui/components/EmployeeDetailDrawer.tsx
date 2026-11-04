@@ -46,16 +46,16 @@ export function EmployeeDetailDrawer({
               label: <span><IdcardOutlined /> Công việc &amp; Phân công</span>,
               children: (
                 <Descriptions column={2} bordered size="small" styles={{ label: { width: 200, fontWeight: 500 } }}>
-                  <Descriptions.Item label="Mã nhân sự">
+                  <Descriptions.Item label="MSNV">
                     <Tag color="geekblue" style={{ borderRadius: 2, fontWeight: 600 }}>{employee.employeeCode}</Tag>
                   </Descriptions.Item>
                   <Descriptions.Item label="Họ và tên">{employee.fullName}</Descriptions.Item>
                   <Descriptions.Item label="Số điện thoại">{fmtPhone(employee.phone)}</Descriptions.Item>
-                  <Descriptions.Item label="Chi nhánh làm việc">{employee.branchName}</Descriptions.Item>
+                  <Descriptions.Item label="Chi nhánh">{employee.branchName}</Descriptions.Item>
                   <Descriptions.Item label="Nhóm vị trí">{employee.staffGroupLabel}</Descriptions.Item>
                   <Descriptions.Item label="Chức danh">{employee.positionTitle}</Descriptions.Item>
-                  <Descriptions.Item label="Giai đoạn hiện tại"><StatusTag value={employee.stage} /></Descriptions.Item>
-                  <Descriptions.Item label="Trạng thái làm việc"><StatusTag value={employee.status} /></Descriptions.Item>
+                  <Descriptions.Item label="Giai đoạn"><StatusTag value={employee.stage} /></Descriptions.Item>
+                  <Descriptions.Item label="Trạng thái"><StatusTag value={employee.status} /></Descriptions.Item>
                   <Descriptions.Item label="Ca mặc định">{employee.defaultShiftLabel}</Descriptions.Item>
                   <Descriptions.Item label="Hình thức làm việc">{employee.employmentTypeLabel}</Descriptions.Item>
                   <Descriptions.Item label="Chu kỳ thử việc chuẩn" span={2}>
