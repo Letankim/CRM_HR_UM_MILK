@@ -1,4 +1,4 @@
-import { DEFAULT_SHIFT_LABELS, type ShiftAssignment, type ShiftSwap } from '@umbm/shared';
+import { DEFAULT_SHIFT_LABELS, type ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { nowIso } from '../lib/time.js';
 
@@ -6,19 +6,20 @@ import { nowIso } from '../lib/time.js';
 export async function publishDispatchAnnouncement(
   ctx: AppContext,
   swap: ShiftSwap,
-  from: ShiftAssignment,
+  from: { branch_id: string; work_date: string; shift_code: string; start_at?: string; end_at?: string },
   actor: { id: string; display_name?: string; username?: string },
 ): Promise<void> {
   const branch = ctx.db.branches.get(from.branch_id);
   const branchName = branch?.name || from.branch_id;
-  const shiftLabel = (DEFAULT_SHIFT_LABELS as Record<string, string>)[from.shift_code] ?? from.shift_code;
+  const tpl = ctx.db.shiftTemplates.find((t) => t.code === from.shift_code);
+  const shiftLabel = (DEFAULT_SHIFT_LABELS as Record<string, string>)[from.shift_code] ?? tpl?.name ?? from.shift_code;
   const workDateFormatted = from.work_date.split('-').reverse().join('/');
-  const shiftTime = `${from.start_at || '07:00'} – ${from.end_at || '12:00'}`;
+  const shiftTime = `${from.start_at || tpl?.start_time || '07:00'} – ${from.end_at || tpl?.end_time || '12:00'}`;
 
-  const title = `Điều phối khẩn cấp: Cần nhân sự làm thay ca ${shiftLabel} ngày ${workDateFormatted} (+30.000đ)`;
-  const summary = `Cửa hàng ${branchName} thiếu nhân sự khẩn cấp cho ca ${shiftLabel} (${shiftTime}) ngày ${workDateFormatted}. Nhân sự nhận ca làm thay được hệ thống tự động cộng phụ cấp thưởng +30.000đ/ca vào bảng lương kỳ này.`;
+  const title = `Điều phối khẩn cấp: Cần nhân sự làm thêm / làm thay ca ${shiftLabel} ngày ${workDateFormatted} (+30.000đ)`;
+  const summary = `Cửa hàng ${branchName} thiếu nhân sự khẩn cấp cho ca ${shiftLabel} (${shiftTime}) ngày ${workDateFormatted}. Nhân sự nhận ca làm thêm / làm thay được hệ thống tự động cộng phụ cấp thưởng +30.000đ/ca vào bảng lương kỳ này.`;
   const bodyHtml = `<p><strong>LỆNH ĐIỀU PHỐI NHÂN SỰ KHẨN CẤP (${swap.swap_code})</strong></p>` +
-    `<p>Cửa hàng <strong>${branchName}</strong> đang cần tuyển gấp nhân sự nhận làm thay ca làm việc sau:</p>` +
+    `<p>Cửa hàng <strong>${branchName}</strong> đang cần tuyển gấp nhân sự nhận làm thêm / làm thay ca làm việc sau:</p>` +
     `<ul>` +
     `<li><strong>Ngày làm:</strong> ${workDateFormatted}</li>` +
     `<li><strong>Ca làm việc:</strong> ${shiftLabel} (${shiftTime})</li>` +
@@ -33,7 +34,7 @@ export async function publishDispatchAnnouncement(
     title,
     summary,
     body: bodyHtml,
-    cta_label: 'Nhận ca làm thay (+30.000đ)',
+    cta_label: 'Nhận ca (+30.000đ)',
     cta_link: '/nv/doi-ca',
     media_ids: '[]',
     audience_scope: 'BRANCH',

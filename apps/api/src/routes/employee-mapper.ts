@@ -111,7 +111,6 @@ export function findLinkedUserForEmployee(e: Employee, ctx: AppContext): User | 
 export function isOfficialSwapEligibleEmployee(ctx: AppContext, e: Employee): boolean {
   if (e.status !== 'ACTIVE' || e.stage !== 'OFFICIAL') return false;
   if (e.staff_group === 'BACKOFFICE' || e.staff_group === 'STORE_MANAGER') return false;
-  if (e.note === 'Hồ sơ nhân sự liên kết tài khoản hệ thống') return false;
   const linkedUser = findLinkedUserForEmployee(e, ctx);
   if (linkedUser && (linkedUser.role !== 'CHINH_THUC' || linkedUser.status === 'REVOKED' || linkedUser.status === 'LOCKED')) return false;
   return true;

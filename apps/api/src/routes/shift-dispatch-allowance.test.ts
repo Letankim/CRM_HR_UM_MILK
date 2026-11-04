@@ -56,6 +56,19 @@ describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ'
     expect(foundInBulletin).toBeDefined();
     expect(foundInBulletin.cta_link).toBe('/nv/doi-ca');
 
+    // 3b. Trang Nhường / Đổi ca của nhân viên chi nhánh phải liệt kê lệnh điều phối đang mở để bấm Nhận ca
+    const myAttRes = await app.inject({ method: 'GET', url: '/api/my-attendance', headers: receiverHeaders });
+    expect(myAttRes.statusCode).toBe(200);
+    const openDispatch = (myAttRes.json().data.swaps as { id: string; kind: string; status: string }[]).find((s) => s.id === dispatchData.id);
+    expect(openDispatch).toBeDefined();
+    expect(openDispatch!.kind).toBe('HR_DISPATCH');
+    expect(openDispatch!.status).toBe('PENDING_PEER');
+
+    // 3c. Một nhân viên bỏ qua lệnh không được làm hủy lệnh của cả chi nhánh
+    const skipRes = await app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${dispatchData.id}/peer-respond`, headers: receiverHeaders, payload: { version: dispatchData.version, accept: false, peer_note: 'Bận' } });
+    expect(skipRes.statusCode).toBe(200);
+    expect(db.shiftSwaps.get(dispatchData.id)!.status).toBe('PENDING_PEER');
+
     // 4. Tạo kỳ lương mở để tính lương
     const periodRes = await app.inject({
       method: 'POST',
@@ -65,6 +78,30 @@ describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ'
     });
     expect(periodRes.statusCode).toBe(201);
     const periodId = periodRes.json().data.id;
+
+    // 4b. Kiểm tra nếu nhân viên ĐÃ CÓ ca trùng khung giờ ngày đó -> hệ thống chặn không cho nhận
+    const receiverEmp = db.employees.find((e) => e.user_id === receiverUser.id || e.id === receiverUser.employee_id || e.employee_code === receiverUser.employee_id)!;
+    const conflictingShift = await db.shiftAssignments.insert({
+      branch_id: shift.branch_id, work_date: shift.work_date, shift_code: shift.shift_code,
+      start_at: shift.start_at, end_at: shift.end_at, scheduled_hours: shift.scheduled_hours,
+      employee_id: receiverEmp.id, employee_stage: receiverEmp.stage, status: 'PUBLISHED',
+      schedule_week_id: shift.schedule_week_id, shift_template_id: shift.shift_template_id,
+      day_type: 'WORK', note: 'Ca trùng giờ thử nghiệm', source: 'TEST',
+      swapped_from_employee_id: '', replacement_for_employee_id: '', linked_assignment_id: '',
+      published_at: '2026-10-01T00:00:00+07:00',
+    }, 'test');
+
+    const conflictClaimRes = await app.inject({
+      method: 'POST',
+      url: `/api/admin/shift-swaps/${dispatchData.id}/claim`,
+      headers: receiverHeaders,
+      payload: { version: dispatchData.version, accept: true, peer_note: 'Cố nhận khi đã có ca trùng' },
+    });
+    expect(conflictClaimRes.statusCode).toBe(400);
+    expect(conflictClaimRes.json().message).toContain('trùng khung giờ');
+
+    // Xóa ca trùng để tiếp tục nhận ca hợp lệ
+    await db.shiftAssignments.softDelete(conflictingShift.id, conflictingShift.version, 'test');
 
     // 5. Nhân viên nhận ca làm thay khẩn cấp (Claim)
     const claimRes = await app.inject({
@@ -82,14 +119,24 @@ describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ'
     expect(claimedSwap.allowance_eligible).toBe(true);
     expect(claimedSwap.allowance_amount_vnd).toBe(30000);
 
-    // Kiểm tra ca làm việc đã đổi sang nhân viên nhận ca
-    const updatedShift = db.shiftAssignments.get(shift.id)!;
-    const receiverEmp = db.employees.find((e) => e.user_id === receiverUser.id || e.id === receiverUser.employee_id || e.employee_code === receiverUser.employee_id)!;
-    expect(updatedShift.employee_id).toBe(receiverEmp.id);
-    expect(updatedShift.note).toContain('DSP-');
+    // Kiểm tra CA GỐC vẫn thuộc nhân viên ban đầu (không bị thay thế)
+    const originalShift = db.shiftAssignments.get(shift.id)!;
+    expect(originalShift.employee_id).toBe(shift.employee_id);
+    expect(originalShift.status).toBe('PUBLISHED');
 
-    // Đánh dấu ca đã hoàn thành để tính vào bảng lương
-    await db.shiftAssignments.update(updatedShift.id, updatedShift.version, { status: 'COMPLETED' }, 'test');
+    // Kiểm tra CA MỚI được tạo cho người nhận (điều phối = tăng thêm ca, không thay thế)
+    const newShiftId = claimedSwap.to_assignment_id;
+    expect(newShiftId).toBeTruthy();
+    const newShift = db.shiftAssignments.get(newShiftId)!;
+    expect(newShift).toBeDefined();
+    expect(newShift.employee_id).toBe(receiverEmp.id);
+    expect(newShift.work_date).toBe(shift.work_date);
+    expect(newShift.shift_code).toBe(shift.shift_code);
+    expect(newShift.source).toBe('HR_DISPATCH');
+    expect(newShift.note).toContain('DSP-');
+
+    // Đánh dấu ca mới đã hoàn thành để tính vào bảng lương
+    await db.shiftAssignments.update(newShift.id, newShift.version, { status: 'COMPLETED' }, 'test');
 
     // Kiểm tra bản tin chi nhánh cập nhật trạng thái đã tiếp nhận
     const updatedAnc = db.announcements.get(anc!.id)!;

@@ -69,6 +69,50 @@ describe('7.4 Hỗ trợ chi nhánh khác (HR Support) & Scheduler kiểm toán 
     expect(restoredSourceShift.status).toBe('PUBLISHED');
     expect(restoredSourceShift.branch_id).toBe(sourceBranch.id);
     expect(restoredSourceShift.employee_id).toBe(originalEmpId);
+
+    // 5. Luồng chuẩn mới: Chọn Chi nhánh đích + Ngày + Khung ca + Nhân sự rảnh từ chi nhánh khác (không cần chọn ca cũ)
+    const freeDate = '2026-11-28';
+    const freeShiftCode = 'CA_TOI';
+    const newSupRes = await app.inject({
+      method: 'POST',
+      url: '/api/admin/shift-swaps',
+      headers: hrHeaders,
+      payload: {
+        kind: 'HR_SUPPORT',
+        target_branch_id: targetBranch.id,
+        work_date: freeDate,
+        shift_code: freeShiftCode,
+        requester_id: originalEmpId,
+        reason: 'Điều động nhân sự đang rảnh sang thêm vào lịch chi nhánh đích',
+      },
+    });
+    expect(newSupRes.statusCode).toBe(201);
+    const newSupData = newSupRes.json().data;
+    expect(newSupData.status).toBe('APPROVED');
+    const createdSupportShift = db.shiftAssignments.get(newSupData.to_assignment_id)!;
+    expect(createdSupportShift).toBeDefined();
+    expect(createdSupportShift.branch_id).toBe(targetBranch.id);
+    expect(createdSupportShift.work_date).toBe(freeDate);
+    expect(createdSupportShift.shift_code).toBe(freeShiftCode);
+    expect(createdSupportShift.employee_id).toBe(originalEmpId);
+    expect(createdSupportShift.source).toBe('HR_SUPPORT');
+
+    // 6. Nếu cố điều động nhân sự đã bận khung ca đó -> báo lỗi 400
+    const conflictSupRes = await app.inject({
+      method: 'POST',
+      url: '/api/admin/shift-swaps',
+      headers: hrHeaders,
+      payload: {
+        kind: 'HR_SUPPORT',
+        target_branch_id: targetBranch.id,
+        work_date: freeDate,
+        shift_code: freeShiftCode,
+        requester_id: originalEmpId,
+        reason: 'Cố điều động trùng ca',
+      },
+    });
+    expect(conflictSupRes.statusCode).toBe(400);
+    expect(conflictSupRes.json().message).toContain('vui lòng chọn nhân sự đang rảnh');
   });
 
   it('Scheduler tự động kiểm toán (audit-out-of-week): phát hiện phiếu sai tuần, tự động hủy và hoàn trả lịch về đúng người ban đầu', async () => {

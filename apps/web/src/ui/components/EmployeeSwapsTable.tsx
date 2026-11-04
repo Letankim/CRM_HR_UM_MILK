@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { Alert, App, Space, Tag } from 'antd';
+import { Alert, App, Button, Space, Tag } from 'antd';
 import { CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, CloseOutlined, DownloadOutlined, StopOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -61,16 +61,16 @@ export function usePeerSwapDecision({ empId, empCode, onSuccess }: { empId: stri
     if (accept) {
       promptDecision({
         title: single ? (isDispatch ? `Nhận ca điều phối khẩn cấp (+30.000đ) — ${code}` : `${isSwap ? 'Đồng ý đổi ca 2 chiều' : 'Đồng ý nhận ca'} — ${code}`) : `Xác nhận nhận ${eligible.length} ca đã chọn`,
-        subtitle: single ? (isDispatch ? `Cần nhân sự làm thay · Ngày ${single.from_work_date ? dayjs(String(single.from_work_date)).format('DD/MM/YYYY') : '—'} · ${cleanShiftName(single.shiftLabel || single.from_shift_code)} · Phụ cấp: +30.000đ/ca` : `Yêu cầu từ ${requester} · Ngày ${single.from_work_date ? dayjs(String(single.from_work_date)).format('DD/MM/YYYY') : '—'} · ${cleanShiftName(single.shiftLabel || single.from_shift_code)}`) : undefined,
+        subtitle: single ? (isDispatch ? `Cần nhân sự làm thêm / làm thay · Ngày ${single.from_work_date ? dayjs(String(single.from_work_date)).format('DD/MM/YYYY') : '—'} · ${cleanShiftName(single.shiftLabel || single.from_shift_code)} · Phụ cấp: +30.000đ/ca` : `Yêu cầu từ ${requester} · Ngày ${single.from_work_date ? dayjs(String(single.from_work_date)).format('DD/MM/YYYY') : '—'} · ${cleanShiftName(single.shiftLabel || single.from_shift_code)}`) : undefined,
         alertNode: isDispatch ? (
-          <Alert type="success" showIcon message="Phụ cấp thưởng điều phối khẩn cấp: +30.000đ" description="Bạn đang nhận làm thay ca điều phối khẩn cấp từ Cửa hàng. Khi bấm xác nhận, ca này sẽ lập tức được nạp vào lịch làm việc chính thức của bạn và hệ thống tự động cộng +30.000đ vào kỳ lương." style={{ marginBottom: 12 }} />
+          <Alert type="success" showIcon message="Phụ cấp thưởng điều phối khẩn cấp: +30.000đ" description="Bạn đang nhận làm thêm ca điều phối khẩn cấp từ Cửa hàng. Khi bấm xác nhận, hệ thống sẽ tạo ca mới trên lịch làm việc của bạn (không làm mất ca của đồng nghiệp) và tự động cộng +30.000đ vào kỳ lương. Lưu ý: Bạn không được có ca trùng khung giờ ngày này." style={{ marginBottom: 12 }} />
         ) : renderWorkflowDecisionAlert('swap', eligible),
         noteLabel: isDispatch ? 'Ghi chú xác nhận nhận ca' : 'Ghi chú phản hồi cho đồng nghiệp',
-        placeholder: isDispatch ? 'VD: Tôi sẵn sàng nhận làm thay ca này...' : 'Nhập ghi chú xác nhận (không bắt buộc)...',
+        placeholder: isDispatch ? 'VD: Tôi sẵn sàng nhận ca này...' : 'Nhập ghi chú xác nhận (không bắt buộc)...',
         required: false,
         maxLength: 200,
-        suggestions: isDispatch ? ['Tôi sẵn sàng nhận làm thay ca này', 'Đã sắp xếp thời gian để hỗ trợ chi nhánh'] : ['Đồng ý nhận ca hỗ trợ đồng nghiệp', 'Đã sắp xếp lịch cá nhân, đồng ý đổi ca'],
-        okText: single ? (isDispatch ? 'Nhận ca làm thay (+30k)' : isSwap ? 'Đồng ý đổi ca' : 'Đồng ý nhận ca') : `Đồng ý (${eligible.length})`,
+        suggestions: isDispatch ? ['Tôi sẵn sàng nhận làm ca này', 'Đã sắp xếp thời gian để hỗ trợ chi nhánh'] : ['Đồng ý nhận ca hỗ trợ đồng nghiệp', 'Đã sắp xếp lịch cá nhân, đồng ý đổi ca'],
+        okText: single ? (isDispatch ? 'Nhận ca làm thêm (+30k)' : isSwap ? 'Đồng ý đổi ca' : 'Đồng ý nhận ca') : `Đồng ý (${eligible.length})`,
         onConfirm: async (note) => { await peerRespondMut.mutateAsync({ rows: eligible, accept: true, note, clear }); },
       });
       return;
@@ -132,8 +132,9 @@ export function EmployeeSwapsTable({
       {openDispatches.length > 0 && (
         <Alert
           type="warning" showIcon style={{ marginBottom: 12 }}
-          message={<strong>Cửa hàng đang có {openDispatches.length} ca điều phối khẩn cấp cần người làm thay (+30.000đ/ca)</strong>}
-          description="Nhân viên nhận ca làm thay theo diện HR Dispatch sẽ được hệ thống tự động cộng thêm phụ cấp thưởng +30.000đ/ca vào bảng lương kỳ đó. Bấm 'Nhận ca (+30k)' tại bảng bên dưới để nhận ca ngay."
+          message={<strong>Cửa hàng đang có {openDispatches.length} ca điều phối khẩn cấp cần người làm thêm / làm thay (+30.000đ/ca)</strong>}
+          description="Nhân viên nhận ca làm thêm theo diện HR Dispatch sẽ được hệ thống tự động tạo ca mới trên lịch và cộng thêm phụ cấp thưởng +30.000đ/ca vào bảng lương kỳ đó. Bấm 'Nhận ca (+30k)' để nhận ca ngay."
+          action={<Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={busy} onClick={() => handleRespond([openDispatches[0]!], true)}>Nhận ca (+30.000đ)</Button>}
         />
       )}
       <SelectableTable<Row>
@@ -167,7 +168,9 @@ export function EmployeeSwapsTable({
             title: 'Người nhận', width: 180, ellipsis: true,
             render: (_, r) => {
               if (r.kind === 'HR_DISPATCH' && (!r.peer_id || r.status === 'PENDING_PEER')) {
-                return <Tag color="gold" style={{ margin: 0 }}>Đang mở toàn chi nhánh (+30k)</Tag>;
+                return fallbackPeer.canClaim(r)
+                  ? <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={busy} onClick={(e) => { e.stopPropagation(); handleRespond([r], true); }}>Nhận ca (+30k)</Button>
+                  : <Tag color="gold" style={{ margin: 0 }}>Đang mở toàn chi nhánh (+30k)</Tag>;
               }
               if (r.kind === 'HR_SUPPORT') {
                 return <Tag color="purple" style={{ margin: 0 }}>Hỗ trợ: {String(r.targetBranchName || 'Chi nhánh khác')}</Tag>;

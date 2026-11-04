@@ -98,7 +98,7 @@ async function runSweep(
       expectedVersion: a.version,
       patch: {
         status: 'ABSENT',
-        note: a.note && a.note.includes('Vắng mặt') ? a.note : 'Quá giờ kết thúc ca chưa điểm danh — Tự động chuyển Vắng mặt',
+        note: a.note ? (a.note.includes('Vắng mặt') ? a.note : `${a.note} (Quá giờ — Tự động chuyển Vắng mặt)`) : 'Quá giờ kết thúc ca chưa điểm danh — Tự động chuyển Vắng mặt',
       },
     });
     markedAbsent++;

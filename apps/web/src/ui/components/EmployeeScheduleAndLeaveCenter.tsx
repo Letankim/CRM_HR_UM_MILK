@@ -43,7 +43,8 @@ export function EmployeeScheduleAndLeaveCenter({
   const isProbation = stage === 'PROBATION';
   const offWin = useOffWindow(!isProbation && (mode === 'all' || mode === 'leaves')).data;
   const canRegister = canRegisterShift ?? extras?.canRegisterShift ?? isProbation;
-  const canSwap = canSwapShift ?? extras?.canSwapShift ?? (stage === 'OFFICIAL');
+  const hasOpenDispatch = (swaps ?? []).some((s) => s.kind === 'HR_DISPATCH' && s.status === 'PENDING_PEER');
+  const canSwap = (canSwapShift ?? extras?.canSwapShift ?? (stage === 'OFFICIAL')) || hasOpenDispatch;
   const cycle = extras?.probationCycle;
   const quotaText = isProbation
     ? (cycle ? `Đã đăng ký ${cycle.offCount}/${cycle.offLimit} ngày OFF trong chu kỳ thử việc` : undefined)

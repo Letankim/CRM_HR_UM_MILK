@@ -67,9 +67,9 @@ export function formatSwapAllowanceSummary(s: Pick<ShiftSwap, 'status' | 'allowa
 }
 
 export function mapShiftSwapRecord(ctx: AppContext, s: ShiftSwap, fallbackBranch?: Branch) {
-  const reqEmp = ctx.db.employees.get(s.requester_id) ?? ctx.db.employees.find((e) => e.employee_code === s.requester_id);
-  const peerEmp = ctx.db.employees.get(s.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === s.peer_id);
-  const branch = (reqEmp ? ctx.db.branches.get(reqEmp.branch_id) : undefined) ?? ctx.db.branches.get(s.branch_id) ?? fallbackBranch;
+  const reqEmp = s.requester_id ? (ctx.db.employees.get(s.requester_id) ?? ctx.db.employees.find((e) => e.employee_code === s.requester_id)) : undefined;
+  const peerEmp = s.peer_id ? (ctx.db.employees.get(s.peer_id) ?? ctx.db.employees.find((e) => e.employee_code === s.peer_id)) : undefined;
+  const branch = ctx.db.branches.get(s.branch_id) ?? (reqEmp ? ctx.db.branches.get(reqEmp.branch_id) : undefined) ?? fallbackBranch;
   const branchId = branch?.id ?? s.branch_id;
   const isApproved = s.status === 'APPROVED';
   const isDispatch = s.kind === 'HR_DISPATCH';
@@ -87,7 +87,7 @@ export function mapShiftSwapRecord(ctx: AppContext, s: ShiftSwap, fallbackBranch
     branchName: branch?.name ?? 'Chi nhánh',
     requesterCode: reqEmp?.employee_code ?? s.requester_id,
     peerCode: peerEmp?.employee_code ?? s.peer_id,
-    requesterName: reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id,
+    requesterName: reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : (isDispatch ? `Tăng cường ${branch?.name ?? 'Cửa hàng'}` : s.requester_id),
     peerName: peerEmp ? `${peerEmp.full_name} (${peerEmp.employee_code})` : s.peer_id,
     statusLabel: s.status === 'PENDING_PEER' && s.kind === 'GIVE' ? 'Chờ người nhận xác nhận' : SHIFT_SWAP_STATUS_LABELS[s.status],
     kindLabel: (SHIFT_SWAP_KIND_LABELS as Record<string, string>)[s.kind] ?? (s.kind === 'HR_DISPATCH' ? 'Điều phối khẩn cấp (+30k)' : s.kind === 'HR_SUPPORT' ? 'Hỗ trợ liên chi nhánh' : s.kind),

@@ -138,7 +138,11 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     });
 
     const leaves = ctx.db.leaveRequests.filter((l) => l.employee_id === emp.id || l.employee_id === emp.employee_code).reverse().map((l) => ({ ...l, ...resolveShiftTimeDetails(ctx, l.shift_code, l.assignment_id, l.branch_id, l.employee_id, l.leave_date), branchName: ctx.db.branches.get(l.branch_id)?.name ?? branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[l.status] }));
-    const swaps = ctx.db.shiftSwaps.filter((s) => s.requester_id === emp.id || s.requester_id === emp.employee_code || s.peer_id === emp.id || s.peer_id === emp.employee_code).reverse().map((s) => mapShiftSwapRecord(ctx, s, branch));
+    const isMine = (id: string) => Boolean(id) && (id === emp.id || id === emp.employee_code);
+    const myBranchId = emp.branch_id || branch?.id || '', isAllScope = !user.branch_scope || user.branch_scope === 'ALL' || ['ADMIN', 'HR'].includes(user.role);
+    const isMatchBranch = (bid: string) => isAllScope || !bid || !myBranchId || bid === myBranchId || bid === emp.branch_id || bid === branch?.id;
+    const isOpenBranchDispatch = (s: { kind: string; status: string; branch_id: string }) => s.kind === 'HR_DISPATCH' && s.status === 'PENDING_PEER' && isMatchBranch(s.branch_id);
+    const swaps = ctx.db.shiftSwaps.filter((s) => isMine(s.requester_id) || isMine(s.peer_id) || isOpenBranchDispatch(s)).reverse().map((s) => mapShiftSwapRecord(ctx, s, branch));
     const peerBusyByEmp = new Map<string, Record<string, string>>();
     const putBusy = (key: string, date: string, label: string) => {
       let map = peerBusyByEmp.get(key);
@@ -166,10 +170,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
         busyShiftsByDate: { ...(peerBusyByEmp.get(e.employee_code) ?? {}), ...(peerBusyByEmp.get(e.id) ?? {}) },
       }));
 
-    const adjustments = ctx.db.attendanceAdjustments
-      .filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code)
-      .reverse();
-
+    const adjustments = ctx.db.attendanceAdjustments.filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code).reverse();
     const cycleDays = emp.probation_cycle_days || 12;
     const rawDiff = emp.probation_start ? dayjs(todayStr).diff(dayjs(emp.probation_start), 'day') + 1 : (emp.probation_work_days || 7);
     const probationDaysPassed = Math.min(cycleDays, Math.max(1, rawDiff > cycleDays ? (emp.probation_work_days || 7) : rawDiff));

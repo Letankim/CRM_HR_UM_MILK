@@ -55,7 +55,7 @@ export default function EmployeeHome() {
   const displayShifts = myQ.data?.shifts ?? [];
   const myEvents = myQ.data?.events ?? [];
   const myLeaves = myQ.data?.leaves ?? [];
-  const pendingSwaps = (swapsQ.data?.data ?? []).filter((s) => (s.requester_id === empId || s.requesterCode === empCode || s.peer_id === empId || s.peerCode === empCode) && (s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED'));
+  const pendingSwaps = (myQ.data?.swaps ?? []).filter((s) => s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED');
   const myTests = (testsQ.data?.assignments ?? []).filter((a) => !empId || a.employee_id === empId || a.employeeCode === empCode);
   const probationDaysTotal = myQ.data?.profile.probationCycleDays || SYSTEM_CONFIG.defaults.probationCycleDays;
   const probationDaysPassed = myQ.data?.profile.probationDaysPassed ?? 7;
