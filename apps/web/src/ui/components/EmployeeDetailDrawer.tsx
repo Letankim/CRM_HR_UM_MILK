@@ -19,7 +19,7 @@ export function EmployeeDetailDrawer({
 }) {
   return (
     <BaseDetailDrawer
-      title={employee ? `Hồ sơ nhân sự: ${employee.fullName} (${employee.employeeCode})` : 'Chi tiết nhân sự'}
+      title="Chi tiết Hồ sơ Nhân sự"
       open={!!employee}
       onClose={onClose}
       extra={

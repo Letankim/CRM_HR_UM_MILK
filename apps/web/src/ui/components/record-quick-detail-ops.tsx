@@ -75,7 +75,7 @@ export function buildOpsQuickDetailSpec(kind: OpsQuickDetailKind, r: Rec): Quick
       };
     case 'plannerProbation':
       return {
-        title: `Chi tiết Chu kỳ 12 ngày Thử việc — ${s(r.employeeName)} (${s(r.employeeCode)})`,
+        title: 'Chi tiết Chu kỳ 12 ngày Thử việc',
         fields: [
           { label: 'Nhân sự thử việc', value: `${s(r.employeeCode)} — ${s(r.employeeName)}` },
           { label: 'Chi nhánh & Ca mặc định', value: `${s(r.branchName)} · ${shiftLbl(r.defaultShiftCode)}` },

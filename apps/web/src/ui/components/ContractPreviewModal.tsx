@@ -142,7 +142,7 @@ export function ContractPreviewModal({
   return (
     <Modal
       width="min(940px, 95vw)" style={{ top: 18 }} open={open && Boolean(employee)} destroyOnHidden onCancel={onClose}
-      title={<span>Xem &amp; Tải về Hợp đồng Lao động{employee ? ` — ${employee.fullName} (${employee.employeeCode})` : ''}</span>}
+      title="Chi tiết Văn bản Hợp đồng Lao động"
       footer={
         <Button icon={<CloseOutlined />} onClick={onClose}>
           Đóng
@@ -164,9 +164,10 @@ export function ContractPreviewModal({
 
           {activeContract && (
             <Descriptions size="small" bordered column={{ xs: 1, sm: 2, md: 3 }}>
+              <Descriptions.Item label="Nhân sự"><b>{employee?.fullName || '—'}</b> {employee?.employeeCode ? <Tag color="geekblue" style={{ marginLeft: 4 }}>{employee.employeeCode}</Tag> : null}</Descriptions.Item>
               <Descriptions.Item label="Loại hợp đồng"><Tag color={activeContract.contractType === 'OFFICIAL_CONTRACT' ? 'green' : 'gold'} style={{ margin: 0 }}>{CONTRACT_TYPE_LABELS[activeContract.contractType] || activeContract.contractType}</Tag></Descriptions.Item>
-              <Descriptions.Item label="Tên tệp & Dung lượng"><b>{fileName}</b> ({fmtSizeKb(activeContract.sizeBytes)})</Descriptions.Item>
               <Descriptions.Item label="Thời gian tải lên">{activeContract.uploadedAt ? dayjs(activeContract.uploadedAt).format('HH:mm DD/MM/YYYY') : '—'}</Descriptions.Item>
+              <Descriptions.Item label="Tên tệp & Dung lượng" span={3}><b>{fileName}</b> ({fmtSizeKb(activeContract.sizeBytes)})</Descriptions.Item>
             </Descriptions>
           )}
 

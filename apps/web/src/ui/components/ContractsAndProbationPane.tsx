@@ -190,20 +190,11 @@ export function ContractsAndProbationPane({ branches }: { branches: { value: str
       />
 
       <BaseDetailDrawer
-        open={Boolean(liveDetailEmp)} title={liveDetailEmp ? `Hợp đồng & Đánh giá Thử việc: ${liveDetailEmp.fullName} (${liveDetailEmp.employeeCode})` : 'Chi tiết hợp đồng'}
+        open={Boolean(liveDetailEmp)} title="Chi tiết Hợp đồng & Đánh giá Thử việc"
         onClose={() => setDetailEmp(null)}
-        extra={liveDetailEmp && (
-          <Space size={6} wrap>
-            {(liveDetailEmp.contracts?.length ?? 0) > 0 && (
-              <>
-                <Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewTarget({ emp: liveDetailEmp, item: liveDetailEmp.contracts![0]! })}>Xem hợp đồng</Button>
-                <Button size="small" icon={<DownloadOutlined />} onClick={() => void downloadEmployeeContractDirect(liveDetailEmp, liveDetailEmp.contracts![0]!, message)}>Tải về</Button>
-              </>
-            )}
-            {canManage && <Button size="small" type="primary" ghost icon={<CloudUploadOutlined />} onClick={() => { setUploadPresetEmp(liveDetailEmp); setUploadModalOpen(true); }}>Tải lên hợp đồng</Button>}
-            {canPromote && liveDetailEmp.stage === 'PROBATION' && <Button size="small" type="primary" icon={<RiseOutlined />} onClick={() => setPromotingRow(liveDetailEmp)}>Chuyển Chính thức</Button>}
-          </Space>
-        )}
+        extra={liveDetailEmp && canPromote && liveDetailEmp.stage === 'PROBATION' ? (
+          <Button size="small" type="primary" icon={<RiseOutlined />} onClick={() => setPromotingRow(liveDetailEmp)}>Chuyển Chính thức</Button>
+        ) : undefined}
       >
         {liveDetailEmp && <EmployeeContractStorePanel employee={liveDetailEmp} canManage={canManage} />}
       </BaseDetailDrawer>

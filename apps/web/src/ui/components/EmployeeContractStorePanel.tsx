@@ -78,10 +78,16 @@ export function ContractUploadModal({
   return (
     <Modal
       width={620} open={open} destroyOnHidden onCancel={onClose} onOk={() => form.submit()}
-      title={presetEmployee ? `Tải lên Hợp đồng Lao động: ${presetEmployee.fullName} (${presetEmployee.employeeCode})` : 'Tải lên Hợp đồng Lao động mới'}
+      title="Tải lên Hợp đồng Lao động"
       okText="Lưu hợp đồng" cancelText="Hủy bỏ"
       okButtonProps={{ icon: <CloudUploadOutlined />, loading: uploadMut.isPending }} cancelButtonProps={{ icon: <CloseOutlined /> }}
     >
+      {presetEmployee && (
+        <Descriptions size="small" bordered column={2} style={{ marginBottom: 12 }}>
+          <Descriptions.Item label="Họ và tên nhân viên"><strong>{presetEmployee.fullName}</strong></Descriptions.Item>
+          <Descriptions.Item label="Mã số nhân viên"><Tag color="geekblue" style={{ margin: 0, fontWeight: 600 }}>{presetEmployee.employeeCode}</Tag></Descriptions.Item>
+        </Descriptions>
+      )}
       <Form form={form} layout="vertical" onFinish={(v) => uploadMut.mutate(v)}>
         <Row gutter={12}>
           <Col span={presetEmployee ? 24 : 14}>
@@ -150,21 +156,16 @@ export function EmployeeContractStorePanel({ employee, canManage = false }: { em
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Descriptions size="small" bordered column={{ xs: 1, sm: 2, md: 3 }}>
+        <Descriptions.Item label="Họ và tên nhân viên"><strong>{employee.fullName}</strong></Descriptions.Item>
+        <Descriptions.Item label="Mã số nhân viên (MSNV)"><Tag color="geekblue" style={{ margin: 0, fontWeight: 600 }}>{employee.employeeCode}</Tag></Descriptions.Item>
+        <Descriptions.Item label="Chi nhánh & Vị trí">{employee.branchName} · {employee.staffGroupLabel}</Descriptions.Item>
         <Descriptions.Item label="Giai đoạn nhân sự"><StatusTag value={employee.stage || 'PROBATION'} /></Descriptions.Item>
         <Descriptions.Item label="Điểm tín nhiệm chuyên cần"><Tag color={creditPts >= 95 ? 'success' : creditPts >= 80 ? 'warning' : 'error'} style={{ margin: 0, fontWeight: 600 }}>{creditPts}/100 điểm</Tag></Descriptions.Item>
         <Descriptions.Item label="Giờ công & Điểm TEST"><Space size={4}><Tag color="blue" style={{ margin: 0 }}>Công: {employee.probationHoursCompleted ?? 0}h</Tag><Tag color={employee.testPassed ? 'success' : 'default'} style={{ margin: 0 }}>TEST: {employee.testBestScorePercent ?? 0}%</Tag></Space></Descriptions.Item>
         <Descriptions.Item label="Đánh giá vấn đáp Google Meet"><Space size={4} wrap>{employee.probationMeetDone ? <Tag color="success" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã hoàn tất vấn đáp</Tag> : <Tag color="default" style={{ margin: 0 }}>Chưa vấn đáp</Tag>}{employee.probationMeetNote && <span style={{ fontSize: 12, color: '#475569' }}>({employee.probationMeetNote})</span>}</Space></Descriptions.Item>
         <Descriptions.Item label="Quyền nghỉ đột xuất (Thử việc)"><Tag color="cyan" style={{ margin: 0 }}>Đã cấp: {employee.emergencyLeaveGrantCount ?? 0} lượt</Tag></Descriptions.Item>
         <Descriptions.Item label="Tổng số hợp đồng lưu trữ">
-          <Space size={6} wrap>
-            <Tag color={contracts.length > 0 ? 'geekblue' : 'default'} style={{ margin: 0, fontWeight: 600 }}>{contracts.length} văn bản</Tag>
-            {contracts.length > 0 && (
-              <>
-                <Button size="small" type="primary" ghost icon={<EyeOutlined />} onClick={() => setPreviewState({ open: true, item: contracts[0]! })}>Xem hợp đồng</Button>
-                <Button size="small" icon={<DownloadOutlined />} onClick={() => void downloadEmployeeContractDirect(employee, contracts[0]!, message)}>Tải về</Button>
-              </>
-            )}
-          </Space>
+          <Tag color={contracts.length > 0 ? 'geekblue' : 'default'} style={{ margin: 0, fontWeight: 600 }}>{contracts.length} văn bản</Tag>
         </Descriptions.Item>
       </Descriptions>
 
