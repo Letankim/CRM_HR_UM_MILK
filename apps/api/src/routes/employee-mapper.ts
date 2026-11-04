@@ -15,6 +15,7 @@ import {
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { currentProfile, isOfficialAt, mapSalaryProfile, probationAmount, profilesOf, profileStatus, today } from '../services/salary-profile.service.js';
+import { resolveAvatarUrl } from '../services/employee-avatar.service.js';
 import { buildEmployeeDossierSummary } from './employee-dossier-summary.js';
 
 export interface UniquePersonalCheckInput {
@@ -200,6 +201,7 @@ export function mapEmployeeRecord(e: Employee, ctx: AppContext) {
     userRole: linkedUser?.role ?? null, userRoleLabel: linkedUser ? ROLE_LABELS[linkedUser.role] : null,
     accountStatus: linkedUser?.status ?? null, accountStatusLabel: linkedUser ? ACCOUNT_STATUS_LABELS[linkedUser.status] : 'Chưa liên kết tài khoản',
     canSwapShift: isOfficialSwapEligibleEmployee(ctx, e),
+    avatarFileId: e.avatar_file_id || null, avatarUrl: resolveAvatarUrl(e.avatar_file_id),
     note: e.note || '', version: e.version, created_at: e.created_at, updated_at: e.updated_at,
   };
 }

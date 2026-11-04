@@ -190,6 +190,7 @@ export function TopHeaderBar({
           >
             <Avatar
               size={24}
+              src={user.avatarUrl || undefined}
               style={{ background: BRAND.primaryBg, color: BRAND.primary, border: '1px solid #93C5FD', fontWeight: 700, fontSize: 11 }}
             >
               {loggingOut ? <Spin size="small" /> : (user.displayName || user.username).charAt(0).toUpperCase()}

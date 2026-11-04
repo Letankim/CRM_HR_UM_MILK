@@ -13,6 +13,7 @@ import { auditRoutes } from './routes/audit.routes.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { branchRoutes } from './routes/branches.routes.js';
 import { employeeRoutes } from './routes/employees.routes.js';
+import { employeeAvatarRoutes } from './routes/employee-avatar.routes.js';
 import { healthRoutes } from './routes/health.routes.js';
 import { internalRoutes } from './routes/internal.routes.js';
 import { payrollRoutes } from './routes/payroll.routes.js';
@@ -136,6 +137,7 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
   await app.register(async (i) => authRoutes(i, ctx));
   await app.register(async (i) => accountRoutes(i, ctx));
   await app.register(async (i) => employeeRoutes(i, ctx));
+  await app.register(async (i) => employeeAvatarRoutes(i, ctx));
   await app.register(async (i) => branchRoutes(i, ctx));
   await app.register(async (i) => scheduleRoutes(i, ctx));
   await app.register(async (i) => leaveSwapRoutes(i, ctx));

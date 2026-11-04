@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isEmployeeRole, type Role } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { AdminPayrollSignatureCard } from './AdminPayrollSignatureCard';
+import { AvatarUploader } from './AvatarUploader';
 import { ChangeSecretFields } from './ChangeSecretFields';
 import { FinancePayrollSignaturePanel } from './FinancePayrollSignatureModal';
 import { ProfileBankQrUploader } from './ProfileBankQrUploader';
@@ -17,6 +18,7 @@ import { ProfileBankQrUploader } from './ProfileBankQrUploader';
 interface SelfProfileData {
   id: string; version: number; username: string; displayName: string; phone: string; email: string;
   role: string; roleLabel: string; employeeId: string | null; employeeCode: string | null; branchName: string;
+  avatarFileId?: string | null; avatarUrl?: string | null;
   currentAddress: string; emergencyContactName: string; emergencyContactPhone: string;
   bankName: string; bankAccountNumber: string; bankAccountHolder: string;
   bankQrFileId?: string; bankQrUrl?: string | null; bankQrDriveFolder?: string;
@@ -143,7 +145,20 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
             forceRender: true,
             label: <span><IdcardOutlined /> Thông tin cá nhân</span>,
             children: (
-              <Form form={infoForm} layout="vertical" onFinish={(v) => updateInfoMut.mutate(v as Record<string, unknown>)} style={{ marginTop: 2 }}>
+              <>
+                <div style={{ marginBottom: 12, padding: '8px 12px', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4 }}>
+                  <AvatarUploader
+                    value={p?.avatarUrl}
+                    name={p?.displayName || p?.username}
+                    uploadUrl="/auth/profile/avatar"
+                    deleteUrl="/auth/profile/avatar"
+                    onUploaded={() => {
+                      void qc.invalidateQueries({ queryKey: ['me'] });
+                      void qc.invalidateQueries({ queryKey: ['auth-profile'] });
+                    }}
+                  />
+                </div>
+                <Form form={infoForm} layout="vertical" onFinish={(v) => updateInfoMut.mutate(v as Record<string, unknown>)} style={{ marginTop: 2 }}>
                 <Row gutter={12}>
                   <Col xs={24} sm={12}><Form.Item name="display_name" label="Họ và tên" rules={[{ required: true, message: 'Vui lòng nhập họ và tên' }]}><Input prefix={<UserOutlined />} placeholder="Nhập họ và tên hiển thị" /></Form.Item></Col>
                   <Col xs={24} sm={12}><Form.Item name="phone" label="Số điện thoại"><Input prefix={<PhoneOutlined />} placeholder="Ví dụ: 0901000001" /></Form.Item></Col>
@@ -167,6 +182,7 @@ export function UserProfileModal({ open, initialTab = 'info', onClose }: UserPro
                   </Form.Item>
                 )}
               </Form>
+              </>
             ),
           },
           {

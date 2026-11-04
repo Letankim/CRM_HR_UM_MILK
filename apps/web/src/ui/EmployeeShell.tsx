@@ -144,7 +144,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
                 }}
               >
                 <div className="umbm-header-pill" style={{ height: 36, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px 0 6px', border: `1px solid ${BRAND.headerControlBorder}`, borderRadius: 8, cursor: 'pointer', background: '#F8FAFC' }}>
-                  <Avatar size={24} style={{ background: BRAND.primaryBg, color: BRAND.primary, border: '1px solid #93C5FD', fontWeight: 700, fontSize: 11 }}>{(u.displayName || u.username).charAt(0).toUpperCase()}</Avatar>
+                  <Avatar size={24} src={u.avatarUrl || undefined} style={{ background: BRAND.primaryBg, color: BRAND.primary, border: '1px solid #93C5FD', fontWeight: 700, fontSize: 11 }}>{(u.displayName || u.username).charAt(0).toUpperCase()}</Avatar>
                   <Typography.Text strong style={{ fontSize: 12, color: '#0F172A' }}>{u.displayName || u.username}</Typography.Text>
                   <Tag color="blue" style={{ margin: 0, borderRadius: 4, fontSize: 11, lineHeight: '18px', paddingInline: 6, fontWeight: 600 }}>{ROLE_SHORT_LABELS[u.role]}</Tag>
                   <DownOutlined style={{ fontSize: 10, color: '#64748B' }} />

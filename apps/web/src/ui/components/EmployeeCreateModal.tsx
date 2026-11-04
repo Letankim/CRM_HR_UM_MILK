@@ -18,11 +18,10 @@ import { ProfileBankQrUploader } from './ProfileBankQrUploader';
 import { SALARY_FIELD_DEFAULTS, SalaryProfileFields } from './SalaryProfileFields';
 
 interface EmployeeFormValues {
-  employee_code?: string; full_name: string; phone_number: string; email?: string;
+  employee_code?: string; full_name: string; phone_number: string; email?: string; avatar_base64?: string | null;
   date_of_birth?: string; gender?: string; citizen_id?: string; citizen_issue_date?: string;
   permanent_address?: string; current_address?: string; emergency_contact_name?: string; emergency_contact_phone?: string;
-  tax_code?: string; resigned_at?: string; resign_reason?: string;
-  branch_id: string; staff_group: string; stage: 'PROBATION' | 'OFFICIAL'; status?: string;
+  tax_code?: string; resigned_at?: string; resign_reason?: string; branch_id: string; staff_group: string; stage: 'PROBATION' | 'OFFICIAL'; status?: string;
   employment_type: string; default_shift_code: string; probation_start?: string; probation_end?: string;
   salary?: Record<string, unknown>; bank_name?: string; bank_account_number?: string; bank_account_holder?: string;
   note?: string; account_mode?: EmployeeAccountMode; link_user_id?: string; username?: string; initial_pin?: string;
@@ -60,6 +59,7 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
     if (editing) {
       const sp = editing.salaryProfile;
       form.setFieldsValue({
+        avatar_base64: editing.avatarUrl ?? undefined,
         employee_code: editing.employeeCode, full_name: editing.fullName, phone_number: editing.phone,
         email: editing.email ?? '', date_of_birth: editing.dateOfBirth ?? '', gender: editing.gender || undefined,
         citizen_id: editing.citizenId ?? '', citizen_issue_date: editing.citizenIssueDate ?? '',
@@ -100,14 +100,13 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
   }, [open, editing, existingCodes, branches, form]);
 
   const saveMutation = useMutation({
-    mutationFn: (values: EmployeeFormValues) => {
+    mutationFn: async (values: EmployeeFormValues) => {
       const mode = values.account_mode ?? 'AUTO_CREATE';
-      const payload = {
-        ...values,
-        create_account: mode === 'AUTO_CREATE',
-        link_user_id: mode === 'LINK_EXISTING' ? values.link_user_id || '' : mode === 'NONE' ? '' : undefined,
-      };
-      return editing ? api.put(`/admin/employees/${editing.id}`, { ...payload, version: editing.version }) : api.post('/admin/employees', payload);
+      const payload = { ...values, create_account: mode === 'AUTO_CREATE', link_user_id: mode === 'LINK_EXISTING' ? values.link_user_id || '' : mode === 'NONE' ? '' : undefined };
+      const res = editing ? await api.put(`/admin/employees/${editing.id}`, { ...payload, version: editing.version }) : await api.post('/admin/employees', payload);
+      if (editing && values.avatar_base64?.startsWith('data:image/')) await api.post(`/admin/employees/${editing.id}/avatar`, { avatar_base64: values.avatar_base64 });
+      else if (editing && values.avatar_base64 === null) await api.delete(`/admin/employees/${editing.id}/avatar`);
+      return res;
     },
     onSuccess: () => {
       message.success(editing ? 'Đã cập nhật hồ sơ nhân sự và đồng bộ liên kết tài khoản thành công' : 'Đã tạo hồ sơ nhân sự và liên kết tài khoản thành công');

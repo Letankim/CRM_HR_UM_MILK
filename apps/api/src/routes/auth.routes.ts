@@ -9,7 +9,9 @@ import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { auditContext, requireAuth } from '../plugins/auth-context.js';
+import { resolveAvatarUrl } from '../services/employee-avatar.service.js';
 import { registerAuthProfileRoutes } from './auth-profile.routes.js';
+import { findLinkedEmployeeForUser } from './employee-mapper.js';
 
 const zChangePasswordBody = z.object({
   current_secret: z.string().optional(),
@@ -50,7 +52,10 @@ export function isPinRotationRequiredInWindow(
 
 export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
   const cookieBase = { httpOnly: true, secure: ctx.env.COOKIE_SECURE, sameSite: 'lax' as const, path: '/' };
-  const toResolvedPublicUser = (u: Parameters<typeof toPublicUser>[0]) => ({ ...toPublicUser(u, ctx.auth.resolvePinState(u)), branchScope: ctx.auth.resolveEffectiveBranchScope(u) });
+  const toResolvedPublicUser = (u: Parameters<typeof toPublicUser>[0]) => {
+    const emp = findLinkedEmployeeForUser(u, ctx);
+    return { ...toPublicUser(u, ctx.auth.resolvePinState(u), resolveAvatarUrl(emp?.avatar_file_id)), branchScope: ctx.auth.resolveEffectiveBranchScope(u) };
+  };
   const maskName = (name: string) => name.split(' ').map((w, i, arr) => (i === arr.length - 1 ? w : `${w.charAt(0)}.`)).join(' ');
 
   async function issueSession(reply: FastifyReply, claims: TokenClaims): Promise<string> {

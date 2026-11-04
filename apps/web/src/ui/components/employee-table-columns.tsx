@@ -1,6 +1,6 @@
 'use client';
 
-import { Space, Tag, Typography } from 'antd';
+import { Avatar, Space, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { CheckCircleOutlined, DeleteOutlined, EditOutlined, FileProtectOutlined, RiseOutlined, UserOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -12,6 +12,7 @@ import { RowActionButtons } from './RowActionButtons';
 
 export interface EmployeeRowItem {
   id: string; employeeCode: string; fullName: string; phone: string;
+  avatarFileId?: string | null; avatarUrl?: string | null;
   email?: string; dateOfBirth?: string; gender?: string; citizenId?: string; citizenIssueDate?: string;
   permanentAddress?: string; currentAddress?: string; emergencyContactName?: string; emergencyContactPhone?: string;
   taxCode?: string; resignedAt?: string; resignReason?: string;
@@ -76,40 +77,33 @@ export function exportEmployeesExcel(rows: EmployeeRowItem[], canSeeSalary = tru
 }
 
 export interface BuildEmployeeColumnsOptions {
-  canManage: boolean;
-  canPromote: boolean;
-  canSeeSalary?: boolean;
-  processingId: string | null;
-  onViewDetail: (row: EmployeeRowItem) => void;
-  onEdit: (row: EmployeeRowItem) => void;
-  onPromoteOfficial: (row: EmployeeRowItem) => void;
-  onDelete: (row: EmployeeRowItem) => void;
+  canManage: boolean; canPromote: boolean; canSeeSalary?: boolean; processingId: string | null;
+  onViewDetail: (row: EmployeeRowItem) => void; onEdit: (row: EmployeeRowItem) => void;
+  onPromoteOfficial: (row: EmployeeRowItem) => void; onDelete: (row: EmployeeRowItem) => void;
 }
 
 export function buildEmployeeColumns({
-  canManage,
-  canPromote,
-  canSeeSalary = true,
-  processingId,
-  onViewDetail,
-  onEdit,
-  onPromoteOfficial,
-  onDelete,
+  canManage, canPromote, canSeeSalary = true, processingId, onViewDetail, onEdit, onPromoteOfficial, onDelete,
 }: BuildEmployeeColumnsOptions): ColumnsType<EmployeeRowItem> {
   const cols: ColumnsType<EmployeeRowItem> = [
     {
       title: 'Nhân sự & Vị trí',
       key: 'employee',
       render: (_, r) => (
-        <div>
-          <Typography.Text strong style={{ fontSize: 13 }}>{r.fullName}</Typography.Text>
-          <div style={{ marginTop: 3 }}>
-            <Space size={6} wrap>
-              <Tag color="geekblue" style={{ margin: 0, borderRadius: 2, fontSize: 11, fontWeight: 600 }}>{r.employeeCode}</Tag>
-              <span style={{ fontSize: 12, color: '#64748B' }}>{r.staffGroupLabel}</span>
-            </Space>
+        <Space size={10} align="center">
+          <Avatar size={34} src={r.avatarUrl || undefined} style={{ backgroundColor: '#2563EB', flexShrink: 0, fontWeight: 600 }}>
+            {r.fullName.charAt(0).toUpperCase()}
+          </Avatar>
+          <div>
+            <Typography.Text strong style={{ fontSize: 13 }}>{r.fullName}</Typography.Text>
+            <div style={{ marginTop: 2 }}>
+              <Space size={6} wrap>
+                <Tag color="geekblue" style={{ margin: 0, borderRadius: 2, fontSize: 11, fontWeight: 600 }}>{r.employeeCode}</Tag>
+                <span style={{ fontSize: 12, color: '#64748B' }}>{r.staffGroupLabel}</span>
+              </Space>
+            </div>
           </div>
-        </div>
+        </Space>
       ),
     },
     {

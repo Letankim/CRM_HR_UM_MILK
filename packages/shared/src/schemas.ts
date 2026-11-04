@@ -135,6 +135,7 @@ export const zPublicUser = z.object({
   mustChangePin: z.boolean().optional(),
   /** Lý do yêu cầu đổi PIN: lần đầu cấp tài khoản / đặt lại / hết chu kỳ định kỳ */
   pinChangeReason: z.enum(['FIRST_LOGIN', 'RESET', 'EXPIRED']).nullable().optional(),
+  avatarUrl: z.string().nullable().optional(),
 });
 export type PublicUser = z.infer<typeof zPublicUser>;
 

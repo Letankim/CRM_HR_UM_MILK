@@ -17,6 +17,7 @@ import { assertAmountInRange, newProfileRow } from '../services/salary-profile.w
 import { healBranchConsistency, syncAccountFromEmployee } from './account-employee-sync.js';
 import { assertUniquePersonalIdentifiers, mapEmployeeRecord, resolveStaffGroupLabel } from './employee-mapper.js';
 import { employeeActionRoutes } from './employees-actions.routes.js';
+import { saveEmployeeAvatar } from '../services/employee-avatar.service.js';
 import { zSalaryProfileFields } from './salary-profile.schemas.js';
 
 export { mapEmployeeRecord } from './employee-mapper.js';
@@ -59,6 +60,7 @@ const zCreateEmployeeBody = z.object({
   bank_account_holder: z.string().trim().max(80).optional().default(''),
   note: z.string().trim().max(300).optional().default(''),
   create_account: z.boolean().optional().default(true),
+  avatar_base64: z.string().trim().optional(),
   link_user_id: z.string().trim().max(64).optional().default(''),
   username: z.string().trim().max(32).optional().default(''),
   initial_pin: z.string().trim().min(6, 'Mã PIN đăng nhập phải gồm đúng 6 chữ số').max(128).or(z.literal('')).optional().default(''),
@@ -205,10 +207,11 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
         after: { employee_code: created.employee_code, stage: created.stage, user_id: created.user_id, salary_rate_type: body.salary?.rate_type ?? null },
       });
     });
+    if (body.avatar_base64) await saveEmployeeAvatar(ctx, { employeeId: created.id, base64: body.avatar_base64, actorId });
     const onboardSecret = created.user_id ? (body.link_user_id ? (body.initial_pin && body.initial_pin.length >= 6 ? body.initial_pin : undefined) : (body.create_account ? effectiveCreatePin : undefined)) : undefined;
     queueEmployeeOnboardedEmail(ctx, created, request.auth?.user.email, onboardSecret);
     reply.code(201);
-    return sendSuccess(request, 'Đã tạo hồ sơ nhân sự mới và đề xuất tài khoản ở trạng thái Chờ Quản trị viên kích hoạt', mapEmployeeRecord(created, ctx));
+    return sendSuccess(request, 'Đã tạo hồ sơ nhân sự mới và đề xuất tài khoản ở trạng thái Chờ Quản trị viên kích hoạt', mapEmployeeRecord(ctx.db.employees.get(created.id) || created, ctx));
   });
   await employeeActionRoutes(app, ctx);
 }

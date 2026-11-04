@@ -18,8 +18,7 @@ import { dayjs, nowIso } from '../lib/time.js';
 import { getDummyHash, verifySecret } from './password.js';
 import type { TokenClaims } from './tokens.js';
 
-const MAX_FAILED_ATTEMPTS = 5;
-const LOCK_MINUTES = 15;
+const MAX_FAILED_ATTEMPTS = 5, LOCK_MINUTES = 15;
 
 export function parseBranchScope(raw: string): BranchScope {
   const value = raw.trim();
@@ -43,22 +42,16 @@ export function parseExtraPermissions(raw: string): Permission[] {
 export type PinChangeReason = 'FIRST_LOGIN' | 'RESET' | 'EXPIRED';
 export interface PinChangeState { required: boolean; reason: PinChangeReason | null }
 
-export function toPublicUser(user: User, pinState?: PinChangeState): PublicUser {
+export function toPublicUser(user: User, pinState?: PinChangeState, avatarUrl?: string | null): PublicUser {
   const extraPermissions = parseExtraPermissions(user.permissions_json).filter(
     (p) => !isPermissionForbiddenForRole(user.role, p),
   );
   return {
-    id: user.id,
-    username: user.username,
-    displayName: user.display_name,
-    role: user.role,
-    permissions: [...resolvePermissions(user.role, extraPermissions)],
-    extraPermissions,
-    branchScope: parseBranchScope(user.branch_scope),
-    employeeId: user.employee_id || null,
-    status: user.status,
-    mustChangePin: pinState?.required ?? user.must_change_pin,
-    pinChangeReason: pinState?.reason ?? null,
+    id: user.id, username: user.username, displayName: user.display_name, role: user.role,
+    permissions: [...resolvePermissions(user.role, extraPermissions)], extraPermissions,
+    branchScope: parseBranchScope(user.branch_scope), employeeId: user.employee_id || null, status: user.status,
+    mustChangePin: pinState?.required ?? user.must_change_pin, pinChangeReason: pinState?.reason ?? null,
+    avatarUrl: avatarUrl ?? null,
   };
 }
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { Col, Form, Input, Row, Select } from 'antd';
+import { AvatarUploader } from './AvatarUploader';
 import { DateStringPicker } from './DateTimePickers';
 
 /**
@@ -10,6 +11,13 @@ import { DateStringPicker } from './DateTimePickers';
 export function EmployeePersonalFields({ isEditing }: { isEditing?: boolean }) {
   return (
     <>
+      <Row gutter={12}>
+        <Col span={24}>
+          <Form.Item name="avatar_base64" label="Ảnh đại diện (Avatar)" valuePropName="value">
+            <AvatarUploader />
+          </Form.Item>
+        </Col>
+      </Row>
       <Row gutter={12}>
         <Col span={10}>
           <Form.Item name="email" label="Email">

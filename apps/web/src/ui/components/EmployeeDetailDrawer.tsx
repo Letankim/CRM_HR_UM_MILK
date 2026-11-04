@@ -2,7 +2,9 @@
 
 import { Alert, Button, Descriptions, Space, Tabs, Tag } from 'antd';
 import { CalendarOutlined, ContactsOutlined, DollarOutlined, EditOutlined, FileProtectOutlined, IdcardOutlined, RiseOutlined, UserOutlined, UserSwitchOutlined } from '@ant-design/icons';
+import { useQueryClient } from '@tanstack/react-query';
 import { StatusTag } from '../StatusTag';
+import { AvatarUploader } from './AvatarUploader';
 import { BaseDetailDrawer } from './BaseDetailDrawer';
 import { EmployeeContractStorePanel } from './EmployeeContractStorePanel';
 import { EmployeeDossierHistoryTab } from './EmployeeDossierHistoryTab';
@@ -17,6 +19,7 @@ export function EmployeeDetailDrawer({
   employee: EmployeeRowItem | null; canManage?: boolean; canPromote: boolean; canSeeSalary?: boolean;
   promoting: boolean; onEdit?: (row: EmployeeRowItem) => void; onPromoteOfficial: (row: EmployeeRowItem) => void; onClose: () => void;
 }) {
+  const qc = useQueryClient();
   return (
     <BaseDetailDrawer
       title="Chi tiết Hồ sơ Nhân sự"
@@ -38,7 +41,18 @@ export function EmployeeDetailDrawer({
       }
     >
       {employee && (
-        <Tabs
+        <>
+          <div style={{ marginBottom: 12, padding: '8px 12px', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4 }}>
+            <AvatarUploader
+              value={employee.avatarUrl}
+              name={employee.fullName}
+              uploadUrl={canManage ? `/admin/employees/${employee.id}/avatar` : undefined}
+              deleteUrl={canManage ? `/admin/employees/${employee.id}/avatar` : undefined}
+              disabled={!canManage}
+              onUploaded={() => qc.invalidateQueries({ queryKey: ['employees'] })}
+            />
+          </div>
+          <Tabs
           defaultActiveKey="work"
           items={[
             {
@@ -187,6 +201,7 @@ export function EmployeeDetailDrawer({
             },
           ]}
         />
+        </>
       )}
     </BaseDetailDrawer>
   );

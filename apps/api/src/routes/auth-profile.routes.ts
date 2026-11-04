@@ -6,6 +6,7 @@ import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { auditContext, requireAuth } from '../plugins/auth-context.js';
 import { runBackgroundSideEffect } from '../services/background-write.js';
+import { resolveAvatarUrl } from '../services/employee-avatar.service.js';
 import { persistPayrollMedia, resolvePayrollMediaUrl, toCleanDriveSlug, type PersistedPayrollMedia } from '../services/payroll-media-storage.js';
 import { assertUniquePersonalIdentifiers } from './employee-mapper.js';
 
@@ -42,6 +43,8 @@ export function registerAuthProfileRoutes(app: FastifyInstance, ctx: AppContext,
       roleLabel: ROLE_LABELS[user.role],
       employeeId: emp?.id ?? null,
       employeeCode: emp?.employee_code ?? (user.employee_id || null),
+      avatarFileId: emp?.avatar_file_id || null,
+      avatarUrl: resolveAvatarUrl(emp?.avatar_file_id),
       branchName: branch?.name ?? 'Toàn hệ thống',
       currentAddress: emp?.current_address ?? '',
       emergencyContactName: emp?.emergency_contact_name ?? '',
