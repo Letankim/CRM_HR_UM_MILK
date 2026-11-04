@@ -55,6 +55,14 @@ export interface OfficeScheduleShiftPlan {
   note: string;
 }
 
+export interface OfficeStaffDaySchedule {
+  date: string;
+  weekday: number;
+  type: 'PLANNED' | 'EXISTING' | 'OFF' | 'WEEKEND_OFF';
+  label: string;
+  hours: number;
+}
+
 export async function planOfficeShiftsForWeek(ctx: AppContext, params: { weekStart: string; branchId?: string; mode?: OfficeWorkdayMode }) {
   await ensureOfficeStaffProfiles(ctx);
   const settings = getOperationSettings(ctx.db);
@@ -105,10 +113,23 @@ export async function planOfficeShiftsForWeek(ctx: AppContext, params: { weekSta
   return {
     weekStart: mon, weekEnd, mode, modeLabel: OFFICE_WORKDAY_MODE_LABELS[mode],
     staffCount: staff.length, workdays, toCreate, skippedExisting, skippedOff,
-    staffSummary: staff.map((e) => ({
-      id: e.id, code: e.employee_code, name: e.full_name, branchId: e.branch_id,
-      plannedCount: toCreate.filter((c) => c.employeeId === e.id).length,
-    })),
+    staffSummary: staff.map((emp) => {
+      const user = usersByEmpId.get(emp.id) || usersByEmpId.get(emp.employee_code);
+      const br = ctx.db.branches.get(emp.branch_id);
+      const days: OfficeStaffDaySchedule[] = workdays.map((d) => {
+        if (!d.isWorkday) return { date: d.date, weekday: d.weekday, type: 'WEEKEND_OFF', label: 'Nghỉ', hours: 0 };
+        const hasOff = ctx.db.leaveRequests.filter((l) => (l.employee_id === emp.id || l.employee_id === emp.employee_code) && l.leave_date === d.date && l.status === 'APPROVED').length > 0;
+        if (hasOff) return { date: d.date, weekday: d.weekday, type: 'OFF', label: 'Nghỉ phép', hours: 0 };
+        const existing = ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === d.date && a.day_type !== 'OFF');
+        if (existing) return { date: d.date, weekday: d.weekday, type: 'EXISTING', label: 'Đã có ca', hours: existing.scheduled_hours || 8 };
+        const hours = d.isHalfDay ? settings.officeSaturdayHours : hcHours;
+        return { date: d.date, weekday: d.weekday, type: 'PLANNED', label: d.isHalfDay ? 'Sáng T7' : 'Hành chính', hours };
+      });
+      return {
+        id: emp.id, code: emp.employee_code, name: emp.full_name, roleTitle: emp.position_title || user?.role || 'Văn phòng',
+        branchName: br?.name || 'Văn phòng', days, plannedCount: days.filter((x) => x.type === 'PLANNED').length,
+      };
+    }),
   };
 }
 

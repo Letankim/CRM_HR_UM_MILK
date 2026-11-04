@@ -1,11 +1,14 @@
 'use client';
 
-import { Alert, App, Button, Form, Input, Modal, Select, Space, Spin, Tag, Typography } from 'antd';
-import { BankOutlined, CheckCircleOutlined, ScheduleOutlined } from '@ant-design/icons';
+import { useEffect, useState } from 'react';
+import { Alert, App, Button, Checkbox, Flex, Input, Modal, Select, Space, Spin, Tag } from 'antd';
+import {
+  BankOutlined, CheckCircleOutlined, CloseOutlined, FormOutlined, ReloadOutlined, ScheduleOutlined,
+} from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
 import { OFFICE_WORKDAY_MODE_OPTIONS, type OfficeWorkdayMode } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
+import { OfficeRosterPreviewTable, type OfficeStaffSummaryItem } from './OfficeRosterPreviewTable';
 
 interface OfficePreviewResponse {
   weekStart: string;
@@ -16,7 +19,7 @@ interface OfficePreviewResponse {
   toCreate: { employeeName: string; workDate: string; shiftCode: string; hours: number }[];
   skippedExisting: number;
   skippedOff: number;
-  staffSummary: { id: string; name: string; plannedCount: number }[];
+  staffSummary: OfficeStaffSummaryItem[];
 }
 
 interface Props {
@@ -31,6 +34,12 @@ export function OfficeShiftPublishModal({ open, onClose, weekStart, branchId = '
   const { message } = App.useApp();
   const [selectedMode, setSelectedMode] = useState<OfficeWorkdayMode | undefined>(undefined);
   const [note, setNote] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+
+  useEffect(() => {
+    setConfirmed(false);
+    setNote('');
+  }, [open, weekStart, selectedMode]);
 
   const queryParams = new URLSearchParams({ week_start: weekStart, branch_id: branchId });
   if (selectedMode) queryParams.set('mode', selectedMode);
@@ -67,70 +76,96 @@ export function OfficeShiftPublishModal({ open, onClose, weekStart, branchId = '
       open={open}
       onCancel={onClose}
       destroyOnHidden
+      centered
+      width="96vw"
+      style={{ maxWidth: 1120, top: 16 }}
+      styles={{ body: { maxHeight: 'calc(100vh - 170px)', overflowY: 'auto', paddingTop: 8 } }}
       title={
-        <Space>
+        <Space size={8} wrap>
           <BankOutlined style={{ color: '#2563EB' }} />
-          <span>Phát hành ca Hành chính Khối Văn phòng</span>
+          <span>Xem trước &amp; Phát hành ca Hành chính Khối Văn phòng</span>
+          {p && (
+            <Tag color="blue" icon={<ScheduleOutlined />} style={{ margin: 0 }}>
+              Tuần {p.weekStart} – {p.weekEnd}
+            </Tag>
+          )}
         </Space>
       }
-      footer={[
-        <Button key="cancel" onClick={onClose} disabled={publishMut.isPending}>
-          Đóng
-        </Button>,
-        <Button
-          key="submit"
-          type="primary"
-          icon={<CheckCircleOutlined />}
-          loading={publishMut.isPending}
-          disabled={!p || p.toCreate.length === 0}
-          onClick={() => publishMut.mutate()}
-        >
-          Phát hành {p?.toCreate.length ? `${p.toCreate.length} ca` : 'ca'}
-        </Button>,
-      ]}
-    >
-      <Form layout="vertical" style={{ marginTop: 12 }}>
-        <Form.Item label="Chế độ làm việc áp dụng cho tuần này">
-          <Select
-            value={selectedMode ?? p?.mode ?? 'MON_TO_FRI'}
-            options={OFFICE_WORKDAY_MODE_OPTIONS}
-            onChange={(val) => setSelectedMode(val as OfficeWorkdayMode)}
-          />
-        </Form.Item>
-
-        {q.isLoading ? (
-          <div style={{ textAlign: 'center', padding: '24px 0' }}><Spin tip="Đang tải dữ liệu dự kiến..." /></div>
-        ) : p ? (
-          <Space direction="vertical" size={10} style={{ width: '100%' }}>
-            <Alert
-              type="info"
-              showIcon
-              icon={<ScheduleOutlined />}
-              message={`Tuần áp dụng: ${p.weekStart} đến ${p.weekEnd}`}
-              description={
-                <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  <Tag color="blue">Tổng nhân sự: {p.staffCount} người</Tag>
-                  <Tag color="green">Dự kiến tạo: {p.toCreate.length} ca</Tag>
-                  {p.skippedExisting > 0 && <Tag color="default">Đã có ca: {p.skippedExisting} lượt</Tag>}
-                  {p.skippedOff > 0 && <Tag color="orange">Đơn OFF duyệt: {p.skippedOff} ngày</Tag>}
-                </div>
-              }
-            />
-            {p.toCreate.length === 0 && (
-              <Alert type="warning" showIcon message="Tất cả nhân sự khối văn phòng đã có ca hoặc đã duyệt nghỉ OFF trong tuần này." />
-            )}
-            <Form.Item label="Ghi chú phát hành (tùy chọn)" style={{ marginBottom: 0 }}>
-              <Input.TextArea
-                rows={2}
-                maxLength={300}
-                placeholder="Nhập ghi chú cho đợt phát hành ca văn phòng..."
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-              />
-            </Form.Item>
+      footer={
+        <Flex justify="space-between" align="center" wrap gap={12} style={{ width: '100%' }}>
+          <Checkbox
+            checked={confirmed}
+            disabled={publishMut.isPending || !p || p.toCreate.length === 0}
+            onChange={(e) => setConfirmed(e.target.checked)}
+            style={{ textAlign: 'left' }}
+          >
+            Tôi đã kiểm tra danh sách ca hành chính dự kiến và xác nhận phát hành ca cho khối văn phòng
+          </Checkbox>
+          <Space size={8}>
+            <Button icon={<CloseOutlined />} disabled={publishMut.isPending} onClick={onClose}>
+              Hủy bỏ
+            </Button>
+            <Button
+              type="primary"
+              icon={<CheckCircleOutlined />}
+              disabled={!confirmed || !p || p.toCreate.length === 0}
+              loading={publishMut.isPending}
+              onClick={() => publishMut.mutate()}
+            >
+              Xác nhận &amp; Phát hành ca ({p?.toCreate.length ?? 0} ca)
+            </Button>
           </Space>
-        ) : null}
-      </Form>
+        </Flex>
+      }
+    >
+      <Space direction="vertical" size={10} style={{ width: '100%' }}>
+        <div style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '10px 14px' }}>
+          <Flex justify="space-between" align="center" wrap gap={10}>
+            <Space size={10} wrap>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>Chế độ làm việc:</span>
+              <Select
+                value={selectedMode ?? p?.mode ?? 'MON_TO_FRI'}
+                options={OFFICE_WORKDAY_MODE_OPTIONS}
+                onChange={(v) => setSelectedMode(v as OfficeWorkdayMode)}
+                style={{ width: 330 }}
+              />
+              {p && (
+                <Space size={6} wrap>
+                  <Tag color="blue" style={{ margin: 0 }}>Tổng nhân sự: {p.staffCount} người</Tag>
+                  <Tag color="green" style={{ margin: 0 }}>Ca dự kiến: {p.toCreate.length} ca</Tag>
+                  {p.skippedExisting > 0 && <Tag color="default" style={{ margin: 0 }}>Đã có ca: {p.skippedExisting}</Tag>}
+                  {p.skippedOff > 0 && <Tag color="orange" style={{ margin: 0 }}>Đơn OFF: {p.skippedOff}</Tag>}
+                </Space>
+              )}
+            </Space>
+            <Button icon={<ReloadOutlined />} loading={q.isFetching && !q.isLoading} onClick={() => q.refetch()}>
+              Tải lại dữ liệu
+            </Button>
+          </Flex>
+          <Flex align="center" gap={10} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #E5E7EB' }}>
+            <span style={{ fontWeight: 600, fontSize: 13, color: '#0F172A', whiteSpace: 'nowrap' }}>
+              <FormOutlined style={{ color: '#2563EB', marginRight: 6 }} />
+              Ghi chú đợt phát hành:
+            </span>
+            <Input
+              allowClear
+              maxLength={300}
+              showCount
+              disabled={publishMut.isPending}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Nhập ghi chú cho đợt phát hành ca văn phòng tuần này (không bắt buộc)..."
+              style={{ flex: 1 }}
+            />
+          </Flex>
+        </div>
+
+        {p && p.toCreate.length === 0 && (
+          <Alert type="warning" showIcon message="Tất cả nhân sự khối văn phòng đã có ca làm việc hoặc đã duyệt nghỉ OFF trong tuần này." />
+        )}
+
+        <OfficeRosterPreviewTable dataSource={p?.staffSummary ?? []} loading={q.isLoading} />
+      </Space>
     </Modal>
   );
 }
