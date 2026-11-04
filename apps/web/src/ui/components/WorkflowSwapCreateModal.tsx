@@ -99,7 +99,7 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
   return (
     <Modal
       width="min(760px, 94vw)" open={open} forceRender
-      title={isSupport ? 'Điều phối hỗ trợ liên chi nhánh (HR Support)' : isDispatch ? 'Phát lệnh điều phối khẩn cấp (HR Dispatch)' : 'Tạo yêu cầu đổi ca / nhường ca'}
+      title={isSupport ? 'Điều phối hỗ trợ liên chi nhánh' : isDispatch ? 'Phát lệnh điều phối khẩn cấp' : 'Tạo yêu cầu đổi ca / nhường ca'}
       okText={isSupport ? 'Tạo phiếu điều động' : isDispatch ? 'Phát lệnh điều phối (+30k)' : 'Gửi yêu cầu'}
       cancelText="Hủy bỏ" confirmLoading={submitting}
       okButtonProps={{ icon: <SwapOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onClose} onOk={() => !submitting && form.submit()}
@@ -110,7 +110,7 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
           if (submitting) return;
           onSubmit({
             ...v,
-            from_assignment_id: v.kind === 'HR_SUPPORT' ? '' : (v.from_assignment_id || ''),
+            from_assignment_id: (v.kind === 'HR_SUPPORT' || v.kind === 'HR_DISPATCH') ? '' : (v.from_assignment_id || ''),
             to_assignment_id: v.kind === 'SWAP' ? v.to_assignment_id : '',
             peer_id: (v.kind === 'HR_DISPATCH' || v.kind === 'HR_SUPPORT') ? '' : v.peer_id,
             target_branch_id: v.kind === 'HR_SUPPORT' ? v.target_branch_id : (v.kind === 'HR_DISPATCH' ? v.branch_id : ''),
@@ -135,9 +135,9 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
         <Alert
           type={isSupport ? 'success' : isDispatch ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
           message={isSupport
-            ? 'Hỗ trợ liên chi nhánh (HR Support): Chọn Chi nhánh cần hỗ trợ + Ngày + Khung ca bên đó, sau đó chọn nhân sự đang rảnh từ các chi nhánh khác để điều động sang thêm vào lịch.'
+            ? 'Chọn Chi nhánh cần hỗ trợ + Ngày + Khung ca bên đó, sau đó chọn nhân sự đang rảnh từ các chi nhánh khác để điều động sang thêm vào lịch.'
             : isDispatch
-            ? 'Điều phối khẩn cấp (HR Dispatch): Chọn Chi nhánh + Ngày + Khung ca cần bổ sung người để phát lệnh lên Bảng tin chi nhánh (+30.000đ/ca). Khi nhân viên nhận ca, hệ thống kiểm tra không trùng ca và tự tạo ca mới trên lịch.'
+            ? 'Chọn Chi nhánh + Ngày + Khung ca cần bổ sung người để phát lệnh lên Bảng tin chi nhánh (+30.000đ/ca). Khi nhân viên nhận ca, hệ thống kiểm tra không trùng ca và tự tạo ca mới trên lịch.'
             : kind === 'SWAP'
             ? 'Đổi ca 2 chiều: chỉ giữa 2 Nhân viên Chính thức cùng chi nhánh. Khi đồng nghiệp đồng ý, lịch được đổi ngay, không cần HR duyệt.'
             : 'Nhường ca: chỉ áp dụng giữa các Nhân viên Chính thức cùng chi nhánh. Nếu người nhận vượt 2 ca/ngày, yêu cầu sẽ chờ HR duyệt.'}
@@ -160,16 +160,13 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
 
         {isDispatch && (
           <>
-            <Form.Item name="branch_id" label="1. Chi nhánh cần điều phối khẩn cấp" rules={[{ required: true, message: 'Vui lòng chọn chi nhánh phát lệnh' }]}>
+            <Form.Item name="branch_id" label="Chi nhánh cần điều phối khẩn cấp" rules={[{ required: true, message: 'Vui lòng chọn chi nhánh phát lệnh' }]}>
               <Select showSearch optionFilterProp="label" placeholder="Chọn chi nhánh cần thêm nhân sự khẩn cấp" options={storeBranches} />
             </Form.Item>
             <Row gutter={12}>
-              <Col span={12}><Form.Item name="work_date" label="2. Ngày làm việc cần điều phối" rules={[{ required: true, message: 'Vui lòng chọn ngày' }]}><DateStringPicker /></Form.Item></Col>
-              <Col span={12}><Form.Item name="shift_code" label="3. Khung ca cần bổ sung (+30.000đ)" rules={[{ required: true, message: 'Vui lòng chọn khung ca' }]}><Select options={shiftOptions} placeholder="Chọn khung ca" /></Form.Item></Col>
+              <Col span={12}><Form.Item name="work_date" label="Ngày làm việc cần điều phối" rules={[{ required: true, message: 'Vui lòng chọn ngày' }]}><DateStringPicker /></Form.Item></Col>
+              <Col span={12}><Form.Item name="shift_code" label="Khung ca cần bổ sung (+30.000đ)" rules={[{ required: true, message: 'Vui lòng chọn khung ca' }]}><Select options={shiftOptions} placeholder="Chọn khung ca" /></Form.Item></Col>
             </Row>
-            <Form.Item name="from_assignment_id" label="4. Gắn với ca đã xếp trên lịch (Không bắt buộc — để trống nếu muốn tuyển thêm người làm ca này)">
-              <Select allowClear showSearch optionFilterProp="label" placeholder="Để trống nếu cần thêm người mới, hoặc chọn ca cụ thể cần người hỗ trợ" options={fromOptions} />
-            </Form.Item>
           </>
         )}
 
