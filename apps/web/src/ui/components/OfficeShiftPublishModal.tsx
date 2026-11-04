@@ -77,13 +77,13 @@ export function OfficeShiftPublishModal({ open, onClose, weekStart, branchId = '
       onCancel={onClose}
       destroyOnHidden
       centered
-      width="96vw"
-      style={{ maxWidth: 1120, top: 16 }}
+      width="min(1560px, 98vw)"
+      style={{ maxWidth: '98vw', top: 16 }}
       styles={{ body: { maxHeight: 'calc(100vh - 170px)', overflowY: 'auto', paddingTop: 8 } }}
       title={
         <Space size={8} wrap>
           <BankOutlined style={{ color: '#2563EB' }} />
-          <span>Xem trước &amp; Phát hành ca Hành chính Khối Văn phòng</span>
+          <span>Ca khối văn phòng</span>
           {p && (
             <Tag color="blue" icon={<ScheduleOutlined />} style={{ margin: 0 }}>
               Tuần {p.weekStart} – {p.weekEnd}
@@ -112,7 +112,7 @@ export function OfficeShiftPublishModal({ open, onClose, weekStart, branchId = '
               loading={publishMut.isPending}
               onClick={() => publishMut.mutate()}
             >
-              Xác nhận &amp; Phát hành ca ({p?.toCreate.length ?? 0} ca)
+              Xác nhận
             </Button>
           </Space>
         </Flex>
