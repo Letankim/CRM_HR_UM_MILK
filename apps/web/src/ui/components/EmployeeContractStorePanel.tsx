@@ -155,10 +155,11 @@ export function EmployeeContractStorePanel({ employee, canManage = false }: { em
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <Descriptions size="small" bordered column={{ xs: 1, sm: 2, md: 3 }}>
+      <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }} styles={{ label: { whiteSpace: 'nowrap', width: 135, fontWeight: 500 } }}>
         <Descriptions.Item label="Họ và tên"><strong>{employee.fullName}</strong></Descriptions.Item>
         <Descriptions.Item label="MSNV"><Tag color="geekblue" style={{ margin: 0, fontWeight: 600 }}>{employee.employeeCode}</Tag></Descriptions.Item>
-        <Descriptions.Item label="Chi nhánh & Vị trí">{employee.branchName} · {employee.staffGroupLabel}</Descriptions.Item>
+        <Descriptions.Item label="Chi nhánh">{employee.branchName}</Descriptions.Item>
+        <Descriptions.Item label="Vị trí">{employee.staffGroupLabel}</Descriptions.Item>
         <Descriptions.Item label="Giai đoạn"><StatusTag value={employee.stage || 'PROBATION'} /></Descriptions.Item>
         <Descriptions.Item label="Chuyên cần"><Tag color={creditPts >= 95 ? 'success' : creditPts >= 80 ? 'warning' : 'error'} style={{ margin: 0, fontWeight: 600 }}>{creditPts}/100 điểm</Tag></Descriptions.Item>
         <Descriptions.Item label="Công & TEST"><Space size={4}><Tag color="blue" style={{ margin: 0 }}>Công: {employee.probationHoursCompleted ?? 0}h</Tag><Tag color={employee.testPassed ? 'success' : 'default'} style={{ margin: 0 }}>TEST: {employee.testBestScorePercent ?? 0}%</Tag></Space></Descriptions.Item>

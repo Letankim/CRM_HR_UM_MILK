@@ -28,30 +28,30 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <Descriptions title="Tổng hợp Công thử việc, Kết quả TEST & Đơn từ liên quan" column={2} bordered size="small">
-        <Descriptions.Item label="Tổng ca làm việc đã xếp">
+      <Descriptions title="Tổng hợp công thử việc & kết quả TEST" column={2} bordered size="small" styles={{ label: { whiteSpace: 'nowrap', width: 155, fontWeight: 500 } }}>
+        <Descriptions.Item label="Tổng ca đã xếp">
           <span className="num" style={{ fontWeight: 600 }}>{employee.totalShiftsCount ?? 0} ca ({employee.probationHoursCompleted ?? 0} giờ)</span>
         </Descriptions.Item>
-        <Descriptions.Item label="Kết quả bài thi TEST nghiệp vụ">
+        <Descriptions.Item label="Kết quả TEST">
           <Space size={6}>
             <Tag color={employee.testPassed ? 'success' : (employee.testAssignedCount ?? 0) > 0 ? 'processing' : 'default'}>
-              {employee.testPassed ? 'ĐẠT TEST NGHIỆP VỤ' : (employee.testAssignedCount ?? 0) > 0 ? 'ĐANG THI / CHỜ KẾT QUẢ' : 'Chưa giao bài thi'}
+              {employee.testPassed ? 'Đạt TEST' : (employee.testAssignedCount ?? 0) > 0 ? 'Đang thi' : 'Chưa giao bài'}
             </Tag>
             <span className="num" style={{ fontWeight: 600 }}>{employee.testBestScorePercent ?? 0}%</span>
-            <span style={{ fontSize: 12, color: '#64748B' }}>({employee.testAttemptsCount ?? 0} lượt nộp)</span>
+            <span style={{ fontSize: 12, color: '#64748B' }}>({employee.testAttemptsCount ?? 0} lượt)</span>
           </Space>
         </Descriptions.Item>
-        <Descriptions.Item label="Thời gian thử việc gốc (giữ nguyên lịch sử)">
+        <Descriptions.Item label="Thời gian thử việc">
           <span className="num">{employee.probationStart || '—'} đến {employee.probationEnd || '—'} ({employee.probationCycleDays} ngày)</span>
         </Descriptions.Item>
-        <Descriptions.Item label="Đơn từ liên quan (Nghỉ OFF / Đổi ca)">
-          <span className="num">{employee.leaveRequestsCount ?? 0} đơn nghỉ OFF · {employee.swapRequestsCount ?? 0} yêu cầu đổi ca</span>
+        <Descriptions.Item label="Đơn từ liên quan">
+          <span className="num">{employee.leaveRequestsCount ?? 0} đơn nghỉ OFF · {employee.swapRequestsCount ?? 0} đổi ca</span>
         </Descriptions.Item>
       </Descriptions>
 
-      <Card size="small" title={`Lịch sử chuyển giai đoạn & Thay đổi hiệu lực (${historyRows.length})`}>
+      <Card size="small" title={`Lịch sử chuyển giai đoạn (${historyRows.length})`}>
         {historyRows.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa phát sinh lịch sử chuyển giai đoạn (nhân sự đang ở giai đoạn khởi tạo ban đầu)" />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa phát sinh lịch sử chuyển giai đoạn" />
         ) : (
           <Table<StageHistoryItem>
             size="small"
@@ -63,7 +63,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
             columns={[
               { title: 'Chuyển đổi giai đoạn', key: 'transition', width: 240, render: (_, r) => <Space size={6} wrap><StatusTag value={r.fromStage} /><span style={{ color: '#94A3B8', fontWeight: 600 }}>→</span><StatusTag value={r.toStage} /></Space> },
               { title: 'Ngày hiệu lực', dataIndex: 'effectiveFrom', width: 125, render: (v: string) => <span className="num" style={{ fontWeight: 600 }}>{v}</span> },
-              { title: 'Giờ thử việc / Điểm TEST', key: 'metrics', width: 180, render: (_, r) => <Space size={4} wrap><Tag color="blue" className="num" style={{ margin: 0, borderRadius: 2 }}>{r.probationHoursCompleted}h</Tag><Tag color={r.testScorePercent >= 80 ? 'green' : 'gold'} className="num" style={{ margin: 0, borderRadius: 2 }}>TEST {r.testScorePercent}%</Tag></Space> },
+              { title: 'Công & TEST', key: 'metrics', width: 165, render: (_, r) => <Space size={4} wrap><Tag color="blue" className="num" style={{ margin: 0, borderRadius: 2 }}>{r.probationHoursCompleted}h</Tag><Tag color={r.testScorePercent >= 80 ? 'green' : 'gold'} className="num" style={{ margin: 0, borderRadius: 2 }}>TEST {r.testScorePercent}%</Tag></Space> },
               {
                 title: 'Người duyệt',
                 key: 'decidedBy',
@@ -81,7 +81,7 @@ export function EmployeeDossierHistoryTab({ employee }: { employee: EmployeeRowI
         )}
       </Card>
 
-      <Card size="small" title={`Lịch phân ca gần nhất của nhân sự (${shiftRows.length})`}>
+      <Card size="small" title={`Lịch phân ca gần nhất (${shiftRows.length})`}>
         {shiftRows.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có ca làm việc nào được phân công" />
         ) : (
@@ -184,12 +184,14 @@ export function PromoteOfficialModal({
   }, [employee, form]);
 
   return (
-    <Modal width="min(860px, 94vw)" open={Boolean(employee)} destroyOnHidden title={employee ? `Xét duyệt Chuyển Chính thức: ${employee.fullName} (${employee.employeeCode})` : 'Chuyển Chính thức'} okText="Xác nhận Chuyển Chính thức" cancelText="Hủy bỏ" okButtonProps={{ icon: <RiseOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onClose} onOk={() => form.submit()}>
+    <Modal width="min(860px, 94vw)" open={Boolean(employee)} destroyOnHidden title="Xét duyệt chuyển Chính thức" okText="Xác nhận Chuyển Chính thức" cancelText="Hủy bỏ" okButtonProps={{ icon: <RiseOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onClose} onOk={() => form.submit()}>
       {employee && (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Descriptions size="small" bordered column={2}>
-            <Descriptions.Item label="Công thử việc tích lũy"><span className="num" style={{ fontWeight: 600 }}>{employee.totalShiftsCount ?? 0} ca ({employee.probationHoursCompleted ?? 0} giờ)</span></Descriptions.Item>
-            <Descriptions.Item label="Điểm bài TEST nghiệp vụ"><Tag color={employee.testPassed ? 'success' : 'processing'} className="num">{employee.testBestScorePercent ?? 0}% ({employee.testPassed ? 'Đạt' : 'Chưa đạt / Đang thi'})</Tag></Descriptions.Item>
+          <Descriptions size="small" bordered column={2} styles={{ label: { whiteSpace: 'nowrap', width: 145, fontWeight: 500 } }}>
+            <Descriptions.Item label="Họ và tên"><strong>{employee.fullName}</strong></Descriptions.Item>
+            <Descriptions.Item label="MSNV"><Tag color="geekblue" style={{ margin: 0, fontWeight: 600 }}>{employee.employeeCode}</Tag></Descriptions.Item>
+            <Descriptions.Item label="Công thử việc"><span className="num" style={{ fontWeight: 600 }}>{employee.totalShiftsCount ?? 0} ca ({employee.probationHoursCompleted ?? 0} giờ)</span></Descriptions.Item>
+            <Descriptions.Item label="Điểm TEST"><Tag color={employee.testPassed ? 'success' : 'processing'} className="num">{employee.testBestScorePercent ?? 0}% ({employee.testPassed ? 'Đạt' : 'Chưa đạt'})</Tag></Descriptions.Item>
             <Descriptions.Item label="Chi nhánh & Vị trí" span={2}>{employee.branchName} · {employee.staffGroupLabel}</Descriptions.Item>
           </Descriptions>
           <Form form={form} layout="vertical" onFinish={(v) => onConfirm(v)}>

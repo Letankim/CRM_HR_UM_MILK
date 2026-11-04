@@ -45,25 +45,25 @@ export function EmployeeDetailDrawer({
               key: 'work',
               label: <span><IdcardOutlined /> Công việc &amp; Phân công</span>,
               children: (
-                <Descriptions column={2} bordered size="small" styles={{ label: { width: 200, fontWeight: 500 } }}>
+                <Descriptions column={2} bordered size="small" styles={{ label: { width: 165, fontWeight: 500, whiteSpace: 'nowrap' } }}>
+                  <Descriptions.Item label="Họ và tên"><strong>{employee.fullName}</strong></Descriptions.Item>
                   <Descriptions.Item label="MSNV">
                     <Tag color="geekblue" style={{ borderRadius: 2, fontWeight: 600 }}>{employee.employeeCode}</Tag>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Họ và tên">{employee.fullName}</Descriptions.Item>
                   <Descriptions.Item label="Số điện thoại">{fmtPhone(employee.phone)}</Descriptions.Item>
                   <Descriptions.Item label="Chi nhánh">{employee.branchName}</Descriptions.Item>
-                  <Descriptions.Item label="Nhóm vị trí">{employee.staffGroupLabel}</Descriptions.Item>
+                  <Descriptions.Item label="Vị trí">{employee.staffGroupLabel}</Descriptions.Item>
                   <Descriptions.Item label="Chức danh">{employee.positionTitle}</Descriptions.Item>
                   <Descriptions.Item label="Giai đoạn"><StatusTag value={employee.stage} /></Descriptions.Item>
                   <Descriptions.Item label="Trạng thái"><StatusTag value={employee.status} /></Descriptions.Item>
                   <Descriptions.Item label="Ca mặc định">{employee.defaultShiftLabel}</Descriptions.Item>
-                  <Descriptions.Item label="Hình thức làm việc">{employee.employmentTypeLabel}</Descriptions.Item>
-                  <Descriptions.Item label="Chu kỳ thử việc chuẩn" span={2}>
+                  <Descriptions.Item label="Hình thức">{employee.employmentTypeLabel}</Descriptions.Item>
+                  <Descriptions.Item label="Chu kỳ thử việc" span={2}>
                     {employee.probationCycleDays} ngày ({employee.probationWorkDays} ngày làm / {employee.probationOffDays} ngày nghỉ)
                   </Descriptions.Item>
                   <Descriptions.Item label="Bắt đầu thử việc">{employee.probationStart || 'Chưa cập nhật'}</Descriptions.Item>
                   <Descriptions.Item label="Kết thúc thử việc">{employee.probationEnd || 'Chưa cập nhật'}</Descriptions.Item>
-                  <Descriptions.Item label="Ngày chuyển Chính thức" span={2}>{employee.officialFrom || 'Chưa chuyển chính thức'}</Descriptions.Item>
+                  <Descriptions.Item label="Ngày Chính thức" span={2}>{employee.officialFrom || 'Chưa chuyển chính thức'}</Descriptions.Item>
                   {employee.resignedAt && <Descriptions.Item label="Ngày nghỉ việc">{employee.resignedAt}</Descriptions.Item>}
                   {employee.resignReason && <Descriptions.Item label="Lý do nghỉ việc">{employee.resignReason}</Descriptions.Item>}
                 </Descriptions>
@@ -73,33 +73,33 @@ export function EmployeeDetailDrawer({
               key: 'personal',
               label: <span><ContactsOutlined /> Liên hệ &amp; Địa chỉ</span>,
               children: (
-                <Descriptions column={2} bordered size="small" styles={{ label: { width: 200, fontWeight: 500 } }}>
-                  <Descriptions.Item label="Email cá nhân">{employee.email || 'Chưa cập nhật'}</Descriptions.Item>
+                <Descriptions column={2} bordered size="small" styles={{ label: { width: 165, fontWeight: 500, whiteSpace: 'nowrap' } }}>
+                  <Descriptions.Item label="Email">{employee.email || 'Chưa cập nhật'}</Descriptions.Item>
                   <Descriptions.Item label="Ngày sinh">{employee.dateOfBirth || 'Chưa cập nhật'}</Descriptions.Item>
                   <Descriptions.Item label="Giới tính">{employee.gender || 'Chưa cập nhật'}</Descriptions.Item>
-                  {canSeeSalary && <Descriptions.Item label="Mã số thuế cá nhân">{employee.taxCode || 'Chưa cập nhật'}</Descriptions.Item>}
-                  {canManage && <Descriptions.Item label="Số CCCD / CMND">{employee.citizenId || 'Chưa cập nhật'}</Descriptions.Item>}
+                  {canSeeSalary && <Descriptions.Item label="Mã số thuế">{employee.taxCode || 'Chưa cập nhật'}</Descriptions.Item>}
+                  {canManage && <Descriptions.Item label="Số CCCD">{employee.citizenId || 'Chưa cập nhật'}</Descriptions.Item>}
                   {canManage && <Descriptions.Item label="Ngày cấp CCCD">{employee.citizenIssueDate || 'Chưa cập nhật'}</Descriptions.Item>}
                   <Descriptions.Item label="Địa chỉ thường trú" span={2}>{employee.permanentAddress || 'Chưa cập nhật'}</Descriptions.Item>
-                  <Descriptions.Item label="Chỗ ở hiện tại / Tạm trú" span={2}>{employee.currentAddress || 'Chưa cập nhật'}</Descriptions.Item>
-                  <Descriptions.Item label="Người liên hệ khẩn cấp">{employee.emergencyContactName || 'Chưa cập nhật'}</Descriptions.Item>
-                  <Descriptions.Item label="SĐT liên hệ khẩn cấp">{fmtPhone(employee.emergencyContactPhone || '')}</Descriptions.Item>
-                  <Descriptions.Item label="Ghi chú hồ sơ" span={2}>{employee.note || '—'}</Descriptions.Item>
+                  <Descriptions.Item label="Chỗ ở hiện tại" span={2}>{employee.currentAddress || 'Chưa cập nhật'}</Descriptions.Item>
+                  <Descriptions.Item label="Liên hệ khẩn cấp">{employee.emergencyContactName || 'Chưa cập nhật'}</Descriptions.Item>
+                  <Descriptions.Item label="SĐT khẩn cấp">{fmtPhone(employee.emergencyContactPhone || '')}</Descriptions.Item>
+                  <Descriptions.Item label="Ghi chú" span={2}>{employee.note || '—'}</Descriptions.Item>
                 </Descriptions>
               ),
             },
             ...(canSeeSalary ? [{
               key: 'salary',
-              label: <span><DollarOutlined /> Lương, Phụ cấp &amp; Ngân hàng</span>,
+              label: <span><DollarOutlined /> Lương &amp; Ngân hàng</span>,
               children: (() => {
                 const sp = employee.salaryProfile;
                 const fixedTotal = (sp?.attendanceBonusVnd ?? 0) + (sp?.transportAllowanceVnd ?? 0) + (sp?.responsibilityAllowanceVnd ?? 0) + (sp?.otherAllowanceVnd ?? 0);
                 return (
                   <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    <Descriptions title="Hồ sơ mức lương & Định mức công" column={2} bordered size="small">
-                      <Descriptions.Item label="Trạng thái hồ sơ lương"><StatusTag value={employee.salaryStatus} label={employee.salaryStatusLabel} /></Descriptions.Item>
-                      <Descriptions.Item label="Hình thức tính lương">{employee.salaryRateTypeLabel || 'Chưa thiết lập'}</Descriptions.Item>
-                      <Descriptions.Item label="Lương cá nhân đang áp dụng" span={2}>
+                    <Descriptions title="Hồ sơ mức lương & Định mức công" column={2} bordered size="small" styles={{ label: { width: 165, fontWeight: 500, whiteSpace: 'nowrap' } }}>
+                      <Descriptions.Item label="Trạng thái lương"><StatusTag value={employee.salaryStatus} label={employee.salaryStatusLabel} /></Descriptions.Item>
+                      <Descriptions.Item label="Hình thức lương">{employee.salaryRateTypeLabel || 'Chưa thiết lập'}</Descriptions.Item>
+                      <Descriptions.Item label="Lương đang áp dụng" span={2}>
                         {employee.salaryRateType ? (
                           <span className="num" style={{ fontWeight: 600, color: '#2563EB' }}>
                             {fmtEmployeeSalary(employee)}
@@ -109,35 +109,35 @@ export function EmployeeDetailDrawer({
                           <span style={{ color: '#B45309' }}>{employee.salaryStatusLabel} — thiết lập tại Kỳ lương &gt; Hồ sơ lương nhân sự</span>
                         )}
                       </Descriptions.Item>
-                      <Descriptions.Item label="Mức lương chính thức"><span className="num" style={{ fontWeight: 600 }}>{employee.salaryRateType ? fmtEmployeeSalary(employee, employee.salaryOfficialAmountVnd) : '—'}</span></Descriptions.Item>
-                      <Descriptions.Item label={`Mức lương thử việc (${sp?.probationPercent ?? employee.salaryProbationPercent ?? 85}%)`}><span className="num">{sp ? `${fmtVnd(sp.probationAmountVnd)}/${sp.unitLabel}` : '—'}</span></Descriptions.Item>
-                      <Descriptions.Item label="Ngày hiệu lực áp dụng"><span className="num">{sp?.effectiveFrom || '—'}</span></Descriptions.Item>
-                      <Descriptions.Item label="Định mức quy đổi công">
+                      <Descriptions.Item label="Lương chính thức"><span className="num" style={{ fontWeight: 600 }}>{employee.salaryRateType ? fmtEmployeeSalary(employee, employee.salaryOfficialAmountVnd) : '—'}</span></Descriptions.Item>
+                      <Descriptions.Item label="Lương thử việc"><span className="num">{sp ? `${fmtVnd(sp.probationAmountVnd)}/${sp.unitLabel} (${sp.probationPercent}%)` : '—'}</span></Descriptions.Item>
+                      <Descriptions.Item label="Ngày hiệu lực"><span className="num">{sp?.effectiveFrom || '—'}</span></Descriptions.Item>
+                      <Descriptions.Item label="Định mức công">
                         <span className="num">
                           {!sp
                             ? '—'
                             : sp.rateType === 'MONTHLY'
                               ? `${sp.standardWorkDays} công/tháng · ${sp.standardHoursPerDay} giờ/ngày`
                               : sp.rateType === 'SHIFT'
-                                ? `${sp.standardHoursPerDay} giờ/ca (quy đổi giờ OT)`
-                                : 'Tính trực tiếp theo giờ thực tế'}
+                                ? `${sp.standardHoursPerDay} giờ/ca`
+                                : 'Tính theo giờ thực tế'}
                         </span>
                       </Descriptions.Item>
-                      <Descriptions.Item label="Hệ số tăng ca (OT)" span={2}><Tag color="blue" className="num">{sp ? `x${sp.otMultiplier} (${Math.round(sp.otMultiplier * 100)}% đơn giá)` : '—'}</Tag></Descriptions.Item>
+                      <Descriptions.Item label="Hệ số tăng ca" span={2}><Tag color="blue" className="num">{sp ? `x${sp.otMultiplier} (${Math.round(sp.otMultiplier * 100)}% đơn giá)` : '—'}</Tag></Descriptions.Item>
                     </Descriptions>
-                    <Descriptions title="Thưởng & Phụ cấp cố định theo hồ sơ" column={2} bordered size="small">
+                    <Descriptions title="Thưởng & Phụ cấp cố định" column={2} bordered size="small" styles={{ label: { width: 165, fontWeight: 500, whiteSpace: 'nowrap' } }}>
                       <Descriptions.Item label="Phụ cấp ăn ca"><span className="num" style={{ fontWeight: 600 }}>{fmtVnd(sp?.mealAllowancePerShiftVnd ?? 0)}/ca</span></Descriptions.Item>
-                      <Descriptions.Item label="Thưởng chuyên cần (đủ ca)"><span className="num" style={{ fontWeight: 600, color: '#16A34A' }}>{fmtVnd(sp?.attendanceBonusVnd ?? 0)}/kỳ</span></Descriptions.Item>
-                      <Descriptions.Item label="Phụ cấp đi lại (xăng xe)"><span className="num">{fmtVnd(sp?.transportAllowanceVnd ?? 0)}/kỳ</span></Descriptions.Item>
+                      <Descriptions.Item label="Thưởng chuyên cần"><span className="num" style={{ fontWeight: 600, color: '#16A34A' }}>{fmtVnd(sp?.attendanceBonusVnd ?? 0)}/kỳ</span></Descriptions.Item>
+                      <Descriptions.Item label="Phụ cấp đi lại"><span className="num">{fmtVnd(sp?.transportAllowanceVnd ?? 0)}/kỳ</span></Descriptions.Item>
                       <Descriptions.Item label="Phụ cấp trách nhiệm"><span className="num">{fmtVnd(sp?.responsibilityAllowanceVnd ?? 0)}/kỳ</span></Descriptions.Item>
                       <Descriptions.Item label="Phụ cấp khác"><span className="num">{fmtVnd(sp?.otherAllowanceVnd ?? 0)}/kỳ</span></Descriptions.Item>
-                      <Descriptions.Item label="Tổng thưởng & phụ cấp cố định">
+                      <Descriptions.Item label="Tổng phụ cấp cố định">
                         <Tag color="green" className="num" style={{ fontWeight: 600 }}>{fmtVnd(fixedTotal)}/kỳ (+ {fmtVnd(sp?.mealAllowancePerShiftVnd ?? 0)}/ca)</Tag>
                       </Descriptions.Item>
                     </Descriptions>
-                    <Descriptions title="Tài khoản Ngân hàng nhận lương" column={2} bordered size="small">
-                      <Descriptions.Item label="Ngân hàng nhận lương">{employee.bankName || 'Chưa cập nhật'}</Descriptions.Item>
-                      <Descriptions.Item label="Số tài khoản ngân hàng"><span className="num" style={{ fontWeight: 600 }}>{employee.bankAccountNumber || 'Chưa cập nhật'}</span></Descriptions.Item>
+                    <Descriptions title="Tài khoản Ngân hàng" column={2} bordered size="small" styles={{ label: { width: 165, fontWeight: 500, whiteSpace: 'nowrap' } }}>
+                      <Descriptions.Item label="Ngân hàng">{employee.bankName || 'Chưa cập nhật'}</Descriptions.Item>
+                      <Descriptions.Item label="Số tài khoản"><span className="num" style={{ fontWeight: 600 }}>{employee.bankAccountNumber || 'Chưa cập nhật'}</span></Descriptions.Item>
                       <Descriptions.Item label="Chủ tài khoản" span={2}>{employee.bankAccountHolder || employee.fullName.toUpperCase()}</Descriptions.Item>
                     </Descriptions>
                   </Space>
@@ -147,27 +147,27 @@ export function EmployeeDetailDrawer({
             {
               key: 'contracts',
               forceRender: true,
-              label: <span><FileProtectOutlined /> Hợp đồng &amp; Đánh giá thử việc</span>,
+              label: <span><FileProtectOutlined /> Hợp đồng &amp; Thử việc</span>,
               children: <EmployeeContractStorePanel employee={employee} canManage={canManage} />,
             },
             {
               key: 'account',
-              label: <span><UserSwitchOutlined /> Tài khoản Liên kết</span>,
+              label: <span><UserSwitchOutlined /> Tài khoản</span>,
               children: (
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   {employee.username ? (
-                    <Descriptions column={1} bordered size="small">
+                    <Descriptions column={1} bordered size="small" styles={{ label: { width: 165, fontWeight: 500, whiteSpace: 'nowrap' } }}>
                       <Descriptions.Item label="Tên đăng nhập">
                         <Tag color="blue" style={{ borderRadius: 2, fontWeight: 600 }}>
                           <UserOutlined /> @{employee.username}
                         </Tag>
                       </Descriptions.Item>
-                      <Descriptions.Item label="Họ tên tài khoản">{employee.userDisplayName || employee.fullName}</Descriptions.Item>
-                      <Descriptions.Item label="Vai trò hệ thống">{employee.userRoleLabel || 'Nhân viên'}</Descriptions.Item>
-                      <Descriptions.Item label="Trạng thái kích hoạt">
+                      <Descriptions.Item label="Họ và tên">{employee.userDisplayName || employee.fullName}</Descriptions.Item>
+                      <Descriptions.Item label="Vai trò">{employee.userRoleLabel || 'Nhân viên'}</Descriptions.Item>
+                      <Descriptions.Item label="Trạng thái">
                         {employee.accountStatus ? <StatusTag value={employee.accountStatus} /> : employee.accountStatusLabel}
                       </Descriptions.Item>
-                      <Descriptions.Item label="Số điện thoại đăng nhập">{fmtPhone(employee.phone)}</Descriptions.Item>
+                      <Descriptions.Item label="Số điện thoại">{fmtPhone(employee.phone)}</Descriptions.Item>
                     </Descriptions>
                   ) : (
                     <Alert
@@ -182,7 +182,7 @@ export function EmployeeDetailDrawer({
             },
             {
               key: 'history',
-              label: <span><CalendarOutlined /> Lịch sử giai đoạn, Lịch ca &amp; TEST</span>,
+              label: <span><CalendarOutlined /> Lịch sử &amp; Lịch ca</span>,
               children: <EmployeeDossierHistoryTab employee={employee} />,
             },
           ]}

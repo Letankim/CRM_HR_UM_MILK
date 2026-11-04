@@ -136,7 +136,7 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
   return (
     <>
       <Modal
-        title={editing ? `Chỉnh sửa Hồ sơ Nhân sự — ${editing.fullName} (${editing.employeeCode})` : 'Tiếp nhận Hồ sơ Nhân sự mới'}
+        title={editing ? 'Chỉnh sửa Hồ sơ Nhân sự' : 'Tiếp nhận Hồ sơ Nhân sự mới'}
         open={open} onCancel={onClose}
         onOk={() => form.validateFields().then((v) => saveMutation.mutate(v)).catch((e: { errorFields?: { name: (string | number)[] }[] }) => {
           const f = String(e?.errorFields?.[0]?.name[0] ?? '');
@@ -160,7 +160,7 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
                     <Row gutter={12}>
                       <Col span={14}><Form.Item name="full_name" label="Họ và tên" rules={[{ required: true, message: 'Vui lòng nhập họ và tên' }]}><Input placeholder="Ví dụ: Nguyễn Thị Minh Anh" /></Form.Item></Col>
                       <Col span={10}>
-                        <Form.Item label="Mã nhân sự">
+                        <Form.Item label="MSNV">
                           <Space.Compact style={{ width: '100%' }}>
                             <Form.Item name="employee_code" noStyle><Input disabled={!!editing} placeholder="Ví dụ: NV0004" /></Form.Item>
                             {!editing && <Button icon={<ThunderboltOutlined />} onClick={handleGenerateCode}>Tự sinh</Button>}
@@ -185,7 +185,7 @@ export function EmployeeCreateModal({ open, editing, existingCodes = [], branche
                       <Col span={8}><Form.Item name="status" label="Trạng thái"><Select options={EMPLOYEE_STATUS_OPTIONS} /></Form.Item></Col>
                     </Row>
                     <Row gutter={12}>
-                      <Col span={8}><Form.Item name="default_shift_code" label="Ca mặc định (theo chi nhánh)"><Select options={shiftOptions} /></Form.Item></Col>
+                      <Col span={8}><Form.Item name="default_shift_code" label="Ca mặc định"><Select options={shiftOptions} /></Form.Item></Col>
                       <Col span={8}><Form.Item name="employment_type" label="Hình thức"><Select options={EMPLOYMENT_TYPE_OPTIONS} /></Form.Item></Col>
                       <Col span={8}><Form.Item name="probation_start" label="Ngày bắt đầu"><DateStringPicker placeholder="Chọn ngày bắt đầu" /></Form.Item></Col>
                     </Row>

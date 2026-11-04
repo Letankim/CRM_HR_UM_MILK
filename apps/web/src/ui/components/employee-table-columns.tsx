@@ -129,9 +129,9 @@ export function buildEmployeeColumns({
       render: (v: string) => <span className="num" style={{ fontWeight: 600, color: '#2563EB' }}>{fmtPhone(v)}</span>,
     },
     {
-      title: 'Giai đoạn nhân sự',
+      title: 'Giai đoạn',
       dataIndex: 'stage',
-      width: 150,
+      width: 155,
       render: (_, r) => (
         <div>
           <StatusTag value={r.stage} />
