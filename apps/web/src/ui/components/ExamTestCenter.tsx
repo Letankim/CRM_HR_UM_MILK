@@ -134,9 +134,7 @@ export function EmployeeTestCenterView({
 }: { assignments: Record<string, unknown>[]; attempts: Record<string, unknown>[]; tests: Record<string, unknown>[]; onRefresh: () => void }) {
   const { message } = App.useApp(), qc = useQueryClient(), showDetail = useQuickDetail();
   const [subTab, setSubTab] = useState<'assignments' | 'history'>('assignments'), [filterTestId, setFilterTestId] = useState<string>('ALL');
-  const [activeAttempt, setActiveAttempt] = useState<Record<string, unknown> | null>(null), [activeTestRec, setActiveTestRec] = useState<Record<string, unknown> | null>(null);
-  const [reviewingAttempt, setReviewingAttempt] = useState<Record<string, unknown> | null>(null);
-  const [startingId, setStartingId] = useState<string | null>(null), [refreshing, setRefreshing] = useState(false);
+  const [activeAttempt, setActiveAttempt] = useState<Record<string, unknown> | null>(null), [activeTestRec, setActiveTestRec] = useState<Record<string, unknown> | null>(null), [reviewingAttempt, setReviewingAttempt] = useState<Record<string, unknown> | null>(null), [startingId, setStartingId] = useState<string | null>(null), [refreshing, setRefreshing] = useState(false);
   const asgPag = useClientPagination(10, 'bài kiểm tra');
 
   const handleRefresh = async () => {
@@ -167,7 +165,7 @@ export function EmployeeTestCenterView({
       columns={[
         { title: 'Mã đợt giao', dataIndex: 'assignment_code', width: 115, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
         { title: 'Đề thi nghiệp vụ', dataIndex: 'testTitle', ellipsis: true },
-        { title: 'Số câu hỏi', width: 125, render: (_, r) => <Tag color="purple" style={{ margin: 0, whiteSpace: 'nowrap' }}>Random {String(r.examSampleSize ?? r.exam_sample_size ?? 25)} câu</Tag> },
+        { title: 'Số câu / đề', width: 125, render: (_, r) => <Tag color="purple" style={{ margin: 0, whiteSpace: 'nowrap' }}>{String(r.examSampleSize ?? r.exam_sample_size ?? 25)} câu</Tag> },
         { title: 'Thời lượng', dataIndex: 'durationMinutes', width: 95, render: (v: number) => `${v ?? 15} phút` },
         { title: 'Lượt đã thi', width: 105, render: (_, r) => <Tag color="blue" style={{ margin: 0 }}>{`${r.attempts_used ?? 0}/${r.max_attempts ?? 3} lần`}</Tag> },
         { title: 'Thời gian mở / Hạn nộp', width: 175, render: (_, r) => { const ovd = resolveAsgStatus(r) === 'OVERDUE'; return <div className="num" style={{ fontSize: 12 }}><div>Mở: {r.open_at ? dayjs(String(r.open_at)).format('HH:mm DD/MM') : 'Mở ngay'}</div><div style={{ color: ovd ? '#DC2626' : '#64748B', fontWeight: ovd ? 600 : 400 }}>Hạn: {r.close_at ? dayjs(String(r.close_at)).format('HH:mm DD/MM/YYYY') : '—'}</div></div>; } },
