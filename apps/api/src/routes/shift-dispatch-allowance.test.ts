@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import dayjs from 'dayjs';
 import { DEMO_PIN } from '../data/memory-seed.js';
 import { buildTestApp } from '../test-utils/build-test-app.js';
+
+/** Ngày hôm nay (luôn nằm trong tuần hiện tại → pass assertDispatchDateInRange). */
+const TODAY = dayjs().format('YYYY-MM-DD');
 
 describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ', () => {
   it('HR/Store phát lệnh điều phối ca khẩn cấp lên bảng tin chi nhánh, nhân viên nhận ca được tự động cộng +30.000đ vào kỳ lương', async () => {
@@ -8,18 +12,21 @@ describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ'
     const hrHeaders = await loginHeaders('hr');
     const finHeaders = await loginHeaders('finance');
 
-    // Tìm một ca phân công hợp lệ trong dữ liệu seed
+    // Lấy thông tin chi nhánh & khung ca từ ca seed
     const shift = db.shiftAssignments.find((a) => a.status === 'PUBLISHED')!;
     expect(shift).toBeDefined();
+    const branchId = shift.branch_id, shiftCode = shift.shift_code;
 
-    // 1. HR phát lệnh điều phối khẩn cấp HR_DISPATCH
+    // 1. HR phát lệnh điều phối khẩn cấp HR_DISPATCH (dùng branch_id + work_date + shift_code, không dùng from_assignment_id)
     const dispatchRes = await app.inject({
       method: 'POST',
       url: '/api/admin/shift-swaps',
       headers: hrHeaders,
       payload: {
         kind: 'HR_DISPATCH',
-        from_assignment_id: shift.id,
+        branch_id: branchId,
+        work_date: TODAY,
+        shift_code: shiftCode,
         reason: 'Nhân viên ốm đột xuất, thiếu nhân sự cửa hàng cần điều phối khẩn cấp',
       },
     });
@@ -70,11 +77,13 @@ describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ'
     expect(db.shiftSwaps.get(dispatchData.id)!.status).toBe('PENDING_PEER');
 
     // 4. Tạo kỳ lương mở để tính lương
+    const fromDate = dayjs(TODAY).startOf('month').format('YYYY-MM-DD');
+    const toDate = dayjs(TODAY).endOf('month').format('YYYY-MM-DD');
     const periodRes = await app.inject({
       method: 'POST',
       url: '/api/admin/payroll/periods',
       headers: finHeaders,
-      payload: { name: 'Kỳ lương Tháng Điều Phối', from_date: '2026-10-01', to_date: '2026-10-31' },
+      payload: { name: 'Kỳ lương Tháng Điều Phối', from_date: fromDate, to_date: toDate },
     });
     expect(periodRes.statusCode).toBe(201);
     const periodId = periodRes.json().data.id;
@@ -82,7 +91,7 @@ describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ'
     // 4b. Kiểm tra nếu nhân viên ĐÃ CÓ ca trùng khung giờ ngày đó -> hệ thống chặn không cho nhận
     const receiverEmp = db.employees.find((e) => e.user_id === receiverUser.id || e.id === receiverUser.employee_id || e.employee_code === receiverUser.employee_id)!;
     const conflictingShift = await db.shiftAssignments.insert({
-      branch_id: shift.branch_id, work_date: shift.work_date, shift_code: shift.shift_code,
+      branch_id: branchId, work_date: TODAY, shift_code: shiftCode,
       start_at: shift.start_at, end_at: shift.end_at, scheduled_hours: shift.scheduled_hours,
       employee_id: receiverEmp.id, employee_stage: receiverEmp.stage, status: 'PUBLISHED',
       schedule_week_id: shift.schedule_week_id, shift_template_id: shift.shift_template_id,
@@ -130,8 +139,8 @@ describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ'
     const newShift = db.shiftAssignments.get(newShiftId)!;
     expect(newShift).toBeDefined();
     expect(newShift.employee_id).toBe(receiverEmp.id);
-    expect(newShift.work_date).toBe(shift.work_date);
-    expect(newShift.shift_code).toBe(shift.shift_code);
+    expect(newShift.work_date).toBe(TODAY);
+    expect(newShift.shift_code).toBe(shiftCode);
     expect(newShift.source).toBe('HR_DISPATCH');
     expect(newShift.note).toContain('DSP-');
 
@@ -163,12 +172,11 @@ describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ'
     expect(Number(receiverSnap!.shiftSwapCount)).toBeGreaterThanOrEqual(1);
 
     // 7. Kiểm tra hủy lệnh điều phối khẩn cấp -> bản tin tự động soft-delete
-    const shift2 = db.shiftAssignments.find((a) => a.id !== shift.id && a.status === 'PUBLISHED')!;
     const dispatch2 = await app.inject({
       method: 'POST',
       url: '/api/admin/shift-swaps',
       headers: hrHeaders,
-      payload: { kind: 'HR_DISPATCH', from_assignment_id: shift2.id, reason: 'Điều phối thử nghiệm hủy' },
+      payload: { kind: 'HR_DISPATCH', branch_id: branchId, work_date: TODAY, shift_code: shiftCode, reason: 'Điều phối thử nghiệm hủy' },
     });
     const d2Data = dispatch2.json().data;
     const anc2 = db.announcements.find((a) => a.code === `ANC-DSP-${d2Data.swap_code}`);
@@ -183,5 +191,15 @@ describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ'
     expect(cancelRes.statusCode).toBe(200);
     expect(db.announcements.get(anc2!.id)).toBeUndefined();
     expect(db.announcements.all(true).find((a) => a.id === anc2!.id)?.is_deleted).toBe(true);
+
+    // 8. Chặn lệnh điều phối ngày quá khứ
+    const pastRes = await app.inject({
+      method: 'POST',
+      url: '/api/admin/shift-swaps',
+      headers: hrHeaders,
+      payload: { kind: 'HR_DISPATCH', branch_id: branchId, work_date: '2026-01-01', shift_code: shiftCode, reason: 'Quá khứ' },
+    });
+    expect(pastRes.statusCode).toBe(400);
+    expect(pastRes.json().errors.details[0].message).toContain('ngày đã qua');
   });
 });

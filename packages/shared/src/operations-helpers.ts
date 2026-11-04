@@ -23,6 +23,29 @@ export function weekDates(weekStart: string): string[] {
   return Array.from({ length: 7 }, (_, i) => addDaysYmd(weekStart, i));
 }
 
+/**
+ * Rà soát ngày điều phối / hỗ trợ:
+ * - Không cho phép chọn ngày trong quá khứ (< todayYmd).
+ * - Cho phép các ngày trong tuần hiện tại.
+ * - Cho phép tuần tiếp theo nếu hôm nay cách tuần tiếp theo <= 3 ngày (Thứ 6, Thứ 7, Chủ Nhật).
+ */
+export function validateDispatchDateRange(workDate: string, todayYmd: string): { valid: boolean; message?: string } {
+  if (workDate < todayYmd) {
+    return { valid: false, message: 'Không được phép tạo lệnh điều phối cho ngày đã qua' };
+  }
+  const curMonday = mondayOfWeek(todayYmd);
+  const wdMonday = mondayOfWeek(workDate);
+  if (wdMonday === curMonday) return { valid: true };
+
+  const nextMonday = addDaysYmd(curMonday, 7);
+  if (wdMonday === nextMonday) {
+    const dow = isoWeekday(fromYmd(todayYmd)); // 1=T2 .. 5=T6, 6=T7, 7=CN
+    if (dow >= 5) return { valid: true };
+    return { valid: false, message: 'Chỉ được phép tạo lệnh điều phối cho tuần kế tiếp khi hôm nay là Thứ 6, Thứ 7 hoặc Chủ nhật' };
+  }
+  return { valid: false, message: 'Chỉ được phép tạo lệnh điều phối cho tuần hiện tại hoặc tuần kế tiếp (mở từ Thứ 6)' };
+}
+
 export interface OffWindowSettingsInput {
   offWindowOpenWeekday: number;
   offWindowOpenTime: string;

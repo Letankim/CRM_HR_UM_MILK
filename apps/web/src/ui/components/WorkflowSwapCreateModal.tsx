@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { Alert, Col, Form, Input, Modal, Row, Segmented, Select } from 'antd';
 import { CloseOutlined, SwapOutlined } from '@ant-design/icons';
-import { SHIFT_SWAP_KIND_LABELS } from '@umbm/shared';
+import { SHIFT_SWAP_KIND_LABELS, validateDispatchDateRange } from '@umbm/shared';
 import dayjs from 'dayjs';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { DateStringPicker } from './DateTimePickers';
@@ -51,6 +51,22 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
 
   const kind = (Form.useWatch('kind', form) as 'SWAP' | 'GIVE' | 'HR_DISPATCH' | 'HR_SUPPORT' | undefined) ?? 'GIVE';
   const isDispatch = kind === 'HR_DISPATCH', isSupport = kind === 'HR_SUPPORT';
+  const isDispatchOrSupport = isDispatch || isSupport;
+  const todayStr = useMemo(() => dayjs().format('YYYY-MM-DD'), []);
+  const disableInvalidDispatchDate = useCallback((d: dayjs.Dayjs) => {
+    if (!isDispatchOrSupport) return false;
+    return !validateDispatchDateRange(d.format('YYYY-MM-DD'), todayStr).valid;
+  }, [isDispatchOrSupport, todayStr]);
+  const dateRangeRules = useMemo(() => [
+    { required: true, message: 'Vui lòng chọn ngày' },
+    {
+      validator: async (_: unknown, val: string) => {
+        if (!val || !isDispatchOrSupport) return;
+        const res = validateDispatchDateRange(val, todayStr);
+        if (!res.valid) throw new Error(res.message);
+      },
+    },
+  ], [isDispatchOrSupport, todayStr]);
   const fromId = Form.useWatch('from_assignment_id', form), peerId = Form.useWatch('peer_id', form);
   const watchedBranchId = Form.useWatch('branch_id', form), watchedTargetBranchId = Form.useWatch('target_branch_id', form);
   const watchedWorkDate = Form.useWatch('work_date', form) || dayjs().format('YYYY-MM-DD');
@@ -135,9 +151,9 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
         <Alert
           type={isSupport ? 'success' : isDispatch ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
           message={isSupport
-            ? 'Chọn Chi nhánh cần hỗ trợ + Ngày + Khung ca bên đó, sau đó chọn nhân sự đang rảnh từ các chi nhánh khác để điều động sang thêm vào lịch.'
+            ? 'Chọn Chi nhánh cần hỗ trợ + Ngày + Khung ca bên đó, sau đó chọn nhân sự đang rảnh từ các chi nhánh khác để điều động sang thêm vào lịch. Lưu ý: Chỉ áp dụng trong tuần hiện tại hoặc tuần kế tiếp (mở từ Thứ 6).'
             : isDispatch
-            ? 'Chọn Chi nhánh + Ngày + Khung ca cần bổ sung người để phát lệnh lên Bảng tin chi nhánh (+30.000đ/ca). Khi nhân viên nhận ca, hệ thống kiểm tra không trùng ca và tự tạo ca mới trên lịch.'
+            ? 'Chọn Chi nhánh + Ngày + Khung ca cần bổ sung người để phát lệnh lên Bảng tin chi nhánh (+30.000đ/ca). Lưu ý: Chỉ áp dụng trong tuần hiện tại hoặc tuần kế tiếp (mở từ Thứ 6). Khi nhân viên nhận ca, hệ thống kiểm tra không trùng ca và tự tạo ca mới trên lịch.'
             : kind === 'SWAP'
             ? 'Đổi ca 2 chiều: chỉ giữa 2 Nhân viên Chính thức cùng chi nhánh. Khi đồng nghiệp đồng ý, lịch được đổi ngay, không cần HR duyệt.'
             : 'Nhường ca: chỉ áp dụng giữa các Nhân viên Chính thức cùng chi nhánh. Nếu người nhận vượt 2 ca/ngày, yêu cầu sẽ chờ HR duyệt.'}
@@ -149,7 +165,7 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
               <Select showSearch optionFilterProp="label" placeholder="Chọn chi nhánh đang thiếu người cần hỗ trợ" options={storeBranches} />
             </Form.Item>
             <Row gutter={12}>
-              <Col span={12}><Form.Item name="work_date" label="2. Ngày làm việc bên chi nhánh đích" rules={[{ required: true, message: 'Vui lòng chọn ngày' }]}><DateStringPicker /></Form.Item></Col>
+              <Col span={12}><Form.Item name="work_date" label="2. Ngày làm việc bên chi nhánh đích" rules={dateRangeRules}><DateStringPicker disabledDate={disableInvalidDispatchDate} /></Form.Item></Col>
               <Col span={12}><Form.Item name="shift_code" label="3. Khung ca cần thêm người" rules={[{ required: true, message: 'Vui lòng chọn khung ca' }]}><Select options={shiftOptions} placeholder="Chọn khung ca" /></Form.Item></Col>
             </Row>
             <Form.Item name="requester_id" label={`4. Nhân sự rảnh từ các chi nhánh khác điều động sang (${freeSupportCount} người đang rảnh)`} rules={[{ required: true, message: 'Vui lòng chọn nhân sự rảnh để điều động sang' }]}>
@@ -164,7 +180,7 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
               <Select showSearch optionFilterProp="label" placeholder="Chọn chi nhánh cần thêm nhân sự khẩn cấp" options={storeBranches} />
             </Form.Item>
             <Row gutter={12}>
-              <Col span={12}><Form.Item name="work_date" label="Ngày làm việc cần điều phối" rules={[{ required: true, message: 'Vui lòng chọn ngày' }]}><DateStringPicker /></Form.Item></Col>
+              <Col span={12}><Form.Item name="work_date" label="Ngày làm việc cần điều phối" rules={dateRangeRules}><DateStringPicker disabledDate={disableInvalidDispatchDate} /></Form.Item></Col>
               <Col span={12}><Form.Item name="shift_code" label="Khung ca cần bổ sung (+30.000đ)" rules={[{ required: true, message: 'Vui lòng chọn khung ca' }]}><Select options={shiftOptions} placeholder="Chọn khung ca" /></Form.Item></Col>
             </Row>
           </>

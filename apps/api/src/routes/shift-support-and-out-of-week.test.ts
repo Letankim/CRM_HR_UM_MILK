@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import dayjs from 'dayjs';
 import { buildTestApp } from '../test-utils/build-test-app.js';
 
 describe('7.4 Hỗ trợ chi nhánh khác (HR Support) & Scheduler kiểm toán (audit-out-of-week)', () => {
   it('HR điều phối nhân viên sang tăng cường chi nhánh khác, hệ thống tự động tạo ca mới tại chi nhánh đích và hoàn trả khi hủy', async () => {
     const { app, db, loginHeaders } = await buildTestApp('hr_sup');
     const hrHeaders = await loginHeaders('hr');
+    const TODAY = dayjs().format('YYYY-MM-DD');
 
     // Lấy 2 chi nhánh khác nhau
     const branches = db.branches.all();
@@ -12,22 +14,16 @@ describe('7.4 Hỗ trợ chi nhánh khác (HR Support) & Scheduler kiểm toán 
     const sourceBranch = branches[0]!;
     const targetBranch = branches[1]!;
 
-    // Tìm một ca làm việc đang phát hành tại chi nhánh nguồn
-    const shift = db.shiftAssignments.find((a) => a.branch_id === sourceBranch.id && a.status === 'PUBLISHED')!;
-    expect(shift).toBeDefined();
+    // Tìm một ca làm việc đang phát hành tại chi nhánh nguồn và cập nhật ngày sang hôm nay (hợp lệ trong tuần)
+    const rawShift = db.shiftAssignments.find((a) => a.branch_id === sourceBranch.id && a.status === 'PUBLISHED')!;
+    expect(rawShift).toBeDefined();
+    const shift = await db.shiftAssignments.update(rawShift.id, rawShift.version, { work_date: TODAY }, 'test');
     const originalEmpId = shift.employee_id;
 
     // 1. HR tạo phiếu điều động hỗ trợ liên chi nhánh (HR_SUPPORT)
     const supRes = await app.inject({
-      method: 'POST',
-      url: '/api/admin/shift-swaps',
-      headers: hrHeaders,
-      payload: {
-        kind: 'HR_SUPPORT',
-        from_assignment_id: shift.id,
-        target_branch_id: targetBranch.id,
-        reason: 'Chi nhánh đích thiếu nhân sự, điều động tăng cường hỗ trợ',
-      },
+      method: 'POST', url: '/api/admin/shift-swaps', headers: hrHeaders,
+      payload: { kind: 'HR_SUPPORT', from_assignment_id: shift.id, target_branch_id: targetBranch.id, reason: 'Chi nhánh đích thiếu nhân sự, điều động tăng cường hỗ trợ' },
     });
     expect(supRes.statusCode).toBe(201);
     const supData = supRes.json().data;
@@ -52,39 +48,21 @@ describe('7.4 Hỗ trợ chi nhánh khác (HR Support) & Scheduler kiểm toán 
     expect(updatedSourceShift.note).toContain(supData.swap_code);
 
     // 4. HR hủy phiếu điều động hỗ trợ, hệ thống hoàn trả ca gốc và hủy ca tại chi nhánh đích
-    const cancelRes = await app.inject({
-      method: 'POST',
-      url: `/api/admin/shift-swaps/${supData.id}/cancel`,
-      headers: hrHeaders,
-      payload: {},
-    });
+    const cancelRes = await app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${supData.id}/cancel`, headers: hrHeaders, payload: {} });
     expect(cancelRes.statusCode).toBe(200);
 
-    // Ca tại chi nhánh đích bị soft delete
-    const cancelledTargetShift = db.shiftAssignments.get(supData.to_assignment_id);
-    expect(cancelledTargetShift).toBeUndefined(); // soft deleted
-
-    // Ca gốc tại chi nhánh nguồn được phục hồi về PUBLISHED
+    // Ca tại chi nhánh đích bị soft delete, ca gốc được phục hồi
+    expect(db.shiftAssignments.get(supData.to_assignment_id)).toBeUndefined();
     const restoredSourceShift = db.shiftAssignments.get(shift.id)!;
     expect(restoredSourceShift.status).toBe('PUBLISHED');
     expect(restoredSourceShift.branch_id).toBe(sourceBranch.id);
     expect(restoredSourceShift.employee_id).toBe(originalEmpId);
 
     // 5. Luồng chuẩn mới: Chọn Chi nhánh đích + Ngày + Khung ca + Nhân sự rảnh từ chi nhánh khác (không cần chọn ca cũ)
-    const freeDate = '2026-11-28';
-    const freeShiftCode = 'CA_TOI';
+    const freeDate = TODAY, freeShiftCode = 'CA_TOI';
     const newSupRes = await app.inject({
-      method: 'POST',
-      url: '/api/admin/shift-swaps',
-      headers: hrHeaders,
-      payload: {
-        kind: 'HR_SUPPORT',
-        target_branch_id: targetBranch.id,
-        work_date: freeDate,
-        shift_code: freeShiftCode,
-        requester_id: originalEmpId,
-        reason: 'Điều động nhân sự đang rảnh sang thêm vào lịch chi nhánh đích',
-      },
+      method: 'POST', url: '/api/admin/shift-swaps', headers: hrHeaders,
+      payload: { kind: 'HR_SUPPORT', target_branch_id: targetBranch.id, work_date: freeDate, shift_code: freeShiftCode, requester_id: originalEmpId, reason: 'Điều động nhân sự đang rảnh sang thêm vào lịch' },
     });
     expect(newSupRes.statusCode).toBe(201);
     const newSupData = newSupRes.json().data;
@@ -99,20 +77,19 @@ describe('7.4 Hỗ trợ chi nhánh khác (HR Support) & Scheduler kiểm toán 
 
     // 6. Nếu cố điều động nhân sự đã bận khung ca đó -> báo lỗi 400
     const conflictSupRes = await app.inject({
-      method: 'POST',
-      url: '/api/admin/shift-swaps',
-      headers: hrHeaders,
-      payload: {
-        kind: 'HR_SUPPORT',
-        target_branch_id: targetBranch.id,
-        work_date: freeDate,
-        shift_code: freeShiftCode,
-        requester_id: originalEmpId,
-        reason: 'Cố điều động trùng ca',
-      },
+      method: 'POST', url: '/api/admin/shift-swaps', headers: hrHeaders,
+      payload: { kind: 'HR_SUPPORT', target_branch_id: targetBranch.id, work_date: freeDate, shift_code: freeShiftCode, requester_id: originalEmpId, reason: 'Cố điều động trùng ca' },
     });
     expect(conflictSupRes.statusCode).toBe(400);
     expect(conflictSupRes.json().message).toContain('vui lòng chọn nhân sự đang rảnh');
+
+    // 7. Chặn điều động hỗ trợ cho ngày quá khứ
+    const pastSupRes = await app.inject({
+      method: 'POST', url: '/api/admin/shift-swaps', headers: hrHeaders,
+      payload: { kind: 'HR_SUPPORT', target_branch_id: targetBranch.id, work_date: '2026-01-01', shift_code: freeShiftCode, requester_id: originalEmpId, reason: 'Quá khứ' },
+    });
+    expect(pastSupRes.statusCode).toBe(400);
+    expect(pastSupRes.json().errors.details[0].message).toContain('ngày đã qua');
   });
 
   it('Scheduler tự động kiểm toán (audit-out-of-week): phát hiện phiếu sai tuần, tự động hủy và hoàn trả lịch về đúng người ban đầu', async () => {

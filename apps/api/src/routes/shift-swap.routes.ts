@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { isEmployeeRole, SYSTEM_CONFIG, zListQueryBase, type ShiftSwap } from '@umbm/shared';
+import { isEmployeeRole, SYSTEM_CONFIG, validateDispatchDateRange, zListQueryBase, type ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
 import { sendPaginated, sendSuccess } from '../lib/response.js';
-import { nowIso } from '../lib/time.js';
+import { nowIso, todayLocal } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { queueSwapEventEmail } from '../services/action-email-dispatcher.js';
@@ -31,6 +31,11 @@ const zCreateSwapBody = z.object({
 const zPeerRespondBody = z.object({ version: z.coerce.number().int().min(1).optional(), accept: z.boolean().optional().default(true), peer_id: z.string().trim().optional(), peer_note: z.string().trim().max(200).optional().default('') });
 const zWorkflowQuery = zListQueryBase.extend({ branch_id: z.string().trim().optional(), status: z.string().trim().optional(), kind: z.string().trim().optional() });
 const ACTIVE = new Set(['PENDING_PEER', 'PEER_ACCEPTED']);
+
+function assertDispatchDateInRange(workDate: string, field = 'work_date'): void {
+  const check = validateDispatchDateRange(workDate, todayLocal());
+  if (!check.valid) throw Errors.fieldValidation(field, 'INVALID_VALUE', check.message!, workDate);
+}
 
 export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
   const loadPair = (s: ShiftSwap) => {
@@ -59,7 +64,7 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
 
     if (body.kind === 'HR_SUPPORT') {
       const workDate = body.work_date || from?.work_date || '';
-      if (workDate) assertDateNotLockedByPayroll(ctx.db, workDate, 'điều phối hỗ trợ ca');
+      if (workDate) { assertDispatchDateInRange(workDate); assertDateNotLockedByPayroll(ctx.db, workDate, 'điều phối hỗ trợ ca'); }
       if (!body.target_branch_id) throw Errors.fieldValidation('target_branch_id', 'REQUIRED_FIELD', 'Vui lòng chọn chi nhánh tiếp nhận hỗ trợ', '');
       const created = await executeHrSupportDispatch(ctx, { fromAssignmentId: from?.id, targetBranchId: body.target_branch_id, workDate: body.work_date || undefined, shiftCode: body.shift_code || undefined, reason: body.reason, requesterId: body.requester_id || from?.employee_id }, actor.id);
       reply.code(201);
@@ -70,6 +75,7 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       const workDate = from?.work_date || body.work_date || '', shiftCode = from?.shift_code || body.shift_code || '';
       if (!branchId) throw Errors.fieldValidation('branch_id', 'REQUIRED_FIELD', 'Vui lòng chọn chi nhánh cần điều phối khẩn cấp', '');
       if (!workDate || !shiftCode) throw Errors.fieldValidation(!workDate ? 'work_date' : 'shift_code', 'REQUIRED_FIELD', !workDate ? 'Vui lòng chọn ngày làm việc cần điều phối' : 'Vui lòng chọn khung ca cần điều phối', '');
+      assertDispatchDateInRange(workDate);
       assertBranchAccess(request, branchId);
       assertDateNotLockedByPayroll(ctx.db, workDate, 'điều phối ca');
       const requester = (body.requester_id || from?.employee_id) ? findEmp(ctx, body.requester_id || from!.employee_id) : undefined;

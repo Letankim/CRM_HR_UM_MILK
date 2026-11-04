@@ -10,13 +10,14 @@ export interface DateStringPickerProps {
   placeholder?: string;
   disabled?: boolean;
   minDate?: string;
+  disabledDate?: (current: dayjs.Dayjs) => boolean;
 }
 
 /**
  * DatePicker hiển thị chuẩn DD/MM/YYYY cho người dùng Việt Nam,
  * nhưng lưu giá trị chuỗi YYYY-MM-DD tương thích trực tiếp với Form & API.
  */
-export function DateStringPicker({ value, onChange, placeholder = 'Chọn ngày (DD/MM/YYYY)', disabled, minDate }: DateStringPickerProps) {
+export function DateStringPicker({ value, onChange, placeholder = 'Chọn ngày (DD/MM/YYYY)', disabled, minDate, disabledDate }: DateStringPickerProps) {
   const parsed = value ? dayjs(value.slice(0, 10), 'YYYY-MM-DD') : null;
   return (
     <DatePicker
@@ -24,7 +25,7 @@ export function DateStringPicker({ value, onChange, placeholder = 'Chọn ngày 
       format="DD/MM/YYYY"
       placeholder={placeholder}
       disabled={disabled}
-      disabledDate={minDate ? (d) => d.isBefore(dayjs(minDate.slice(0, 10), 'YYYY-MM-DD'), 'day') : undefined}
+      disabledDate={disabledDate ?? (minDate ? (d) => d.isBefore(dayjs(minDate.slice(0, 10), 'YYYY-MM-DD'), 'day') : undefined)}
       value={parsed && parsed.isValid() ? parsed : null}
       onChange={(d) => onChange?.(d ? d.format('YYYY-MM-DD') : '')}
     />
