@@ -36,7 +36,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const mime = buf[0] === 0x89 && buf[1] === 0x50 ? 'image/png' : buf[0] === 0x52 && buf[1] === 0x49 ? 'image/webp' : 'image/jpeg';
     return reply.header('Content-Type', mime).header('Cache-Control', 'public, max-age=31536000, immutable').send(buf);
   });
-  app.get('/api/admin/attendance', { preHandler: requirePermission('attendance.read', 'self.attendance') }, async (request) => {
+  app.get('/api/admin/attendance', { preHandler: requirePermission('attendance.read') }, async (request) => {
     void migrateLegacyBase64Photos(ctx); await runBackgroundSideEffect(() => healBranchConsistency(ctx));
     const rawEvents = [...filterByBranch(request, ctx.db.attendanceEvents.all(), (e) => resolveEmployeeBranchId(ctx, e.employee_id, e.branch_id))].reverse().slice(0, 200);
     const events = rawEvents.map((e) => mapAttendanceEvent(e, ctx));
@@ -47,7 +47,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     });
     return sendSuccess(request, 'Lấy dữ liệu sự kiện chấm công gốc và phiếu bổ sung công thành công', { events, adjustments });
   });
-  app.get('/api/admin/attendance/sessions', { preHandler: requirePermission('attendance.read', 'schedule.read', 'self.attendance') }, async (request) => {
+  app.get('/api/admin/attendance/sessions', { preHandler: requirePermission('attendance.read', 'schedule.read') }, async (request) => {
     const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), shift_code: z.string().trim().optional(), status: z.string().trim().optional(), from_date: z.string().trim().optional(), to_date: z.string().trim().optional(), refresh: z.string().trim().optional() }).parse(request.query ?? {});
     if (query.refresh === '1') { await ctx.db.attendanceEvents.refreshIfIdle(); await healBranchConsistency(ctx); }
     else { await runBackgroundSideEffect(() => healBranchConsistency(ctx)); }

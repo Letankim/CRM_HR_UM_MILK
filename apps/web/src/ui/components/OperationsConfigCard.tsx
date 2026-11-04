@@ -4,19 +4,11 @@ import { Alert, App, Button, Card, Col, Divider, Form, InputNumber, Row, Select,
 import { ClockCircleOutlined, LockOutlined, ReloadOutlined, SaveOutlined, SafetyOutlined, ScheduleOutlined, SettingOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { WEEKDAY_OPTIONS, type OperationSettings } from '@umbm/shared';
+import { WEEKDAY_OPTIONS, type OffWindowState, type OperationSettings, type OfficeWorkdayMode } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { TimeStringPicker } from './DateTimePickers';
-
-export interface OffWindowState {
-  isOpen: boolean;
-  opensAt: string;
-  closesAt: string;
-  targetWeekStart: string;
-  targetWeekEnd: string;
-  message: string;
-}
+import { OperationsOfficeSection } from './OperationsOfficeSection';
 
 export interface OperationsConfigResponse {
   settings: OperationSettings;
@@ -25,7 +17,7 @@ export interface OperationsConfigResponse {
   partitionLabel: string;
 }
 
-interface OperationsFormValues {
+export interface OperationsFormValues {
   pin_rotation_days: number;
   off_window_open_weekday: number;
   off_window_open_time: string;
@@ -36,6 +28,10 @@ interface OperationsFormValues {
   checkout_max_late_hours: number;
   standard_work_days_per_month: number;
   standard_hours_per_day: number;
+  office_workday_mode: OfficeWorkdayMode;
+  office_saturday_start_time: string;
+  office_saturday_end_time: string;
+  office_saturday_hours: number;
 }
 
 const toFormValues = (s: OperationSettings): OperationsFormValues => ({
@@ -49,6 +45,10 @@ const toFormValues = (s: OperationSettings): OperationsFormValues => ({
   checkout_max_late_hours: s.checkoutMaxLateHours,
   standard_work_days_per_month: s.standardWorkDaysPerMonth,
   standard_hours_per_day: s.standardHoursPerDay,
+  office_workday_mode: s.officeWorkdayMode || 'MON_TO_FRI',
+  office_saturday_start_time: s.officeSaturdayStartTime || '08:00',
+  office_saturday_end_time: s.officeSaturdayEndTime || '12:00',
+  office_saturday_hours: s.officeSaturdayHours || 4,
 });
 
 const SECTION_STYLE = { fontSize: 13, fontWeight: 600, color: '#0F172A' } as const;
@@ -158,6 +158,8 @@ export function OperationsConfigCard() {
               </Form.Item>
             </Col>
           </Row>
+
+          <OperationsOfficeSection canEdit={canEdit} />
 
           <Divider style={{ margin: '12px 0' }} />
           <Typography.Text style={SECTION_STYLE}><ClockCircleOutlined /> Lịch, chấm công &amp; công chuẩn</Typography.Text>

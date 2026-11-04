@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Alert, Button, Card, Col, DatePicker, Flex, Row, Select, Space, Statistic, Tag } from 'antd';
 import {
-  CalendarOutlined, CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, LockOutlined,
+  BankOutlined, CalendarOutlined, CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, LockOutlined,
   ReloadOutlined, ScheduleOutlined, UnlockOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
@@ -11,6 +11,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import { mondayOfWeek } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
+import { OfficeShiftPublishModal } from './OfficeShiftPublishModal';
 import { PlannerWeekPreviewModal } from './PlannerWeekPreviewModal';
 import { PlannerIssuesAlert, PlannerOffConflictsAlert, PlannerOffTable } from './SchedulePlannerShared';
 import { fmtDm, fmtTs, fmtYmd, type PlannerWeekData } from './schedule-planner-types';
@@ -18,7 +19,7 @@ import { usePlannerOffDecision } from './usePlannerOffDecision';
 
 interface Props { branchOptions: { value: string; label: string }[] }
 
-/** Chốt lịch tuần cho nhân viên chính thức: xem trước Lưới Lịch Tuần toàn màn hình & tự động sắp ca theo chi nhánh. */
+/** Chốt lịch tuần cho nhân viên chính thức: xem trước Lưới Lịch Tuần & phát hành ca hành chính văn phòng. */
 export function SchedulePlannerWeekPane({ branchOptions }: Props) {
   const can = useCan(), me = useMe().data?.user;
   const isFinance = me?.role === 'FINANCE', canPublish = !isFinance && can('schedule.publish'), canDecide = !isFinance && can('leave.approve');
@@ -26,6 +27,7 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
   const [branchId, setBranchId] = useState('ALL');
   const [issuesOpen, setIssuesOpen] = useState(false);
   const [preview, setPreview] = useState<{ open: boolean; seq: number; branchId: string }>({ open: false, seq: 0, branchId: 'ALL' });
+  const [officeModalOpen, setOfficeModalOpen] = useState(false);
   const decision = usePlannerOffDecision();
 
   const params = new URLSearchParams({ branch_id: branchId });
@@ -59,6 +61,11 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
           </Space>
           <Space size={8} wrap>
             <Button icon={<ReloadOutlined />} loading={q.isFetching && !q.isLoading} onClick={() => q.refetch()}>Làm mới</Button>
+            {canPublish && (
+              <Button icon={<BankOutlined />} disabled={!effWeek} onClick={() => setOfficeModalOpen(true)}>
+                Phát hành ca Văn phòng
+              </Button>
+            )}
             {canPublish ? (
               <Button
                 type="primary" icon={<ScheduleOutlined />} disabled={!effWeek}
@@ -128,6 +135,12 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
         branchOptions={branchOptions} canPublish={canPublish}
         onBranchChange={(next) => setPreview((p) => ({ ...p, branchId: next }))}
         onClose={() => setPreview((p) => ({ ...p, open: false }))}
+      />
+      <OfficeShiftPublishModal
+        open={officeModalOpen}
+        onClose={() => setOfficeModalOpen(false)}
+        weekStart={effWeek ?? ''}
+        branchId={branchId}
       />
     </Space>
   );

@@ -20,6 +20,7 @@ import { scheduleRoutes } from './routes/schedules.routes.js';
 import { leaveSwapRoutes } from './routes/leave-swap.routes.js';
 import { operationsConfigRoutes } from './routes/operations-config.routes.js';
 import { schedulePlannerRoutes } from './routes/schedule-planner.routes.js';
+import { officeScheduleRoutes } from './routes/office-schedule.routes.js';
 import { shiftSwapRoutes } from './routes/shift-swap.routes.js';
 import { attendanceRoutes } from './routes/attendance.routes.js';
 import { myAttendanceRoutes } from './routes/my-attendance.routes.js';
@@ -140,6 +141,7 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
   await app.register(async (i) => leaveSwapRoutes(i, ctx));
   await app.register(async (i) => shiftSwapRoutes(i, ctx));
   await app.register(async (i) => schedulePlannerRoutes(i, ctx));
+  await app.register(async (i) => officeScheduleRoutes(i, ctx));
   await app.register(async (i) => operationsConfigRoutes(i, ctx));
   await app.register(async (i) => attendanceRoutes(i, ctx));
   await app.register(async (i) => myAttendanceRoutes(i, ctx));

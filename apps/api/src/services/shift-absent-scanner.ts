@@ -88,7 +88,8 @@ async function runSweep(
     if (a.status !== 'PUBLISHED' || hasIn || approvedAdj) continue;
     if (isVitest && a.source === 'SEED') continue;
 
-    const endAt = a.end_at || '12:00';
+    const rawEnd = a.end_at || '12:00';
+    const endAt = rawEnd.includes('T') ? rawEnd.slice(11, 16) : rawEnd;
     const isExpired = a.work_date < todayStr || (a.work_date === todayStr && nowHm > endAt);
     if (!isExpired) continue;
 

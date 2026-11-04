@@ -25,6 +25,10 @@ const zUpdateOperationsBody = z.object({
   checkout_max_late_hours: z.coerce.number().int().min(0, 'Thời hạn Ra ca không được âm').max(12, 'Thời hạn Ra ca tối đa 12 giờ').optional(),
   standard_work_days_per_month: z.coerce.number().int().min(1, 'Công chuẩn tháng tối thiểu 1 ngày').max(31, 'Công chuẩn tháng tối đa 31 ngày').optional(),
   standard_hours_per_day: z.coerce.number().int().min(1, 'Giờ chuẩn ngày tối thiểu 1 giờ').max(24, 'Giờ chuẩn ngày tối đa 24 giờ').optional(),
+  office_workday_mode: z.enum(['MON_TO_FRI', 'MON_TO_SAT', 'MON_TO_SAT_MORNING']).optional(),
+  office_saturday_start_time: hm.optional(),
+  office_saturday_end_time: hm.optional(),
+  office_saturday_hours: z.coerce.number().min(1, 'Giờ công T7 tối thiểu 1 giờ').max(12, 'Giờ công T7 tối đa 12 giờ').optional(),
 });
 const zMonthKey = z.string().trim().regex(/^(\d{4}_(0[1-9]|1[0-2]))?$/, 'Mã tháng phải theo định dạng YYYY_MM (ví dụ 2026_11)');
 
@@ -46,6 +50,8 @@ export async function operationsConfigRoutes(app: FastifyInstance, ctx: AppConte
       offWindowCloseWeekday: body.off_window_close_weekday, offWindowCloseTime: body.off_window_close_time,
       officialWeeklyOffLimit: body.official_weekly_off_limit, maxShiftsPerDay: body.max_shifts_per_day, checkoutMaxLateHours: body.checkout_max_late_hours,
       standardWorkDaysPerMonth: body.standard_work_days_per_month, standardHoursPerDay: body.standard_hours_per_day,
+      officeWorkdayMode: body.office_workday_mode, officeSaturdayStartTime: body.office_saturday_start_time,
+      officeSaturdayEndTime: body.office_saturday_end_time, officeSaturdayHours: body.office_saturday_hours,
     }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'system.operations.update', entity: 'SYSTEM_SETTINGS', entityId: 'operations-config', before: { ...before }, after: { ...after } });
     return sendSuccess(request, 'Đã lưu cấu hình vận hành hệ thống', buildPayload());

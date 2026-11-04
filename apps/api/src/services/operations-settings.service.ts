@@ -16,6 +16,10 @@ const FIELD_KEYS: Record<Field, string> = {
   standardWorkDaysPerMonth: OPERATION_SETTING_KEYS.STANDARD_WORK_DAYS_PER_MONTH,
   standardHoursPerDay: OPERATION_SETTING_KEYS.STANDARD_HOURS_PER_DAY,
   dataPartitionMonth: OPERATION_SETTING_KEYS.DATA_PARTITION_MONTH,
+  officeWorkdayMode: OPERATION_SETTING_KEYS.OFFICE_WORKDAY_MODE,
+  officeSaturdayStartTime: OPERATION_SETTING_KEYS.OFFICE_SATURDAY_START_TIME,
+  officeSaturdayEndTime: OPERATION_SETTING_KEYS.OFFICE_SATURDAY_END_TIME,
+  officeSaturdayHours: OPERATION_SETTING_KEYS.OFFICE_SATURDAY_HOURS,
 };
 
 const FIELD_META: Record<Field, { label: string; category: string }> = {
@@ -30,6 +34,10 @@ const FIELD_META: Record<Field, { label: string; category: string }> = {
   standardWorkDaysPerMonth: { label: 'Số ngày công chuẩn mặc định của tháng (ngày)', category: 'PAYROLL' },
   standardHoursPerDay: { label: 'Số giờ công chuẩn mặc định mỗi ngày/ca (giờ)', category: 'PAYROLL' },
   dataPartitionMonth: { label: 'Phân vùng dữ liệu tháng đang hoạt động', category: 'DATA' },
+  officeWorkdayMode: { label: 'Chế độ ngày làm việc khối Văn phòng', category: 'SCHEDULE' },
+  officeSaturdayStartTime: { label: 'Giờ bắt đầu làm việc Thứ 7 khối Văn phòng', category: 'SCHEDULE' },
+  officeSaturdayEndTime: { label: 'Giờ kết thúc làm việc Thứ 7 khối Văn phòng', category: 'SCHEDULE' },
+  officeSaturdayHours: { label: 'Số giờ công làm việc Thứ 7 khối Văn phòng (giờ)', category: 'SCHEDULE' },
 };
 
 /** Đọc cấu hình vận hành từ SYSTEM_SETTINGS (thiếu thì dùng mặc định) và đồng bộ thời hạn Ra ca. */

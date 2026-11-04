@@ -1,9 +1,11 @@
 /**
  * Cấu hình vận hành do Quản trị viên điều chỉnh (lưu tại bảng SYSTEM_SETTINGS):
  * - Chu kỳ bắt buộc đổi mã PIN, cửa sổ đăng ký nghỉ OFF theo tuần, giới hạn ra ca muộn,
- *   số ca tối đa / ngày và phân vùng dữ liệu theo tháng.
+ *   số ca tối đa / ngày, chế độ làm việc khối Văn phòng và phân vùng dữ liệu theo tháng.
  * Hàm thuần dùng chung cho cả Backend và Frontend.
  */
+
+export * from './operations-helpers.js';
 
 export const OPERATION_SETTING_KEYS = {
   PIN_ROTATION_DAYS: 'AUTH_PIN_ROTATION_DAYS',
@@ -24,9 +26,24 @@ export const OPERATION_SETTING_KEYS = {
   PAYROLL_FINANCE_SIGNATURE_FILE_ID: 'PAYROLL_FINANCE_SIGNATURE_FILE_ID',
   PAYROLL_FINANCE_SIGNER_NAME: 'PAYROLL_FINANCE_SIGNER_NAME',
   PAYROLL_FINANCE_SIGNED_UPDATED_AT: 'PAYROLL_FINANCE_SIGNED_UPDATED_AT',
+  OFFICE_WORKDAY_MODE: 'OFFICE_WORKDAY_MODE',
+  OFFICE_SATURDAY_START_TIME: 'OFFICE_SATURDAY_START_TIME',
+  OFFICE_SATURDAY_END_TIME: 'OFFICE_SATURDAY_END_TIME',
+  OFFICE_SATURDAY_HOURS: 'OFFICE_SATURDAY_HOURS',
 } as const;
 
 export type MonthlyPartitionMode = 'ROOT_FILE' | 'MONTHLY_FILE' | 'LEGACY_TAB';
+
+export type OfficeWorkdayMode = 'MON_TO_FRI' | 'MON_TO_SAT' | 'MON_TO_SAT_MORNING';
+
+export const OFFICE_WORKDAY_MODE_LABELS: Record<OfficeWorkdayMode, string> = {
+  MON_TO_FRI: 'Thứ 2 – Thứ 6 (Nghỉ Thứ 7 & CN)',
+  MON_TO_SAT: 'Thứ 2 – Thứ 7 (Nghỉ Chủ nhật)',
+  MON_TO_SAT_MORNING: 'Thứ 2 – Thứ 6 + Sáng Thứ 7 (Nghỉ chiều T7 & CN)',
+};
+
+export const OFFICE_WORKDAY_MODE_OPTIONS = (Object.keys(OFFICE_WORKDAY_MODE_LABELS) as OfficeWorkdayMode[])
+  .map((value) => ({ value, label: OFFICE_WORKDAY_MODE_LABELS[value] }));
 
 export interface MonthlyPartitionRegistryEntry {
   monthKey: string;
@@ -48,7 +65,6 @@ export const PARTITION_MODE_LABELS: Record<MonthlyPartitionMode, string> = {
 
 const MONTH_KEY_RE = /^\d{4}_(0[1-9]|1[0-2])$/;
 
-/** Đọc sổ đăng ký các file Google Spreadsheet theo tháng từ JSON trong SYSTEM_SETTINGS. */
 export function parsePartitionRegistry(raw: string | null | undefined): MonthlyPartitionRegistryEntry[] {
   if (!raw || !raw.trim()) return [];
   try {
@@ -90,6 +106,10 @@ export interface OperationSettings {
   standardWorkDaysPerMonth: number;
   standardHoursPerDay: number;
   dataPartitionMonth: string;
+  officeWorkdayMode: OfficeWorkdayMode;
+  officeSaturdayStartTime: string;
+  officeSaturdayEndTime: string;
+  officeSaturdayHours: number;
 }
 
 export const DEFAULT_OPERATION_SETTINGS: OperationSettings = {
@@ -104,16 +124,18 @@ export const DEFAULT_OPERATION_SETTINGS: OperationSettings = {
   standardWorkDaysPerMonth: 26,
   standardHoursPerDay: 8,
   dataPartitionMonth: '',
+  officeWorkdayMode: 'MON_TO_FRI',
+  officeSaturdayStartTime: '08:00',
+  officeSaturdayEndTime: '12:00',
+  officeSaturdayHours: 4,
 };
 
-/** 1 = Thứ 2 ... 6 = Thứ 7, 7 = Chủ nhật (chuẩn ISO). */
 export const WEEKDAY_LABELS: Record<number, string> = {
   1: 'Thứ 2', 2: 'Thứ 3', 3: 'Thứ 4', 4: 'Thứ 5', 5: 'Thứ 6', 6: 'Thứ 7', 7: 'Chủ nhật',
 };
 export const WEEKDAY_OPTIONS = [1, 2, 3, 4, 5, 6, 7].map((value) => ({ value, label: WEEKDAY_LABELS[value]! }));
 
 export const SHIFT_SWAP_KIND_LABELS = { SWAP: 'Đổi ca 2 chiều', GIVE: 'Nhường ca' } as const;
-/** Nhãn tiếng Việt cho các bảng dữ liệu phân vùng theo tháng (không hiển thị tên tab nội bộ). */
 export const PARTITION_TABLE_LABELS: Record<string, string> = {
   SHIFT_ASSIGNMENTS: 'Lịch phân ca', LEAVE_REQUESTS: 'Đơn nghỉ OFF', SHIFT_SWAPS: 'Đổi ca / Nhường ca',
   ATTENDANCE_EVENTS: 'Chấm công Vào/Ra', ATTENDANCE_ADJUSTMENTS: 'Phiếu bổ sung công',
@@ -127,25 +149,6 @@ export const ADJUSTMENT_PUNCH_TYPE_OPTIONS = (Object.keys(ADJUSTMENT_PUNCH_TYPE_
   .map((value) => ({ value, label: ADJUSTMENT_PUNCH_TYPE_LABELS[value] }));
 
 const HM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-const pad = (n: number) => String(n).padStart(2, '0');
-const toYmd = (d: Date) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-const fromYmd = (s: string) => new Date(`${s}T00:00:00Z`);
-const isoWeekday = (d: Date) => (d.getUTCDay() === 0 ? 7 : d.getUTCDay());
-
-export function addDaysYmd(ymd: string, days: number): string {
-  const d = fromYmd(ymd);
-  d.setUTCDate(d.getUTCDate() + days);
-  return toYmd(d);
-}
-
-/** Thứ 2 của tuần chứa ngày `ymd`. */
-export function mondayOfWeek(ymd: string): string {
-  return addDaysYmd(ymd, 1 - isoWeekday(fromYmd(ymd)));
-}
-
-export function weekDates(weekStart: string): string[] {
-  return Array.from({ length: 7 }, (_, i) => addDaysYmd(weekStart, i));
-}
 
 export function normalizeOperationSettings(raw: Partial<Record<keyof OperationSettings, unknown>>): OperationSettings {
   const num = (v: unknown, fb: number, min: number, max: number) => {
@@ -155,6 +158,7 @@ export function normalizeOperationSettings(raw: Partial<Record<keyof OperationSe
   const hm = (v: unknown, fb: string) => (typeof v === 'string' && HM_RE.test(v.trim()) ? v.trim() : fb);
   const d = DEFAULT_OPERATION_SETTINGS;
   const month = typeof raw.dataPartitionMonth === 'string' && /^\d{4}_(0[1-9]|1[0-2])$/.test(raw.dataPartitionMonth) ? raw.dataPartitionMonth : '';
+  const validMode = (v: unknown): OfficeWorkdayMode => (v === 'MON_TO_SAT' || v === 'MON_TO_SAT_MORNING' ? v : 'MON_TO_FRI');
   return {
     pinRotationDays: num(raw.pinRotationDays, d.pinRotationDays, 0, 3650),
     offWindowOpenWeekday: num(raw.offWindowOpenWeekday, d.offWindowOpenWeekday, 1, 7),
@@ -167,50 +171,9 @@ export function normalizeOperationSettings(raw: Partial<Record<keyof OperationSe
     standardWorkDaysPerMonth: num(raw.standardWorkDaysPerMonth, d.standardWorkDaysPerMonth, 1, 31),
     standardHoursPerDay: num(raw.standardHoursPerDay, d.standardHoursPerDay, 1, 24),
     dataPartitionMonth: month,
-  };
-}
-
-export interface OffWindowState {
-  isOpen: boolean;
-  /** Mốc mở / đóng của kỳ đăng ký đang diễn ra hoặc sắp tới (YYYY-MM-DD HH:mm, giờ Việt Nam) */
-  opensAt: string;
-  closesAt: string;
-  /** Tuần được đăng ký nghỉ OFF (tuần ngay sau thời điểm đóng cổng) */
-  targetWeekStart: string;
-  targetWeekEnd: string;
-  message: string;
-}
-
-/**
- * Tính trạng thái cổng đăng ký nghỉ OFF theo tuần.
- * Mặc định mở 09:00 Thứ 6 và đóng 09:00 Thứ 7; nghỉ OFF đăng ký cho tuần kế tiếp (Thứ 2 – Chủ nhật).
- */
-export function evaluateOffWindow(settings: OperationSettings, todayYmd: string, nowHm: string): OffWindowState {
-  const thisMonday = mondayOfWeek(todayYmd);
-  const span = (monday: string) => {
-    const open = addDaysYmd(monday, settings.offWindowOpenWeekday - 1);
-    let close = addDaysYmd(monday, settings.offWindowCloseWeekday - 1);
-    if (close < open || (close === open && settings.offWindowCloseTime <= settings.offWindowOpenTime)) close = addDaysYmd(close, 7);
-    return { open: `${open} ${settings.offWindowOpenTime}`, close: `${close} ${settings.offWindowCloseTime}`, closeDate: close };
-  };
-  const now = `${todayYmd} ${nowHm}`;
-  let cur = span(thisMonday);
-  if (now >= cur.close) cur = span(addDaysYmd(thisMonday, 7));
-  const prev = span(addDaysYmd(thisMonday, -7));
-  if (now >= prev.open && now < prev.close) cur = prev;
-  const isOpen = now >= cur.open && now < cur.close;
-  const targetWeekStart = addDaysYmd(mondayOfWeek(cur.closeDate), 7);
-  const targetWeekEnd = addDaysYmd(targetWeekStart, 6);
-  const fmt = (s: string) => `${s.slice(11)} ngày ${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}`;
-  const weekVi = `${targetWeekStart.slice(8, 10)}/${targetWeekStart.slice(5, 7)} – ${targetWeekEnd.slice(8, 10)}/${targetWeekEnd.slice(5, 7)}/${targetWeekEnd.slice(0, 4)}`;
-  return {
-    isOpen,
-    opensAt: cur.open,
-    closesAt: cur.close,
-    targetWeekStart,
-    targetWeekEnd,
-    message: isOpen
-      ? `Cổng đăng ký nghỉ OFF đang mở đến ${fmt(cur.close)} cho tuần ${weekVi}.`
-      : `Cổng đăng ký nghỉ OFF đang đóng. Kỳ đăng ký tiếp theo mở từ ${fmt(cur.open)} đến ${fmt(cur.close)} cho tuần ${weekVi}.`,
+    officeWorkdayMode: validMode(raw.officeWorkdayMode),
+    officeSaturdayStartTime: hm(raw.officeSaturdayStartTime, d.officeSaturdayStartTime),
+    officeSaturdayEndTime: hm(raw.officeSaturdayEndTime, d.officeSaturdayEndTime),
+    officeSaturdayHours: num(raw.officeSaturdayHours, d.officeSaturdayHours, 1, 12),
   };
 }
