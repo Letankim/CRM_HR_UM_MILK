@@ -185,7 +185,7 @@ export function PayrollSheetCard({ period, onOpenPayslip }: { period: PayPeriodR
                     { key: 'pdf', icon: <FilePdfOutlined />, label: 'Xuất phiếu lương', onClick: () => void downloadSinglePdf(r) },
                     ...(canEditManual6 ? [{ key: 'manual6', icon: <CalculatorOutlined />, label: 'Nhập tay 6 cột Kế toán', onClick: () => setManualTarget(r) }] : []),
                     ...(isFinance && r.employeeConfirmedAt ? [{ key: 'qr', icon: <QrcodeOutlined />, label: 'Mã QR Ngân hàng & Đánh dấu Đã TT', onClick: () => setQrPayTarget(r) }] : []),
-                    ...(canAdj ? [{ key: 'adjust', icon: <EditOutlined />, label: 'Điều chỉnh phiếu lương (+ / -)', onClick: () => onOpenPayslip(r) }] : []),
+                    ...(canAdj ? [{ key: 'adjust', icon: <EditOutlined />, label: 'Điều chỉnh', onClick: () => onOpenPayslip(r) }] : []),
                   ]}
                 />
               );

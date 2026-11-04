@@ -61,6 +61,8 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
   const liveQ = useQuery({ queryKey: ['my-attendance'], queryFn: () => api.get<{ profile?: { stage?: string; role?: string }; shifts: Record<string, unknown>[] }>('/my-attendance'), enabled: open });
   const activeShift = liveQ.data?.shifts?.find((s) => String(s.id) === String(shift?.id)) ?? shift;
   const isProbation = String(activeShift?.employeeStage ?? activeShift?.employee_stage ?? liveQ.data?.profile?.stage ?? '') === 'PROBATION' || liveQ.data?.profile?.role === 'THU_VIEC';
+  const isOffice = ['HR', 'FINANCE', 'MKT', 'ADMIN', 'STORE'].includes(String(liveQ.data?.profile?.role || '')) || String(activeShift?.staffGroup || '') === 'BACKOFFICE' || String(activeShift?.shiftCode || '') === 'HANH_CHINH';
+  const isExemptUniform = isProbation || isOffice;
   const branchName = String(activeShift?.branchName || 'Chi nhánh làm việc');
   const branchLat = activeShift?.branchLat !== undefined && activeShift?.branchLat !== null ? Number(activeShift.branchLat) : null;
   const branchLng = activeShift?.branchLng !== undefined && activeShift?.branchLng !== null ? Number(activeShift.branchLng) : null;
@@ -144,7 +146,7 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
   const startAt = String(activeShift?.startAt || activeShift?.start_at || '07:00'), endAt = String(activeShift?.endAt || activeShift?.end_at || '12:00');
   const cleanShiftTitle = String(activeShift?.shiftLabel ?? 'Ca sáng').replace(/\s*\([^)]*\)\s*/g, '').trim();
   const punc = evaluateShiftPunctuality(kind, nowStr.slice(0, 5), startAt, endAt);
-  const canSubmit = Boolean(photoDataUrl && activeShift && coords && withinRadius && !branchMismatch && !locating && (isProbation || uniformConfirmed));
+  const canSubmit = Boolean(photoDataUrl && activeShift && coords && withinRadius && !branchMismatch && !locating && (isExemptUniform || uniformConfirmed));
 
   return (
     <Modal
@@ -153,7 +155,7 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
       footer={
         <Space wrap>
           <Button icon={<CloseOutlined />} onClick={onClose}>Hủy bỏ</Button>
-          <Button type="primary" icon={<CheckCircleOutlined />} disabled={!canSubmit} loading={loading} onClick={() => activeShift && coords && onConfirm({ assignment_id: String(activeShift.id), kind, lat: coords.lat, lng: coords.lng, accuracy_m: coords.accuracy, selfie_source: 'LIVE_CAMERA', photo_base64: photoDataUrl, enforce_shift_state: true, pink_ratio_percent: pinkResult?.pinkRatioPercent ?? 0, uniform_verified: isProbation ? true : uniformConfirmed }, photoDataUrl)}>{kind === 'CHECK_IN' ? 'Xác nhận Vào ca' : 'Xác nhận Ra ca'}</Button>
+          <Button type="primary" icon={<CheckCircleOutlined />} disabled={!canSubmit} loading={loading} onClick={() => activeShift && coords && onConfirm({ assignment_id: String(activeShift.id), kind, lat: coords.lat, lng: coords.lng, accuracy_m: coords.accuracy, selfie_source: 'LIVE_CAMERA', photo_base64: photoDataUrl, enforce_shift_state: true, pink_ratio_percent: pinkResult?.pinkRatioPercent ?? 0, uniform_verified: isExemptUniform ? true : uniformConfirmed }, photoDataUrl)}>{kind === 'CHECK_IN' ? 'Xác nhận Vào ca' : 'Xác nhận Ra ca'}</Button>
         </Space>
       }
     >
@@ -184,13 +186,15 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
           </div>
           {!photoDataUrl ? (
             <Button type="primary" icon={<CameraOutlined />} block disabled={!coords || !withinRadius || branchMismatch || locating} onClick={handleCapture}>
-              {!coords ? 'Vui lòng lấy vị trí GPS trước khi chụp ảnh' : !withinRadius ? `Ngoài bán kính (${formatDistanceVi(distanceM!)} / ${branchRadiusM}m)` : 'Chụp ảnh khuôn mặt & Đồng phục'}
+              {!coords ? 'Vui lòng lấy vị trí GPS trước khi chụp ảnh' : !withinRadius ? `Ngoài bán kính (${formatDistanceVi(distanceM!)} / ${branchRadiusM}m)` : (isOffice ? 'Chụp ảnh khuôn mặt xác thực' : 'Chụp ảnh khuôn mặt & Đồng phục')}
             </Button>
           ) : (
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
               <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap><Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã chụp ảnh xác thực</Tag><Button size="small" icon={<ReloadOutlined />} onClick={() => { setPhotoDataUrl(''); setPinkResult(null); void startCamera(); }}>Chụp lại ảnh</Button></Space>
               <div style={{ padding: '8px 10px', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4 }}>
-                {isProbation ? (
+                {isOffice ? (
+                  <Tag color="blue" icon={<SafetyCertificateOutlined />} style={{ margin: 0 }}>Khối Văn phòng / Quản lý: Trang phục công sở, miễn trừ kiểm tra áo hồng</Tag>
+                ) : isProbation ? (
                   <Tag color="gold" icon={<SafetyCertificateOutlined />} style={{ margin: 0 }}>Nhân viên thử việc: Miễn trừ kiểm tra tỷ lệ màu áo hồng</Tag>
                 ) : (
                   <Space direction="vertical" size={6} style={{ width: '100%' }}>

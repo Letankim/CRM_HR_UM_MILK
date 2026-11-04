@@ -66,7 +66,6 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/attendance-events', { preHandler: requirePermission('attendance.read', 'schedule.read') }, handleGetEvents);
 
   app.post('/api/attendance/check', { preHandler: requireAuth() }, async (request, reply) => {
-    if (request.auth!.user.role === 'MKT') throw Errors.forbidden('Tài khoản Truyền thông (MKT) không được phép truy cập chức năng điểm danh GPS');
     const body = zCheckInOutBody.parse(request.body);
     if (body.idempotency_key) {
       const existingByKey = ctx.db.attendanceEvents.find((e) => e.idempotency_key === body.idempotency_key);
@@ -116,7 +115,8 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
           throw Errors.badRequest(`Chưa đến giờ mở cổng điểm danh vào ca (chỉ mở trước giờ vào ca ${SYSTEM_CONFIG.defaults.checkInOpenBeforeMinutes} phút)`);
         }
         const hasInNow = Boolean(ctx.db.attendanceEvents.find((e) => e.assignment_id === assign.id && e.type === 'CHECK_IN'));
-        if (!hasInNow && diffFromStart > SYSTEM_CONFIG.defaults.checkInAutoAbsentAfterHours * 60) {
+        const isOffice = assign.shift_code === 'HANH_CHINH' || empRecord.staff_group === 'BACKOFFICE' || ['HR', 'FINANCE', 'MKT', 'ADMIN'].includes(request.auth!.user.role);
+        if (!isOffice && !hasInNow && diffFromStart > SYSTEM_CONFIG.defaults.checkInAutoAbsentAfterHours * 60) {
           await ctx.db.shiftAssignments.update(assign.id, assign.version, { status: 'ABSENT', note: 'Quá 3 giờ kể từ giờ bắt đầu ca chưa điểm danh — Tự động chuyển Vắng mặt' }, request.auth!.user.id);
           throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'}) đã quá ${SYSTEM_CONFIG.defaults.checkInAutoAbsentAfterHours} giờ kể từ giờ bắt đầu mà chưa điểm danh vào ca nên đã tự động chuyển sang trạng thái Vắng mặt (ABSENT).`);
         }

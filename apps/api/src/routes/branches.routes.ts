@@ -51,6 +51,15 @@ function mapStaffingRule(r: StaffingRule, ctx: AppContext) {
   };
 }
 
+export async function ensureOfficeShiftTemplate(ctx: AppContext, actorId = 'system') {
+  if (!ctx.db.shiftTemplates.find((s) => s.code === 'HANH_CHINH')) {
+    await ctx.db.shiftTemplates.insert({
+      code: 'HANH_CHINH', name: 'Ca Hành chính (Văn phòng)', start_time: '08:00', end_time: '17:30', standard_hours: 8, break_minutes: 90,
+      effective_from: '2026-01-01', effective_to: '', shift_group: 'STORE', is_overnight: false, status: 'ACTIVE', note: 'Ca làm việc giờ hành chính chuẩn',
+    }, actorId).catch(() => undefined);
+  }
+}
+
 export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/admin/branches', { preHandler: requireAuth() }, async (request) => {
     const query = zBranchListQuery.parse(request.query);
@@ -97,6 +106,7 @@ export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.get('/api/admin/shift-templates', { preHandler: requireAuth() }, async (request) => {
+    await ensureOfficeShiftTemplate(ctx);
     const scope = request.auth!.branchScope;
     const empBranchId = request.auth!.user.employee_id
       ? (ctx.db.employees.get(request.auth!.user.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === request.auth!.user.employee_id))?.branch_id
@@ -163,39 +173,28 @@ export async function branchRoutes(app: FastifyInstance, ctx: AppContext) {
   app.post('/api/admin/staffing-rules', { preHandler: requirePermission('system.config', 'schedule.publish') }, async (request, reply) => {
     const body = zStaffingRuleBody.parse(request.body);
     if (body.branch_id !== 'ALL') assertBranchAccess(request, body.branch_id);
-    if (body.max_staff < body.min_staff) {
-      throw Errors.fieldValidation('max_staff', 'OUT_OF_RANGE', 'Số nhân sự tối đa phải lớn hơn hoặc bằng số nhân sự tối thiểu', body.max_staff);
-    }
+    if (body.max_staff < body.min_staff) throw Errors.fieldValidation('max_staff', 'OUT_OF_RANGE', 'Số nhân sự tối đa phải lớn hơn hoặc bằng số nhân sự tối thiểu', body.max_staff);
     if (ctx.db.staffingRules.find((r) => r.branch_id === body.branch_id && r.shift_template_id === body.shift_template_id)) {
       throw Errors.fieldValidation('shift_template_id', 'DUPLICATE_VALUE', 'Chi nhánh này đã có cấu hình định biên cho khung ca đã chọn. Vui lòng chỉnh sửa định biên hiện có.', body.shift_template_id);
     }
-    const created = await ctx.db.staffingRules.insert(
-      { ...body, effective_from: body.effective_from || dayjs().format('YYYY-MM-DD'), approved_by: request.auth!.user.display_name || request.auth!.user.username },
-      request.auth!.user.id,
-    );
+    const created = await ctx.db.staffingRules.insert({ ...body, effective_from: body.effective_from || dayjs().format('YYYY-MM-DD'), approved_by: request.auth!.user.display_name || request.auth!.user.username }, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'staffing_rule.create', entity: 'STAFFING_RULES', entityId: created.id, after: { branch_id: created.branch_id, min_staff: created.min_staff, max_staff: created.max_staff } });
     reply.code(201);
     return sendSuccess(request, 'Đã lưu cấu hình định biên nhân sự theo ca thành công', mapStaffingRule(created, ctx));
   });
 
   app.put('/api/admin/staffing-rules/:id', { preHandler: requirePermission('system.config', 'schedule.publish') }, async (request) => {
-    const { id } = request.params as { id: string };
-    const body = zStaffingRuleBody.partial().extend({ version: z.coerce.number().int().min(1).optional() }).parse(request.body);
+    const { id } = request.params as { id: string }, body = zStaffingRuleBody.partial().extend({ version: z.coerce.number().int().min(1).optional() }).parse(request.body);
     const before = ctx.db.staffingRules.get(id);
     if (!before) throw Errors.notFound('Định biên ca làm', id);
-    const nextBranch = body.branch_id ?? before.branch_id;
-    const nextShift = body.shift_template_id ?? before.shift_template_id;
-    const nextMin = body.min_staff ?? before.min_staff;
-    const nextMax = body.max_staff ?? before.max_staff;
+    const nextBranch = body.branch_id ?? before.branch_id, nextShift = body.shift_template_id ?? before.shift_template_id;
+    const nextMin = body.min_staff ?? before.min_staff, nextMax = body.max_staff ?? before.max_staff;
     if (nextBranch !== 'ALL') assertBranchAccess(request, nextBranch);
-    if (nextMax < nextMin) {
-      throw Errors.fieldValidation('max_staff', 'OUT_OF_RANGE', 'Số nhân sự tối đa phải lớn hơn hoặc bằng số nhân sự tối thiểu', nextMax);
-    }
+    if (nextMax < nextMin) throw Errors.fieldValidation('max_staff', 'OUT_OF_RANGE', 'Số nhân sự tối đa phải lớn hơn hoặc bằng số nhân sự tối thiểu', nextMax);
     if (ctx.db.staffingRules.find((r) => r.id !== id && r.branch_id === nextBranch && r.shift_template_id === nextShift)) {
       throw Errors.fieldValidation('shift_template_id', 'DUPLICATE_VALUE', 'Chi nhánh này đã có cấu hình định biên cho khung ca đã chọn', nextShift);
     }
-    const { version, ...patch } = body;
-    const updated = await ctx.db.staffingRules.update(id, version ?? before.version, patch, request.auth!.user.id);
+    const { version, ...patch } = body, updated = await ctx.db.staffingRules.update(id, version ?? before.version, patch, request.auth!.user.id);
     await ctx.audit.record(auditContext(request), { action: 'staffing_rule.update', entity: 'STAFFING_RULES', entityId: id, before: { branch_id: before.branch_id, min_staff: before.min_staff, max_staff: before.max_staff }, after: { branch_id: updated.branch_id, min_staff: updated.min_staff, max_staff: updated.max_staff } });
     return sendSuccess(request, 'Đã cập nhật cấu hình định biên nhân sự theo ca thành công', mapStaffingRule(updated, ctx));
   });

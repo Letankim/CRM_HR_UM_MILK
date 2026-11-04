@@ -56,6 +56,7 @@ export const BACKOFFICE_NAV: NavGroup[] = [
         breadcrumbTitle: 'Điểm danh GPS, Ca làm việc & Đơn cá nhân của bạn',
         icon: <EnvironmentOutlined />,
         perms: ['self.attendance'],
+        roles: ['ADMIN', 'HR', 'STORE', 'FINANCE', 'MKT'],
       },
       {
         key: '/admin/notifications',

@@ -4,7 +4,7 @@ import { evaluateOffWindow, REQUEST_STATUS_LABELS, ROLE_LABELS, type Employee, t
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
-import { dayjs } from '../lib/time.js';
+import { dayjs, nowIso } from '../lib/time.js';
 import { requireAuth } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { runBackgroundSideEffect } from '../services/background-write.js';
@@ -20,6 +20,7 @@ import { buildProbationCycleSummary, registerMyShiftRegisterRoute } from './my-s
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { mapShiftAssignment } from './schedules.routes.js';
 import { mapShiftSwapRecord } from './shift-swap-helpers.js';
+import { ensureOfficeShiftTemplate } from './branches.routes.js';
 
 const SHIFT_DEFAULT_HOURS: Record<string, { start: string; end: string; hours: number }> = {
   CA_SANG: { start: '07:00', end: '12:00', hours: 5 }, CA_CHIEU: { start: '12:00', end: '17:00', hours: 5 },
@@ -75,6 +76,22 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     const events = myRawEvents.map((e) => mapAttendanceEvent(e, ctx));
 
     const myRawShifts = ctx.db.shiftAssignments.filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code).reverse();
+    const isOfficeOrMgr = emp.staff_group === 'BACKOFFICE' || emp.staff_group === 'STORE_MANAGER' || user.role === 'HR' || user.role === 'FINANCE' || user.role === 'MKT' || user.role === 'STORE' || user.role === 'ADMIN';
+    if (isOfficeOrMgr && !myRawShifts.some((a) => a.work_date === todayStr && !a.is_deleted)) {
+      await ensureOfficeShiftTemplate(ctx);
+      const officeBranch = ctx.db.branches.find((b) => b.code === 'VAN_PHONG') ?? branch;
+      const tpl = ctx.db.shiftTemplates.find((s) => s.code === 'HANH_CHINH');
+      const startAt = tpl?.start_time || '08:00', endAt = tpl?.end_time || '17:30', scheduledHours = Number(tpl?.standard_hours) || 8;
+      const autoShift = await ctx.db.shiftAssignments.insert({
+        schedule_week_id: `WK-${todayStr.slice(0, 7)}`, employee_id: emp.id,
+        branch_id: emp.branch_id || officeBranch?.id || '', work_date: todayStr,
+        shift_template_id: tpl?.id || '', shift_code: 'HANH_CHINH', start_at: startAt, end_at: endAt,
+        scheduled_hours: scheduledHours, status: 'PUBLISHED', source: 'AUTO_OFFICE',
+        employee_stage: emp.stage, day_type: 'WORK', published_at: nowIso(), note: 'Ca làm việc giờ hành chính',
+        swapped_from_employee_id: '', replacement_for_employee_id: '', linked_assignment_id: '',
+      }, user.id).catch(() => undefined);
+      if (autoShift) myRawShifts.unshift(autoShift);
+    }
     const shifts = myRawShifts.map((a) => {
       const base = mapShiftAssignment(a, ctx);
       const sEvs = events.filter((e) => e.assignment_id === a.id || (!e.assignment_id && e.work_date === a.work_date && e.shift_code === a.shift_code));
@@ -120,16 +137,8 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       return a.workDate >= todayStr ? a.workDate.localeCompare(b.workDate) || a.startAt.localeCompare(b.startAt) : b.workDate.localeCompare(a.workDate);
     });
 
-    const leaves = ctx.db.leaveRequests
-      .filter((l) => l.employee_id === emp.id || l.employee_id === emp.employee_code)
-      .reverse()
-      .map((l) => ({ ...l, ...resolveShiftTimeDetails(ctx, l.shift_code, l.assignment_id, l.branch_id, l.employee_id, l.leave_date), branchName: ctx.db.branches.get(l.branch_id)?.name ?? branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[l.status] }));
-
-    const swaps = ctx.db.shiftSwaps
-      .filter((s) => s.requester_id === emp.id || s.requester_id === emp.employee_code || s.peer_id === emp.id || s.peer_id === emp.employee_code)
-      .reverse()
-      .map((s) => mapShiftSwapRecord(ctx, s, branch));
-
+    const leaves = ctx.db.leaveRequests.filter((l) => l.employee_id === emp.id || l.employee_id === emp.employee_code).reverse().map((l) => ({ ...l, ...resolveShiftTimeDetails(ctx, l.shift_code, l.assignment_id, l.branch_id, l.employee_id, l.leave_date), branchName: ctx.db.branches.get(l.branch_id)?.name ?? branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[l.status] }));
+    const swaps = ctx.db.shiftSwaps.filter((s) => s.requester_id === emp.id || s.requester_id === emp.employee_code || s.peer_id === emp.id || s.peer_id === emp.employee_code).reverse().map((s) => mapShiftSwapRecord(ctx, s, branch));
     const peerBusyByEmp = new Map<string, Record<string, string>>();
     const putBusy = (key: string, date: string, label: string) => {
       let map = peerBusyByEmp.get(key);

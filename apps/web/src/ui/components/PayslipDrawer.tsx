@@ -22,19 +22,13 @@ import { ShiftAttendanceDetailModal } from './ShiftAttendanceDetailModal';
 export { payslipLines };
 
 export function PayslipDrawer({ snapshot: propSnap, periodStatus, onClose }: { snapshot: PayrollSnapshotItem | null; periodStatus?: PayPeriodStatus; onClose: () => void }) {
-  const [s, setS] = useState<PayrollSnapshotItem | null>(propSnap);
-  const [revModal, setRevModal] = useState(false);
-  const [qrModalOpen, setQrModalOpen] = useState(false);
-  const [downloadingPdf, setDownloadingPdf] = useState(false);
-  const [attShiftId, setAttShiftId] = useState<string | null>(null);
+  const [s, setS] = useState<PayrollSnapshotItem | null>(propSnap), [revModal, setRevModal] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false), [downloadingPdf, setDownloadingPdf] = useState(false), [attShiftId, setAttShiftId] = useState<string | null>(null);
   const qc = useQueryClient(), can = useCan(), me = useMe().data?.user;
   const isFinance = me?.role === 'FINANCE', isAdmin = me?.role === 'ADMIN', canManage = can('payroll.manage');
   const { message } = App.useApp(), showDetail = useQuickDetail();
 
-  useEffect(() => {
-    setS(propSnap);
-    if (!propSnap) { setAttShiftId(null); setQrModalOpen(false); }
-  }, [propSnap]);
+  useEffect(() => { setS(propSnap); if (!propSnap) { setAttShiftId(null); setQrModalOpen(false); } }, [propSnap]);
 
   const revsQ = useQuery({
     queryKey: ['payslip-revisions', s?.id],

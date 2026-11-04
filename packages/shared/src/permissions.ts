@@ -77,6 +77,10 @@ const SELF_SERVICE: Permission[] = [
   'self.profile', 'self.schedule', 'self.attendance', 'self.leave', 'self.swap', 'self.adjustment', 'self.test', 'self.payslip',
 ];
 
+export const BACKOFFICE_SELF_SERVICE: Permission[] = [
+  'self.profile', 'self.schedule', 'self.attendance', 'self.leave', 'self.adjustment', 'self.payslip',
+];
+
 /**
  * Permission mặc định theo vai trò (RBAC Matrix — Phần 01 tài liệu đặc tả).
  * Admin có thể cấp thêm permission bổ sung qua cột permissions_json của USERS.
@@ -86,22 +90,25 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'account.read', 'account.manage', 'account.activate', 'system.config', 'system.maintenance',
     'system.audit.read', 'system.backup', 'integration.read', 'employee.read', 'schedule.read',
     'attendance.read', 'attendance.media.read', 'test.read', 'payroll.read', 'payroll.pay',
-    'report.finance', 'notification.send',
+    'report.finance', 'notification.send', ...BACKOFFICE_SELF_SERVICE,
   ],
   HR: [
     'account.read', 'candidate.manage', 'interview.manage', 'employee.read', 'employee.manage', 'employee.promote',
     'schedule.read', 'schedule.propose', 'schedule.publish', 'leave.approve', 'swap.approve',
     'attendance.read', 'attendance.media.read', 'adjustment.approve', 'test.manage', 'test.read', 'report.hr', 'notification.send',
+    ...BACKOFFICE_SELF_SERVICE,
   ],
   STORE: [
     'employee.read', 'schedule.read', 'schedule.propose', 'leave.approve',
     'attendance.read', 'attendance.media.read', 'attendance.confirm', 'report.store', 'notification.send',
+    ...BACKOFFICE_SELF_SERVICE,
   ],
   FINANCE: [
     'employee.read', 'schedule.read', 'attendance.read', 'payroll.read', 'payroll.manage',
     'payroll.publish', 'payroll.pay', 'report.finance', 'notification.send',
+    ...BACKOFFICE_SELF_SERVICE,
   ],
-  MKT: ['comms.manage', 'notification.send'],
+  MKT: ['comms.manage', 'notification.send', ...BACKOFFICE_SELF_SERVICE],
   THU_VIEC: SELF_SERVICE,
   CHINH_THUC: SELF_SERVICE,
 };
