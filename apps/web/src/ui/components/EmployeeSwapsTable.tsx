@@ -147,7 +147,7 @@ export function EmployeeSwapsTable({
         locale={{ emptyText: 'Bạn chưa có yêu cầu nhường / đổi ca nào. Bấm "Nhường / Đổi ca" phía trên để gửi yêu cầu cho đồng nghiệp.' }}
         columns={[
           { title: 'Mã đơn', dataIndex: 'swap_code', width: 115, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
-          { title: 'Loại', dataIndex: 'kind', width: 125, render: (v: string, r) => <Tag color={v === 'SWAP' ? 'geekblue' : v === 'HR_DISPATCH' ? 'gold' : 'cyan'} style={{ margin: 0 }}>{String(r.kindLabel || '')}</Tag> },
+          { title: 'Loại', dataIndex: 'kind', width: 125, render: (v: string, r) => <Tag color={v === 'SWAP' ? 'geekblue' : v === 'HR_DISPATCH' ? 'gold' : v === 'HR_SUPPORT' ? 'purple' : 'cyan'} style={{ margin: 0 }}>{String(r.kindLabel || '')}</Tag> },
           {
             title: 'Ca nhường / đổi', width: 300,
             render: (_, r) => {
@@ -168,6 +168,9 @@ export function EmployeeSwapsTable({
             render: (_, r) => {
               if (r.kind === 'HR_DISPATCH' && (!r.peer_id || r.status === 'PENDING_PEER')) {
                 return <Tag color="gold" style={{ margin: 0 }}>Đang mở toàn chi nhánh (+30k)</Tag>;
+              }
+              if (r.kind === 'HR_SUPPORT') {
+                return <Tag color="purple" style={{ margin: 0 }}>Hỗ trợ: {String(r.targetBranchName || 'Chi nhánh khác')}</Tag>;
               }
               return <Space size={4}><span>{String(r.peerName || '')}</span>{isPeer(r) && <Tag color="cyan" style={{ margin: 0 }}>Bạn</Tag>}</Space>;
             },

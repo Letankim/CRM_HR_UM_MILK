@@ -8,6 +8,7 @@ import { sweepDueScheduledAnnouncements } from '../services/announcement-schedul
 import { listRegisteredMonthlySpreadsheets } from '../services/backup-targets.helper.js';
 import { sweepUpcomingInterviewReminders } from '../services/interview-reminder.service.js';
 import { syncRecruitmentFormFromGoogleSheet } from '../services/recruitment-form-sync.service.js';
+import { auditOutOfWeekSwaps } from '../services/shift-swap-audit.service.js';
 
 const zBackupStart = z.object({
   kind: z.enum(['DAILY', 'CRITICAL', 'PRE_OPERATION', 'WEEKLY', 'MONTHLY']),
@@ -101,8 +102,14 @@ export async function internalRoutes(app: FastifyInstance, ctx: AppContext) {
         const publishedAnnouncements = await sweepDueScheduledAnnouncements(ctx, 'cron-reconciler');
         const interviewReminders = await sweepUpcomingInterviewReminders(ctx, Date.now(), 'cron-reconciler');
         const formSync = await syncRecruitmentFormFromGoogleSheet(ctx, { actorId: 'cron-reconciler' }).catch(() => null);
+        const outOfWeekAudit = await auditOutOfWeekSwaps(ctx, 'cron-reconciler');
         const report = await ctx.reconciliation.scanAndRepair({ autoFix: true, actorId: 'cron-reconciler' });
-        return sendSuccess(request, 'Thực thi cron đối soát tự động thành công', { ...report, publishedAnnouncements, interviewReminders, formSync });
+        return sendSuccess(request, 'Thực thi cron đối soát tự động thành công', { ...report, publishedAnnouncements, interviewReminders, formSync, outOfWeekAudit });
+      }
+      case 'audit-out-of-week':
+      case 'audit-swaps': {
+        const res = await auditOutOfWeekSwaps(ctx, 'cron-audit-out-of-week');
+        return sendSuccess(request, `Kiểm toán tự động phiếu đổi ca lệch tuần thành công (đã hủy ${res.cancelledCount} phiếu, hoàn trả ${res.revertedCount} ca)`, res);
       }
       case 'recruitment-form-sync': {
         const res = await syncRecruitmentFormFromGoogleSheet(ctx, { actorId: 'cron-form-sync' });

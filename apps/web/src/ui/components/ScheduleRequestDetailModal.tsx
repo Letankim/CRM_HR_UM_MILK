@@ -70,7 +70,7 @@ export function ScheduleRequestDetailModal({ target, onClose, ...actions }: Sche
             <Descriptions.Item label="Mã yêu cầu & Loại">
               <Space size={6} wrap>
                 <Tag color="purple" style={{ margin: 0 }}>{String(r.swap_code || r.id)}</Tag>
-                <Tag color={r.kind === 'SWAP' ? 'geekblue' : 'cyan'} style={{ margin: 0 }}>{String(r.kindLabel || (r.kind === 'SWAP' ? 'Đổi ca 2 chiều' : 'Nhường ca'))}</Tag>
+                <Tag color={r.kind === 'SWAP' ? 'geekblue' : r.kind === 'HR_DISPATCH' ? 'gold' : r.kind === 'HR_SUPPORT' ? 'purple' : 'cyan'} style={{ margin: 0 }}>{String(r.kindLabel || (r.kind === 'SWAP' ? 'Đổi ca 2 chiều' : 'Nhường ca'))}</Tag>
               </Space>
             </Descriptions.Item>
             <Descriptions.Item label="Trạng thái hiện tại">
@@ -98,7 +98,7 @@ export function ScheduleRequestDetailModal({ target, onClose, ...actions }: Sche
             )}
             <Descriptions.Item label="Chi nhánh làm việc">{String(r.branchName || '—')}</Descriptions.Item>
             <Descriptions.Item label="Người gửi yêu cầu">{String(r.requesterName || r.requester_id || '—')}</Descriptions.Item>
-            <Descriptions.Item label="Đồng nghiệp nhận ca">{String(r.peerName || r.peer_id || '—')}</Descriptions.Item>
+            <Descriptions.Item label={r.kind === 'HR_SUPPORT' ? 'Chi nhánh tiếp nhận hỗ trợ' : 'Đồng nghiệp nhận ca'}>{r.kind === 'HR_SUPPORT' ? <Tag color="purple">{String(r.targetBranchName || r.target_branch_id || '—')}</Tag> : String(r.peerName || r.peer_id || '—')}</Descriptions.Item>
             <Descriptions.Item label="Phụ cấp nhận đổi ca">{renderSwapAllowanceTag(r)}</Descriptions.Item>
             <Descriptions.Item label="Kiểm tra chồng ca & Định biên">
               <Space size={6} wrap>

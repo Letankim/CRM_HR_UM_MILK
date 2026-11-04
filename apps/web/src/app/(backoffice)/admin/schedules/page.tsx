@@ -12,6 +12,7 @@ import { useCan } from '@/lib/auth';
 import { ATTENDANCE_SESSION_STATUS_OPTIONS, AttendanceEventsTable, exportAttendanceEventsExcel, type AttendanceEventRow } from '@/ui/components/AttendanceEventsTable';
 import { DataTableCard } from '@/ui/components/DataTableCard';
 import { FilterToolbar } from '@/ui/components/FilterToolbar';
+import { ScheduleDispatchLauncher } from '@/ui/components/ScheduleDispatchLauncher';
 import { ScheduleFormModal, type ScheduleAssignmentItem } from '@/ui/components/ScheduleFormModal';
 import { ScheduleSurplusAlertBanner, ScheduleViewsPanel } from '@/ui/components/ScheduleViewsPanel';
 import { getMonday } from '@/ui/components/ScheduleWeekMatrix';
@@ -135,6 +136,8 @@ function SchedulesView() {
               { key: 'status', value: status, width: 185, options: statusOptions, onChange: (v) => { setPage(1); setStatus(v); } },
             ]}
             extraRight={
+              <Space size={8} wrap>
+              <ScheduleDispatchLauncher employees={employeeOptions} assignments={items} />
               <Segmented
                 value={viewMode}
                 onChange={(v) => { setStatus('ALL'); setPage(1); setViewMode(v as ViewMode); }}
@@ -145,6 +148,7 @@ function SchedulesView() {
                   { value: 'ATTENDANCE', icon: <EnvironmentOutlined />, label: `Danh Sách Điểm Danh (${attTotalSessions})` },
                 ]}
               />
+              </Space>
             }
             onExportExcel={async () => {
               if (viewMode === 'ATTENDANCE') {

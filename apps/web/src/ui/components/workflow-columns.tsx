@@ -91,8 +91,15 @@ export function buildLeaveColumns(c: WorkflowColumnCtx): ColumnsType<RowRec> {
 export function buildSwapColumns(c: WorkflowColumnCtx): ColumnsType<RowRec> {
   return [
     { title: 'Mã đơn', dataIndex: 'swap_code', width: 105, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
-    { title: 'Loại yêu cầu', width: 125, render: (_, r) => <Tag color={r.kind === 'SWAP' ? 'geekblue' : 'cyan'} style={{ margin: 0 }}>{String(r.kindLabel || (r.kind === 'SWAP' ? 'Đổi ca 2 chiều' : 'Nhường ca'))}</Tag> },
-    { title: 'Người gửi → Người nhận', width: 230, ellipsis: true, render: (_, r) => <span><strong>{String(r.requesterName || '—')}</strong> → <strong>{String(r.peerName || '—')}</strong></span> },
+    { title: 'Loại yêu cầu', width: 140, render: (_, r) => <Tag color={r.kind === 'SWAP' ? 'geekblue' : r.kind === 'HR_DISPATCH' ? 'gold' : r.kind === 'HR_SUPPORT' ? 'purple' : 'cyan'} style={{ margin: 0 }}>{String(r.kindLabel || (r.kind === 'SWAP' ? 'Đổi ca 2 chiều' : 'Nhường ca'))}</Tag> },
+    {
+      title: 'Người gửi → Người nhận', width: 230, ellipsis: true,
+      render: (_, r) => r.kind === 'HR_SUPPORT'
+        ? <span><strong>{String(r.requesterName || '—')}</strong> → <Tag color="purple" style={{ margin: 0 }}>Hỗ trợ: {String(r.targetBranchName || 'Chi nhánh khác')}</Tag></span>
+        : r.kind === 'HR_DISPATCH' && (!r.peer_id || r.status === 'PENDING_PEER')
+        ? <span><strong>{String(r.requesterName || '—')}</strong> → <Tag color="gold" style={{ margin: 0 }}>Toàn chi nhánh (+30k)</Tag></span>
+        : <span><strong>{String(r.requesterName || '—')}</strong> → <strong>{String(r.peerName || '—')}</strong></span>
+    },
     { title: 'Ca của người gửi', width: 250, render: (_, r) => <Space size={4} wrap><strong className="num">{fmtDate(r.from_work_date)}</strong><span style={{ fontWeight: 600 }}>{cleanShiftName(r.shiftLabel || r.from_shift_code)}</span><Tag color="geekblue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{fmtShiftTime(r)}</Tag>{renderWorkflowShiftStateTag(r)}</Space> },
     {
       title: 'Ca nhận lại (đổi 2 chiều)', width: 230,

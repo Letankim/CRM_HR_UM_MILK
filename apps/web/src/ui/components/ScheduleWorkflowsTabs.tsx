@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { App, Card, Select, Tabs } from 'antd';
-import { CalendarOutlined, EnvironmentOutlined, FileAddOutlined, FormOutlined, PlusOutlined, ScheduleOutlined, SwapOutlined } from '@ant-design/icons';
+import { App, Card, Select, Space, Tabs } from 'antd';
+import { AuditOutlined, CalendarOutlined, EnvironmentOutlined, FileAddOutlined, FormOutlined, PlusOutlined, ScheduleOutlined, SwapOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SHIFT_SWAP_KIND_LABELS, SHIFT_SWAP_STATUS_OPTIONS } from '@umbm/shared';
 import { api, ApiClientError } from '@/lib/api';
@@ -78,6 +78,15 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Phê duyệt yêu cầu thất bại'),
   });
 
+  const auditOutOfWeekMut = useMutation({
+    mutationFn: () => api.post<{ cancelledCount: number; revertedCount?: number }>('/admin/shift-swaps/audit-out-of-week', {}),
+    onSuccess: (data) => {
+      message.success(`Đã kiểm toán: hủy ${data.cancelledCount} phiếu lệch tuần${data.revertedCount ? `, đã hoàn trả ${data.revertedCount} ca làm việc về đúng người ban đầu` : ''}`);
+      refreshAll();
+    },
+    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Kiểm toán lệch tuần thất bại'),
+  });
+
   const bulkOpts = {
     canConfirmAtt: wf.canConfirmAtt, canApproveAdj: wf.canApproveAdj, canApproveLeave: wf.canApproveLeave, canApproveSwap: wf.canApproveSwap,
     loading: wf.busy || swapApproveMut.isPending,
@@ -132,7 +141,11 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
         ) },
         { key: 'swap', label: <span><SwapOutlined /> Đổi ca / Nhường ca ({swapsQ.data?.meta.pagination.total ?? swapRows.length})</span>, children: (
           <>
-            {filterBar(SWAP_STATUS_OPTS, () => exportSwapsExcel(swapRows), <GuardButton type="primary" icon={<PlusOutlined />} perms={['swap.approve']} onClick={() => setSwapModal(true)}>Tạo yêu cầu đổi / nhường ca</GuardButton>,
+            {filterBar(SWAP_STATUS_OPTS, () => exportSwapsExcel(swapRows),
+              <Space size={6}>
+                <GuardButton icon={<AuditOutlined />} perms={['swap.approve']} loading={auditOutOfWeekMut.isPending} onClick={() => auditOutOfWeekMut.mutate()}>Kiểm toán lệch tuần</GuardButton>
+                <GuardButton type="primary" icon={<PlusOutlined />} perms={['swap.approve']} onClick={() => setSwapModal(true)}>Tạo yêu cầu đổi / nhường ca</GuardButton>
+              </Space>,
               <Select value={kindFilter} onChange={(v) => { setKindFilter(v); setPage(1); }} options={SWAP_KIND_OPTS} style={{ width: 185 }} />)}
             <SelectableTable<RowRec> size="small" rowKey="id" loading={swapsQ.isLoading} scroll={{ x: 1450 }} pagination={mkPag(swapsQ.data?.meta.pagination.total)} dataSource={swapRows} onRowClick={(r) => setDetailTarget({ kind: 'swap', record: r })} bulkActions={buildSwapsBulkActions(bulkOpts)} columns={buildSwapColumns(colCtx)} />
           </>
@@ -144,7 +157,21 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
         onEditSwapAllowance={wf.canApproveSwap ? (r) => setSwapApproveTarget({ mode: 'edit-allowance', rows: [r] }) : undefined}
       />
       <ShiftSwapApproveModal target={swapApproveTarget} loading={swapApproveMut.isPending} onClose={() => setSwapApproveTarget(null)} onConfirm={(payload) => swapApproveTarget && swapApproveMut.mutate({ target: swapApproveTarget, payload })} />
-      <ScheduleWorkflowModals employees={employees} assignments={assignments} leaveModal={leaveModal} swapModal={swapModal} adjModal={adjModal} submitting={createMut.isPending} onCloseLeave={() => setLeaveModal(false)} onCloseSwap={() => setSwapModal(false)} onCloseAdj={() => setAdjModal(false)} onSubmitAction={(url, body) => !createMut.isPending && createMut.mutate({ url, body, successMsg: url.includes('shift-swaps') ? ((body as Record<string, unknown> | null)?.kind === 'HR_DISPATCH' ? 'Đã phát lệnh điều phối khẩn cấp lên bảng tin chi nhánh (+30.000đ)' : 'Đã gửi yêu cầu — chờ đồng nghiệp xác nhận') : undefined })} />
+      <ScheduleWorkflowModals
+        employees={employees} assignments={assignments} branches={branchesQ.data?.data ?? []}
+        leaveModal={leaveModal} swapModal={swapModal} adjModal={adjModal} submitting={createMut.isPending}
+        onCloseLeave={() => setLeaveModal(false)} onCloseSwap={() => setSwapModal(false)} onCloseAdj={() => setAdjModal(false)}
+        onSubmitAction={(url, body) => !createMut.isPending && createMut.mutate({
+          url, body,
+          successMsg: url.includes('shift-swaps')
+            ? ((body as Record<string, unknown> | null)?.kind === 'HR_SUPPORT'
+                ? 'Đã tạo phiếu điều động hỗ trợ liên chi nhánh và tự động tạo ca tại chi nhánh đích'
+                : (body as Record<string, unknown> | null)?.kind === 'HR_DISPATCH'
+                ? 'Đã phát lệnh điều phối khẩn cấp lên bảng tin chi nhánh (+30.000đ)'
+                : 'Đã gửi yêu cầu — chờ đồng nghiệp xác nhận')
+            : undefined,
+        })}
+      />
       {wf.decisionModalElement}
     </Card>
   );

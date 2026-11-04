@@ -10,6 +10,7 @@ import { SocketEvents } from '../realtime/realtime.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { emitScheduleRealtime, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
+import { auditOutOfWeekSwaps as auditOutOfWeekSwapsCore } from '../services/shift-swap-audit.service.js';
 
 export const zDecideSwapBody = z.object({
   version: z.coerce.number().int().min(1, 'Phiên bản bản ghi không hợp lệ'),
@@ -105,14 +106,9 @@ export function enrichSwapKindLabel(ctx: AppContext, s: ShiftSwap) {
 }
 
 export async function auditOutOfWeekSwaps(ctx: AppContext, actorId = 'system-audit') {
-  const now = nowIso(), cancelled: ShiftSwap[] = [];
-  for (const s of ctx.db.shiftSwaps.all()) {
-    if (s.status === 'CANCELLED' || s.status === 'REJECTED' || !s.from_work_date || !s.to_work_date) continue;
-    if (mondayOfWeek(s.from_work_date) !== mondayOfWeek(s.to_work_date)) {
-      cancelled.push(await ctx.db.shiftSwaps.update(s.id, s.version, { status: 'CANCELLED', decided_by: actorId, decided_at: now, decision_reason: 'Tự động hủy do 2 ca đổi không thuộc cùng 1 tuần làm việc' }, actorId));
-    }
-  }
-  return { cancelledCount: cancelled.length, cancelledIds: cancelled.map((x) => x.id), items: cancelled.map((x) => enrichSwapKindLabel(ctx, x)) };
+  const res = await auditOutOfWeekSwapsCore(ctx, actorId);
+  const items = res.cancelledIds.map((id) => ctx.db.shiftSwaps.get(id)).filter((x): x is ShiftSwap => Boolean(x)).map((x) => enrichSwapKindLabel(ctx, x));
+  return { ...res, items };
 }
 
 export function registerShiftSwapAllowanceRoute(app: FastifyInstance, ctx: AppContext): void {

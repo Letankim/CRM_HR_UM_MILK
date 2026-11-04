@@ -17,6 +17,7 @@ export interface WorkflowAssignmentOption {
 interface Props {
   employees: { value: string; label: string; branchId?: string; canSwapShift?: boolean }[];
   assignments: WorkflowAssignmentOption[];
+  branches?: { id: string; name: string; code?: string }[];
   leaveModal: boolean;
   swapModal: boolean;
   adjModal: boolean;
@@ -38,7 +39,7 @@ const KIND_OPTIONS = [
 const cleanShiftName = (raw: unknown) => String(raw || 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
 
 export function ScheduleWorkflowModals({
-  employees, assignments, leaveModal, swapModal, adjModal, submitting = false,
+  employees, assignments, branches = [], leaveModal, swapModal, adjModal, submitting = false,
   onCloseLeave, onCloseSwap, onCloseAdj, onSubmitAction,
 }: Props) {
   const [leaveForm] = Form.useForm();
@@ -100,7 +101,7 @@ export function ScheduleWorkflowModals({
         </Form>
       </Modal>
 
-      <WorkflowSwapCreateModal open={swapModal} employees={employees} assignments={assignments} submitting={submitting} onClose={onCloseSwap} onSubmit={(body) => onSubmitAction('/admin/shift-swaps', body)} />
+      <WorkflowSwapCreateModal open={swapModal} employees={employees} assignments={assignments} branches={branches} submitting={submitting} onClose={onCloseSwap} onSubmit={(body) => onSubmitAction('/admin/shift-swaps', body)} />
 
       <Modal width="min(840px, 94vw)" open={adjModal} forceRender title="Tạo phiếu bổ sung công" okText="Tạo phiếu bổ sung" cancelText="Hủy bỏ" confirmLoading={submitting} okButtonProps={{ icon: <FileAddOutlined />, disabled: !isAdjShiftLocked || submitting }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseAdj} onOk={() => !submitting && adjForm.submit()}>
         <Form
