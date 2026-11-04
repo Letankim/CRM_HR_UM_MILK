@@ -93,7 +93,7 @@ export function ScheduleWorkflowModals({
 
   return (
     <>
-      <Modal width="min(760px, 94vw)" open={leaveModal} forceRender title="Tạo đơn xin nghỉ phép (OFF)" okText="Gửi đơn nghỉ phép" cancelText="Hủy bỏ" confirmLoading={submitting} okButtonProps={{ icon: <PlusOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseLeave} onOk={() => !submitting && leaveForm.submit()}>
+      <Modal width="min(760px, 94vw)" open={leaveModal} forceRender centered destroyOnHidden title="Tạo đơn xin nghỉ phép (OFF)" okText="Gửi đơn nghỉ phép" cancelText="Hủy bỏ" confirmLoading={submitting} okButtonProps={{ icon: <PlusOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseLeave} onOk={() => !submitting && leaveForm.submit()}>
         <Form form={leaveForm} layout="vertical" initialValues={{ shift_code: 'CA_SANG', kind: 'WEEKLY_OFF', leave_date: dayjs().add(1, 'day').format('YYYY-MM-DD') }} onFinish={(v) => { if (submitting) return; onSubmitAction('/admin/leave-requests', v); onCloseLeave(); }}>
           <Form.Item name="employee_id" label="Nhân sự" rules={[{ required: true }]}><Select options={employees} showSearch optionFilterProp="label" placeholder="Chọn nhân sự" /></Form.Item>
           <Row gutter={12}><Col span={12}><Form.Item name="leave_date" label="Ngày nghỉ" rules={[{ required: true }]}><DateStringPicker /></Form.Item></Col><Col span={12}><Form.Item name="shift_code" label="Khung ca"><Select options={leaveShiftOptions} /></Form.Item></Col></Row>
@@ -103,7 +103,7 @@ export function ScheduleWorkflowModals({
 
       <WorkflowSwapCreateModal open={swapModal} employees={employees} assignments={assignments} branches={branches} submitting={submitting} onClose={onCloseSwap} onSubmit={(body) => onSubmitAction('/admin/shift-swaps', body)} />
 
-      <Modal width="min(840px, 94vw)" open={adjModal} forceRender title="Tạo phiếu bổ sung công" okText="Tạo phiếu bổ sung" cancelText="Hủy bỏ" confirmLoading={submitting} okButtonProps={{ icon: <FileAddOutlined />, disabled: !isAdjShiftLocked || submitting }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseAdj} onOk={() => !submitting && adjForm.submit()}>
+      <Modal width="min(840px, 94vw)" open={adjModal} forceRender centered destroyOnHidden title="Tạo phiếu bổ sung công" okText="Tạo phiếu bổ sung" cancelText="Hủy bỏ" confirmLoading={submitting} okButtonProps={{ icon: <FileAddOutlined />, disabled: !isAdjShiftLocked || submitting }} cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCloseAdj} onOk={() => !submitting && adjForm.submit()}>
         <Form
           form={adjForm} layout="vertical"
           initialValues={{ kind: 'FORGOT_CHECK_IN', punch_type: 'FULL_SHIFT', reason: 'Bổ sung công bù ca Vắng mặt do nhân sự quên điểm danh đúng giờ' }}

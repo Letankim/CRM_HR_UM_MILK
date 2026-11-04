@@ -114,7 +114,8 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
 
   return (
     <Modal
-      width="min(760px, 94vw)" open={open} forceRender
+      width="min(760px, 94vw)" open={open} forceRender centered destroyOnHidden
+      styles={{ body: { maxHeight: 'calc(85vh - 110px)', overflowY: 'auto' } }}
       title={isSupport ? 'Điều phối hỗ trợ liên chi nhánh' : isDispatch ? 'Phát lệnh điều phối khẩn cấp' : 'Tạo yêu cầu đổi ca / nhường ca'}
       okText={isSupport ? 'Tạo phiếu điều động' : isDispatch ? 'Phát lệnh điều phối (+30k)' : 'Gửi yêu cầu'}
       cancelText="Hủy bỏ" confirmLoading={submitting}
