@@ -7,6 +7,7 @@ import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { dispatchAnnouncement, isScheduledAnnouncementDue, sweepDueScheduledAnnouncements } from '../services/announcement-scheduler.service.js';
+import { enrichDeliveryLog } from '../services/comms-delivery-log-helper.js';
 import { enrichMediaAsset, resolveAnnouncementMediaAttachments } from '../services/comms-media-helper.js';
 import { deleteAnnouncementNotifications, deleteCampaignWithCascade, deleteMediaWithCascade, parseCascadeDeleteFlag } from '../services/mkt-cascade-delete.js';
 import { probeMktMediaSource } from '../services/mkt-media-probe.service.js';
@@ -90,12 +91,10 @@ export async function mktCommsRoutes(app: FastifyInstance, ctx: AppContext) {
       return { ...a, announcement_code: a.code, campaignName: camp?.name || 'Thông báo độc lập', audience_target: target, audienceLabel: formatAudienceLabel(a.audience_scope || 'ALL', a.audience_json), mediaAttachments: resolveAnnouncementMediaAttachments(ctx, a.media_ids, u), creatorName: ctx.db.users.get(a.created_by)?.display_name || a.approved_by || 'Hệ thống', isMine: Boolean(u && (a.created_by === u.id || a.approved_by === u.username || a.approved_by === u.display_name)), canEdit: Boolean(u && canModify(u, a)), deliveredCount: logs.filter((l) => l.status === 'SENT').length, failedCount: logs.filter((l) => l.status === 'FAILED').length, readConfirmedCount: logs.filter((l) => Boolean(l.read_at || l.ack_at)).length };
     });
     const mediaAssets = [...allMedia].reverse().map((m) => enrichMediaAsset(ctx, m, u, canModify));
-    const deliveryLogs = [...allLogs].reverse().map((l) => {
-      const anc = ctx.db.announcements.get(l.announcement_id), recUser = ctx.db.users.get(l.recipient_user_id);
-      return { ...l, announcementCode: anc?.code || 'ANC', announcementTitle: anc?.title || 'Bản tin nội bộ', recipientName: recUser?.display_name || l.recipient_user_id, readReceiptStatus: l.read_at || l.ack_at ? 'READ_CONFIRMED' : 'NO_RECEIPT', readReceiptLabel: l.read_at || l.ack_at ? 'Đã xác nhận đọc' : 'Chưa xác nhận đọc' };
-    });
+    const deliveryLogs = [...allLogs].reverse().map((l) => enrichDeliveryLog(ctx, l));
     const policies = ctx.db.policies.all().reverse().map((p) => ({ ...p, value: p.value_json || '', description: p.title || p.key, content_html: p.note || '', creatorName: ctx.db.users.get(p.created_by)?.display_name || p.approved_by || 'Hệ thống' }));
-    const dashboard = { runningCount: allAncs.filter((a) => a.status === 'SENT').length, draftCount: allAncs.filter((a) => a.status === 'DRAFT').length, scheduledCount: allAncs.filter((a) => a.status === 'SCHEDULED').length, failedCount: allAncs.filter((a) => a.status === 'FAILED').length + allLogs.filter((l) => l.status === 'FAILED').length, campaignCount: allCampaigns.length, activeCampaignsCount: allCampaigns.filter((c) => c.status === 'ACTIVE').length, acknowledgedCount: allLogs.filter((l) => Boolean(l.read_at || l.ack_at)).length, mediaCount: allMedia.length };
+    const acknowledgedCount = allLogs.filter((l) => Boolean(l.read_at || (l.ack_at && !l.ack_at.trim().startsWith('{')))).length;
+    const dashboard = { runningCount: allAncs.filter((a) => a.status === 'SENT').length, draftCount: allAncs.filter((a) => a.status === 'DRAFT').length, scheduledCount: allAncs.filter((a) => a.status === 'SCHEDULED').length, failedCount: allAncs.filter((a) => a.status === 'FAILED').length + allLogs.filter((l) => l.status === 'FAILED').length, campaignCount: allCampaigns.length, activeCampaignsCount: allCampaigns.filter((c) => c.status === 'ACTIVE').length, acknowledgedCount, mediaCount: allMedia.length };
     return { dashboard, audienceGroups: buildAudienceGroups(branchScope), campaigns, announcements, mediaAssets, deliveryLogs, policies };
   };
   app.get('/api/announcements', { preHandler: requireAuth() }, async (req) => {

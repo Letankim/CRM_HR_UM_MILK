@@ -14,7 +14,12 @@ export type QuickDetailKind =
 
 type Rec = Record<string, unknown>;
 const s = (v: unknown, fb = '—') => (v === null || v === undefined || v === '' ? fb : String(v));
-const dt = (v: unknown) => (v ? String(v).slice(0, 19).replace('T', ' ') : '—');
+const dt = (v: unknown) => {
+  if (!v) return '—';
+  const str = String(v).trim();
+  if (str.startsWith('{') || str.startsWith('[')) return '—';
+  return str.slice(0, 19).replace('T', ' ');
+};
 const tblLbl = (raw: unknown) => {
   const key = String(raw ?? '').trim();
   if (!key) return '—';
@@ -22,7 +27,14 @@ const tblLbl = (raw: unknown) => {
   const matched = Object.entries(TABLE_DISPLAY_LABELS).find(([k]) => k.endsWith(`.${key}`));
   return matched ? matched[1] : key;
 };
-const CHANNEL_MAP: Record<string, string> = { IN_APP: 'Thông báo trên hệ thống', EMAIL: 'Thư điện tử (Email)', MULTI: 'Đa kênh (Hệ thống & Email)', ALL: 'Đa kênh (Hệ thống & Email)' };
+const CHANNEL_MAP: Record<string, string> = {
+  IN_APP: 'Thông báo trên hệ thống',
+  IN_APP_PORTAL: 'Cổng thông tin Nội bộ',
+  IN_APP_SOCKET: 'Thông báo Realtime',
+  EMAIL: 'Thư điện tử (Email)',
+  MULTI: 'Đa kênh (Hệ thống & Email)',
+  ALL: 'Đa kênh (Hệ thống & Email)',
+};
 const SCOPE_MAP: Record<string, string> = { ALL: 'Toàn hệ thống', BRANCH: 'Theo chi nhánh', ROLE: 'Theo vai trò', STAGE: 'Theo giai đoạn nhân sự', STAFF_GROUP: 'Theo khối nhân sự', CUSTOM: 'Nhóm tùy chỉnh' };
 
 export function buildQuickDetailSpec(kind: QuickDetailKind, raw: unknown): QuickDetailSpec {
@@ -129,7 +141,10 @@ export function buildQuickDetailSpec(kind: QuickDetailKind, raw: unknown): Quick
           { label: 'Mô tả & Ghi chú', value: s(r.description || r.note, 'Không có ghi chú'), span: 2 },
         ],
       };
-    case 'deliveryLog':
+    case 'deliveryLog': {
+      const readText = r.read_at ? dt(r.read_at) : 'Chưa đọc';
+      const cleanAck = typeof r.ack_at === 'string' && r.ack_at.trim().startsWith('{') ? '' : r.ack_at;
+      const ackText = cleanAck ? dt(cleanAck) : 'Chưa xác nhận';
       return {
         title: `Chi tiết Nhật ký Gửi Thông báo — ${s(r.announcementCode || r.announcementTitle)}`,
         fields: [
@@ -139,10 +154,11 @@ export function buildQuickDetailSpec(kind: QuickDetailKind, raw: unknown): Quick
           { label: 'Trạng thái phân phối', value: <StatusTag value={String(r.status || 'SENT')} /> },
           { label: 'Trạng thái đọc & xác nhận', value: `${s(r.readReceiptLabel, 'Chưa đọc')} (Lần gửi: ${s(r.attempts, '1')})` },
           { label: 'Thời điểm gửi / nhận', value: `Gửi: ${dt(r.sent_at)} · Nhận: ${dt(r.delivered_at)}` },
-          { label: 'Thời điểm đọc / xác nhận', value: `Đọc: ${dt(r.read_at)} · Xác nhận: ${dt(r.ack_at)}` },
+          { label: 'Thời điểm đọc / xác nhận', value: `Đọc: ${readText} · Xác nhận: ${ackText}` },
           ...(r.last_error ? [{ label: 'Chi tiết lỗi gửi', value: <Typography.Text type="danger">{s(r.last_error)}</Typography.Text>, span: 2 as const }] : []),
         ],
       };
+    }
     default:
       return buildOpsQuickDetailSpec(kind, r);
   }
