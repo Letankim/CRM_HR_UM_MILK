@@ -19,6 +19,13 @@ import { getShiftExpiryInfo, renderWorkflowDecisionAlert, renderWorkflowShiftSta
 
 type Row = Record<string, unknown>;
 
+const renderPersonCell = (name: string, isSelf: boolean, color: 'blue' | 'cyan') => (
+  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
+    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name || '—'}</span>
+    {isSelf && <Tag color={color} style={{ margin: 0, flexShrink: 0, whiteSpace: 'nowrap' }}>Bạn</Tag>}
+  </div>
+);
+
 /** Hook dùng chung mở popup phản hồi Đồng ý / Từ chối nhận hoặc đổi ca của người nhận (peer). */
 export function usePeerSwapDecision({ empId, empCode, onSuccess }: { empId: string; empCode: string; onSuccess: () => void }) {
   const { message } = App.useApp();
@@ -176,21 +183,21 @@ export function EmployeeSwapsTable({
               );
             },
           },
-          { title: 'Người gửi', width: 180, ellipsis: true, render: (_, r) => <Space size={4}><span>{String(r.requesterName || '')}</span>{isRequester(r) && <Tag color="blue" style={{ margin: 0 }}>Bạn</Tag>}</Space> },
+          { title: 'Người gửi', width: 220, render: (_, r) => renderPersonCell(String(r.requesterName || ''), isRequester(r), 'blue') },
           {
-            title: 'Người nhận', width: 180, ellipsis: true,
+            title: 'Người nhận', width: 220,
             render: (_, r) => {
               if (r.kind === 'HR_DISPATCH' && (!r.peer_id || r.status === 'PENDING_PEER')) {
                 const exp = getShiftExpiryInfo(r);
-                if (exp.isPassed) return <Tag color="default" style={{ margin: 0 }}>Quá hạn ({exp.label})</Tag>;
+                if (exp.isPassed) return <Tag color="default" style={{ margin: 0, whiteSpace: 'nowrap' }}>Quá hạn ({exp.label})</Tag>;
                 return fallbackPeer.canClaim(r)
                   ? <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={busy} onClick={(e) => { e.stopPropagation(); handleRespond([r], true); }}>Nhận ca (+30k)</Button>
-                  : <Tag color="gold" style={{ margin: 0 }}>Đang mở toàn chi nhánh (+30k)</Tag>;
+                  : <Tag color="gold" style={{ margin: 0, whiteSpace: 'nowrap' }}>Đang mở toàn chi nhánh (+30k)</Tag>;
               }
               if (r.kind === 'HR_SUPPORT') {
-                return <Tag color="purple" style={{ margin: 0 }}>Hỗ trợ: {String(r.targetBranchName || 'Chi nhánh khác')}</Tag>;
+                return <Tag color="purple" style={{ margin: 0, whiteSpace: 'nowrap' }}>Hỗ trợ: {String(r.targetBranchName || 'Chi nhánh khác')}</Tag>;
               }
-              return <Space size={4}><span>{String(r.peerName || '')}</span>{isPeer(r) && <Tag color="cyan" style={{ margin: 0 }}>Bạn</Tag>}</Space>;
+              return renderPersonCell(String(r.peerName || ''), isPeer(r), 'cyan');
             },
           },
           { title: 'Trạng thái', dataIndex: 'status', width: 230, render: (v: string, r) => <Space size={4} wrap><StatusTag value={v} label={String(r.statusLabel || '') || undefined} />{renderSwapAllowanceTag(r, true)}</Space> },
