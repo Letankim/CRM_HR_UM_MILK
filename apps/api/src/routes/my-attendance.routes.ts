@@ -19,7 +19,7 @@ import { mapAdjustmentRecord } from './attendance-adjustments.routes.js';
 import { buildProbationCycleSummary, registerMyShiftRegisterRoute } from './my-shift-register.routes.js';
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { mapShiftAssignment } from './schedules.routes.js';
-import { mapShiftSwapRecord } from './shift-swap-helpers.js';
+import { mapShiftSwapRecord } from './shift-swap-helpers.js'; import { sweepExpiredShiftSwaps } from '../services/shift-swap-sweep.service.js';
 import { ensureOfficeShiftTemplate } from './branches.routes.js';
 
 const SHIFT_DEFAULT_HOURS: Record<string, { start: string; end: string; hours: number }> = {
@@ -137,6 +137,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       return a.workDate >= todayStr ? a.workDate.localeCompare(b.workDate) || a.startAt.localeCompare(b.startAt) : b.workDate.localeCompare(a.workDate);
     });
 
+    await sweepExpiredShiftSwaps(ctx);
     const leaves = ctx.db.leaveRequests.filter((l) => l.employee_id === emp.id || l.employee_id === emp.employee_code).reverse().map((l) => ({ ...l, ...resolveShiftTimeDetails(ctx, l.shift_code, l.assignment_id, l.branch_id, l.employee_id, l.leave_date), branchName: ctx.db.branches.get(l.branch_id)?.name ?? branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[l.status] }));
     const isMine = (id: string) => Boolean(id) && (id === emp.id || id === emp.employee_code);
     const myBranchId = emp.branch_id || branch?.id || '', isAllScope = !user.branch_scope || user.branch_scope === 'ALL' || ['ADMIN', 'HR'].includes(user.role);
@@ -145,9 +146,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     const swaps = ctx.db.shiftSwaps.filter((s) => isMine(s.requester_id) || isMine(s.peer_id) || isOpenBranchDispatch(s)).reverse().map((s) => mapShiftSwapRecord(ctx, s, branch));
     const peerBusyByEmp = new Map<string, Record<string, string>>();
     const putBusy = (key: string, date: string, label: string) => {
-      let map = peerBusyByEmp.get(key);
-      if (!map) { map = {}; peerBusyByEmp.set(key, map); }
-      map[date] = label;
+      const map = peerBusyByEmp.get(key) ?? {}; peerBusyByEmp.set(key, map); map[date] = label;
     };
     for (const a of ctx.db.shiftAssignments.all()) {
       if (a.day_type === 'OFF' || a.status === 'ON_LEAVE' || a.status === 'ABSENT') continue;

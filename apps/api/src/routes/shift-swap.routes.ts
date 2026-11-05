@@ -18,7 +18,7 @@ import { applySwapToSchedule, evaluateSwapRequest, findEmp, isOfficialSwapEligib
 import { emitScheduleRealtime, resolveEmployeeBranchId } from './account-employee-sync.js';
 import { findLinkedEmployeeForUser } from './employee-mapper.js';
 import { auditOutOfWeekSwaps, enrichSwapKindLabel, registerShiftSwapAllowanceRoute, resolveSwapAllowance, zDecideSwapBody } from './shift-swap-helpers.js';
-import { executeHrDispatchClaim, executeHrSupportDispatch, revertSwapSchedule } from '../services/shift-swap-audit.service.js';
+import { executeHrDispatchClaim, executeHrSupportDispatch, revertSwapSchedule } from '../services/shift-swap-audit.service.js'; import { sweepExpiredShiftSwaps } from '../services/shift-swap-sweep.service.js';
 
 const zCreateSwapBody = z.object({
   kind: z.enum(['SWAP', 'GIVE', 'HR_DISPATCH', 'HR_SUPPORT'], { errorMap: () => ({ message: 'Loại yêu cầu phải là Đổi ca 2 chiều, Nhường ca, Điều phối khẩn cấp hoặc Hỗ trợ liên chi nhánh' }) }).default('GIVE'),
@@ -53,6 +53,7 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
   };
 
   app.get('/api/admin/shift-swaps', { preHandler: requirePermission('schedule.read', 'swap.approve', 'self.swap') }, async (request) => {
+    await sweepExpiredShiftSwaps(ctx);
     const query = zWorkflowQuery.parse(request.query ?? {});
     const scoped = filterByBranch(request, ctx.db.shiftSwaps.all(), (s) => resolveEmployeeBranchId(ctx, s.requester_id, s.branch_id));
     const mapped = scoped.map((s) => enrichSwapKindLabel(ctx, s)).filter((s) => (!query.branch_id || query.branch_id === 'ALL' || s.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || s.status === query.status) && (!query.kind || query.kind === 'ALL' || s.kind === query.kind));
@@ -205,16 +206,15 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!ACTIVE.has(before.status) && !((before.kind === 'HR_SUPPORT' || before.kind === 'HR_DISPATCH') && before.status === 'APPROVED')) throw Errors.badRequest('Yêu cầu đã được xử lý, không thể hủy');
     assertDateNotLockedByPayroll(ctx.db, before.from_work_date, 'hủy yêu cầu đổi / điều động ca');
     const updated = await ctx.db.shiftSwaps.update(id, before.version, { status: 'CANCELLED', decided_at: nowIso(), decision_reason: 'Đã hủy yêu cầu' }, actor.id);
-    if (before.kind === 'HR_DISPATCH') { await cancelDispatchAnnouncement(ctx, before.swap_code, actor.id); if (before.status === 'APPROVED') await revertSwapSchedule(ctx, before, actor.id); }
-    else if (before.kind === 'HR_SUPPORT') await revertSwapSchedule(ctx, before, actor.id);
+    if (before.kind === 'HR_DISPATCH') { await cancelDispatchAnnouncement(ctx, before.swap_code, actor.id); if (before.status === 'APPROVED') await revertSwapSchedule(ctx, before, actor.id); } else if (before.kind === 'HR_SUPPORT') await revertSwapSchedule(ctx, before, actor.id);
     await runBackgroundSideEffect(() => ensureSyncedNotifications(ctx));
     const cancelMsg = before.kind === 'HR_DISPATCH' ? (before.status === 'APPROVED' ? 'Đã hủy lệnh điều phối khẩn cấp và xóa ca đã tạo cho người nhận' : 'Đã hủy lệnh điều phối khẩn cấp') : before.kind === 'HR_SUPPORT' ? 'Đã hủy điều động hỗ trợ liên chi nhánh và hoàn trả lịch gốc' : 'Đã hủy yêu cầu đổi / nhường ca';
     return sendSuccess(request, cancelMsg, enrichSwapKindLabel(ctx, updated));
   });
 
   app.post('/api/admin/shift-swaps/audit-out-of-week', { preHandler: requireAuth() }, async (request) => {
-    const res = await auditOutOfWeekSwaps(ctx, request.auth!.user.id);
-    return sendSuccess(request, `Đã rà soát và tự động hủy ${res.cancelledCount} phiếu đổi ca khác tuần`, res);
+    const exp = await sweepExpiredShiftSwaps(ctx, request.auth!.user.id), res = await auditOutOfWeekSwaps(ctx, request.auth!.user.id);
+    return sendSuccess(request, `Đã rà soát tự động: đóng ${exp.expiredCount} phiếu quá hạn, hủy ${res.cancelledCount} phiếu lệch tuần`, { ...res, expiredCount: exp.expiredCount });
   });
   registerShiftSwapAllowanceRoute(app, ctx);
 }

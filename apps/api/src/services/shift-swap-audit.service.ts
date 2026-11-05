@@ -12,7 +12,7 @@ const SHIFT_DEFAULTS: Record<string, { start: string; end: string; hours: number
   CA_SANG: { start: '07:00', end: '12:00', hours: 5 }, CA_CHIEU: { start: '12:00', end: '17:00', hours: 5 },
   CA_TOI: { start: '17:00', end: '22:30', hours: 5.5 }, HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
 };
-function resolveShiftSpec(ctx: AppContext, shiftCode: string, from?: { start_at?: string; end_at?: string; scheduled_hours?: number; shift_template_id?: string; schedule_week_id?: string }, workDate?: string) {
+export function resolveShiftSpec(ctx: AppContext, shiftCode: string, from?: { start_at?: string; end_at?: string; scheduled_hours?: number; shift_template_id?: string; schedule_week_id?: string }, workDate?: string) {
   const tpl = ctx.db.shiftTemplates.find((t) => t.code === shiftCode);
   const def = SHIFT_DEFAULTS[shiftCode] ?? SHIFT_DEFAULTS.CA_SANG!;
   return {

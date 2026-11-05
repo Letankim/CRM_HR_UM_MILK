@@ -44,6 +44,7 @@ export const SHIFT_SWAP_STATUSES = [
   'APPROVED',
   'REJECTED',
   'CANCELLED',
+  'EXPIRED',
 ] as const;
 export type ShiftSwapStatus = (typeof SHIFT_SWAP_STATUSES)[number];
 

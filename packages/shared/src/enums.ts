@@ -114,6 +114,7 @@ export const SHIFT_SWAP_STATUS_LABELS: Record<ShiftSwapStatus, string> = {
   APPROVED: 'Đã cập nhật lịch',
   REJECTED: 'Từ chối',
   CANCELLED: 'Đã hủy',
+  EXPIRED: 'Đã quá hạn',
 };
 
 export const PAY_PERIOD_STATUS_LABELS: Record<PayPeriodStatus, string> = {

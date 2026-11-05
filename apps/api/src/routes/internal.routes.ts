@@ -9,6 +9,7 @@ import { listRegisteredMonthlySpreadsheets } from '../services/backup-targets.he
 import { sweepUpcomingInterviewReminders } from '../services/interview-reminder.service.js';
 import { syncRecruitmentFormFromGoogleSheet } from '../services/recruitment-form-sync.service.js';
 import { auditOutOfWeekSwaps } from '../services/shift-swap-audit.service.js';
+import { sweepExpiredShiftSwaps } from '../services/shift-swap-sweep.service.js';
 
 const zBackupStart = z.object({
   kind: z.enum(['DAILY', 'CRITICAL', 'PRE_OPERATION', 'WEEKLY', 'MONTHLY']),
@@ -102,14 +103,16 @@ export async function internalRoutes(app: FastifyInstance, ctx: AppContext) {
         const publishedAnnouncements = await sweepDueScheduledAnnouncements(ctx, 'cron-reconciler');
         const interviewReminders = await sweepUpcomingInterviewReminders(ctx, Date.now(), 'cron-reconciler');
         const formSync = await syncRecruitmentFormFromGoogleSheet(ctx, { actorId: 'cron-reconciler' }).catch(() => null);
+        const expiredSwapsAudit = await sweepExpiredShiftSwaps(ctx, 'cron-reconciler');
         const outOfWeekAudit = await auditOutOfWeekSwaps(ctx, 'cron-reconciler');
         const report = await ctx.reconciliation.scanAndRepair({ autoFix: true, actorId: 'cron-reconciler' });
-        return sendSuccess(request, 'Thực thi cron đối soát tự động thành công', { ...report, publishedAnnouncements, interviewReminders, formSync, outOfWeekAudit });
+        return sendSuccess(request, 'Thực thi cron đối soát tự động thành công', { ...report, publishedAnnouncements, interviewReminders, formSync, expiredSwapsAudit, outOfWeekAudit });
       }
       case 'audit-out-of-week':
       case 'audit-swaps': {
+        const exp = await sweepExpiredShiftSwaps(ctx, 'cron-audit-swaps');
         const res = await auditOutOfWeekSwaps(ctx, 'cron-audit-out-of-week');
-        return sendSuccess(request, `Kiểm toán tự động phiếu đổi ca lệch tuần thành công (đã hủy ${res.cancelledCount} phiếu, hoàn trả ${res.revertedCount} ca)`, res);
+        return sendSuccess(request, `Kiểm toán tự động phiếu đổi ca thành công (đóng ${exp.expiredCount} phiếu quá hạn, hủy ${res.cancelledCount} phiếu lệch tuần)`, { ...res, expiredCount: exp.expiredCount });
       }
       case 'recruitment-form-sync': {
         const res = await syncRecruitmentFormFromGoogleSheet(ctx, { actorId: 'cron-form-sync' });

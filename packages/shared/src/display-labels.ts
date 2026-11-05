@@ -163,7 +163,7 @@ export const STATUS_VISUAL_MAP: Record<string, StatusVisual> = {
   COMPLETED: { color: 'success', label: 'Hoàn thành ca' },
   ABSENT: { color: 'error', label: 'Vắng mặt' },
   OVERDUE: { color: 'error', label: 'Đã quá hạn' },
-  EXPIRED: { color: 'default', label: 'Hết hiệu lực' },
+  EXPIRED: { color: 'default', label: 'Đã quá hạn' },
   CANCELLED: { color: 'default', label: 'Đã hủy' },
   RECONCILE: { color: 'processing', label: 'Đang đối soát' },
   PAID: { color: 'success', label: 'Đã chi trả' },
