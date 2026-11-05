@@ -195,7 +195,11 @@ export function ScheduleRequestDetailModal({ target, onClose, ...actions }: Sche
             </Descriptions.Item>
             <Descriptions.Item label="Chi nhánh">{String(r.branchName || '—')}</Descriptions.Item>
             <Descriptions.Item label="Trạng thái phân ca"><Space size={6} wrap><StatusTag value={String(r.status)} label={String(r.statusLabel || '') || undefined} />{renderProbationExtraTags(r)}</Space></Descriptions.Item>
-            <Descriptions.Item label="Trạng thái điểm danh"><Tag color={String(r.attendanceStatusColor || 'default')} style={{ margin: 0 }}>{String(r.attendanceStatusLabel || 'Chưa điểm danh')}</Tag></Descriptions.Item>
+            <Descriptions.Item label="Trạng thái điểm danh">
+              <Tag color={r.status === 'ABSENT' && (!r.attendanceStatusLabel || r.attendanceStatusLabel === 'Vắng mặt') ? 'default' : String(r.attendanceStatusColor || 'default')} style={{ margin: 0 }}>
+                {r.status === 'ABSENT' && (!r.attendanceStatusLabel || r.attendanceStatusLabel === 'Vắng mặt') ? 'Không có dữ liệu chấm công' : String(r.attendanceStatusLabel || 'Chưa điểm danh')}
+              </Tag>
+            </Descriptions.Item>
             <Descriptions.Item label="Ghi chú ca làm việc">{String(r.note || '—')}</Descriptions.Item>
             <Descriptions.Item label="Thời điểm tạo / đăng ký"><span className="num">{fmtTs(r.created_at)}</span></Descriptions.Item>
           </>

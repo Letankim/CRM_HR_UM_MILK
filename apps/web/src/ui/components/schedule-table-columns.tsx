@@ -79,21 +79,30 @@ export function buildScheduleColumns({ canEdit, onApprove, onViewAttendance, onE
       title: 'Trạng thái & Điểm danh',
       key: 'status',
       width: 215,
-      render: (_, r) => (
-        <Space direction="vertical" size={3}>
-          <StatusTag value={r.status} label={r.statusLabel} />
-          {r.attendanceStatusLabel && (
-            <Tag color={r.attendanceStatusColor || 'default'} style={{ margin: 0, borderRadius: 2, fontSize: 11 }}>
-              {r.attendanceStatusLabel}
-            </Tag>
-          )}
-          {r.isLockedByPayroll && (
-            <Tag color="purple" style={{ margin: 0, borderRadius: 2, fontSize: 11 }}>
-              Đã chốt lương ({r.lockedByPeriodCode || 'Khóa'})
-            </Tag>
-          )}
-        </Space>
-      ),
+      render: (_, r) => {
+        const isDuplicateAttendance =
+          !r.attendanceStatusLabel ||
+          r.attendanceStatusLabel.trim().toLowerCase() === (r.statusLabel || '').trim().toLowerCase() ||
+          (r.status === 'ABSENT' && r.attendanceStatusLabel.includes('Vắng mặt')) ||
+          (r.status === 'COMPLETED' && r.attendanceStatusLabel.includes('hoàn thành')) ||
+          (r.status === 'DRAFT' && r.attendanceStatusLabel.includes('duyệt')) ||
+          (r.status === 'ON_LEAVE' && r.attendanceStatusLabel.includes('Nghỉ phép'));
+        return (
+          <Space direction="vertical" size={3}>
+            <StatusTag value={r.status} label={r.statusLabel} />
+            {!isDuplicateAttendance && (
+              <Tag color={r.attendanceStatusColor || 'default'} style={{ margin: 0, borderRadius: 2, fontSize: 11 }}>
+                {r.attendanceStatusLabel}
+              </Tag>
+            )}
+            {r.isLockedByPayroll && (
+              <Tag color="purple" style={{ margin: 0, borderRadius: 2, fontSize: 11 }}>
+                Đã chốt lương ({r.lockedByPeriodCode || 'Khóa'})
+              </Tag>
+            )}
+          </Space>
+        );
+      },
     },
     {
       title: 'Thao tác',
