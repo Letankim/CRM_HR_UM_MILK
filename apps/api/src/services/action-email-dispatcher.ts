@@ -21,9 +21,27 @@ export function queueSwapEventEmail(ctx: AppContext, swap: ShiftSwap, stage: 'CR
   const reqContact = resolveStrictEmployeeContact(ctx, swap.requester_id);
   const peerContact = resolveStrictEmployeeContact(ctx, swap.peer_id);
   const branchName = ctx.db.branches.get(swap.branch_id)?.name || reqContact?.branchName || 'Chi nhánh';
+  const targetBranchName = swap.target_branch_id ? (ctx.db.branches.get(swap.target_branch_id)?.name || swap.target_branch_id) : branchName;
   let queued = 0;
 
   if (stage === 'CREATED') {
+    if (swap.kind === 'HR_DISPATCH') {
+      const storeOfficials = ctx.db.employees.filter((e) => e.status === 'ACTIVE' && e.stage === 'OFFICIAL' && e.branch_id === swap.branch_id && e.staff_group !== 'BACKOFFICE' && e.staff_group !== 'STORE_MANAGER');
+      for (const emp of storeOfficials) {
+        if (swap.requester_id && (emp.id === swap.requester_id || emp.employee_code === swap.requester_id)) continue;
+        const c = resolveStrictEmployeeContact(ctx, emp.id);
+        if (!c?.personalEmail || c.userId === actorId) continue;
+        ctx.email.enqueue({
+          to: c.personalEmail, template: 'LEAVE_SWAP_DECISION', recipientName: c.name, referenceCode: swap.swap_code,
+          subject: `${SYSTEM_CONFIG.emailSubjectPrefix} Lệnh điều phối ca khẩn cấp (+30.000đ) — ${swap.swap_code}`,
+          summary: `Cửa hàng ${branchName} đang phát lệnh tìm nhân sự làm thay ca ${shiftLabel(swap.from_shift_code)} ngày ${swap.from_work_date}. Nhận ca được tự động cộng phụ cấp +30.000đ vào kỳ lương.`,
+          metadata: [{ label: 'Mã lệnh điều phối', value: swap.swap_code }, { label: 'Chi nhánh & Ca', value: `${branchName} · ${swap.from_work_date} (${shiftLabel(swap.from_shift_code)})` }, { label: 'Phụ cấp nhận ca', value: '+30.000 đ / ca' }, { label: 'Lý do điều phối', value: swap.reason }],
+          actionLabel: 'Nhận ca khẩn cấp (+30.000đ)', actionUrl: `${webOrigin(ctx)}/nv/doi-ca`,
+        }, { dedupeKey: `dsp_create:${swap.id}:${c.personalEmail}` });
+        queued += 1;
+      }
+      return flushMail(ctx, queued);
+    }
     if (peerContact?.personalEmail && peerContact.userId !== actorId) {
       ctx.email.enqueue({
         to: peerContact.personalEmail, template: 'LEAVE_SWAP_DECISION', recipientName: peerContact.name, referenceCode: swap.swap_code,
@@ -66,13 +84,18 @@ export function queueSwapEventEmail(ctx: AppContext, swap: ShiftSwap, stage: 'CR
     return flushMail(ctx, queued);
   }
 
-  const approved = swap.status === 'APPROVED', swapAllowanceText = swap.allowance_eligible && swap.allowance_amount_vnd > 0 ? `+${swap.allowance_amount_vnd.toLocaleString('vi-VN')} đ (cộng cho người nhận ca thay)` : 'Không cộng phụ cấp đổi ca (0 đ)';
+  const approved = swap.status === 'APPROVED', isDspOrSup = swap.kind === 'HR_DISPATCH' || swap.kind === 'HR_SUPPORT';
+  const swapAllowanceText = swap.allowance_eligible && swap.allowance_amount_vnd > 0 ? `+${swap.allowance_amount_vnd.toLocaleString('vi-VN')} đ (cộng vào bảng lương kỳ này)` : 'Không cộng phụ cấp đổi ca (0 đ)';
   for (const c of [reqContact, peerContact]) {
-    if (!c?.personalEmail || c.userId === (actorId || swap.decided_by)) continue;
+    if (!c?.personalEmail || (!isDspOrSup && c.userId === (actorId || swap.decided_by))) continue;
     ctx.email.enqueue({
       to: c.personalEmail, template: 'LEAVE_SWAP_DECISION', recipientName: c.name, referenceCode: `${swap.swap_code}-${swap.status}`,
-      summary: `Yêu cầu đổi ca ${swap.swap_code} ngày ${swap.from_work_date} đã ${approved ? 'được chấp thuận và cập nhật lịch làm việc chính thức' : 'bị từ chối'}.`,
-      metadata: [{ label: 'Mã đơn đổi ca', value: swap.swap_code }, { label: 'Ngày ca hoán đổi', value: `${swap.from_work_date} (${shiftLabel(swap.from_shift_code)})` }, { label: 'Kết quả duyệt cuối', value: approved ? 'Đã phê duyệt & chuyển lịch chính thức' : 'Từ chối' }, ...(approved ? [{ label: 'Phụ cấp nhận đổi ca', value: swapAllowanceText }] : []), { label: 'Ghi chú Quản lý', value: swap.decision_reason || 'Đảm bảo định biên ca trực' }],
+      summary: swap.kind === 'HR_SUPPORT'
+        ? `Bạn vừa được điều động tăng cường hỗ trợ chi nhánh ${targetBranchName} vào ngày ${swap.from_work_date} (${shiftLabel(swap.from_shift_code)} · Phụ cấp +30.000đ).`
+        : swap.kind === 'HR_DISPATCH'
+        ? `Ca điều phối khẩn cấp ${swap.swap_code} ngày ${swap.from_work_date} (${shiftLabel(swap.from_shift_code)}) tại ${branchName} đã được tiếp nhận và cập nhật lịch làm việc chính thức.`
+        : `Yêu cầu đổi ca ${swap.swap_code} ngày ${swap.from_work_date} đã ${approved ? 'được chấp thuận và cập nhật lịch làm việc chính thức' : 'bị từ chối'}.`,
+      metadata: [{ label: 'Mã phiếu', value: swap.swap_code }, { label: 'Chi nhánh & Ca', value: `${swap.kind === 'HR_SUPPORT' ? targetBranchName : branchName} · ${swap.from_work_date} (${shiftLabel(swap.from_shift_code)})` }, { label: 'Kết quả', value: approved ? 'Đã phê duyệt & chuyển lịch chính thức' : 'Từ chối' }, ...(approved ? [{ label: 'Phụ cấp nhận ca', value: swapAllowanceText }] : []), { label: 'Ghi chú', value: swap.decision_reason || swap.reason || 'Đảm bảo định biên ca trực' }],
       actionLabel: 'Kiểm tra lịch làm việc mới', actionUrl: `${webOrigin(ctx)}${resolveRolePortalPath(c.role, 'schedule')}`,
     }, { dedupeKey: `swap_decide:${swap.id}:v${swap.version}:${c.personalEmail}` });
     queued += 1;

@@ -87,11 +87,11 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
   const fromAssign = assignments.find((a) => a.id === fromId);
 
   const fromOptions = useMemo(() => assignments
-    .filter((a) => a.status === 'PUBLISHED' && (!a.employeeStage || a.employeeStage === 'OFFICIAL') && officialEmpMap.has(a.employeeId) && (!isDispatch || !watchedBranchId || a.branchId === watchedBranchId))
+    .filter((a) => a.status === 'PUBLISHED' && (isDispatch ? ((!watchedBranchId || a.branchId === watchedBranchId) && (!watchedWorkDate || a.workDate === watchedWorkDate)) : ((!a.employeeStage || a.employeeStage === 'OFFICIAL') && officialEmpMap.has(a.employeeId))))
     .map((a) => {
       const pCode = a.pendingSwapCode || a.pendingLeaveCode;
       return { value: a.id, disabled: Boolean(pCode), label: `${fmtShift(a)} · ${a.employeeName}${pCode ? ` [Đang chờ xử lý ${pCode}]` : ''}` };
-    }), [assignments, officialEmpMap, isDispatch, watchedBranchId]);
+    }), [assignments, officialEmpMap, isDispatch, watchedBranchId, watchedWorkDate]);
 
   const supportEmpOptions = useMemo(() => {
     const candidates = officialEmployees.filter((e) => !watchedTargetBranchId || !e.branchId || e.branchId !== watchedTargetBranchId);
@@ -126,7 +126,7 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
           if (submitting) return;
           onSubmit({
             ...v,
-            from_assignment_id: isDispatchOrSupport ? '' : (v.from_assignment_id || ''),
+            from_assignment_id: isSupport ? '' : (v.from_assignment_id || ''),
             to_assignment_id: v.kind === 'SWAP' ? v.to_assignment_id : '',
             peer_id: isDispatchOrSupport ? '' : v.peer_id,
             target_branch_id: v.kind === 'HR_SUPPORT' ? v.target_branch_id : (v.kind === 'HR_DISPATCH' ? v.branch_id : ''),
@@ -138,8 +138,10 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
             const found = assignments.find((a) => a.id === changed.from_assignment_id);
             if (found) form.setFieldsValue({ requester_id: found.employeeId, branch_id: found.branchId || form.getFieldValue('branch_id'), work_date: found.workDate, shift_code: found.shiftCode, peer_id: undefined, to_assignment_id: undefined });
           }
+          if (changed.branch_id && isDispatch) form.setFieldsValue({ from_assignment_id: undefined, requester_id: undefined });
           if (changed.target_branch_id || changed.work_date || changed.shift_code) { if (isSupport) form.setFieldValue('requester_id', undefined); }
           if (changed.work_date) {
+            if (isDispatch && fromAssign && fromAssign.workDate !== changed.work_date) form.setFieldsValue({ from_assignment_id: undefined, requester_id: undefined });
             const cur = shiftOptions.find((o) => o.value === form.getFieldValue('shift_code')), now = dayjs().format('HH:mm');
             if (cur && isShiftTimePassed(changed.work_date, cur.endTime || '12:00', todayStr, now)) {
               const next = shiftOptions.find((o) => !isShiftTimePassed(changed.work_date, o.endTime || '12:00', todayStr, now));
@@ -155,11 +157,11 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
         <Alert
           type={isSupport ? 'success' : isDispatch ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
           message={isSupport
-            ? 'Chọn Chi nhánh cần hỗ trợ + Ngày + Khung ca bên đó, sau đó chọn nhân sự đang rảnh từ các chi nhánh khác để điều động sang thêm vào lịch. Lưu ý: Chỉ áp dụng trong tuần hiện tại hoặc tuần kế tiếp (mở từ Thứ 6). Các ca trong ngày hôm nay đã kết thúc không thể chọn.'
+            ? 'Chọn Chi nhánh cần hỗ trợ + Ngày + Khung ca bên đó, sau đó chọn nhân sự cửa hàng đang rảnh từ chi nhánh khác để điều động sang (+30.000đ/ca).'
             : isDispatch
-            ? 'Chọn Chi nhánh + Ngày + Khung ca cần bổ sung người để phát lệnh lên Bảng tin chi nhánh (+30.000đ/ca). Lưu ý: Chỉ áp dụng trong tuần hiện tại hoặc tuần kế tiếp (mở từ Thứ 6). Các ca trong ngày hôm nay đã kết thúc không thể chọn.'
-            : kind === 'SWAP' ? 'Đổi ca 2 chiều: chỉ giữa 2 Nhân viên Chính thức cùng chi nhánh. Khi đồng nghiệp đồng ý, lịch được đổi ngay, không cần HR duyệt.'
-            : 'Nhường ca: chỉ áp dụng giữa các Nhân viên Chính thức cùng chi nhánh. Nếu người nhận vượt 2 ca/ngày, yêu cầu sẽ chờ HR duyệt.'}
+            ? 'Chọn Ca làm việc cần người thay khẩn cấp (hoặc Chi nhánh + Ngày + Khung ca) để phát lệnh lên Bảng tin chi nhánh. Khi nhân viên chính thức tại cửa hàng bấm Nhận ca, hệ thống sẽ thay thế trực tiếp ca đó sang người nhận và cộng +30.000đ/ca.'
+            : kind === 'SWAP' ? 'Đổi ca 2 chiều giữa 2 Nhân viên Chính thức cùng chi nhánh (không cộng phụ cấp đổi ca). Khi đồng nghiệp đồng ý, lịch được đổi ngay.'
+            : 'Nhường ca giữa các Nhân viên Chính thức cùng chi nhánh (không cộng phụ cấp đổi ca). Nếu người nhận vượt 2 ca/ngày sẽ chờ HR duyệt.'}
         />
 
         {isSupport && (
@@ -171,7 +173,7 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
               <Col span={12}><Form.Item name="work_date" label="2. Ngày bên chi nhánh đích" rules={dateRangeRules}><DateStringPicker disabledDate={disableInvalidDispatchDate} /></Form.Item></Col>
               <Col span={12}><Form.Item name="shift_code" label="3. Khung ca cần thêm người" rules={shiftCodeRules}><Select options={processedShiftOptions} placeholder="Chọn khung ca" /></Form.Item></Col>
             </Row>
-            <Form.Item name="requester_id" label={`4. Nhân sự rảnh từ chi nhánh khác điều động sang (${supportEmpOptions.filter((o) => !o.disabled).length} người đang rảnh)`} rules={[{ required: true, message: 'Vui lòng chọn nhân sự rảnh để điều động sang' }]}>
+            <Form.Item name="requester_id" label={`4. Nhân sự cửa hàng rảnh từ chi nhánh khác điều động sang (${supportEmpOptions.filter((o) => !o.disabled).length} người đang rảnh)`} rules={[{ required: true, message: 'Vui lòng chọn nhân sự rảnh để điều động sang' }]}>
               <Select showSearch optionFilterProp="label" placeholder="Chọn nhân sự đang rảnh ở chi nhánh khác để điều động sang" options={supportEmpOptions} notFoundContent="Không có nhân sự rảnh ở chi nhánh khác" />
             </Form.Item>
           </>
@@ -179,12 +181,25 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
 
         {isDispatch && (
           <>
-            <Form.Item name="branch_id" label="Chi nhánh cần điều phối khẩn cấp" rules={[{ required: true, message: 'Vui lòng chọn chi nhánh phát lệnh' }]}>
-              <Select showSearch optionFilterProp="label" placeholder="Chọn chi nhánh cần thêm nhân sự khẩn cấp" options={storeBranches} />
-            </Form.Item>
             <Row gutter={12}>
-              <Col span={12}><Form.Item name="work_date" label="Ngày làm việc cần điều phối" rules={dateRangeRules}><DateStringPicker disabledDate={disableInvalidDispatchDate} /></Form.Item></Col>
-              <Col span={12}><Form.Item name="shift_code" label="Khung ca cần bổ sung (+30.000đ)" rules={shiftCodeRules}><Select options={processedShiftOptions} placeholder="Chọn khung ca" /></Form.Item></Col>
+              <Col span={12}>
+                <Form.Item name="branch_id" label="1. Chi nhánh cần điều phối khẩn cấp" rules={[{ required: true, message: 'Vui lòng chọn chi nhánh phát lệnh' }]}>
+                  <Select showSearch optionFilterProp="label" placeholder="Chọn chi nhánh" options={storeBranches} />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="work_date" label="2. Ngày làm việc cần điều phối" rules={dateRangeRules}><DateStringPicker disabledDate={disableInvalidDispatchDate} /></Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={12}>
+              <Col span={14}>
+                <Form.Item name="from_assignment_id" label="3. Ca làm việc cần người thay thế (người nhận sẽ thay ca này)">
+                  <Select allowClear showSearch optionFilterProp="label" placeholder="Chọn ca của nhân sự cần người thay thế..." options={fromOptions} notFoundContent="Không có ca phân công trong ngày này" />
+                </Form.Item>
+              </Col>
+              <Col span={10}>
+                <Form.Item name="shift_code" label="4. Khung ca (+30.000đ)" rules={shiftCodeRules}><Select options={processedShiftOptions} disabled={Boolean(fromAssign)} placeholder="Chọn khung ca" /></Form.Item>
+              </Col>
             </Row>
           </>
         )}
@@ -209,7 +224,7 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
         )}
 
         <Form.Item name="reason" label="Lý do" rules={[{ required: true, message: 'Vui lòng nhập lý do' }, { min: 2, message: 'Lý do tối thiểu 2 ký tự' }]}>
-          <Input.TextArea rows={2} maxLength={300} placeholder={isSupport ? 'VD: Chi nhánh đích thiếu nhân sự khung ca này, điều động nhân sự rảnh sang tăng cường...' : isDispatch ? 'VD: Cửa hàng đông khách cần thêm người làm ca này, hoặc nhân viên báo ốm đột xuất...' : 'Nhập lý do đổi hoặc nhường ca...'} />
+          <Input.TextArea rows={2} maxLength={300} placeholder={isSupport ? 'VD: Chi nhánh đích thiếu nhân sự khung ca này, điều động nhân sự rảnh sang tăng cường...' : isDispatch ? 'VD: Nhân viên báo ốm đột xuất hoặc cửa hàng cần người thay ca...' : 'Nhập lý do đổi hoặc nhường ca...'} />
         </Form.Item>
       </Form>
     </Modal>

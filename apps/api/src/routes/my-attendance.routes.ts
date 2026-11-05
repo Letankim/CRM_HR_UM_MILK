@@ -138,54 +138,47 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     });
 
     await sweepExpiredShiftSwaps(ctx);
+    const canSwapShift = isOfficialSwapEligibleEmployee(ctx, emp), myShiftCode = (emp.default_shift_code || 'CA_SANG').toUpperCase();
     const leaves = ctx.db.leaveRequests.filter((l) => l.employee_id === emp.id || l.employee_id === emp.employee_code).reverse().map((l) => ({ ...l, ...resolveShiftTimeDetails(ctx, l.shift_code, l.assignment_id, l.branch_id, l.employee_id, l.leave_date), branchName: ctx.db.branches.get(l.branch_id)?.name ?? branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[l.status] }));
     const isMine = (id: string) => Boolean(id) && (id === emp.id || id === emp.employee_code);
-    const myBranchId = emp.branch_id || branch?.id || '', isAllScope = !user.branch_scope || user.branch_scope === 'ALL' || ['ADMIN', 'HR'].includes(user.role);
-    const isMatchBranch = (bid: string) => isAllScope || !bid || !myBranchId || bid === myBranchId || bid === emp.branch_id || bid === branch?.id;
-    const isOpenBranchDispatch = (s: { kind: string; status: string; branch_id: string }) => s.kind === 'HR_DISPATCH' && s.status === 'PENDING_PEER' && isMatchBranch(s.branch_id);
+    const isOpenBranchDispatch = (s: { kind: string; status: string; branch_id: string }) => canSwapShift && s.kind === 'HR_DISPATCH' && s.status === 'PENDING_PEER' && Boolean(emp.branch_id && s.branch_id === emp.branch_id);
     const swaps = ctx.db.shiftSwaps.filter((s) => isMine(s.requester_id) || isMine(s.peer_id) || isOpenBranchDispatch(s)).reverse().map((s) => mapShiftSwapRecord(ctx, s, branch));
-    const peerBusyByEmp = new Map<string, Record<string, string>>();
-    const putBusy = (key: string, date: string, label: string) => {
-      const map = peerBusyByEmp.get(key) ?? {}; peerBusyByEmp.set(key, map); map[date] = label;
-    };
+    const peerBusyByEmp = new Map<string, Record<string, string>>(), takenOffByDate: Record<string, string> = {};
+    const putBusy = (key: string, date: string, label: string) => { const map = peerBusyByEmp.get(key) ?? {}; peerBusyByEmp.set(key, map); map[date] = label; };
     for (const a of ctx.db.shiftAssignments.all()) {
       if (a.day_type === 'OFF' || a.status === 'ON_LEAVE' || a.status === 'ABSENT') continue;
       const meta = resolveShiftTimeDetails(ctx, a.shift_code, a.id);
       putBusy(a.employee_id, a.work_date, `${meta.shiftLabel} (${meta.shiftTimeRange})`);
     }
     for (const l of ctx.db.leaveRequests.all()) {
-      if (l.status === 'APPROVED' || l.status === 'PENDING') putBusy(l.employee_id, l.leave_date, 'Đang nghỉ OFF');
+      if (l.status === 'APPROVED' || l.status === 'PENDING') {
+        putBusy(l.employee_id, l.leave_date, 'Đang nghỉ OFF');
+        if (!isMine(l.employee_id)) {
+          const pEmp = ctx.db.employees.get(l.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === l.employee_id);
+          if (pEmp && pEmp.status === 'ACTIVE' && pEmp.branch_id === emp.branch_id && (pEmp.default_shift_code || l.shift_code || 'CA_SANG').toUpperCase() === myShiftCode) takenOffByDate[l.leave_date] = pEmp.full_name;
+        }
+      }
     }
     const branchPeers = ctx.db.employees
-      .filter((e) => {
-        if (e.id === emp.id || e.branch_id !== emp.branch_id || !isOfficialSwapEligibleEmployee(ctx, e)) return false;
-        const linked = findLinkedUserForEmployee(e, ctx);
-        return !linked || linked.status === 'ACTIVE';
-      })
-      .map((e) => ({
-        id: e.id, employeeCode: e.employee_code, fullName: e.full_name, stage: e.stage,
-        positionTitle: resolveStaffGroupLabel(ctx, e.staff_group, e.position_title),
-        branchName: ctx.db.branches.get(e.branch_id)?.name ?? '',
-        busyShiftsByDate: { ...(peerBusyByEmp.get(e.employee_code) ?? {}), ...(peerBusyByEmp.get(e.id) ?? {}) },
-      }));
+      .filter((e) => e.id !== emp.id && e.branch_id === emp.branch_id && isOfficialSwapEligibleEmployee(ctx, e) && (!findLinkedUserForEmployee(e, ctx) || findLinkedUserForEmployee(e, ctx)?.status === 'ACTIVE'))
+      .map((e) => ({ id: e.id, employeeCode: e.employee_code, fullName: e.full_name, stage: e.stage, positionTitle: resolveStaffGroupLabel(ctx, e.staff_group, e.position_title), branchName: ctx.db.branches.get(e.branch_id)?.name ?? '', busyShiftsByDate: { ...(peerBusyByEmp.get(e.employee_code) ?? {}), ...(peerBusyByEmp.get(e.id) ?? {}) } }));
 
     const adjustments = ctx.db.attendanceAdjustments.filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code).reverse();
     const cycleDays = emp.probation_cycle_days || 12;
     const rawDiff = emp.probation_start ? dayjs(todayStr).diff(dayjs(emp.probation_start), 'day') + 1 : (emp.probation_work_days || 7);
     const probationDaysPassed = Math.min(cycleDays, Math.max(1, rawDiff > cycleDays ? (emp.probation_work_days || 7) : rawDiff));
-    const canSwapShift = isOfficialSwapEligibleEmployee(ctx, emp);
 
     return sendSuccess(request, 'Lấy dữ liệu điểm danh và ca làm việc cá nhân thành công', {
       todayDate: todayStr, nowTimeHm: nowHm,
       profile: {
         employeeId: emp.id, employeeCode: emp.employee_code, fullName: emp.full_name, role: user.role, roleLabel: ROLE_LABELS[user.role],
-        stage: emp.stage, branchId: branch?.id ?? emp.branch_id, branchName: branch?.name ?? 'Ụm Bò Milk Chi nhánh 1',
+        stage: emp.stage, branchId: branch?.id ?? emp.branch_id, branchName: branch?.name ?? 'Ụm Bò Milk Chi nhánh 1', defaultShiftCode: myShiftCode,
         branchLat: branch?.lat ?? 10.7769, branchLng: branch?.lng ?? 106.7009, radiusM: branch?.radius_m ?? 100,
         probationStart: emp.probation_start, probationEnd: emp.probation_end, officialFrom: emp.official_from,
         probationCycleDays: cycleDays, probationDaysPassed, probationDaysRemaining: Math.max(0, cycleDays - probationDaysPassed),
       },
       shifts, events, leaves, swaps, branchPeers, adjustments: adjustments.map((a) => mapAdjustmentRecord(ctx, a)),
-      offWindow: evaluateOffWindow(settings, todayStr, nowHm), canRegisterShift: emp.stage === 'PROBATION', canSwapShift,
+      offWindow: evaluateOffWindow(settings, todayStr, nowHm), canRegisterShift: emp.stage === 'PROBATION', canSwapShift, takenOffByDate,
       probationCycle: emp.stage === 'PROBATION' ? buildProbationCycleSummary(ctx, emp, todayStr) : null,
     });
   });

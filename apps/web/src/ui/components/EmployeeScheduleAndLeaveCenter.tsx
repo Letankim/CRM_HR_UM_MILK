@@ -43,15 +43,14 @@ export function EmployeeScheduleAndLeaveCenter({
   const isProbation = stage === 'PROBATION';
   const offWin = useOffWindow(!isProbation && (mode === 'all' || mode === 'leaves')).data;
   const canRegister = canRegisterShift ?? extras?.canRegisterShift ?? isProbation;
-  const hasOpenDispatch = (swaps ?? []).some((s) => s.kind === 'HR_DISPATCH' && s.status === 'PENDING_PEER');
-  const canSwap = (canSwapShift ?? extras?.canSwapShift ?? (stage === 'OFFICIAL')) || hasOpenDispatch;
+  const canSwap = Boolean(canSwapShift ?? extras?.canSwapShift ?? false);
   const cycle = extras?.probationCycle;
   const quotaText = isProbation
     ? (cycle ? `Đã đăng ký ${cycle.offCount}/${cycle.offLimit} ngày OFF trong chu kỳ thử việc` : undefined)
     : `Tối đa ${offWin?.officialWeeklyOffLimit ?? DEFAULT_OPERATION_SETTINGS.officialWeeklyOffLimit} ngày OFF / tuần${offWin?.message ? ` · ${offWin.message}` : ''}`;
   const effectiveTab = mode === 'all' ? (!canSwap && activeTab === 'swaps' ? 'shifts' : activeTab) : mode;
   const showShiftsActions = mode === 'all' || mode === 'shifts';
-  const peerSwap = usePeerSwapDecision({ empId, empCode, onSuccess: onRefresh });
+  const peerSwap = usePeerSwapDecision({ empId, empCode, canSwapShift: canSwap, onSuccess: onRefresh });
   const canPeerRespondDetail = Boolean(detailTarget?.kind === 'swap' && peerSwap.canRespond(detailTarget.record));
 
   return (
@@ -101,7 +100,7 @@ export function EmployeeScheduleAndLeaveCenter({
             label: <span><SwapOutlined /> Nhường / Đổi ca ({swaps.length})</span>,
             children: canSwap ? (
               <EmployeeSwapsTable
-                swaps={swaps} empId={empId} empCode={empCode} refreshing={refreshing}
+                swaps={swaps} empId={empId} empCode={empCode} canSwapShift={canSwap} refreshing={refreshing}
                 onViewDetail={(record) => setDetailTarget({ kind: 'swap', record })} onRefresh={onRefresh}
                 onPeerRespond={peerSwap.promptRespond} peerResponding={peerSwap.responding}
               />

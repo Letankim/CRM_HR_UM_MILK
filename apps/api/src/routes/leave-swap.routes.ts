@@ -22,7 +22,16 @@ import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, r
 import { findLinkedEmployeeForUser } from './employee-mapper.js';
 import { assertEmergencyLeaveAllowed, completeEmergencyLeaveSideEffects, registerLeaveRequestGateRoutes } from './leave-requests.routes.js';
 
-const zCreateLeaveBody = z.object({ employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'), leave_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày nghỉ phải theo định dạng YYYY-MM-DD'), kind: z.enum(['PROBATION_OFF', 'WEEKLY_OFF', 'UNPAID_LEAVE', 'DOT_XUAT']).default('WEEKLY_OFF'), shift_code: z.string().default('CA_SANG'), reason: z.string().trim().min(2, 'Vui lòng nhập lý do xin nghỉ').max(300), status: z.enum(['DRAFT', 'PENDING']).default('PENDING') });
+const zYmd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày nghỉ phải theo định dạng YYYY-MM-DD');
+const zCreateLeaveBody = z.object({
+  employee_id: z.string().trim().min(1, 'Vui lòng chọn nhân sự'),
+  leave_date: zYmd.optional(),
+  leave_dates: z.array(zYmd).optional(),
+  kind: z.enum(['PROBATION_OFF', 'WEEKLY_OFF', 'UNPAID_LEAVE', 'DOT_XUAT']).default('WEEKLY_OFF'),
+  shift_code: z.string().default('CA_SANG'),
+  reason: z.string().trim().min(2, 'Vui lòng nhập lý do xin nghỉ').max(300),
+  status: z.enum(['DRAFT', 'PENDING', 'APPROVED']).optional(),
+});
 const zDecideLeaveBody = z.object({ version: z.coerce.number().int().min(1), decision: z.enum(['APPROVED', 'REJECTED']), decision_reason: z.string().trim().max(300).optional().default('') });
 const zWorkflowQuery = zListQueryBase.extend({ branch_id: z.string().trim().optional(), status: z.string().trim().optional(), from_date: z.string().trim().optional(), to_date: z.string().trim().optional() });
 const ACTIVE_LEAVE = (s: string) => s !== 'REJECTED' && s !== 'CANCELLED';
@@ -80,27 +89,75 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
   app.post('/api/admin/leave-requests', { preHandler: requireAuth() }, async (request, reply) => {
     const body = zCreateLeaveBody.parse(request.body), emp = ctx.db.employees.get(body.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === body.employee_id);
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy nhân sự', body.employee_id);
-    const actor = request.auth!.user, isSelf = findLinkedEmployeeForUser(actor, ctx)?.id === emp.id;
+    const dates = Array.from(new Set([...(body.leave_dates ?? []), ...(body.leave_date ? [body.leave_date] : [])])).sort();
+    if (dates.length === 0) throw Errors.fieldValidation('leave_date', 'REQUIRED_FIELD', 'Vui lòng chọn ít nhất 1 ngày nghỉ OFF', '');
+    const actor = request.auth!.user, isSelf = findLinkedEmployeeForUser(actor, ctx)?.id === emp.id, isEmp = matchEmp(emp);
     if (isEmployeeRole(actor.role) && !isSelf) throw Errors.forbidden('Bạn chỉ được đăng ký nghỉ OFF cho chính mình');
     if (!isSelf) assertBranchAccess(request, emp.branch_id);
-    assertDateNotLockedByPayroll(ctx.db, body.leave_date, 'đăng ký nghỉ OFF');
-    if (ctx.db.leaveRequests.find((l) => matchEmp(emp)(l.employee_id) && l.leave_date === body.leave_date && ACTIVE_LEAVE(l.status))) throw Errors.fieldValidation('leave_date', 'DUPLICATE_VALUE', `Nhân sự đã có đơn đăng ký nghỉ OFF trong ngày ${vi(body.leave_date)}`, body.leave_date);
     const isEmergency = body.kind === 'DOT_XUAT';
     if (isEmergency) assertEmergencyLeaveAllowed(emp);
-    const quota = isSelf && !isEmergency ? assertSelfLeaveAllowed(ctx, emp, body.leave_date) : { limit: emp.stage === 'PROBATION' ? emp.probation_off_days || 5 : getOperationSettings(ctx.db).officialWeeklyOffLimit, used: 0 };
-    const existingShift = ctx.db.shiftAssignments.find((a) => matchEmp(emp)(a.employee_id) && a.work_date === body.leave_date && a.day_type !== 'OFF'), shiftCode = existingShift?.shift_code || emp.default_shift_code || body.shift_code;
-    assertNoDuplicateShiftWorkflow(ctx.db, emp, 'leave_date', existingShift?.id ?? '', body.leave_date, shiftCode);
+    const quota = isSelf && !isEmergency ? assertSelfLeaveAllowed(ctx, emp, dates[0]!) : { limit: emp.stage === 'PROBATION' ? emp.probation_off_days || 5 : getOperationSettings(ctx.db).officialWeeklyOffLimit, used: 0 };
+    if (isSelf && !isEmergency) {
+      for (const d of dates.slice(1)) assertSelfLeaveAllowed(ctx, emp, d);
+      if (quota.used + dates.length > quota.limit) {
+        throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', `Bạn chỉ còn được đăng ký tối đa ${Math.max(0, quota.limit - quota.used)} ngày OFF trong kỳ (đã chọn ${dates.length} ngày)`, dates.join(', '));
+      }
+    }
+    for (const d of dates) {
+      assertDateNotLockedByPayroll(ctx.db, d, 'đăng ký nghỉ OFF');
+      if (ctx.db.leaveRequests.find((l) => isEmp(l.employee_id) && l.leave_date === d && ACTIVE_LEAVE(l.status))) {
+        throw Errors.fieldValidation('leave_date', 'DUPLICATE_VALUE', `Nhân sự đã có đơn đăng ký nghỉ OFF trong ngày ${vi(d)}`, d);
+      }
+      const exShift = ctx.db.shiftAssignments.find((a) => isEmp(a.employee_id) && a.work_date === d && a.day_type !== 'OFF');
+      const shiftCode = (exShift?.shift_code || emp.default_shift_code || body.shift_code || 'CA_SANG').toUpperCase();
+      assertNoDuplicateShiftWorkflow(ctx.db, emp, 'leave_date', exShift?.id ?? '', d, shiftCode);
+      if (!isEmergency) {
+        const peerTaken = ctx.db.leaveRequests.find((l) => {
+          if (l.leave_date !== d || !ACTIVE_LEAVE(l.status) || isEmp(l.employee_id)) return false;
+          const pEmp = ctx.db.employees.get(l.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === l.employee_id);
+          if (!pEmp || pEmp.status !== 'ACTIVE' || pEmp.branch_id !== emp.branch_id) return false;
+          return (pEmp.default_shift_code || l.shift_code || 'CA_SANG').toUpperCase() === shiftCode;
+        });
+        if (peerTaken) {
+          const pEmp = ctx.db.employees.get(peerTaken.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === peerTaken.employee_id);
+          throw Errors.fieldValidation('leave_date', 'DUPLICATE_VALUE', `Ngày ${vi(d)} đã có đồng nghiệp cùng khung ca (${pEmp?.full_name || peerTaken.employee_id} · ${shiftCode}) đăng ký nghỉ OFF trước (ai đăng ký trước được trước). Vui lòng chọn ngày khác!`, d);
+        }
+      }
+    }
     const effectiveKind = isEmergency ? 'DOT_XUAT' : emp.stage === 'PROBATION' ? 'PROBATION_OFF' : body.kind;
-    const created = await ctx.db.leaveRequests.insert({ request_code: `OFF-${String(ctx.db.leaveRequests.all(true).length + 1).padStart(4, '0')}`, employee_id: emp.id, branch_id: emp.branch_id, leave_date: body.leave_date, kind: effectiveKind, shift_code: shiftCode, reason: body.reason, status: body.status, employee_stage: emp.stage, schedule_week_id: weekLockCode(emp.branch_id, mondayOfWeek(body.leave_date), ctx.db.partitionMonth), assignment_id: existingShift?.id ?? '', quota_cycle_used: quota.used + 1, quota_cycle_limit: quota.limit, ...computeLeaveStaffing(emp.branch_id, body.leave_date, shiftCode, emp.id), submitted_at: nowIso(), store_reviewed_by: '', store_reviewed_at: '', decided_by: '', decision_reason: '', decided_at: '' }, actor.id);
-    if (isEmergency) await completeEmergencyLeaveSideEffects(ctx, emp, created, actor.id);
-    queueLeaveCreatedEmail(ctx, created, actor.id);
-    const reqAudit = auditContext(request);
-    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'LEAVE_CREATED', message: `${emp.full_name} gửi đơn nghỉ OFF ngày ${vi(created.leave_date)}`, actorId: actor.id });
+    const targetStatus = body.status === 'DRAFT' ? 'DRAFT' : 'APPROVED', now = nowIso();
+    const createdList = [];
+    for (let i = 0; i < dates.length; i++) {
+      const d = dates[i]!, exShift = ctx.db.shiftAssignments.find((a) => isEmp(a.employee_id) && a.work_date === d && a.day_type !== 'OFF');
+      const shiftCode = exShift?.shift_code || emp.default_shift_code || body.shift_code;
+      const item = await ctx.db.leaveRequests.insert({
+        request_code: `OFF-${String(ctx.db.leaveRequests.all(true).length + 1).padStart(4, '0')}`, employee_id: emp.id, branch_id: emp.branch_id,
+        leave_date: d, kind: effectiveKind, shift_code: shiftCode, reason: body.reason, status: targetStatus, employee_stage: emp.stage,
+        schedule_week_id: weekLockCode(emp.branch_id, mondayOfWeek(d), ctx.db.partitionMonth), assignment_id: exShift?.id ?? '',
+        quota_cycle_used: quota.used + i + 1, quota_cycle_limit: quota.limit, ...computeLeaveStaffing(emp.branch_id, d, shiftCode, emp.id),
+        submitted_at: now, store_reviewed_by: '', store_reviewed_at: '',
+        decided_by: targetStatus === 'APPROVED' ? actor.id : '',
+        decision_reason: targetStatus === 'APPROVED' ? 'Tự động duyệt ngay theo cơ chế đăng ký sớm (Ai đăng ký trước được trước)' : '',
+        decided_at: targetStatus === 'APPROVED' ? now : '',
+      }, actor.id);
+      if (isEmergency) await completeEmergencyLeaveSideEffects(ctx, emp, item, actor.id);
+      else if (targetStatus === 'APPROVED') {
+        for (const a of ctx.db.shiftAssignments.filter((x) => isEmp(x.employee_id) && x.work_date === d && x.day_type !== 'OFF')) {
+          await clearShiftAttendanceOnWorkflowOverride(ctx.db, a, actor.id, 'Tự động gỡ ca làm việc do đăng ký nghỉ OFF đã được duyệt ngay');
+          await ctx.db.shiftAssignments.softDelete(a.id, a.version, actor.id);
+        }
+      }
+      queueLeaveCreatedEmail(ctx, item, actor.id);
+      createdList.push(item);
+    }
+    const created = createdList[0]!, reqAudit = auditContext(request), dateSummary = dates.map(vi).join(', ');
+    emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'LEAVE_CREATED', message: `${emp.full_name} đã đăng ký nghỉ OFF ngày ${dateSummary} (Đã duyệt tự động)`, actorId: actor.id });
     await runBackgroundSideEffect(async () => {
       await ensureSyncedNotifications(ctx);
-      await ctx.audit.record(reqAudit, { action: 'leave.create', entity: 'LEAVE_REQUESTS', entityId: created.id, after: { request_code: created.request_code, leave_date: created.leave_date, status: created.status } });
+      await ctx.audit.record(reqAudit, { action: 'leave.create', entity: 'LEAVE_REQUESTS', entityId: created.id, after: { request_code: created.request_code, leave_dates: dates, status: created.status } });
     });
-    return reply.code(201), sendSuccess(request, `Đã đăng ký nghỉ OFF ngày ${vi(created.leave_date)} — chờ HR chốt lịch`, created);
+    const payload = createdList.length === 1 ? created : { ...created, items: createdList, count: createdList.length };
+    return reply.code(201), sendSuccess(request, `Đã đăng ký và tự động duyệt ${createdList.length} ngày nghỉ OFF (${dateSummary})`, payload);
   });
 
   app.post('/api/admin/leave-requests/:id/cancel', { preHandler: requireAuth() }, async (request) => {
@@ -108,7 +165,10 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!before) throw Errors.notFound('Đơn xin nghỉ OFF', id);
     const emp = findLinkedEmployeeForUser(actor, ctx);
     if (!emp || !matchEmp(emp)(before.employee_id)) throw Errors.forbidden('Bạn chỉ được hủy đơn nghỉ OFF của chính mình');
-    if (before.status !== 'PENDING' && before.status !== 'DRAFT') throw Errors.badRequest('Đơn nghỉ OFF đã được xử lý / chốt lịch, không thể hủy');
+    if (before.status !== 'PENDING' && before.status !== 'DRAFT' && before.status !== 'APPROVED') throw Errors.badRequest('Đơn nghỉ OFF đã được xử lý, không thể hủy');
+    if (emp.stage === 'PROBATION' ? Boolean(findProbationLock(ctx, emp, resolveProbationCycle(emp, getVnNowDateAndHm().todayStr).start)) : Boolean(findWeekLock(ctx, emp.branch_id, mondayOfWeek(before.leave_date)))) {
+      throw Errors.badRequest('HR đã chốt lịch tuần / chu kỳ này, không thể tự hủy đơn nghỉ OFF');
+    }
     const updated = await ctx.db.leaveRequests.update(id, before.version, { status: 'CANCELLED', decided_at: nowIso(), decision_reason: 'Nhân viên tự hủy đơn trước khi HR chốt lịch' }, actor.id);
     await runBackgroundSideEffect(() => ensureSyncedNotifications(ctx));
     return sendSuccess(request, 'Đã hủy đơn đăng ký nghỉ OFF', updated);

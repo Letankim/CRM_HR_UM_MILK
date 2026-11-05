@@ -34,12 +34,18 @@ describe('Ops V5.2 — Chốt lịch tuần & tự động sắp ca theo ca mặ
 
     const off = await t.app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: hr, payload: { employee_id: official.id, leave_date: offDate, reason: 'Nghỉ OFF giữa tuần' } });
     expect(off.statusCode).toBe(201);
+    expect(off.json().data.status).toBe('APPROVED');
+
+    // Đồng nghiệp cùng ca mặc định (CA_SANG) đăng ký trùng ngày offDate -> bị chặn theo cơ chế Ai đăng ký trước được trước
+    const dupSameShift = await t.app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: hr, payload: { employee_id: e1b.id, leave_date: offDate, reason: 'Đăng ký sau trùng ngày Ca sáng' } });
+    expect(dupSameShift.statusCode).toBe(400);
+    expect(dupSameShift.json().errors.details[0].message).toContain('ai đăng ký trước được trước');
 
     const preview = await t.app.inject({ method: 'GET', url: `/api/admin/schedule-planner/week?week_start=${weekStart}&branch_id=${branchId}`, headers: hr });
     expect(preview.statusCode).toBe(200);
     const pv = preview.json().data;
     expect(pv.isLocked).toBe(false);
-    expect(pv.offRequests.some((o: { leaveDate: string; status: string }) => o.leaveDate === offDate && o.status === 'PENDING')).toBe(true);
+    expect(pv.offRequests.some((o: { leaveDate: string; status: string }) => o.leaveDate === offDate && o.status === 'APPROVED')).toBe(true);
     expect(pv.planned.some((p: { employeeId: string; workDate: string }) => p.employeeId === official.id && p.workDate === offDate)).toBe(false);
     expect(pv.planned.length).toBe(21);
     expect(pv.issues.length).toBe(0);
@@ -67,9 +73,10 @@ describe('Ops V5.2 — Chốt lịch tuần & tự động sắp ca theo ca mặ
     for (const a of t.db.shiftAssignments.filter((x) => x.employee_id === prob.id || x.employee_id === prob.employee_code)) await t.db.shiftAssignments.softDelete(a.id, a.version, 'test');
     for (const l of t.db.leaveRequests.filter((x) => x.employee_id === prob.id || x.employee_id === prob.employee_code)) await t.db.leaveRequests.softDelete(l.id, l.version, 'test');
     const nv1 = { ...web, cookie: (await t.login('0901000001', DEMO_PIN, 'employee')).cookie };
-    for (const n of [2, 4, 6, 8, 10]) {
-      expect((await t.app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: nv1, payload: { employee_id: prob.id, leave_date: day(n), reason: 'OFF chu kỳ thử việc' } })).statusCode).toBe(201);
-    }
+    const multiOff = await t.app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: nv1, payload: { employee_id: prob.id, leave_dates: [day(2), day(4), day(6), day(8), day(10)], reason: 'Chọn 1 lần 5 ngày OFF chu kỳ thử việc' } });
+    expect(multiOff.statusCode).toBe(201);
+    expect(multiOff.json().data.count).toBe(5);
+    expect(multiOff.json().data.status).toBe('APPROVED');
     const list = (await t.app.inject({ method: 'GET', url: '/api/admin/schedule-planner/probation', headers: hr })).json().data;
     const item = list.find((i: { employeeId: string }) => i.employeeId === prob.id);
     expect(item.planned.length).toBe(7);
@@ -124,7 +131,8 @@ describe('Ops V5.2 — Chốt lịch tuần & tự động sắp ca theo ca mặ
     const accept = await t.app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${give.json().data.id}/peer-respond`, headers: nvRec, payload: { version: give.json().data.version, accept: true } });
     expect(accept.statusCode).toBe(200);
     expect(accept.json().data.status).toBe('APPROVED');
-    expect(accept.json().data.allowance_eligible).toBe(true);
+    expect(accept.json().data.allowance_eligible).toBe(false);
+    expect(accept.json().data.allowance_amount_vnd).toBe(0);
     expect(t.db.shiftAssignments.get(shift.id)?.employee_id).toBe(receiverId);
   });
 

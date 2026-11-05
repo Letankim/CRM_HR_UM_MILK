@@ -171,7 +171,30 @@ describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ'
     expect(Number(receiverSnap!.shiftSwapAllowanceVnd)).toBeGreaterThanOrEqual(30000);
     expect(Number(receiverSnap!.shiftSwapCount)).toBeGreaterThanOrEqual(1);
 
-    // 7. Kiểm tra hủy lệnh điều phối khẩn cấp -> bản tin tự động soft-delete
+    // 7. Kiểm tra khi phát lệnh điều phối có chọn ca cụ thể (from_assignment_id) -> người nhận sẽ THAY THẾ trực tiếp ca của người đó và nhận +30k; đồng thời chặn nhân sự văn phòng (HR/MKT/Finance) thấy hoặc nhận ca
+    const finMyAtt = await app.inject({ method: 'GET', url: '/api/my-attendance', headers: finHeaders });
+    expect((finMyAtt.json().data.swaps as { kind: string }[]).some((s) => s.kind === 'HR_DISPATCH')).toBe(false);
+    const targetShiftToReplace = await db.shiftAssignments.insert({
+      branch_id: branchId, work_date: TODAY, shift_code: shiftCode === 'CA_SANG' ? 'CA_CHIEU' : 'CA_SANG',
+      start_at: '12:00', end_at: '23:59', scheduled_hours: 5,
+      employee_id: shift.employee_id, employee_stage: 'OFFICIAL', status: 'PUBLISHED',
+      schedule_week_id: shift.schedule_week_id, shift_template_id: shift.shift_template_id,
+      day_type: 'WORK', note: 'Ca cần người thay khẩn cấp', source: 'MANUAL',
+      swapped_from_employee_id: '', replacement_for_employee_id: '', linked_assignment_id: '', published_at: '2026-10-01T00:00:00+07:00',
+    }, 'test');
+    const dispatchReplace = await app.inject({
+      method: 'POST', url: '/api/admin/shift-swaps', headers: hrHeaders,
+      payload: { kind: 'HR_DISPATCH', from_assignment_id: targetShiftToReplace.id, branch_id: branchId, work_date: TODAY, shift_code: targetShiftToReplace.shift_code, reason: 'Nhân viên ốm cần người thay thế ca này' },
+    });
+    expect(dispatchReplace.statusCode).toBe(201);
+    const drData = dispatchReplace.json().data;
+    const officeClaimBlocked = await app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${drData.id}/claim`, headers: finHeaders, payload: { version: drData.version, accept: true } });
+    expect(officeClaimBlocked.statusCode).toBe(403);
+    const replaceClaimRes = await app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${drData.id}/claim`, headers: receiverHeaders, payload: { version: drData.version, accept: true, peer_note: 'Nhận thay thế ca này' } });
+    expect(replaceClaimRes.statusCode).toBe(200);
+    expect(db.shiftAssignments.get(targetShiftToReplace.id)?.employee_id).toBe(receiverEmp.id);
+
+    // 7b. Kiểm tra hủy lệnh điều phối khẩn cấp -> bản tin tự động soft-delete
     const dispatch2 = await app.inject({
       method: 'POST',
       url: '/api/admin/shift-swaps',

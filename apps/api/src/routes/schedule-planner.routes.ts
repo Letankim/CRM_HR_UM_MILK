@@ -48,7 +48,7 @@ function enrichPlanned(ctx: AppContext, list: PlannedShift[]) {
 }
 
 async function applyPlan(ctx: AppContext, plan: PlanResult, lock: { code: string; branchId: string; weekStart: string; weekEnd: string; kind: 'WEEKLY' | 'PROBATION_12_DAYS'; note: string }, actorId: string) {
-  const now = nowIso(), pendingOffs = plan.offRequests.filter((l) => l.status === 'PENDING' || l.status === 'DRAFT');
+  const now = nowIso(), pendingOffs = plan.offRequests.filter((l) => l.status === 'PENDING' || l.status === 'DRAFT'), totalApprovedOffs = plan.offRequests.filter((l) => OFF_ACTIVE.has(l.status)).length;
   if (pendingOffs.length > 0) {
     const offDecisionNote = lock.note ? `Đã duyệt khi HR chốt lịch: ${lock.note}` : 'Đã duyệt khi HR chốt lịch & tự động sắp ca';
     await ctx.db.leaveRequests.batchUpdate(pendingOffs.map((l) => ({ id: l.id, expectedVersion: l.version, patch: { status: 'APPROVED' as const, decided_by: actorId, decided_at: now, decision_reason: offDecisionNote } })), actorId);
@@ -70,10 +70,10 @@ async function applyPlan(ctx: AppContext, plan: PlanResult, lock: { code: string
     scheduled_hours: p.hours, swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now, note: p.isCoverShift ? 'Tự động điều phối bù ca OFF để đủ 1 người/ca khi HR chốt lịch' : 'Tự động sắp ca theo ca mặc định (1 người/ca) khi HR chốt lịch', linked_assignment_id: '',
   }, actorId)));
   const existing = ctx.db.scheduleWeeks.find((w) => w.code === lock.code);
-  const record = { branch_id: lock.branchId, week_start: lock.weekStart, week_end: lock.weekEnd, status: 'PUBLISHED' as const, published_by: actorId, published_at: now, code: lock.code, schedule_kind: lock.kind, store_confirmed_by: '', store_confirmed_at: '', locked_at: now, note: lock.note || `Đã xếp ${created.length} ca · Duyệt ${pendingOffs.length} đơn OFF · ${plan.issues.length} cảnh báo` };
+  const record = { branch_id: lock.branchId, week_start: lock.weekStart, week_end: lock.weekEnd, status: 'PUBLISHED' as const, published_by: actorId, published_at: now, code: lock.code, schedule_kind: lock.kind, store_confirmed_by: '', store_confirmed_at: '', locked_at: now, note: lock.note || `Đã xếp ${created.length} ca · Duyệt ${totalApprovedOffs} đơn OFF · ${plan.issues.length} cảnh báo` };
   if (existing) await ctx.db.scheduleWeeks.update(existing.id, existing.version, record, actorId);
   else await ctx.db.scheduleWeeks.insert(record, actorId);
-  return { createdCount: created.length, approvedOffCount: pendingOffs.length, createdIds: created.map((c) => c.id) };
+  return { createdCount: created.length, approvedOffCount: totalApprovedOffs, createdIds: created.map((c) => c.id) };
 }
 
 export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContext) {

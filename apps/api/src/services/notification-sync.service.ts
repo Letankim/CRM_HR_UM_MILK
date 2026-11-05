@@ -77,29 +77,38 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
       await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: brId, category: 'WORKFLOW', title: `Ca đăng ký ngày ${a.work_date} đã được duyệt phân ca chính thức`, body: `${shiftLabel(a.shift_code)} (${a.start_at}–${a.end_at}) ngày ${a.work_date} đã được phê duyệt. Bạn đã có thể chấm công Vào/Ra ca.`, link: '/nv/lich', severity: 'INFO', entity_type: 'SHIFT_PUB_USER', entity_id: `${a.id}_PUBLISHED` }, a.updated_by);
     }
   }
-  for (const l of activePlusRecent(ctx.db.leaveRequests.all(), (x) => x.status === 'PENDING', 50)) {
+  for (const l of activePlusRecent(ctx.db.leaveRequests.all(), (x) => x.status === 'PENDING' || x.status === 'APPROVED', 50)) {
     const code = l.request_code || l.id, emp = findEmp(l.employee_id), empUser = findUserByEmp(l.employee_id), empKey = `${l.id}_${l.status}`, brId = emp?.branch_id || l.branch_id || 'ALL';
     const empLabel = emp ? `${emp.full_name} (${emp.employee_code})` : l.employee_id;
-    if (l.status === 'PENDING' && !hasKey('LEAVE_ROLE', l.id)) {
-      await ins({ recipient_user_id: '', recipient_role: isBoOrHr(emp, empUser, l.created_by) ? 'HR' : 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Đơn xin nghỉ phép (OFF) chờ duyệt: ${code} — ${empLabel}`, body: `Nhân sự ${empLabel} xin nghỉ ngày ${l.leave_date} — Lý do: ${l.reason || 'Nghỉ phép cá nhân'}.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'LEAVE_ROLE', entity_id: l.id }, l.created_by);
+    if ((l.status === 'PENDING' || l.status === 'APPROVED') && !hasKey('LEAVE_ROLE', l.id)) {
+      await ins({ recipient_user_id: '', recipient_role: isBoOrHr(emp, empUser, l.created_by) ? 'HR' : 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Đơn đăng ký nghỉ OFF: ${code} — ${empLabel}`, body: `Nhân sự ${empLabel} đăng ký nghỉ ngày ${l.leave_date} — Lý do: ${l.reason || 'Nghỉ phép cá nhân'}.`, link: '/admin/schedules?section=workflows', severity: 'INFO', entity_type: 'LEAVE_ROLE', entity_id: l.id }, l.created_by);
     }
     if (empUser && (l.status === 'APPROVED' || l.status === 'REJECTED') && empUser.id !== l.decided_by && !hasKey('LEAVE_USER', empKey)) {
       await ins({ recipient_user_id: empUser.id, recipient_role: '', branch_id: brId, category: 'WORKFLOW', title: l.status === 'APPROVED' ? `Đơn xin nghỉ OFF (${l.leave_date}) đã được phê duyệt` : `Đơn xin nghỉ OFF (${l.leave_date}) bị từ chối`, body: `Mã đơn: ${code} · Ngày nghỉ: ${l.leave_date} · Lý do: ${l.decision_reason || l.reason || 'Cá nhân'}.`, link: '/nv/nghi-phep', severity: l.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'LEAVE_USER', entity_id: empKey }, l.decided_by);
     }
   }
   for (const s of activePlusRecent(ctx.db.shiftSwaps.all(), (x) => x.status === 'PENDING_PEER' || x.status === 'PEER_ACCEPTED', 50)) {
-    const reqEmp = findEmp(s.requester_id), reqUser = findUserByEmp(s.requester_id), peerUser = findUserByEmp(s.peer_id), swapKey = `${s.id}_${s.status}`, brId = reqEmp?.branch_id || s.branch_id || 'ALL';
-    const reqLabel = reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id;
+    const reqEmp = findEmp(s.requester_id), peerEmp = findEmp(s.peer_id), reqUser = findUserByEmp(s.requester_id), peerUser = findUserByEmp(s.peer_id), swapKey = `${s.id}_${s.status}`, brId = s.branch_id || reqEmp?.branch_id || 'ALL';
+    const reqLabel = reqEmp ? `${reqEmp.full_name} (${reqEmp.employee_code})` : s.requester_id, peerLabel = peerEmp ? `${peerEmp.full_name} (${peerEmp.employee_code})` : s.peer_id;
     if (s.kind === 'HR_DISPATCH' && s.status === 'PENDING_PEER' && !hasKey('DISPATCH_OPEN', s.id)) {
       await ins({ recipient_user_id: '', recipient_role: 'CHINH_THUC', branch_id: brId, category: 'WORKFLOW', title: `Điều phối khẩn cấp (${s.swap_code}): Cần nhân sự làm thay (+30.000đ)`, body: `Cửa hàng phát lệnh tìm nhân sự làm thay ca ${shiftLabel(s.from_shift_code)} ngày ${s.from_work_date}. Nhận ca được tự động cộng +30.000đ vào kỳ lương.`, link: '/nv/doi-ca', severity: 'WARNING', entity_type: 'DISPATCH_OPEN', entity_id: s.id }, s.created_by);
+    }
+    if (s.kind === 'HR_DISPATCH' && s.status === 'APPROVED' && !hasKey('DISPATCH_CLAIMED_STORE', `${s.id}_CLAIMED`)) {
+      await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: brId, category: 'WORKFLOW', title: `Đã có nhân sự nhận ca điều phối khẩn cấp (${s.swap_code}): ${peerLabel}`, body: `${peerLabel} đã nhận làm thay ca ${shiftLabel(s.from_shift_code)} ngày ${s.from_work_date} (+30.000đ).`, link: '/admin/schedules?section=workflows', severity: 'INFO', entity_type: 'DISPATCH_CLAIMED_STORE', entity_id: `${s.id}_CLAIMED` }, peerUser?.id || s.decided_by);
+    }
+    if (s.kind === 'HR_SUPPORT' && s.status === 'APPROVED' && !hasKey('SUPPORT_STORE', `${s.id}_SUPPORT`)) {
+      const targetBrName = ctx.db.branches.get(s.target_branch_id)?.name || s.target_branch_id;
+      await ins({ recipient_user_id: '', recipient_role: 'HR,STORE', branch_id: s.target_branch_id || brId, category: 'WORKFLOW', title: `Điều động hỗ trợ liên chi nhánh (${s.swap_code}): ${reqLabel}`, body: `Nhân sự ${reqLabel} được điều động sang hỗ trợ ${targetBrName} ca ${shiftLabel(s.from_shift_code)} ngày ${s.from_work_date} (+30.000đ).`, link: '/admin/schedules?section=workflows', severity: 'INFO', entity_type: 'SUPPORT_STORE', entity_id: `${s.id}_SUPPORT` }, s.decided_by || s.created_by);
     }
     if (s.status === 'PEER_ACCEPTED' && !hasKey('SWAP_STORE', `${s.id}_PEER_ACCEPTED`)) {
       await ins({ recipient_user_id: '', recipient_role: 'HR', branch_id: brId, category: 'WORKFLOW', title: `Yêu cầu nhường ca vượt 2 ca/ngày chờ HR duyệt (${s.swap_code || s.id}): ${reqLabel}`, body: `Người nhận đã đồng ý nhận ${shiftLabel(s.from_shift_code)} ngày ${s.from_work_date} và sẽ làm 3 ca trong ngày — cần HR phê duyệt.`, link: '/admin/schedules?section=workflows', severity: 'WARNING', entity_type: 'SWAP_STORE', entity_id: `${s.id}_PEER_ACCEPTED` }, peerUser?.id || s.updated_by);
     }
-    const targetIds = s.status === 'PENDING_PEER' ? [peerUser?.id] : (s.status === 'PEER_ACCEPTED' || s.status === 'PEER_DECLINED') ? [reqUser?.id] : [reqUser?.id, peerUser?.id].filter((id) => id !== s.decided_by);
-    const cleanTargetIds = targetIds.filter(Boolean).join(',');
+    const isDspOrSup = s.kind === 'HR_DISPATCH' || s.kind === 'HR_SUPPORT';
+    const targetIds = s.status === 'PENDING_PEER' ? [peerUser?.id] : (s.status === 'PEER_ACCEPTED' || s.status === 'PEER_DECLINED') ? [reqUser?.id] : isDspOrSup ? [reqUser?.id, peerUser?.id] : [reqUser?.id, peerUser?.id].filter((id) => id !== s.decided_by);
+    const cleanTargetIds = Array.from(new Set(targetIds.filter(Boolean))).join(',');
     if (cleanTargetIds && !hasKey('SWAP_USER', swapKey)) {
-      await ins({ recipient_user_id: cleanTargetIds, recipient_role: '', branch_id: brId, category: 'WORKFLOW', title: `Cập nhật yêu cầu ${s.kind === 'SWAP' ? 'đổi ca' : 'nhường ca'} (${s.swap_code || s.id})`, body: `Ca ngày ${s.from_work_date} (${shiftLabel(s.from_shift_code)}): ${s.status === 'APPROVED' ? `Đã cập nhật lịch chính thức (${s.allowance_eligible && Number(s.allowance_amount_vnd ?? 0) > 0 ? `Phụ cấp nhận ca: +${Number(s.allowance_amount_vnd).toLocaleString('vi-VN')}đ` : 'Không tính phụ cấp đổi ca'})` : s.status === 'PEER_ACCEPTED' ? 'Người nhận đã đồng ý — Chờ HR duyệt (vượt 2 ca/ngày)' : s.status === 'REJECTED' || s.status === 'PEER_DECLINED' ? 'Đã bị từ chối' : s.status === 'CANCELLED' ? 'Người gửi đã hủy yêu cầu' : `${reqLabel} ${s.kind === 'SWAP' ? 'đề nghị đổi ca 2 chiều với bạn' : 'nhờ bạn nhận ca được nhường'}`}.`, link: '/nv/doi-ca', severity: s.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_USER', entity_id: swapKey }, s.status === 'PENDING_PEER' ? (reqUser?.id || s.created_by) : (s.decided_by || peerUser?.id || s.updated_by));
+      const title = s.kind === 'HR_SUPPORT' ? `Lệnh điều động hỗ trợ chi nhánh (${s.swap_code})` : s.kind === 'HR_DISPATCH' ? `Xác nhận ca điều phối khẩn cấp (${s.swap_code})` : `Cập nhật yêu cầu ${s.kind === 'SWAP' ? 'đổi ca' : 'nhường ca'} (${s.swap_code || s.id})`;
+      await ins({ recipient_user_id: cleanTargetIds, recipient_role: '', branch_id: brId, category: 'WORKFLOW', title, body: `Ca ngày ${s.from_work_date} (${shiftLabel(s.from_shift_code)}): ${s.status === 'APPROVED' ? `Đã cập nhật lịch chính thức (${s.allowance_eligible && Number(s.allowance_amount_vnd ?? 0) > 0 ? `Phụ cấp nhận ca: +${Number(s.allowance_amount_vnd).toLocaleString('vi-VN')}đ` : 'Không tính phụ cấp đổi ca'})` : s.status === 'PEER_ACCEPTED' ? 'Người nhận đã đồng ý — Chờ HR duyệt (vượt 2 ca/ngày)' : s.status === 'REJECTED' || s.status === 'PEER_DECLINED' ? 'Đã bị từ chối' : s.status === 'CANCELLED' ? 'Người gửi đã hủy yêu cầu' : `${reqLabel} ${s.kind === 'SWAP' ? 'đề nghị đổi ca 2 chiều với bạn' : 'nhờ bạn nhận ca được nhường'}`}.`, link: '/nv/doi-ca', severity: s.status === 'REJECTED' ? 'WARNING' : 'INFO', entity_type: 'SWAP_USER', entity_id: swapKey }, s.status === 'PENDING_PEER' ? (reqUser?.id || s.created_by) : (s.decided_by || peerUser?.id || s.updated_by));
     }
   }
   const adjList = activePlusRecent(ctx.db.attendanceAdjustments.all(), (x) => x.status === 'PENDING' || x.status === 'STORE_CONFIRMED', 60);
@@ -167,6 +176,7 @@ export function isNotificationCreatedByOrSelfAction(ctx: AppContext, n: Notifica
   if (n.entity_type === 'SWAP_STORE') { const s = ctx.db.shiftSwaps.get(rawId); return !s || (n.entity_id.endsWith('_PEER_ACCEPTED') ? s.updated_by === userId : s.created_by === userId); }
   if (n.entity_type === 'SWAP_USER') {
     const s = ctx.db.shiftSwaps.get(rawId);
+    if (s && (s.kind === 'HR_DISPATCH' || s.kind === 'HR_SUPPORT')) return false;
     return !s || (n.entity_id.endsWith('_PENDING_PEER') && (s.created_by === userId || isMyEmp(s.requester_id))) || ((n.entity_id.endsWith('_PEER_ACCEPTED') || n.entity_id.endsWith('_PEER_DECLINED')) && (s.updated_by === userId || isMyEmp(s.peer_id))) || ((n.entity_id.endsWith('_APPROVED') || n.entity_id.endsWith('_REJECTED')) && s.decided_by === userId);
   }
   if (n.entity_type === 'EMG_STORE' || n.entity_type === 'EMG_USER') return true;

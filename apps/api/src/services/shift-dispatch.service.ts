@@ -38,7 +38,7 @@ export async function publishDispatchAnnouncement(
     cta_link: '/nv/doi-ca',
     media_ids: '[]',
     audience_scope: 'BRANCH',
-    audience_json: JSON.stringify({ scope: 'BRANCH', target: from.branch_id }),
+    audience_json: JSON.stringify({ scope: 'BRANCH', target: from.branch_id, onlyStoreOfficial: true }),
     priority: 'URGENT',
     requires_ack: false,
     scheduled_at: '',

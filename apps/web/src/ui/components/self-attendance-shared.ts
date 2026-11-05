@@ -22,6 +22,8 @@ export interface SelfAttendanceExtras {
   canRegisterShift?: boolean;
   canSwapShift?: boolean;
   probationCycle?: ProbationCycleSummary | null;
+  takenOffByDate?: Record<string, string>;
+  leaves?: Record<string, unknown>[];
 }
 
 export type OffWindowInfo = OffWindowState & { officialWeeklyOffLimit: number; maxShiftsPerDay: number };

@@ -104,10 +104,10 @@ export async function submitWeeklyOffBatch(
       request_code: `OFF-${String(baseSeq + i + 1).padStart(4, '0')}`,
       employee_id: emp.id, branch_id: emp.branch_id, leave_date: uniqueDates[i]!, kind: 'WEEKLY_OFF',
       shift_code: shiftCode, reason: params.reason || 'Đăng ký 2 ngày OFF định kỳ hàng tuần',
-      status: 'PENDING', employee_stage: emp.stage, schedule_week_id: wkCode, assignment_id: '',
+      status: 'APPROVED', employee_stage: emp.stage, schedule_week_id: wkCode, assignment_id: '',
       quota_cycle_used: i + 1, quota_cycle_limit: gate.requiredCount,
       staffing_after_leave: Math.max(1, sameShiftOfficials.length - 1), min_staff_required: minStaff,
-      submitted_at: now, store_reviewed_by: '', store_reviewed_at: '', decided_by: '', decision_reason: '', decided_at: '',
+      submitted_at: now, store_reviewed_by: '', store_reviewed_at: '', decided_by: actorId, decision_reason: 'Tự động duyệt ngay theo cơ chế đăng ký sớm (Ai đăng ký trước được trước)', decided_at: now,
     }, actorId);
     created.push(lv);
   }

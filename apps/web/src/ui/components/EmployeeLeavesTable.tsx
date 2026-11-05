@@ -15,7 +15,7 @@ import { exportLeavesExcel } from './workflow-bulk-helpers';
 import { renderWorkflowShiftStateTag } from './workflow-shift-warning';
 
 type Row = Record<string, unknown>;
-const isCancellable = (r: Row) => r.status === 'PENDING' || r.status === 'DRAFT';
+const isCancellable = (r: Row) => r.status === 'PENDING' || r.status === 'DRAFT' || r.status === 'APPROVED';
 
 export interface EmployeeLeavesTableProps {
   leaves: Row[]; quotaText?: string; refreshing?: boolean; onViewDetail: (record: Row) => void; onRefresh: () => void;

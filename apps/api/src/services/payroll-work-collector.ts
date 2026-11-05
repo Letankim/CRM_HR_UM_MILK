@@ -73,9 +73,9 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
 
   const approvedLeaves = ctx.db.leaveRequests.filter((l) => isEmp(l.employee_id) && l.leave_date >= from && l.leave_date <= to && l.status === 'APPROVED');
   const approvedLeaveDates = new Set(approvedLeaves.map((l) => l.leave_date));
-  const swapsGivenOut = ctx.db.shiftSwaps.filter((s) => isEmp(s.requester_id) && !isEmp(s.peer_id) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && !isDeletedRef(s.from_assignment_id, s.from_work_date, s.from_shift_code));
-  const swapsReceived = ctx.db.shiftSwaps.filter((s) => isEmp(s.peer_id) && !isEmp(s.requester_id) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && !isDeletedRef(s.from_assignment_id, s.from_work_date, s.from_shift_code));
-  const receivedSwapAssignIds = new Set(swapsReceived.map((s) => s.from_assignment_id).filter(Boolean));
+  const swapsGivenOut = ctx.db.shiftSwaps.filter((s) => isEmp(s.requester_id) && !isEmp(s.peer_id) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && (s.kind === 'HR_SUPPORT' ? Boolean(s.from_assignment_id && s.from_assignment_id !== s.to_assignment_id) : s.kind === 'HR_DISPATCH' ? Boolean(s.from_assignment_id) : true) && !isDeletedRef(s.from_assignment_id, s.from_work_date, s.from_shift_code));
+  const swapsReceived = ctx.db.shiftSwaps.filter((s) => (s.kind === 'HR_SUPPORT' ? (isEmp(s.requester_id) || isEmp(s.peer_id)) : (isEmp(s.peer_id) && !isEmp(s.requester_id))) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && !isDeletedRef(s.to_assignment_id || s.from_assignment_id, s.from_work_date, s.from_shift_code));
+  const receivedSwapAssignIds = new Set(swapsReceived.flatMap((s) => [s.to_assignment_id, s.from_assignment_id]).filter(Boolean));
 
   const empEvents = ctx.db.attendanceEvents.filter((e) => isEmp(e.employee_id) && e.work_date >= from && e.work_date <= to && !isDeletedRef(e.assignment_id, e.work_date, e.shift_code));
   const empAdjsAll = ctx.db.attendanceAdjustments.filter((a) => isEmp(a.employee_id) && a.work_date >= from && a.work_date <= to && !isDeletedRef(a.assignment_id, a.work_date, a.shift_code));
@@ -104,12 +104,16 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
     const isExpired = a.work_date < todayStr || (a.work_date === todayStr && nowHm > endAt);
     const isExpiredUnpunched = a.status === 'PUBLISHED' && isExpired && !(isVitest && a.source === 'SEED');
 
-    const swapOut = swapsGivenOut.find((s) => s.from_assignment_id === a.id || (s.from_work_date === a.work_date && s.from_shift_code === a.shift_code));
-    if (swapOut && !receivedSwapAssignIds.has(a.id)) {
-      usedSwapOutIds.add(swapOut.id);
-      shiftLogs.push({ assignmentId: a.id, date: a.work_date, shiftCode: a.shift_code, shiftLabel, shiftTime, branchName, status: 'SWAPPED_OUT', statusLabel: `Đã đổi ca (${swapOut.swap_code})`, hours: 0, otHours: 0, isSwapIn: false, lateMinutes: 0, checkInHm: '', checkOutHm: '', note: swapOut.reason });
-      continue;
+    const swapOut = swapsGivenOut.find((s) => s.from_assignment_id ? s.from_assignment_id === a.id : (s.from_work_date === a.work_date && s.from_shift_code === a.shift_code));
+    if (swapOut && a.id !== swapOut.to_assignment_id && !isEmp( a.employee_id === swapOut.peer_id ? a.employee_id : '' )) {
+      if (a.status === 'SWAPPED' || !isEmp(a.employee_id)) {
+        usedSwapOutIds.add(swapOut.id);
+        shiftLogs.push({ assignmentId: a.id, date: a.work_date, shiftCode: a.shift_code, shiftLabel, shiftTime, branchName, status: 'SWAPPED_OUT', statusLabel: `Đã đổi ca (${swapOut.swap_code})`, hours: 0, otHours: 0, isSwapIn: false, lateMinutes: 0, checkInHm: '', checkOutHm: '', note: swapOut.reason });
+        continue;
+      }
     }
+    const swapIn = swapsReceived.find((s) => s.to_assignment_id === a.id || (s.kind !== 'HR_SUPPORT' && s.from_assignment_id === a.id) || (!s.from_assignment_id && !s.to_assignment_id && s.from_work_date === a.work_date && s.from_shift_code === a.shift_code));
+    if (swapIn) usedSwapInIds.add(swapIn.id);
 
     if ((approvedLeaveDates.has(a.work_date) || a.day_type === 'OFF' || a.status === 'ON_LEAVE') && !checkIn && !checkOut && !adj) {
       usedLeaveDates.add(a.work_date);
@@ -126,12 +130,10 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
 
     if (!COUNTED_STATUSES.has(a.status) && !checkIn && !checkOut && !adj && !receivedSwapAssignIds.has(a.id)) continue;
 
-    const swapIn = swapsReceived.find((s) => s.from_assignment_id === a.id || (s.from_work_date === a.work_date && s.from_shift_code === a.shift_code));
-    if (swapIn) usedSwapInIds.add(swapIn.id);
-    const isEmgRep = Boolean(a.replacement_for_employee_id);
-    const matchedSwap = swapIn ?? (a.swapped_from_employee_id ? ctx.db.shiftSwaps.find((s) => s.status === 'APPROVED' && (s.from_assignment_id === a.id || s.to_assignment_id === a.id || (s.from_work_date === a.work_date && s.from_shift_code === a.shift_code && isEmp(s.peer_id)))) : undefined);
+    const isEmgRep = Boolean(a.replacement_for_employee_id) || a.source === 'HR_DISPATCH' || a.source === 'HR_SUPPORT';
+    const matchedSwap = swapIn ?? ctx.db.shiftSwaps.find((s) => s.status === 'APPROVED' && (s.to_assignment_id === a.id || s.from_assignment_id === a.id || (s.from_work_date === a.work_date && s.from_shift_code === a.shift_code && (isEmp(s.peer_id) || (s.kind === 'HR_SUPPORT' && isEmp(s.requester_id))))));
     const isSwap = Boolean(matchedSwap || a.swapped_from_employee_id || isEmgRep);
-    const swapAllowanceVnd = !isSwap ? 0 : matchedSwap ? (matchedSwap.allowance_eligible ? Math.max(0, Math.round(Number(matchedSwap.allowance_amount_vnd ?? 0))) : 0) : SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd;
+    const swapAllowanceVnd = !isSwap ? 0 : matchedSwap ? (matchedSwap.allowance_eligible ? Math.max(0, Math.round(Number(matchedSwap.allowance_amount_vnd ?? 0))) : 0) : (isEmgRep ? SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd : 0);
 
     const lateMins = checkIn ? (checkIn.late_minutes || Math.max(0, parseHm(checkInHm) - parseHm(a.start_at || '07:00'))) : 0;
     if (lateMins > 0) { lateCount += 1; lateMinutesTotal += lateMins; }

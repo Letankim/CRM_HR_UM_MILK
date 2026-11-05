@@ -94,7 +94,7 @@ async function saveAudienceConfig(ctx: AppContext, list: AudienceGroupConfigItem
 }
 
 export function doesUserMatchAudience(ctx: AppContext, u: { id: string; role: string; employee_id?: string; branch_scope?: string }, rawScope: string, rawJsonOrTarget: string): boolean {
-  let scope = rawScope || 'ALL', target = 'ALL', branch_id = 'ALL', stage = 'ALL', staff_group = 'ALL';
+  let scope = rawScope || 'ALL', target = 'ALL', branch_id = 'ALL', stage = 'ALL', staff_group = 'ALL', onlyStoreOfficial = false;
   if (rawJsonOrTarget?.trim().startsWith('{')) {
     try {
       const obj = JSON.parse(rawJsonOrTarget);
@@ -103,14 +103,16 @@ export function doesUserMatchAudience(ctx: AppContext, u: { id: string; role: st
       if (obj.branch_id) branch_id = String(obj.branch_id);
       if (obj.stage) stage = String(obj.stage);
       if (obj.staff_group) staff_group = String(obj.staff_group);
+      if (obj.onlyStoreOfficial) onlyStoreOfficial = true;
     } catch { target = rawJsonOrTarget; }
   } else if (rawJsonOrTarget) target = rawJsonOrTarget;
   if (scope === 'CUSTOM' && target.includes('|')) {
     const [b = 'ALL', s = 'ALL', g = 'ALL'] = target.split('|');
     branch_id = b; stage = s; staff_group = g;
   }
-  if (!scope || scope === 'ALL') return true;
   const emp = (u.employee_id ? (ctx.db.employees.get(u.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === u.employee_id)) : undefined) ?? ctx.db.employees.find((e) => e.user_id === u.id);
+  if (onlyStoreOfficial && (u.role !== 'CHINH_THUC' || (emp && (emp.stage !== 'OFFICIAL' || emp.staff_group === 'BACKOFFICE' || emp.staff_group === 'STORE_MANAGER')))) return false;
+  if (!scope || scope === 'ALL') return true;
   const matchBranch = (bt: string) => {
     if (!bt || bt === 'ALL') return true;
     const br = ctx.db.branches.get(bt) ?? ctx.db.branches.find((x) => x.code === bt);

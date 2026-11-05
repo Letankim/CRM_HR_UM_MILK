@@ -90,8 +90,9 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!empRecord || !empRecord.branch_id) throw Errors.badRequest('Hồ sơ nhân sự chưa được gán thuộc chi nhánh làm việc nào nên không thể điểm danh Vào/Ra ca');
     const empBranch = findBranch(empRecord.branch_id);
     const branch = findBranch(assign.branch_id) ?? empBranch;
+    const isSupportShift = assign.source === 'HR_SUPPORT' || Boolean(ctx.db.shiftSwaps.find((s) => s.kind === 'HR_SUPPORT' && s.status === 'APPROVED' && s.to_assignment_id === assign.id));
     if (!branch || branch.status !== 'ACTIVE') throw Errors.notFound('Chi nhánh hoạt động', assign.branch_id || empRecord.branch_id);
-    if (empBranch && empBranch.id !== branch.id) throw Errors.forbidden(`Nhân sự thuộc chi nhánh "${empBranch.name}", không được phép điểm danh Vào/Ra ca tại chi nhánh khác ("${branch.name}")`);
+    if (empBranch && empBranch.id !== branch.id && !isSupportShift) throw Errors.forbidden(`Nhân sự thuộc chi nhánh "${empBranch.name}", không được phép điểm danh Vào/Ra ca tại chi nhánh khác ("${branch.name}")`);
     if (body.enforce_shift_state || isEmployeeRole(request.auth!.user.role)) {
       const matchAssignEmp = (eid: string) => eid === assign.employee_id || eid === empRecord.id || eid === empRecord.employee_code;
       const blockingAdj = ctx.db.attendanceAdjustments.find((a) =>
@@ -127,7 +128,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       const myEmp = ctx.db.employees.find((e) => e.user_id === user.id || Boolean(user.employee_id && (e.employee_code === user.employee_id || e.id === user.employee_id)));
       if (!myEmp || (assign.employee_id !== myEmp.id && assign.employee_id !== myEmp.employee_code)) throw Errors.forbidden('Ca làm việc này không thuộc lịch đăng ký / phân công của bạn, không được phép điểm danh');
       const myBranch = findBranch(myEmp.branch_id);
-      if (!myBranch || myBranch.id !== branch.id) throw Errors.forbidden(`Bạn thuộc chi nhánh "${myBranch?.name ?? myEmp.branch_id}", chỉ được phép Vào/Ra ca tại đúng chi nhánh trực thuộc của mình`);
+      if ((!myBranch || myBranch.id !== branch.id) && !isSupportShift) throw Errors.forbidden(`Bạn thuộc chi nhánh "${myBranch?.name ?? myEmp.branch_id}", chỉ được phép Vào/Ra ca tại đúng chi nhánh trực thuộc của mình`);
       const { todayStr, nowHm } = getVnNowDateAndHm(), win = getShiftCheckoutWindow(assign.work_date, assign.start_at || '07:00', assign.end_at || '12:00', todayStr, nowHm);
       const existingEvents = ctx.db.attendanceEvents.filter((e) => e.assignment_id === assign.id);
       const hasIn = existingEvents.some((e) => e.type === 'CHECK_IN'), hasOut = existingEvents.some((e) => e.type === 'CHECK_OUT');

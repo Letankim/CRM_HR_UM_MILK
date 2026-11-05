@@ -27,70 +27,50 @@ const renderPersonCell = (name: string, isSelf: boolean, color: 'blue' | 'cyan')
 );
 
 /** Hook dùng chung mở popup phản hồi Đồng ý / Từ chối nhận hoặc đổi ca của người nhận (peer). */
-export function usePeerSwapDecision({ empId, empCode, onSuccess }: { empId: string; empCode: string; onSuccess: () => void }) {
+export function usePeerSwapDecision({ empId, empCode, canSwapShift = true, onSuccess }: { empId: string; empCode: string; canSwapShift?: boolean; onSuccess: () => void }) {
   const { message } = App.useApp();
   const { promptDecision, decisionModalElement } = useWorkflowDecisionModal();
   const isPeer = useCallback((r: Row) => r.peer_id === empId || r.peerCode === empCode, [empId, empCode]);
-  const canClaim = useCallback((r: Row) => r.kind === 'HR_DISPATCH' && r.status === 'PENDING_PEER' && r.requester_id !== empId && r.requesterCode !== empCode && !getShiftExpiryInfo(r).isPassed, [empId, empCode]);
+  const canClaim = useCallback((r: Row) => canSwapShift && r.kind === 'HR_DISPATCH' && r.status === 'PENDING_PEER' && r.requester_id !== empId && r.requesterCode !== empCode && !getShiftExpiryInfo(r).isPassed, [canSwapShift, empId, empCode]);
   const canRespond = useCallback((r: Row) => (r.status === 'PENDING_PEER' && isPeer(r)) || canClaim(r), [isPeer, canClaim]);
 
   const peerRespondMut = useMutation({
     mutationFn: async (vars: { rows: Row[]; accept: boolean; note: string; clear?: () => void }) => {
-      for (const r of vars.rows) {
-        await api.post(`/admin/shift-swaps/${String(r.id)}/peer-respond`, {
-          version: Number(r.version), accept: vars.accept, peer_note: vars.note,
-        });
-      }
+      for (const r of vars.rows) await api.post(`/admin/shift-swaps/${String(r.id)}/peer-respond`, { version: Number(r.version), accept: vars.accept, peer_note: vars.note });
       return vars;
     },
     onSuccess: (vars) => {
       const isDispatch = vars.rows.some((r) => r.kind === 'HR_DISPATCH');
-      message.success(
-        vars.accept
-          ? isDispatch
-            ? 'Đã nhận ca điều phối khẩn cấp (+30.000đ). Lịch làm việc và bảng lương của bạn đã được cập nhật ngay lập tức.'
-            : 'Đã xác nhận đồng ý. Lịch được cập nhật ngay hoặc chuyển HR duyệt nếu người nhận vượt 2 ca/ngày.'
-          : isDispatch
-          ? 'Đã từ chối ca điều phối khẩn cấp'
-          : 'Đã từ chối yêu cầu nhường / đổi ca',
-      );
-      vars.clear?.();
-      onSuccess();
+      message.success(vars.accept
+        ? (isDispatch ? 'Đã nhận ca điều phối khẩn cấp (+30.000đ). Lịch làm việc và bảng lương của bạn đã được cập nhật ngay lập tức.' : 'Đã xác nhận đồng ý. Lịch được cập nhật ngay hoặc chuyển HR duyệt nếu người nhận vượt 2 ca/ngày.')
+        : (isDispatch ? 'Đã từ chối ca điều phối khẩn cấp' : 'Đã từ chối yêu cầu nhường / đổi ca'));
+      vars.clear?.(); onSuccess();
     },
-    onError: (e) => {
-      message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại');
-      onSuccess();
-    },
+    onError: (e) => { message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại'); onSuccess(); },
   });
 
   const promptRespond = useCallback((rows: Row[], accept: boolean, clear?: () => void) => {
     const eligible = rows.filter(canRespond);
     if (eligible.length === 0) return;
     const single = eligible.length === 1 ? eligible[0] : null;
-    const code = single ? String(single.swap_code || '') : '';
-    const requester = single ? String(single.requesterName || 'đồng nghiệp') : '';
-    const isSwap = single ? single.kind === 'SWAP' : false;
-    const isDispatch = single ? single.kind === 'HR_DISPATCH' : false;
+    const code = single ? String(single.swap_code || '') : '', requester = single ? String(single.requesterName || 'đồng nghiệp') : '';
+    const isSwap = single ? single.kind === 'SWAP' : false, isDispatch = single ? single.kind === 'HR_DISPATCH' : false;
     if (accept) {
       if (isDispatch && single) {
         const exp = getShiftExpiryInfo(single);
-        if (exp.isPassed) {
-          message.warning(`Ca làm việc này đã quá hạn nhận ca (${exp.label}), không thể nhận ca nữa`);
-          return;
-        }
+        if (exp.isPassed) { message.warning(`Ca làm việc này đã quá hạn nhận ca (${exp.label}), không thể nhận ca nữa`); return; }
       }
       promptDecision({
         title: single ? (isDispatch ? `Nhận ca điều phối khẩn cấp (+30.000đ) — ${code}` : `${isSwap ? 'Đồng ý đổi ca 2 chiều' : 'Đồng ý nhận ca'} — ${code}`) : `Xác nhận nhận ${eligible.length} ca đã chọn`,
-        subtitle: single ? (isDispatch ? `Cần nhân sự làm thêm / làm thay · Ngày ${single.from_work_date ? dayjs(String(single.from_work_date)).format('DD/MM/YYYY') : '—'} · ${cleanShiftName(single.shiftLabel || single.from_shift_code)} · Phụ cấp: +30.000đ/ca` : `Yêu cầu từ ${requester} · Ngày ${single.from_work_date ? dayjs(String(single.from_work_date)).format('DD/MM/YYYY') : '—'} · ${cleanShiftName(single.shiftLabel || single.from_shift_code)}`) : undefined,
+        subtitle: single ? (isDispatch ? `Cần nhân sự làm thay · Ngày ${single.from_work_date ? dayjs(String(single.from_work_date)).format('DD/MM/YYYY') : '—'} · ${cleanShiftName(single.shiftLabel || single.from_shift_code)} · Phụ cấp: +30.000đ/ca` : `Yêu cầu từ ${requester} · Ngày ${single.from_work_date ? dayjs(String(single.from_work_date)).format('DD/MM/YYYY') : '—'} · ${cleanShiftName(single.shiftLabel || single.from_shift_code)}`) : undefined,
         alertNode: isDispatch ? (
-          <Alert type="success" showIcon message="Phụ cấp thưởng điều phối khẩn cấp: +30.000đ" description="Bạn đang nhận làm thêm ca điều phối khẩn cấp từ Cửa hàng. Khi bấm xác nhận, hệ thống sẽ tạo ca mới trên lịch làm việc của bạn (không làm mất ca của đồng nghiệp) và tự động cộng +30.000đ vào kỳ lương. Lưu ý: Bạn không được có ca trùng khung giờ ngày này." style={{ marginBottom: 12 }} />
+          <Alert type="success" showIcon message="Phụ cấp thưởng điều phối khẩn cấp: +30.000đ" description="Khi bấm xác nhận nhận ca, hệ thống sẽ thay thế trực tiếp bạn vào ca làm việc này trên lịch chính thức và tự động cộng +30.000đ vào kỳ lương sau khi hoàn thành ca." style={{ marginBottom: 12 }} />
         ) : renderWorkflowDecisionAlert('swap', eligible),
         noteLabel: isDispatch ? 'Ghi chú xác nhận nhận ca' : 'Ghi chú phản hồi cho đồng nghiệp',
         placeholder: isDispatch ? 'VD: Tôi sẵn sàng nhận ca này...' : 'Nhập ghi chú xác nhận (không bắt buộc)...',
-        required: false,
-        maxLength: 200,
+        required: false, maxLength: 200,
         suggestions: isDispatch ? ['Tôi sẵn sàng nhận làm ca này', 'Đã sắp xếp thời gian để hỗ trợ chi nhánh'] : ['Đồng ý nhận ca hỗ trợ đồng nghiệp', 'Đã sắp xếp lịch cá nhân, đồng ý đổi ca'],
-        okText: single ? (isDispatch ? 'Nhận ca làm thêm (+30k)' : isSwap ? 'Đồng ý đổi ca' : 'Đồng ý nhận ca') : `Đồng ý (${eligible.length})`,
+        okText: single ? (isDispatch ? 'Nhận ca (+30k)' : isSwap ? 'Đồng ý đổi ca' : 'Đồng ý nhận ca') : `Đồng ý (${eligible.length})`,
         onConfirm: async (note) => { await peerRespondMut.mutateAsync({ rows: eligible, accept: true, note, clear }); },
       });
       return;
@@ -100,21 +80,18 @@ export function usePeerSwapDecision({ empId, empCode, onSuccess }: { empId: stri
       subtitle: single ? `Yêu cầu từ ${requester}` : undefined,
       noteLabel: isDispatch ? 'Lý do từ chối nhận ca điều phối' : 'Lý do từ chối nhận / đổi ca',
       placeholder: 'Nhập rõ lý do từ chối để đồng nghiệp nắm thông tin sắp xếp lại...',
-      required: true,
-      requiredMessage: isDispatch ? 'Vui lòng nhập lý do từ chối nhận ca điều phối' : 'Vui lòng nhập lý do từ chối yêu cầu nhường / đổi ca',
-      maxLength: 200,
-      danger: true,
-      suggestions: ['Bận lịch cá nhân, không thể nhận ca này', 'Đã có kế hoạch khác trùng khung giờ ca'],
+      required: true, requiredMessage: isDispatch ? 'Vui lòng nhập lý do từ chối nhận ca điều phối' : 'Vui lòng nhập lý do từ chối yêu cầu nhường / đổi ca',
+      maxLength: 200, danger: true, suggestions: ['Bận lịch cá nhân, không thể nhận ca này', 'Đã có kế hoạch khác trùng khung giờ ca'],
       okText: single ? 'Xác nhận từ chối' : `Từ chối (${eligible.length})`,
       onConfirm: async (note) => { await peerRespondMut.mutateAsync({ rows: eligible, accept: false, note, clear }); },
     });
-  }, [canRespond, peerRespondMut, promptDecision]);
+  }, [canRespond, message, peerRespondMut, promptDecision]);
 
   return { isPeer, canClaim, canRespond, promptRespond, responding: peerRespondMut.isPending, decisionModalElement };
 }
 
 export interface EmployeeSwapsTableProps {
-  swaps: Row[]; empId: string; empCode: string; refreshing?: boolean;
+  swaps: Row[]; empId: string; empCode: string; canSwapShift?: boolean; refreshing?: boolean;
   onViewDetail: (record: Row) => void; onRefresh: () => void;
   onPeerRespond?: (rows: Row[], accept: boolean, clear?: () => void) => void;
   peerResponding?: boolean;
@@ -122,11 +99,11 @@ export interface EmployeeSwapsTableProps {
 
 /** Bảng yêu cầu Nhường ca / Đổi ca 2 chiều của chính nhân viên (người gửi hoặc người nhận). */
 export function EmployeeSwapsTable({
-  swaps, empId, empCode, refreshing = false, onViewDetail, onRefresh, onPeerRespond, peerResponding,
+  swaps, empId, empCode, canSwapShift = true, refreshing = false, onViewDetail, onRefresh, onPeerRespond, peerResponding,
 }: EmployeeSwapsTableProps) {
   const { message, modal } = App.useApp();
   const pag = useClientPagination(10, 'yêu cầu');
-  const fallbackPeer = usePeerSwapDecision({ empId, empCode, onSuccess: onRefresh });
+  const fallbackPeer = usePeerSwapDecision({ empId, empCode, canSwapShift, onSuccess: onRefresh });
   const isPeer = fallbackPeer.isPeer;
   const isRequester = (r: Row) => r.requester_id === empId || r.requesterCode === empCode;
   const canRespond = fallbackPeer.canRespond;
