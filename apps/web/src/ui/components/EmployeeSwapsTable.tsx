@@ -15,7 +15,7 @@ import { cleanShiftName } from './self-attendance-shared';
 import { renderSwapAllowanceTag } from './ShiftSwapApproveModal';
 import { useWorkflowDecisionModal } from './WorkflowDecisionModal';
 import { exportSwapsExcel } from './workflow-bulk-helpers';
-import { renderWorkflowDecisionAlert, renderWorkflowShiftStateTag } from './workflow-shift-warning';
+import { getShiftExpiryInfo, renderWorkflowDecisionAlert, renderWorkflowShiftStateTag } from './workflow-shift-warning';
 
 type Row = Record<string, unknown>;
 
@@ -24,7 +24,7 @@ export function usePeerSwapDecision({ empId, empCode, onSuccess }: { empId: stri
   const { message } = App.useApp();
   const { promptDecision, decisionModalElement } = useWorkflowDecisionModal();
   const isPeer = useCallback((r: Row) => r.peer_id === empId || r.peerCode === empCode, [empId, empCode]);
-  const canClaim = useCallback((r: Row) => r.kind === 'HR_DISPATCH' && r.status === 'PENDING_PEER' && r.requester_id !== empId && r.requesterCode !== empCode, [empId, empCode]);
+  const canClaim = useCallback((r: Row) => r.kind === 'HR_DISPATCH' && r.status === 'PENDING_PEER' && r.requester_id !== empId && r.requesterCode !== empCode && !getShiftExpiryInfo(r).isPassed, [empId, empCode]);
   const canRespond = useCallback((r: Row) => (r.status === 'PENDING_PEER' && isPeer(r)) || canClaim(r), [isPeer, canClaim]);
 
   const peerRespondMut = useMutation({
@@ -37,17 +37,23 @@ export function usePeerSwapDecision({ empId, empCode, onSuccess }: { empId: stri
       return vars;
     },
     onSuccess: (vars) => {
+      const isDispatch = vars.rows.some((r) => r.kind === 'HR_DISPATCH');
       message.success(
-        vars.rows.some((r) => r.kind === 'HR_DISPATCH')
-          ? 'Đã nhận ca điều phối khẩn cấp (+30.000đ). Lịch làm việc và bảng lương của bạn đã được cập nhật ngay lập tức.'
-          : vars.accept
-          ? 'Đã xác nhận đồng ý. Lịch được cập nhật ngay hoặc chuyển HR duyệt nếu người nhận vượt 2 ca/ngày.'
+        vars.accept
+          ? isDispatch
+            ? 'Đã nhận ca điều phối khẩn cấp (+30.000đ). Lịch làm việc và bảng lương của bạn đã được cập nhật ngay lập tức.'
+            : 'Đã xác nhận đồng ý. Lịch được cập nhật ngay hoặc chuyển HR duyệt nếu người nhận vượt 2 ca/ngày.'
+          : isDispatch
+          ? 'Đã từ chối ca điều phối khẩn cấp'
           : 'Đã từ chối yêu cầu nhường / đổi ca',
       );
       vars.clear?.();
       onSuccess();
     },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại'),
+    onError: (e) => {
+      message.error(e instanceof ApiClientError ? e.message : 'Thao tác thất bại');
+      onSuccess();
+    },
   });
 
   const promptRespond = useCallback((rows: Row[], accept: boolean, clear?: () => void) => {
@@ -59,6 +65,13 @@ export function usePeerSwapDecision({ empId, empCode, onSuccess }: { empId: stri
     const isSwap = single ? single.kind === 'SWAP' : false;
     const isDispatch = single ? single.kind === 'HR_DISPATCH' : false;
     if (accept) {
+      if (isDispatch && single) {
+        const exp = getShiftExpiryInfo(single);
+        if (exp.isPassed) {
+          message.warning(`Ca làm việc này đã quá hạn nhận ca (${exp.label}), không thể nhận ca nữa`);
+          return;
+        }
+      }
       promptDecision({
         title: single ? (isDispatch ? `Nhận ca điều phối khẩn cấp (+30.000đ) — ${code}` : `${isSwap ? 'Đồng ý đổi ca 2 chiều' : 'Đồng ý nhận ca'} — ${code}`) : `Xác nhận nhận ${eligible.length} ca đã chọn`,
         subtitle: single ? (isDispatch ? `Cần nhân sự làm thêm / làm thay · Ngày ${single.from_work_date ? dayjs(String(single.from_work_date)).format('DD/MM/YYYY') : '—'} · ${cleanShiftName(single.shiftLabel || single.from_shift_code)} · Phụ cấp: +30.000đ/ca` : `Yêu cầu từ ${requester} · Ngày ${single.from_work_date ? dayjs(String(single.from_work_date)).format('DD/MM/YYYY') : '—'} · ${cleanShiftName(single.shiftLabel || single.from_shift_code)}`) : undefined,
@@ -76,12 +89,12 @@ export function usePeerSwapDecision({ empId, empCode, onSuccess }: { empId: stri
       return;
     }
     promptDecision({
-      title: single ? `Từ chối yêu cầu nhường / đổi ca — ${code}` : `Từ chối ${eligible.length} yêu cầu nhường / đổi ca đã chọn`,
+      title: single ? (isDispatch ? `Từ chối ca điều phối khẩn cấp — ${code}` : `Từ chối yêu cầu nhường / đổi ca — ${code}`) : `Từ chối ${eligible.length} yêu cầu nhường / đổi ca đã chọn`,
       subtitle: single ? `Yêu cầu từ ${requester}` : undefined,
-      noteLabel: 'Lý do từ chối nhận / đổi ca',
+      noteLabel: isDispatch ? 'Lý do từ chối nhận ca điều phối' : 'Lý do từ chối nhận / đổi ca',
       placeholder: 'Nhập rõ lý do từ chối để đồng nghiệp nắm thông tin sắp xếp lại...',
       required: true,
-      requiredMessage: 'Vui lòng nhập lý do từ chối yêu cầu nhường / đổi ca',
+      requiredMessage: isDispatch ? 'Vui lòng nhập lý do từ chối nhận ca điều phối' : 'Vui lòng nhập lý do từ chối yêu cầu nhường / đổi ca',
       maxLength: 200,
       danger: true,
       suggestions: ['Bận lịch cá nhân, không thể nhận ca này', 'Đã có kế hoạch khác trùng khung giờ ca'],
@@ -168,6 +181,8 @@ export function EmployeeSwapsTable({
             title: 'Người nhận', width: 180, ellipsis: true,
             render: (_, r) => {
               if (r.kind === 'HR_DISPATCH' && (!r.peer_id || r.status === 'PENDING_PEER')) {
+                const exp = getShiftExpiryInfo(r);
+                if (exp.isPassed) return <Tag color="default" style={{ margin: 0 }}>Quá hạn ({exp.label})</Tag>;
                 return fallbackPeer.canClaim(r)
                   ? <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={busy} onClick={(e) => { e.stopPropagation(); handleRespond([r], true); }}>Nhận ca (+30k)</Button>
                   : <Tag color="gold" style={{ margin: 0 }}>Đang mở toàn chi nhánh (+30k)</Tag>;

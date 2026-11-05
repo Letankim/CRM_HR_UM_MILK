@@ -136,12 +136,19 @@ export function isShiftTimeOverlapping(s1: string, e1: string, s2: string, e2: s
 export async function executeHrDispatchClaim(
   ctx: AppContext, swap: ShiftSwap, receiver: Employee, note: string, actorId: string,
 ): Promise<ShiftSwap> {
+  const current = ctx.db.shiftSwaps.get(swap.id);
+  if (!current || current.status !== 'PENDING_PEER') {
+    throw Errors.badRequest('Ca điều phối khẩn cấp này đã được nhân sự khác nhận trước đó, phiếu đã được đóng');
+  }
   const from = swap.from_assignment_id ? ctx.db.shiftAssignments.get(swap.from_assignment_id) : undefined;
   const branchId = from?.branch_id || swap.branch_id, workDate = from?.work_date || swap.from_work_date, shiftCode = from?.shift_code || swap.from_shift_code;
   if (!branchId || !workDate || !shiftCode) throw Errors.badRequest('Thông tin ca điều phối không hợp lệ');
   const spec = resolveShiftSpec(ctx, shiftCode, from, workDate);
   const today = dayjs().tz(APP_TZ).format('YYYY-MM-DD'), nowHm = dayjs().tz(APP_TZ).format('HH:mm');
-  if (isShiftTimePassed(workDate, spec.endAt, today, nowHm)) throw Errors.badRequest(`Ca làm việc này đã kết thúc vào lúc ${spec.endAt}, không thể nhận ca nữa`);
+  if (isShiftTimePassed(workDate, spec.endAt, today, nowHm)) {
+    const formattedDate = dayjs(workDate).format('DD/MM/YYYY');
+    throw Errors.badRequest(`Ca làm việc này đã quá hạn nhận ca (kết thúc lúc ${spec.endAt} ngày ${formattedDate}), không thể nhận ca nữa`);
+  }
   const conflict = ctx.db.shiftAssignments.find((a) => {
     if (a.is_deleted || a.status === 'ABSENT' || a.status === 'ON_LEAVE' || a.day_type === 'OFF') return false;
     const isReceiver = a.employee_id === receiver.id || a.employee_id === receiver.employee_code;

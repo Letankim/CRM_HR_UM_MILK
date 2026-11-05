@@ -212,7 +212,7 @@ export function emitScheduleRealtime(ctx: AppContext, event: string, opts: { bra
       rt.toTargets({ branchId, roles: alertRoles, userIds: alertUserIds, excludeUserId: actorId }, event, { kind, branchId, message, actorId });
       rt.toTargets({ branchId, roles: alertRoles, userIds: alertUserIds, excludeUserId: actorId }, 'notification:new', { kind, branchId, title: message, actorId });
     }
-    const silentRoles = (['ADMIN', 'HR', 'STORE', 'FINANCE'] as Role[]).filter((r) => !message || !alertRoles.includes(r));
+    const silentRoles = (['ADMIN', 'HR', 'STORE', 'FINANCE', 'CHINH_THUC', 'THU_VIEC'] as Role[]).filter((r) => !message || !alertRoles.includes(r));
     rt.toTargets({ branchId, roles: silentRoles, userIds: message ? [] : Array.from(userIds) }, event, { kind, branchId, message: '', actorId });
   }, 120);
   if (typeof timer.unref === 'function') timer.unref();

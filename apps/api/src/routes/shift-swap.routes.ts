@@ -125,15 +125,16 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
 
   const handlePeerOrClaim = async (request: Parameters<typeof auditContext>[0] & { params: unknown; body: unknown }) => {
     const { id } = request.params as { id: string }, body = zPeerRespondBody.parse(request.body ?? {}), before = ctx.db.shiftSwaps.get(id), actor = request.auth!.user;
-    if (!before || before.status !== 'PENDING_PEER') throw !before ? Errors.notFound('Yêu cầu đổi / nhường ca', id) : Errors.badRequest('Yêu cầu này đã được xử lý trước đó');
+    if (!before || before.status !== 'PENDING_PEER') throw !before ? Errors.notFound('Yêu cầu đổi / nhường ca', id) : Errors.badRequest('Ca điều phối hoặc yêu cầu đổi ca này đã được xử lý trước đó');
     const ver = body.version ?? before.version;
 
     if (before.kind === 'HR_DISPATCH' || before.kind === 'HR_SUPPORT') {
       const receiver = (body.peer_id ? findEmp(ctx, body.peer_id) : undefined) ?? findLinkedEmployeeForUser(actor, ctx) ?? (before.peer_id ? findEmp(ctx, before.peer_id) : undefined);
       if (!receiver) throw Errors.badRequest('Không xác định được nhân sự nhận ca điều phối');
       if (!body.accept) {
-        if (before.kind === 'HR_DISPATCH' && !before.peer_id) return sendSuccess(request, 'Đã bỏ qua lệnh điều phối, lệnh vẫn mở cho đồng nghiệp khác trong chi nhánh', enrichSwapKindLabel(ctx, before));
+        if (before.kind === 'HR_DISPATCH' && !before.peer_id) return sendSuccess(request, 'Đã bỏ qua lệnh điều phối (lệnh vẫn mở cho đồng nghiệp khác trong chi nhánh)', enrichSwapKindLabel(ctx, before));
         const declined = await ctx.db.shiftSwaps.update(id, ver, { status: 'PEER_DECLINED', peer_responded_at: nowIso(), peer_note: body.peer_note }, actor.id);
+        emitScheduleRealtime(ctx, SocketEvents.SWAP_UPDATED, { branchId: before.branch_id, employeeIds: [receiver.id, before.requester_id].filter(Boolean), kind: 'SWAP_PEER_RESPONDED', message: `Nhân viên ${receiver.full_name} đã từ chối ca điều phối ${before.swap_code}`, actorId: actor.id });
         return sendSuccess(request, 'Đã từ chối nhận ca điều phối', enrichSwapKindLabel(ctx, declined));
       }
       if (before.kind === 'HR_DISPATCH') {

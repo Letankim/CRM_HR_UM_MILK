@@ -141,6 +141,15 @@ export function renderWorkflowDecisionAlert(kind: WorkflowConfirmKind, rows: Row
   );
 }
 
+export function getShiftExpiryInfo(r: RowRec): { isPassed: boolean; label: string } {
+  const workDate = String(r.from_work_date || '');
+  const endAt = String(r.endAt || (r.shiftTimeRange ? String(r.shiftTimeRange).split('–')[1]?.trim() : '') || '22:30');
+  const todayYmd = dayjs().format('YYYY-MM-DD'), nowHm = dayjs().format('HH:mm');
+  const isPassed = Boolean(workDate && (workDate < todayYmd || (workDate === todayYmd && endAt && nowHm >= endAt)));
+  const formattedDate = workDate ? dayjs(workDate).format('DD/MM/YYYY') : '—';
+  return { isPassed, label: `kết thúc lúc ${endAt} ngày ${formattedDate}` };
+}
+
 export function confirmWorkflowShiftOverride(modal: ModalHookAPI, kind: WorkflowConfirmKind, rows: RowRec[], onConfirm: () => void): void {
   const alertNode = renderWorkflowDecisionAlert(kind, rows);
   if (!alertNode) { onConfirm(); return; }
