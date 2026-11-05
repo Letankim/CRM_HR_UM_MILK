@@ -44,7 +44,7 @@ export function registerShiftAttendanceDetailRoute(app: FastifyInstance, ctx: Ap
         ctx.db.attendanceEvents.filter((e) => e.assignment_id !== assign.id && isSameEmp(e.employee_id) && e.work_date === assign.work_date && e.shift_code === assign.shift_code),
       );
 
-      const inEv = directEvents.find((e) => e.type === 'CHECK_IN') ?? fallbackEvents.find((e) => e.type === 'CHECK_IN') ?? null;
+      const rawInEv = directEvents.find((e) => e.type === 'CHECK_IN') ?? fallbackEvents.find((e) => e.type === 'CHECK_IN') ?? null;
       const rawOutEv = directEvents.find((e) => e.type === 'CHECK_OUT') ?? fallbackEvents.find((e) => e.type === 'CHECK_OUT') ?? null;
 
       const matchedAdjs = ctx.db.attendanceAdjustments.filter(
@@ -57,7 +57,24 @@ export function registerShiftAttendanceDetailRoute(app: FastifyInstance, ctx: Ap
       const tpl = findBranchShiftTemplate(ctx, assign.shift_code, branchId);
       const startAt = assign.start_at || tpl?.start_time || '07:00';
       const endAt = assign.end_at || tpl?.end_time || '12:00';
-      const isCompleted = assign.status === 'COMPLETED' || Boolean(inEv && rawOutEv) || Boolean(approvedCompletionAdj);
+      const isCompleted = assign.status === 'COMPLETED' || Boolean(rawInEv && rawOutEv) || Boolean(approvedCompletionAdj);
+
+      const inEv: AttendanceEvent | null = rawInEv ?? (approvedCompletionAdj?.punch_type === 'FULL_SHIFT'
+        ? {
+            id: `${assign.id}_auto_in`, assignment_id: assign.id, employee_id: emp?.id ?? assign.employee_id, branch_id: branchId,
+            work_date: assign.work_date, shift_code: assign.shift_code, type: 'CHECK_IN', scheduled_time: startAt,
+            server_time: `${assign.work_date}T${approvedCompletionAdj.requested_check_in_at || startAt}:00+07:00`,
+            lat: 0, lng: 0, accuracy_m: 0, distance_m: 0, within_radius: false, allowed_radius_m: 100, gps_status: 'OUT_OF_RADIUS',
+            late_minutes: 0, early_leave_minutes: 0, late_fine_tier: 'NONE', late_fine_vnd: 0, pink_ratio_percent: 0, uniform_verified: true,
+            photo_id: '', photo_sha256: '', photo_drive_file_id: approvedCompletionAdj.evidence_file_id || '',
+            device_info: 'Phiếu bổ sung công (HR phê duyệt minh chứng)', ip_address: '', result: 'VALID', anomaly_flags_json: '["HR_APPROVED_EVIDENCE"]',
+            idempotency_key: `ADJ_AUTO_IN_${approvedCompletionAdj.id}`,
+            note: `Xác nhận giờ Vào ca được bù bởi HR theo phiếu bổ sung công ${approvedCompletionAdj.adjustment_code}`,
+            created_at: approvedCompletionAdj.decided_at || assign.updated_at, created_by: approvedCompletionAdj.decided_by || 'system',
+            updated_at: approvedCompletionAdj.decided_at || assign.updated_at, updated_by: approvedCompletionAdj.decided_by || 'system',
+            version: 1, is_deleted: false,
+          }
+        : null);
 
       const outEv: AttendanceEvent | null = rawOutEv ?? (isCompleted && inEv
         ? {
@@ -70,7 +87,7 @@ export function registerShiftAttendanceDetailRoute(app: FastifyInstance, ctx: Ap
             early_leave_minutes: 0,
             photo_id: '',
             photo_drive_file_id: approvedCompletionAdj?.evidence_file_id || '',
-            note: approvedCompletionAdj ? `Xác nhận giờ Ra ca theo phiếu bổ sung công ${approvedCompletionAdj.adjustment_code}` : 'Đã hoàn thành ca (Xác nhận bổ sung giờ ra ca)',
+            note: approvedCompletionAdj ? `Xác nhận giờ Ra ca được bù bởi HR theo phiếu bổ sung công ${approvedCompletionAdj.adjustment_code}` : 'Đã hoàn thành ca (Xác nhận bổ sung giờ ra ca)',
           }
         : null);
 

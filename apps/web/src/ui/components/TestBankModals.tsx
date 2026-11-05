@@ -184,16 +184,16 @@ export function TestDetailDrawer({
       >
         {viewingAssignment && (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Descriptions size="small" bordered column={2}>
-              <Descriptions.Item label="Mã đợt giao bài"><Tag color="geekblue">{String(viewingAssignment.assignment_code)}</Tag></Descriptions.Item>
+            <Descriptions size="small" bordered column={2} styles={{ label: { whiteSpace: 'nowrap', width: 145 }, content: { minWidth: 140 } }}>
+              <Descriptions.Item label="Bộ đề kiểm tra" span={2}><strong>{String(viewingAssignment.testTitle)}</strong></Descriptions.Item>
+              <Descriptions.Item label="Mã đợt giao bài"><Tag color="geekblue" style={{ margin: 0, whiteSpace: 'nowrap' }}>{String(viewingAssignment.assignment_code)}</Tag></Descriptions.Item>
               <Descriptions.Item label="Trạng thái"><StatusTag value={resolveAsgStatus(viewingAssignment)} /></Descriptions.Item>
               <Descriptions.Item label="Nhân sự nhận đề"><strong>{String(viewingAssignment.employeeName)}</strong></Descriptions.Item>
-              <Descriptions.Item label="Số lượt đã thi / Tối đa"><Tag color="blue">{String(viewingAssignment.attempts_used ?? 0)} / {String(viewingAssignment.max_attempts ?? 3)} lần</Tag></Descriptions.Item>
-              <Descriptions.Item label="Bộ đề kiểm tra">{String(viewingAssignment.testTitle)}</Descriptions.Item>
-              <Descriptions.Item label="Số câu hỏi / đề"><Tag color="purple" style={{ margin: 0 }}>{String(viewingAssignment.examSampleSize ?? viewingAssignment.exam_sample_size ?? 25)} / {String(viewingAssignment.bankQuestionsCount ?? 120)} câu</Tag></Descriptions.Item>
+              <Descriptions.Item label="Số lượt đã thi / Tối đa"><Tag color="blue" style={{ margin: 0, whiteSpace: 'nowrap' }}>{String(viewingAssignment.attempts_used ?? 0)} / {String(viewingAssignment.max_attempts ?? 3)} lần</Tag></Descriptions.Item>
+              <Descriptions.Item label="Số câu hỏi / đề"><Tag color="purple" style={{ margin: 0, whiteSpace: 'nowrap' }}>{String(viewingAssignment.examSampleSize ?? viewingAssignment.exam_sample_size ?? 25)} / {String(viewingAssignment.bankQuestionsCount ?? 120)} câu</Tag></Descriptions.Item>
+              <Descriptions.Item label="Điểm cao nhất đạt được"><Tag color={Number(viewingAssignment.best_score_percent ?? 0) >= 80 ? 'green' : 'red'} style={{ margin: 0, fontWeight: 700, whiteSpace: 'nowrap' }}>{String(viewingAssignment.best_score_percent ?? 0)}%</Tag></Descriptions.Item>
               <Descriptions.Item label="Thời hạn nộp bài">{viewingAssignment.close_at ? dayjs(String(viewingAssignment.close_at)).format('HH:mm DD/MM/YYYY') : '—'}</Descriptions.Item>
-              <Descriptions.Item label="Điểm cao nhất đạt được"><Tag color={Number(viewingAssignment.best_score_percent ?? 0) >= 80 ? 'green' : 'default'}>{String(viewingAssignment.best_score_percent ?? 0)}%</Tag></Descriptions.Item>
-              <Descriptions.Item label="Ghi chú hướng dẫn" span={2}>{String(viewingAssignment.note || '—')}</Descriptions.Item>
+              <Descriptions.Item label="Ghi chú hướng dẫn">{String(viewingAssignment.note || '—')}</Descriptions.Item>
             </Descriptions>
 
             <div>

@@ -37,10 +37,14 @@ export function calculateHaversineMeters(lat1: number, lng1: number, lat2: numbe
   return Math.round(6_371_000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-export function buildCheckInPhotoUrl(rawPhotoData: string, employeeName: string, kindLabel: string, checkTimeFormatted: string, shiftLabel: string, distanceM: number): string {
+export function buildCheckInPhotoUrl(rawPhotoData: string, employeeName: string, kindLabel: string, checkTimeFormatted: string, shiftLabel: string, distanceM: number, isHrCompensated = false, gpsStatusLabel = ''): string {
   if (rawPhotoData && rawPhotoData.startsWith('data:image/')) return rawPhotoData;
   if (rawPhotoData && rawPhotoData !== 'photo_01' && rawPhotoData !== 'demo_camera_selfie') return `/api/attendance/photos/${encodeURIComponent(rawPhotoData)}`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320" viewBox="0 0 480 320"><rect width="480" height="320" fill="#0F172A"/><rect x="16" y="16" width="448" height="288" rx="4" fill="#1E293B" stroke="#334155" stroke-width="1.5"/><circle cx="240" cy="112" r="38" fill="#3B82F6" opacity="0.25"/><circle cx="240" cy="100" r="18" fill="#93C5FD"/><path d="M204 144 C204 124 276 124 276 144" fill="#93C5FD"/><rect x="28" y="28" width="136" height="26" rx="3" fill="#2563EB"/><text x="96" y="45" text-anchor="middle" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="12" font-weight="bold">CAMERA TRỰC TIẾP</text><rect x="28" y="210" width="424" height="78" rx="4" fill="#0F172A" opacity="0.88"/><text x="42" y="234" fill="#F8FAFC" font-family="Arial, sans-serif" font-size="14" font-weight="bold">${employeeName.replace(/[<>&"']/g, '')}</text><text x="42" y="255" fill="#93C5FD" font-family="Arial, sans-serif" font-size="12">${kindLabel} · ${shiftLabel} · ${checkTimeFormatted}</text><text x="42" y="275" fill="#4ADE80" font-family="Arial, sans-serif" font-size="12">Xác thực GPS: Cách cửa hàng ${distanceM}m (Hợp lệ)</text></svg>`;
+  const badgeText = isHrCompensated ? 'BÙ CÔNG BỞI HR' : 'CAMERA TRỰC TIẾP';
+  const badgeColor = isHrCompensated ? '#D97706' : '#2563EB';
+  const locColor = isHrCompensated ? '#FBBF24' : '#4ADE80';
+  const locText = isHrCompensated ? `Vị trí: ${gpsStatusLabel || 'Được bù bởi HR (Không chấm GPS tại quầy)'}` : `Xác thực GPS: Cách cửa hàng ${distanceM}m (Hợp lệ)`;
+  const svg = `<svg xmlns="http://www.w3.svg/2000/svg" width="480" height="320" viewBox="0 0 480 320"><rect width="480" height="320" fill="#0F172A"/><rect x="16" y="16" width="448" height="288" rx="4" fill="#1E293B" stroke="#334155" stroke-width="1.5"/><circle cx="240" cy="112" r="38" fill="#3B82F6" opacity="0.25"/><circle cx="240" cy="100" r="18" fill="#93C5FD"/><path d="M204 144 C204 124 276 124 276 144" fill="#93C5FD"/><rect x="28" y="28" width="136" height="26" rx="3" fill="${badgeColor}"/><text x="96" y="45" text-anchor="middle" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="12" font-weight="bold">${badgeText}</text><rect x="28" y="210" width="424" height="78" rx="4" fill="#0F172A" opacity="0.88"/><text x="42" y="234" fill="#F8FAFC" font-family="Arial, sans-serif" font-size="14" font-weight="bold">${employeeName.replace(/[<>&"']/g, '')}</text><text x="42" y="255" fill="#93C5FD" font-family="Arial, sans-serif" font-size="12">${kindLabel} · ${shiftLabel} · ${checkTimeFormatted}</text><text x="42" y="275" fill="${locColor}" font-family="Arial, sans-serif" font-size="12">${locText.replace(/[<>&"']/g, '')}</text></svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
@@ -59,10 +63,23 @@ export function mapAttendanceEvent(e: AttendanceEvent, ctx: AppContext) {
   const punc = describePunctuality(e.type, lateMins, earlyMins);
   const kindLabel = e.type === 'CHECK_IN' ? 'Vào ca' : 'Ra ca';
   const employeeName = emp ? `${emp.full_name} (${emp.employee_code})` : e.employee_id;
-  const photoUrl = buildCheckInPhotoUrl(e.photo_drive_file_id, employeeName, kindLabel, checkTimeFormatted, shiftLabel, e.distance_m);
+  const isSameEmp = (rawId: string) => rawId === e.employee_id || Boolean(emp && (rawId === emp.id || rawId === emp.employee_code));
+  const matchedAdj = ctx.db.attendanceAdjustments.find(
+    (a) => a.status === 'APPROVED' && (a.punch_type === 'FULL_SHIFT' || a.punch_type === e.type) && ((e.assignment_id && a.assignment_id === e.assignment_id) || (isSameEmp(a.employee_id) && a.work_date === e.work_date && a.shift_code === e.shift_code)),
+  );
+  const isHrCompensated = Boolean(
+    matchedAdj || e.idempotency_key?.startsWith('adj_') || e.id?.endsWith('_auto_out') || e.id?.endsWith('_auto_in')
+    || String(e.anomaly_flags_json || '').includes('HR_APPROVED_EVIDENCE') || String(e.device_info || '').includes('Phiếu bổ sung công')
+    || String(e.note || '').includes('HR duyệt') || String(e.note || '').includes('bù bởi HR') || String(e.note || '').includes('Xác nhận bổ sung') || String(e.note || '').includes('phiếu bổ sung'),
+  );
+  const gpsStatusLabel = isHrCompensated
+    ? (matchedAdj ? `Được bù bởi HR (${matchedAdj.adjustment_code})` : 'Được bù bởi HR')
+    : (e.within_radius !== false ? `Cách CH ${Number(e.distance_m ?? 0)}m · Hợp lệ` : `Ngoài bán kính (${Number(e.distance_m ?? 0)}m)`);
+  const photoUrl = buildCheckInPhotoUrl(e.photo_drive_file_id, employeeName, kindLabel, checkTimeFormatted, shiftLabel, e.distance_m, isHrCompensated, gpsStatusLabel);
 
   return {
-    ...e, branch_id: branch?.id ?? e.branch_id, kindLabel,
+    ...e, within_radius: isHrCompensated ? false : e.within_radius, isHrCompensated, gpsStatusLabel,
+    branch_id: branch?.id ?? e.branch_id, kindLabel,
     employeeId: emp?.id ?? e.employee_id, employeeCode: emp?.employee_code ?? e.employee_id, employeeName,
     branchName: branch?.name ?? 'Chi nhánh', branchLat: branch?.lat ?? null, branchLng: branch?.lng ?? null, branchRadiusM: branch?.radius_m ?? 100,
     shiftLabel, shiftTimeRange: `${startAt} – ${endAt}`, checkTimeHm, checkTimeFormatted, photoUrl, ...punc,

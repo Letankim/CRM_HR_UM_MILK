@@ -105,14 +105,25 @@ export function generateUmbm120Questions(): UmbmSopQuestion[] {
 
 export const UMBM_120_QUESTIONS: readonly UmbmSopQuestion[] = generateUmbm120Questions();
 
-export function pickRandomExamQuestions<T>(questions: readonly T[], count: number = SYSTEM_CONFIG.defaults.testQuestionsPerExam): T[] {
-  if (questions.length <= count) return [...questions];
-  const copy = [...questions];
-  for (let i = copy.length - 1; i > 0; i--) {
+function shuffleInPlace<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    const tmp = copy[i]!;
-    copy[i] = copy[j]!;
-    copy[j] = tmp;
+    const tmp = arr[i]!;
+    arr[i] = arr[j]!;
+    arr[j] = tmp;
   }
-  return copy.slice(0, count);
+  return arr;
+}
+
+export function pickRandomExamQuestions<T extends { id?: string }>(
+  questions: readonly T[],
+  count: number = SYSTEM_CONFIG.defaults.testQuestionsPerExam,
+  excludeIds?: ReadonlySet<string>,
+): T[] {
+  if (questions.length <= count) return shuffleInPlace([...questions]);
+  if (!excludeIds || excludeIds.size === 0) return shuffleInPlace([...questions]).slice(0, count);
+  const unseen = shuffleInPlace(questions.filter((q) => !q.id || !excludeIds.has(q.id)));
+  if (unseen.length >= count) return unseen.slice(0, count);
+  const seen = shuffleInPlace(questions.filter((q) => Boolean(q.id && excludeIds.has(q.id))));
+  return shuffleInPlace([...unseen, ...seen.slice(0, count - unseen.length)]);
 }

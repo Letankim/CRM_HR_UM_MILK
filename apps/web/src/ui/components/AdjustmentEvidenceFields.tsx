@@ -1,7 +1,8 @@
 'use client';
 
 import { Alert, Col, Form, Row, Select } from 'antd';
-import { ADJUSTMENT_PUNCH_TYPE_OPTIONS } from '@umbm/shared';
+import { ADJUSTMENT_PUNCH_TYPE_LABELS, ADJUSTMENT_PUNCH_TYPE_OPTIONS } from '@umbm/shared';
+import { useMe } from '@/lib/auth';
 import { EvidencePhotoUpload } from './EvidencePhotoUpload';
 
 export type AdjustmentPunchType = 'CHECK_IN' | 'CHECK_OUT' | 'FULL_SHIFT';
@@ -37,14 +38,23 @@ export function formatAdjustmentProposal(r?: Record<string, unknown> | null): st
   return `${Number(r.requested_hours || r.scheduledHours || r.scheduled_hours || 5)} giờ`;
 }
 
-/** Nhóm trường "Loại phiếu" + "Ảnh minh chứng" bắt buộc khi nhân viên gửi phiếu lỗi chấm công / bổ sung công. */
+/** Nhóm trường "Loại phiếu" + "Ảnh minh chứng chụp trực tiếp" bắt buộc khi nhân viên gửi phiếu lỗi chấm công / bổ sung công. */
 export function AdjustmentEvidenceFields({ evidenceRequired = true }: { evidenceRequired?: boolean }) {
+  const form = Form.useFormInstance();
+  const punchType = (Form.useWatch('punch_type', form) as AdjustmentPunchType | undefined) ?? 'FULL_SHIFT';
+  const workDate = (Form.useWatch('work_date', form) as string | undefined) ?? '';
+  const shiftCode = (Form.useWatch('shift_code', form) as string | undefined) ?? '';
+  const me = useMe().data?.user;
+  const punchLabel = ADJUSTMENT_PUNCH_TYPE_LABELS[punchType] || 'Bổ sung công';
+  const empLabel = me?.displayName || me?.username || 'Nhân sự';
+  const watermarkTitle = `${punchLabel.toUpperCase()} · ${empLabel}${workDate ? ` · Ca ngày ${workDate}` : ''}${shiftCode ? ` (${shiftCode})` : ''}`;
+
   return (
     <>
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
         message="HR duyệt minh chứng Vào ca -> ghi nhận Vào ca thành công; duyệt minh chứng Ra ca -> ca hoàn thành."
-        description="Bù công cả ca: HR duyệt thì ca được ghi nhận hoàn thành. Ảnh minh chứng nên thể hiện rõ thời điểm và địa điểm làm việc."
+        description="Bắt buộc chụp ảnh trực tiếp qua Camera (không tải ảnh từ thiết bị). Hệ thống tự động đóng dấu thời gian chụp và tọa độ GPS lên ảnh như điểm danh."
       />
       <Row gutter={12}>
         <Col xs={24} md={10}>
@@ -54,10 +64,10 @@ export function AdjustmentEvidenceFields({ evidenceRequired = true }: { evidence
         </Col>
         <Col xs={24} md={14}>
           <Form.Item
-            name="evidence_photo_base64" label="Ảnh minh chứng (Tải ảnh từ máy hoặc chụp ảnh)"
-            rules={evidenceRequired ? [{ required: true, message: 'Vui lòng tải ảnh từ máy hoặc chụp ảnh minh chứng' }] : []}
+            name="evidence_photo_base64" label="Ảnh minh chứng (Chụp ảnh trực tiếp)"
+            rules={evidenceRequired ? [{ required: true, message: 'Vui lòng mở Camera chụp ảnh minh chứng trực tiếp' }] : []}
           >
-            <EvidencePhotoUpload />
+            <EvidencePhotoUpload watermarkTitle={watermarkTitle} />
           </Form.Item>
         </Col>
       </Row>

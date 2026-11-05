@@ -22,6 +22,7 @@ export interface AttendanceEventRow {
   shiftLabel?: string; shiftTimeRange?: string; checkTimeHm?: string; checkTimeFormatted?: string;
   punctualityStatus?: 'ON_TIME' | 'LATE' | 'EARLY_LEAVE'; punctualityLabel?: string;
   distance_m?: number; lat?: number; lng?: number; device_info?: string; photoUrl?: string;
+  isHrCompensated?: boolean; gpsStatusLabel?: string;
   photo_drive_file_id?: string; photo_sha256?: string; note?: string;
   checkInEvent?: AttendanceEventRow | null; checkOutEvent?: AttendanceEventRow | null;
 }
@@ -79,7 +80,11 @@ export function renderShiftCheckInOutSummary(r: AttendanceEventRow) {
         {inEv ? (
           <>
             <span className="num" style={{ fontWeight: 600 }}>{inEv.checkTimeHm || String(inEv.checkTimeFormatted || '').slice(0, 5)}</span>
-            <Tag color={inEv.punctualityStatus === 'LATE' ? 'volcano' : 'green'} icon={inEv.punctualityStatus === 'LATE' ? <ClockCircleOutlined /> : <CheckCircleOutlined />} style={{ margin: 0 }}>{inEv.punctualityLabel || 'Vào đúng giờ'}</Tag>
+            {inEv.isHrCompensated ? (
+              <Tag color="warning" style={{ margin: 0, fontWeight: 600 }}>{inEv.gpsStatusLabel || 'Được bù bởi HR'}</Tag>
+            ) : (
+              <Tag color={inEv.punctualityStatus === 'LATE' ? 'volcano' : 'green'} icon={inEv.punctualityStatus === 'LATE' ? <ClockCircleOutlined /> : <CheckCircleOutlined />} style={{ margin: 0 }}>{inEv.punctualityLabel || 'Vào đúng giờ'}</Tag>
+            )}
           </>
         ) : <Typography.Text type="secondary" style={{ fontSize: 12 }}>Chưa vào ca</Typography.Text>}
       </Space>
@@ -88,7 +93,11 @@ export function renderShiftCheckInOutSummary(r: AttendanceEventRow) {
         {outEv ? (
           <>
             <span className="num" style={{ fontWeight: 600 }}>{outEv.checkTimeHm || String(outEv.checkTimeFormatted || '').slice(0, 5)}</span>
-            <Tag color={outEv.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} icon={outEv.punctualityStatus === 'EARLY_LEAVE' ? <ClockCircleOutlined /> : <CheckCircleOutlined />} style={{ margin: 0 }}>{outEv.punctualityLabel || 'Ra đúng giờ'}</Tag>
+            {outEv.isHrCompensated ? (
+              <Tag color="warning" style={{ margin: 0, fontWeight: 600 }}>{outEv.gpsStatusLabel || 'Được bù bởi HR'}</Tag>
+            ) : (
+              <Tag color={outEv.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} icon={outEv.punctualityStatus === 'EARLY_LEAVE' ? <ClockCircleOutlined /> : <CheckCircleOutlined />} style={{ margin: 0 }}>{outEv.punctualityLabel || 'Ra đúng giờ'}</Tag>
+            )}
           </>
         ) : <Tag color="default" style={{ margin: 0 }}>Chưa ra ca</Tag>}
       </Space>

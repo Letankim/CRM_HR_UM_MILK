@@ -1,14 +1,12 @@
 'use client';
 
-import { useState, type ClipboardEvent, type DragEvent } from 'react';
-import { App, Button, Flex, Space, Tag, Typography, Upload } from 'antd';
-import { CameraOutlined, CheckCircleOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons';
+import { useState } from 'react';
+import { Button, Flex, Space, Tag, Typography } from 'antd';
+import { CameraOutlined, CheckCircleOutlined, DeleteOutlined } from '@ant-design/icons';
 import { computeCrispDimensions } from '@/lib/payroll-file-helpers';
 import { EvidenceCameraModal } from './EvidenceCameraModal';
 import { FancyboxImage } from './FancyboxPreview';
 
-const IMAGE_EXT_REGEX = /\.(jpe?g|png|webp|gif|bmp)$/i;
-const MAX_RAW_BYTES = 15 * 1024 * 1024;
 const DIRECT_PASSTHROUGH_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg']);
 
 /** Nén ảnh thông minh giữ độ nét cao: giữ nguyên bản gốc nếu ảnh <= 750KB, hoặc thu phóng khử răng cưa chuẩn Full-HD+ (quality 0.90). */
@@ -52,71 +50,15 @@ export interface EvidencePhotoUploadProps {
   value?: string;
   onChange?: (value: string) => void;
   disabled?: boolean;
+  watermarkTitle?: string;
 }
 
 /**
- * Ô tải ảnh từ máy tính / thư viện điện thoại hoặc chụp ảnh trực tiếp qua Camera làm minh chứng.
- * Không gắn `capture` lên nút Tải ảnh để người dùng luôn chọn được tệp hình ảnh có sẵn trên thiết bị.
+ * Ô chụp ảnh minh chứng trực tiếp qua Camera (không cho phép tải ảnh có sẵn từ máy tính / thư viện).
+ * Tự động đóng dấu thời gian chụp và tọa độ GPS trực tiếp lên ảnh giống như điểm danh Vào/Ra ca.
  */
-export function EvidencePhotoUpload({ value, onChange, disabled }: EvidencePhotoUploadProps) {
-  const { message } = App.useApp();
-  const [processing, setProcessing] = useState(false);
-  const [dragging, setDragging] = useState(false);
+export function EvidencePhotoUpload({ value, onChange, disabled, watermarkTitle }: EvidencePhotoUploadProps) {
   const [cameraOpen, setCameraOpen] = useState(false);
-
-  const handleFile = async (file: File) => {
-    if (!file.type.startsWith('image/') && !IMAGE_EXT_REGEX.test(file.name || '')) {
-      message.error('Vui lòng chọn tệp hình ảnh hợp lệ (JPG, PNG, WEBP)');
-      return;
-    }
-    if (file.size > MAX_RAW_BYTES) {
-      message.error('Dung lượng ảnh quá lớn (tối đa 15MB), vui lòng chọn ảnh nhẹ hơn');
-      return;
-    }
-    setProcessing(true);
-    try {
-      onChange?.(await compressImageToJpegDataUrl(file));
-    } catch {
-      message.error('Không xử lý được tệp ảnh, vui lòng chọn ảnh JPG, PNG hoặc WEBP khác');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragging(false);
-    if (disabled || processing) return;
-    const file = e.dataTransfer?.files?.[0];
-    if (file) void handleFile(file);
-  };
-
-  const handlePaste = (e: ClipboardEvent<HTMLDivElement>) => {
-    if (disabled || processing) return;
-    const item = Array.from(e.clipboardData?.items ?? []).find((x) => x.type.startsWith('image/'));
-    const file = item?.getAsFile();
-    if (file) {
-      e.preventDefault();
-      void handleFile(file);
-    }
-  };
-
-  const uploadTrigger = (label: string, primary = false, small = false) => (
-    <Upload
-      accept="image/*,.jpg,.jpeg,.png,.webp"
-      maxCount={1}
-      showUploadList={false}
-      disabled={disabled || processing}
-      beforeUpload={(file) => {
-        void handleFile(file);
-        return false;
-      }}
-    >
-      <Button size={small ? 'small' : 'middle'} type={primary ? 'primary' : 'default'} icon={<UploadOutlined />} loading={processing} disabled={disabled}>
-        {label}
-      </Button>
-    </Upload>
-  );
 
   return (
     <>
@@ -128,18 +70,17 @@ export function EvidencePhotoUpload({ value, onChange, disabled }: EvidencePhoto
           style={{ border: '1px solid #E5E7EB', borderRadius: 4, background: '#F8FAFC', padding: 10 }}
         >
           <div style={{ width: 112, border: '1px solid #CBD5E1', borderRadius: 4, overflow: 'hidden', background: '#FFFFFF', flexShrink: 0 }}>
-            <FancyboxImage src={value} alt="Ảnh minh chứng" caption="Ảnh minh chứng chấm công" height={84} />
+            <FancyboxImage src={value} alt="Ảnh minh chứng Camera" caption="Ảnh chụp minh chứng trực tiếp (đã đóng dấu thời gian & tọa độ GPS)" height={84} />
           </div>
           <Space direction="vertical" size={6} style={{ flex: 1, minWidth: 180 }}>
             <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>
-              Đã đính kèm ảnh minh chứng
+              Đã chụp ảnh minh chứng trực tiếp (Có đóng dấu Thời gian &amp; GPS)
             </Tag>
             <Flex gap={6} wrap="wrap">
-              {uploadTrigger('Tải ảnh khác từ máy', false, true)}
-              <Button size="small" icon={<CameraOutlined />} disabled={disabled || processing} onClick={() => setCameraOpen(true)}>
-                Chụp lại
+              <Button size="small" type="primary" ghost icon={<CameraOutlined />} disabled={disabled} onClick={() => setCameraOpen(true)}>
+                Chụp lại ảnh trực tiếp
               </Button>
-              <Button size="small" danger icon={<DeleteOutlined />} disabled={disabled || processing} onClick={() => onChange?.('')}>
+              <Button size="small" danger icon={<DeleteOutlined />} disabled={disabled} onClick={() => onChange?.('')}>
                 Xóa ảnh
               </Button>
             </Flex>
@@ -147,38 +88,28 @@ export function EvidencePhotoUpload({ value, onChange, disabled }: EvidencePhoto
         </Flex>
       ) : (
         <div
-          tabIndex={0}
-          onPaste={handlePaste}
-          onDragOver={(e) => {
-            e.preventDefault();
-            if (!disabled && !processing) setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={handleDrop}
           style={{
-            border: `1px dashed ${dragging ? '#2563EB' : '#CBD5E1'}`,
+            border: '1px dashed #CBD5E1',
             borderRadius: 4,
-            background: dragging ? '#EFF6FF' : '#F8FAFC',
+            background: '#F8FAFC',
             padding: '10px 12px',
-            transition: 'border-color 0.15s ease, background-color 0.15s ease',
           }}
         >
           <Flex gap={8} wrap="wrap" align="center">
-            {uploadTrigger('Tải ảnh từ máy', true)}
-            <Button icon={<CameraOutlined />} disabled={disabled || processing} onClick={() => setCameraOpen(true)}>
+            <Button type="primary" icon={<CameraOutlined />} disabled={disabled} onClick={() => setCameraOpen(true)}>
               Chụp ảnh trực tiếp
             </Button>
           </Flex>
           <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 6 }}>
-            Chọn ảnh có sẵn từ máy tính / thư viện điện thoại, kéo-thả tệp ảnh vào khung này hoặc mở Camera chụp trực tiếp.
+            Chỉ chấp nhận ảnh chụp trực tiếp qua Camera tại thời điểm gửi phiếu (hệ thống tự động lưu thời gian chụp và tọa độ GPS trực tiếp trên ảnh như điểm danh).
           </Typography.Text>
         </div>
       )}
       <EvidenceCameraModal
         open={cameraOpen}
+        watermarkTitle={watermarkTitle}
         onClose={() => setCameraOpen(false)}
         onCapture={(dataUrl) => onChange?.(dataUrl)}
-        onFallbackFile={(file) => void handleFile(file)}
       />
     </>
   );

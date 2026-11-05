@@ -38,17 +38,16 @@ export function AttemptReviewModal({ attempt, onClose }: { attempt: Record<strin
     >
       {attempt && (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Descriptions size="small" bordered column={{ xs: 1, sm: 2, lg: 3 }}>
-            <Descriptions.Item label="Bộ đề kiểm tra"><strong>{String(attempt.testTitle ?? '')}</strong> {attempt.testCode ? <Tag color="geekblue" style={{ marginLeft: 6 }}>{String(attempt.testCode)}</Tag> : null}</Descriptions.Item>
+          <Descriptions size="small" bordered column={{ xs: 1, sm: 2, lg: 3 }} styles={{ label: { whiteSpace: 'nowrap', width: 135 }, content: { minWidth: 180 } }}>
+            <Descriptions.Item label="Bộ đề kiểm tra" span={2}><strong>{String(attempt.testTitle ?? '')}</strong> {attempt.testCode ? <Tag color="geekblue" style={{ marginLeft: 6, whiteSpace: 'nowrap' }}>{String(attempt.testCode)}</Tag> : null}</Descriptions.Item>
+            <Descriptions.Item label="Lượt làm bài"><Tag color="blue" style={{ margin: 0, whiteSpace: 'nowrap' }}>Lần thi #{String(attempt.attempt_no ?? 1)}</Tag></Descriptions.Item>
             <Descriptions.Item label="Nhân sự làm bài">{String(attempt.employeeName || 'Nhân sự')} {attempt.employeeCode ? `(${attempt.employeeCode})` : ''}</Descriptions.Item>
-            <Descriptions.Item label="Lượt làm bài"><Tag color="blue" style={{ margin: 0 }}>Lần thi #{String(attempt.attempt_no ?? 1)}</Tag></Descriptions.Item>
-            <Descriptions.Item label="Thời gian nộp bài">{attempt.submitted_at ? dayjs(String(attempt.submitted_at)).format('HH:mm:ss DD/MM/YYYY') : '—'}</Descriptions.Item>
-            <Descriptions.Item label="Thời lượng làm bài">{formatDurationSec(attempt.duration_seconds)}</Descriptions.Item>
+            <Descriptions.Item label="Thời gian & Thời lượng">{attempt.submitted_at ? dayjs(String(attempt.submitted_at)).format('HH:mm:ss DD/MM/YYYY') : '—'} · <strong>{formatDurationSec(attempt.duration_seconds)}</strong></Descriptions.Item>
             <Descriptions.Item label="Điểm số & Kết quả">
-              <Space size={6}>
-                <strong>{String(attempt.correct_count ?? 0)}/{String(attempt.total_questions ?? items.length)} câu đúng</strong>
-                <Tag color={passed ? 'green' : 'red'} style={{ margin: 0, fontWeight: 700, fontSize: 13 }}>{String(attempt.score_percent ?? 0)}%</Tag>
-                <Tag color={passed ? 'success' : 'error'} icon={passed ? <CheckCircleOutlined /> : <CloseCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>{passed ? 'ĐẠT YÊU CẦU' : 'CHƯA ĐẠT'}</Tag>
+              <Space size={6} wrap style={{ whiteSpace: 'nowrap' }}>
+                <strong style={{ whiteSpace: 'nowrap' }}>{String(attempt.correct_count ?? 0)}/{String(attempt.total_questions ?? items.length)} câu đúng</strong>
+                <Tag color={passed ? 'green' : 'red'} style={{ margin: 0, fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap' }}>{String(attempt.score_percent ?? 0)}%</Tag>
+                <Tag color={passed ? 'success' : 'error'} icon={passed ? <CheckCircleOutlined /> : <CloseCircleOutlined />} style={{ margin: 0, fontWeight: 600, whiteSpace: 'nowrap' }}>{passed ? 'ĐẠT YÊU CẦU' : 'CHƯA ĐẠT'}</Tag>
               </Space>
             </Descriptions.Item>
           </Descriptions>
@@ -113,8 +112,8 @@ export function AttemptHistoryTable({
         { title: 'Bộ đề kiểm tra', dataIndex: 'testTitle', ellipsis: true },
         { title: 'Thời gian nộp bài', dataIndex: 'submitted_at', width: 148, render: (v: string) => <span className="num" style={{ fontSize: 12 }}>{v ? dayjs(v).format('HH:mm:ss DD/MM/YYYY') : '—'}</span> },
         { title: 'Thời lượng', dataIndex: 'duration_seconds', width: 115, render: (v: number) => <span style={{ fontSize: 12 }}>{formatDurationSec(v)}</span> },
-        { title: 'Số câu đúng', width: 105, render: (_, r) => <strong>{`${r.correct_count ?? 0}/${r.total_questions ?? 0} câu`}</strong> },
-        { title: 'Điểm & Kết quả', width: 155, render: (_, r) => <Space size={4}><Tag color={r.passed ? 'green' : 'red'} style={{ margin: 0, fontWeight: 700 }}>{`${r.score_percent ?? 0}%`}</Tag><Tag color={r.passed ? 'success' : 'default'} style={{ margin: 0 }}>{r.passed ? 'ĐẠT' : 'CHƯA ĐẠT'}</Tag></Space> },
+        { title: 'Số câu đúng', width: 110, render: (_, r) => <strong style={{ whiteSpace: 'nowrap' }}>{`${r.correct_count ?? 0}/${r.total_questions ?? 0} câu`}</strong> },
+        { title: 'Điểm & Kết quả', width: 175, render: (_, r) => <Space size={4} style={{ whiteSpace: 'nowrap' }}><Tag color={r.passed ? 'green' : 'red'} style={{ margin: 0, fontWeight: 700, whiteSpace: 'nowrap' }}>{`${r.score_percent ?? 0}%`}</Tag><Tag color={r.passed ? 'success' : 'error'} style={{ margin: 0, whiteSpace: 'nowrap', fontWeight: 600 }}>{r.passed ? 'ĐẠT' : 'CHƯA ĐẠT'}</Tag></Space> },
         {
           title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
           render: (_, r) => (

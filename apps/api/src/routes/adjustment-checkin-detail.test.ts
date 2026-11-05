@@ -89,6 +89,9 @@ describe('Approved CHECK_IN adjustment never fabricates CHECK_OUT or clones phot
     expect(d1.hasRawCheckOut).toBe(false);
     expect(d1.isAutoOut).toBe(false);
     expect(d1.checkInEvent).toBeTruthy();
+    expect(d1.checkInEvent.isHrCompensated).toBe(true);
+    expect(d1.checkInEvent.within_radius).toBe(false);
+    expect(d1.checkInEvent.gpsStatusLabel).toContain('Được bù bởi HR');
     expect(d1.checkInEvent.photoUrl).toContain('/api/attendance/photos/');
     expect(d1.checkOutEvent).toBeNull();
     expect(d1.adjustment?.punch_type).toBe('CHECK_IN');
@@ -159,11 +162,64 @@ describe('Approved CHECK_IN adjustment never fabricates CHECK_OUT or clones phot
     expect(d2.shiftStatus).toBe('COMPLETED');
     expect(d2.checkInEvent).toBeTruthy();
     expect(d2.checkOutEvent).toBeTruthy();
+    expect(d2.checkOutEvent.isHrCompensated).toBe(true);
+    expect(d2.checkOutEvent.within_radius).toBe(false);
+    expect(d2.checkOutEvent.gpsStatusLabel).toContain('Được bù bởi HR');
     expect(d2.checkInEvent.photoUrl).not.toBe(d2.checkOutEvent.photoUrl);
     expect(d2.adjustments).toHaveLength(2);
 
     const workCompleted = collectWorkEntries(t.ctx, empId, workDate, workDate);
     const log2 = workCompleted.shiftLogs.find((l) => l.assignmentId === shiftId);
     expect(log2?.status).toBe('ADJUSTMENT_APPROVED');
+  });
+
+  it('draws fresh random questions on exam retake and isolates employee attendance from backoffice sheet switch', async () => {
+    const adminHeaders = await t.loginHeaders('admin');
+    const hrHeaders = await t.loginHeaders('hr');
+    const empUser = t.db.users.find((u) => u.role === 'CHINH_THUC' && Boolean(u.phone))!;
+    const empLogin = await t.login(empUser.phone, DEMO_PIN, 'employee');
+    const empHeaders = { cookie: empLogin.cookie, 'x-umbm-client': 'web' };
+
+    // 1. Exam retake randomization: Attempt #1 and Attempt #2 must draw different random question sets
+    const seedRes = await t.app.inject({ method: 'POST', url: '/api/admin/tests/bank/seed-120', headers: hrHeaders, payload: {} });
+    const bankId = seedRes.json().data.id as string;
+    const assignRes = await t.app.inject({
+      method: 'POST', url: '/api/admin/tests/assignments', headers: hrHeaders,
+      payload: { test_id: bankId, employee_id: empUser.employee_id, max_attempts: 3, exam_sample_size: 25 },
+    });
+    expect(assignRes.statusCode).toBe(201);
+    const asg = assignRes.json().data as { id: string; max_attempts: number };
+
+    const start1 = await t.app.inject({ method: 'POST', url: `/api/tests/assignments/${asg.id}/start`, headers: empHeaders, payload: {} });
+    expect(start1.statusCode).toBe(201);
+    const qIds1 = (start1.json().data.questions as { id: string }[]).map((q) => q.id);
+    await t.app.inject({
+      method: 'POST', url: `/api/tests/attempts/${start1.json().data.id}/submit`, headers: empHeaders,
+      payload: { answers: Object.fromEntries(qIds1.map((id) => [id, 0])) },
+    });
+
+    const start2 = await t.app.inject({ method: 'POST', url: `/api/tests/assignments/${asg.id}/start`, headers: empHeaders, payload: {} });
+    expect(start2.statusCode).toBe(201);
+    const qIds2 = (start2.json().data.questions as { id: string }[]).map((q) => q.id);
+    expect(qIds2.join(',')).not.toBe(qIds1.join(','));
+    const overlapCount = qIds2.filter((id) => qIds1.includes(id)).length;
+    expect(overlapCount).toBe(0);
+
+    // 2. Backoffice switches active monthly sheet -> Employee still sees live shifts in /api/my-attendance
+    const rollRes = await t.app.inject({
+      method: 'POST', url: '/api/admin/data-partitions/rollover', headers: adminHeaders,
+      payload: { month_key: '2029_05', activate: true },
+    });
+    expect(rollRes.statusCode).toBe(201);
+    expect(t.db.partitionMonth).toBe('2029_05');
+
+    const myAttDuringSwitch = await t.app.inject({ method: 'GET', url: '/api/my-attendance', headers: empHeaders });
+    expect(myAttDuringSwitch.statusCode).toBe(200);
+    expect((myAttDuringSwitch.json().data.shifts as unknown[]).length).toBeGreaterThan(0);
+
+    await t.app.inject({
+      method: 'PUT', url: '/api/admin/data-partitions/active', headers: adminHeaders,
+      payload: { month_key: '' },
+    });
   });
 });

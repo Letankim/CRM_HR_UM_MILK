@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { App, Button, Card, Col, Descriptions, Empty, Form, Input, InputNumber, Modal, Row, Select, Space, Tag, Typography } from 'antd';
-import { CameraOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, EnvironmentOutlined, SaveOutlined } from '@ant-design/icons';
+import { CameraOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseOutlined, EnvironmentOutlined, ExclamationCircleOutlined, SaveOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
@@ -46,11 +46,20 @@ function renderCheckEventPane(ev: AttendanceEventRow | null | undefined, kind: '
               </div>
             </Descriptions.Item>
             <Descriptions.Item label="Vị trí GPS">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
-                <Tag color="green" icon={<EnvironmentOutlined />} style={{ margin: 0 }}>Cách CH {Number(ev.distance_m ?? 0)}m · Hợp lệ</Tag>
-                {canViewMedia && ev.lat !== undefined && ev.lng !== undefined && <Button size="small" type="link" icon={<EnvironmentOutlined />} style={{ padding: 0, height: 20, fontSize: 12 }} href={`https://www.google.com/maps?q=${Number(ev.lat)},${Number(ev.lng)}`} target="_blank" rel="noopener noreferrer">Xem trên Google Maps</Button>}
-              </div>
-              {canViewMedia && ev.lat !== undefined && ev.lng !== undefined && <div className="mono" style={{ fontSize: 11, color: BRAND.textSecondary, marginTop: 3 }}>Tọa độ thiết bị: ({Number(ev.lat).toFixed(5)}, {Number(ev.lng).toFixed(5)})</div>}
+              {ev.isHrCompensated ? (
+                <div>
+                  <Tag color="warning" icon={<ExclamationCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>{ev.gpsStatusLabel || 'Được bù bởi HR (Không chấm GPS tại quầy)'}</Tag>
+                  <div style={{ fontSize: 11, color: BRAND.textSecondary, marginTop: 3 }}>Lượt chấm công này được xác nhận bù công bởi HR qua phiếu bổ sung minh chứng.</div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                    <Tag color="green" icon={<EnvironmentOutlined />} style={{ margin: 0 }}>{ev.gpsStatusLabel || `Cách CH ${Number(ev.distance_m ?? 0)}m · Hợp lệ`}</Tag>
+                    {canViewMedia && ev.lat !== undefined && ev.lng !== undefined && <Button size="small" type="link" icon={<EnvironmentOutlined />} style={{ padding: 0, height: 20, fontSize: 12 }} href={`https://www.google.com/maps?q=${Number(ev.lat)},${Number(ev.lng)}`} target="_blank" rel="noopener noreferrer">Xem trên Google Maps</Button>}
+                  </div>
+                  {canViewMedia && ev.lat !== undefined && ev.lng !== undefined && <div className="mono" style={{ fontSize: 11, color: BRAND.textSecondary, marginTop: 3 }}>Tọa độ thiết bị: ({Number(ev.lat).toFixed(5)}, {Number(ev.lng).toFixed(5)})</div>}
+                </>
+              )}
             </Descriptions.Item>
           </Descriptions>
         </Space>

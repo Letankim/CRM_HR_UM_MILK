@@ -8,7 +8,7 @@ import { nowIso } from '../lib/time.js';
 import { auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { queueTestAssignedEmail } from '../services/action-email-dispatcher.js';
 import {
-  buildReviewItems, isSameEmployee, parseRawQuestions, recoverSampledQuestions,
+  buildReviewItems, extractAttemptQuestionIds, isSameEmployee, parseRawQuestions, recoverSampledQuestions,
   resolveAsgSampleSize, resolveBankSampleSize, resolveEmp, sampledQuestionsByAttemptId,
   sanitizeQuestionList, sanitizeQuestions, zAssignTestBody, zDeleteVersionBody,
   zSubmitAttemptBody, zTestBankBody, zUpdateAssignmentBody, zUpdateTestBankBody,
@@ -56,7 +56,7 @@ export async function testingCertsRoutes(app: FastifyInstance, ctx: AppContext) 
     const attempts = ctx.db.testAttempts.all().filter((att) => Boolean(att.submitted_at)).reverse().map((att) => {
       const test = ctx.db.testBank.get(att.test_id), emp = resolveEmp(ctx, att.employee_id), asg = ctx.db.testAssignments.get(att.assignment_id);
       const revealCorrect = Boolean(canManage || asg?.passed || (asg && asg.attempts_used >= asg.max_attempts));
-      const qList = recoverSampledQuestions(att.id, att.answers_json, parseRawQuestions(test?.questions_json));
+      const qList = recoverSampledQuestions(att.id, att.answers_json, parseRawQuestions(test?.questions_json), att.total_questions);
       return { ...att, score_10: Math.round((att.score_percent / 10) * 10) / 10, testTitle: test?.title ?? att.test_id, testCode: test?.code ?? '', passPercent: test?.pass_percent ?? 80, employeeName: emp?.full_name ?? att.employee_id, employeeCode: emp?.employee_code ?? '', isMine: isSameEmployee(ctx, request.auth?.user, att.employee_id), reviewItems: buildReviewItems(qList, att.answers_json, revealCorrect) };
     });
     return sendSuccess(request, 'Lấy ngân hàng đề thi, đợt giao bài và kết quả bài làm thành công', { tests, assignments, attempts });
@@ -164,7 +164,9 @@ export async function testingCertsRoutes(app: FastifyInstance, ctx: AppContext) 
     const allQuestions = parseRawQuestions(test.questions_json);
     const bankSample = resolveBankSampleSize(test, allQuestions.length);
     const targetSampleSize = resolveAsgSampleSize(asg, bankSample, allQuestions.length);
-    const sampled = pickRandomExamQuestions(allQuestions, targetSampleSize);
+    const prevAttempts = ctx.db.testAttempts.filter((a) => a.assignment_id === asg.id || (a.test_id === test.id && a.employee_id === asg.employee_id));
+    const prevQuestionIds = new Set(prevAttempts.flatMap((a) => extractAttemptQuestionIds(a.answers_json)));
+    const sampled = pickRandomExamQuestions(allQuestions, targetSampleSize, prevQuestionIds);
     const durationLimitSec = test.duration_minutes * 60;
     const startedMs = Date.now(), expiresMs = startedMs + durationLimitSec * 1000;
     const attempt = await ctx.db.testAttempts.insert({ test_id: test.id, assignment_id: asg.id, employee_id: asg.employee_id, attempt_no: asg.attempts_used + 1, started_at: new Date(startedMs).toISOString(), expires_at: new Date(expiresMs).toISOString(), submitted_at: '', duration_seconds: 0, answers_json: JSON.stringify({ __sampled_ids: sampled.map((q) => q.id) }), correct_count: 0, total_questions: sampled.length || test.total_questions, score_percent: 0, passed: false, auto_submitted: false, client_ip: request.ip ?? '127.0.0.1' }, request.auth!.user.id);

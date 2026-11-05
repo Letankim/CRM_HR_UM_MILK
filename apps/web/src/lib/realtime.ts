@@ -158,6 +158,7 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
     };
     let lastPartitionSig = '';
     const onPartitionChanged = (payload?: { activeMonth?: string; activeLabel?: string; switchedAt?: string; message?: string }) => {
+      if (app === 'employee') return;
       const sig = `${payload?.activeMonth ?? ''}:${payload?.switchedAt ?? ''}`;
       if (sig && sig === lastPartitionSig) return;
       lastPartitionSig = sig;

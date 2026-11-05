@@ -1,9 +1,13 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ZodType, ZodTypeDef } from 'zod';
 import { MAX_CELL_CHARS } from '@umbm/shared';
 import { Errors } from '../lib/errors.js';
 import { nowIso } from '../lib/time.js';
 import { serializeCell } from './a1.js';
 import type { SheetsGateway } from './gateway.js';
+
+export const requestScopeStorage = new AsyncLocalStorage<{ isEmployeeScope: boolean }>();
+export const isEmployeeRequestScope = (): boolean => Boolean(requestScopeStorage.getStore()?.isEmployeeScope);
 
 export interface BaseRecord {
   id: string;

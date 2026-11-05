@@ -1,21 +1,41 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Flex, Modal, Space } from 'antd';
-import { CameraOutlined, CheckOutlined, CloseOutlined, ReloadOutlined, RetweetOutlined } from '@ant-design/icons';
+import { Alert, Button, Flex, Modal, Space, Tag } from 'antd';
+import { CameraOutlined, CheckOutlined, ClockCircleOutlined, CloseOutlined, EnvironmentOutlined, ReloadOutlined, RetweetOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
+import { getAccurateDeviceLocation, type AccurateCoords } from '@/lib/geolocation';
 
 export interface EvidenceCameraModalProps {
   open: boolean;
+  watermarkTitle?: string;
   onClose: () => void;
   onCapture: (jpegDataUrl: string) => void;
-  onFallbackFile: (file: File) => void;
+}
+
+function stampEvidenceWatermark(canvas: HTMLCanvasElement, watermarkTitle: string, coords: AccurateCoords | null): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const w = canvas.width, h = canvas.height;
+  const barH = Math.max(76, Math.round(h * 0.15));
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.86)';
+  ctx.fillRect(0, h - barH, w, barH);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.textAlign = 'left';
+  const titleFontPx = Math.max(14, Math.round(w * 0.024));
+  const subFontPx = Math.max(12, Math.round(w * 0.02));
+  ctx.font = `600 ${titleFontPx}px sans-serif`;
+  ctx.fillText(watermarkTitle || 'MINH CHỨNG BỔ SUNG CÔNG · CAMERA TRỰC TIẾP', 18, h - barH + Math.round(barH * 0.42));
+  ctx.fillStyle = '#CBD5E1';
+  ctx.font = `${subFontPx}px monospace`;
+  const gpsText = coords ? `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)} (±${coords.accuracy}m)` : 'Không xác định tọa độ GPS thiết bị';
+  ctx.fillText(`Chụp lúc: ${dayjs().format('DD/MM/YYYY HH:mm:ss')} · GPS: ${gpsText}`, 18, h - barH + Math.round(barH * 0.78));
 }
 
 /**
- * Hộp thoại chụp ảnh minh chứng trực tiếp qua Camera (hỗ trợ cả Webcam máy tính và Camera điện thoại).
- * Có nút chuyển đổi Camera trước/sau và phương án mở ứng dụng Camera gốc của thiết bị khi trình duyệt chặn quyền.
+ * Hộp thoại chụp ảnh minh chứng trực tiếp qua Camera (tự động đóng dấu thời gian chụp & tọa độ GPS lên ảnh như điểm danh).
  */
-export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }: EvidenceCameraModalProps) {
+export function EvidenceCameraModal({ open, watermarkTitle, onClose, onCapture }: EvidenceCameraModalProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const nativeInputRef = useRef<HTMLInputElement | null>(null);
@@ -23,6 +43,9 @@ export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
+  const [coords, setCoords] = useState<AccurateCoords | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [nowStr, setNowStr] = useState(() => dayjs().format('DD/MM/YYYY HH:mm:ss'));
 
   const stopStream = useCallback(() => {
     if (streamRef.current) {
@@ -32,18 +55,30 @@ export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }
     setCameraReady(false);
   }, []);
 
+  const locateGps = useCallback(async () => {
+    setLocating(true);
+    try {
+      const pos = await getAccurateDeviceLocation();
+      setCoords(pos);
+    } catch {
+      setCoords(null);
+    } finally {
+      setLocating(false);
+    }
+  }, []);
+
   const startCamera = useCallback(async (mode: 'environment' | 'user') => {
     stopStream();
     setCameraError('');
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Trình duyệt hiện tại không hỗ trợ mở Camera trực tiếp. Bạn có thể bấm nút bên dưới để mở Camera thiết bị hoặc đóng hộp thoại để tải ảnh từ máy.');
+      setCameraError('Trình duyệt hiện tại không hỗ trợ mở luồng Camera trực tiếp. Vui lòng bấm nút bên dưới để mở ứng dụng Camera của thiết bị và chụp trực tiếp.');
       return;
     }
     try {
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: mode }, width: { ideal: 1600 }, height: { ideal: 1200 } },
+          video: { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 960 } },
           audio: false,
         });
       } catch {
@@ -56,7 +91,7 @@ export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }
       }
       setCameraReady(true);
     } catch {
-      setCameraError('Không mở được Camera (chưa cấp quyền hoặc thiết bị không có Camera). Vui lòng cấp quyền Camera hoặc đóng để tải ảnh có sẵn từ máy.');
+      setCameraError('Không mở được Camera (chưa cấp quyền Camera trên trình duyệt). Vui lòng cấp quyền Camera rồi thử lại hoặc mở Camera thiết bị để chụp trực tiếp.');
     }
   }, [stopStream]);
 
@@ -69,17 +104,22 @@ export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }
     }
     setPreviewUrl('');
     void startCamera(facingMode);
-    return () => stopStream();
-  }, [open, facingMode, startCamera, stopStream]);
+    void locateGps();
+    const timer = setInterval(() => setNowStr(dayjs().format('DD/MM/YYYY HH:mm:ss')), 1000);
+    return () => {
+      clearInterval(timer);
+      stopStream();
+    };
+  }, [open, facingMode, startCamera, locateGps, stopStream]);
 
   const handleSnap = () => {
     const video = videoRef.current;
     if (!video || !cameraReady) return;
-    const rawW = video.videoWidth || 1280;
-    const rawH = video.videoHeight || 960;
-    const scale = Math.min(1, 1600 / Math.max(rawW, rawH));
-    const w = Math.max(1, Math.round(rawW * scale));
-    const h = Math.max(1, Math.round(rawH * scale));
+    const rawW = video.videoWidth || 960;
+    const rawH = video.videoHeight || 720;
+    const scale = Math.min(1, 1280 / Math.max(rawW, rawH));
+    const w = Math.max(640, Math.round(rawW * scale));
+    const h = Math.max(480, Math.round(rawH * scale));
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
@@ -88,7 +128,36 @@ export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(video, 0, 0, w, h);
+    stampEvidenceWatermark(canvas, watermarkTitle || 'MINH CHỨNG BỔ SUNG CÔNG · CAMERA TRỰC TIẾP', coords);
     setPreviewUrl(canvas.toDataURL('image/jpeg', 0.89));
+  };
+
+  const handleNativeCameraFile = (file: File) => {
+    const srcUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, 1280 / Math.max(img.naturalWidth || 960, img.naturalHeight || 720));
+        const w = Math.max(640, Math.round((img.naturalWidth || 960) * scale));
+        const h = Math.max(480, Math.round((img.naturalHeight || 720) * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, w, h);
+          stampEvidenceWatermark(canvas, watermarkTitle || 'MINH CHỨNG BỔ SUNG CÔNG · CAMERA TRỰC TIẾP', coords);
+          onCapture(canvas.toDataURL('image/jpeg', 0.89));
+          onClose();
+        }
+      } finally {
+        URL.revokeObjectURL(srcUrl);
+      }
+    };
+    img.onerror = () => URL.revokeObjectURL(srcUrl);
+    img.src = srcUrl;
   };
 
   return (
@@ -97,8 +166,8 @@ export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }
       onCancel={onClose}
       destroyOnHidden
       centered
-      width={520}
-      title={<span><CameraOutlined /> Chụp ảnh minh chứng trực tiếp</span>}
+      width={560}
+      title={<span><CameraOutlined /> Chụp ảnh minh chứng trực tiếp (Đóng dấu Thời gian &amp; GPS)</span>}
       footer={
         <Flex justify="space-between" align="center" gap={8} wrap="wrap" style={{ width: '100%' }}>
           <Button
@@ -113,20 +182,13 @@ export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }
             {previewUrl ? (
               <>
                 <Button icon={<ReloadOutlined />} onClick={() => setPreviewUrl('')}>Chụp lại</Button>
-                <Button
-                  type="primary"
-                  icon={<CheckOutlined />}
-                  onClick={() => {
-                    onCapture(previewUrl);
-                    onClose();
-                  }}
-                >
-                  Dùng ảnh này
+                <Button type="primary" icon={<CheckOutlined />} onClick={() => { onCapture(previewUrl); onClose(); }}>
+                  Xác nhận dùng ảnh này
                 </Button>
               </>
             ) : (
               <Button type="primary" icon={<CameraOutlined />} disabled={!cameraReady} onClick={handleSnap}>
-                Chụp ảnh
+                Chụp ảnh ngay
               </Button>
             )}
           </Space>
@@ -142,31 +204,43 @@ export function EvidenceCameraModal({ open, onClose, onCapture, onFallbackFile }
         onChange={(e) => {
           const file = e.target.files?.[0];
           e.currentTarget.value = '';
-          if (file) {
-            onFallbackFile(file);
-            onClose();
-          }
+          if (file) handleNativeCameraFile(file);
         }}
       />
-      {cameraError ? (
-        <Space direction="vertical" size={10} style={{ width: '100%' }}>
-          <Alert type="warning" showIcon message={cameraError} />
-          <Space wrap>
-            <Button icon={<ReloadOutlined />} onClick={() => void startCamera(facingMode)}>Thử mở lại Camera</Button>
-            <Button type="primary" icon={<CameraOutlined />} onClick={() => nativeInputRef.current?.click()}>
-              Mở Camera thiết bị
-            </Button>
+      <Space direction="vertical" size={10} style={{ width: '100%' }}>
+        <Flex justify="space-between" align="center" wrap="wrap" gap={6} style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '6px 10px' }}>
+          <Space size={6} wrap>
+            <Tag color="blue" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>{nowStr}</Tag>
+            {locating ? (
+              <Tag color="processing" style={{ margin: 0 }}>Đang lấy tọa độ GPS...</Tag>
+            ) : coords ? (
+              <Tag color="green" icon={<EnvironmentOutlined />} style={{ margin: 0 }}>GPS: ({coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}) · ±{coords.accuracy}m</Tag>
+            ) : (
+              <Tag color="warning" style={{ margin: 0 }}>Chưa xác định GPS (vẫn chụp được ảnh)</Tag>
+            )}
           </Space>
-        </Space>
-      ) : (
-        <div style={{ background: '#0F172A', borderRadius: 4, overflow: 'hidden', border: '1px solid #E5E7EB', position: 'relative' }}>
-          {previewUrl ? (
-            <img src={previewUrl} alt="Ảnh vừa chụp" style={{ width: '100%', maxHeight: 340, objectFit: 'contain', display: 'block' }} />
-          ) : (
-            <video ref={videoRef} playsInline muted autoPlay style={{ width: '100%', maxHeight: 340, objectFit: 'contain', display: 'block' }} />
-          )}
-        </div>
-      )}
+          <Button size="small" icon={<ReloadOutlined />} loading={locating} onClick={() => void locateGps()}>Lấy lại GPS</Button>
+        </Flex>
+        {cameraError ? (
+          <Space direction="vertical" size={10} style={{ width: '100%' }}>
+            <Alert type="warning" showIcon message={cameraError} />
+            <Space wrap>
+              <Button icon={<ReloadOutlined />} onClick={() => void startCamera(facingMode)}>Thử mở lại Camera</Button>
+              <Button type="primary" icon={<CameraOutlined />} onClick={() => nativeInputRef.current?.click()}>
+                Mở Camera thiết bị chụp trực tiếp
+              </Button>
+            </Space>
+          </Space>
+        ) : (
+          <div style={{ background: '#0F172A', borderRadius: 4, overflow: 'hidden', border: '1px solid #E5E7EB', position: 'relative' }}>
+            {previewUrl ? (
+              <img src={previewUrl} alt="Ảnh vừa chụp" style={{ width: '100%', maxHeight: 340, objectFit: 'contain', display: 'block' }} />
+            ) : (
+              <video ref={videoRef} playsInline muted autoPlay style={{ width: '100%', maxHeight: 340, objectFit: 'contain', display: 'block' }} />
+            )}
+          </div>
+        )}
+      </Space>
     </Modal>
   );
 }

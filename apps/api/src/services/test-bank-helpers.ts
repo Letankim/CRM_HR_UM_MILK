@@ -100,18 +100,40 @@ export function resolveAsgSampleSize(asg: { exam_sample_size?: number }, bankSam
   return Math.max(1, Math.min(total, raw >= 1 ? raw : bankSampleSize));
 }
 
-export function recoverSampledQuestions(attemptId: string, answersJson: string | undefined, allQuestions: RawQuestion[]): RawQuestion[] {
+export function extractAttemptQuestionIds(answersJson?: string): string[] {
+  try {
+    const parsed = JSON.parse(answersJson || '{}') as Record<string, unknown>;
+    if (Array.isArray(parsed.__sampled_ids) && parsed.__sampled_ids.length > 0) {
+      return parsed.__sampled_ids.map((x) => String(x));
+    }
+    return Object.keys(parsed).filter((k) => !k.startsWith('__'));
+  } catch {
+    return [];
+  }
+}
+
+export function recoverSampledQuestions(attemptId: string, answersJson: string | undefined, allQuestions: RawQuestion[], targetCount?: number): RawQuestion[] {
   const cached = sampledQuestionsByAttemptId.get(attemptId);
   if (cached && cached.length > 0) return cached;
-  try {
-    const parsed = JSON.parse(answersJson || '{}') as { __sampled_ids?: string[] };
-    if (Array.isArray(parsed.__sampled_ids) && parsed.__sampled_ids.length > 0) {
-      const byId = new Map(allQuestions.map((q) => [q.id, q]));
-      const recovered = parsed.__sampled_ids.map((qid) => byId.get(qid)).filter((q): q is RawQuestion => Boolean(q));
-      if (recovered.length > 0) return recovered;
+  const byId = new Map(allQuestions.map((q) => [q.id, q]));
+  const ids = extractAttemptQuestionIds(answersJson);
+  if (ids.length > 0) {
+    const recovered = ids.map((qid) => byId.get(qid)).filter((q): q is RawQuestion => Boolean(q));
+    if (recovered.length > 0 && (!targetCount || recovered.length >= targetCount || recovered.length === allQuestions.length)) return recovered;
+    if (recovered.length > 0 && targetCount && allQuestions.length > recovered.length) {
+      const used = new Set(recovered.map((q) => q.id));
+      let seed = 0;
+      for (let i = 0; i < attemptId.length; i++) seed = (seed * 31 + attemptId.charCodeAt(i)) >>> 0;
+      const rem = allQuestions.filter((q) => !used.has(q.id));
+      for (let i = rem.length - 1; i > 0; i--) {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        const j = seed % (i + 1);
+        const tmp = rem[i]!; rem[i] = rem[j]!; rem[j] = tmp;
+      }
+      return [...recovered, ...rem.slice(0, Math.max(0, targetCount - recovered.length))];
     }
-  } catch { /* ignore */ }
-  return allQuestions;
+  }
+  return targetCount && allQuestions.length > targetCount ? allQuestions.slice(0, targetCount) : allQuestions;
 }
 
 export function buildReviewItems(questions: readonly RawQuestion[], answersJson: string | undefined, revealCorrect: boolean) {

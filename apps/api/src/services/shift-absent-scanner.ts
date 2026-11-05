@@ -131,11 +131,11 @@ export async function applyApprovedAdjustmentToShift(db: Database, adjustmentId:
     if (!exists) {
       await db.attendanceEvents.insert({
         idempotency_key: `adj_${adj.id}_${type}`, employee_id: targetShift.employee_id, assignment_id: targetShift.id, branch_id: targetShift.branch_id, type,
-        server_time: `${targetShift.work_date}T${hm || '07:00'}:00+07:00`, lat: branch?.lat ?? 0, lng: branch?.lng ?? 0, accuracy_m: 0, distance_m: 0, within_radius: true,
+        server_time: `${targetShift.work_date}T${hm || '07:00'}:00+07:00`, lat: branch?.lat ?? 0, lng: branch?.lng ?? 0, accuracy_m: 0, distance_m: 0, within_radius: false,
         photo_id: adj.evidence_file_id ? `evidence_${adj.id}` : '', photo_sha256: '', device_info: 'Phiếu bổ sung công (HR phê duyệt minh chứng)', result: 'VALID',
         work_date: targetShift.work_date, shift_code: targetShift.shift_code, scheduled_time: type === 'CHECK_IN' ? targetShift.start_at : targetShift.end_at,
-        late_minutes: 0, early_leave_minutes: 0, allowed_radius_m: branch?.radius_m ?? 100, gps_status: 'OK', photo_drive_file_id: adj.evidence_file_id,
-        ip_address: '', anomaly_flags_json: JSON.stringify(['HR_APPROVED_EVIDENCE']), note: `${type === 'CHECK_IN' ? 'Vào ca' : 'Ra ca'} thành công theo phiếu ${adj.adjustment_code} (HR duyệt minh chứng)`,
+        late_minutes: 0, early_leave_minutes: 0, allowed_radius_m: branch?.radius_m ?? 100, gps_status: 'OUT_OF_RADIUS', photo_drive_file_id: adj.evidence_file_id,
+        ip_address: '', anomaly_flags_json: JSON.stringify(['HR_APPROVED_EVIDENCE']), note: `${type === 'CHECK_IN' ? 'Vào ca' : 'Ra ca'} được bù bởi HR theo phiếu ${adj.adjustment_code} (HR duyệt minh chứng)`,
       }, actorId);
     }
     const fresh = db.shiftAssignments.get(targetShift.id) ?? targetShift;

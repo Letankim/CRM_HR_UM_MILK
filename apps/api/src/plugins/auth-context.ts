@@ -1,8 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { BranchScope, Permission, PublicUser, User } from '@umbm/shared';
+import { isEmployeeRole, type BranchScope, type Permission, type PublicUser, type User } from '@umbm/shared';
 import { AppError, Errors } from '../lib/errors.js';
 import { toPublicUser, type AuthService } from '../auth/auth.service.js';
 import { ACCESS_COOKIE, type TokenService } from '../auth/tokens.js';
+import { requestScopeStorage } from '../sheets/table-store-codec.js';
 
 export interface AuthContext {
   user: User;
@@ -35,7 +36,10 @@ export function registerAuthContext(app: FastifyInstance, tokens: TokenService, 
     }
 
     const token = request.cookies[ACCESS_COOKIE];
-    if (!token) return;
+    if (!token) {
+      requestScopeStorage.enterWith({ isEmployeeScope: false });
+      return;
+    }
     try {
       const claims = await tokens.verifyAccess(token);
       const user = auth.resolveSession(claims);
@@ -50,9 +54,15 @@ export function registerAuthContext(app: FastifyInstance, tokens: TokenService, 
         app: claims.app,
         pinChangeRequired: pinState.required,
       };
+      requestScopeStorage.enterWith({ isEmployeeScope: isEmployeeRole(user.role) });
     } catch {
       request.auth = null;
+      requestScopeStorage.enterWith({ isEmployeeScope: false });
     }
+  });
+
+  app.addHook('preHandler', (request, _reply, done) => {
+    requestScopeStorage.run({ isEmployeeScope: Boolean(request.auth && isEmployeeRole(request.auth.user.role)) }, done);
   });
 }
 

@@ -103,7 +103,7 @@ export function DataPartitionCard() {
                   <Tag style={{ margin: 0, fontWeight: 600 }}>Tổng {totalActiveRows.toLocaleString('vi-VN')} dòng</Tag>
                 </Flex>
                 <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 4 }}>
-                  <FolderOpenOutlined /> Tách riêng dữ liệu lịch ca, nghỉ OFF, đổi ca và chấm công theo từng tháng trên Google Drive để hệ thống luôn nhanh và gọn nhẹ; có thể chuyển lại tháng cũ bất kỳ lúc nào để tra cứu.
+                  <FolderOpenOutlined /> Tách riêng dữ liệu theo từng tháng cho khối Văn phòng (Admin / HR / Kế toán) tra cứu và đối soát; phía Cổng Nhân viên vẫn luôn vận hành trên dữ liệu mới nhất để đảm bảo điểm danh và lịch ca không bị ảnh hưởng.
                 </Typography.Text>
               </div>
             </Flex>
