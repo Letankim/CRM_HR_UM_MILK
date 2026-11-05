@@ -1,6 +1,6 @@
 'use client';
 
-import { Col, Divider, Form, InputNumber, Row, Select, Typography } from 'antd';
+import { Col, Form, InputNumber, Row, Select, Typography } from 'antd';
 import { BankOutlined } from '@ant-design/icons';
 import { OFFICE_WORKDAY_MODE_OPTIONS } from '@umbm/shared';
 import { TimeStringPicker } from './DateTimePickers';
@@ -12,8 +12,7 @@ export function OperationsOfficeSection({ canEdit }: { canEdit: boolean }) {
   const mode = Form.useWatch('office_workday_mode', form);
 
   return (
-    <>
-      <Divider style={{ margin: '12px 0' }} />
+    <div style={{ padding: '8px 4px 4px' }}>
       <Typography.Text style={SECTION_STYLE}>
         <BankOutlined /> Chế độ làm việc Khối Văn phòng (Backoffice / Quản trị)
       </Typography.Text>
@@ -61,6 +60,6 @@ export function OperationsOfficeSection({ canEdit }: { canEdit: boolean }) {
           </>
         )}
       </Row>
-    </>
+    </div>
   );
 }
