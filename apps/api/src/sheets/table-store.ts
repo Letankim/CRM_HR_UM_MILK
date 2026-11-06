@@ -165,6 +165,7 @@ export class TableStore<T extends BaseRecord> {
     const targetTab = onBaseline ? this.liveBaseline!.tab : this.opts.tab;
     const targetMap = onBaseline ? this.liveBaseline!.entries : this.entries;
     return this.queue.enqueue(targetSid, async () => {
+      while (this.insertBuffer.length > 0) await this.flushInserts();
       const entry = targetMap.get(id);
       const isRestoring = (patch as Record<string, unknown>).is_deleted === false;
       if (!entry || (entry.data.is_deleted && !isRestoring)) throw Errors.notFound();
@@ -190,6 +191,7 @@ export class TableStore<T extends BaseRecord> {
     if (items.length === 0) return [];
     if (this.opts.appendOnly) throw new Error(`${this.name} là bảng chỉ thêm, không được cập nhật`);
     return this.queue.enqueue(this.opts.spreadsheetId, async () => {
+      while (this.insertBuffer.length > 0) await this.flushInserts();
       const now = nowIso(), staged: { id: string; row: number; next: T; values: string[] }[] = [];
       for (const { id, expectedVersion, patch } of items) {
         const entry = this.entries.get(id);

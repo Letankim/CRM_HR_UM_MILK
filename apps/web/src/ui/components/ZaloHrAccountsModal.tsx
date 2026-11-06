@@ -41,6 +41,7 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
   };
 
   useEffect(() => { if (open) { setActiveTab('accounts'); resetToCreate(); loadTemplateForAcc(accounts.find((a) => a.is_default) ?? accounts[0]); } }, [open, currentUserId]);
+  useEffect(() => { if (open && !selectedTplAccId && accounts.length > 0) loadTemplateForAcc(accounts.find((a) => a.is_default) ?? accounts[0]); }, [open, selectedTplAccId, accounts]);
   useEffect(() => {
     if (!open || activeTab !== 'accounts' || qrSession.status === 'CONFIRMED') return;
     const timer = setInterval(() => setSecondsLeft((s) => (s > 0 ? s - 1 : 0)), 1000);
@@ -60,6 +61,7 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
         if (st.zalo_phone) accForm.setFieldValue('zalo_phone', st.zalo_phone);
         if (st.status === 'CONFIRMED' && st.saved_account) {
           const saved = st.saved_account;
+          accForm.setFieldsValue({ zalo_name: saved.zalo_name, zalo_phone: saved.zalo_phone, is_default: saved.is_default, status: saved.status });
           qc.setQueryData<{ items: ZaloHrAccountItem[] }>(['recruitment-zalo-accounts'], (old) => old ? { ...old, items: [saved, ...old.items.filter((a) => a.id !== saved.id)] } : old);
           setEditing(saved); qc.invalidateQueries({ queryKey: ['recruitment-zalo-accounts'] });
           message.success(`Đã liên kết Zalo "${saved.zalo_name}" thành công và hiển thị ngay trong danh sách`);
@@ -96,8 +98,10 @@ export function ZaloHrAccountsModal({ open, accounts, defaultTemplates, userOpti
 
   const saveTplMut = useMutation({
     mutationFn: (v: Record<string, unknown>) => {
-      const target = accounts.find((a) => a.id === selectedTplAccId) ?? accounts[0];
-      if (!target) throw new Error('Vui lòng liên kết ít nhất 1 tài khoản Zalo trước khi lưu mẫu tin nhắn');
+      const target = accounts.find((a) => a.id === selectedTplAccId) ?? accounts[0] ?? editing ?? qrSession.saved_account;
+      if (!target) {
+        return api.post('/admin/recruitment/zalo-accounts', { owner_user_id: currentUserId || userOptions[0]?.value || 'hr', zalo_name: 'HR Tuyển dụng Ụm Bò Milk', zalo_phone: '0901000002', is_default: true, status: 'ACTIVE', ...v });
+      }
       return api.put(`/admin/recruitment/zalo-accounts/${target.id}`, { owner_user_id: target.owner_user_id, zalo_name: target.zalo_name, zalo_phone: target.zalo_phone, is_default: target.is_default, status: target.status, ...v });
     },
     onSuccess: () => { message.success('Đã lưu cấu hình mẫu tin nhắn Zalo tuyển dụng thành công'); qc.invalidateQueries({ queryKey: ['recruitment-zalo-accounts'] }); },

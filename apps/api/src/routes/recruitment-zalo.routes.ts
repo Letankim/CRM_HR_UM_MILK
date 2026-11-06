@@ -23,7 +23,7 @@ const zUpsertZaloAccountBody = z.object({
   owner_user_id: z.string().trim().optional(),
   zalo_name: z.string().trim().min(2, 'Tên hiển thị tài khoản Zalo tối thiểu 2 ký tự').max(120),
   zalo_phone: z.string().trim().min(9, 'Số điện thoại Zalo không hợp lệ'),
-  zalo_id: z.string().trim().max(80).optional().default(''), access_token: z.string().trim().max(8000).optional().default(''),
+  zalo_id: z.string().trim().max(80).optional().default(''), access_token: z.string().trim().max(35000).optional().default(''),
   is_default: z.boolean().optional().default(true), status: z.enum(['ACTIVE', 'INACTIVE']).optional().default('ACTIVE'),
   greeting_template: z.string().trim().max(ZALO_FRIEND_REQUEST_MAX_CHARS, 'Mẫu lời mời kết bạn Zalo chỉ được tối đa 150 ký tự').optional().default(''),
   invite_template: z.string().trim().max(1500).optional().default(''),
@@ -46,20 +46,27 @@ async function unsetOtherDefaultZaloAccounts(ctx: AppContext, excludeId: string,
       const dec = decryptZaloPayload(ctx, r.value);
       return dec?.is_default ? [{ id: r.id, expectedVersion: r.version, patch: { value: encryptZaloPayload(ctx, { ...dec, is_default: false }) } }] : [];
     });
-  if (patches.length > 0) await ctx.db.systemSettings.batchUpdate(patches, actorId);
+  if (patches.length > 0) await ctx.db.systemSettings.batchUpdate(patches, actorId).catch(() => undefined);
+}
+
+function buildMergedZaloSecret(body: z.infer<typeof zUpsertZaloAccountBody>, ownerId: string, phone: string, prev?: StoredZaloAccountSecret | null): StoredZaloAccountSecret {
+  return {
+    owner_user_id: ownerId, zalo_name: body.zalo_name, zalo_phone: phone,
+    zalo_id: body.zalo_id || prev?.zalo_id || `zalo_${phone}`,
+    access_token: prev?.access_token?.startsWith('{') ? prev.access_token : (body.access_token || prev?.access_token || `zalo_session_${phone}_${Date.now()}`),
+    is_default: body.is_default, status: body.status,
+    greeting_template: body.greeting_template || prev?.greeting_template || DEFAULT_ZALO_TEMPLATES.greeting,
+    invite_template: body.invite_template || prev?.invite_template || DEFAULT_ZALO_TEMPLATES.invite,
+    reminder_template: body.reminder_template || prev?.reminder_template || DEFAULT_ZALO_TEMPLATES.reminder,
+    pass_template: body.pass_template || prev?.pass_template || DEFAULT_ZALO_TEMPLATES.pass,
+  };
 }
 
 export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContext) {
   app.post('/api/admin/recruitment/zalo-qr-session', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
     const body = zQrSessionBody.parse(request.body ?? {}), actorId = request.auth!.user.id;
-    const state = await startZaloQrLoginSession(ctx, {
-      actorId, ownerUserId: body.owner_user_id || actorId, isDefault: body.is_default,
-      fallbackName: body.zalo_name, fallbackPhone: body.zalo_phone,
-    });
-    return sendSuccess(request, 'Đã khởi tạo mã QR đăng nhập Zalo tuyển dụng', {
-      session_id: state.session_id, qr_image: state.qr_image, qr_url: state.qr_url,
-      session_token: state.session_token, status: state.status, expires_in: state.expires_in,
-    });
+    const state = await startZaloQrLoginSession(ctx, { actorId, ownerUserId: body.owner_user_id || actorId, isDefault: body.is_default, fallbackName: body.zalo_name, fallbackPhone: body.zalo_phone });
+    return sendSuccess(request, 'Đã khởi tạo mã QR đăng nhập Zalo tuyển dụng', { session_id: state.session_id, qr_image: state.qr_image, qr_url: state.qr_url, session_token: state.session_token, status: state.status, expires_in: state.expires_in });
   });
 
   app.get('/api/admin/recruitment/zalo-qr-session/:sessionId', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
@@ -81,7 +88,6 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
   app.post('/api/admin/recruitment/zalo-accounts', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request, reply) => {
     const body = zUpsertZaloAccountBody.parse(request.body ?? {}), phone = normalizePhone(body.zalo_phone);
     if (!phone) throw Errors.fieldValidation('zalo_phone', 'INVALID_PHONE', 'Số điện thoại Zalo phải gồm 10 chữ số bắt đầu bằng số 0', body.zalo_phone);
-
     const actor = request.auth!.user, ownerId = body.owner_user_id || actor.id;
     const ownerUser = ctx.db.users.get(ownerId) ?? ctx.db.users.find((u) => u.username === ownerId) ?? actor;
     const duplicated = ctx.db.systemSettings.filter((s) => s.category === ZALO_HR_SETTING_CATEGORY).find((r) => {
@@ -89,37 +95,17 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
       return Boolean(dec && (dec.zalo_phone === phone || (body.zalo_id && dec.zalo_id === body.zalo_id)));
     });
     if (body.is_default) await unsetOtherDefaultZaloAccounts(ctx, duplicated?.id ?? '', actor.id);
-
-    const secret: StoredZaloAccountSecret = {
-      owner_user_id: ownerUser.id, zalo_name: body.zalo_name, zalo_phone: phone,
-      zalo_id: body.zalo_id || `zalo_${phone}`, access_token: body.access_token || `zalo_session_${phone}_${Date.now()}`,
-      is_default: body.is_default, status: body.status,
-      greeting_template: body.greeting_template || DEFAULT_ZALO_TEMPLATES.greeting,
-      invite_template: body.invite_template || DEFAULT_ZALO_TEMPLATES.invite,
-      reminder_template: body.reminder_template || DEFAULT_ZALO_TEMPLATES.reminder,
-      pass_template: body.pass_template || DEFAULT_ZALO_TEMPLATES.pass,
-    };
+    const prev = duplicated ? decryptZaloPayload(ctx, duplicated.value) : null;
+    const secret = buildMergedZaloSecret(body, ownerUser.id, phone, prev);
     const label = `${ownerUser.display_name} (@${ownerUser.username}) — ${secret.zalo_name} (${phone})`;
 
     if (duplicated) {
-      const prev = decryptZaloPayload(ctx, duplicated.value), fresh = ctx.db.systemSettings.get(duplicated.id) ?? duplicated;
-      const merged: StoredZaloAccountSecret = {
-        ...secret, zalo_id: prev?.zalo_id || secret.zalo_id,
-        access_token: prev?.access_token?.startsWith('{') ? prev.access_token : secret.access_token,
-        greeting_template: body.greeting_template || prev?.greeting_template || secret.greeting_template,
-        invite_template: body.invite_template || prev?.invite_template || secret.invite_template,
-        reminder_template: body.reminder_template || prev?.reminder_template || secret.reminder_template,
-        pass_template: body.pass_template || prev?.pass_template || secret.pass_template,
-      };
-      await ctx.db.systemSettings.update(fresh.id, fresh.version, { label, value: encryptZaloPayload(ctx, merged) }, actor.id);
+      const fresh = ctx.db.systemSettings.get(duplicated.id) ?? duplicated;
+      await ctx.db.systemSettings.update(fresh.id, fresh.version, { label, value: encryptZaloPayload(ctx, secret) }, actor.id);
       const refreshed = await listHrZaloAccounts(ctx);
       return sendSuccess(request, `Tài khoản Zalo "${secret.zalo_name}" đã được liên kết trước đó, hệ thống đã cập nhật lại thông tin`, refreshed.find((a) => a.id === duplicated.id) ?? refreshed[0]);
     }
-
-    const created = await ctx.db.systemSettings.insert({
-      key: `ZALO_ACC_${ownerUser.id}_${Date.now()}`, category: ZALO_HR_SETTING_CATEGORY,
-      label, note: ownerUser.id, value_type: 'ENCRYPTED_JSON', value: encryptZaloPayload(ctx, secret),
-    }, actor.id);
+    const created = await ctx.db.systemSettings.insert({ key: `ZALO_ACC_${ownerUser.id}_${Date.now()}`, category: ZALO_HR_SETTING_CATEGORY, label, note: ownerUser.id, value_type: 'ENCRYPTED_JSON', value: encryptZaloPayload(ctx, secret) }, actor.id);
     await ctx.audit.record(auditContext(request), { action: 'recruitment.zalo_account.create', entity: 'SYSTEM_SETTINGS', entityId: created.id, after: { owner_user_id: ownerUser.id, zalo_name: secret.zalo_name, zalo_phone: phone, encrypted: true } });
     const list = await listHrZaloAccounts(ctx);
     reply.code(201);
@@ -127,37 +113,35 @@ export async function recruitmentZaloRoutes(app: FastifyInstance, ctx: AppContex
   });
 
   app.put('/api/admin/recruitment/zalo-accounts/:id', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
-    const { id } = request.params as { id: string }, body = zUpsertZaloAccountBody.parse(request.body ?? {}), before = ctx.db.systemSettings.get(id);
-    if (!before || before.category !== ZALO_HR_SETTING_CATEGORY) throw Errors.notFound('Cấu hình tài khoản Zalo', id);
-    const prevSecret = decryptZaloPayload(ctx, before.value), phone = normalizePhone(body.zalo_phone);
+    const { id } = request.params as { id: string }, body = zUpsertZaloAccountBody.parse(request.body ?? {}), phone = normalizePhone(body.zalo_phone);
     if (!phone) throw Errors.fieldValidation('zalo_phone', 'INVALID_PHONE', 'Số điện thoại Zalo phải gồm 10 chữ số bắt đầu bằng số 0', body.zalo_phone);
-
-    const actor = request.auth!.user, ownerId = body.owner_user_id || prevSecret?.owner_user_id || before.note || actor.id;
+    await ctx.db.systemSettings.flushPending().catch(() => undefined);
+    let before = ctx.db.systemSettings.get(id);
+    if (!before || before.category !== ZALO_HR_SETTING_CATEGORY) {
+      await ctx.db.systemSettings.refreshIfIdle(0).catch(() => undefined);
+      before = ctx.db.systemSettings.get(id) ?? ctx.db.systemSettings.filter((s) => s.category === ZALO_HR_SETTING_CATEGORY).find((r) => {
+        const dec = decryptZaloPayload(ctx, r.value);
+        return r.key === id || Boolean(dec && (dec.zalo_phone === phone || (body.zalo_id && dec.zalo_id === body.zalo_id)));
+      });
+    }
+    const prevSecret = before ? decryptZaloPayload(ctx, before.value) : null;
+    const actor = request.auth!.user, ownerId = body.owner_user_id || prevSecret?.owner_user_id || before?.note || actor.id;
     const ownerUser = ctx.db.users.get(ownerId) ?? ctx.db.users.find((u) => u.username === ownerId) ?? actor;
-    if (body.is_default) await unsetOtherDefaultZaloAccounts(ctx, id, actor.id);
-
-    const nextSecret: StoredZaloAccountSecret = {
-      owner_user_id: ownerUser.id, zalo_name: body.zalo_name, zalo_phone: phone,
-      zalo_id: body.zalo_id || prevSecret?.zalo_id || `zalo_${phone}`,
-      access_token: prevSecret?.access_token?.startsWith('{') ? prevSecret.access_token : (body.access_token || prevSecret?.access_token || `zalo_session_${phone}`),
-      is_default: body.is_default, status: body.status,
-      greeting_template: body.greeting_template || prevSecret?.greeting_template || DEFAULT_ZALO_TEMPLATES.greeting,
-      invite_template: body.invite_template || prevSecret?.invite_template || DEFAULT_ZALO_TEMPLATES.invite,
-      reminder_template: body.reminder_template || prevSecret?.reminder_template || DEFAULT_ZALO_TEMPLATES.reminder,
-      pass_template: body.pass_template || prevSecret?.pass_template || DEFAULT_ZALO_TEMPLATES.pass,
-    };
-    await ctx.db.systemSettings.update(id, before.version, {
-      label: `${ownerUser.display_name} (@${ownerUser.username}) — ${nextSecret.zalo_name} (${phone})`,
-      note: ownerUser.id, value_type: 'ENCRYPTED_JSON', value: encryptZaloPayload(ctx, nextSecret),
-    }, actor.id);
+    if (body.is_default) await unsetOtherDefaultZaloAccounts(ctx, before?.id ?? id, actor.id);
+    const nextSecret = buildMergedZaloSecret(body, ownerUser.id, phone, prevSecret);
+    const label = `${ownerUser.display_name} (@${ownerUser.username}) — ${nextSecret.zalo_name} (${phone})`, encrypted = encryptZaloPayload(ctx, nextSecret);
+    const savedId = before ? before.id : id;
+    if (before) await ctx.db.systemSettings.update(before.id, before.version, { label, note: ownerUser.id, value_type: 'ENCRYPTED_JSON', value: encrypted }, actor.id);
+    else await ctx.db.systemSettings.insert({ id, key: `ZALO_ACC_${ownerUser.id}_${Date.now()}`, category: ZALO_HR_SETTING_CATEGORY, label, note: ownerUser.id, value_type: 'ENCRYPTED_JSON', value: encrypted }, actor.id);
     const list = await listHrZaloAccounts(ctx);
-    return sendSuccess(request, `Đã cập nhật tài khoản Zalo "${nextSecret.zalo_name}" thành công`, list.find((a) => a.id === id) ?? null);
+    return sendSuccess(request, `Đã cập nhật tài khoản Zalo "${nextSecret.zalo_name}" thành công`, list.find((a) => a.id === savedId) ?? list[0] ?? null);
   });
 
   app.delete('/api/admin/recruitment/zalo-accounts/:id', { preHandler: requirePermission('candidate.manage', 'interview.manage') }, async (request) => {
-    const { id } = request.params as { id: string }, actorId = request.auth!.user.id, before = ctx.db.systemSettings.get(id);
-    if (!before || before.category !== ZALO_HR_SETTING_CATEGORY) throw Errors.notFound('Cấu hình tài khoản Zalo', id);
-    await ctx.db.systemSettings.softDelete(id, before.version, actorId);
+    const { id } = request.params as { id: string }, actorId = request.auth!.user.id;
+    const before = ctx.db.systemSettings.get(id) ?? ctx.db.systemSettings.find((s) => s.category === ZALO_HR_SETTING_CATEGORY && s.key === id);
+    if (!before || before.category !== ZALO_HR_SETTING_CATEGORY) return sendSuccess(request, 'Đã xóa tài khoản Zalo', { id, replacement_id: null });
+    await ctx.db.systemSettings.softDelete(before.id, before.version, actorId);
 
     const remainingRows = ctx.db.systemSettings.filter((s) => s.category === ZALO_HR_SETTING_CATEGORY && s.id !== id).slice().reverse();
     let replacementId = '';

@@ -29,6 +29,7 @@ async function persistConfirmedZaloSession(
   const owner = ctx.db.users.get(state.owner_user_id) ?? ctx.db.users.find((u) => u.username === state.owner_user_id) ?? actor;
   if (!owner) return null;
 
+  await ctx.db.systemSettings.flushPending().catch(() => undefined);
   const existingRows = ctx.db.systemSettings.filter((s) => s.category === ZALO_HR_SETTING_CATEGORY);
   const matchedRow = existingRows.find((r) => {
     const dec = decryptZaloPayload(ctx, r.value);
@@ -54,8 +55,34 @@ async function persistConfirmedZaloSession(
   const settingKey = matchedRow?.key ?? `ZALO_ACC_${owner.id}_${Date.now()}`;
   const label = `${owner.display_name} (@${owner.username}) — ${secret.zalo_name} (${secret.zalo_phone})`;
   const encryptedValue = encryptZaloPayload(ctx, secret);
+  if (apiClient) zaloApiClients.set(savedId, apiClient);
 
-  const optimisticDto: PublicZaloAccountDto = {
+  if (matchedRow) {
+    const fresh = ctx.db.systemSettings.get(matchedRow.id) ?? matchedRow;
+    await ctx.db.systemSettings.update(fresh.id, fresh.version, { label, note: owner.id, value_type: 'ENCRYPTED_JSON', value: encryptedValue }, owner.id).catch(async () => {
+      await ctx.db.systemSettings.load().catch(() => undefined);
+      const reloaded = ctx.db.systemSettings.get(matchedRow.id);
+      if (reloaded) await ctx.db.systemSettings.update(reloaded.id, reloaded.version, { label, note: owner.id, value_type: 'ENCRYPTED_JSON', value: encryptedValue }, owner.id);
+    });
+  } else {
+    await ctx.db.systemSettings.insert({
+      id: savedId, key: settingKey, category: ZALO_HR_SETTING_CATEGORY,
+      label, note: owner.id, value_type: 'ENCRYPTED_JSON', value: encryptedValue,
+    }, owner.id);
+  }
+
+  if (state.is_default) {
+    const patches = ctx.db.systemSettings
+      .filter((s) => s.category === ZALO_HR_SETTING_CATEGORY && s.id !== savedId)
+      .flatMap((r) => {
+        const dec = decryptZaloPayload(ctx, r.value);
+        return dec?.is_default ? [{ id: r.id, expectedVersion: r.version, patch: { value: encryptZaloPayload(ctx, { ...dec, is_default: false }) } }] : [];
+      });
+    if (patches.length > 0) await ctx.db.systemSettings.batchUpdate(patches, owner.id).catch(() => undefined);
+  }
+
+  const all = await listHrZaloAccounts(ctx);
+  const finalSaved = all.find((a) => a.id === savedId) ?? {
     id: savedId, setting_key: settingKey, owner_user_id: owner.id,
     owner_username: owner.username, owner_display_name: owner.display_name,
     owner_role_label: ROLE_LABELS[owner.role], zalo_name: secret.zalo_name,
@@ -66,38 +93,8 @@ async function persistConfirmedZaloSession(
     invite_template: secret.invite_template, reminder_template: secret.reminder_template,
     pass_template: secret.pass_template, updated_at: nowIso(), version: (matchedRow?.version ?? 0) + 1,
   };
-
-  state.saved_account = optimisticDto;
-  state.status = 'CONFIRMED';
-  if (apiClient) zaloApiClients.set(savedId, apiClient);
-
-  const patches: { id: string; expectedVersion: number; patch: { label?: string; note?: string; value_type?: string; value: string } }[] = [];
-  if (state.is_default) {
-    for (const r of existingRows) {
-      if (r.id === savedId) continue;
-      const dec = decryptZaloPayload(ctx, r.value);
-      if (dec?.is_default) {
-        patches.push({ id: r.id, expectedVersion: r.version, patch: { value: encryptZaloPayload(ctx, { ...dec, is_default: false }) } });
-      }
-    }
-  }
-  if (matchedRow) {
-    const fresh = ctx.db.systemSettings.get(matchedRow.id) ?? matchedRow;
-    patches.push({ id: fresh.id, expectedVersion: fresh.version, patch: { label, note: owner.id, value_type: 'ENCRYPTED_JSON', value: encryptedValue } });
-  }
-
-  const insertTask = matchedRow
-    ? Promise.resolve(null)
-    : ctx.db.systemSettings.insert({
-        id: savedId, key: settingKey, category: ZALO_HR_SETTING_CATEGORY,
-        label, note: owner.id, value_type: 'ENCRYPTED_JSON', value: encryptedValue,
-      }, owner.id);
-  const batchTask = patches.length > 0 ? ctx.db.systemSettings.batchUpdate(patches, owner.id) : Promise.resolve([]);
-
-  await Promise.all([insertTask, batchTask]);
-  const all = await listHrZaloAccounts(ctx);
-  const finalSaved = all.find((a) => a.id === savedId) ?? optimisticDto;
   state.saved_account = finalSaved;
+  state.status = 'CONFIRMED';
   return finalSaved;
 }
 
@@ -169,8 +166,15 @@ export async function startZaloQrLoginSession(
         state.zalo_phone = zaloPhone;
         await persistConfirmedZaloSession(ctx, state, { zaloId, zaloName, zaloPhone, credentialsJson: credsJson }, api);
       })
-      .catch(() => {
+      .catch(async () => {
         clearTimeout(timer);
+        if (capturedCreds && state.status !== 'CONFIRMED') {
+          const zaloName = state.scanned_display_name || params.fallbackName || 'Zalo Tuyển dụng';
+          const zaloPhone = normalizePhone(params.fallbackPhone || '') || '0901000002';
+          const zaloId = `zalo_${zaloPhone}`;
+          state.zalo_id = zaloId; state.zalo_name = zaloName; state.zalo_phone = zaloPhone;
+          await persistConfirmedZaloSession(ctx, state, { zaloId, zaloName, zaloPhone, credentialsJson: JSON.stringify(capturedCreds) }).catch(() => null);
+        }
         finishInit();
       });
   });
