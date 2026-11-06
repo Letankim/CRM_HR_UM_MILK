@@ -10,6 +10,7 @@ import { getAccurateDeviceLocation, type AccurateCoords } from '@/lib/geolocatio
 import { analyzePinkUniformFromDataUrl, type PinkUniformAnalysisResult } from '@/lib/pink-uniform-detector';
 import { FancyboxImage } from './FancyboxPreview';
 import { LateFineDetailBlock } from './LateFineTierNotice';
+import { ViewGpsMapButton, type MapPointMarker } from './VietnamGpsMapModal';
 
 export interface AttendanceCheckPayload {
   assignment_id: string; kind: 'CHECK_IN' | 'CHECK_OUT'; lat: number; lng: number;
@@ -148,6 +149,7 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
   const cleanShiftTitle = String(activeShift?.shiftLabel ?? 'Ca sáng').replace(/\s*\([^)]*\)\s*/g, '').trim();
   const punc = evaluateShiftPunctuality(kind, nowStr.slice(0, 5), startAt, endAt);
   const canSubmit = Boolean(photoDataUrl && activeShift && coords && withinRadius && !branchMismatch && !locating && (isExemptUniform || uniformConfirmed));
+  const liveMapPoints: MapPointMarker[] = coords ? [{ lat: coords.lat, lng: coords.lng, kind, label: `Vị trí hiện tại của bạn (${kind === 'CHECK_IN' ? 'Vào ca' : 'Ra ca'})`, subLabel: `Sai số ±${coords.accuracy}m`, distanceM, withinRadius }] : [];
 
   return (
     <Modal
@@ -166,7 +168,7 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
             <Descriptions.Item label="Ca làm việc"><strong>{cleanShiftTitle} ({startAt} – {endAt})</strong> · Ngày {String(activeShift?.workDate ?? activeShift?.work_date ?? '')}</Descriptions.Item>
             <Descriptions.Item label="Chi nhánh">
               <div><strong>{branchName}</strong> <Tag color="blue" style={{ marginLeft: 4 }}>Bán kính {branchRadiusM}m</Tag></div>
-              {hasBranchCoords && <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 4 }}><span className="mono" style={{ fontSize: 12, color: '#475569' }}>Tọa độ: ({branchLat!.toFixed(5)}, {branchLng!.toFixed(5)})</span><Button size="small" type="link" icon={<EnvironmentOutlined />} style={{ padding: 0, height: 20, fontSize: 12 }} href={`https://www.google.com/maps?q=${branchLat},${branchLng}`} target="_blank" rel="noopener noreferrer">Xem trên Google Maps</Button></div>}
+              {hasBranchCoords && <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 4 }}><span className="mono" style={{ fontSize: 12, color: '#475569' }}>Tọa độ: ({branchLat!.toFixed(5)}, {branchLng!.toFixed(5)})</span><ViewGpsMapButton buttonText="Xem trên bản đồ" branchName={branchName} branchLat={branchLat} branchLng={branchLng} branchRadiusM={branchRadiusM} points={liveMapPoints} /></div>}
             </Descriptions.Item>
             <Descriptions.Item label="Giờ hiện tại"><Space wrap size={6}><Tag icon={<ClockCircleOutlined />} color="blue" style={{ margin: 0 }}>{nowStr}</Tag><Tag color={punc.color} style={{ margin: 0, fontWeight: 600 }}>{punc.label}</Tag></Space></Descriptions.Item>
             {kind === 'CHECK_IN' && <Descriptions.Item label="Phạt đi trễ"><LateFineDetailBlock liveLateMinutes={Math.max(0, parseHm(nowStr.slice(0, 5)) - parseHm(startAt))} shiftHours={Number(activeShift?.scheduledHours || activeShift?.scheduled_hours || 5)} isOfficial={!isProbation} /></Descriptions.Item>}
@@ -175,7 +177,7 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
                 {locating ? <Tag color="processing" style={{ margin: 0 }}>Đang lấy vị trí hiện tại...</Tag> : branchMismatch ? <Tag color="red" icon={<CloseCircleOutlined />} style={{ margin: 0 }}>Sai chi nhánh ({String(activeShift?.employeeBranchName || 'chi nhánh khác')})</Tag> : !coords ? <Tag color="red" icon={<CloseCircleOutlined />} style={{ margin: 0 }}>Chưa xác định được tọa độ GPS</Tag> : withinRadius ? <Tag color="green" icon={<EnvironmentOutlined />} style={{ margin: 0, fontWeight: 600 }}>Hợp lệ tại {branchName}: Cách {formatDistanceVi(distanceM!)} / {branchRadiusM}m</Tag> : <Tag color="red" icon={<CloseCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>Ngoài vùng cho phép: Cách {formatDistanceVi(distanceM!)} (Tối đa {branchRadiusM}m)</Tag>}
                 <Button size="small" icon={<ReloadOutlined />} loading={locating} onClick={() => void locateGps()}>Lấy vị trí hiện tại</Button>
               </div>
-              {coords && <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 6 }}><span className="mono" style={{ fontSize: 12, color: '#475569' }}>Thiết bị: ({coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}) · ±{coords.accuracy}m</span><Button size="small" type="link" icon={<EnvironmentOutlined />} style={{ padding: 0, height: 20, fontSize: 12 }} href={`https://www.google.com/maps?q=${coords.lat},${coords.lng}`} target="_blank" rel="noopener noreferrer">Xem trên Google Maps</Button></div>}
+              {coords && <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 6 }}><span className="mono" style={{ fontSize: 12, color: '#475569' }}>Thiết bị: ({coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}) · ±{coords.accuracy}m</span><ViewGpsMapButton buttonText="Xem trên bản đồ" branchName={branchName} branchLat={branchLat} branchLng={branchLng} branchRadiusM={branchRadiusM} points={liveMapPoints} /></div>}
             </Descriptions.Item>
           </Descriptions>
           {branchMismatch && <Alert type="error" showIcon message={`Bạn thuộc "${String(activeShift?.employeeBranchName)}", không được phép Vào/Ra ca tại "${branchName}".`} style={{ marginTop: 10 }} />}

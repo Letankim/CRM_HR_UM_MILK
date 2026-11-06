@@ -7,6 +7,7 @@ import dayjs from 'dayjs';
 import { exportToExcel } from '@/lib/export-excel';
 import type { BranchRowItem } from '@/ui/components/BranchFormModal';
 import { RowActionButtons } from '@/ui/components/RowActionButtons';
+import { ViewGpsMapButton } from '@/ui/components/VietnamGpsMapModal';
 import { StatusTag } from '@/ui/StatusTag';
 
 /** Xuất danh mục chi nhánh, tọa độ GPS & bán kính điểm danh ra Excel. */
@@ -63,9 +64,7 @@ export function buildBranchColumns({ canConfig, onViewDetail, onEdit, onDelete }
               <EnvironmentOutlined style={{ color: '#2563EB', marginRight: 4 }} />
               {r.lat.toFixed(4)}, {r.lng.toFixed(4)}
             </span>
-            <Button size="small" type="link" icon={<EnvironmentOutlined />} style={{ padding: 0, height: 20, fontSize: 12 }} href={`https://www.google.com/maps?q=${r.lat},${r.lng}`} target="_blank" rel="noopener noreferrer">
-              Xem trên Google Maps
-            </Button>
+            <ViewGpsMapButton buttonText="Xem trên bản đồ" branchName={r.name} branchAddress={r.address} branchLat={r.lat} branchLng={r.lng} branchRadiusM={r.radiusM} />
           </Space>
           <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
             Bán kính hợp lệ: <strong>{r.radiusM}m</strong> (Sai số tối đa {r.maxAccuracyM}m)

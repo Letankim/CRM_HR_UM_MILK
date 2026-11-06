@@ -14,6 +14,7 @@ import { DataTableCard } from '@/ui/components/DataTableCard';
 import { FilterToolbar } from '@/ui/components/FilterToolbar';
 import { JobPositionsTableCard } from '@/ui/components/JobPositionsManagerModal';
 import { ShiftTemplatesCard, type ShiftTemplateItem } from '@/ui/components/ShiftTemplatesCard';
+import { ViewGpsMapButton } from '@/ui/components/VietnamGpsMapModal';
 import { StatusTag } from '@/ui/StatusTag';
 
 function BranchesView() {
@@ -181,9 +182,7 @@ function BranchesView() {
                     <Descriptions.Item label="Vĩ độ & Kinh độ GPS">
                       <Space size={8} wrap>
                         <span className="num" style={{ fontWeight: 600 }}>{viewing.lat}, {viewing.lng}</span>
-                        <Button size="small" type="primary" ghost icon={<EnvironmentOutlined />} href={`https://www.google.com/maps?q=${viewing.lat},${viewing.lng}`} target="_blank" rel="noopener noreferrer">
-                          Xem trên Google Maps
-                        </Button>
+                        <ViewGpsMapButton type="primary" ghost buttonText="Xem trên bản đồ" branchName={viewing.name} branchAddress={viewing.address} branchLat={viewing.lat} branchLng={viewing.lng} branchRadiusM={viewing.radiusM} />
                       </Space>
                     </Descriptions.Item>
                     <Descriptions.Item label="Bán kính điểm danh hợp lệ"><span className="num"><strong>{viewing.radiusM}m</strong> quanh tâm chi nhánh</span></Descriptions.Item>

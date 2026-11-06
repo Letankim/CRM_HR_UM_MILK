@@ -11,6 +11,7 @@ import { BRAND } from '../theme';
 import type { AttendanceEventRow } from './AttendanceEventsTable';
 import { FancyboxImage, type FancyboxSlideItem } from './FancyboxPreview';
 import { LateFineDetailBlock } from './LateFineTierNotice';
+import { ViewGpsMapButton, type MapPointMarker } from './VietnamGpsMapModal';
 
 export interface ShiftAttendanceAdjustmentInfo {
   id: string; adjustment_code: string; kind: string; status: string;
@@ -47,64 +48,36 @@ export function canViewShiftAttendanceDetail(
   return lbl.includes('Đã hoàn thành') || lbl.includes('Đã vào ca') || lbl.includes('Quên Ra ca');
 }
 
+function toShiftMapPoint(ev: AttendanceEventRow | null | undefined, kind: 'CHECK_IN' | 'CHECK_OUT'): MapPointMarker[] {
+  if (!ev || ev.isHrCompensated || ev.lat === undefined || ev.lng === undefined) return [];
+  return [{ lat: Number(ev.lat), lng: Number(ev.lng), kind, label: `${kind === 'CHECK_IN' ? 'Vị trí Vào ca' : 'Vị trí Ra ca'} — ${ev.employeeName || ''}`, subLabel: `${ev.checkTimeFormatted || ev.checkTimeHm || ''} · ${ev.punctualityLabel || 'Đúng giờ'}`, distanceM: ev.distance_m !== undefined ? Number(ev.distance_m) : null }];
+}
+
 function renderShiftCheckPane(
   ev: AttendanceEventRow | null | undefined, kind: 'CHECK_IN' | 'CHECK_OUT',
   gallerySlides: FancyboxSlideItem[], canViewMedia: boolean, isCompletedByAdjustment: boolean, hasCheckIn = false,
+  branchCtx?: { branchName?: string; branchLat?: number | null; branchLng?: number | null; branchRadiusM?: number },
 ) {
-  const isCheckIn = kind === 'CHECK_IN';
-  const titleLabel = isCheckIn ? 'Chi tiết Vào ca (Check-In)' : 'Chi tiết Ra ca (Check-Out)';
+  const isCheckIn = kind === 'CHECK_IN', titleLabel = isCheckIn ? 'Chi tiết Vào ca (Check-In)' : 'Chi tiết Ra ca (Check-Out)';
   const slideIdx = ev?.photoUrl ? Math.max(0, gallerySlides.findIndex((s) => s.src === ev.photoUrl)) : 0;
   return (
-    <Card
-      size="small"
-      styles={{ body: { padding: 10 } }}
-      title={
-        <Space size={6}>
-          <Tag color={isCheckIn ? 'blue' : 'purple'} style={{ margin: 0 }}>{isCheckIn ? 'Vào ca' : 'Ra ca'}</Tag>
-          <Typography.Text strong style={{ fontSize: 13 }}>{titleLabel}</Typography.Text>
-        </Space>
-      }
-    >
+    <Card size="small" styles={{ body: { padding: 10 } }} title={<Space size={6}><Tag color={isCheckIn ? 'blue' : 'purple'} style={{ margin: 0 }}>{isCheckIn ? 'Vào ca' : 'Ra ca'}</Tag><Typography.Text strong style={{ fontSize: 13 }}>{titleLabel}</Typography.Text></Space>}>
       {!ev ? (
         <div style={{ padding: '22px 12px', textAlign: 'center' }}>
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={
-              isCompletedByAdjustment
-                ? `Đã xác nhận ${isCheckIn ? 'giờ Vào ca' : 'giờ Ra ca'} qua Phiếu bổ sung công`
-                : isCheckIn
-                  ? 'Chưa có bản ghi điểm danh Vào ca'
-                  : (hasCheckIn ? 'Chưa điểm danh Ra ca (Đang trong ca làm việc)' : 'Chưa có bản ghi điểm danh Ra ca')
-            }
-          />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={isCompletedByAdjustment ? `Đã xác nhận ${isCheckIn ? 'giờ Vào ca' : 'giờ Ra ca'} qua Phiếu bổ sung công` : isCheckIn ? 'Chưa có bản ghi điểm danh Vào ca' : (hasCheckIn ? 'Chưa điểm danh Ra ca (Đang trong ca làm việc)' : 'Chưa có bản ghi điểm danh Ra ca')} />
         </div>
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           {canViewMedia && (
             <div style={{ background: '#0F172A', borderRadius: 4, overflow: 'hidden', textAlign: 'center', border: `1px solid ${BRAND.border}` }}>
-              {ev.photoUrl ? (
-                <FancyboxImage
-                  src={ev.photoUrl}
-                  alt={titleLabel}
-                  caption={`${titleLabel} — ${ev.employeeName || ''} (${ev.checkTimeFormatted || ev.checkTimeHm || ''})`}
-                  gallerySlides={gallerySlides}
-                  slideIndex={slideIdx}
-                  height={176}
-                />
-              ) : (
-                <div style={{ height: 176, display: 'grid', placeItems: 'center', color: '#94A3B8' }}>
-                  <div><CameraOutlined style={{ fontSize: 24 }} /><div>Ảnh xác thực Camera</div></div>
-                </div>
-              )}
+              {ev.photoUrl ? <FancyboxImage src={ev.photoUrl} alt={titleLabel} caption={`${titleLabel} — ${ev.employeeName || ''} (${ev.checkTimeFormatted || ev.checkTimeHm || ''})`} gallerySlides={gallerySlides} slideIndex={slideIdx} height={176} /> : <div style={{ height: 176, display: 'grid', placeItems: 'center', color: '#94A3B8' }}><div><CameraOutlined style={{ fontSize: 24 }} /><div>Ảnh xác thực Camera</div></div></div>}
             </div>
           )}
           <Descriptions column={1} bordered size="small" styles={{ label: { width: 102, whiteSpace: 'nowrap', padding: '6px 10px' }, content: { padding: '6px 10px' } }}>
             <Descriptions.Item label="Thời gian">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                 <Typography.Text strong className="num">{ev.checkTimeFormatted || ev.checkTimeHm || '—'}</Typography.Text>
-                <Tag color={ev.punctualityStatus === 'LATE' ? 'volcano' : ev.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} icon={ev.punctualityStatus === 'ON_TIME' ? <CheckCircleOutlined /> : <ClockCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>
-                  {ev.punctualityLabel || 'Đúng giờ'}
-                </Tag>
+                <Tag color={ev.punctualityStatus === 'LATE' ? 'volcano' : ev.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} icon={ev.punctualityStatus === 'ON_TIME' ? <CheckCircleOutlined /> : <ClockCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>{ev.punctualityLabel || 'Đúng giờ'}</Tag>
               </div>
             </Descriptions.Item>
             <Descriptions.Item label="Vị trí GPS">
@@ -117,7 +90,7 @@ function renderShiftCheckPane(
                 <>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
                     <Tag color="green" icon={<EnvironmentOutlined />} style={{ margin: 0 }}>{ev.gpsStatusLabel || `Cách CH ${Number(ev.distance_m ?? 0)}m · Hợp lệ`}</Tag>
-                    {canViewMedia && ev.lat !== undefined && ev.lng !== undefined && <Button size="small" type="link" icon={<EnvironmentOutlined />} style={{ padding: 0, height: 20, fontSize: 12 }} href={`https://www.google.com/maps?q=${Number(ev.lat)},${Number(ev.lng)}`} target="_blank" rel="noopener noreferrer">Xem trên Google Maps</Button>}
+                    {canViewMedia && ev.lat !== undefined && ev.lng !== undefined && <ViewGpsMapButton buttonText="Xem trên bản đồ" {...branchCtx} points={toShiftMapPoint(ev, kind)} />}
                   </div>
                   {canViewMedia && ev.lat !== undefined && ev.lng !== undefined && <div className="mono" style={{ fontSize: 11, color: BRAND.textSecondary, marginTop: 3 }}>Tọa độ thiết bị: ({Number(ev.lat).toFixed(5)}, {Number(ev.lng).toFixed(5)})</div>}
                 </>
@@ -148,21 +121,15 @@ export function ShiftAttendanceDetailModal({ assignmentId, onClose }: { assignme
   const inCompletedByAdj = data?.shiftStatus === 'COMPLETED' && adjList.some((a) => a.status === 'APPROVED' && a.punch_type === 'FULL_SHIFT');
   const outCompletedByAdj = data?.shiftStatus === 'COMPLETED' && adjList.some((a) => a.status === 'APPROVED' && a.punch_type !== 'CHECK_IN');
   const hasBranchCoords = data?.branchLat !== undefined && data?.branchLat !== null && data?.branchLng !== undefined && data?.branchLng !== null;
+  const branchCtx = { branchName: data?.branchName, branchLat: data?.branchLat, branchLng: data?.branchLng, branchRadiusM: data?.branchRadiusM || 100 };
+  const allShiftPoints = [...toShiftMapPoint(inEv, 'CHECK_IN'), ...toShiftMapPoint(outEv, 'CHECK_OUT')];
   const gallerySlides: FancyboxSlideItem[] = [
     ...(inEv?.photoUrl ? [{ src: inEv.photoUrl, caption: `Vào ca (Check-In) — ${data?.employeeName || ''} · ${inEv.checkTimeFormatted || inEv.checkTimeHm || ''} · Cách CH ${Number(inEv.distance_m ?? 0)}m` }] : []),
     ...(outEv?.photoUrl ? [{ src: outEv.photoUrl, caption: `Ra ca (Check-Out) — ${data?.employeeName || ''} · ${outEv.checkTimeFormatted || outEv.checkTimeHm || ''} · Cách CH ${Number(outEv.distance_m ?? 0)}m` }] : []),
   ];
 
   return (
-    <Modal
-      open={Boolean(assignmentId)}
-      title={data ? `Chi tiết Điểm danh Ca làm việc — ${data.employeeName}` : 'Chi tiết Điểm danh Ca làm việc'}
-      onCancel={onClose}
-      footer={<Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>}
-      width={860}
-      style={{ top: 18, maxWidth: '95vw' }}
-      destroyOnHidden
-    >
+    <Modal open={Boolean(assignmentId)} title={data ? `Chi tiết Điểm danh Ca làm việc — ${data.employeeName}` : 'Chi tiết Điểm danh Ca làm việc'} onCancel={onClose} footer={<Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>} width={860} style={{ top: 18, maxWidth: '95vw' }} destroyOnHidden>
       <Spin spinning={detailQ.isLoading} tip="Đang tải chi tiết điểm danh...">
         {data && (
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
@@ -182,23 +149,13 @@ export function ShiftAttendanceDetailModal({ assignmentId, onClose }: { assignme
                     {data.branchRadiusM && <Tag color="geekblue" style={{ margin: 0 }}>Bán kính {data.branchRadiusM}m</Tag>}
                     {canViewMedia && hasBranchCoords && <span className="mono" style={{ fontSize: 12, color: BRAND.textSecondary }}>Tọa độ: ({Number(data.branchLat).toFixed(5)}, {Number(data.branchLng).toFixed(5)})</span>}
                   </Space>
-                  {canViewMedia && hasBranchCoords && (
-                    <Button size="small" type="primary" ghost icon={<EnvironmentOutlined />} href={`https://www.google.com/maps?q=${Number(data.branchLat)},${Number(data.branchLng)}`} target="_blank" rel="noopener noreferrer">
-                      Xem trên Google Maps
-                    </Button>
-                  )}
+                  {canViewMedia && hasBranchCoords && <ViewGpsMapButton type="primary" ghost buttonText="Xem trên bản đồ" {...branchCtx} points={allShiftPoints} />}
                 </div>
               </Descriptions.Item>
             </Descriptions>
 
             {adjList.map((a) => (
-              <Alert
-                key={a.id}
-                type={a.status === 'APPROVED' ? 'success' : a.status === 'REJECTED' ? 'error' : 'warning'}
-                showIcon
-                message={formatShiftAdjustmentTitle(a)}
-                description={`Lý do: ${a.reason}${a.decision_reason ? ` · Phản hồi phê duyệt: ${a.decision_reason}` : ''}${a.status === 'APPROVED' && a.punch_type === 'CHECK_IN' && !outEv ? ' · Đã ghi nhận Vào ca — nhân sự vẫn cần điểm danh Ra ca khi kết thúc ca.' : ''}`}
-              />
+              <Alert key={a.id} type={a.status === 'APPROVED' ? 'success' : a.status === 'REJECTED' ? 'error' : 'warning'} showIcon message={formatShiftAdjustmentTitle(a)} description={`Lý do: ${a.reason}${a.decision_reason ? ` · Phản hồi phê duyệt: ${a.decision_reason}` : ''}${a.status === 'APPROVED' && a.punch_type === 'CHECK_IN' && !outEv ? ' · Đã ghi nhận Vào ca — nhân sự vẫn cần điểm danh Ra ca khi kết thúc ca.' : ''}`} />
             ))}
 
             {data.shiftStatus === 'COMPLETED' && !inEv && !outEv && adjList.length === 0 && (
@@ -206,8 +163,8 @@ export function ShiftAttendanceDetailModal({ assignmentId, onClose }: { assignme
             )}
 
             <Row gutter={[12, 12]}>
-              <Col xs={24} md={12}>{renderShiftCheckPane(inEv, 'CHECK_IN', gallerySlides, canViewMedia, Boolean(inCompletedByAdj), Boolean(inEv))}</Col>
-              <Col xs={24} md={12}>{renderShiftCheckPane(outEv, 'CHECK_OUT', gallerySlides, canViewMedia, Boolean(outCompletedByAdj), Boolean(inEv))}</Col>
+              <Col xs={24} md={12}>{renderShiftCheckPane(inEv, 'CHECK_IN', gallerySlides, canViewMedia, Boolean(inCompletedByAdj), Boolean(inEv), branchCtx)}</Col>
+              <Col xs={24} md={12}>{renderShiftCheckPane(outEv, 'CHECK_OUT', gallerySlides, canViewMedia, Boolean(outCompletedByAdj), Boolean(inEv), branchCtx)}</Col>
             </Row>
           </Space>
         )}

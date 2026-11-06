@@ -17,6 +17,7 @@ import { generateBranchCode } from '@/lib/auto-generate';
 import { applyApiFormErrors, clearChangedFieldErrors } from '@/lib/form-error';
 import { getAccurateDeviceLocation, saveDeviceGpsAnchor } from '@/lib/geolocation';
 import { DateStringPicker, TimeSelect } from './DateTimePickers';
+import { ViewGpsMapButton } from './VietnamGpsMapModal';
 
 export interface BranchRowItem {
   id: string; code: string; name: string; address: string; lat: number; lng: number;
@@ -38,6 +39,11 @@ export function BranchFormModal({
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState('info');
   const [locatingGps, setLocatingGps] = useState(false);
+  const watchedLat = Form.useWatch('lat', form);
+  const watchedLng = Form.useWatch('lng', form);
+  const watchedRadius = Form.useWatch('radius_m', form);
+  const watchedName = Form.useWatch('name', form);
+  const watchedAddress = Form.useWatch('address', form);
 
   const handleUseDeviceGps = async () => {
     setLocatingGps(true);
@@ -189,7 +195,7 @@ export function BranchFormModal({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
                     <span style={{ fontSize: 12, color: '#64748B' }}>Nhập tọa độ cửa hàng hoặc lấy trực tiếp tọa độ GPS từ trình duyệt đang sử dụng:</span>
                     <Space size={6} wrap>
-                      <Button size="small" icon={<EnvironmentOutlined />} onClick={() => window.open(`https://www.google.com/maps?q=${form.getFieldValue('lat') || 10.7769},${form.getFieldValue('lng') || 106.7009}`, '_blank', 'noopener,noreferrer')}>Xem trên Google Maps</Button>
+                      <ViewGpsMapButton type="default" buttonText="Xem trên bản đồ" branchName={watchedName || editing?.name || 'Chi nhánh'} branchAddress={watchedAddress || editing?.address} branchLat={Number(watchedLat || 10.7769)} branchLng={Number(watchedLng || 106.7009)} branchRadiusM={Number(watchedRadius || 100)} />
                       <Button size="small" type="primary" ghost icon={<EnvironmentOutlined />} loading={locatingGps} onClick={() => void handleUseDeviceGps()}>Lấy vị trí hiện tại</Button>
                     </Space>
                   </div>
