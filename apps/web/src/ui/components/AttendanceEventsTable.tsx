@@ -67,13 +67,13 @@ export function exportAttendanceEventsExcel(rows: AttendanceEventRow[]) {
       { header: 'Nhân sự', key: 'employeeName' }, { header: 'Chi nhánh', key: 'branchName' },
       { header: 'Ngày làm việc', key: 'work_date' }, { header: 'Ca làm việc', key: 'shiftLabel' },
       { header: 'Khung giờ quy định', key: 'shiftTimeRange' }, { header: 'Giờ Vào ca', key: 'checkInTime' },
-      { header: 'Đánh giá Vào ca', key: 'checkInPunctuality' }, { header: 'Phạt đi trễ (8.5)', key: 'lateFineSummary' },
+      { header: 'Đánh giá Vào ca', key: 'checkInPunctuality' }, { header: 'Số tiền bị trừ đi trễ', key: 'lateFineSummary' },
       { header: 'Giờ Ra ca', key: 'checkOutTime' }, { header: 'Đánh giá Ra ca', key: 'checkOutPunctuality' },
       { header: 'Khoảng cách GPS (m)', key: 'distance_m', align: 'right' },
     ],
     rows: grouped.map((r) => {
       const fine = resolveEventLateFine(r.checkInEvent);
-      return { ...r, checkInTime: r.checkInEvent?.checkTimeHm || '—', checkInPunctuality: r.checkInEvent?.punctualityLabel || 'Chưa vào ca', lateFineSummary: fine ? fine.detailText : '0đ', checkOutTime: r.checkOutEvent?.checkTimeHm || '—', checkOutPunctuality: r.checkOutEvent?.punctualityLabel || 'Chưa ra ca' };
+      return { ...r, checkInTime: r.checkInEvent?.checkTimeHm || '—', checkInPunctuality: r.checkInEvent?.punctualityLabel || 'Chưa vào ca', lateFineSummary: fine && fine.fineVnd > 0 ? `-${fine.fineVnd.toLocaleString('vi-VN')}đ` : '0đ', checkOutTime: r.checkOutEvent?.checkTimeHm || '—', checkOutPunctuality: r.checkOutEvent?.punctualityLabel || 'Chưa ra ca' };
     }),
   });
 }

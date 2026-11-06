@@ -27,7 +27,7 @@ import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from '@/ui/comp
 import { ShiftAttendanceDetailModal } from '@/ui/components/ShiftAttendanceDetailModal';
 import { EmployeeTestCenterView } from '@/ui/components/ExamTestCenter';
 import { GovernanceDetailDrawer, POLICY_CATEGORY_LABELS } from '@/ui/components/GovernanceAndCommsModals';
-import { LateFineDetailBlock, renderLateFineInlineTag } from '@/ui/components/LateFineTierNotice';
+import { renderLateFineInlineTag } from '@/ui/components/LateFineTierNotice';
 import { MyAdjustmentsTable } from '@/ui/components/MyAdjustmentsTable';
 import { NotificationsCenterView } from '@/ui/components/NotificationsCenterView';
 import { SelfShiftActionPanel } from '@/ui/components/SelfShiftActionPanel';
@@ -136,7 +136,6 @@ export default function EmployeeSection() {
                       </div>
                     )}
                     <SelfShiftActionPanel shift={activeShift} todayDate={todayDate} size="middle" showIncidentButton onCamera={setCameraModalKind} onAdjust={openAdjust} onViewAttendance={setAttShiftId} />
-                    {activeShift && <div style={{ marginTop: 10 }}><LateFineDetailBlock ev={checkInEvent} shiftHours={Number(activeShift.scheduledHours || 5)} isOfficial={myQ.data?.profile.stage === 'OFFICIAL'} /></div>}
                   </>
                 )}
               </div>

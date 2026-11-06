@@ -21,12 +21,9 @@ export function resolveShiftBasePayVnd(ctx: AppContext, emp?: Employee, assign?:
   return Math.round(hours * hourly);
 }
 
-export function formatLateFineTierLabel(lateMins: number, tier: string, fineVnd: number): string {
-  if (lateMins <= 0) return 'Đúng giờ — Không phạt (0đ)';
-  if (tier === 'NONE' || lateMins < 5) return 'Bậc 1 (Trễ < 5 phút): Mức du di cho phép — Không phạt (0đ)';
-  if (tier === 'FLAT_30K') return 'Bậc 2 (Trễ từ 5 – 29 phút): Phạt cố định -30.000đ';
-  if (tier === 'HALF_SHIFT') return `Bậc 3 (Trễ từ 30 – 59 phút): Phạt 50% tiền lương ca (-${fineVnd.toLocaleString('vi-VN')}đ)`;
-  return `Bậc 4 (Trễ từ ≥ 60 phút): Phạt 100% tiền lương ca (-${fineVnd.toLocaleString('vi-VN')}đ — đi làm không hưởng lương ca đó)`;
+export function formatLateFineTierLabel(lateMins: number, _tier: string, fineVnd: number): string {
+  if (lateMins <= 0 || fineVnd <= 0) return 'Số tiền bị trừ: 0đ';
+  return `Số tiền bị trừ: -${fineVnd.toLocaleString('vi-VN')}đ`;
 }
 
 export function parseHm(hm: string): number {
