@@ -111,8 +111,15 @@ export function extractHolderFromText(text: string): string {
     const name = cleanAccountHolder(pMatch[1]);
     if (name) return name;
   }
+  // Hỗ trợ nhãn trên 1 dòng riêng, tên ở dòng kế tiếp (phổ biến trên ảnh QR VCB, MB, TCB)
+  const multiLinePrefix = /(?:Ch[ủu]\s*(?:t[àa]i\s*kho[ảa]n|TK)|T[êe]n\s*(?:ch[ủu]\s*)?(?:t[àa]i\s*kho[ảa]n|TK|th[ẻe])|Ng[ưu][ờo]i\s*th[ụu]\s*h[ưu][ởo]ng|Account\s*(?:Name|Holder)|Beneficiary|CTK)\s*[:：\-]?\s*[\r\n]+\s*([A-Za-zÀ-ỹĐđ\s]{4,45})\s*(?:[\r\n]|$)/im;
+  const mlMatch = clean.match(multiLinePrefix);
+  if (mlMatch?.[1]) {
+    const name = cleanAccountHolder(mlMatch[1]);
+    if (name) return name;
+  }
   const lines = clean.replace(/[_\-]/g, ' ').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const EXCLUDED = /\b(NGAN HANG|BANK|VIETQR|NAPAS|QUET MA|CHUYEN TIEN|SO TAI KHOAN|STK|VND|THANH TOAN|CONG TY|CHI NHANH|TAI KHOAN|VIETINBANK|VIETCOMBANK|TECHCOMBANK|AGRIBANK|SACOMBANK|VPBANK|TPBANK|SHB|OCB|ACB|MBBANK|BIDV)\b/i;
+  const EXCLUDED = /\b(NGAN HANG|BANK|VIETQR|NAPAS|QUET MA|CHUYEN TIEN|SO TAI KHOAN|STK|VND|THANH TOAN|CONG TY|CHI NHANH|TAI KHOAN|VIETINBANK|VIETCOMBANK|TECHCOMBANK|AGRIBANK|SACOMBANK|VPBANK|TPBANK|SHB|OCB|ACB|MBBANK|BIDV|SCAN TO PAY|MA QR|MÃ QR|CA NHAN|CÁ NHÂN|CHIA SE|CHIA SẺ|LUU MA|LƯU MÃ|QUÉT MÃ|CHUYEN KHOAN|CHUYỂN KHOẢN|THANH TOÁN|QR CODE|PAYMENT|TRANSFER|PERSONAL|DOWNLOAD|SAVE|SHARE|NAPAS247)\b/i;
   for (const line of lines) {
     if (EXCLUDED.test(line)) continue;
     if (/^[A-ZÀ-ỸĐa-zà-ỹđ\s]{4,45}$/u.test(line)) {
