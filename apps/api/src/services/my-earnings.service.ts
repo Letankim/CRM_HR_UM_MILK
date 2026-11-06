@@ -3,10 +3,12 @@ import {
   PAY_RATE_TYPE_LABELS,
   PAYROLL_ITEM_TYPE_LABELS,
   SYSTEM_CONFIG,
+  computeLateFine,
   type Employee,
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { dayjs } from '../lib/time.js';
+import { formatLateFineTierLabel } from '../routes/attendance-helpers.js';
 import {
   classifyShiftLog,
   collectHistoricalSnapshotLogs,
@@ -123,6 +125,9 @@ export async function buildMyEarningsSummary(ctx: AppContext, emp: Employee, fro
       if (log.isSwapIn) swapInCompletedCount += 1;
     }
 
+    const fine = computeLateFine(log.lateMinutes, rowBasePay);
+    const lateFineLabel = formatLateFineTierLabel(log.lateMinutes, fine.tier, fine.fineVnd);
+
     return {
       key: log.assignmentId || `${log.date}-${log.shiftCode}-${idx}`,
       assignmentId: log.assignmentId || null,
@@ -132,6 +137,7 @@ export async function buildMyEarningsSummary(ctx: AppContext, emp: Employee, fro
       isCountedInEarned, stage, stageLabel, percent, rateTypeLabel, unitRateVnd, unitLabel,
       hours: isWorkCandidate ? log.hours : 0, otHours: isWorkCandidate ? log.otHours : 0,
       checkInHm: log.checkInHm, checkOutHm: log.checkOutHm, lateMinutes: log.lateMinutes,
+      lateFineTier: fine.tier, lateFineVnd: fine.fineVnd, lateFineLabel,
       isSwapIn: log.isSwapIn, basePayVnd: rowBasePay, otPayVnd: rowOtPay,
       mealAllowanceVnd: rowMeal, swapAllowanceVnd: rowSwap, totalShiftPayVnd,
       pendingAdjustmentCode: log.pendingAdjustmentCode || null, note: log.note || '',

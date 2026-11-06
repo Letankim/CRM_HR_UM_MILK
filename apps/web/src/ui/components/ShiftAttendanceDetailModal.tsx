@@ -10,6 +10,7 @@ import { StatusTag } from '../StatusTag';
 import { BRAND } from '../theme';
 import type { AttendanceEventRow } from './AttendanceEventsTable';
 import { FancyboxImage, type FancyboxSlideItem } from './FancyboxPreview';
+import { LateFineDetailBlock } from './LateFineTierNotice';
 
 export interface ShiftAttendanceAdjustmentInfo {
   id: string; adjustment_code: string; kind: string; status: string;
@@ -122,6 +123,7 @@ function renderShiftCheckPane(
                 </>
               )}
             </Descriptions.Item>
+            {isCheckIn && <Descriptions.Item label="Phạt đi trễ"><LateFineDetailBlock ev={ev} /></Descriptions.Item>}
           </Descriptions>
         </Space>
       )}

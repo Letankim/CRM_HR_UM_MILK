@@ -27,6 +27,7 @@ import { ScheduleRequestDetailModal, type ScheduleDetailTarget } from '@/ui/comp
 import { ShiftAttendanceDetailModal } from '@/ui/components/ShiftAttendanceDetailModal';
 import { EmployeeTestCenterView } from '@/ui/components/ExamTestCenter';
 import { GovernanceDetailDrawer, POLICY_CATEGORY_LABELS } from '@/ui/components/GovernanceAndCommsModals';
+import { LateFineDetailBlock, renderLateFineInlineTag } from '@/ui/components/LateFineTierNotice';
 import { MyAdjustmentsTable } from '@/ui/components/MyAdjustmentsTable';
 import { NotificationsCenterView } from '@/ui/components/NotificationsCenterView';
 import { SelfShiftActionPanel } from '@/ui/components/SelfShiftActionPanel';
@@ -129,11 +130,13 @@ export default function EmployeeSection() {
                           <StatusTag value={String(activeShift.status || 'PUBLISHED')} label={String(activeShift.statusLabel || '') || undefined} />
                           <Tag color={String(activeShift.attendanceStatusColor || 'default')} style={{ margin: 0 }}>{String(activeShift.attendanceStatusLabel || 'Chưa điểm danh')}</Tag>
                           {checkInEvent && <Tag color={checkInEvent.punctualityStatus === 'LATE' ? 'volcano' : 'green'} style={{ margin: 0 }}>Vào: {String(checkInEvent.checkTimeFormatted || '').slice(0, 5)} ({String(checkInEvent.punctualityLabel)})</Tag>}
+                          {checkInEvent && renderLateFineInlineTag(checkInEvent)}
                           {checkOutEvent && <Tag color={checkOutEvent.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} style={{ margin: 0 }}>Ra: {String(checkOutEvent.checkTimeFormatted || '').slice(0, 5)} ({String(checkOutEvent.punctualityLabel)})</Tag>}
                         </Space>
                       </div>
                     )}
                     <SelfShiftActionPanel shift={activeShift} todayDate={todayDate} size="middle" showIncidentButton onCamera={setCameraModalKind} onAdjust={openAdjust} onViewAttendance={setAttShiftId} />
+                    {activeShift && <div style={{ marginTop: 10 }}><LateFineDetailBlock ev={checkInEvent} shiftHours={Number(activeShift.scheduledHours || 5)} isOfficial={myQ.data?.profile.stage === 'OFFICIAL'} /></div>}
                   </>
                 )}
               </div>
@@ -158,7 +161,7 @@ export default function EmployeeSection() {
                     </Space>
                     <Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => openAdjust(undefined)}>Yêu cầu bổ sung công</Button>
                   </div>
-                  <SelectableTable<Record<string, unknown>> size="small" rowKey="id" pagination={attPag} dataSource={filteredCongShifts} onRowClick={(r) => setDetailReq({ kind: 'shift', record: { ...r, employeeId: empId } })} bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAdjustmentsExcel(rows) }]} columns={[{ title: 'Ngày làm', dataIndex: 'workDate', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> }, { title: 'Ca & Tổng giờ / OT', width: 225, render: (_, r) => <Space size={4} wrap><strong>{cleanShiftName(r.shiftLabel)}</strong><Tag color="blue" style={{ margin: 0 }}>{String(r.startAt || '07:00')}–{String(r.endAt || '12:00')} ({String(r.scheduledHours || 5)}h{Number(r.otHours || 0) > 0 ? ` + OT ${r.otHours}h` : ''})</Tag></Space> }, { title: 'Check-in / Check-out & Cờ sự cố', render: (_, r) => { const inEv = r.checkInEvent as Record<string, unknown> | null; const outEv = r.checkOutEvent as Record<string, unknown> | null; return <Space size={4} wrap>{inEv ? <Tag color={inEv.punctualityStatus === 'LATE' ? 'volcano' : 'green'} style={{ margin: 0 }}>Vào: {String(inEv.checkTimeFormatted || '').slice(0, 5)} ({String(inEv.punctualityLabel)})</Tag> : <Tag style={{ margin: 0 }}>Chưa Check-in</Tag>}{outEv ? <Tag color={outEv.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} style={{ margin: 0 }}>Ra: {String(outEv.checkTimeFormatted || '').slice(0, 5)} ({String(outEv.punctualityLabel)})</Tag> : inEv ? <Tag color="orange" style={{ margin: 0 }}>Thiếu Check-out</Tag> : null}</Space>; } }, { title: 'Trạng thái công', width: 195, render: (_, r) => <Tag color={String(r.attendanceStatusColor || 'default')} style={{ margin: 0 }}>{String(r.attendanceStatusLabel || 'Chưa điểm danh')}</Tag> }, { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết ca công" onViewDetail={() => setDetailReq({ kind: 'shift', record: { ...r, employeeId: empId } })} /> }]} />
+                  <SelectableTable<Record<string, unknown>> size="small" rowKey="id" pagination={attPag} dataSource={filteredCongShifts} onRowClick={(r) => setDetailReq({ kind: 'shift', record: { ...r, employeeId: empId } })} bulkActions={[{ key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportAdjustmentsExcel(rows) }]} columns={[{ title: 'Ngày làm', dataIndex: 'workDate', width: 115, render: (v: string) => <strong className="num">{v ? dayjs(v).format('DD/MM/YYYY') : '—'}</strong> }, { title: 'Ca & Tổng giờ / OT', width: 225, render: (_, r) => <Space size={4} wrap><strong>{cleanShiftName(r.shiftLabel)}</strong><Tag color="blue" style={{ margin: 0 }}>{String(r.startAt || '07:00')}–{String(r.endAt || '12:00')} ({String(r.scheduledHours || 5)}h{Number(r.otHours || 0) > 0 ? ` + OT ${r.otHours}h` : ''})</Tag></Space> }, { title: 'Check-in / Check-out & Cờ sự cố', render: (_, r) => { const inEv = r.checkInEvent as AttendanceEventRow | null; const outEv = r.checkOutEvent as AttendanceEventRow | null; return <Space size={4} wrap>{inEv ? <><Tag color={inEv.punctualityStatus === 'LATE' ? 'volcano' : 'green'} style={{ margin: 0 }}>Vào: {String(inEv.checkTimeFormatted || '').slice(0, 5)} ({String(inEv.punctualityLabel)})</Tag>{renderLateFineInlineTag(inEv)}</> : <Tag style={{ margin: 0 }}>Chưa Check-in</Tag>}{outEv ? <Tag color={outEv.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} style={{ margin: 0 }}>Ra: {String(outEv.checkTimeFormatted || '').slice(0, 5)} ({String(outEv.punctualityLabel)})</Tag> : inEv ? <Tag color="orange" style={{ margin: 0 }}>Thiếu Check-out</Tag> : null}</Space>; } }, { title: 'Trạng thái công', width: 195, render: (_, r) => <Tag color={String(r.attendanceStatusColor || 'default')} style={{ margin: 0 }}>{String(r.attendanceStatusLabel || 'Chưa điểm danh')}</Tag> }, { title: 'Thao tác', width: 88, fixed: 'right', align: 'right', render: (_, r) => <RowActionButtons detailTooltip="Xem chi tiết ca công" onViewDetail={() => setDetailReq({ kind: 'shift', record: { ...r, employeeId: empId } })} /> }]} />
                 </>
               ),
             },
@@ -166,9 +169,7 @@ export default function EmployeeSection() {
               key: 'adjustments', label: <span><FileAddOutlined /> Phiếu bổ sung công ({myAdjustments.length})</span>,
               children: (
                 <>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 10 }}>
-                    <Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => openAdjust(undefined)}>Gửi phiếu bổ sung công</Button>
-                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 10 }}><Button size="small" type="primary" icon={<FileAddOutlined />} onClick={() => openAdjust(undefined)}>Gửi phiếu bổ sung công</Button></div>
                   <MyAdjustmentsTable adjustments={myAdjustments} onViewDetail={(r) => setDetailReq({ kind: 'adjustment', record: r })} />
                 </>
               ),

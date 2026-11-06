@@ -13,6 +13,7 @@ import { useShiftTemplates } from '../hooks/useShiftTemplates';
 import { BRAND } from '../theme';
 import { AttendanceEventDetailModal, AttendanceEventEditModal } from './AttendanceEventDetailModal';
 import { SelectableTable } from './BulkActionBar';
+import { renderLateFineInlineTag, resolveEventLateFine } from './LateFineTierNotice';
 import { RowActionButtons } from './RowActionButtons';
 
 export interface AttendanceEventRow {
@@ -21,6 +22,9 @@ export interface AttendanceEventRow {
   work_date?: string; shift_code?: string; type?: 'CHECK_IN' | 'CHECK_OUT'; kindLabel?: string;
   shiftLabel?: string; shiftTimeRange?: string; checkTimeHm?: string; checkTimeFormatted?: string;
   punctualityStatus?: 'ON_TIME' | 'LATE' | 'EARLY_LEAVE'; punctualityLabel?: string;
+  late_minutes?: number; lateMinutes?: number; late_fine_tier?: 'NONE' | 'FLAT_30K' | 'HALF_SHIFT' | 'FULL_SHIFT';
+  lateFineTier?: 'NONE' | 'FLAT_30K' | 'HALF_SHIFT' | 'FULL_SHIFT'; late_fine_vnd?: number; lateFineVnd?: number;
+  lateFineLabel?: string; shiftPayVnd?: number;
   distance_m?: number; lat?: number; lng?: number; device_info?: string; photoUrl?: string;
   isHrCompensated?: boolean; gpsStatusLabel?: string;
   photo_drive_file_id?: string; photo_sha256?: string; note?: string;
@@ -63,10 +67,14 @@ export function exportAttendanceEventsExcel(rows: AttendanceEventRow[]) {
       { header: 'Nhân sự', key: 'employeeName' }, { header: 'Chi nhánh', key: 'branchName' },
       { header: 'Ngày làm việc', key: 'work_date' }, { header: 'Ca làm việc', key: 'shiftLabel' },
       { header: 'Khung giờ quy định', key: 'shiftTimeRange' }, { header: 'Giờ Vào ca', key: 'checkInTime' },
-      { header: 'Đánh giá Vào ca', key: 'checkInPunctuality' }, { header: 'Giờ Ra ca', key: 'checkOutTime' },
-      { header: 'Đánh giá Ra ca', key: 'checkOutPunctuality' }, { header: 'Khoảng cách GPS (m)', key: 'distance_m', align: 'right' },
+      { header: 'Đánh giá Vào ca', key: 'checkInPunctuality' }, { header: 'Phạt đi trễ (8.5)', key: 'lateFineSummary' },
+      { header: 'Giờ Ra ca', key: 'checkOutTime' }, { header: 'Đánh giá Ra ca', key: 'checkOutPunctuality' },
+      { header: 'Khoảng cách GPS (m)', key: 'distance_m', align: 'right' },
     ],
-    rows: grouped.map((r) => ({ ...r, checkInTime: r.checkInEvent?.checkTimeHm || '—', checkInPunctuality: r.checkInEvent?.punctualityLabel || 'Chưa vào ca', checkOutTime: r.checkOutEvent?.checkTimeHm || '—', checkOutPunctuality: r.checkOutEvent?.punctualityLabel || 'Chưa ra ca' })),
+    rows: grouped.map((r) => {
+      const fine = resolveEventLateFine(r.checkInEvent);
+      return { ...r, checkInTime: r.checkInEvent?.checkTimeHm || '—', checkInPunctuality: r.checkInEvent?.punctualityLabel || 'Chưa vào ca', lateFineSummary: fine ? fine.detailText : '0đ', checkOutTime: r.checkOutEvent?.checkTimeHm || '—', checkOutPunctuality: r.checkOutEvent?.punctualityLabel || 'Chưa ra ca' };
+    }),
   });
 }
 
@@ -83,7 +91,10 @@ export function renderShiftCheckInOutSummary(r: AttendanceEventRow) {
             {inEv.isHrCompensated ? (
               <Tag color="warning" style={{ margin: 0, fontWeight: 600 }}>{inEv.gpsStatusLabel || 'Được bù bởi HR'}</Tag>
             ) : (
-              <Tag color={inEv.punctualityStatus === 'LATE' ? 'volcano' : 'green'} icon={inEv.punctualityStatus === 'LATE' ? <ClockCircleOutlined /> : <CheckCircleOutlined />} style={{ margin: 0 }}>{inEv.punctualityLabel || 'Vào đúng giờ'}</Tag>
+              <>
+                <Tag color={inEv.punctualityStatus === 'LATE' ? 'volcano' : 'green'} icon={inEv.punctualityStatus === 'LATE' ? <ClockCircleOutlined /> : <CheckCircleOutlined />} style={{ margin: 0 }}>{inEv.punctualityLabel || 'Vào đúng giờ'}</Tag>
+                {renderLateFineInlineTag(inEv)}
+              </>
             )}
           </>
         ) : <Typography.Text type="secondary" style={{ fontSize: 12 }}>Chưa vào ca</Typography.Text>}
@@ -122,30 +133,23 @@ export function AttendanceEventsTable({ externalFilters }: Props) {
   useEffect(() => { setPage(1); }, [effQ, effBranch, effShift, effState]);
 
   const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'), enabled: !externalFilters });
-  const sessionsUrl = useMemo(() => {
-    const sp = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+  const buildSp = (p: number, pp: number) => {
+    const sp = new URLSearchParams({ page: String(p), per_page: String(pp) });
     if (effBranch && effBranch !== 'ALL') sp.set('branch_id', effBranch);
     if (effShift && effShift !== 'ALL') sp.set('shift_code', effShift);
     if (effState && effState !== 'ALL') sp.set('status', effState);
     if (effQ.trim()) sp.set('q', effQ.trim());
-    return `/admin/attendance/sessions?${sp}`;
-  }, [page, perPage, effBranch, effShift, effState, effQ]);
-
-  const sessionsQ = useQuery({
-    queryKey: ['attendance-sessions', effBranch, effShift, effState, effQ, page, perPage],
-    queryFn: () => api.list<AttendanceEventRow>(sessionsUrl),
-  });
-
-  const refreshAttendance = () => {
-    ['attendance-sessions', 'attendance-all', 'nv-attendance', 'my-attendance', 'schedules', 'nv-schedules'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    return sp;
   };
+  const sessionsUrl = useMemo(() => `/admin/attendance/sessions?${buildSp(page, perPage)}`, [page, perPage, effBranch, effShift, effState, effQ]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sessionsQ = useQuery({ queryKey: ['attendance-sessions', effBranch, effShift, effState, effQ, page, perPage], queryFn: () => api.list<AttendanceEventRow>(sessionsUrl) });
+  const refreshAttendance = () => ['attendance-sessions', 'attendance-all', 'nv-attendance', 'my-attendance', 'schedules', 'nv-schedules'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
 
   const deleteMut = useMutation({
     mutationFn: async (items: AttendanceEventRow[]) => {
       for (const r of items) {
         const targets = [r.checkInEvent, r.checkOutEvent].filter((x): x is AttendanceEventRow => Boolean(x));
-        if (targets.length === 0) targets.push(r);
-        for (const t of targets) await api.delete(`/admin/attendance/events/${t.id}`, { version: t.version ?? 1 });
+        for (const t of (targets.length ? targets : [r])) await api.delete(`/admin/attendance/events/${t.id}`, { version: t.version ?? 1 });
       }
     },
     onSuccess: () => { message.success('Đã xóa bản ghi điểm danh của ca làm việc'); refreshAttendance(); },
@@ -153,12 +157,7 @@ export function AttendanceEventsTable({ externalFilters }: Props) {
   });
 
   const handleExportExcel = async () => {
-    const sp = new URLSearchParams({ page: '1', per_page: '100' });
-    if (effBranch && effBranch !== 'ALL') sp.set('branch_id', effBranch);
-    if (effShift && effShift !== 'ALL') sp.set('shift_code', effShift);
-    if (effState && effState !== 'ALL') sp.set('status', effState);
-    if (effQ.trim()) sp.set('q', effQ.trim());
-    const res = await api.list<AttendanceEventRow>(`/admin/attendance/sessions?${sp}`);
+    const res = await api.list<AttendanceEventRow>(`/admin/attendance/sessions?${buildSp(1, 100)}`);
     exportAttendanceEventsExcel(res.data);
   };
 

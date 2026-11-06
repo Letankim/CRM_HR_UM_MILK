@@ -6,6 +6,7 @@ import { CheckCircleOutlined, ClockCircleOutlined, EyeOutlined, FormOutlined, Lo
 import dayjs from 'dayjs';
 import Link from 'next/link';
 import { BRAND } from '@/ui/theme';
+import { renderLateFineInlineTag } from './LateFineTierNotice';
 import { cleanShiftName, formatPendingShiftLabel, isBeforeShiftEnd } from './self-attendance-shared';
 
 type Row = Record<string, unknown>;
@@ -70,6 +71,7 @@ export function EmployeeHomeShiftItem({ shift: s, events, todayDate, nowHm, late
         {(inEv || outEv) && (
           <Space size={4} wrap style={{ marginTop: 4 }}>
             {inEv && <Tag color={inEv.punctualityStatus === 'LATE' ? 'volcano' : 'green'} style={{ margin: 0, fontSize: 11 }}>Vào: {String(inEv.checkTimeFormatted || '').slice(0, 5)} ({String(inEv.punctualityLabel || '')})</Tag>}
+            {inEv && renderLateFineInlineTag(inEv)}
             {outEv && <Tag color={outEv.punctualityStatus === 'EARLY_LEAVE' ? 'orange' : 'green'} style={{ margin: 0, fontSize: 11 }}>Ra: {String(outEv.checkTimeFormatted || '').slice(0, 5)} ({String(outEv.punctualityLabel || '')})</Tag>}
           </Space>
         )}

@@ -12,7 +12,7 @@ import { formatGraceLabel, getShiftCheckoutWindow } from '../services/schedule-s
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
-import { buildPaginatedAttendanceSessions, buildShiftFolderName, calculateHaversineMeters, describePunctuality, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto, queueAttendancePhotoDrivePatch } from './attendance-helpers.js';
+import { buildPaginatedAttendanceSessions, buildShiftFolderName, calculateHaversineMeters, describePunctuality, formatLateFineTierLabel, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto, queueAttendancePhotoDrivePatch, resolveShiftBasePayVnd } from './attendance-helpers.js';
 import { registerShiftAttendanceDetailRoute } from './attendance-shift-detail.js';
 import { registerAttendanceAdjustmentRoutes } from './attendance-adjustments.routes.js';
 export { calculateHaversineMeters } from './attendance-helpers.js';
@@ -160,9 +160,10 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const checkWin = getShiftCheckoutWindow(assign.work_date, assign.start_at || '07:00', assign.end_at || '12:00', serverDt.format('YYYY-MM-DD'), serverDt.format('HH:mm'));
     const lateMinutes = checkType === 'CHECK_IN' ? (body.enforce_shift_state ? checkWin.lateCheckInMinutes : Math.max(0, parseHm(serverDt.format('HH:mm')) - parseHm(schedTime))) : 0;
     const earlyLeaveMinutes = checkType === 'CHECK_OUT' ? checkWin.earlyLeaveMinutes : 0;
-    const shiftPayVnd = (assign.scheduled_hours || 5) * (empRecord.stage === 'OFFICIAL' ? SYSTEM_CONFIG.defaults.officialHourlyRateVnd : SYSTEM_CONFIG.defaults.probationHourlyRateVnd);
+    const shiftPayVnd = resolveShiftBasePayVnd(ctx, empRecord, assign);
     const fine = checkType === 'CHECK_IN' ? computeLateFine(lateMinutes, shiftPayVnd) : { tier: 'NONE' as const, fineVnd: 0 };
     const punc = describePunctuality(checkType, lateMinutes, earlyLeaveMinutes);
+    const fineNote = checkType === 'CHECK_IN' && lateMinutes > 0 ? ` · ${formatLateFineTierLabel(lateMinutes, fine.tier, fine.fineVnd)}` : '';
     const shiftMeta = resolveShiftTimeDetails(ctx, assign.shift_code, assign.id, branch.id);
     const uploadedPhoto = await persistAttendancePhoto(ctx, { base64: body.photo_base64, employeeCode: empRecord.employee_code, checkType, workDate: assign.work_date, shiftFolder: buildShiftFolderName(shiftMeta.shiftLabel, assign.shift_code, assign.start_at, assign.end_at) });
 
@@ -171,7 +172,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       lat: body.lat, lng: body.lng, accuracy_m: body.accuracy_m, distance_m: distanceM, within_radius: withinRadius, photo_id: `photo_${Date.now()}`, photo_sha256: uploadedPhoto.sha256, device_info: body.device_info, result,
       work_date: assign.work_date, shift_code: assign.shift_code, scheduled_time: schedTime, late_minutes: lateMinutes, late_fine_tier: fine.tier, late_fine_vnd: fine.fineVnd, early_leave_minutes: earlyLeaveMinutes,
       pink_ratio_percent: body.pink_ratio_percent ?? 100, uniform_verified: body.uniform_verified ?? true, allowed_radius_m: branch.radius_m, gps_status: accuracyOk && withinRadius ? 'OK' : 'WARNING',
-      photo_drive_file_id: uploadedPhoto.fileId, ip_address: request.ip, anomaly_flags_json: '[]', note: `${punc.punctualityLabel} · Khoảng cách GPS ${distanceM}m`,
+      photo_drive_file_id: uploadedPhoto.fileId, ip_address: request.ip, anomaly_flags_json: '[]', note: `${punc.punctualityLabel}${fineNote} · Khoảng cách GPS ${distanceM}m`,
     }, request.auth!.user.id);
     uploadedPhoto.syncDrive?.(async (driveFileId) => { queueAttendancePhotoDrivePatch(ctx, created.id, driveFileId); });
     if (checkType === 'CHECK_OUT' && assign.status !== 'COMPLETED') await ctx.db.shiftAssignments.update(assign.id, assign.version, { status: 'COMPLETED' }, request.auth!.user.id);
@@ -182,7 +183,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const reqAuditCtx = auditContext(request);
     ctx.realtime()?.toBranch(branch.id, 'attendance:event', { id: created.id, type: created.type, result, distanceM, lateMinutes, earlyLeaveMinutes, message: '' });
     await runBackgroundSideEffect(() => ctx.audit.record(reqAuditCtx, { action: checkType === 'CHECK_IN' ? 'attendance.check_in' : 'attendance.check_out', entity: 'ATTENDANCE_EVENTS', entityId: created.id, after: { type: created.type, distance_m: distanceM, within_radius: withinRadius, result, late_minutes: lateMinutes, late_fine_tier: fine.tier, late_fine_vnd: fine.fineVnd, early_leave_minutes: earlyLeaveMinutes } }));
-    return reply.code(201), sendSuccess(request, `Điểm danh ${checkType === 'CHECK_IN' ? 'vào ca' : 'ra ca'} thành công (${punc.punctualityLabel} · GPS ${distanceM}m)`, mapAttendanceEvent(created, ctx));
+    return reply.code(201), sendSuccess(request, `Điểm danh ${checkType === 'CHECK_IN' ? 'vào ca' : 'ra ca'} thành công (${punc.punctualityLabel}${fineNote} · GPS ${distanceM}m)`, mapAttendanceEvent(created, ctx));
     } finally {
       if (lockKey) inFlightSet.delete(lockKey);
     }

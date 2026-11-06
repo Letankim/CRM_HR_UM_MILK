@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { getAccurateDeviceLocation, type AccurateCoords } from '@/lib/geolocation';
 import { analyzePinkUniformFromDataUrl, type PinkUniformAnalysisResult } from '@/lib/pink-uniform-detector';
 import { FancyboxImage } from './FancyboxPreview';
+import { LateFineDetailBlock } from './LateFineTierNotice';
 
 export interface AttendanceCheckPayload {
   assignment_id: string; kind: 'CHECK_IN' | 'CHECK_OUT'; lat: number; lng: number;
@@ -168,6 +169,7 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
               {hasBranchCoords && <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 4 }}><span className="mono" style={{ fontSize: 12, color: '#475569' }}>Tọa độ: ({branchLat!.toFixed(5)}, {branchLng!.toFixed(5)})</span><Button size="small" type="link" icon={<EnvironmentOutlined />} style={{ padding: 0, height: 20, fontSize: 12 }} href={`https://www.google.com/maps?q=${branchLat},${branchLng}`} target="_blank" rel="noopener noreferrer">Xem trên Google Maps</Button></div>}
             </Descriptions.Item>
             <Descriptions.Item label="Giờ hiện tại"><Space wrap size={6}><Tag icon={<ClockCircleOutlined />} color="blue" style={{ margin: 0 }}>{nowStr}</Tag><Tag color={punc.color} style={{ margin: 0, fontWeight: 600 }}>{punc.label}</Tag></Space></Descriptions.Item>
+            {kind === 'CHECK_IN' && <Descriptions.Item label="Phạt đi trễ"><LateFineDetailBlock liveLateMinutes={Math.max(0, parseHm(nowStr.slice(0, 5)) - parseHm(startAt))} shiftHours={Number(activeShift?.scheduledHours || activeShift?.scheduled_hours || 5)} isOfficial={!isProbation} /></Descriptions.Item>}
             <Descriptions.Item label="Vị trí GPS">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                 {locating ? <Tag color="processing" style={{ margin: 0 }}>Đang lấy vị trí hiện tại...</Tag> : branchMismatch ? <Tag color="red" icon={<CloseCircleOutlined />} style={{ margin: 0 }}>Sai chi nhánh ({String(activeShift?.employeeBranchName || 'chi nhánh khác')})</Tag> : !coords ? <Tag color="red" icon={<CloseCircleOutlined />} style={{ margin: 0 }}>Chưa xác định được tọa độ GPS</Tag> : withinRadius ? <Tag color="green" icon={<EnvironmentOutlined />} style={{ margin: 0, fontWeight: 600 }}>Hợp lệ tại {branchName}: Cách {formatDistanceVi(distanceM!)} / {branchRadiusM}m</Tag> : <Tag color="red" icon={<CloseCircleOutlined />} style={{ margin: 0, fontWeight: 600 }}>Ngoài vùng cho phép: Cách {formatDistanceVi(distanceM!)} (Tối đa {branchRadiusM}m)</Tag>}

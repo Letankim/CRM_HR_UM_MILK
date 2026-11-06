@@ -54,7 +54,6 @@ export function AdjustmentEvidenceFields({ evidenceRequired = true }: { evidence
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
         message="HR duyệt minh chứng Vào ca -> ghi nhận Vào ca thành công; duyệt minh chứng Ra ca -> ca hoàn thành."
-        description="Bắt buộc chụp ảnh trực tiếp qua Camera (không tải ảnh từ thiết bị). Hệ thống tự động đóng dấu thời gian chụp và tọa độ GPS lên ảnh như điểm danh."
       />
       <Row gutter={12}>
         <Col xs={24} md={10}>

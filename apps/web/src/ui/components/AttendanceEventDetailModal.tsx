@@ -13,6 +13,7 @@ import { AttendanceCameraModal } from './AttendanceCameraModal';
 import type { AttendanceEventRow } from './AttendanceEventsTable';
 import { DateStringPicker, TimeStringPicker } from './DateTimePickers';
 import { FancyboxImage, type FancyboxSlideItem } from './FancyboxPreview';
+import { LateFineDetailBlock } from './LateFineTierNotice';
 
 interface DetailProps { event: AttendanceEventRow | null; onClose: () => void; }
 
@@ -61,6 +62,7 @@ function renderCheckEventPane(ev: AttendanceEventRow | null | undefined, kind: '
                 </>
               )}
             </Descriptions.Item>
+            {isCheckIn && <Descriptions.Item label="Phạt đi trễ"><LateFineDetailBlock ev={ev} /></Descriptions.Item>}
           </Descriptions>
         </Space>
       )}

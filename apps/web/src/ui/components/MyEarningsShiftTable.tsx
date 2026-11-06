@@ -13,6 +13,7 @@ import {
   type MyEarningsSummary,
 } from '@/ui/components/my-earnings-types';
 import { fmtVnd } from '@/ui/components/payroll-types';
+import { LateFineDetailBlock, renderLateFineInlineTag } from '@/ui/components/LateFineTierNotice';
 import { RowActionButtons } from '@/ui/components/RowActionButtons';
 import { BRAND } from '@/ui/theme';
 
@@ -76,6 +77,7 @@ export function MyEarningsShiftTable({ summary, rows, loading }: Props) {
                       ? `Vào: ${r.checkInHm || '—'} · Ra: ${r.checkOutHm || '—'}${r.lateMinutes > 0 ? ` (Trễ ${r.lateMinutes}p)` : ''}`
                       : r.branchName}
                   </div>
+                  {r.lateMinutes > 0 && <div style={{ marginTop: 3 }}>{renderLateFineInlineTag(r)}</div>}
                 </div>
               ),
             },
@@ -190,6 +192,7 @@ export function MyEarningsShiftTable({ summary, rows, loading }: Props) {
               <Descriptions.Item label="Ngày & Khung ca">{selected.weekdayLabel}, {dayjs(selected.date).format('DD/MM/YYYY')} · {selected.shiftLabel} ({selected.shiftTime})</Descriptions.Item>
               <Descriptions.Item label="Chi nhánh">{selected.branchName}</Descriptions.Item>
               <Descriptions.Item label="Điểm danh Vào / Ra">{selected.checkInHm || selected.checkOutHm ? `Vào: ${selected.checkInHm || 'Chưa có'} · Ra: ${selected.checkOutHm || 'Chưa có'}${selected.lateMinutes > 0 ? ` (Trễ ${selected.lateMinutes} phút)` : ''}` : 'Chưa có lượt chấm công'}</Descriptions.Item>
+              <Descriptions.Item label="Phạt đi trễ"><LateFineDetailBlock ev={selected} /></Descriptions.Item>
               <Descriptions.Item label="Trạng thái">{selected.statusLabel}</Descriptions.Item>
               <Descriptions.Item label="Giai đoạn & Đơn giá">{selected.stageLabel} ({selected.percent}%) · {selected.rateTypeLabel}{selected.unitRateVnd > 0 ? ` (${fmtVnd(selected.unitRateVnd)}/${selected.unitLabel})` : ''}</Descriptions.Item>
               <Descriptions.Item label="Số giờ công">{selected.hours} giờ{selected.otHours > 0 ? ` · Tăng ca OT: ${selected.otHours} giờ` : ''}</Descriptions.Item>

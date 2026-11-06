@@ -74,7 +74,7 @@ export function EvidencePhotoUpload({ value, onChange, disabled, watermarkTitle 
           </div>
           <Space direction="vertical" size={6} style={{ flex: 1, minWidth: 180 }}>
             <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>
-              Đã chụp ảnh minh chứng trực tiếp (Có đóng dấu Thời gian &amp; GPS)
+              Đã chụp ảnh minh chứng trực tiếp
             </Tag>
             <Flex gap={6} wrap="wrap">
               <Button size="small" type="primary" ghost icon={<CameraOutlined />} disabled={disabled} onClick={() => setCameraOpen(true)}>
@@ -100,9 +100,6 @@ export function EvidencePhotoUpload({ value, onChange, disabled, watermarkTitle 
               Chụp ảnh trực tiếp
             </Button>
           </Flex>
-          <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 6 }}>
-            Chỉ chấp nhận ảnh chụp trực tiếp qua Camera tại thời điểm gửi phiếu (hệ thống tự động lưu thời gian chụp và tọa độ GPS trực tiếp trên ảnh như điểm danh).
-          </Typography.Text>
         </div>
       )}
       <EvidenceCameraModal

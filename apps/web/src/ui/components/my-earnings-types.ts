@@ -32,6 +32,9 @@ export interface MyEarningsShiftRow {
   checkInHm: string;
   checkOutHm: string;
   lateMinutes: number;
+  lateFineTier?: 'NONE' | 'FLAT_30K' | 'HALF_SHIFT' | 'FULL_SHIFT';
+  lateFineVnd?: number;
+  lateFineLabel?: string;
   isSwapIn: boolean;
   basePayVnd: number;
   otPayVnd: number;

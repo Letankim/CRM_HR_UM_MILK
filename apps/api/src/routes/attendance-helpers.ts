@@ -1,10 +1,33 @@
-import type { AttendanceEvent } from '@umbm/shared';
+import { SYSTEM_CONFIG, computeLateFine, type AttendanceEvent, type Employee, type ShiftAssignment } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { paginateAndSort } from '../lib/list-query.js';
 import { dayjs } from '../lib/time.js';
 import { findBranchShiftTemplate } from './account-employee-sync.js';
 import { resolveShiftLabel } from './employee-mapper.js';
 export { buildAttendanceFolderSegments, buildShiftFolderName, flushCoalescedPhotoPatches, loadAttendancePhotoBuffer, migrateLegacyBase64Photos, persistAttendancePhoto, queueAdjustmentPhotoDrivePatch, queueAttendancePhotoDrivePatch } from './attendance-photo-storage.js';
+
+export function resolveShiftBasePayVnd(ctx: AppContext, emp?: Employee, assign?: ShiftAssignment): number {
+  const hours = Number(assign?.scheduled_hours || 5);
+  const isOfficial = emp?.stage === 'OFFICIAL';
+  const rate = emp ? ctx.db.payRates.find((r) => (r.employee_id === emp.id || r.employee_id === emp.employee_code) && !r.effective_to) : undefined;
+  if (rate) {
+    const pct = isOfficial ? 100 : (rate.probation_percent || SYSTEM_CONFIG.defaults.probationSalaryPercent);
+    const eff = (rate.amount_vnd * pct) / 100;
+    if (rate.rate_type === 'SHIFT') return Math.round(eff);
+    if (rate.rate_type === 'MONTHLY') return Math.round(eff / (rate.standard_work_days || 26));
+    return Math.round(hours * eff);
+  }
+  const hourly = isOfficial ? SYSTEM_CONFIG.defaults.officialHourlyRateVnd : SYSTEM_CONFIG.defaults.probationHourlyRateVnd;
+  return Math.round(hours * hourly);
+}
+
+export function formatLateFineTierLabel(lateMins: number, tier: string, fineVnd: number): string {
+  if (lateMins <= 0) return 'Đúng giờ — Không phạt (0đ)';
+  if (tier === 'NONE' || lateMins < 5) return 'Bậc 1 (Trễ < 5 phút): Mức du di cho phép — Không phạt (0đ)';
+  if (tier === 'FLAT_30K') return 'Bậc 2 (Trễ từ 5 – 29 phút): Phạt cố định -30.000đ';
+  if (tier === 'HALF_SHIFT') return `Bậc 3 (Trễ từ 30 – 59 phút): Phạt 50% tiền lương ca (-${fineVnd.toLocaleString('vi-VN')}đ)`;
+  return `Bậc 4 (Trễ từ ≥ 60 phút): Phạt 100% tiền lương ca (-${fineVnd.toLocaleString('vi-VN')}đ — đi làm không hưởng lương ca đó)`;
+}
 
 export function parseHm(hm: string): number {
   const [h, m] = (hm || '00:00').split(':').map((x) => Number(x) || 0);
@@ -76,9 +99,18 @@ export function mapAttendanceEvent(e: AttendanceEvent, ctx: AppContext) {
     ? (matchedAdj ? `Được bù bởi HR (${matchedAdj.adjustment_code})` : 'Được bù bởi HR')
     : (e.within_radius !== false ? `Cách CH ${Number(e.distance_m ?? 0)}m · Hợp lệ` : `Ngoài bán kính (${Number(e.distance_m ?? 0)}m)`);
   const photoUrl = buildCheckInPhotoUrl(e.photo_drive_file_id, employeeName, kindLabel, checkTimeFormatted, shiftLabel, e.distance_m, isHrCompensated, gpsStatusLabel);
+  const shiftPayVnd = resolveShiftBasePayVnd(ctx, emp, assign);
+  const calcFine = e.type === 'CHECK_IN' && !isHrCompensated ? computeLateFine(lateMins, shiftPayVnd) : { tier: 'NONE' as const, fineVnd: 0, label: '' };
+  const lateFineTier = e.type === 'CHECK_IN' && !isHrCompensated ? (e.late_fine_tier && e.late_fine_tier !== 'NONE' ? e.late_fine_tier : calcFine.tier) : 'NONE';
+  const lateFineVnd = e.type === 'CHECK_IN' && !isHrCompensated ? (e.late_fine_vnd && e.late_fine_vnd > 0 ? e.late_fine_vnd : calcFine.fineVnd) : 0;
+  const lateFineLabel = e.type === 'CHECK_IN' && !isHrCompensated
+    ? formatLateFineTierLabel(lateMins, lateFineTier, lateFineVnd)
+    : (isHrCompensated ? 'Được bù bởi HR — Không áp dụng phạt đi trễ' : 'Không áp dụng cho lượt Ra ca');
 
   return {
-    ...e, within_radius: isHrCompensated ? false : e.within_radius, isHrCompensated, gpsStatusLabel,
+    ...e, late_minutes: lateMins, early_leave_minutes: earlyMins, late_fine_tier: lateFineTier, late_fine_vnd: lateFineVnd,
+    lateMinutes: lateMins, earlyLeaveMinutes: earlyMins, shiftPayVnd, lateFineTier, lateFineVnd, lateFineLabel,
+    within_radius: isHrCompensated ? false : e.within_radius, isHrCompensated, gpsStatusLabel,
     branch_id: branch?.id ?? e.branch_id, kindLabel,
     employeeId: emp?.id ?? e.employee_id, employeeCode: emp?.employee_code ?? e.employee_id, employeeName,
     branchName: branch?.name ?? 'Chi nhánh', branchLat: branch?.lat ?? null, branchLng: branch?.lng ?? null, branchRadiusM: branch?.radius_m ?? 100,
