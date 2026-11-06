@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Flex, Modal, Segmented, Space, Spin, Tag, Typography } from 'antd';
+import { Alert, Button, Flex, Modal, Segmented, Space, Spin, Tag } from 'antd';
 import type { ButtonProps } from 'antd';
-import { AimOutlined, CheckCircleOutlined, CloseOutlined, CompassOutlined, EnvironmentOutlined, FlagOutlined, ShopOutlined } from '@ant-design/icons';
+import { AimOutlined, CheckCircleOutlined, CloseOutlined, CompassOutlined, EnvironmentOutlined, ShopOutlined } from '@ant-design/icons';
 import { BRAND } from '../theme';
 import { loadLeafletLibrary, renderVietnamGpsMap, type MapPointMarker, type VietnamMapRenderConfig } from './vietnam-map-leaflet';
 
@@ -28,7 +28,7 @@ export function VietnamGpsMapModal({
 }: ModalProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<ReturnType<typeof renderVietnamGpsMap> | null>(null);
-  const [tileMode, setTileMode] = useState<'STREET' | 'SATELLITE'>('STREET');
+  const [tileMode, setTileMode] = useState<'OSM' | 'GOOGLE_VN' | 'SATELLITE'>('OSM');
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
@@ -90,19 +90,9 @@ export function VietnamGpsMapModal({
         <Space size={8} wrap>
           <EnvironmentOutlined style={{ color: '#2563EB' }} />
           <span>{title || `Bản đồ Vị trí Cửa hàng & Điểm danh GPS — ${branchName || 'Ụm Bò Milk'}`}</span>
-          <Tag color="red" icon={<FlagOutlined />} style={{ margin: 0, fontWeight: 600 }}>
-            Chủ quyền Việt Nam: Hoàng Sa &amp; Trường Sa
-          </Tag>
         </Space>
       }
-      footer={
-        <Flex justify="space-between" align="center" wrap="wrap" gap={8}>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Bản đồ trực tuyến miễn phí · Hiển thị đầy đủ Quần đảo Hoàng Sa &amp; Quần đảo Trường Sa thuộc chủ quyền Việt Nam
-          </Typography.Text>
-          <Button icon={<CloseOutlined />} onClick={onClose}>Đóng bản đồ</Button>
-        </Flex>
-      }
+      footer={<Button icon={<CloseOutlined />} onClick={onClose}>Đóng bản đồ</Button>}
     >
       <Space direction="vertical" size={10} style={{ width: '100%' }}>
         <Flex justify="space-between" align="center" wrap="wrap" gap={8} style={{ background: '#F8FAFC', border: `1px solid ${BRAND.border}`, borderRadius: 4, padding: '8px 10px' }}>
@@ -121,16 +111,14 @@ export function VietnamGpsMapModal({
                 {pt.distanceM !== undefined && pt.distanceM !== null ? ` (${Math.round(pt.distanceM)}m)` : ''}
               </Button>
             ))}
-            <Button size="small" danger ghost icon={<FlagOutlined />} onClick={() => controllerRef.current?.flyToSovereignty()}>
-              Hoàng Sa &amp; Trường Sa (VN)
-            </Button>
           </Space>
           <Segmented
             size="small"
             value={tileMode}
-            onChange={(v) => setTileMode(v as 'STREET' | 'SATELLITE')}
+            onChange={(v) => setTileMode(v as 'OSM' | 'GOOGLE_VN' | 'SATELLITE')}
             options={[
-              { value: 'STREET', label: 'Bản đồ Giao thông' },
+              { value: 'OSM', label: 'OpenStreetMap' },
+              { value: 'GOOGLE_VN', label: 'Bản đồ Chi tiết' },
               { value: 'SATELLITE', label: 'Ảnh Vệ tinh' },
             ]}
           />

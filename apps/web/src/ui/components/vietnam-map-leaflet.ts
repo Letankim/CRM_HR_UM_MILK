@@ -17,7 +17,7 @@ export interface VietnamMapRenderConfig {
   branchLng?: number | null;
   branchRadiusM?: number;
   points?: MapPointMarker[];
-  tileMode?: 'STREET' | 'SATELLITE';
+  tileMode?: 'OSM' | 'GOOGLE_VN' | 'SATELLITE';
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -36,11 +36,11 @@ export function loadLeafletLibrary(): Promise<LeafletAny> {
       const link = document.createElement('link');
       link.id = 'umbm-leaflet-css';
       link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      link.href = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css';
       document.head.appendChild(link);
     }
     const script = document.createElement('script');
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js';
     script.async = true;
     script.onload = () => (w.L ? resolve(w.L) : reject(new Error('Leaflet load failed')));
     script.onerror = () => {
@@ -52,71 +52,48 @@ export function loadLeafletLibrary(): Promise<LeafletAny> {
   return leafletLoadPromise;
 }
 
-const SOVEREIGNTY_POINTS = [
-  { lat: 16.5333, lng: 111.6167, title: 'Quần đảo Hoàng Sa (TP. Đà Nẵng — Việt Nam)', subtitle: 'Lãnh thổ thuộc chủ quyền không thể tách rời của Việt Nam' },
-  { lat: 9.6667, lng: 114.25, title: 'Quần đảo Trường Sa (Tỉnh Khánh Hòa — Việt Nam)', subtitle: 'Lãnh thổ thuộc chủ quyền không thể tách rời của Việt Nam' },
-];
-
 function createPinIcon(L: LeafletAny, bg: string, badgeText: string) {
   return L.divIcon({
     className: 'umbm-map-pin-icon',
     iconSize: [34, 42],
     iconAnchor: [17, 40],
     popupAnchor: [0, -36],
-    html: `<div style="display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0 2px 4px rgba(15,23,42,0.35));">
-      <div style="background:${bg};color:#FFFFFF;border:2px solid #FFFFFF;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;white-space:nowrap;line-height:1.35;">${badgeText}</div>
+    html: `<div style="display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0 2px 5px rgba(15,23,42,0.32));">
+      <div style="background:${bg};color:#FFFFFF;border:2px solid #FFFFFF;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:700;white-space:nowrap;line-height:1.35;">${badgeText}</div>
       <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${bg};margin-top:-1px;"></div>
     </div>`,
   });
 }
 
-function addVietnamSovereigntyLayer(L: LeafletAny, map: LeafletAny) {
-  // Opaque sea patches covering Paracel & Spratly regions to block any foreign tile text, replaced by official Vietnamese sovereignty labels
+function addCleanVietnamSeaLabels(L: LeafletAny, map: LeafletAny) {
   const seaMasks = [
     [[15.4, 110.8], [17.3, 113.1]],
     [[7.5, 111.5], [11.9, 117.2]],
   ];
   for (const bounds of seaMasks) {
-    L.rectangle(bounds, { color: 'transparent', weight: 0, fillColor: '#AAD3DF', fillOpacity: 0.92, interactive: false }).addTo(map);
+    L.rectangle(bounds, { color: 'transparent', weight: 0, fillColor: '#AAD3DF', fillOpacity: 0.94, interactive: false }).addTo(map);
   }
-
-  for (const item of SOVEREIGNTY_POINTS) {
-    L.circle([item.lat, item.lng], {
-      radius: 85000,
-      color: '#DC2626',
-      weight: 1.5,
-      dashArray: '4 4',
-      fillColor: '#FEE2E2',
-      fillOpacity: 0.28,
-    }).addTo(map);
-
-    const sovIcon = L.divIcon({
-      className: 'umbm-vn-sovereignty-marker',
-      iconSize: [230, 36],
-      iconAnchor: [115, 18],
-      html: `<div style="background:#DC2626;color:#FEF08A;border:1.5px solid #FEF08A;border-radius:4px;padding:3px 8px;font-size:11px;font-weight:700;text-align:center;box-shadow:0 2px 6px rgba(15,23,42,0.25);white-space:nowrap;">
-        ★ ${item.title}
-      </div>`,
+  const seaLabels = [
+    { lat: 16.5333, lng: 111.6167, text: 'Quần đảo Hoàng Sa (Đà Nẵng, Việt Nam)' },
+    { lat: 9.6667, lng: 114.25, text: 'Quần đảo Trường Sa (Khánh Hòa, Việt Nam)' },
+    { lat: 13.2, lng: 111.8, text: 'Biển Đông' },
+  ];
+  for (const item of seaLabels) {
+    const icon = L.divIcon({
+      className: 'umbm-sea-geo-label',
+      iconSize: [220, 22],
+      iconAnchor: [110, 11],
+      html: `<div style="color:#1E3A8A;font-size:11.5px;font-weight:600;text-shadow:0 0 3px #FFFFFF,0 0 3px #FFFFFF;text-align:center;white-space:nowrap;">${item.text}</div>`,
     });
-    L.marker([item.lat, item.lng], { icon: sovIcon, zIndexOffset: 9000 })
-      .addTo(map)
-      .bindPopup(`<strong>${item.title}</strong><br/><span style="font-size:12px;color:#475569;">${item.subtitle}</span>`);
+    L.marker([item.lat, item.lng], { icon, interactive: false }).addTo(map);
   }
-
-  const eastSeaIcon = L.divIcon({
-    className: 'umbm-vn-east-sea-label',
-    iconSize: [160, 24],
-    iconAnchor: [80, 12],
-    html: `<div style="color:#1E3A8A;font-size:12px;font-weight:700;letter-spacing:0.6px;text-shadow:0 0 4px #FFFFFF,0 0 4px #FFFFFF;text-align:center;white-space:nowrap;">BIỂN ĐÔNG (VIỆT NAM)</div>`,
-  });
-  L.marker([13.2, 111.8], { icon: eastSeaIcon, interactive: false }).addTo(map);
 }
 
 export function renderVietnamGpsMap(
   L: LeafletAny,
   container: HTMLElement,
   config: VietnamMapRenderConfig,
-): { map: LeafletAny; fitMainBounds: () => void; flyToBranch: () => void; flyToPoint: (idx: number) => void; flyToSovereignty: () => void } {
+): { map: LeafletAny; fitMainBounds: () => void; flyToBranch: () => void; flyToPoint: (idx: number) => void } {
   const hasBranch = config.branchLat !== undefined && config.branchLat !== null && config.branchLng !== undefined && config.branchLng !== null && !Number.isNaN(Number(config.branchLat)) && !Number.isNaN(Number(config.branchLng));
   const bLat = hasBranch ? Number(config.branchLat) : null;
   const bLng = hasBranch ? Number(config.branchLng) : null;
@@ -134,22 +111,25 @@ export function renderVietnamGpsMap(
   if (config.tileMode === 'SATELLITE') {
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 19,
-      attribution: 'Bản đồ Vệ tinh · Chủ quyền Việt Nam (Hoàng Sa & Trường Sa)',
+      attribution: 'Esri World Imagery',
+    }).addTo(map);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+    }).addTo(map);
+  } else if (config.tileMode === 'GOOGLE_VN') {
+    L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=vi&gl=VN&x={x}&y={y}&z={z}', {
+      maxZoom: 20,
+      referrerPolicy: 'no-referrer',
+      attribution: 'Bản đồ Đường phố Việt Nam',
     }).addTo(map);
   } else {
-    // Carto Voyager No-Labels base + labels layer with Vietnamese sovereignty mask
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
-      subdomains: 'abcd',
-      maxZoom: 20,
-    }).addTo(map);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
-      subdomains: 'abcd',
-      maxZoom: 20,
-      attribution: 'OpenStreetMap & CARTO · Chủ quyền Việt Nam (Hoàng Sa & Trường Sa)',
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap Việt Nam',
     }).addTo(map);
   }
 
-  addVietnamSovereigntyLayer(L, map);
+  addCleanVietnamSeaLabels(L, map);
 
   const boundsCoords: [number, number][] = [];
 
@@ -225,6 +205,5 @@ export function renderVietnamGpsMap(
     fitMainBounds,
     flyToBranch: () => { if (bLat !== null && bLng !== null) map.setView([bLat, bLng], 17); },
     flyToPoint: (idx: number) => { const p = validPoints[idx]; if (p) map.setView([p.lat, p.lng], 18); },
-    flyToSovereignty: () => { map.fitBounds([[8.2, 103.5], [17.5, 116.5]], { padding: [24, 24] }); },
   };
 }
