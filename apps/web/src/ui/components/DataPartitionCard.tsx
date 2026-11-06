@@ -3,7 +3,7 @@
 import { Alert, App, Button, Card, Flex, Select, Skeleton, Space, Table, Tag, Typography } from 'antd';
 import {
   CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, DatabaseOutlined,
-  EnvironmentOutlined, ExportOutlined, FileExcelOutlined, FileTextOutlined, FolderOpenOutlined,
+  EnvironmentOutlined, ExportOutlined, FileExcelOutlined, FileTextOutlined,
   PlusOutlined, ReloadOutlined, SwapOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -102,9 +102,6 @@ export function DataPartitionCard() {
                   </Tag>
                   <Tag style={{ margin: 0, fontWeight: 600 }}>Tổng {totalActiveRows.toLocaleString('vi-VN')} dòng</Tag>
                 </Flex>
-                <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 4 }}>
-                  <FolderOpenOutlined /> Tách riêng dữ liệu theo từng tháng cho khối Văn phòng (Admin / HR / Kế toán) tra cứu và đối soát; phía Cổng Nhân viên vẫn luôn vận hành trên dữ liệu mới nhất để đảm bảo điểm danh và lịch ca không bị ảnh hưởng.
-                </Typography.Text>
               </div>
             </Flex>
             <Flex align="center" gap={8} wrap="wrap">

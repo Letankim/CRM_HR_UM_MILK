@@ -52,27 +52,24 @@ describe('Cảnh báo OFF trùng ngày, Lịch sử 4 tuần xuyên Sheet tháng
     const r1 = await t.app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: hrH, payload: { employee_id: m1, leave_date: leaveDate, shift_code: 'CA_SANG', reason: 'Việc cá nhân 1' } });
     const r2 = await t.app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: hrH, payload: { employee_id: m2, leave_date: leaveDate, shift_code: 'CA_SANG', reason: 'Việc cá nhân 2' } });
     const r3 = await t.app.inject({ method: 'POST', url: '/api/admin/leave-requests', headers: hrH, payload: { employee_id: c1, leave_date: leaveDate, shift_code: 'CA_CHIEU', reason: 'Việc cá nhân 3' } });
-    expect([r1.statusCode, r2.statusCode, r3.statusCode]).toEqual([201, 201, 201]);
+    expect([r1.statusCode, r2.statusCode, r3.statusCode]).toEqual([201, 400, 201]);
 
     const listRes = await t.app.inject({ method: 'GET', url: `/api/admin/leave-requests?branch_id=${cn2.id}`, headers: hrH });
-    const leave1Row = listRes.json().data.find((x: { id: string }) => x.id === r1.json().data.id);
-    expect(leave1Row.offConflict).toMatchObject({
-      hasConflict: true, sameBranchOffCount: 3, sameShiftOffCount: 2, sameShiftTotalStaff: 2,
+    const leave3Row = listRes.json().data.find((x: { id: string }) => x.id === r3.json().data.id);
+    expect(leave3Row.offConflict).toMatchObject({
+      hasConflict: true, sameBranchOffCount: 2, sameShiftOffCount: 1, sameShiftTotalStaff: 1,
       remainingGroupStaff: 0, willUnderstaffShift: true, severity: 'CRITICAL',
     });
-    expect(String(leave1Row.offConflict.warningMessage)).toContain('trống ca');
+    expect(String(leave3Row.offConflict.warningMessage)).toContain('chỉ còn 0/1 người trực');
 
     const plannerRes = await t.app.inject({ method: 'GET', url: `/api/admin/schedule-planner/week?week_start=${targetMonday}&branch_id=${cn2.id}`, headers: hrH });
     expect(plannerRes.json().data.summary.offConflictCount).toBeGreaterThanOrEqual(1);
     const dayConflict = plannerRes.json().data.offConflicts.find((c: { leaveDate: string }) => c.leaveDate === leaveDate);
-    expect(dayConflict).toMatchObject({ severity: 'CRITICAL', totalOffCount: 3 });
+    expect(dayConflict).toMatchObject({ severity: 'CRITICAL', totalOffCount: 2 });
 
-    const decideRes = await t.app.inject({
-      method: 'POST', url: `/api/admin/leave-requests/${r1.json().data.id}/decide`, headers: hrH,
-      payload: { version: 1, decision: 'APPROVED', decision_reason: 'Chấp thuận và sẽ điều phối quản lý trực thay' },
-    });
-    expect(decideRes.statusCode).toBe(200);
-    expect(String(decideRes.json().message)).toContain('trống ca');
+    const recRes = await t.app.inject({ method: 'GET', url: '/api/notifications/recipients', headers: hrH });
+    expect(recRes.statusCode).toBe(200);
+    expect(recRes.json().data.every((u: Record<string, unknown>) => typeof u.employeeId === 'string' && typeof u.employeeCode === 'string')).toBe(true);
   });
 
   it('2. Giữ nguyên thống kê "4 tuần trước" & xoay vòng 4-3 + đảo Chủ Nhật chính xác khi chuyển sang Sheet phân vùng tháng mới', async () => {

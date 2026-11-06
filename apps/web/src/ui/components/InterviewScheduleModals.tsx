@@ -141,7 +141,7 @@ export function InterviewRescheduleModal({
     const startParsed = dayjs(String(target.scheduled_at || target.start_at || `${todayStr}T09:30:00`));
     const rawIds = String(target.interviewer_id || '').split(',').map((s) => s.trim()).filter(Boolean);
     const validIds = rawIds
-      .map((raw) => interviewerOptions.find((o) => o.value === raw || o.label.includes(`(@${raw})`))?.value)
+      .map((raw) => interviewerOptions.find((o) => o.value === raw || o.label.includes(`(@${raw})`) || o.label.includes(`· ${raw}`) || o.label.includes(`(${raw})`))?.value)
       .filter((v): v is string => Boolean(v));
     const defaultZalo = zaloAccounts.find((a) => a.is_default && a.status === 'ACTIVE') ?? zaloAccounts.find((a) => a.is_default) ?? zaloAccounts[0];
     form.setFieldsValue({

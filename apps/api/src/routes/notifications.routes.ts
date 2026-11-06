@@ -69,10 +69,10 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
       if (scope === 'ALL' || u.branch_scope === 'ALL') return true;
       const uBranches = (u.branch_scope || '').split(',').map((s) => s.trim()).filter(Boolean);
       return uBranches.some((b) => scope.includes(b));
-    }).map((u) => ({
-      id: u.id, username: u.username, displayName: u.display_name || u.username,
-      role: u.role, roleLabel: ROLE_LABELS[u.role as Role] ?? u.role,
-    }));
+    }).map((u) => {
+      const emp = (u.employee_id ? (ctx.db.employees.get(u.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === u.employee_id)) : undefined) ?? ctx.db.employees.find((e) => e.user_id === u.id);
+      return { id: u.id, username: u.username, displayName: emp?.full_name || u.display_name || u.username, role: u.role, roleLabel: ROLE_LABELS[u.role as Role] ?? u.role, employeeId: emp?.id || '', employeeCode: emp?.employee_code || '' };
+    });
     return sendSuccess(request, 'Lấy danh sách người nhận thông báo thành công', items);
   });
 

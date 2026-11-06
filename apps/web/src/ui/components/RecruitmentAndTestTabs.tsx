@@ -62,27 +62,38 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
     enabled: canViewRec && isRecActive,
   });
   const testsQ = useQuery({ queryKey: ['tests-bank'], queryFn: () => api.get<{ tests: Record<string, unknown>[]; assignments: Record<string, unknown>[]; attempts: Record<string, unknown>[] }>('/admin/tests/bank'), enabled: canViewTests && isTestsActive });
-  const recipientsQ = useQuery({ queryKey: ['notifications', 'recipients'], queryFn: () => api.get<{ id: string; username: string; displayName: string; roleLabel: string }[]>('/notifications/recipients'), enabled: canViewRec && isRecActive });
+  const recipientsQ = useQuery({ queryKey: ['notifications', 'recipients'], queryFn: () => api.get<{ id: string; username: string; displayName: string; roleLabel: string; employeeId?: string; employeeCode?: string }[]>('/notifications/recipients'), enabled: canViewRec && isRecActive });
 
   const interviewerOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    if (me?.user) map.set(me.user.id, `${me.user.displayName} (@${me.user.username}) — ${ROLE_LABELS[me.user.role]} (Bạn)`);
-    for (const u of recipientsQ.data ?? []) if (!map.has(u.id)) map.set(u.id, `${u.displayName} (@${u.username}) — ${u.roleLabel}`);
+    const map = new Map<string, string>(), seen = new Set<string>();
+    const markSeen = (...vals: (string | null | undefined)[]) => vals.forEach((v) => { if (v?.trim()) seen.add(v.trim().toLowerCase()); });
+    const meRec = (recipientsQ.data ?? []).find((u) => u.id === me?.user.id);
+    if (me?.user) {
+      const code = meRec?.employeeCode ? ` · ${meRec.employeeCode}` : '';
+      map.set(me.user.id, `${me.user.displayName} (@${me.user.username})${code} — ${ROLE_LABELS[me.user.role]} (Bạn)`);
+      markSeen(me.user.id, me.user.username, me.user.displayName, me.user.employeeId, meRec?.employeeId, meRec?.employeeCode);
+    }
+    for (const u of recipientsQ.data ?? []) {
+      if (seen.has(u.id.toLowerCase()) || (u.employeeId && seen.has(u.employeeId.toLowerCase()))) continue;
+      map.set(u.id, `${u.displayName} (@${u.username})${u.employeeCode ? ` · ${u.employeeCode}` : ''} — ${u.roleLabel}`);
+      markSeen(u.id, u.username, u.displayName, u.employeeId, u.employeeCode);
+    }
     if (map.size === 0) for (const d of DEFAULT_INTERVIEWERS) map.set(d.value, d.label);
-    for (const e of empSelect.options) if (!map.has(e.value)) map.set(e.value, e.label);
+    for (const e of empSelect.options) {
+      const parts = e.label.split('—').map((s) => s.trim());
+      const code = e.employeeCode || (parts.length > 1 ? parts[0] : '');
+      const name = (parts.length > 1 ? parts.slice(1).join(' — ') : e.label).replace(/\([^)]*\)\s*$/, '').trim();
+      if (seen.has(e.value.toLowerCase()) || (code && seen.has(code.toLowerCase())) || (name && seen.has(name.toLowerCase()))) continue;
+      map.set(e.value, `${name || e.label}${code ? ` (${code})` : ''}${e.branchName ? ` — ${e.branchName}` : ''}`);
+      markSeen(e.value, code, name);
+    }
     return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
   }, [me?.user, recipientsQ.data, empSelect.options]);
 
-  const allInterviews = ivQ.data ?? [];
-  const zaloAccounts = zaloQ.data?.items ?? [];
+  const allInterviews = ivQ.data ?? [], zaloAccounts = zaloQ.data?.items ?? [];
   const scheduledCandidateIds = useMemo(() => {
     const s = new Set<string>();
-    for (const iv of allInterviews) {
-      if (iv.status !== 'CANCELLED') {
-        s.add(String(iv.candidate_id));
-        if (iv.candidateCode) s.add(String(iv.candidateCode));
-      }
-    }
+    for (const iv of allInterviews) if (iv.status !== 'CANCELLED') { s.add(String(iv.candidate_id)); if (iv.candidateCode) s.add(String(iv.candidateCode)); }
     return s;
   }, [allInterviews]);
 
@@ -90,10 +101,7 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
 
   const postMut = useMutation({
     mutationFn: ({ url, body }: { url: string; body: unknown }) => api.post(url, body),
-    onSuccess: () => {
-      message.success('Đã đặt lịch phỏng vấn thành công');
-      setIvModal(false); setRecSubTab('interviews'); refreshAll();
-    },
+    onSuccess: () => { message.success('Đã đặt lịch phỏng vấn thành công'); setIvModal(false); setRecSubTab('interviews'); refreshAll(); },
     onError: (e) => message.error(applyApiFormErrors(ivForm, e, { fallbackMessage: 'Đặt lịch phỏng vấn thất bại' })),
   });
 
@@ -102,19 +110,14 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
       const existingIv = allInterviews.find((iv) => (String(iv.candidate_id) === candidateId || String(iv.candidateCode) === candidateId) && iv.status !== 'CANCELLED');
       if (existingIv) { setRecSubTab('interviews'); setExternalEditIv(existingIv); return; }
     }
-    const nextSlot = getNextFutureInterviewSlot();
-    const defaultInterviewer = me?.user.id ?? interviewerOptions[0]?.value ?? 'hr';
+    const nextSlot = getNextFutureInterviewSlot(), defaultInterviewer = me?.user.id ?? interviewerOptions[0]?.value ?? 'hr';
     const availableCandidates = (candQ.data?.data ?? []).filter((c) => !scheduledCandidateIds.has(String(c.id)) && !scheduledCandidateIds.has(String(c.candidate_code)));
     const firstCand = candidateId ? (candQ.data?.data ?? []).find((c) => String(c.id) === candidateId) : availableCandidates[0];
     ivForm.resetFields();
     ivForm.setFieldsValue({
-      candidate_id: candidateId || (firstCand ? String(firstCand.id) : undefined),
-      interviewer_ids: [defaultInterviewer],
-      interview_date: nextSlot.date,
-      interview_slot: nextSlot.slot,
-      duration_minutes: 30,
-      zalo_account_id: String(firstCand?.zalo_account_id || zaloAccounts[0]?.id || ''),
-      candidate_zalo_id: String(firstCand?.candidate_zalo_id || firstCand?.phone || ''),
+      candidate_id: candidateId || (firstCand ? String(firstCand.id) : undefined), interviewer_ids: [defaultInterviewer],
+      interview_date: nextSlot.date, interview_slot: nextSlot.slot, duration_minutes: 30,
+      zalo_account_id: String(firstCand?.zalo_account_id || zaloAccounts[0]?.id || ''), candidate_zalo_id: String(firstCand?.candidate_zalo_id || firstCand?.phone || ''),
     });
     setIvModal(true);
   };
@@ -123,32 +126,24 @@ export function RecruitmentAndTestTabs({ branches, employees, activeTab, onTabCh
     const linkedIv = allInterviews.find((iv) => (String(iv.candidate_id) === String(c.id) || String(iv.candidateCode) === String(c.candidate_code)) && iv.status !== 'CANCELLED');
     const isConf = Boolean(linkedIv?.candidate_confirmed);
     setZaloNotifyTarget({
-      candidateId: String(c.id), interviewId: linkedIv ? String(linkedIv.id) : undefined,
-      candidateName: String(c.full_name || 'Ứng viên'), candidateCode: String(c.candidate_code || ''),
-      candidatePhone: String(c.phone || ''), candidateZaloId: String(c.candidate_zalo_id || c.phone || ''),
-      zaloAccountId: String(c.zalo_account_id || linkedIv?.zalo_account_id || ''),
+      candidateId: String(c.id), interviewId: linkedIv ? String(linkedIv.id) : undefined, candidateName: String(c.full_name || 'Ứng viên'), candidateCode: String(c.candidate_code || ''),
+      candidatePhone: String(c.phone || ''), candidateZaloId: String(c.candidate_zalo_id || c.phone || ''), zaloAccountId: String(c.zalo_account_id || linkedIv?.zalo_account_id || ''),
       positionLabel: String(c.positionLabel || c.position || ''), branchName: String(c.branchName || ''),
       interviewTime: linkedIv ? String(linkedIv.scheduled_at || linkedIv.start_at || '').slice(0, 16).replace('T', ' ') : undefined,
       interviewStartAt: linkedIv ? String(linkedIv.start_at || linkedIv.scheduled_at || '') : undefined,
-      meetLink: linkedIv ? String(linkedIv.meet_link || '') : undefined,
-      rsvpUrl: linkedIv ? String(linkedIv.rsvpUrl || '') : undefined,
-      candidateConfirmed: isConf,
-      defaultTemplateType: c.status === 'HIRED' ? 'PASS' : linkedIv ? (isConf ? 'REMINDER' : 'INVITE') : 'GREETING',
+      meetLink: linkedIv ? String(linkedIv.meet_link || '') : undefined, rsvpUrl: linkedIv ? String(linkedIv.rsvpUrl || '') : undefined,
+      candidateConfirmed: isConf, defaultTemplateType: c.status === 'HIRED' ? 'PASS' : linkedIv ? (isConf ? 'REMINDER' : 'INVITE') : 'GREETING',
     });
   };
 
   const openZaloForInterview = (iv: Record<string, unknown>) => {
     const isConf = Boolean(iv.candidate_confirmed);
     setZaloNotifyTarget({
-      candidateId: String(iv.candidate_id || ''), interviewId: String(iv.id),
-      candidateName: String(iv.candidateName || 'Ứng viên'), candidateCode: String(iv.candidateCode || ''),
-      candidatePhone: String(iv.candidatePhone || ''), candidateZaloId: String(iv.candidate_zalo_id || iv.candidatePhone || ''),
-      zaloAccountId: String(iv.zalo_account_id || ''), positionLabel: String(iv.positionLabel || ''),
-      branchName: String(iv.branchName || ''), interviewTime: String(iv.scheduled_at || iv.start_at || '').slice(0, 16).replace('T', ' '),
-      interviewStartAt: String(iv.start_at || iv.scheduled_at || ''),
-      meetLink: String(iv.meet_link || ''), rsvpUrl: String(iv.rsvpUrl || ''),
-      candidateConfirmed: isConf,
-      defaultTemplateType: iv.decision === 'PASS' ? 'PASS' : isConf ? 'REMINDER' : 'INVITE',
+      candidateId: String(iv.candidate_id || ''), interviewId: String(iv.id), candidateName: String(iv.candidateName || 'Ứng viên'), candidateCode: String(iv.candidateCode || ''),
+      candidatePhone: String(iv.candidatePhone || ''), candidateZaloId: String(iv.candidate_zalo_id || iv.candidatePhone || ''), zaloAccountId: String(iv.zalo_account_id || ''),
+      positionLabel: String(iv.positionLabel || ''), branchName: String(iv.branchName || ''), interviewTime: String(iv.scheduled_at || iv.start_at || '').slice(0, 16).replace('T', ' '),
+      interviewStartAt: String(iv.start_at || iv.scheduled_at || ''), meetLink: String(iv.meet_link || ''), rsvpUrl: String(iv.rsvpUrl || ''),
+      candidateConfirmed: isConf, defaultTemplateType: iv.decision === 'PASS' ? 'PASS' : isConf ? 'REMINDER' : 'INVITE',
     });
   };
 
