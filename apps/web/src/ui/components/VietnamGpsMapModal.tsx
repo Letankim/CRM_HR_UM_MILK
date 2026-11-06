@@ -28,7 +28,7 @@ export function VietnamGpsMapModal({
 }: ModalProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<ReturnType<typeof renderVietnamGpsMap> | null>(null);
-  const [tileMode, setTileMode] = useState<'OSM' | 'GOOGLE_VN' | 'SATELLITE'>('OSM');
+  const [tileMode, setTileMode] = useState<'GOOGLE_VN' | 'SATELLITE'>('GOOGLE_VN');
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
@@ -77,7 +77,12 @@ export function VietnamGpsMapModal({
         controllerRef.current = null;
       }
     };
-  }, [open, tileMode, branchName, branchAddress, branchLat, branchLng, branchRadiusM, JSON.stringify(validPoints)]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, branchName, branchAddress, branchLat, branchLng, branchRadiusM, JSON.stringify(validPoints)]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleTileModeChange = (nextMode: 'GOOGLE_VN' | 'SATELLITE') => {
+    setTileMode(nextMode);
+    controllerRef.current?.setTileMode(nextMode);
+  };
 
   return (
     <Modal
@@ -115,9 +120,8 @@ export function VietnamGpsMapModal({
           <Segmented
             size="small"
             value={tileMode}
-            onChange={(v) => setTileMode(v as 'OSM' | 'GOOGLE_VN' | 'SATELLITE')}
+            onChange={(v) => handleTileModeChange(v as 'GOOGLE_VN' | 'SATELLITE')}
             options={[
-              { value: 'OSM', label: 'OpenStreetMap' },
               { value: 'GOOGLE_VN', label: 'Bản đồ Chi tiết' },
               { value: 'SATELLITE', label: 'Ảnh Vệ tinh' },
             ]}

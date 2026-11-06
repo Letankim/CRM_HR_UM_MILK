@@ -17,7 +17,7 @@ export interface VietnamMapRenderConfig {
   branchLng?: number | null;
   branchRadiusM?: number;
   points?: MapPointMarker[];
-  tileMode?: 'OSM' | 'GOOGLE_VN' | 'SATELLITE';
+  tileMode?: 'GOOGLE_VN' | 'SATELLITE';
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,6 +65,17 @@ function createPinIcon(L: LeafletAny, bg: string, badgeText: string) {
   });
 }
 
+function createBaseTileLayer(L: LeafletAny, mode: 'GOOGLE_VN' | 'SATELLITE') {
+  const lyrs = mode === 'SATELLITE' ? 'y' : 'm';
+  return L.tileLayer(`https://{s}.google.com/vt/lyrs=${lyrs}&hl=vi&gl=VN&x={x}&y={y}&z={z}`, {
+    subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+    maxZoom: 20,
+    maxNativeZoom: 20,
+    referrerPolicy: 'no-referrer',
+    attribution: mode === 'SATELLITE' ? 'Ảnh Vệ tinh Việt Nam' : 'Bản đồ Chi tiết Việt Nam',
+  });
+}
+
 function addCleanVietnamSeaLabels(L: LeafletAny, map: LeafletAny) {
   const seaMasks = [
     [[15.4, 110.8], [17.3, 113.1]],
@@ -93,7 +104,13 @@ export function renderVietnamGpsMap(
   L: LeafletAny,
   container: HTMLElement,
   config: VietnamMapRenderConfig,
-): { map: LeafletAny; fitMainBounds: () => void; flyToBranch: () => void; flyToPoint: (idx: number) => void } {
+): {
+  map: LeafletAny;
+  setTileMode: (mode: 'GOOGLE_VN' | 'SATELLITE') => void;
+  fitMainBounds: () => void;
+  flyToBranch: () => void;
+  flyToPoint: (idx: number) => void;
+} {
   const hasBranch = config.branchLat !== undefined && config.branchLat !== null && config.branchLng !== undefined && config.branchLng !== null && !Number.isNaN(Number(config.branchLat)) && !Number.isNaN(Number(config.branchLng));
   const bLat = hasBranch ? Number(config.branchLat) : null;
   const bLng = hasBranch ? Number(config.branchLng) : null;
@@ -107,27 +124,7 @@ export function renderVietnamGpsMap(
       : [10.7769, 106.7009];
 
   const map = L.map(container, { center: initCenter, zoom: 17, zoomControl: true, attributionControl: true });
-
-  if (config.tileMode === 'SATELLITE') {
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19,
-      attribution: 'Esri World Imagery',
-    }).addTo(map);
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19,
-    }).addTo(map);
-  } else if (config.tileMode === 'GOOGLE_VN') {
-    L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=vi&gl=VN&x={x}&y={y}&z={z}', {
-      maxZoom: 20,
-      referrerPolicy: 'no-referrer',
-      attribution: 'Bản đồ Đường phố Việt Nam',
-    }).addTo(map);
-  } else {
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap Việt Nam',
-    }).addTo(map);
-  }
+  let activeTileLayer = createBaseTileLayer(L, config.tileMode === 'SATELLITE' ? 'SATELLITE' : 'GOOGLE_VN').addTo(map);
 
   addCleanVietnamSeaLabels(L, map);
 
@@ -202,6 +199,11 @@ export function renderVietnamGpsMap(
 
   return {
     map,
+    setTileMode: (mode: 'GOOGLE_VN' | 'SATELLITE') => {
+      if (activeTileLayer) map.removeLayer(activeTileLayer);
+      activeTileLayer = createBaseTileLayer(L, mode).addTo(map);
+      map.invalidateSize();
+    },
     fitMainBounds,
     flyToBranch: () => { if (bLat !== null && bLng !== null) map.setView([bLat, bLng], 17); },
     flyToPoint: (idx: number) => { const p = validPoints[idx]; if (p) map.setView([p.lat, p.lng], 18); },
