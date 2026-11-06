@@ -1,7 +1,7 @@
 'use client';
 
 import { App, Button, Flex, Form, Space, Spin, Tag, Typography } from 'antd';
-import { CheckCircleOutlined, QrcodeOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, InfoCircleOutlined, QrcodeOutlined } from '@ant-design/icons';
 import { useRef, useState } from 'react';
 import type { ParsedVietQrResult } from '@umbm/shared';
 import { decodeVietQrFromImage } from '@/lib/vietqr-image-decoder';
@@ -31,23 +31,27 @@ export function ProfileBankQrUploader({
     e.target.value = '';
     if (!file) return;
     setDecoding(true);
-    const fallbackName = String(form?.getFieldValue('full_name') || form?.getFieldValue('display_name') || form?.getFieldValue('name') || '').trim();
     try {
       const dataUrl = await readFileAsDataUrl(file);
-      const decoded = await decodeVietQrFromImage({ file, dataUrl, fallbackText: fallbackName });
+      const decoded = await decodeVietQrFromImage({ file, dataUrl });
       if (decoded) {
-        if (!decoded.accountHolder && fallbackName) decoded.accountHolder = fallbackName.toUpperCase();
         setDecodedInfo(decoded);
+        // Chỉ điền các trường thực sự có dữ liệu — không bịa tên chủ tài khoản
         form?.setFieldsValue({
           ...(decoded.bankName ? { bank_name: decoded.bankName } : {}),
           ...(decoded.accountNumber ? { bank_account_number: decoded.accountNumber } : {}),
           ...(decoded.accountHolder ? { bank_account_holder: decoded.accountHolder } : {}),
         });
         onDecoded?.(decoded);
-        message.success('Đã tự động nhận diện thông tin tài khoản ngân hàng từ mã QR');
+        const hasHolder = !!decoded.accountHolder;
+        message.success(
+          hasHolder
+            ? 'Đã tự động nhận diện thông tin tài khoản ngân hàng từ mã QR'
+            : 'Đã nhận diện Ngân hàng và Số tài khoản. Vui lòng nhập Chủ tài khoản thủ công.',
+        );
       } else {
         setDecodedInfo(null);
-        message.warning('Không nhận diện được mã VietQR trong ảnh, vui lòng chọn ảnh mã QR rõ nét hơn hoặc nhập thủ công');
+        message.warning('Không nhận diện được mã VietQR trong ảnh, vui lòng nhập thủ công');
       }
     } catch (err) {
       message.error(err instanceof Error ? err.message : 'Không thể đọc tệp ảnh Mã QR');
@@ -84,17 +88,23 @@ export function ProfileBankQrUploader({
           <Space size={6}>
             <Spin size="small" />
             <Typography.Text style={{ fontSize: 12, color: '#2563EB' }}>
-              Đang quét và nhận diện thông tin tài khoản...
+              Đang quét mã QR...
             </Typography.Text>
           </Space>
         ) : decodedInfo ? (
-          <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>
-            Đã nhận diện: {decodedInfo.bankName} · {decodedInfo.accountNumber}
-            {decodedInfo.accountHolder ? ` (${decodedInfo.accountHolder})` : ''}
-          </Tag>
+          <Space size={4} direction="vertical">
+            <Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>
+              Đã nhận diện: {decodedInfo.bankName} · {decodedInfo.accountNumber}
+            </Tag>
+            {!decodedInfo.accountHolder && (
+              <Typography.Text type="warning" style={{ fontSize: 11 }}>
+                <InfoCircleOutlined /> Mã QR không chứa tên chủ TK — vui lòng nhập thủ công
+              </Typography.Text>
+            )}
+          </Space>
         ) : (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Chọn ảnh mã QR ngân hàng để tự động điền Ngân hàng, Số tài khoản và Chủ tài khoản (không lưu ảnh).
+            Tự động điền Ngân hàng và Số tài khoản. Chủ tài khoản cần nhập thủ công.
           </Typography.Text>
         )}
       </Space>

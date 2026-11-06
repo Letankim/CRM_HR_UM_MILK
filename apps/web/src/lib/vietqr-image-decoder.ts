@@ -7,9 +7,7 @@
 
 import jsQR from 'jsqr';
 import {
-  cleanAccountHolder,
   extractBankAccountFromOcrText,
-  extractHolderFromText,
   parseVietQrEmvcoPayload,
   parseVietQrUrlPayload,
   type ParsedVietQrResult,
@@ -116,63 +114,21 @@ async function detectQrRawValueFromImage(file?: File, dataUrl?: string): Promise
 
 /**
  * Tự động nhận diện thông tin Ngân hàng, Số tài khoản, Chủ tài khoản từ tệp ảnh QR.
- * Pipeline: (1) jsQR đọc mã QR → (2) parse EMVCo/URL → (3) OCR tesseract.js đọc text trên ảnh → (4) fallback tên form.
- * Chỉ giải mã trên trình duyệt để điền vào form, không lưu trữ tệp ảnh QR.
+ * Pipeline: (1) jsQR đọc mã QR → (2) parse EMVCo TLV / URL VietQR.
+ * Nếu mã QR không chứa tên chủ tài khoản (phổ biến với QR cá nhân VN), để trống để người dùng tự nhập.
  */
 export async function decodeVietQrFromImage(params: {
   file?: File;
   dataUrl?: string;
-  fallbackText?: string;
 }): Promise<ParsedVietQrResult | null> {
-  let result: ParsedVietQrResult | null = null;
   const qrRaw = await detectQrRawValueFromImage(params.file, params.dataUrl);
   if (qrRaw) {
-    result = decodeVietQrPayloadOrText(qrRaw);
+    return decodeVietQrPayloadOrText(qrRaw);
   }
-
-  const fileHint = [params.fallbackText ?? '', params.file?.name ?? ''].join(' ').trim();
-  if (!result && fileHint) {
-    result = decodeVietQrPayloadOrText(fileHint);
+  // Thử parse từ tên file (trường hợp file có tên chứa thông tin ngân hàng)
+  const fileName = params.file?.name ?? '';
+  if (fileName) {
+    return decodeVietQrPayloadOrText(fileName);
   }
-
-  // OCR fallback: khi đã tìm thấy QR nhưng thiếu accountHolder (phổ biến với QR VN)
-  if (result && !result.accountHolder && params.dataUrl) {
-    try {
-      const { ocrBankAccountHolder } = await import('./ocr-bank-holder');
-      const ocrName = await ocrBankAccountHolder(params.dataUrl, result.accountNumber);
-      if (ocrName) result.accountHolder = ocrName;
-    } catch { /* OCR không khả dụng — tiếp tục fallback */ }
-  }
-
-  // OCR fallback: khi không tìm thấy QR nào trong ảnh, thử OCR toàn bộ ảnh
-  if (!result && params.dataUrl) {
-    try {
-      const { ocrBankAccountHolder, ocrRawText } = await import('./ocr-bank-holder');
-      const rawText = await ocrRawText(params.dataUrl);
-      if (rawText) {
-        result = decodeVietQrPayloadOrText(rawText);
-        if (result && !result.accountHolder) {
-          const ocrName = extractHolderFromText(rawText);
-          if (ocrName) result.accountHolder = ocrName;
-        }
-      }
-      // Nếu vẫn chưa có tên, thử ocrBankAccountHolder chuyên biệt
-      if (result && !result.accountHolder) {
-        const name = await ocrBankAccountHolder(params.dataUrl, result.accountNumber);
-        if (name) result.accountHolder = name;
-      }
-    } catch { /* OCR không khả dụng */ }
-  }
-
-  // Fallback cuối: dùng hint từ form (tên nhân sự)
-  if (result && !result.accountHolder) {
-    const hintHolder = extractHolderFromText(fileHint);
-    if (hintHolder) {
-      result.accountHolder = hintHolder;
-    } else if (params.fallbackText?.trim()) {
-      result.accountHolder = cleanAccountHolder(params.fallbackText);
-    }
-  }
-
-  return result;
+  return null;
 }
