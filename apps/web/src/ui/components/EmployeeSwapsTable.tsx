@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { Alert, App, Button, Space, Tag } from 'antd';
-import { CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, CloseOutlined, DownloadOutlined, StopOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, CloseOutlined, DownloadOutlined, ExclamationCircleFilled, StopOutlined } from '@ant-design/icons';
 import { useMutation } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { api, ApiClientError } from '@/lib/api';
@@ -127,22 +127,35 @@ export function EmployeeSwapsTable({
   return (
     <>
       {openDispatches.length > 0 && (
-        <Alert
-          type="warning" showIcon style={{ marginBottom: 12, padding: '8px 12px' }}
-          message={
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>Có {openDispatches.length} ca điều phối khẩn cấp (+30.000đ/ca)</span>
-              <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={busy} onClick={() => handleRespond([openDispatches[0]!], true)}>
-                Nhận ca ngay (+30k)
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px',
+          background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 4, marginBottom: 12,
+        }}>
+          <ExclamationCircleFilled style={{ fontSize: 16, color: '#D97706', flexShrink: 0, marginTop: 2 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: '#92400E', lineHeight: '1.4' }}>
+              Cửa hàng đang có {openDispatches.length} ca điều phối khẩn cấp cần người làm thêm / làm thay (+30.000đ/ca)
+            </div>
+            <div style={{ fontSize: 12, color: '#78350F', marginTop: 3, lineHeight: '1.5' }}>
+              Nhân viên nhận ca làm thêm theo diện HR Dispatch sẽ được hệ thống tự động tạo ca mới trên lịch và cộng thêm phụ cấp thưởng <strong>+30.000đ/ca</strong> vào bảng lương kỳ đó. Bấm &apos;Nhận ca (+30k)&apos; để nhận ca ngay.
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <Button
+                size="small" type="primary"
+                icon={<CheckCircleOutlined />}
+                loading={busy}
+                onClick={() => handleRespond([openDispatches[0]!], true)}
+                style={{ background: '#D97706', borderColor: '#D97706', fontSize: 12 }}
+              >
+                Nhận ca (+30k)
               </Button>
             </div>
-          }
-          description={<div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>Nhận ca để bổ sung vào lịch làm việc &amp; cộng phụ cấp <strong>+30.000đ</strong> sau khi hoàn thành.</div>}
-        />
+          </div>
+        </div>
       )}
       <SelectableTable<Row>
         size="small" rowKey="id" loading={refreshing} pagination={pag} dataSource={swaps} onRowClick={onViewDetail}
-        scroll={{ x: 880 }}
+        scroll={{ x: 700 }}
         bulkActions={[
           { key: 'accept', label: 'Đồng ý / Nhận ca đã chọn', type: 'primary', icon: <CheckCircleOutlined />, loading: isResponding, eligibleFilter: canRespond, onClick: (rows, clear) => handleRespond(rows, true, clear) },
           { key: 'reject', label: 'Từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: isResponding, eligibleFilter: canRespond, onClick: (rows, clear) => handleRespond(rows, false, clear) },
