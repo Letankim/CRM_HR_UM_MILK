@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Flex, Popconfirm, Space, Table, Tag, Tooltip } from 'antd';
+import { Button, Flex, Grid, Popconfirm, Space, Table, Tag, Tooltip } from 'antd';
 import type { TableProps } from 'antd/es/table';
 import { CheckOutlined, CloseOutlined, FilterOutlined } from '@ant-design/icons';
 import { type Key, type ReactNode, useEffect, useMemo, useState } from 'react';
@@ -128,6 +128,8 @@ export interface SelectableTableProps<TRecord extends object> extends TableProps
 export function SelectableTable<TRecord extends object>({
   bulkActions = [], selectionPresets, dataSource = [], rowKey = 'id', columns, scroll, onRow, onRowClick, ...rest
 }: SelectableTableProps<TRecord>) {
+  const screens = Grid.useBreakpoint();
+  const isDesktop = Boolean(screens.md);
   const getKey = (r: TRecord): string => typeof rowKey === 'function' ? String(rowKey(r)) : String((r as Record<string, unknown>)[String(rowKey)] ?? '');
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
   const clearSelection = () => setSelectedRowKeys([]);
@@ -150,11 +152,12 @@ export function SelectableTable<TRecord extends object>({
       const isLast = columns ? idx === columns.length - 1 : false;
       const isAction = isLast && (col.key === 'actions' || col.key === 'act' || col.title === 'Thao tác' || col.title === 'Điều phối' || col.title === 'Chi tiết');
       const w = Number(col.width ?? (isAction ? 88 : 'ellipsis' in col && col.ellipsis ? 280 : 220));
-      return { ...col, width: w, ...(isAction && !col.fixed ? { fixed: 'right' as const } : {}) };
+      const fixedVal = isDesktop ? (col.fixed ?? (isAction ? ('right' as const) : undefined)) : undefined;
+      return { ...col, width: w, fixed: fixedVal };
     });
     const sumW = (cols ?? []).reduce((acc, c) => acc + Number(c.width || 220), 56);
-    return { normalizedColumns: cols, totalScrollX: Math.max(sumW, 920) };
-  }, [columns]);
+    return { normalizedColumns: cols, totalScrollX: Math.max(sumW, 760) };
+  }, [columns, isDesktop]);
 
   const resolvedActions = typeof bulkActions === 'function' ? bulkActions(selectedRows, clearSelection) : bulkActions;
   const selections = useMemo(

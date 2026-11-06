@@ -129,9 +129,15 @@ export function EmployeeSwapsTable({
       {openDispatches.length > 0 && (
         <Alert
           type="warning" showIcon style={{ marginBottom: 12 }}
-          message={<strong>Cửa hàng đang có {openDispatches.length} ca điều phối khẩn cấp cần người làm thêm / làm thay (+30.000đ/ca)</strong>}
-          description="Nhân viên nhận ca làm thêm theo diện HR Dispatch sẽ được hệ thống tự động tạo ca mới trên lịch và cộng thêm phụ cấp thưởng +30.000đ/ca vào bảng lương kỳ đó. Bấm 'Nhận ca (+30k)' để nhận ca ngay."
-          action={<Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={busy} onClick={() => handleRespond([openDispatches[0]!], true)}>Nhận ca (+30.000đ)</Button>}
+          message={<strong style={{ fontSize: 13.5, lineHeight: 1.4 }}>Cửa hàng đang có {openDispatches.length} ca điều phối khẩn cấp cần người làm thay (+30.000đ/ca)</strong>}
+          description={
+            <div style={{ fontSize: 12.5, lineHeight: 1.5, marginTop: 4 }}>
+              <div>Khi nhận ca, hệ thống tự động cập nhật bạn vào lịch làm việc chính thức và cộng phụ cấp thưởng <strong>+30.000đ/ca</strong> vào kỳ lương sau khi hoàn thành ca.</div>
+              <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={busy} style={{ marginTop: 8 }} onClick={() => handleRespond([openDispatches[0]!], true)}>
+                Nhận ca ngay (+30.000đ)
+              </Button>
+            </div>
+          }
         />
       )}
       <SelectableTable<Row>
@@ -144,10 +150,10 @@ export function EmployeeSwapsTable({
         ]}
         locale={{ emptyText: 'Bạn chưa có yêu cầu nhường / đổi ca nào. Bấm "Nhường / Đổi ca" phía trên để gửi yêu cầu cho đồng nghiệp.' }}
         columns={[
-          { title: 'Mã đơn', dataIndex: 'swap_code', width: 115, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
-          { title: 'Loại', dataIndex: 'kind', width: 125, render: (v: string, r) => <Tag color={v === 'SWAP' ? 'geekblue' : v === 'HR_DISPATCH' ? 'gold' : v === 'HR_SUPPORT' ? 'purple' : 'cyan'} style={{ margin: 0 }}>{String(r.kindLabel || '')}</Tag> },
+          { title: 'Mã đơn', dataIndex: 'swap_code', width: 96, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
+          { title: 'Loại', dataIndex: 'kind', width: 130, render: (v: string, r) => <Tag color={v === 'SWAP' ? 'geekblue' : v === 'HR_DISPATCH' ? 'gold' : v === 'HR_SUPPORT' ? 'purple' : 'cyan'} style={{ margin: 0, whiteSpace: 'nowrap' }}>{String(r.kindLabel || '')}</Tag> },
           {
-            title: 'Ca nhường / đổi', width: 300,
+            title: 'Ca nhường / đổi', width: 240,
             render: (_, r) => {
               const to = r.toShiftDetails as Row | null | undefined;
               return (
@@ -160,9 +166,9 @@ export function EmployeeSwapsTable({
               );
             },
           },
-          { title: 'Người gửi', width: 220, render: (_, r) => renderPersonCell(String(r.requesterName || ''), isRequester(r), 'blue') },
+          { title: 'Người gửi', width: 175, render: (_, r) => renderPersonCell(String(r.requesterName || ''), isRequester(r), 'blue') },
           {
-            title: 'Người nhận', width: 220,
+            title: 'Người nhận', width: 185,
             render: (_, r) => {
               if (r.kind === 'HR_DISPATCH' && (!r.peer_id || r.status === 'PENDING_PEER')) {
                 const exp = getShiftExpiryInfo(r);
@@ -177,9 +183,9 @@ export function EmployeeSwapsTable({
               return renderPersonCell(String(r.peerName || ''), isPeer(r), 'cyan');
             },
           },
-          { title: 'Trạng thái', dataIndex: 'status', width: 230, render: (v: string, r) => <Space size={4} wrap><StatusTag value={v} label={String(r.statusLabel || '') || undefined} />{renderSwapAllowanceTag(r, true)}</Space> },
+          { title: 'Trạng thái', dataIndex: 'status', width: 190, render: (v: string, r) => <Space size={4} wrap><StatusTag value={v} label={String(r.statusLabel || '') || undefined} />{renderSwapAllowanceTag(r, true)}</Space> },
           {
-            title: 'Thao tác', width: 88, fixed: 'right', align: 'right',
+            title: 'Thao tác', width: 84, fixed: 'right', align: 'right',
             render: (_, r) => (
               <RowActionButtons
                 detailTooltip="Xem chi tiết yêu cầu" onViewDetail={() => onViewDetail(r)} loading={busy}

@@ -1,6 +1,6 @@
 'use client';
 
-import { Table, Typography } from 'antd';
+import { Grid, Table, Typography } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import type { Key } from 'react';
 import { useEffect, useMemo, useState } from 'react';
@@ -41,6 +41,8 @@ export function DataTableCard<TRecord extends { id: string }>({
   bulkActions = [],
   selectionPresets,
 }: DataTableCardProps<TRecord>) {
+  const screens = Grid.useBreakpoint();
+  const isDesktop = Boolean(screens.md);
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
   const [localPage, setLocalPage] = useState(1);
   const [localPerPage, setLocalPerPage] = useState(12);
@@ -73,7 +75,7 @@ export function DataTableCard<TRecord extends { id: string }>({
       title: 'NO',
       key: '__no',
       width: 78,
-      fixed: 'left',
+      fixed: isDesktop ? 'left' : undefined,
       render: (_value, record, index) => {
         const seq = (page - 1) * perPage + index + 1;
         const code = codeExtractor ? codeExtractor(record) : record.id.slice(0, 10).toUpperCase();
@@ -105,13 +107,13 @@ export function DataTableCard<TRecord extends { id: string }>({
       return {
         ...col,
         width: w,
-        ...(isAction ? { fixed: 'right' as const } : {}),
+        fixed: isDesktop ? (col.fixed ?? (isAction ? ('right' as const) : undefined)) : undefined,
       };
     });
     const allCols = [noColumn, ...normalizedCols];
     const sumW = allCols.reduce((acc, c) => acc + Number(c.width || 220), 56);
-    return { fullColumns: allCols, totalScrollX: Math.max(sumW, 960) };
-  }, [codeExtractor, columns, page, perPage]);
+    return { fullColumns: allCols, totalScrollX: Math.max(sumW, 760) };
+  }, [codeExtractor, columns, isDesktop, page, perPage]);
 
   const selections = useMemo(
     () => buildTableSelections(dataSource, (r) => r.id, setSelectedRowKeys, bulkActions, selectionPresets),
