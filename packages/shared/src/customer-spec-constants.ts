@@ -160,3 +160,27 @@ export function parseEmployeeCodeSeq(code: string): number {
   const m = String(code ?? '').match(/(\d+)$/);
   return m ? Number(m[1]) || 0 : 0;
 }
+
+/**
+ * Kiểm tra nhân sự có thuộc Khối văn phòng hay không:
+ * - staff_group là BACKOFFICE hoặc OFFICE
+ * - ca mặc định là HANH_CHINH
+ * - vai trò hệ thống là HR, FINANCE, MKT, ADMIN
+ * - chức danh chứa Văn phòng / Kế toán / Marketing / Hành chính / Nhân sự
+ */
+export function isOfficeEmployeeSpec(emp?: {
+  staff_group?: string;
+  default_shift_code?: string;
+  position_title?: string;
+  branch_id?: string;
+} | null, role?: string): boolean {
+  if (!emp && !role) return false;
+  const staffGroup = String(emp?.staff_group || '').toUpperCase();
+  if (staffGroup === 'BACKOFFICE' || staffGroup === 'OFFICE') return true;
+  if (emp?.default_shift_code === 'HANH_CHINH') return true;
+  const r = String(role || '').toUpperCase();
+  if (['HR', 'FINANCE', 'MKT', 'ADMIN'].includes(r)) return true;
+  const title = String(emp?.position_title || '').toUpperCase();
+  if (title.includes('VĂN PHÒNG') || title.includes('VAN PHONG') || title.includes('HÀNH CHÍNH') || title.includes('HANH CHINH') || title.includes('KẾ TOÁN') || title.includes('KE TOAN') || title.includes('MARKETING') || title.includes('NHÂN SỰ') || title.includes('NHAN SU')) return true;
+  return false;
+}

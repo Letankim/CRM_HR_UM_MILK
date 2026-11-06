@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { Employee } from '@umbm/shared';
+import { isOfficeEmployeeSpec, type Employee } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
@@ -45,6 +45,9 @@ export function registerMyShiftRegisterRoute(app: FastifyInstance, ctx: AppConte
     const user = request.auth!.user, body = zCreateMyShiftBody.parse(request.body), emp = await ensurePersonalProfile(ctx, user);
     if (emp.stage === 'OFFICIAL') {
       throw Errors.forbidden('Nhân viên chính thức không đăng ký ca làm việc. Lịch làm việc được HR tự động sắp theo ca mặc định sau khi chốt lịch OFF — bạn chỉ cần đăng ký nghỉ OFF trong thời gian mở cổng, hoặc dùng Đổi ca / Nhường ca.');
+    }
+    if (isOfficeEmployeeSpec(emp, user.role)) {
+      throw Errors.forbidden('Nhân viên khối văn phòng làm việc theo ca hành chính cố định, không áp dụng đăng ký ca làm thêm.');
     }
     const { todayStr, nowHm } = getVnNowDateAndHm(), settings = getOperationSettings(ctx.db), cycle = resolveProbationCycle(emp, todayStr);
     if (body.work_date < todayStr) throw Errors.fieldValidation('work_date', 'OUT_OF_RANGE', `Không được đăng ký ca cho ngày đã qua (${vi(body.work_date)})`, body.work_date);

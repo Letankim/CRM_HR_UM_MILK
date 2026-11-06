@@ -27,13 +27,14 @@ export function LeaveRequestModal({ open, employeeId, stage, onClose, onSuccess 
   const draftKey = `umbm_leave_draft_${employeeId || 'me'}`;
 
   const isProbation = (stage || myQ.data?.profile?.stage) === 'PROBATION';
+  const isOffice = Boolean(myQ.data?.profile?.isOffice || myQ.data?.profile?.defaultShiftCode === 'HANH_CHINH');
   const win = winQ.data ?? myQ.data?.offWindow;
   const weeklyLimit = winQ.data?.officialWeeklyOffLimit ?? DEFAULT_OPERATION_SETTINGS.officialWeeklyOffLimit;
   const cycle = myQ.data?.probationCycle ?? null;
   const today = dayjs().format('YYYY-MM-DD');
   const minDate = isProbation ? (cycle ? (cycle.start > today ? cycle.start : today) : today) : win?.targetWeekStart;
   const maxDate = isProbation ? cycle?.end : win?.targetWeekEnd;
-  const maxLimit = isProbation ? (cycle?.offLimit ?? 5) : weeklyLimit;
+  const maxLimit = isProbation ? (cycle?.offLimit ?? (isOffice ? 2 : 5)) : weeklyLimit;
   const takenOffByDate = useMemo(() => myQ.data?.takenOffByDate ?? {}, [myQ.data?.takenOffByDate]);
 
   const myRegisteredDates = useMemo(() => {
@@ -111,7 +112,7 @@ export function LeaveRequestModal({ open, employeeId, stage, onClose, onSuccess 
       if (dates.length === 0) { message.warning('Vui lòng chọn ít nhất 1 ngày nghỉ OFF'); return; }
       setLoading(true);
       await api.post('/admin/leave-requests', { employee_id: employeeId, leave_dates: dates, leave_date: dates[0], reason: vals.reason });
-      message.success(`Đã đăng ký và duyệt tự động ${dates.length} ngày nghỉ OFF thành công`);
+      message.success(`Đã đăng ký ${dates.length} ngày nghỉ OFF thành công`);
       if (typeof window !== 'undefined') window.localStorage.removeItem(draftKey);
       void qc.invalidateQueries({ queryKey: ['off-window'] });
       void qc.invalidateQueries({ queryKey: ['my-attendance'] });
@@ -126,13 +127,13 @@ export function LeaveRequestModal({ open, employeeId, stage, onClose, onSuccess 
 
   return (
     <Modal
-      width={680} open={open} forceRender title="Đăng ký nghỉ OFF (Duyệt tự động — Ai đăng ký trước được trước)" onCancel={onClose}
+      width={680} open={open} forceRender title="Đăng ký nghỉ OFF" onCancel={onClose}
       footer={
         <Space wrap>
           <Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
           <Button icon={<SaveOutlined />} onClick={handleSaveDraft}>Lưu nháp</Button>
           <Button type="primary" icon={<SendOutlined />} loading={loading} disabled={isBlocked || selectedDates.length === 0} onClick={handleSubmit}>
-            Xác nhận đăng ký ({selectedDates.length}/{remainingQuota} ngày — Duyệt ngay)
+            Xác nhận đăng ký ({selectedDates.length}/{remainingQuota} ngày)
           </Button>
         </Space>
       }
@@ -141,7 +142,7 @@ export function LeaveRequestModal({ open, employeeId, stage, onClose, onSuccess 
         <Alert
           type={isBlocked ? 'warning' : 'success'} showIcon
           message={isProbation ? (cycle ? `Chu kỳ thử việc: ${fmt(cycle.start)} – ${fmt(cycle.end)}` : 'Đăng ký nghỉ OFF chu kỳ thử việc') : (win?.message || 'Cổng đăng ký nghỉ OFF tuần')}
-          description={blockedReason || `Bạn có thể chọn 1 lần tối đa ${remainingQuota} ngày OFF còn lại. Khi xác nhận, hệ thống duyệt tự động ngay lập tức và khóa ngày đó đối với đồng nghiệp cùng khung ca mặc định (Ai đăng ký trước được trước).`}
+          description={blockedReason || `Bạn có thể chọn tối đa ${remainingQuota} ngày OFF còn lại trong kỳ.`}
         />
         <Space size={6} wrap>
           <Tag color={cycleFull ? 'red' : 'blue'} icon={<CalendarOutlined />} style={{ margin: 0, fontWeight: 600 }}>

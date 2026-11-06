@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { DEMO_PIN } from '../data/memory-seed.js';
+import { dayjs } from '../lib/time.js';
 import { buildTestApp, type TestAppContext } from '../test-utils/build-test-app.js';
 
 let t: TestAppContext;
+const web = { 'x-umbm-client': 'web' };
+const day = (n: number) => dayjs().add(n, 'day').format('YYYY-MM-DD');
 let adm: Awaited<ReturnType<TestAppContext['loginHeaders']>>;
 let hr: Awaited<ReturnType<TestAppContext['loginHeaders']>>;
 let fin: Awaited<ReturnType<TestAppContext['loginHeaders']>>;
@@ -78,7 +82,7 @@ describe('Điểm danh & Ca làm việc linh hoạt cho Vai trò Nội bộ (HR,
 
     // Đảm bảo giờ kết thúc ca trong test chưa qua thời điểm hiện tại và ca ở trạng thái PUBLISHED (độc lập với thời điểm chạy test ngày/đêm)
     const freshAssign = t.db.shiftAssignments.get(shift.id)!;
-    await t.db.shiftAssignments.update(freshAssign.id, freshAssign.version, { status: 'PUBLISHED', end_at: '23:59' }, 'test');
+    await t.db.shiftAssignments.update(freshAssign.id, freshAssign.version, { status: 'PUBLISHED', start_at: '00:00', end_at: '23:59' }, 'test');
 
     const checkInRes = await t.app.inject({
       method: 'POST',
@@ -139,5 +143,59 @@ describe('Điểm danh & Ca làm việc linh hoạt cho Vai trò Nội bộ (HR,
     });
     expect(approveRes.statusCode).toBe(200);
     expect(approveRes.json().data.status).toBe('APPROVED');
+  });
+
+  it('5. Khối văn phòng thử việc: tối đa 2 ngày OFF chu kỳ và không có quyền đăng ký làm thêm ca', async () => {
+    const vpBranch = t.db.branches.find((b) => b.code === 'VAN_PHONG')!;
+    const probEmp = t.db.employees.find((e) => e.employee_code === 'NV0001')!;
+
+    await t.db.employees.update(probEmp.id, probEmp.version, {
+      branch_id: vpBranch.id, staff_group: 'BACKOFFICE', default_shift_code: 'HANH_CHINH',
+      probation_start: day(1), probation_end: day(12), probation_cycle_days: 12,
+      probation_work_days: 10, probation_off_days: 2,
+    }, 'test');
+
+    for (const a of t.db.shiftAssignments.filter((x) => x.employee_id === probEmp.id || x.employee_id === probEmp.employee_code)) await t.db.shiftAssignments.softDelete(a.id, a.version, 'test');
+    for (const l of t.db.leaveRequests.filter((x) => x.employee_id === probEmp.id || x.employee_id === probEmp.employee_code)) await t.db.leaveRequests.softDelete(l.id, l.version, 'test');
+
+    const probCookie = (await t.login('0901000001', DEMO_PIN, 'employee')).cookie;
+    const probHeaders = { ...web, cookie: probCookie };
+
+    // 5.1 Kiểm tra canRegisterShift = false và probationCycle.offLimit = 2
+    const getRes = await t.app.inject({ method: 'GET', url: '/api/my-attendance', headers: probHeaders });
+    expect(getRes.statusCode).toBe(200);
+    expect(getRes.json().data.canRegisterShift).toBe(false);
+    expect(getRes.json().data.profile.isOffice).toBe(true);
+    expect(getRes.json().data.probationCycle.offLimit).toBe(2);
+
+    // 5.2 Khối văn phòng bị chặn đăng ký làm thêm ca
+    const addShiftRes = await t.app.inject({
+      method: 'POST',
+      url: '/api/my-attendance/shifts',
+      headers: probHeaders,
+      payload: { work_date: day(2), shift_code: 'HANH_CHINH' },
+    });
+    expect(addShiftRes.statusCode).toBe(403);
+    expect(addShiftRes.json().message).toContain('khối văn phòng');
+
+    // 5.3 Đăng ký đúng 2 ngày OFF thành công
+    const off2Res = await t.app.inject({
+      method: 'POST',
+      url: '/api/admin/leave-requests',
+      headers: probHeaders,
+      payload: { employee_id: probEmp.id, leave_dates: [day(2), day(4)], reason: 'Đăng ký 2 ngày OFF' },
+    });
+    expect(off2Res.statusCode).toBe(201);
+    expect(off2Res.json().data.count).toBe(2);
+
+    // 5.4 Đăng ký thêm ngày thứ 3 bị chặn vì vượt quá 2 ngày OFF
+    const off3Res = await t.app.inject({
+      method: 'POST',
+      url: '/api/admin/leave-requests',
+      headers: probHeaders,
+      payload: { employee_id: probEmp.id, leave_date: day(6), reason: 'Ngày OFF thứ 3' },
+    });
+    expect(off3Res.statusCode).toBe(400);
+    expect(off3Res.json().errors.details[0].message).toContain('đủ 2 ngày OFF');
   });
 });

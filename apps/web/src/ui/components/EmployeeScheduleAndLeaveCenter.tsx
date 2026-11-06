@@ -41,8 +41,15 @@ export function EmployeeScheduleAndLeaveCenter({
   const extras = useMyAttendanceExtras().data;
 
   const isProbation = stage === 'PROBATION';
+  const isOffice = Boolean(
+    extras?.profile?.isOffice ||
+    extras?.profile?.defaultShiftCode === 'HANH_CHINH' ||
+    extras?.profile?.staffGroup === 'BACKOFFICE' ||
+    extras?.profile?.staffGroup === 'OFFICE' ||
+    extras?.profile?.role === 'HR' || extras?.profile?.role === 'FINANCE' || extras?.profile?.role === 'MKT' || extras?.profile?.role === 'ADMIN'
+  );
   const offWin = useOffWindow(!isProbation && (mode === 'all' || mode === 'leaves')).data;
-  const canRegister = canRegisterShift ?? extras?.canRegisterShift ?? isProbation;
+  const canRegister = !isOffice && Boolean(canRegisterShift ?? extras?.canRegisterShift ?? false);
   const canSwap = Boolean(canSwapShift ?? extras?.canSwapShift ?? false);
   const cycle = extras?.probationCycle;
   const quotaText = isProbation
@@ -72,7 +79,14 @@ export function EmployeeScheduleAndLeaveCenter({
             label: <span><CalendarOutlined /> Lịch làm việc ({shifts.length})</span>,
             children: (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                {!canRegister && <Alert type="info" showIcon message={OFFICIAL_SCHEDULE_INFO} />}
+                {!canRegister && (
+                  <Alert
+                    type="info" showIcon
+                    message={isOffice
+                      ? 'Nhân viên Khối văn phòng làm việc theo ca hành chính cố định — không áp dụng đăng ký ca làm thêm.'
+                      : OFFICIAL_SCHEDULE_INFO}
+                  />
+                )}
                 {shifts.some((s) => s.status === 'DRAFT') && (
                   <Alert type="warning" showIcon message={canSwap ? 'Bạn có ca đang chờ HR duyệt. Chỉ những ca đã được phê duyệt sang Đã phân ca chính thức mới được phép chấm công Vào/Ra ca và Nhường / Đổi ca.' : 'Bạn có ca đăng ký làm thêm đang chờ HR duyệt. Chỉ những ca đã được phê duyệt sang Đã phân ca chính thức mới được phép chấm công Vào/Ra ca.'} />
                 )}

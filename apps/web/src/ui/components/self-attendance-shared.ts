@@ -82,7 +82,18 @@ export function applyOptimisticAdjustmentToMyAttendance(qc: QueryClient, created
 export function useMyAttendanceExtras(enabled = true) {
   return useQuery({
     queryKey: ['my-attendance'],
-    queryFn: () => api.get<SelfAttendanceExtras & { profile?: { employeeId: string; employeeCode: string; stage?: string }; todayDate?: string }>('/my-attendance'),
+    queryFn: () => api.get<SelfAttendanceExtras & {
+      profile?: {
+        employeeId: string;
+        employeeCode: string;
+        stage?: string;
+        role?: string;
+        isOffice?: boolean;
+        defaultShiftCode?: string;
+        staffGroup?: string;
+      };
+      todayDate?: string;
+    }>('/my-attendance'),
     enabled,
   });
 }

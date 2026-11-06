@@ -1,4 +1,4 @@
-import { addDaysYmd, DEFAULT_SHIFT_LABELS, type Employee, type ShiftAssignment } from '@umbm/shared';
+import { addDaysYmd, DEFAULT_SHIFT_LABELS, isOfficeEmployeeSpec, type Employee, type ShiftAssignment } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs } from '../lib/time.js';
@@ -62,14 +62,18 @@ export function assertMaxShiftsPerDay(
   }
 }
 
-export interface ProbationCycle { start: string; end: string; dates: string[]; workRequired: number; offLimit: number }
+export interface ProbationCycle { start: string; end: string; dates: string[]; workRequired: number; offLimit: number; isOffice?: boolean }
 
-/** Chu kỳ thử việc mặc định 12 ngày: 7 ca bắt buộc làm + 5 ngày OFF (tính từ ngày bắt đầu thử việc). */
+/** Chu kỳ thử việc mặc định 12 ngày: Cửa hàng tối đa 5 ngày OFF (7 ca làm); Khối văn phòng tối đa 2 ngày OFF (10 ca làm). */
 export function resolveProbationCycle(emp: Employee, fallbackStart?: string): ProbationCycle {
   const days = emp.probation_cycle_days || 12;
   const start = emp.probation_start || fallbackStart || dayjs().format('YYYY-MM-DD');
   const dates = Array.from({ length: days }, (_, i) => addDaysYmd(start, i));
-  return { start, end: dates[dates.length - 1]!, dates, workRequired: emp.probation_work_days || 7, offLimit: emp.probation_off_days || 5 };
+  const isOffice = isOfficeEmployeeSpec(emp);
+  const defaultOff = isOffice ? 2 : 5;
+  const offLimit = isOffice ? 2 : (emp.probation_off_days || defaultOff);
+  const workRequired = emp.probation_work_days || (days - offLimit);
+  return { start, end: dates[dates.length - 1]!, dates, workRequired, offLimit, isOffice };
 }
 
 export const weekLockCode = (branchId: string, weekStart: string, partitionMonth = '') =>

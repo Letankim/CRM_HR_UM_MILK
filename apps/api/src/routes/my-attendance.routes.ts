@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { evaluateOffWindow, REQUEST_STATUS_LABELS, ROLE_LABELS, type Employee, type User } from '@umbm/shared';
+import { evaluateOffWindow, isOfficeEmployeeSpec, REQUEST_STATUS_LABELS, ROLE_LABELS, type Employee, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
@@ -55,7 +55,7 @@ export async function ensurePersonalProfile(ctx: AppContext, user: User): Promis
     date_of_birth: '1998-01-01', gender: 'Khác', citizen_id: '', citizen_issue_date: '', permanent_address: 'TP. Hồ Chí Minh', current_address: 'TP. Hồ Chí Minh',
     emergency_contact_name: '', emergency_contact_phone: '', branch_id: scopedBranchId, staff_group: staffGroup, position_title: ROLE_LABELS[user.role] || 'Nhân sự',
     stage: isProb ? 'PROBATION' : 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: defaultShiftCode, probation_start: '2026-01-01', probation_end: '2026-01-12',
-    probation_cycle_days: 12, probation_work_days: 7, probation_off_days: 5, official_from: '2026-01-13', resigned_at: '', resign_reason: '', status: 'ACTIVE',
+    probation_cycle_days: 12, probation_work_days: isOfficeRole ? 10 : 7, probation_off_days: isOfficeRole ? 2 : 5, official_from: '2026-01-13', resigned_at: '', resign_reason: '', status: 'ACTIVE',
     base_hourly_rate_vnd: 0, bank_name: 'Techcombank', bank_account_number: '', bank_account_holder: user.display_name.toUpperCase(), tax_code: '',
     note: 'Hồ sơ nhân sự liên kết tài khoản hệ thống',
   }, user.id);
@@ -76,7 +76,8 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     const events = myRawEvents.map((e) => mapAttendanceEvent(e, ctx));
 
     const myRawShifts = ctx.db.shiftAssignments.filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code).reverse();
-    const isOfficeOrMgr = emp.staff_group === 'BACKOFFICE' || emp.staff_group === 'STORE_MANAGER' || user.role === 'HR' || user.role === 'FINANCE' || user.role === 'MKT' || user.role === 'STORE' || user.role === 'ADMIN';
+    const isOffice = isOfficeEmployeeSpec(emp, user.role);
+    const isOfficeOrMgr = isOffice || emp.staff_group === 'STORE_MANAGER' || user.role === 'STORE';
     if (isOfficeOrMgr && !myRawShifts.some((a) => a.work_date === todayStr && !a.is_deleted)) {
       await ensureOfficeShiftTemplate(ctx);
       const officeBranch = ctx.db.branches.find((b) => b.code === 'VAN_PHONG') ?? branch;
@@ -172,13 +173,13 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       todayDate: todayStr, nowTimeHm: nowHm,
       profile: {
         employeeId: emp.id, employeeCode: emp.employee_code, fullName: emp.full_name, role: user.role, roleLabel: ROLE_LABELS[user.role],
-        stage: emp.stage, branchId: branch?.id ?? emp.branch_id, branchName: branch?.name ?? 'Ụm Bò Milk Chi nhánh 1', defaultShiftCode: myShiftCode,
+        stage: emp.stage, isOffice, staffGroup: emp.staff_group, branchId: branch?.id ?? emp.branch_id, branchName: branch?.name ?? 'Ụm Bò Milk Chi nhánh 1', defaultShiftCode: myShiftCode,
         branchLat: branch?.lat ?? 10.7769, branchLng: branch?.lng ?? 106.7009, radiusM: branch?.radius_m ?? 100,
         probationStart: emp.probation_start, probationEnd: emp.probation_end, officialFrom: emp.official_from,
         probationCycleDays: cycleDays, probationDaysPassed, probationDaysRemaining: Math.max(0, cycleDays - probationDaysPassed),
       },
       shifts, events, leaves, swaps, branchPeers, adjustments: adjustments.map((a) => mapAdjustmentRecord(ctx, a)),
-      offWindow: evaluateOffWindow(settings, todayStr, nowHm), canRegisterShift: emp.stage === 'PROBATION', canSwapShift, takenOffByDate,
+      offWindow: evaluateOffWindow(settings, todayStr, nowHm), canRegisterShift: emp.stage === 'PROBATION' && !isOffice, canSwapShift, takenOffByDate,
       probationCycle: emp.stage === 'PROBATION' ? buildProbationCycleSummary(ctx, emp, todayStr) : null,
     });
   });

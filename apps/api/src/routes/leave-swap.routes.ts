@@ -50,7 +50,7 @@ function assertSelfLeaveAllowed(ctx: AppContext, emp: Employee, leaveDate: strin
     if (!cycle.dates.includes(leaveDate)) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', `Ngày nghỉ phải nằm trong chu kỳ thử việc ${vi(cycle.start)} – ${vi(cycle.end)}`, leaveDate);
     if (findProbationLock(ctx, emp, cycle.start)) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', 'HR đã chốt lịch chu kỳ thử việc của bạn, không thể đăng ký thêm ngày OFF', leaveDate);
     const used = ctx.db.leaveRequests.filter((l) => isEmp(l.employee_id) && ACTIVE_LEAVE(l.status) && cycle.dates.includes(l.leave_date)).length;
-    if (used >= cycle.offLimit) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', `Bạn đã đăng ký đủ ${cycle.offLimit} ngày OFF trong chu kỳ thử việc (7 ca làm + 5 ngày OFF)`, leaveDate);
+    if (used >= cycle.offLimit) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', `Bạn đã đăng ký đủ ${cycle.offLimit} ngày OFF trong chu kỳ thử việc`, leaveDate);
     return { limit: cycle.offLimit, used };
   }
   const win = evaluateOffWindow(settings, todayStr, nowHm), vipOpen = isVipOffWindowActive(emp);
