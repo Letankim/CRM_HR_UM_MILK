@@ -42,6 +42,7 @@ export function EmployeeLeavesTable({ leaves, quotaText, refreshing = false, onV
       {quotaText && <Tag color="blue" style={{ margin: 0, fontWeight: 600 }}>{quotaText}</Tag>}
       <SelectableTable<Row>
         size="small" rowKey="id" loading={refreshing} pagination={pag} dataSource={leaves} onRowClick={onViewDetail}
+        scroll={{ x: 760 }}
         bulkActions={[
           { key: 'cancel', label: 'Hủy đơn đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: cancelMut.isPending, eligibleFilter: isCancellable, onClick: (rows, clear) => confirmCancel(rows, clear) },
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportLeavesExcel(rows) },

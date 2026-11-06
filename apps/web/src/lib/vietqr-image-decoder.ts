@@ -7,8 +7,11 @@
 
 import jsQR from 'jsqr';
 import {
+  cleanAccountHolder,
   extractBankAccountFromOcrText,
+  extractHolderFromText,
   parseVietQrEmvcoPayload,
+  parseVietQrUrlPayload,
   type ParsedVietQrResult,
 } from '@umbm/shared';
 
@@ -25,11 +28,13 @@ interface BarcodeDetectorConstructor {
 }
 
 /**
- * Giải mã chuỗi dữ liệu thô (EMVCo TLV hoặc văn bản OCR) thành thông tin tài khoản ngân hàng.
+ * Giải mã chuỗi dữ liệu thô (EMVCo TLV, URL VietQR hoặc văn bản OCR) thành thông tin tài khoản ngân hàng.
  */
 export function decodeVietQrPayloadOrText(raw: string): ParsedVietQrResult | null {
   const clean = String(raw ?? '').trim();
   if (!clean) return null;
+  const fromUrl = parseVietQrUrlPayload(clean);
+  if (fromUrl) return fromUrl;
   const emvMatch = clean.match(/(000201[\dA-Za-z\s._\-/]{20,})/);
   if (emvMatch?.[1]) {
     const parsedEmv = parseVietQrEmvcoPayload(emvMatch[1].trim());
@@ -118,17 +123,25 @@ export async function decodeVietQrFromImage(params: {
   dataUrl?: string;
   fallbackText?: string;
 }): Promise<ParsedVietQrResult | null> {
+  let result: ParsedVietQrResult | null = null;
   const qrRaw = await detectQrRawValueFromImage(params.file, params.dataUrl);
   if (qrRaw) {
-    const parsed = decodeVietQrPayloadOrText(qrRaw);
-    if (parsed) return parsed;
+    result = decodeVietQrPayloadOrText(qrRaw);
   }
 
   const fileHint = [params.fallbackText ?? '', params.file?.name ?? ''].join(' ').trim();
-  if (fileHint) {
-    const parsedFallback = decodeVietQrPayloadOrText(fileHint);
-    if (parsedFallback) return parsedFallback;
+  if (!result && fileHint) {
+    result = decodeVietQrPayloadOrText(fileHint);
   }
 
-  return null;
+  if (result && !result.accountHolder) {
+    const hintHolder = extractHolderFromText(fileHint);
+    if (hintHolder) {
+      result.accountHolder = hintHolder;
+    } else if (params.fallbackText?.trim()) {
+      result.accountHolder = cleanAccountHolder(params.fallbackText);
+    }
+  }
+
+  return result;
 }

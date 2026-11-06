@@ -128,32 +128,33 @@ export function EmployeeSwapsTable({
     <>
       {openDispatches.length > 0 && (
         <Alert
-          type="warning" showIcon style={{ marginBottom: 12 }}
-          message={<strong style={{ fontSize: 13.5, lineHeight: 1.4 }}>Cửa hàng đang có {openDispatches.length} ca điều phối khẩn cấp cần người làm thay (+30.000đ/ca)</strong>}
-          description={
-            <div style={{ fontSize: 12.5, lineHeight: 1.5, marginTop: 4 }}>
-              <div>Khi nhận ca, hệ thống tự động cập nhật bạn vào lịch làm việc chính thức và cộng phụ cấp thưởng <strong>+30.000đ/ca</strong> vào kỳ lương sau khi hoàn thành ca.</div>
-              <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={busy} style={{ marginTop: 8 }} onClick={() => handleRespond([openDispatches[0]!], true)}>
-                Nhận ca ngay (+30.000đ)
+          type="warning" showIcon style={{ marginBottom: 12, padding: '8px 12px' }}
+          message={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Có {openDispatches.length} ca điều phối khẩn cấp (+30.000đ/ca)</span>
+              <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={busy} onClick={() => handleRespond([openDispatches[0]!], true)}>
+                Nhận ca ngay (+30k)
               </Button>
             </div>
           }
+          description={<div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>Nhận ca để bổ sung vào lịch làm việc &amp; cộng phụ cấp <strong>+30.000đ</strong> sau khi hoàn thành.</div>}
         />
       )}
       <SelectableTable<Row>
         size="small" rowKey="id" loading={refreshing} pagination={pag} dataSource={swaps} onRowClick={onViewDetail}
+        scroll={{ x: 880 }}
         bulkActions={[
           { key: 'accept', label: 'Đồng ý / Nhận ca đã chọn', type: 'primary', icon: <CheckCircleOutlined />, loading: isResponding, eligibleFilter: canRespond, onClick: (rows, clear) => handleRespond(rows, true, clear) },
           { key: 'reject', label: 'Từ chối đã chọn', danger: true, icon: <CloseCircleOutlined />, loading: isResponding, eligibleFilter: canRespond, onClick: (rows, clear) => handleRespond(rows, false, clear) },
           { key: 'cancel', label: 'Hủy yêu cầu đã chọn', danger: true, icon: <StopOutlined />, loading: cancelMut.isPending, eligibleFilter: canCancel, onClick: (rows, clear) => confirmCancel(rows, clear) },
           { key: 'export', label: 'Xuất Excel đã chọn', icon: <DownloadOutlined />, onClick: (rows) => exportSwapsExcel(rows) },
         ]}
-        locale={{ emptyText: 'Bạn chưa có yêu cầu nhường / đổi ca nào. Bấm "Nhường / Đổi ca" phía trên để gửi yêu cầu cho đồng nghiệp.' }}
+        locale={{ emptyText: 'Bạn chưa có yêu cầu nhường / đổi ca nào. Bấm "Gửi yêu cầu đổi ca" phía trên để gửi yêu cầu cho đồng nghiệp.' }}
         columns={[
-          { title: 'Mã đơn', dataIndex: 'swap_code', width: 96, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
-          { title: 'Loại', dataIndex: 'kind', width: 130, render: (v: string, r) => <Tag color={v === 'SWAP' ? 'geekblue' : v === 'HR_DISPATCH' ? 'gold' : v === 'HR_SUPPORT' ? 'purple' : 'cyan'} style={{ margin: 0, whiteSpace: 'nowrap' }}>{String(r.kindLabel || '')}</Tag> },
+          { title: 'Mã đơn', dataIndex: 'swap_code', width: 90, render: (v: string) => <Tag color="purple" style={{ margin: 0 }}>{v}</Tag> },
+          { title: 'Loại', dataIndex: 'kind', width: 120, render: (v: string, r) => <Tag color={v === 'SWAP' ? 'geekblue' : v === 'HR_DISPATCH' ? 'gold' : v === 'HR_SUPPORT' ? 'purple' : 'cyan'} style={{ margin: 0, whiteSpace: 'nowrap' }}>{v === 'HR_DISPATCH' ? 'Điều phối (+30k)' : v === 'SWAP' ? 'Đổi ca' : v === 'HR_SUPPORT' ? 'Hỗ trợ' : String(r.kindLabel || 'Nhường ca')}</Tag> },
           {
-            title: 'Ca nhường / đổi', width: 240,
+            title: 'Ca nhường / đổi', width: 220,
             render: (_, r) => {
               const to = r.toShiftDetails as Row | null | undefined;
               return (
@@ -166,16 +167,16 @@ export function EmployeeSwapsTable({
               );
             },
           },
-          { title: 'Người gửi', width: 175, render: (_, r) => renderPersonCell(String(r.requesterName || ''), isRequester(r), 'blue') },
+          { title: 'Người gửi', width: 150, render: (_, r) => renderPersonCell(String(r.requesterName || ''), isRequester(r), 'blue') },
           {
-            title: 'Người nhận', width: 185,
+            title: 'Người nhận', width: 160,
             render: (_, r) => {
               if (r.kind === 'HR_DISPATCH' && (!r.peer_id || r.status === 'PENDING_PEER')) {
                 const exp = getShiftExpiryInfo(r);
                 if (exp.isPassed) return <Tag color="default" style={{ margin: 0, whiteSpace: 'nowrap' }}>Quá hạn ({exp.label})</Tag>;
                 return fallbackPeer.canClaim(r)
                   ? <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={busy} onClick={(e) => { e.stopPropagation(); handleRespond([r], true); }}>Nhận ca (+30k)</Button>
-                  : <Tag color="gold" style={{ margin: 0, whiteSpace: 'nowrap' }}>Đang mở toàn chi nhánh (+30k)</Tag>;
+                  : <Tag color="gold" style={{ margin: 0, whiteSpace: 'nowrap' }}>Mở toàn chi nhánh</Tag>;
               }
               if (r.kind === 'HR_SUPPORT') {
                 return <Tag color="purple" style={{ margin: 0, whiteSpace: 'nowrap' }}>Hỗ trợ: {String(r.targetBranchName || 'Chi nhánh khác')}</Tag>;
@@ -183,9 +184,9 @@ export function EmployeeSwapsTable({
               return renderPersonCell(String(r.peerName || ''), isPeer(r), 'cyan');
             },
           },
-          { title: 'Trạng thái', dataIndex: 'status', width: 190, render: (v: string, r) => <Space size={4} wrap><StatusTag value={v} label={String(r.statusLabel || '') || undefined} />{renderSwapAllowanceTag(r, true)}</Space> },
+          { title: 'Trạng thái', dataIndex: 'status', width: 170, render: (v: string, r) => <Space size={4} wrap><StatusTag value={v} label={String(r.statusLabel || '') || undefined} />{renderSwapAllowanceTag(r, true)}</Space> },
           {
-            title: 'Thao tác', width: 84, fixed: 'right', align: 'right',
+            title: 'Thao tác', width: 80, fixed: 'right', align: 'right',
             render: (_, r) => (
               <RowActionButtons
                 detailTooltip="Xem chi tiết yêu cầu" onViewDetail={() => onViewDetail(r)} loading={busy}

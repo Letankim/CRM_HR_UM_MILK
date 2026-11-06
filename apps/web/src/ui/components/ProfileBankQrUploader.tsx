@@ -31,10 +31,12 @@ export function ProfileBankQrUploader({
     e.target.value = '';
     if (!file) return;
     setDecoding(true);
+    const fallbackName = String(form?.getFieldValue('full_name') || form?.getFieldValue('display_name') || form?.getFieldValue('name') || '').trim();
     try {
       const dataUrl = await readFileAsDataUrl(file);
-      const decoded = await decodeVietQrFromImage({ file, dataUrl });
+      const decoded = await decodeVietQrFromImage({ file, dataUrl, fallbackText: fallbackName });
       if (decoded) {
+        if (!decoded.accountHolder && fallbackName) decoded.accountHolder = fallbackName.toUpperCase();
         setDecodedInfo(decoded);
         form?.setFieldsValue({
           ...(decoded.bankName ? { bank_name: decoded.bankName } : {}),

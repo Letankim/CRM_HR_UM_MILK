@@ -52,6 +52,7 @@ export function EmployeeShiftsTable({ shifts, empId, refreshing = false, onViewD
   return (
     <SelectableTable<Row>
       size="small" rowKey="id" loading={refreshing} pagination={pag} dataSource={shifts} onRowClick={(r) => onViewDetail(withEmp(r))}
+      scroll={{ x: 800 }}
       bulkActions={buildPortalShiftsBulkActions({ loading: cancelShiftMut.isPending, onCancelDrafts: (rows, clear) => confirmCancelDrafts(rows, clear), onCreateAbsentAdj: (row) => onViewDetail(withEmp(row)) })}
       locale={{ emptyText: 'Bạn chưa có ca làm việc nào được phân công trong kỳ này.' }}
       columns={[

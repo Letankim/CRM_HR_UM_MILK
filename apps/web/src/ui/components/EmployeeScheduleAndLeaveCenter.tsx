@@ -62,7 +62,7 @@ export function EmployeeScheduleAndLeaveCenter({
           <Space size={6} wrap>
             <Button size="small" icon={<ReloadOutlined />} loading={refreshing} onClick={onRefresh}>Làm mới</Button>
             {showShiftsActions && canRegister && <Button size="small" type={mode === 'shifts' ? 'primary' : 'default'} icon={<PlusOutlined />} onClick={() => setAddShiftOpen(true)}>Đăng ký làm thêm ca</Button>}
-            {canSwap && (mode === 'all' || mode === 'swaps') && <Button size="small" type={mode === 'swaps' ? 'primary' : 'default'} icon={<SwapOutlined />} onClick={() => setSwapOpen(true)}>Nhường / Đổi ca</Button>}
+            {canSwap && (mode === 'all' || mode === 'swaps') && <Button size="small" type={mode === 'swaps' ? 'primary' : 'default'} icon={<PlusOutlined />} onClick={() => setSwapOpen(true)}>Gửi yêu cầu đổi ca</Button>}
             {(mode === 'all' || mode === 'leaves') && <Button size="small" type="primary" icon={<CalendarOutlined />} onClick={() => setLeaveOpen(true)}>Đăng ký nghỉ OFF</Button>}
           </Space>
         }
