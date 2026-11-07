@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Checkbox, Col, Form, Input, Modal, Radio, Row, Select, Space, Tag } from 'antd';
 import {
-  CheckCircleOutlined, CloseCircleOutlined, CloseOutlined, ExclamationCircleOutlined,
-  FlagOutlined, SaveOutlined, SolutionOutlined, TrophyOutlined, UserAddOutlined, UserOutlined,
+  CheckCircleFilled, CheckCircleOutlined, CloseCircleFilled, CloseCircleOutlined, CloseOutlined,
+  ExclamationCircleOutlined, FlagOutlined, SaveOutlined, SolutionOutlined, TrophyOutlined, UserAddOutlined, UserOutlined,
 } from '@ant-design/icons';
 import {
   computeInterviewWeightedScore, evaluateInterviewRubric13, inferCandidateExperienceTrack,
@@ -101,7 +101,7 @@ export function InterviewEvaluateModal({ target, loading, onClose, onSubmit }: I
     <>
       <FireworksCanvasOverlay active={showFireworks} />
       <Modal
-        width={980} style={{ maxWidth: 'calc(100vw - 24px)', top: 16 }} open={Boolean(target)} forceRender destroyOnHidden
+        width={1180} style={{ maxWidth: 'calc(100vw - 32px)', top: 16 }} open={Boolean(target)} forceRender destroyOnHidden
         title={<Space size={8} wrap><span>{isScored ? 'Cập nhật điểm phỏng vấn:' : 'Phiếu chấm điểm phỏng vấn:'} <strong>{String(target?.candidateName ?? '')}</strong></span>{Boolean(target?.candidateCode) && <Tag color="geekblue" style={{ margin: 0 }}>{String(target?.candidateCode)}</Tag>}</Space>}
         okText={isScored ? (eval13.passed && !hasEmp ? 'Lưu & Khởi tạo Nhân sự' : 'Lưu điểm phỏng vấn') : (eval13.passed ? 'Duyệt ĐẠT & Khởi tạo Nhân sự' : 'Lưu kết quả phỏng vấn')} cancelText="Hủy bỏ"
         okButtonProps={{ icon: eval13.passed && !hasEmp ? <UserAddOutlined /> : <SaveOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }}
@@ -123,9 +123,9 @@ export function InterviewEvaluateModal({ target, loading, onClose, onSubmit }: I
             }, (e) => applyApiFormErrors(form, e));
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '8px 12px', marginBottom: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 4, padding: '10px 14px', marginBottom: 12 }}>
             <Radio.Group
-              size="small" value={rubricBlock} buttonStyle="solid"
+              size="middle" value={rubricBlock} buttonStyle="solid"
               onChange={(e) => {
                 const nextBlock = e.target.value as InterviewRubricBlock, defaults = buildDefaultRubricScores(nextBlock);
                 setRubricBlock(nextBlock); setRubricScores(defaults); applyRubricSync(nextBlock, defaults, redFlags);
@@ -134,78 +134,75 @@ export function InterviewEvaluateModal({ target, loading, onClose, onSubmit }: I
               <Radio.Button value="STORE"><SolutionOutlined /> Đã có kinh nghiệm (9 câu hỏi — Thang 13 điểm)</Radio.Button>
               <Radio.Button value="OFFICE"><UserOutlined /> Chưa có kinh nghiệm (7 câu hỏi — Thang 13 điểm)</Radio.Button>
             </Radio.Group>
-            <Space size={6} wrap>
-              <Tag color={eval13.hasRedFlag ? 'error' : eval13.passed ? 'success' : eval13.isConsider ? 'warning' : 'error'} icon={eval13.passed ? <CheckCircleOutlined /> : eval13.isConsider ? <ExclamationCircleOutlined /> : <CloseCircleOutlined />} style={{ margin: 0, fontWeight: 700, fontSize: 13, padding: '3px 10px' }}>
+            <Space size={8} wrap>
+              <Tag color={eval13.hasRedFlag ? 'error' : eval13.passed ? 'success' : eval13.isConsider ? 'warning' : 'error'} icon={eval13.passed ? <CheckCircleOutlined /> : eval13.isConsider ? <ExclamationCircleOutlined /> : <CloseCircleOutlined />} style={{ margin: 0, fontWeight: 700, fontSize: 13.5, padding: '5px 12px', borderRadius: 4 }}>
                 Tổng điểm: {eval13.totalScore13}/{INTERVIEW_RUBRIC_13_MAX}đ · {eval13.hasRedFlag ? 'LOẠI TRỰC TIẾP' : eval13.passed ? `PASS (>= ${INTERVIEW_RUBRIC_13_PASS_THRESHOLD}đ)` : eval13.isConsider ? 'CÂN NHẮC ĐẬU (10, 11đ)' : 'FAIL (Dưới 10đ)'}
               </Tag>
-              {eval13.isPerfect13 && <Tag color="gold" icon={<TrophyOutlined />} onClick={triggerFireworks} style={{ margin: 0, fontWeight: 600, fontSize: 12, padding: '3px 8px', cursor: 'pointer' }}>Xuất sắc 13/13</Tag>}
+              {eval13.isPerfect13 && <Tag color="gold" icon={<TrophyOutlined />} onClick={triggerFireworks} style={{ margin: 0, fontWeight: 700, fontSize: 13, padding: '5px 10px', cursor: 'pointer', borderRadius: 4 }}>Xuất sắc 13/13</Tag>}
             </Space>
           </div>
 
-          <div style={{ border: '1px solid #CBD5E1', borderRadius: 4, maxHeight: 420, overflowY: 'auto', marginBottom: 10 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: '#FDE68A', color: '#0F172A', fontWeight: 700, textAlign: 'center', position: 'sticky', top: 0, zIndex: 2 }}>
-                  <th style={{ width: 42, padding: '7px 6px', borderRight: '1px solid #CBD5E1', borderBottom: '1px solid #CBD5E1' }}>STT</th>
-                  <th style={{ width: '36%', padding: '7px 10px', borderRight: '1px solid #CBD5E1', borderBottom: '1px solid #CBD5E1', textAlign: 'left' }}>Câu hỏi</th>
-                  <th style={{ padding: '7px 10px', borderRight: '1px solid #CBD5E1', borderBottom: '1px solid #CBD5E1', textAlign: 'left' }}>Hướng trả lời (Tích chọn)</th>
-                  <th style={{ width: 92, padding: '7px 6px', borderRight: '1px solid #CBD5E1', borderBottom: '1px solid #CBD5E1' }}>Thang điểm</th>
-                  <th style={{ width: 78, padding: '7px 6px', borderBottom: '1px solid #CBD5E1' }}>Điểm đạt</th>
-                </tr>
-              </thead>
-              <tbody>
-                {criteria13.map((c) => {
-                  const curVal = Number(rubricScores[c.key] ?? 0);
-                  return c.options.map((opt, idx) => {
-                    const active = curVal === opt.points;
-                    return (
-                      <tr
-                        key={`${c.key}_${idx}`}
-                        onClick={() => { const next = { ...rubricScores, [c.key]: opt.points }; setRubricScores(next); applyRubricSync(rubricBlock, next, redFlags); }}
-                        style={{ borderTop: idx === 0 ? '1px solid #CBD5E1' : '1px dashed #E2E8F0', background: active ? (opt.isReject ? '#FEF08A' : '#EFF6FF') : (opt.isReject ? '#FEFCE8' : '#FFFFFF'), cursor: 'pointer' }}
-                      >
-                        {idx === 0 && <td rowSpan={c.options.length} style={{ textAlign: 'center', fontWeight: 700, borderRight: '1px solid #CBD5E1', padding: '6px', background: '#F8FAFC' }}>{c.stt}</td>}
-                        {idx === 0 && (
-                          <td rowSpan={c.options.length} style={{ padding: '7px 10px', borderRight: '1px solid #CBD5E1', fontWeight: 600, color: '#0F172A', background: '#FFFFFF' }}>
-                            <div>{c.question}</div>
-                            {c.conditionNote && <div style={{ color: '#DC2626', fontWeight: 700, fontSize: 11.5, marginTop: 4 }}>{c.conditionNote}</div>}
-                          </td>
-                        )}
-                        <td style={{ padding: '5px 10px', borderRight: '1px solid #CBD5E1', fontWeight: active ? 700 : 400, color: opt.isReject ? '#B91C1C' : '#1E293B' }}>
-                          <Space size={6}><input type="radio" checked={active} readOnly style={{ accentColor: opt.isReject ? '#DC2626' : '#2563EB', cursor: 'pointer' }} /><span>{opt.label}</span></Space>
-                        </td>
-                        <td style={{ textAlign: 'center', padding: '5px 6px', borderRight: '1px solid #CBD5E1', fontWeight: 700, color: opt.isReject ? '#B91C1C' : '#0F172A', background: opt.isReject ? '#FDE047' : 'transparent' }}>
-                          {opt.isReject ? (opt.rejectLabel || 'LOẠI') : opt.points}
-                        </td>
-                        {idx === 0 && (
-                          <td rowSpan={c.options.length} style={{ textAlign: 'center', fontWeight: 700, padding: '6px', background: curVal < 0 ? '#FEE2E2' : '#F8FAFC', color: curVal < 0 ? '#DC2626' : '#2563EB', fontSize: 13 }}>
-                            {curVal < 0 ? 'LOẠI' : `${curVal}đ`}
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  });
-                })}
-                <tr style={{ borderTop: '2px solid #94A3B8', background: '#FED7AA', fontWeight: 700 }}><td colSpan={3} style={{ padding: '5px 12px', textAlign: 'center', borderRight: '1px solid #CBD5E1' }}>MAXIMUM</td><td style={{ textAlign: 'center', borderRight: '1px solid #CBD5E1' }}>13</td><td rowSpan={4} style={{ textAlign: 'center', fontSize: 14, background: '#FFFFFF', color: eval13.hasRedFlag ? '#DC2626' : eval13.passed ? '#16A34A' : eval13.isConsider ? '#D97706' : '#DC2626' }}>{eval13.hasRedFlag ? 'LOẠI' : `${eval13.totalScore13}/13đ`}</td></tr>
-                <tr style={{ borderTop: '1px solid #CBD5E1', background: '#F8FAFC', fontWeight: 700 }}><td colSpan={3} style={{ padding: '4px 12px', textAlign: 'center', borderRight: '1px solid #CBD5E1', color: '#15803D' }}>PASS (ĐẠT)</td><td style={{ textAlign: 'center', borderRight: '1px solid #CBD5E1', color: '#15803D' }}>12</td></tr>
-                <tr style={{ borderTop: '1px solid #CBD5E1', background: '#FEF08A', fontWeight: 700 }}><td colSpan={3} style={{ padding: '4px 12px', textAlign: 'center', borderRight: '1px solid #CBD5E1', color: '#B45309' }}>CÂN NHẮC ĐẬU</td><td style={{ textAlign: 'center', borderRight: '1px solid #CBD5E1', color: '#B45309' }}>10 , 11</td></tr>
-                <tr style={{ borderTop: '1px solid #CBD5E1', background: '#F8FAFC', fontWeight: 700 }}><td colSpan={3} style={{ padding: '4px 12px', textAlign: 'center', borderRight: '1px solid #CBD5E1', color: '#DC2626' }}>FAIL (LOẠI)</td><td style={{ textAlign: 'center', borderRight: '1px solid #CBD5E1', color: '#DC2626' }}>Dưới 10</td></tr>
-              </tbody>
-            </table>
+          <div style={{ border: '1px solid #E2E8F0', borderRadius: 4, overflow: 'hidden', background: '#FFFFFF', marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '52px minmax(300px, 1.25fr) minmax(420px, 1.75fr) 104px', background: '#F1F5F9', borderBottom: '1px solid #E2E8F0', fontWeight: 700, fontSize: 13, color: '#0F172A' }}>
+              <div style={{ padding: '10px 8px', textAlign: 'center', borderRight: '1px solid #E2E8F0' }}>STT</div>
+              <div style={{ padding: '10px 14px', borderRight: '1px solid #E2E8F0' }}>Câu hỏi phỏng vấn</div>
+              <div style={{ padding: '10px 14px', borderRight: '1px solid #E2E8F0' }}>Hướng trả lời & Thang điểm (Bấm chọn)</div>
+              <div style={{ padding: '10px 8px', textAlign: 'center' }}>Điểm đạt</div>
+            </div>
+
+            {criteria13.map((c, idx) => {
+              const curVal = Number(rubricScores[c.key] ?? 0), isRejected = curVal < 0;
+              return (
+                <div key={c.key} style={{ display: 'grid', gridTemplateColumns: '52px minmax(300px, 1.25fr) minmax(420px, 1.75fr) 104px', borderBottom: idx < criteria13.length - 1 ? '1px solid #E2E8F0' : 'none', background: isRejected ? '#FFFBFB' : idx % 2 === 0 ? '#FFFFFF' : '#FCFDFE' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13.5, color: '#475569', borderRight: '1px solid #E2E8F0', background: '#F8FAFC' }}>{c.stt}</div>
+                  <div style={{ padding: '12px 14px', borderRight: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13.5, color: '#0F172A', lineHeight: 1.5 }}>{c.question}</div>
+                    <Space size={6} wrap>
+                      <span style={{ fontSize: 12, color: '#64748B' }}>Tối đa: {c.maxPoints} điểm</span>
+                      {c.conditionNote && <Tag color="red" style={{ margin: 0, fontWeight: 600, fontSize: 11.5 }}>{c.conditionNote}</Tag>}
+                    </Space>
+                  </div>
+                  <div style={{ padding: '10px 14px', borderRight: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'center' }}>
+                    {c.options.map((opt, optIdx) => {
+                      const active = curVal === opt.points, borderColor = active ? (opt.isReject ? '#DC2626' : '#2563EB') : '#E2E8F0', bgColor = active ? (opt.isReject ? '#FEF2F2' : '#EFF6FF') : '#FFFFFF';
+                      return (
+                        <div key={`${c.key}_${optIdx}`} onClick={() => { const next = { ...rubricScores, [c.key]: opt.points }; setRubricScores(next); applyRubricSync(rubricBlock, next, redFlags); }} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 4, border: `1px solid ${borderColor}`, background: bgColor, cursor: 'pointer', transition: 'all 0.15s ease' }}>
+                          <Space size={8} style={{ flex: 1 }}>
+                            {active ? (opt.isReject ? <CloseCircleFilled style={{ color: '#DC2626', fontSize: 15 }} /> : <CheckCircleFilled style={{ color: '#2563EB', fontSize: 15 }} />) : <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: '50%', border: '1.5px solid #94A3B8', flexShrink: 0, background: '#FFFFFF' }} />}
+                            <span style={{ fontSize: 13, fontWeight: active ? 600 : 400, color: opt.isReject && active ? '#B91C1C' : '#0F172A', lineHeight: 1.45 }}>{opt.label}</span>
+                          </Space>
+                          <Tag color={opt.isReject ? 'error' : active ? 'blue' : 'default'} style={{ margin: 0, fontWeight: 700, minWidth: 64, textAlign: 'center' }}>{opt.isReject ? (opt.rejectLabel || 'LOẠI') : `${opt.points} điểm`}</Tag>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px 8px', background: isRejected ? '#FEF2F2' : '#F8FAFC' }}>
+                    <Tag color={isRejected ? 'error' : curVal === c.maxPoints ? 'success' : curVal > 0 ? 'blue' : 'default'} className="num" style={{ margin: 0, fontWeight: 700, fontSize: 13.5, padding: '4px 10px' }}>{isRejected ? 'LOẠI' : `${curVal}/${c.maxPoints}đ`}</Tag>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          <div style={{ background: redFlags.length > 0 ? '#FEF2F2' : '#FFFBEB', border: `1px solid ${redFlags.length > 0 ? '#FECACA' : '#FDE68A'}`, borderRadius: 4, padding: '6px 12px', marginBottom: 10 }}>
-            <div style={{ fontWeight: 600, color: '#DC2626', fontSize: 12, marginBottom: 4 }}><FlagOutlined /> Cảnh báo Loại trực tiếp bổ sung (Nếu phát sinh ngoài bảng câu hỏi):</div>
+          <Row gutter={[10, 10]} style={{ marginBottom: 12 }}>
+            <Col xs={12} md={6}><div style={{ padding: '10px 12px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 4 }}><div style={{ fontSize: 11.5, color: '#64748B' }}>MAXIMUM (Tối đa)</div><div style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', marginTop: 2 }}>13 điểm</div></div></Col>
+            <Col xs={12} md={6}><div style={{ padding: '10px 12px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 4 }}><div style={{ fontSize: 11.5, color: '#15803D' }}>PASS (ĐẠT PHỎNG VẤN)</div><div style={{ fontSize: 15, fontWeight: 700, color: '#15803D', marginTop: 2 }}>12 – 13 điểm</div></div></Col>
+            <Col xs={12} md={6}><div style={{ padding: '10px 12px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 4 }}><div style={{ fontSize: 11.5, color: '#B45309' }}>CÂN NHẮC ĐẬU</div><div style={{ fontSize: 15, fontWeight: 700, color: '#B45309', marginTop: 2 }}>10 , 11 điểm</div></div></Col>
+            <Col xs={12} md={6}><div style={{ padding: '10px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 4 }}><div style={{ fontSize: 11.5, color: '#DC2626' }}>FAIL (KHÔNG ĐẠT)</div><div style={{ fontSize: 15, fontWeight: 700, color: '#DC2626', marginTop: 2 }}>Dưới 10 điểm / Dính LOẠI</div></div></Col>
+          </Row>
+
+          <div style={{ background: redFlags.length > 0 ? '#FEF2F2' : '#F8FAFC', border: `1px solid ${redFlags.length > 0 ? '#FECACA' : '#E2E8F0'}`, borderRadius: 4, padding: '8px 12px', marginBottom: 12 }}>
+            <div style={{ fontWeight: 600, color: redFlags.length > 0 ? '#DC2626' : '#475569', fontSize: 12.5, marginBottom: 6 }}><FlagOutlined /> Cảnh báo Loại trực tiếp bổ sung (Nếu phát sinh ngoài bảng câu hỏi):</div>
             <Checkbox.Group value={redFlags} style={{ width: '100%' }} onChange={(vals) => { const nextFlags = vals.map(String); setRedFlags(nextFlags); applyRubricSync(rubricBlock, rubricScores, nextFlags); }}>
-              <Row gutter={[12, 4]}>{INTERVIEW_RED_FLAGS.map((rf) => <Col xs={24} md={8} key={rf.key}><Checkbox value={rf.key} style={{ fontSize: 11.5 }}>{rf.label}</Checkbox></Col>)}</Row>
+              <Row gutter={[12, 6]}>{INTERVIEW_RED_FLAGS.map((rf) => <Col xs={24} md={8} key={rf.key}><Checkbox value={rf.key} style={{ fontSize: 12.5 }}>{rf.label}</Checkbox></Col>)}</Row>
             </Checkbox.Group>
           </div>
 
-          <Alert style={{ marginBottom: 10, padding: '6px 12px' }} showIcon type={eval13.hasRedFlag ? 'error' : eval13.passed ? 'success' : eval13.isConsider ? 'warning' : 'error'} message={eval13.hasRedFlag ? 'Ứng viên bị LOẠI TRỰC TIẾP do rơi vào phương án LOẠI / LOẠI THẲNG trong bảng câu hỏi phỏng vấn.' : eval13.passed ? 'Đủ điều kiện PASS (>= 12/13 điểm): Khi xác nhận duyệt, hệ thống tự động tạo hồ sơ nhân sự, kích hoạt tài khoản và bắt đầu thử việc 12 ngày.' : eval13.isConsider ? `Điểm hiện tại (${eval13.totalScore13}/13đ) thuộc diện CÂN NHẮC ĐẬU (10, 11 điểm).` : `Điểm hiện tại (${eval13.totalScore13}/13đ) dưới 10 điểm — thuộc diện FAIL (Không đạt).`} />
+          <Alert style={{ marginBottom: 12, padding: '8px 14px' }} showIcon type={eval13.hasRedFlag ? 'error' : eval13.passed ? 'success' : eval13.isConsider ? 'warning' : 'error'} message={eval13.hasRedFlag ? 'Ứng viên bị LOẠI TRỰC TIẾP do rơi vào phương án LOẠI / LOẠI THẲNG trong bảng câu hỏi phỏng vấn.' : eval13.passed ? 'Đủ điều kiện PASS (>= 12/13 điểm): Khi xác nhận duyệt, hệ thống tự động tạo hồ sơ nhân sự, kích hoạt tài khoản và bắt đầu thử việc 12 ngày.' : eval13.isConsider ? `Điểm hiện tại (${eval13.totalScore13}/13đ) thuộc diện CÂN NHẮC ĐẬU (10, 11 điểm).` : `Điểm hiện tại (${eval13.totalScore13}/13đ) dưới 10 điểm — thuộc diện FAIL (Không đạt).`} />
 
           <Row gutter={12}>
             <Col xs={24} md={8}><Form.Item name="decision" label="Quyết định phê duyệt của HR" rules={[{ required: true }]} style={{ marginBottom: 0 }}><Select disabled={eval13.hasRedFlag} options={[{ value: 'PASS', label: eval13.passed ? 'PASS (Đạt >= 12/13đ) — Khởi tạo NV' : 'PASS (Yêu cầu >= 12/13đ)', disabled: !eval13.passed }, { value: 'HOLD', label: 'Cân nhắc đậu (10, 11 điểm)' }, { value: 'FAIL', label: 'FAIL — Không đạt (Dưới 10đ / Loại)' }]} /></Form.Item></Col>
-            <Col xs={24} md={16}><Form.Item name="comment" label="NHẬN XÉT CỦA HR" rules={[{ required: true, message: 'Vui lòng nhập nhận xét đánh giá phỏng vấn' }]} style={{ marginBottom: 0 }}><Input.TextArea rows={2} placeholder="Ghi nhận thái độ, câu trả lời thực tế và mức độ phù hợp..." /></Form.Item></Col>
+            <Col xs={24} md={16}><Form.Item name="comment" label="Nhận xét đánh giá của HR" rules={[{ required: true, message: 'Vui lòng nhập nhận xét đánh giá phỏng vấn' }]} style={{ marginBottom: 0 }}><Input.TextArea rows={2} placeholder="Ghi nhận thái độ, câu trả lời thực tế và mức độ phù hợp..." /></Form.Item></Col>
           </Row>
         </Form>
       </Modal>
