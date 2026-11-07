@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { evaluateInterviewRubric13, OFFICE_RUBRIC_CRITERIA_13, PRE_SCREEN_CRITERIA_14, STORE_RUBRIC_CRITERIA_13 } from '@umbm/shared';
 import { DEMO_PIN, SHIFT_DEFINITIONS } from '../data/memory-seed.js';
 import { isPinRotationRequiredInWindow, parsePinHistory } from './auth.routes.js';
+import { scoreCandidateForm14 } from '../services/candidate-form-scorer.js';
 import { sweepExpiredNoShowInterviews, sweepUpcomingInterviewReminders, INTERVIEW_REMINDER_WINDOW_MINUTES } from '../services/interview-reminder.service.js';
 import { buildTestApp, type TestAppContext } from '../test-utils/build-test-app.js';
 
@@ -157,5 +159,35 @@ describe('Giai đoạn 1 & 2: 6 Điểm GPS, 3 Ca Chuẩn, Xoay PIN, Google Form
     const sync2 = await t.app.inject({ method: 'POST', url: '/api/admin/candidates/sync-google-sheet', headers: hr, payload: {} });
     expect(sync2.statusCode).toBe(200);
     expect(sync2.json().data).toMatchObject({ newCount: 0, skippedCount: 4 });
+  });
+
+  it('6. Bảng chấm điểm sơ loại (9 câu — 14đ) và Phỏng vấn Đã có KN (9 câu — 13đ) / Chưa có KN (7 câu — 13đ) khớp 100% quy tắc LOẠI & CÂN NHẮC ĐẬU', () => {
+    expect(PRE_SCREEN_CRITERIA_14).toHaveLength(9);
+    expect(STORE_RUBRIC_CRITERIA_13).toHaveLength(9);
+    expect(OFFICE_RUBRIC_CRITERIA_13).toHaveLength(7);
+
+    // Sơ loại câu 7: Bạn bè người quen giới thiệu -> LOẠI
+    const refScored = scoreCandidateForm14({
+      'Tên Bạn là?': 'Nguyễn Văn B', 'Năm Sinh của bạn?': '2002', 'Quê Quán theo CCCD?': 'Bến Tre',
+      'Số điện thoại của bạn (Số zalo để liên hệ)': '0909123456', 'Trình độ học vấn': 'Không đi học chỉ đi làm',
+      'Kinh nghiệm làm việc?': 'Kinh nghiệm từng làm F&B', 'Bạn biết tin ứng tuyển qua hình thức nào?': 'Bạn bè người quen giới thiệu',
+      'Nếu như ngày mai em có việc đột xuất trùng lịch ca trực...': 'Báo trước cho quản lý và xin đổi ca',
+      'Gửi link Facebook cá nhân của bạn vào đây nhé!': 'https://facebook.com/nguyenvanb',
+    });
+    expect(refScored.ai_qualified).toBe(false);
+    expect(refScored.red_flag_reason).toContain('Câu 7');
+
+    // Phỏng vấn Chưa có KN (7 câu): 11 điểm -> CÂN NHẮC ĐẬU (HOLD)
+    const considerEval = evaluateInterviewRubric13('OFFICE', {
+      o1_professionalism: 2, o2_communication: 2, o3_responsibility: 2,
+      o4_longterm_fit: 2, o5_domain_expertise: 1, o6_digital_tools: 1, o7_problem_solving: 1,
+    });
+    expect(considerEval).toMatchObject({ totalScore13: 11, passed: false, isConsider: true, recommendedDecision: 'HOLD' });
+
+    // Phỏng vấn Đã có KN (9 câu): câu 5 chọn sở thích nội tâm -> LOẠI THẲNG (-1)
+    const rejectEval = evaluateInterviewRubric13('STORE', {
+      s1_punctuality: 2, s2_grooming: 2, s3_voice_smile: 1, s5_honesty_discipline: -1, s6_teamwork: 2,
+    });
+    expect(rejectEval).toMatchObject({ hasRedFlag: true, passed: false, autoDecision: 'FAIL', recommendedDecision: 'FAIL' });
   });
 });

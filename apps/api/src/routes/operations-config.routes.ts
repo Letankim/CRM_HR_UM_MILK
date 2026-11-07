@@ -71,7 +71,7 @@ export async function operationsConfigRoutes(app: FastifyInstance, ctx: AppConte
   });
 
   app.post('/api/admin/data-partitions/rollover', { preHandler: requirePermission('system.config') }, async (request, reply) => {
-    const body = z.object({ month_key: zMonthKey.refine((v) => v !== '', 'Vui lòng chọn tháng cần tạo tệp Google Sheets mới'), carry_forward: z.boolean().optional().default(true) }).parse(request.body ?? {});
+    const body = z.object({ month_key: zMonthKey.refine((v) => v !== '', 'Vui lòng chọn tháng cần tạo tệp dữ liệu mới'), carry_forward: z.boolean().optional().default(true) }).parse(request.body ?? {});
     const actor = request.auth!.user, before = ctx.db.partitionMonth;
     const result = await rolloverToMonth(ctx.db, body.month_key, actor.id, body.carry_forward);
     const reqAudit = auditContext(request);
@@ -95,7 +95,7 @@ export async function operationsConfigRoutes(app: FastifyInstance, ctx: AppConte
       message: `Hệ thống vừa khởi tạo và chuyển sang dữ liệu ${listing.activeLabel} — Đã tự động tải lại dữ liệu mới nhất`,
     });
     reply.code(201);
-    return sendSuccess(request, `Đã khởi tạo tệp Google Sheets ${result.label} trên Google Drive và chuyển tiếp ${carriedTotal} bản ghi từ đầu tháng trở đi`, { ...result, ...listing });
+    return sendSuccess(request, `Đã khởi tạo tệp dữ liệu ${result.label} và chuyển tiếp ${carriedTotal} bản ghi từ đầu tháng trở đi`, { ...result, ...listing });
   });
 
   app.put('/api/admin/data-partitions/active', { preHandler: requirePermission('system.config') }, async (request) => {

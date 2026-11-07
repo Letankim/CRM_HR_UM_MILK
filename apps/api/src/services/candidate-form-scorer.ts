@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { normalizePhone } from '@umbm/shared';
+import { evaluatePreScreenScores14, normalizePhone, PRE_SCREEN_CRITERIA_14 } from '@umbm/shared';
 
 /** Danh sách 26 cột chuẩn từ Google Form tuyển dụng `FROM_NHAN_VIEN`. */
 export const GOOGLE_FORM_26_COLUMNS = [
@@ -44,7 +44,7 @@ const KEY_ALIASES: Record<string, string[]> = {
   can_rotate_branch: ['can_rotate_branch', 'hỗ trợ xoay ca chi nhánh khác', 'xoay chi nhánh'],
   experience_note: ['experience_note', 'experience', 'kinh nghiệm làm việc?', 'kinh nghiem lam viec', 'kinh nghiệm'],
   fnb_skills: ['fnb_skills', 'kỹ năng pha chế', 'ky nang pha che'],
-  incident_answer: ['incident_answer', 'situational_answer', 'nếu như ngày mai em có việc đột xuất trùng lịch ca trực', 'việc đột xuất trùng lịch'],
+  incident_answer: ['incident_answer', 'situational_answer', 'nếu như ngày mai em có việc đột xuất trùng lịch ca trực', 'việc đột xuất trùng lịch', 'việc đột xuất trùng với lịch ca trực'],
   commitment_months: ['commitment_months', 'commitment', 'gắn bó tối thiểu bao lâu', 'cam kết thời gian'],
   expected_salary: ['expected_salary', 'mức lương mong muốn'],
   start_date_available: ['start_date_available', 'ngày có thể bắt đầu'],
@@ -100,51 +100,61 @@ export function resolveBranchFromText(raw: string, branches: { id: string; code:
   return codeMatch ? (branches.find((b) => b.code.toUpperCase() === codeMatch)?.id ?? codeMatch) : (branches[0]?.id ?? val);
 }
 
-/** Chấm tự động 9 tiêu chí (thang 14 điểm) và kiểm tra cờ loại trực tiếp (Red Flag). */
+const SOUTH_WEST_REGEX = /hồ chí minh|tp\.?\s*hcm|sài gòn|sai gon|bình dương|đồng nai|bà rịa|vũng tàu|tây ninh|bình phước|long an|tiền giang|bến tre|vĩnh long|trà vinh|đồng tháp|an giang|kiên giang|cần thơ|hậu giang|sóc trăng|bạc liêu|cà mau|miền nam|miền tây|mien nam|mien tay/i;
+
+/** Chấm tự động 9 tiêu chí sơ loại (thang 14 điểm, đạt >= 8 điểm) và kiểm tra cờ LOẠI trực tiếp. */
 export function scoreCandidateForm14(
   row: Record<string, unknown>,
   branches: { id: string; code: string; name: string; address?: string }[] = [],
   currentYear = 2026,
 ): ParsedCandidateFormRow {
+  const fullName = pickField(row, 'full_name');
   const rawPhone = pickField(row, 'phone'), normalizedPhone = normalizePhone(rawPhone) ?? rawPhone.replace(/\D/g, '');
   const rawShift = pickField(row, 'shift_pref'), rawBranch = pickField(row, 'branch_pref');
   const birthYearStr = pickField(row, 'birth_year'), birthYearMatch = birthYearStr.match(/(19\d{2}|20\d{2})/);
-  const birthYearNum = birthYearMatch ? Number(birthYearMatch[1]) : 0, age = birthYearNum > 0 ? currentYear - birthYearNum : 21;
+  const birthYearNum = birthYearMatch ? Number(birthYearMatch[1]) : 0, age = birthYearNum > 0 ? currentYear - birthYearNum : 22;
   const experienceNote = pickField(row, 'experience_note'), fnbSkills = pickField(row, 'fnb_skills');
   const incidentAnswer = pickField(row, 'incident_answer'), education = pickField(row, 'education');
   const commitment = pickField(row, 'commitment_months'), fbLink = pickField(row, 'facebook_link');
   const hometown = pickField(row, 'hometown'), citizenId = pickField(row, 'citizen_id'), currentAddress = pickField(row, 'current_address');
+  const sourceChannel = pickField(row, 'source_channel') || 'GOOGLE_FORM';
   const rawPos = pickField(row, 'position') || 'Pha chế';
 
-  let redFlagReason = '';
-  if (birthYearNum > 0 && (age < 18 || age > 45)) {
-    redFlagReason = `Vi phạm độ tuổi quy định (sinh năm ${birthYearNum} — ${age} tuổi, yêu cầu 18–45 tuổi)`;
-  } else if (incidentAnswer && /tự ý nghỉ|bỏ ca|nghỉ luôn|không cần báo|im lặng nghỉ|cứ nghỉ|kệ quản lý/i.test(incidentAnswer)) {
-    redFlagReason = 'Loại trực tiếp: Thái độ kỷ luật kém — tự ý bỏ ca không báo trước khi có việc đột xuất';
-  }
-
-  const c1Age = birthYearNum === 0 ? 1 : (age >= 18 && age <= 30 ? 2 : age >= 31 && age <= 45 ? 1 : 0);
-  const c2Phone = normalizePhone(rawPhone) ? 1 : 0;
-  const c3Shift = rawShift ? 2 : 0;
-  const c4Branch = rawBranch ? 1 : 0;
+  let baseRedFlag = '';
+  if (birthYearNum > 0 && (age < 18 || age > 45)) baseRedFlag = `Vi phạm độ tuổi quy định (sinh năm ${birthYearNum} — ${age} tuổi, yêu cầu 18–45 tuổi)`;
+  const c1Name = fullName.trim().split(/\s+/).filter(Boolean).length >= 2 ? 1 : 0;
+  const c2Birth = birthYearNum === 0 ? 1 : (birthYearNum <= 2004 && age <= 45 ? 2 : birthYearNum >= 2005 && birthYearNum <= 2008 ? 1 : 0);
+  const c3Hometown = SOUTH_WEST_REGEX.test(hometown) || (!hometown && /^0[789]/.test(citizenId)) ? 1 : 0;
+  const c4Phone = normalizePhone(rawPhone) ? 1 : 0;
+  const c5Edu = /không đi học|chỉ đi làm|đã nghỉ học|đã tốt nghiệp|thpt|12\/12/i.test(education) ? 2 : (education || commitment ? 1 : 0);
   const expCombined = `${experienceNote} ${fnbSkills}`.trim();
-  const c5Exp = /pha chế|thu ngân|phục vụ|trà sữa|cà phê|f&b|barista|bán hàng|nhà hàng|quán|\d+\s*(tháng|năm)/i.test(expCombined) ? 2 : expCombined && !/^(không|chưa|0|none)$/i.test(expCombined) ? 1 : 0;
-  const c6Incident = redFlagReason ? 0 : /báo quản lý|báo trước|xin phép|đổi ca|nhờ bạn|tìm người thay|liên hệ|cửa hàng trưởng|hr/i.test(incidentAnswer) ? 2 : incidentAnswer.length >= 5 ? 1 : 0;
-  const eduCombined = `${education} ${commitment}`.trim();
-  const c7Edu = eduCombined ? (education && commitment ? 2 : /đại học|cao đẳng|trung cấp|thpt|sinh viên|6 tháng|1 năm|lâu dài/i.test(eduCombined) ? 2 : 1) : 0;
-  const c8Fb = /facebook\.com|fb\.com|fb\.watch|http/i.test(fbLink) ? 1 : 0;
-  const c9Profile = hometown || citizenId || currentAddress ? 1 : 0;
+  const c6Exp = /pha chế|thu ngân|phục vụ|trà sữa|cà phê|f&b|barista|nhà hàng|quán/i.test(expCombined) ? 2
+    : expCombined && !/^(không|chưa|không có kinh nghiệm|chưa có kinh nghiệm|0|none)$/i.test(expCombined) ? 1 : 0;
+  const c7Source = /bạn bè|ban be|người quen|nguoi quen|giới thiệu|gioi thieu/i.test(sourceChannel) ? -1 : 1;
+  const isFromFormRow = Object.keys(row).some((k) => k.includes('?') || k.toLowerCase().includes('đột xuất'));
+  const isIncidentReject = /tự ý nghỉ|bỏ ca|nghỉ luôn|không cần báo|im lặng nghỉ|cứ nghỉ|kệ quản lý|^bỏ trống$/i.test(incidentAnswer) || (isFromFormRow && !incidentAnswer && Object.keys(row).length >= 3);
+  const c8Incident = isIncidentReject ? -1 : (incidentAnswer.trim().length >= 3 ? 2 : 0);
+  const isFbReject = /drama|châm biếm|cham biem|tiêu cực|tieu cuc/i.test(fbLink);
+  const isRealFb = /facebook\.com\/[a-zA-Z0-9._-]+|fb\.com\/[a-zA-Z0-9._-]+/i.test(fbLink) && !/link ảo|link ao/i.test(fbLink);
+  const c9Fb = isFbReject ? -1 : (isRealFb ? 2 : 1);
 
-  const criteria_scores = {
-    age_valid: c1Age, zalo_phone: c2Phone, shift_flexibility: c3Shift, fixed_branch: c4Branch,
-    fnb_experience: c5Exp, incident_handling: c6Incident, education_commitment: c7Edu, facebook_link: c8Fb, hometown_cccd: c9Profile,
+  const autoScores: Record<string, number> = {
+    full_name_valid: c1Name, age_valid: c2Birth, hometown_cccd: c3Hometown, zalo_phone: c4Phone,
+    education_commitment: c5Edu, fnb_experience: c6Exp, source_channel_score: c7Source,
+    incident_handling: c8Incident, facebook_link: c9Fb,
   };
-  const ai_score_14 = Math.max(0, Math.min(14, Object.values(criteria_scores).reduce((s, v) => s + v, 0)));
-  const ai_qualified = !redFlagReason && ai_score_14 >= 8;
+  const manualScores = (typeof row.criteria_scores === 'object' && row.criteria_scores !== null ? row.criteria_scores : {}) as Record<string, unknown>;
+  const criteria_scores: Record<string, number> = { ...autoScores };
+  for (const c of PRE_SCREEN_CRITERIA_14) {
+    if (manualScores[c.key] !== undefined && manualScores[c.key] !== null && !Number.isNaN(Number(manualScores[c.key]))) {
+      criteria_scores[c.key] = Number(manualScores[c.key]);
+    }
+  }
+  const eval14 = evaluatePreScreenScores14(criteria_scores, baseRedFlag);
 
   return {
     source_row: String(row.source_row ?? `GF-${Date.now()}`), timestamp: pickField(row, 'timestamp'),
-    email: pickField(row, 'email'), full_name: pickField(row, 'full_name') || 'Ứng viên Google Form',
+    email: pickField(row, 'email'), full_name: fullName || 'Ứng viên Google Form',
     gender: pickField(row, 'gender') || 'Khác', birth_year: birthYearMatch ? birthYearMatch[1]! : (birthYearStr || '2003'),
     education, school_or_major: pickField(row, 'school_or_major'), hometown, current_address: currentAddress,
     citizen_id: citizenId, phone: normalizedPhone, raw_phone: rawPhone, position: rawPos,
@@ -155,9 +165,9 @@ export function scoreCandidateForm14(
     can_rotate_branch: pickField(row, 'can_rotate_branch'), experience_note: experienceNote || fnbSkills,
     fnb_skills: fnbSkills, incident_answer: incidentAnswer, commitment_months: commitment,
     expected_salary: pickField(row, 'expected_salary'), start_date_available: pickField(row, 'start_date_available'),
-    facebook_link: fbLink, source_channel: pickField(row, 'source_channel') || 'GOOGLE_FORM',
+    facebook_link: fbLink, source_channel: sourceChannel,
     uniform_gps_consent: pickField(row, 'uniform_gps_consent'), self_intro: pickField(row, 'self_intro'),
-    ai_score_14, ai_qualified, red_flag_reason: redFlagReason, criteria_scores,
+    ai_score_14: eval14.totalScore14, ai_qualified: eval14.qualified, red_flag_reason: eval14.redFlagReason, criteria_scores,
   };
 }
 
@@ -166,8 +176,7 @@ const RSVP_SECRET = process.env.JWT_SECRET || 'umbm-hr-rsvp-jwt-secret-v51';
 export function createRsvpToken(payload: { interviewId: string; candidateId?: string }, ttlDays = 7): string {
   const exp = Math.floor(Date.now() / 1000) + ttlDays * 86_400;
   const headerB64 = Buffer.from('{"t":"J"}').toString('base64url');
-  const bodyObj = { i: payload.interviewId || payload.candidateId || '', e: exp };
-  const bodyB64 = Buffer.from(JSON.stringify(bodyObj)).toString('base64url');
+  const bodyB64 = Buffer.from(JSON.stringify({ i: payload.interviewId || payload.candidateId || '', e: exp })).toString('base64url');
   const sig = createHmac('sha256', RSVP_SECRET).update(`${headerB64}.${bodyB64}`).digest('base64url').slice(0, 16);
   return `${headerB64}.${bodyB64}.${sig}`;
 }
@@ -179,9 +188,7 @@ export function verifyRsvpToken(token: string): { valid: boolean; interviewId?: 
   const fullSig = createHmac('sha256', RSVP_SECRET).update(`${headerB64}.${bodyB64}`).digest('base64url');
   if (sig !== fullSig && sig !== fullSig.slice(0, 16)) return { valid: false };
   try {
-    const data = JSON.parse(Buffer.from(bodyB64, 'base64url').toString('utf8')) as {
-      interviewId?: string; i?: string; candidateId?: string; c?: string; exp?: number; e?: number;
-    };
+    const data = JSON.parse(Buffer.from(bodyB64, 'base64url').toString('utf8')) as { interviewId?: string; i?: string; candidateId?: string; c?: string; exp?: number; e?: number };
     const exp = data.exp ?? data.e;
     if (exp && Math.floor(Date.now() / 1000) > exp) return { valid: false, expired: true };
     const id = data.interviewId ?? data.i;

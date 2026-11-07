@@ -110,13 +110,13 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
     });
 
   const openCreateCand = () => {
-    setEditingCand(null); candForm.resetFields();
+    setEditingCand(null); candForm.resetFields(); setCandTab('personal');
     candForm.setFieldsValue(buildCandidateFormInitials(null, branches[0]?.value));
     setCandModal(true);
   };
 
-  const openEditCand = (r: Record<string, unknown>) => {
-    setEditingCand(r);
+  const openEditCand = (r: Record<string, unknown>, initialTab = 'personal') => {
+    setEditingCand(r); setCandTab(initialTab);
     candForm.setFieldsValue(buildCandidateFormInitials(r));
     setCandModal(true);
   };
@@ -170,7 +170,7 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
           { title: 'Mã UV & VIP', dataIndex: 'candidate_code', width: 130, render: (v: string, r) => <Space size={4} wrap><Tag color="geekblue" style={{ margin: 0 }}>{v}</Tag>{Boolean(r.is_vip) && <Tag color="gold" style={{ margin: 0, fontWeight: 600 }}><StarFilled /> VIP #{Number(r.vip_rank || 1)}</Tag>}</Space> },
           { title: 'Họ và tên', dataIndex: 'full_name', ellipsis: true, render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span> },
           { title: 'Số điện thoại', dataIndex: 'phone', width: 120, render: (v: string) => <span className="num" style={{ fontWeight: 600 }}>{v}</span> },
-          { title: 'Chấm điểm AI (14đ)', key: 'aiScore', width: 165, render: (_, r) => <Tooltip title={String(r.red_flag_reason || `Điểm sàng lọc tự động 9 tiêu chí Google Form: ${Number(r.ai_score_14 || 0)}/14 điểm`)}><Tag color={r.red_flag_reason ? 'error' : r.ai_qualified ? 'success' : 'warning'} style={{ margin: 0, fontWeight: 600 }}>{Number(r.ai_score_14 || 0)}/14đ · {r.red_flag_reason ? 'Cờ loại' : r.ai_qualified ? 'Đạt sơ loại' : 'Cân nhắc'}</Tag></Tooltip> },
+          { title: 'Chấm điểm sơ loại (14đ)', key: 'aiScore', width: 175, render: (_, r) => <Tooltip title={String(r.red_flag_reason || `Bấm để chấm điểm sơ loại 9 câu hỏi (Thang 14 điểm — Đạt >= 8đ): ${Number(r.ai_score_14 || 0)}/14 điểm`)}><Tag onClick={(e) => { e.stopPropagation(); if (canManageRec) openEditCand(r, 'prescreen'); }} color={r.red_flag_reason ? 'error' : r.ai_qualified ? 'success' : 'warning'} style={{ margin: 0, fontWeight: 600, cursor: canManageRec ? 'pointer' : 'default' }}>{Number(r.ai_score_14 || 0)}/14đ · {r.red_flag_reason ? 'Loại' : r.ai_qualified ? 'Đạt (>=8đ)' : 'Loại (<8đ)'}</Tag></Tooltip> },
           { title: 'Vị trí & Ca', key: 'posShift', width: 165, ellipsis: true, render: (_, r) => <div><div>{String(r.positionLabel || '')}</div><div style={{ fontSize: 11, color: '#64748B' }}>{String(r.shiftPrefLabel || '')}</div></div> },
           { title: 'Chi nhánh nguyện vọng', dataIndex: 'branchName', ellipsis: true },
           { title: 'Giai đoạn', dataIndex: 'stage', width: 155, render: (v: string) => <StatusTag value={v} /> },
@@ -186,7 +186,8 @@ export function RecruitmentCandidatesPane({ branches, scheduledCandidateIds, onS
                   ...(canManageIv ? [{ key: 'interview', icon: <CalendarOutlined />, label: checkHasIv(r) ? 'Chỉnh sửa lịch phỏng vấn' : 'Đặt lịch phỏng vấn', onClick: () => onScheduleInterview(String(r.id)) }] : []),
                   ...(canManageRec && r.status !== 'REJECTED' && r.status !== 'HIRED' ? [{ key: 'reject', icon: <CloseCircleOutlined />, danger: true, label: 'Từ chối hồ sơ ứng viên', onClick: () => promptRejectCandidate([r]) }] : []),
                   ...(canManageRec ? [
-                    { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa hồ sơ & ghi chú HR', onClick: () => openEditCand(r) },
+                    { key: 'prescreen', icon: <EditOutlined style={{ color: '#2563EB' }} />, label: 'Chấm điểm sơ loại (9 câu — 14đ)', onClick: () => openEditCand(r, 'prescreen') },
+                    { key: 'edit', icon: <EditOutlined />, label: 'Chỉnh sửa hồ sơ & ghi chú HR', onClick: () => openEditCand(r, 'personal') },
                     { key: 'delete', icon: <DeleteOutlined />, danger: true, label: 'Xóa hồ sơ ứng viên', onClick: () => modal.confirm({ title: `Xóa hồ sơ ứng viên "${r.full_name}"?`, content: 'Hồ sơ ứng viên này sẽ bị xóa khỏi danh sách tuyển dụng.', okText: 'Xác nhận xóa', cancelText: 'Hủy bỏ', okButtonProps: { danger: true, icon: <DeleteOutlined /> }, cancelButtonProps: { icon: <CloseOutlined /> }, onOk: () => delMut.mutateAsync({ url: `/admin/candidates/${r.id}`, body: { version: r.version } }) }) },
                   ] : []),
                 ]}
