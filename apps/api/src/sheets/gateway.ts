@@ -14,6 +14,9 @@ export interface SheetsGateway {
   ensureTab(spreadsheetId: string, tab: string, headers: readonly string[]): Promise<void>;
   listTabs(spreadsheetId: string): Promise<string[]>;
   createMonthlySpreadsheet(params: CreateMonthlySpreadsheetParams): Promise<CreatedMonthlySpreadsheet>;
+  flushOutbox?: () => Promise<number>;
+  reconcileParity?: () => Promise<unknown>;
+  postgresStatus?: () => Promise<unknown>;
 }
 
 const quoteTab = (tab: string) => `'${tab.replace(/'/g, "''")}'`;

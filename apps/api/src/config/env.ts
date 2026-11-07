@@ -6,6 +6,9 @@ const zEnv = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   /** google = dữ liệu thật trên Google Sheets; memory = dữ liệu mẫu trong RAM để dev giao diện. */
   DATA_BACKEND: z.enum(['google', 'memory']).default('google'),
+  /** Chuỗi kết nối PostgreSQL (URI hoặc Host=...;Port=...;Database=...;Username=...;Password=...). */
+  DATABASE_URL: z.string().default(''),
+  POSTGRES_SYNC_INTERVAL_MS: z.coerce.number().int().min(100).default(1200),
   PORT: z.coerce.number().int().optional(),
   API_PORT: z.coerce.number().int().default(4000),
   API_PUBLIC_ORIGIN: z

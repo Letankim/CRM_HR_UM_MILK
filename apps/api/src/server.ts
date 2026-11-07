@@ -20,6 +20,7 @@ import { ensurePublishedPeriodPayslips } from './services/payslip.service.js';
 import { ReconciliationService } from './services/reconciliation.service.js';
 import { hasSmtpRelayOrigin, sendSmtpTlsMail } from './services/smtp-sender.js';
 import { ensureStartupOnePersonPerShiftMigration } from './services/staffing-one-per-shift.service.js';
+import { PostgresSyncedSheetsGateway } from './postgres/pg-synced-gateway.js';
 import { GoogleSheetsGateway, type SheetsGateway } from './sheets/gateway.js';
 import { WriteQueue } from './sheets/write-queue.js';
 
@@ -126,6 +127,11 @@ async function main() {
     google = { mode: 'memory', check: async () => ({ ok: true, detail: 'Chế độ dữ liệu mẫu trong RAM (không nối Google)' }) };
   }
 
+  const pgGateway = env.DATABASE_URL.trim()
+    ? await PostgresSyncedSheetsGateway.connectOrFallback(gateway, env.DATABASE_URL, env.POSTGRES_SYNC_INTERVAL_MS)
+    : null;
+  if (pgGateway) gateway = pgGateway;
+
   const queue = new WriteQueue();
   const db = new Database(gateway, queue, ids);
   const tokens = new TokenService(env.JWT_ACCESS_SECRET, env.JWT_REFRESH_SECRET);
@@ -141,16 +147,7 @@ async function main() {
   const audit = new AuditService(db, (err) => app?.log.error({ err }, 'Ghi audit log thất bại'));
 
   const ctx: AppContext = {
-    env,
-    version,
-    db,
-    tokens,
-    auth,
-    audit,
-    reconciliation,
-    backup,
-    email,
-    google,
+    env, version, db, tokens, auth, audit, reconciliation, backup, email, google,
     realtime: () => realtime,
   };
   app = await buildApp(ctx);
@@ -205,6 +202,7 @@ async function main() {
     await realtime?.close();
     await app.close();
     await queue.drain();
+    await pgGateway?.close();
     process.exit(0);
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));

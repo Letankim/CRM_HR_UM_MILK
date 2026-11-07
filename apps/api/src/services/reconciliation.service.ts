@@ -120,6 +120,7 @@ export class ReconciliationService {
   async scanAndRepair(opts: { autoFix?: boolean; actorId?: string } = {}): Promise<ReconciliationReport> {
     const autoFix = opts.autoFix ?? true;
     const actorId = opts.actorId ?? 'system-reconciler';
+    await this.db.gateway.reconcileParity?.().catch(() => undefined);
     const now = nowIso();
     const issues: ReconciliationIssue[] = [
       ...(await scanUniqueKeys(this.db, { autoFix, actorId })),

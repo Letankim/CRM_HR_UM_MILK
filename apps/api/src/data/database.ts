@@ -209,7 +209,11 @@ export class Database {
   }
 
   stopAutoRefresh(): void { if (this.timer) clearInterval(this.timer); this.timer = null; }
-  async flushAllWrites(): Promise<void> { await Promise.all(this.stores.map((s) => s.flushPending())); await this.queue.drain(); }
+  async flushAllWrites(): Promise<void> {
+    await Promise.all(this.stores.map((s) => s.flushPending()));
+    await this.queue.drain();
+    await this.gateway.flushOutbox?.();
+  }
 
   stats() {
     return { ready: this.ready, lastRefreshError: this.lastRefreshError, queue: this.queue.stats(), tables: this.stores.map((s) => s.stats()), unresolvedDeadLetters: this.deadLetters.filter((d) => !d.resolved_at).length };
