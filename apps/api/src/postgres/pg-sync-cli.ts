@@ -35,6 +35,7 @@ async function main() {
   if (env.DATA_BACKEND === 'google' && pgGw.getMode() === 'PG_PRIMARY') {
     await pgGw.pool.query(`DELETE FROM umbm_sheet_outbox WHERE spreadsheet_id LIKE 'mem%'`);
     await pgGw.pool.query(`DELETE FROM umbm_sheet_tabs WHERE spreadsheet_id LIKE 'mem%'`);
+    await pgGw.pool.query(`UPDATE umbm_sheet_tabs SET hydrated_at = NULL WHERE headers_json->>0 IS DISTINCT FROM 'id'`);
     for (const d of getAllPgTableDescriptors()) {
       await pgGw.pool.query(`DELETE FROM public.${d.pgTableName} WHERE _spreadsheet_id LIKE 'mem%'`);
     }

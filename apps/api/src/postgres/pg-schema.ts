@@ -148,6 +148,7 @@ export async function ensurePostgresSchema(pool: pg.Pool): Promise<void> {
         _updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY (_spreadsheet_id, _tab_name, _row_index)
       );
+      ALTER TABLE public.${desc.pgTableName} DROP CONSTRAINT IF EXISTS ${desc.pgTableName}_record_uniq;
       CREATE INDEX IF NOT EXISTS idx_${desc.pgTableName}_sheet_id
         ON public.${desc.pgTableName} (_spreadsheet_id, _tab_name, "id");
     `);

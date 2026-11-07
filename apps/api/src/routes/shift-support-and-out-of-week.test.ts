@@ -6,7 +6,7 @@ describe('7.4 Hỗ trợ chi nhánh khác (HR Support) & Scheduler kiểm toán 
   it('HR điều phối nhân viên sang tăng cường chi nhánh khác, hệ thống tự động tạo ca mới tại chi nhánh đích và hoàn trả khi hủy', async () => {
     const { app, db, loginHeaders } = await buildTestApp('hr_sup');
     const hrHeaders = await loginHeaders('hr');
-    const TODAY = dayjs().format('YYYY-MM-DD');
+    const TODAY = dayjs().add(1, 'day').format('YYYY-MM-DD');
 
     // Lấy 2 chi nhánh khác nhau
     const branches = db.branches.all();

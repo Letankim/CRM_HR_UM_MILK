@@ -5,6 +5,7 @@ import { computeRowHash, normalizeCellsWidth } from './pg-schema.js';
 import { buildRowUpsertQuery, resolvePgTableDescriptor } from './pg-table-registry.js';
 
 export async function pgReadTab(pool: pg.Pool, remote: SheetsGateway, spreadsheetId: string, tab: string): Promise<string[][]> {
+  const desc = resolvePgTableDescriptor(tab);
   const meta = await pool.query<{ headers_json: string[]; hydrated_at: string | null }>(
     `SELECT headers_json, hydrated_at FROM umbm_sheet_tabs WHERE spreadsheet_id = $1 AND tab_name = $2`,
     [spreadsheetId, tab],
@@ -12,31 +13,23 @@ export async function pgReadTab(pool: pg.Pool, remote: SheetsGateway, spreadshee
   if (meta.rowCount === 0 || !meta.rows[0]?.hydrated_at) {
     return hydrateTabFromRemoteToPostgres(pool, remote, spreadsheetId, tab);
   }
-  const desc = resolvePgTableDescriptor(tab);
   const rawHeaders = (meta.rows[0]!.headers_json ?? []).map((c) => String(c ?? ''));
-  const headers = rawHeaders.length > 0 ? rawHeaders : [...desc.columns];
+  if (rawHeaders[0] !== 'id') {
+    return hydrateTabFromRemoteToPostgres(pool, remote, spreadsheetId, tab);
+  }
+  const headers = rawHeaders.length >= desc.columns.length ? rawHeaders : [...desc.columns];
   const rowsRes = await pool.query<string[]>({
     text: `SELECT ${desc.selectColumnsSql} FROM public.${desc.pgTableName} WHERE _spreadsheet_id = $1 AND _tab_name = $2 ORDER BY _row_index ASC`,
     values: [spreadsheetId, tab],
     rowMode: 'array',
   });
-  if (rawHeaders.length === 0 && rowsRes.rowCount === 0) return [];
   return [headers, ...rowsRes.rows.map((r) => r.map((c) => String(c ?? '')))];
 }
 
 export async function pgReadRow(pool: pg.Pool, remote: SheetsGateway, spreadsheetId: string, tab: string, row: number, width: number): Promise<string[]> {
   const desc = resolvePgTableDescriptor(tab);
   if (row === 1) {
-    const meta = await pool.query<{ headers_json: string[]; hydrated_at: string | null }>(
-      `SELECT headers_json, hydrated_at FROM umbm_sheet_tabs WHERE spreadsheet_id = $1 AND tab_name = $2`,
-      [spreadsheetId, tab],
-    );
-    if (meta.rowCount === 0 || !meta.rows[0]?.hydrated_at) {
-      const all = await hydrateTabFromRemoteToPostgres(pool, remote, spreadsheetId, tab);
-      return normalizeCellsWidth(all[0] ?? desc.columns, width);
-    }
-    const hdrs = meta.rows[0]!.headers_json ?? [];
-    return normalizeCellsWidth(hdrs.length > 0 ? hdrs : desc.columns, width);
+    return normalizeCellsWidth(desc.columns, width);
   }
   const r = await pool.query<string[]>({
     text: `SELECT ${desc.selectColumnsSql} FROM public.${desc.pgTableName} WHERE _spreadsheet_id = $1 AND _tab_name = $2 AND _row_index = $3`,
@@ -51,12 +44,13 @@ export async function pgReadRow(pool: pg.Pool, remote: SheetsGateway, spreadshee
 }
 
 export async function pgEnsureTab(pool: pg.Pool, spreadsheetId: string, tab: string, headers: readonly string[]): Promise<boolean> {
-  const cleanHeaders = headers.map((h) => String(h ?? ''));
-  const existing = await pool.query<{ hydrated_at: string | null }>(
-    `SELECT hydrated_at FROM umbm_sheet_tabs WHERE spreadsheet_id = $1 AND tab_name = $2`,
+  const desc = resolvePgTableDescriptor(tab);
+  const cleanHeaders = headers[0] === 'id' && headers.length >= desc.columns.length ? headers.map((h) => String(h ?? '')) : [...desc.columns];
+  const existing = await pool.query<{ hydrated_at: string | null; col0: string | null }>(
+    `SELECT hydrated_at, headers_json->>0 AS col0 FROM umbm_sheet_tabs WHERE spreadsheet_id = $1 AND tab_name = $2`,
     [spreadsheetId, tab],
   );
-  if ((existing.rowCount ?? 0) > 0 && existing.rows[0]?.hydrated_at) return false;
+  if ((existing.rowCount ?? 0) > 0 && existing.rows[0]?.hydrated_at && existing.rows[0]?.col0 === 'id') return false;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -84,7 +78,8 @@ export async function pgAppendRows(pool: pg.Pool, spreadsheetId: string, tab: st
       `SELECT headers_json, row_count FROM umbm_sheet_tabs WHERE spreadsheet_id = $1 AND tab_name = $2 FOR UPDATE`,
       [spreadsheetId, tab],
     );
-    const headers = tabRes.rows[0]?.headers_json?.length ? tabRes.rows[0].headers_json : [...desc.columns];
+    const rawHdrs = tabRes.rows[0]?.headers_json ?? [];
+    const headers = rawHdrs[0] === 'id' && rawHdrs.length >= desc.columns.length ? rawHdrs : [...desc.columns];
     const maxRowRes = await client.query<{ max_row: number | null }>(
       `SELECT MAX(_row_index) AS max_row FROM public.${desc.pgTableName} WHERE _spreadsheet_id = $1 AND _tab_name = $2`,
       [spreadsheetId, tab],
@@ -99,7 +94,7 @@ export async function pgAppendRows(pool: pg.Pool, spreadsheetId: string, tab: st
     await client.query(
       `INSERT INTO umbm_sheet_tabs (spreadsheet_id, tab_name, headers_json, row_count, hydrated_at, updated_at)
        VALUES ($1, $2, $3::jsonb, $4, NOW(), NOW())
-       ON CONFLICT (spreadsheet_id, tab_name) DO UPDATE SET row_count = $4, updated_at = NOW()`,
+       ON CONFLICT (spreadsheet_id, tab_name) DO UPDATE SET headers_json = EXCLUDED.headers_json, row_count = $4, updated_at = NOW()`,
       [spreadsheetId, tab, JSON.stringify(headers), firstRow + rows.length - 1],
     );
     await client.query(
@@ -117,11 +112,12 @@ export async function pgUpdateRow(pool: pg.Pool, spreadsheetId: string, tab: str
   try {
     await client.query('BEGIN');
     if (row === 1) {
+      const hdrs = cleanValues[0] === 'id' ? cleanValues : [...desc.columns];
       await client.query(
         `INSERT INTO umbm_sheet_tabs (spreadsheet_id, tab_name, headers_json, row_count, hydrated_at, updated_at)
          VALUES ($1, $2, $3::jsonb, 1, NOW(), NOW())
          ON CONFLICT (spreadsheet_id, tab_name) DO UPDATE SET headers_json = EXCLUDED.headers_json, updated_at = NOW()`,
-        [spreadsheetId, tab, JSON.stringify(cleanValues)],
+        [spreadsheetId, tab, JSON.stringify(hdrs)],
       );
     } else {
       const cells = normalizeCellsWidth(cleanValues, desc.columns.length);
@@ -141,6 +137,7 @@ export async function pgBatchUpdateRows(pool: pg.Pool, spreadsheetId: string, ta
   try {
     await client.query('BEGIN');
     for (const { row, values } of items) {
+      if (row <= 1) continue;
       const cells = normalizeCellsWidth(values, desc.columns.length);
       await client.query(buildRowUpsertQuery(desc, spreadsheetId, tab, row, cells, computeRowHash(cells), false));
     }

@@ -3,8 +3,8 @@ import dayjs from 'dayjs';
 import { DEMO_PIN } from '../data/memory-seed.js';
 import { buildTestApp } from '../test-utils/build-test-app.js';
 
-/** Ngày hôm nay (luôn nằm trong tuần hiện tại → pass assertDispatchDateInRange). */
-const TODAY = dayjs().format('YYYY-MM-DD');
+/** Ngày mai (luôn hợp lệ trong assertDispatchDateInRange và không bao giờ bị quá giờ kết thúc ca hôm nay). */
+const TODAY = dayjs().add(1, 'day').format('YYYY-MM-DD');
 
 describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ', () => {
   it('HR/Store phát lệnh điều phối ca khẩn cấp lên bảng tin chi nhánh, nhân viên nhận ca được tự động cộng +30.000đ vào kỳ lương', async () => {
@@ -196,30 +196,21 @@ describe('7.3 Điều phối khẩn cấp (HR Dispatch) & Phụ cấp +30.000đ'
 
     // 7b. Kiểm tra hủy lệnh điều phối khẩn cấp -> bản tin tự động soft-delete
     const dispatch2 = await app.inject({
-      method: 'POST',
-      url: '/api/admin/shift-swaps',
-      headers: hrHeaders,
+      method: 'POST', url: '/api/admin/shift-swaps', headers: hrHeaders,
       payload: { kind: 'HR_DISPATCH', branch_id: branchId, work_date: TODAY, shift_code: shiftCode, reason: 'Điều phối thử nghiệm hủy' },
     });
     const d2Data = dispatch2.json().data;
     const anc2 = db.announcements.find((a) => a.code === `ANC-DSP-${d2Data.swap_code}`);
     expect(anc2).toBeDefined();
 
-    const cancelRes = await app.inject({
-      method: 'POST',
-      url: `/api/admin/shift-swaps/${d2Data.id}/cancel`,
-      headers: hrHeaders,
-      payload: {},
-    });
+    const cancelRes = await app.inject({ method: 'POST', url: `/api/admin/shift-swaps/${d2Data.id}/cancel`, headers: hrHeaders, payload: {} });
     expect(cancelRes.statusCode).toBe(200);
     expect(db.announcements.get(anc2!.id)).toBeUndefined();
     expect(db.announcements.all(true).find((a) => a.id === anc2!.id)?.is_deleted).toBe(true);
 
     // 8. Chặn lệnh điều phối ngày quá khứ
     const pastRes = await app.inject({
-      method: 'POST',
-      url: '/api/admin/shift-swaps',
-      headers: hrHeaders,
+      method: 'POST', url: '/api/admin/shift-swaps', headers: hrHeaders,
       payload: { kind: 'HR_DISPATCH', branch_id: branchId, work_date: '2026-01-01', shift_code: shiftCode, reason: 'Quá khứ' },
     });
     expect(pastRes.statusCode).toBe(400);

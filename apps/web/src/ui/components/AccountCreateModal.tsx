@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ROLE_OPTIONS, getAllowedExtraPermissionsForRole, isEmployeeRole, type Permission, type Role } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { generateAccountSecret, generateUsername } from '@/lib/auto-generate';
-import { applyApiFormErrors, clearChangedFieldErrors } from '@/lib/form-error';
+import { applyApiFormErrors, clearChangedFieldErrors, setFormFieldClean } from '@/lib/form-error';
 import { applyEmployeeDiffsToAccountForm, computeEmployeeToAccountDiffs } from '@/lib/linked-entity-sync';
 import { useLinkedEntityDetail } from '../hooks/useLinkedEntityDetail';
 import type { AccountRowItem } from './AccountDetailDrawer';
@@ -159,7 +159,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
                       <Form.Item label="Tên đăng nhập" required>
                         <Space.Compact style={{ width: '100%' }}>
                           <Form.Item name="username" noStyle rules={[{ required: true, message: 'Vui lòng nhập tên đăng nhập' }]}><Input prefix={<UserOutlined />} disabled={!!editing} placeholder="Ví dụ: nv.an" /></Form.Item>
-                          {!editing && <Button icon={<ThunderboltOutlined />} onClick={() => form.setFields([{ name: 'username', value: generateUsername(form.getFieldValue('display_name'), form.getFieldValue('employee_id'), form.getFieldValue('username')), errors: [] }])}>Tự sinh</Button>}
+                          {!editing && <Button icon={<ThunderboltOutlined />} onClick={() => setFormFieldClean(form, 'username', generateUsername(form.getFieldValue('display_name'), form.getFieldValue('employee_id'), form.getFieldValue('username')))}>Tự sinh</Button>}
                         </Space.Compact>
                       </Form.Item>
                     </Col>
@@ -172,7 +172,7 @@ export function AccountCreateModal({ open, editing, onClose }: AccountCreateModa
                         <Select options={ROLE_OPTIONS} onChange={(nextRole: Role) => {
                           const allowed = new Set(getAllowedExtraPermissionsForRole(nextRole));
                           const cur: Permission[] = form.getFieldValue('extra_permissions') ?? [];
-                          form.setFields([{ name: 'extra_permissions', value: cur.filter((p) => allowed.has(p)), errors: [] }]);
+                          setFormFieldClean(form, 'extra_permissions', cur.filter((p) => allowed.has(p)));
                           syncAccountSecretForRole(form, nextRole, !!editing);
                         }} />
                       </Form.Item>

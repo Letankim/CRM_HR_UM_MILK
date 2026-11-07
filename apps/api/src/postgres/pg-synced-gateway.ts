@@ -8,21 +8,12 @@ import { ensureDatabaseExists, ensurePostgresSchema, parsePostgresConfig, type P
 export type DualStorageMode = 'PG_PRIMARY' | 'SHEETS_FALLBACK' | 'PG_RECOVERING';
 
 export interface PostgresSyncStatus {
-  enabled: boolean;
-  mode: DualStorageMode;
-  database: string;
-  host: string;
-  dirtyFallbackTabs: number;
-  lastFallbackReason: string | null;
-  lastRecoveredAt: string | null;
-  outbox: OutboxStats;
+  enabled: boolean; mode: DualStorageMode; database: string; host: string;
+  dirtyFallbackTabs: number; lastFallbackReason: string | null; lastRecoveredAt: string | null; outbox: OutboxStats;
 }
 
 /**
- * Cổng lưu trữ Kép (PostgreSQL Primary + Google Sheets Async Mirror + Tự động Failover 2 chiều):
- * - Khi PostgreSQL hoạt động (`PG_PRIMARY`): Đọc/ghi trực tiếp PostgreSQL (< 5ms) và đẩy ngầm lên Google Sheets qua `umbm_sheet_outbox`.
- * - Khi PostgreSQL mất kết nối (`SHEETS_FALLBACK`): Tự động chuyển sang đọc/ghi trực tiếp Google Sheets không gián đoạn.
- * - Khi PostgreSQL kết nối lại (`PG_RECOVERING -> PG_PRIMARY`): Tự động đồng bộ ngược các thay đổi từ Google Sheets về PostgreSQL.
+ * Cổng lưu trữ Kép (PostgreSQL Primary + Google Sheets Async Mirror + Tự động Failover 2 chiều).
  */
 export class PostgresSyncedSheetsGateway implements SheetsGateway {
   readonly pool: pg.Pool;
@@ -35,11 +26,7 @@ export class PostgresSyncedSheetsGateway implements SheetsGateway {
   private recoveryTimer: NodeJS.Timeout | null = null;
   private recoveringPromise: Promise<boolean> | null = null;
 
-  constructor(
-    readonly remote: SheetsGateway,
-    readonly config: PostgresConnectionConfig,
-    outboxIntervalMs = 1200,
-  ) {
+  constructor(readonly remote: SheetsGateway, readonly config: PostgresConnectionConfig, outboxIntervalMs = 1200) {
     this.pool = new pg.Pool(config);
     this.pool.on('error', (err) => this.enterFallback(err));
     this.worker = new PostgresOutboxWorker(this.pool, this.remote, () => this.mode === 'PG_PRIMARY' && !this.simulatedOffline, outboxIntervalMs);
@@ -53,9 +40,7 @@ export class PostgresSyncedSheetsGateway implements SheetsGateway {
       await ensureDatabaseExists(cfg);
       await ensurePostgresSchema(gw.pool);
       gw.worker.start();
-    } catch (err) {
-      gw.enterFallback(err);
-    }
+    } catch (err) { gw.enterFallback(err); }
     return gw;
   }
 
@@ -178,24 +163,20 @@ export class PostgresSyncedSheetsGateway implements SheetsGateway {
     return created;
   }
 
-  flushOutbox(): Promise<number> {
-    return this.worker.flushAll();
-  }
-
-  reconcileParity(): Promise<PostgresParityReport> {
-    return this.flushAndReconcileAll();
-  }
-
-  postgresStatus(): Promise<PostgresSyncStatus> {
-    return this.status();
-  }
+  flushOutbox(): Promise<number> { return this.worker.flushAll(); }
+  reconcileParity(): Promise<PostgresParityReport> { return this.flushAndReconcileAll(); }
+  postgresStatus(): Promise<PostgresSyncStatus> { return this.status(); }
 
   async flushAndReconcileAll(): Promise<PostgresParityReport> {
     if (this.mode !== 'PG_PRIMARY') await this.tryRecoverNow();
     await this.worker.flushAll();
     const details: TabParityResult[] = [];
     if (this.mode === 'PG_PRIMARY' && !this.simulatedOffline) {
-      const tabs = await this.pool.query<{ spreadsheet_id: string; tab_name: string }>(`SELECT spreadsheet_id, tab_name FROM umbm_sheet_tabs ORDER BY spreadsheet_id, tab_name`);
+      const isMem = this.remote.constructor.name === 'InMemorySheetsGateway';
+      const cond = isMem ? `spreadsheet_id LIKE 'mem%'` : `spreadsheet_id NOT LIKE 'mem%'`;
+      const tabs = await this.pool.query<{ spreadsheet_id: string; tab_name: string }>(
+        `SELECT spreadsheet_id, tab_name FROM umbm_sheet_tabs WHERE ${cond} ORDER BY spreadsheet_id, tab_name`,
+      );
       for (const t of tabs.rows) {
         try {
           details.push(await reconcileTabTwoWay(this.pool, this.remote, t.spreadsheet_id, t.tab_name));
@@ -210,12 +191,10 @@ export class PostgresSyncedSheetsGateway implements SheetsGateway {
       }
     }
     return {
-      checkedAt: new Date().toISOString(),
-      tabsChecked: details.length,
+      checkedAt: new Date().toISOString(), tabsChecked: details.length,
       pushedToSheets: details.reduce((s, d) => s + d.pushedToSheets, 0),
       pulledToPostgres: details.reduce((s, d) => s + d.pulledToPostgres, 0),
-      realignedRows: details.reduce((s, d) => s + d.realignedRows, 0),
-      details,
+      realignedRows: details.reduce((s, d) => s + d.realignedRows, 0), details,
     };
   }
 

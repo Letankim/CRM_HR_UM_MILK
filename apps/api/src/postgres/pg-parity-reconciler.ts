@@ -41,7 +41,10 @@ export async function hydrateTabFromRemoteToPostgres(
   const desc = resolvePgTableDescriptor(tab);
   const remoteRows = await remote.readTab(spreadsheetId, tab);
   const rawHeaders = (remoteRows[0] ?? []).map((c) => String(c ?? ''));
-  const headers = rawHeaders.length > 0 ? rawHeaders : [...desc.columns];
+  const hasValidHeader = rawHeaders[0] === 'id';
+  const headers = hasValidHeader && rawHeaders.length >= desc.columns.length ? rawHeaders : [...desc.columns];
+  const startIdx = hasValidHeader ? 1 : 0;
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -54,7 +57,7 @@ export async function hydrateTabFromRemoteToPostgres(
            hydrated_at = COALESCE(umbm_sheet_tabs.hydrated_at, NOW()),
            last_reconciled_at = NOW(),
            updated_at = NOW()`,
-      [spreadsheetId, tab, JSON.stringify(headers), Math.max(1, remoteRows.length)],
+      [spreadsheetId, tab, JSON.stringify(headers), Math.max(1, remoteRows.length + (hasValidHeader ? 0 : 1))],
     );
 
     await client.query(
@@ -62,13 +65,13 @@ export async function hydrateTabFromRemoteToPostgres(
       [spreadsheetId, tab],
     );
 
-    for (let i = 1; i < remoteRows.length; i++) {
+    for (let i = startIdx; i < remoteRows.length; i++) {
       const rawCells = (remoteRows[i] ?? []).map((c) => String(c ?? ''));
       if (rawCells.every((c) => c === '')) continue;
       const recordId = String(rawCells[0] ?? '').trim();
-      if (!recordId) continue;
+      if (!recordId || recordId === 'id') continue;
       const cells = normalizeCellsWidth(rawCells, desc.columns.length);
-      const rowIndex = i + 1;
+      const rowIndex = hasValidHeader ? i + 1 : i + 2;
       await client.query(buildRowUpsertQuery(desc, spreadsheetId, tab, rowIndex, cells, computeRowHash(cells), true));
     }
 
@@ -79,14 +82,11 @@ export async function hydrateTabFromRemoteToPostgres(
   } finally {
     client.release();
   }
-  return remoteRows;
+  return hasValidHeader ? remoteRows : [headers, ...remoteRows];
 }
 
 /**
- * Đối soát và đồng bộ 2 chiều giữa bảng vật lý PostgreSQL và Google Sheets cho 1 tab:
- * - Bản ghi có ở Postgres nhưng thiếu trên Sheet (hoặc Postgres có version cao hơn) -> Đẩy lên Google Sheets.
- * - Bản ghi mới trên Sheet (ví dụ phát sinh khi Fallback hoặc Google Form) hoặc Sheet có version cao hơn -> Kéo về Postgres.
- * - Tự động căn chỉnh lại `_row_index` theo đúng vị trí dòng thực tế trên Google Sheets.
+ * Đối soát và đồng bộ 2 chiều giữa bảng vật lý PostgreSQL và Google Sheets cho 1 tab.
  */
 export async function reconcileTabTwoWay(
   pool: pg.Pool,
@@ -99,15 +99,16 @@ export async function reconcileTabTwoWay(
     `SELECT headers_json, hydrated_at FROM umbm_sheet_tabs WHERE spreadsheet_id = $1 AND tab_name = $2`,
     [spreadsheetId, tab],
   );
-  if (tabMeta.rowCount === 0 || !tabMeta.rows[0]?.hydrated_at) {
+  if (tabMeta.rowCount === 0 || !tabMeta.rows[0]?.hydrated_at || tabMeta.rows[0]?.headers_json?.[0] !== 'id') {
     await hydrateTabFromRemoteToPostgres(pool, remote, spreadsheetId, tab);
     return { spreadsheetId, tab, pushedToSheets: 0, pulledToPostgres: 0, realignedRows: 0 };
   }
 
-  const remoteRows = await remote.readTab(spreadsheetId, tab);
-  const headers = (remoteRows[0] ?? tabMeta.rows[0]!.headers_json ?? desc.columns).map((c) => String(c ?? ''));
-  if (remoteRows.length === 0 && headers.length > 0) {
+  let remoteRows = await remote.readTab(spreadsheetId, tab);
+  const headers = [...desc.columns];
+  if (remoteRows.length === 0 || remoteRows[0]?.[0] !== 'id') {
     await remote.ensureTab(spreadsheetId, tab, headers);
+    remoteRows = await remote.readTab(spreadsheetId, tab);
   }
 
   const pgRes = await pool.query<unknown[]>({
@@ -120,7 +121,7 @@ export async function reconcileTabTwoWay(
   for (const raw of pgRes.rows) {
     const cells = raw.slice(0, colLen).map((c) => String(c ?? ''));
     const recordId = String(cells[0] ?? '').trim();
-    if (!recordId) continue;
+    if (!recordId || recordId === 'id') continue;
     pgById.set(recordId, {
       rowIndex: Number(raw[colLen]),
       recordId,
@@ -136,7 +137,7 @@ export async function reconcileTabTwoWay(
     const rawCells = (remoteRows[i] ?? []).map((c) => String(c ?? ''));
     if (rawCells.every((c) => c === '')) continue;
     const id = String(rawCells[0] ?? '').trim();
-    if (!id) continue;
+    if (!id || id === 'id') continue;
     const cells = normalizeCellsWidth(rawCells, colLen);
     sheetById.set(id, {
       rowIndex: i + 1,
