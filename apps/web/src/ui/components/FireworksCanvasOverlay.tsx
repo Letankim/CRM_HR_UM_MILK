@@ -26,7 +26,7 @@ const PALETTE = ['#2563EB', '#16A34A', '#D97706', '#DC2626', '#7C3AED', '#0891B2
  */
 export function FireworksCanvasOverlay({
   active,
-  durationMs = 4200,
+  durationMs = 2400,
   label = 'ĐẠT ĐIỂM TUYỆT ĐỐI 13/13 — ỨNG VIÊN XUẤT SẮC',
 }: FireworksCanvasOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -121,7 +121,7 @@ export function FireworksCanvasOverlay({
       <div
         style={{
           position: 'fixed',
-          top: 20,
+          bottom: 24,
           left: '50%',
           transform: 'translateX(-50%)',
           background: '#0F172A',
@@ -129,7 +129,7 @@ export function FireworksCanvasOverlay({
           border: '1px solid #2563EB',
           borderRadius: 4,
           padding: '8px 16px',
-          fontWeight: 700,
+          fontWeight: 600,
           fontSize: 13,
           display: 'inline-flex',
           alignItems: 'center',
