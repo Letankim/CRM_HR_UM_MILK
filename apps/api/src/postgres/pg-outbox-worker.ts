@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import type { SheetsGateway } from '../sheets/gateway.js';
+import { resolvePgTableDescriptor } from './pg-table-registry.js';
 
 interface OutboxRow {
   seq_id: string | number;
@@ -31,7 +32,7 @@ export interface OutboxStats {
  * Tiến trình nền đẩy dữ liệu từ hàng đợi `umbm_sheet_outbox` (PostgreSQL) lên Google Sheets:
  * - Gom nhóm (Coalesce) nhiều lệnh sửa trùng dòng thành 1 lần gọi `batchUpdateRows`.
  * - Gộp nhiều lệnh thêm mới liên tiếp cùng tab thành 1 lần gọi `appendRows`.
- * - Chống nghẽn Quota 60 req/phút của Google Sheets API và tự động thử lại khi lỗi mạng tạm thời.
+ * - Đánh dấu `_synced_to_remote = TRUE` trực tiếp trên bảng vật lý tương ứng (`core_users`, `hr_employees`, ...).
  */
 export class PostgresOutboxWorker {
   private timer: NodeJS.Timeout | null = null;
@@ -74,7 +75,7 @@ export class PostgresOutboxWorker {
     this.wakeTimer.unref?.();
   }
 
-  /** Đẩy toàn bộ hàng đợi đang chờ lên Google Sheets ngay lập tức (dùng khi đối soát, chuyển tháng hoặc tắt server). */
+  /** Đẩy toàn bộ hàng đợi đang chờ lên Google Sheets ngay lập tức. */
   async flushAll(): Promise<number> {
     if (!this.isPgOnline()) return 0;
     let total = 0;
@@ -113,6 +114,7 @@ export class PostgresOutboxWorker {
       const cur = items[i]!;
       const sid = cur.spreadsheet_id;
       const tab = cur.tab_name;
+      const desc = resolvePgTableDescriptor(tab);
 
       try {
         if (cur.op_type === 'ENSURE_TAB') {
@@ -142,8 +144,8 @@ export class PostgresOutboxWorker {
             const recordIds = combinedRows.map((r) => String(r[0] ?? '')).filter(Boolean);
             if (recordIds.length > 0) {
               await this.pool.query(
-                `UPDATE umbm_sheet_rows SET synced_to_remote = TRUE, updated_at = NOW()
-                 WHERE spreadsheet_id = $1 AND tab_name = $2 AND record_id = ANY($3::text[])`,
+                `UPDATE public.${desc.pgTableName} SET _synced_to_remote = TRUE, _updated_at = NOW()
+                 WHERE _spreadsheet_id = $1 AND _tab_name = $2 AND "id" = ANY($3::text[])`,
                 [sid, tab, recordIds],
               );
             }
@@ -165,9 +167,7 @@ export class PostgresOutboxWorker {
             if (item.op_type === 'UPDATE_ROW' && item.payload_json.row && item.payload_json.values) {
               coalescedByRow.set(item.payload_json.row, item.payload_json.values);
             } else if (item.op_type === 'BATCH_UPDATE_ROWS' && Array.isArray(item.payload_json.items)) {
-              for (const sub of item.payload_json.items) {
-                coalescedByRow.set(sub.row, sub.values);
-              }
+              for (const sub of item.payload_json.items) coalescedByRow.set(sub.row, sub.values);
             }
             batchSeqIds.push(Number(item.seq_id));
             i++;
@@ -177,8 +177,8 @@ export class PostgresOutboxWorker {
             await this.remote.batchUpdateRows(sid, tab, updateItems);
             const rowNums = updateItems.map((u) => u.row);
             await this.pool.query(
-              `UPDATE umbm_sheet_rows SET synced_to_remote = TRUE, updated_at = NOW()
-               WHERE spreadsheet_id = $1 AND tab_name = $2 AND row_index = ANY($3::int[])`,
+              `UPDATE public.${desc.pgTableName} SET _synced_to_remote = TRUE, _updated_at = NOW()
+               WHERE _spreadsheet_id = $1 AND _tab_name = $2 AND _row_index = ANY($3::int[])`,
               [sid, tab, rowNums],
             );
           }
@@ -202,10 +202,7 @@ export class PostgresOutboxWorker {
     }
 
     if (syncedIds.length > 0) {
-      await this.pool.query(
-        `DELETE FROM umbm_sheet_outbox WHERE seq_id = ANY($1::bigint[])`,
-        [syncedIds],
-      );
+      await this.pool.query(`DELETE FROM umbm_sheet_outbox WHERE seq_id = ANY($1::bigint[])`, [syncedIds]);
       this.syncedTotal += syncedIds.length;
       this.lastSyncedAt = new Date().toISOString();
       this.lastError = null;

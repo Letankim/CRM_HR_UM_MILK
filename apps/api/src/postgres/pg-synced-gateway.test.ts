@@ -5,37 +5,52 @@ import { rolloverToMonth, switchPartition } from '../services/data-partition.ser
 import type { InMemorySheetsGateway } from '../sheets/gateway.js';
 import { WriteQueue } from '../sheets/write-queue.js';
 import { PostgresSyncedSheetsGateway } from './pg-synced-gateway.js';
+import { getAllPgTableDescriptors } from './pg-table-registry.js';
 
 const TEST_CONN = 'Host=localhost;Port=5432;Database=umbm_db;Username=postgres;Password=sa';
 
-describe('PostgreSQL Primary + Google Sheets Async Outbox + Auto Failover + Monthly Partitioning', () => {
+describe('PostgreSQL 42 Relational Tables + Google Sheets Outbox + Auto Failover + Monthly Partitioning', () => {
   let remote: InMemorySheetsGateway;
   let pgGw: PostgresSyncedSheetsGateway;
   let db: Database;
+
+  async function cleanupMemRows() {
+    if (!pgGw || pgGw.getMode() !== 'PG_PRIMARY') return;
+    await pgGw.pool.query(`DELETE FROM umbm_sheet_outbox WHERE spreadsheet_id LIKE 'mem%'`);
+    await pgGw.pool.query(`DELETE FROM umbm_sheet_tabs WHERE spreadsheet_id LIKE 'mem%'`);
+    for (const d of getAllPgTableDescriptors()) {
+      await pgGw.pool.query(`DELETE FROM public.${d.pgTableName} WHERE _spreadsheet_id LIKE 'mem%'`);
+    }
+  }
 
   beforeAll(async () => {
     remote = await createMemoryGateway();
     const connected = await PostgresSyncedSheetsGateway.connectOrFallback(remote, TEST_CONN, 200);
     expect(connected).not.toBeNull();
     pgGw = connected!;
-
-    if (pgGw.getMode() === 'PG_PRIMARY') {
-      await pgGw.pool.query('TRUNCATE TABLE umbm_sheet_outbox, umbm_sheet_rows, umbm_sheet_tabs RESTART IDENTITY');
-    }
+    await cleanupMemRows();
 
     db = new Database(pgGw, new WriteQueue(), MEMORY_IDS);
     await db.loadAll();
   });
 
   afterAll(async () => {
+    await cleanupMemRows();
     await pgGw?.close();
   });
 
-  it('1. Hydrate từ Google Sheets xuống PostgreSQL, ghi vào PostgreSQL trước rồi đẩy ngầm qua Outbox lên Google Sheets', async () => {
+  it('1. Tạo đầy đủ 42 bảng quan hệ có cột tường minh (xóa bảng gộp umbm_sheet_rows), Hydrate và đẩy ngầm qua Outbox', async () => {
     expect(pgGw.getMode()).toBe('PG_PRIMARY');
 
-    const hydratedTabs = await pgGw.pool.query('SELECT COUNT(*)::int AS cnt FROM umbm_sheet_tabs');
-    expect(hydratedTabs.rows[0]!.cnt).toBeGreaterThanOrEqual(30);
+    const legacyTable = await pgGw.pool.query(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'umbm_sheet_rows'`,
+    );
+    expect(legacyTable.rowCount).toBe(0);
+
+    const relTables = await pgGw.pool.query<{ cnt: number }>(
+      `SELECT COUNT(*)::int AS cnt FROM information_schema.tables WHERE table_schema = 'public' AND table_name NOT LIKE 'umbm_sheet_%'`,
+    );
+    expect(relTables.rows[0]!.cnt).toBeGreaterThanOrEqual(42);
 
     const newBranch = await db.branches.insert(
       {
@@ -53,17 +68,20 @@ describe('PostgreSQL Primary + Google Sheets Async Outbox + Auto Failover + Mont
         open_time: '07:00',
         close_time: '22:30',
         effective_from: '2026-01-01',
-        note: 'Kiểm thử ghi PostgreSQL Primary',
+        note: 'Kiểm thử ghi bảng core_branches',
       },
       'u-admin',
     );
 
-    const pgRow = await pgGw.pool.query(
-      'SELECT record_id, version, synced_to_remote FROM umbm_sheet_rows WHERE spreadsheet_id = $1 AND tab_name = $2 AND record_id = $3',
+    const pgRow = await pgGw.pool.query<{ id: string; code: string; name: string; version: string; _synced_to_remote: boolean }>(
+      `SELECT "id", "code", "name", "version", _synced_to_remote
+       FROM public.core_branches WHERE _spreadsheet_id = $1 AND _tab_name = $2 AND "id" = $3`,
       [MEMORY_IDS.CORE, 'BRANCHES', newBranch.id],
     );
     expect(pgRow.rowCount).toBe(1);
-    expect(pgRow.rows[0]!.version).toBe(1);
+    expect(pgRow.rows[0]!.code).toBe('CN_PG_01');
+    expect(pgRow.rows[0]!.name).toBe('Ụm Bò Milk Chi nhánh Postgres 01');
+    expect(pgRow.rows[0]!.version).toBe('1');
 
     await db.flushAllWrites();
 
@@ -72,14 +90,14 @@ describe('PostgreSQL Primary + Google Sheets Async Outbox + Auto Failover + Mont
     expect(foundOnSheet).toBeDefined();
     expect(foundOnSheet).toContain('CN_PG_01');
 
-    const pgRowAfterSync = await pgGw.pool.query(
-      'SELECT synced_to_remote FROM umbm_sheet_rows WHERE spreadsheet_id = $1 AND tab_name = $2 AND record_id = $3',
+    const pgRowAfterSync = await pgGw.pool.query<{ _synced_to_remote: boolean }>(
+      `SELECT _synced_to_remote FROM public.core_branches WHERE _spreadsheet_id = $1 AND _tab_name = $2 AND "id" = $3`,
       [MEMORY_IDS.CORE, 'BRANCHES', newBranch.id],
     );
-    expect(pgRowAfterSync.rows[0]!.synced_to_remote).toBe(true);
+    expect(pgRowAfterSync.rows[0]!._synced_to_remote).toBe(true);
   });
 
-  it('2. Tự động Failover sang Google Sheets khi mất kết nối PostgreSQL và đồng bộ ngược (Catch-up) khi PostgreSQL kết nối lại', async () => {
+  it('2. Tự động Failover sang Google Sheets khi mất kết nối PostgreSQL và đồng bộ ngược về bảng core_branches khi kết nối lại', async () => {
     await pgGw.setSimulatedOffline(true);
     try {
       expect(pgGw.getMode()).toBe('SHEETS_FALLBACK');
@@ -112,20 +130,20 @@ describe('PostgreSQL Primary + Google Sheets Async Outbox + Auto Failover + Mont
       await pgGw.setSimulatedOffline(false);
       expect(pgGw.getMode()).toBe('PG_PRIMARY');
 
-      const pgRowRecovered = await pgGw.pool.query(
-        'SELECT record_id, cells_json FROM umbm_sheet_rows WHERE spreadsheet_id = $1 AND tab_name = $2 AND record_id = $3',
+      const pgRowRecovered = await pgGw.pool.query<{ id: string; code: string; name: string; phone_contact: string }>(
+        `SELECT "id", "code", "name", "phone_contact"
+         FROM public.core_branches WHERE _spreadsheet_id = $1 AND _tab_name = $2 AND "id" = $3`,
         [MEMORY_IDS.CORE, 'BRANCHES', fallbackBranch.id],
       );
       expect(pgRowRecovered.rowCount).toBe(1);
-      expect(JSON.stringify(pgRowRecovered.rows[0]!.cells_json)).toContain('CN_FB_02');
+      expect(pgRowRecovered.rows[0]!.code).toBe('CN_FB_02');
+      expect(pgRowRecovered.rows[0]!.phone_contact).toBe('0909999888');
     } finally {
-      if (pgGw.getMode() !== 'PG_PRIMARY') {
-        await pgGw.setSimulatedOffline(false);
-      }
+      if (pgGw.getMode() !== 'PG_PRIMARY') await pgGw.setSimulatedOffline(false);
     }
   });
 
-  it('3. Hỗ trợ đầy đủ Chuyển đổi dữ liệu theo tháng (rolloverToMonth & switchPartition) tách biệt theo từng file tháng trên cả PostgreSQL và Google Sheets', async () => {
+  it('3. Hỗ trợ đầy đủ Chuyển đổi dữ liệu theo tháng (rolloverToMonth & switchPartition) trên bảng thật schedule_shift_assignments', async () => {
     const rolloverRes = await rolloverToMonth(db, '2026_12', 'u-admin', false);
     expect(rolloverRes.monthKey).toBe('2026_12');
     expect(db.partitionMonth).toBe('2026_12');
@@ -149,20 +167,21 @@ describe('PostgreSQL Primary + Google Sheets Async Outbox + Auto Failover + Mont
         swapped_from_employee_id: '',
         replacement_for_employee_id: '',
         published_at: '2026-12-01T08:00:00Z',
-        note: 'Ca tháng 12 lưu qua Postgres & Sheet tháng 12',
+        note: 'Ca tháng 12 lưu qua bảng schedule_shift_assignments',
+        linked_assignment_id: '',
       },
       'u-admin',
     );
     await db.flushAllWrites();
 
-    const pgDecRow = await pgGw.pool.query(
-      'SELECT record_id FROM umbm_sheet_rows WHERE spreadsheet_id = $1 AND tab_name = $2 AND record_id = $3',
+    const pgDecRow = await pgGw.pool.query<{ id: string; work_date: string; shift_code: string }>(
+      `SELECT "id", "work_date", "shift_code"
+       FROM public.schedule_shift_assignments WHERE _spreadsheet_id = $1 AND _tab_name = $2 AND "id" = $3`,
       [decSpreadsheetId, 'SHIFT_ASSIGNMENTS', decShift.id],
     );
     expect(pgDecRow.rowCount).toBe(1);
-
-    const remoteDecRows = await remote.readTab(decSpreadsheetId, 'SHIFT_ASSIGNMENTS');
-    expect(remoteDecRows.some((r) => r[0] === decShift.id)).toBe(true);
+    expect(pgDecRow.rows[0]!.work_date).toBe('2026-12-05');
+    expect(pgDecRow.rows[0]!.shift_code).toBe('CA_SANG');
 
     await switchPartition(db, '', 'u-admin');
     expect(db.partitionMonth).toBe('');

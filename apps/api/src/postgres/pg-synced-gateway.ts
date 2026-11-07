@@ -196,7 +196,18 @@ export class PostgresSyncedSheetsGateway implements SheetsGateway {
     const details: TabParityResult[] = [];
     if (this.mode === 'PG_PRIMARY' && !this.simulatedOffline) {
       const tabs = await this.pool.query<{ spreadsheet_id: string; tab_name: string }>(`SELECT spreadsheet_id, tab_name FROM umbm_sheet_tabs ORDER BY spreadsheet_id, tab_name`);
-      for (const t of tabs.rows) details.push(await reconcileTabTwoWay(this.pool, this.remote, t.spreadsheet_id, t.tab_name));
+      for (const t of tabs.rows) {
+        try {
+          details.push(await reconcileTabTwoWay(this.pool, this.remote, t.spreadsheet_id, t.tab_name));
+        } catch (err) {
+          const code = Number((err as { code?: number; status?: number })?.code ?? (err as { status?: number })?.status ?? 0);
+          if (code === 404 || t.spreadsheet_id.startsWith('mem')) {
+            await this.pool.query(`DELETE FROM umbm_sheet_tabs WHERE spreadsheet_id = $1 AND tab_name = $2`, [t.spreadsheet_id, t.tab_name]);
+          } else {
+            throw err;
+          }
+        }
+      }
     }
     return {
       checkedAt: new Date().toISOString(),

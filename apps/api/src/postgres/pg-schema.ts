@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import pg from 'pg';
+import { getAllPgTableDescriptors } from './pg-table-registry.js';
 
 export interface PostgresConnectionConfig {
   host: string;
@@ -43,9 +44,7 @@ export function parsePostgresConfig(raw: string): PostgresConnectionConfig | nul
     for (const part of trimmed.split(';')) {
       const idx = part.indexOf('=');
       if (idx <= 0) continue;
-      const k = part.slice(0, idx).trim().toLowerCase();
-      const v = part.slice(idx + 1).trim();
-      kv.set(k, v);
+      kv.set(part.slice(0, idx).trim().toLowerCase(), part.slice(idx + 1).trim());
     }
     const host = kv.get('host') || kv.get('server') || 'localhost';
     const port = Number(kv.get('port') || 5432);
@@ -65,7 +64,6 @@ export function parsePostgresConfig(raw: string): PostgresConnectionConfig | nul
       max: 12,
     };
   }
-
   return null;
 }
 
@@ -78,8 +76,7 @@ export async function ensureDatabaseExists(cfg: PostgresConnectionConfig): Promi
     return;
   } catch (err) {
     await probe.end().catch(() => undefined);
-    const code = (err as { code?: string })?.code;
-    if (code !== '3D000') throw err;
+    if ((err as { code?: string })?.code !== '3D000') throw err;
   }
 
   const adminClient = new pg.Client({ ...cfg, database: 'postgres' });
@@ -87,15 +84,16 @@ export async function ensureDatabaseExists(cfg: PostgresConnectionConfig): Promi
   try {
     const safeDbName = cfg.database.replace(/"/g, '""');
     const check = await adminClient.query('SELECT 1 FROM pg_database WHERE datname = $1', [cfg.database]);
-    if (check.rowCount === 0) {
-      await adminClient.query(`CREATE DATABASE "${safeDbName}"`);
-    }
+    if (check.rowCount === 0) await adminClient.query(`CREATE DATABASE "${safeDbName}"`);
   } finally {
     await adminClient.end().catch(() => undefined);
   }
 }
 
-/** Khởi tạo đầy đủ bảng lưu trữ bản ghi, bản đồ dòng và hàng đợi Outbox đồng bộ Google Sheets. */
+/**
+ * Khởi tạo đầy đủ 42 bảng nghiệp vụ chuẩn quan hệ (với đầy đủ cột thật theo schema V5.1 + B-Tree Indexes)
+ * cùng bảng quản lý tab `umbm_sheet_tabs` và hàng đợi `umbm_sheet_outbox`.
+ */
 export async function ensurePostgresSchema(pool: pg.Pool): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS umbm_sheet_tabs (
@@ -108,22 +106,6 @@ export async function ensurePostgresSchema(pool: pg.Pool): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (spreadsheet_id, tab_name)
     );
-
-    CREATE TABLE IF NOT EXISTS umbm_sheet_rows (
-      spreadsheet_id TEXT NOT NULL,
-      tab_name TEXT NOT NULL,
-      row_index INTEGER NOT NULL,
-      record_id TEXT NOT NULL,
-      version INTEGER NOT NULL DEFAULT 1,
-      cells_json JSONB NOT NULL,
-      row_hash TEXT NOT NULL,
-      synced_to_remote BOOLEAN NOT NULL DEFAULT FALSE,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (spreadsheet_id, tab_name, row_index)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_umbm_sheet_rows_record
-      ON umbm_sheet_rows (spreadsheet_id, tab_name, record_id);
 
     CREATE TABLE IF NOT EXISTS umbm_sheet_outbox (
       seq_id BIGSERIAL PRIMARY KEY,
@@ -144,6 +126,38 @@ export async function ensurePostgresSchema(pool: pg.Pool): Promise<void> {
       ON umbm_sheet_outbox (status, seq_id)
       WHERE status = 'PENDING';
   `);
+
+  const legacyCheck = await pool.query(
+    `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'umbm_sheet_rows'`,
+  );
+  if ((legacyCheck.rowCount ?? 0) > 0) {
+    await pool.query(`DROP TABLE IF EXISTS public.umbm_sheet_rows CASCADE; UPDATE umbm_sheet_tabs SET hydrated_at = NULL;`);
+  }
+
+  const ddlStatements: string[] = [];
+  for (const desc of getAllPgTableDescriptors()) {
+    const colDefs = desc.columns.map((c) => `"${c}" TEXT NOT NULL DEFAULT ''`).join(',\n      ');
+    ddlStatements.push(`
+      CREATE TABLE IF NOT EXISTS public.${desc.pgTableName} (
+        ${colDefs},
+        _spreadsheet_id TEXT NOT NULL,
+        _tab_name TEXT NOT NULL,
+        _row_index INTEGER NOT NULL,
+        _row_hash TEXT NOT NULL DEFAULT '',
+        _synced_to_remote BOOLEAN NOT NULL DEFAULT FALSE,
+        _updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (_spreadsheet_id, _tab_name, _row_index)
+      );
+      CREATE INDEX IF NOT EXISTS idx_${desc.pgTableName}_sheet_id
+        ON public.${desc.pgTableName} (_spreadsheet_id, _tab_name, "id");
+    `);
+    for (const col of desc.indexedColumns) {
+      ddlStatements.push(
+        `CREATE INDEX IF NOT EXISTS idx_${desc.pgTableName}_${col} ON public.${desc.pgTableName} ("${col}");`,
+      );
+    }
+  }
+  await pool.query(ddlStatements.join('\n'));
 }
 
 export function computeRowHash(cells: readonly string[]): string {
@@ -152,12 +166,8 @@ export function computeRowHash(cells: readonly string[]): string {
 
 export function extractRowVersion(headers: readonly string[], cells: readonly string[]): number {
   const vIdx = headers.indexOf('version');
-  if (vIdx >= 0) {
-    const parsed = Number(cells[vIdx]);
-    if (Number.isFinite(parsed) && parsed >= 1) return Math.floor(parsed);
-  }
-  const fallback = Number(cells[5]);
-  return Number.isFinite(fallback) && fallback >= 1 ? Math.floor(fallback) : 1;
+  const raw = vIdx >= 0 ? Number(cells[vIdx]) : Number(cells[5]);
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 1;
 }
 
 export function normalizeCellsWidth(cells: readonly string[], width: number): string[] {
