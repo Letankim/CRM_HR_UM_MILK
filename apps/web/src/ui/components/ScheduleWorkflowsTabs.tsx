@@ -49,13 +49,13 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
     return p.toString();
   };
 
-  const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100') });
+  const branchesQ = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100'), staleTime: 60_000 });
   const adjParams = mkParams('adjustments'), leaveParams = mkParams('leave'), swapParams = mkParams('swap');
-  const adjQ = useQuery({ queryKey: ['attendance-adjustments', adjParams], queryFn: () => api.list<RowRec>(`/admin/attendance/adjustments?${adjParams}`) });
-  const leavesQ = useQuery({ queryKey: ['leave-requests', leaveParams], queryFn: () => api.list<RowRec>(`/admin/leave-requests?${leaveParams}`) });
-  const swapsQ = useQuery({ queryKey: ['shift-swaps', swapParams], queryFn: () => api.list<RowRec>(`/admin/shift-swaps?${swapParams}`) });
-  const attCountQ = useQuery({ queryKey: ['attendance-sessions-count', branchFilter], queryFn: () => api.list<AttendanceEventRow>(`/admin/attendance/sessions?page=1&per_page=1${branchFilter !== 'ALL' ? `&branch_id=${branchFilter}` : ''}`) });
-  const draftCountQ = useQuery({ queryKey: ['shift-registrations', 'count'], queryFn: () => api.list<RowRec>('/admin/schedules?status=DRAFT&page=1&per_page=1'), enabled: showPlannerTabs });
+  const adjQ = useQuery({ queryKey: ['attendance-adjustments', adjParams], queryFn: () => api.list<RowRec>(`/admin/attendance/adjustments?${adjParams}`), staleTime: 30_000 });
+  const leavesQ = useQuery({ queryKey: ['leave-requests', leaveParams], queryFn: () => api.list<RowRec>(`/admin/leave-requests?${leaveParams}`), staleTime: 30_000 });
+  const swapsQ = useQuery({ queryKey: ['shift-swaps', swapParams], queryFn: () => api.list<RowRec>(`/admin/shift-swaps?${swapParams}`), staleTime: 30_000 });
+  const attCountQ = useQuery({ queryKey: ['attendance-sessions-count', branchFilter], queryFn: () => api.list<AttendanceEventRow>(`/admin/attendance/sessions?page=1&per_page=1${branchFilter !== 'ALL' ? `&branch_id=${branchFilter}` : ''}`), staleTime: 30_000 });
+  const draftCountQ = useQuery({ queryKey: ['shift-registrations', 'count'], queryFn: () => api.list<RowRec>('/admin/schedules?status=DRAFT&page=1&per_page=1'), enabled: showPlannerTabs, staleTime: 30_000 });
   const draftTotal = draftCountQ.data?.meta.pagination.total ?? 0;
 
   const refreshAll = () => REFRESH_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));

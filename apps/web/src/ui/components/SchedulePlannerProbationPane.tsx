@@ -58,7 +58,11 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
   const offDecision = usePlannerOffDecision();
   const { promptDecision, decisionModalElement: promoteModalElement } = useWorkflowDecisionModal();
 
-  const q = useQuery({ queryKey: ['schedule-planner-probation', branchId], queryFn: () => api.get<PlannerProbationItem[]>(`/admin/schedule-planner/probation?branch_id=${encodeURIComponent(branchId)}`) });
+  const q = useQuery({
+    queryKey: ['schedule-planner-probation', branchId],
+    queryFn: () => api.get<PlannerProbationItem[]>(`/admin/schedule-planner/probation?branch_id=${encodeURIComponent(branchId)}`),
+    staleTime: 30_000,
+  });
   const rows = useMemo(() => sortProbationNewestFirst(q.data ?? []), [q.data]);
   const [viewMode, setViewMode] = useState<'table' | 'gantt'>('table');
   const readyRows = rows.filter((r) => r.readyForOfficial);

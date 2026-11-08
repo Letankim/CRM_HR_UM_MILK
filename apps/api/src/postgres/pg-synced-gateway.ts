@@ -131,12 +131,13 @@ export class PostgresSyncedSheetsGateway implements SheetsGateway {
   }
 
   async listTabs(spreadsheetId: string): Promise<string[]> {
-    const remoteTabs = await this.remote.listTabs(spreadsheetId).catch(() => [] as string[]);
-    if (this.mode !== 'PG_PRIMARY' || this.simulatedOffline) return remoteTabs;
-    try {
-      const pgTabs = await this.pool.query<{ tab_name: string }>(`SELECT tab_name FROM umbm_sheet_tabs WHERE spreadsheet_id = $1`, [spreadsheetId]);
-      return Array.from(new Set([...remoteTabs, ...pgTabs.rows.map((r) => r.tab_name)]));
-    } catch { return remoteTabs; }
+    if (this.mode === 'PG_PRIMARY' && !this.simulatedOffline) {
+      try {
+        const pgTabs = await this.pool.query<{ tab_name: string }>(`SELECT tab_name FROM umbm_sheet_tabs WHERE spreadsheet_id = $1`, [spreadsheetId]);
+        if (pgTabs.rows.length > 0) return pgTabs.rows.map((r) => r.tab_name);
+      } catch { /* fallback */ }
+    }
+    return this.remote.listTabs(spreadsheetId).catch(() => [] as string[]);
   }
 
   async createMonthlySpreadsheet(params: CreateMonthlySpreadsheetParams): Promise<CreatedMonthlySpreadsheet> {

@@ -76,9 +76,9 @@ export function OfficeShiftPublishModal({ open, onClose, weekStart, branchId = '
       open={open}
       onCancel={onClose}
       destroyOnHidden
-      centered
+      centered={false}
       width="min(1560px, 98vw)"
-      style={{ maxWidth: '98vw', top: 16 }}
+      style={{ maxWidth: '98vw', top: 16, margin: '0 auto', paddingBottom: 16 }}
       styles={{ body: { maxHeight: 'calc(100vh - 170px)', overflowY: 'auto', paddingTop: 8 } }}
       title={
         <Space size={8} wrap>

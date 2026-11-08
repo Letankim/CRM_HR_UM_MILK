@@ -14,6 +14,7 @@ export function SchedulePlannerPanel() {
   const branchOptions = [{ value: 'ALL', label: 'Tất cả chi nhánh' }, ...branchList.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` }))];
   return (
     <Tabs
+      destroyInactiveTabPane
       type="card" size="small"
       items={[
         { key: 'week', label: <span><ScheduleOutlined /> Chốt lịch tuần (NV chính thức)</span>, children: <SchedulePlannerWeekPane branchOptions={branchOptions} /> },
