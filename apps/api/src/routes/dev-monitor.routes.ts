@@ -9,7 +9,7 @@ import { collectDevDomainAndRuntimeTelemetry } from '../services/dev-domain-tele
 import { collectDevPostgresTelemetry } from '../services/dev-postgres-telemetry.js';
 
 const zVerifyKeyBody = z.object({
-  key: z.string({ required_error: 'Vui lòng nhập mã khóa giám sát kỹ thuật' }).trim().min(1, 'Vui lòng nhập mã khóa giám sát kỹ thuật'),
+  key: z.string({ required_error: 'Vui lòng nhập mã truy cập' }).trim().min(1, 'Vui lòng nhập mã truy cập'),
 });
 
 const zDevActionBody = z.object({
@@ -29,20 +29,16 @@ function isValidDevKey(provided: string, expected: string): boolean {
 function assertDevMonitorHeader(request: FastifyRequest, expectedKey: string): void {
   const headerVal = String(request.headers['x-dev-monitor-key'] ?? '');
   if (!isValidDevKey(headerVal, expectedKey)) {
-    throw Errors.unauthorized('Mã khóa truy cập trang giám sát kỹ thuật không chính xác hoặc đã hết hiệu lực');
+    throw Errors.unauthorized('Mã truy cập không chính xác hoặc đã hết hiệu lực');
   }
 }
 
-/**
- * Bộ API Giám sát Kỹ thuật Hệ thống dành cho Developer (/dev-monitor).
- * Bắt buộc xác thực khóa mặc định hệ thống (DEV_MONITOR_KEY trong .env) ở phía Backend trên mọi yêu cầu.
- */
 export async function devMonitorRoutes(app: FastifyInstance, ctx: AppContext) {
   app.post('/api/dev/verify-key', async (request) => {
     const headerKey = String(request.headers['x-dev-monitor-key'] ?? '').trim();
     const parsed = headerKey ? { key: headerKey } : zVerifyKeyBody.parse(request.body ?? {});
     if (!isValidDevKey(parsed.key, ctx.env.DEV_MONITOR_KEY)) {
-      throw Errors.unauthorized('Mã khóa giám sát kỹ thuật không chính xác. Vui lòng kiểm tra biến DEV_MONITOR_KEY trên máy chủ.');
+      throw Errors.unauthorized('Mã truy cập không chính xác');
     }
     return sendSuccess(request, 'Xác thực khóa giám sát kỹ thuật thành công', {
       verified: true,
