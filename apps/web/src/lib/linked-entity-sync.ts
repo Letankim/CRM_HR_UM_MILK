@@ -10,6 +10,7 @@ import {
   type Role,
 } from '@umbm/shared';
 import { generateUsername } from '@/lib/auto-generate';
+import { setFormFieldClean, setFormFieldsClean } from '@/lib/form-error';
 import type { AccountRowItem } from '@/ui/components/AccountDetailDrawer';
 import { syncAccountSecretForRole } from '@/ui/components/AccountSecretField';
 import type { EmployeeRowItem } from '@/ui/components/employee-table-columns';
@@ -169,22 +170,22 @@ export function computeEmployeeToAccountDiffs(
 }
 
 export function applyAccountDiffsToEmployeeForm(form: FormInstance, diffs: LinkedFieldDiff[]): void {
-  const entries = diffs.map((d) => ({ name: d.field, value: d.incomingValue, errors: [] as string[] }));
+  const entries = diffs.map((d) => ({ name: d.field, value: d.incomingValue }));
   const stageDiff = diffs.find((d) => d.field === 'stage');
   if (stageDiff?.incomingValue === 'OFFICIAL' && form.getFieldValue('employment_type') === 'PROBATION') {
-    entries.push({ name: 'employment_type', value: 'FULL_TIME', errors: [] });
+    entries.push({ name: 'employment_type', value: 'FULL_TIME' });
   }
-  form.setFields(entries);
+  setFormFieldsClean(form, entries);
 }
 
 export function applyEmployeeDiffsToAccountForm(form: FormInstance, diffs: LinkedFieldDiff[], isEditing: boolean): void {
-  form.setFields(diffs.map((d) => ({ name: d.field, value: d.incomingValue, errors: [] as string[] })));
+  setFormFieldsClean(form, diffs.map((d) => ({ name: d.field, value: d.incomingValue })));
   const roleDiff = diffs.find((d) => d.field === 'role');
   if (roleDiff) {
     const nextRole = roleDiff.incomingValue as Role;
     const allowed = new Set(getAllowedExtraPermissionsForRole(nextRole));
     const curPerms: Permission[] = form.getFieldValue('extra_permissions') ?? [];
-    form.setFields([{ name: 'extra_permissions', value: curPerms.filter((p) => allowed.has(p)), errors: [] }]);
+    setFormFieldClean(form, 'extra_permissions', curPerms.filter((p) => allowed.has(p)));
     syncAccountSecretForRole(form, nextRole, isEditing);
   }
 }

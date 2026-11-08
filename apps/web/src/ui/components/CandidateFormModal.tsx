@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Col, Form, Input, InputNumber, Modal, Row, Select, Tabs } from 'antd';
+import { Col, Form, Input, InputNumber, Modal, Row, Select, Tabs, Tag } from 'antd';
 import type { FormInstance } from 'antd';
-import { CalendarOutlined, CloseOutlined, PlusOutlined, SaveOutlined, SolutionOutlined, UserOutlined } from '@ant-design/icons';
+import { CalendarOutlined, CloseOutlined, PlusOutlined, SaveOutlined, SolutionOutlined, TrophyOutlined, UserOutlined } from '@ant-design/icons';
+import { evaluatePreScreenScores14, PRE_SCREEN_CRITERIA_14 } from '@umbm/shared';
 import { clearChangedFieldErrors } from '@/lib/form-error';
+import { CandidatePreScreenPane, computeAutoPreScreenScoresFromValues } from './CandidatePreScreenPane';
 import { MONEY_INPUT_PROPS } from './payroll-types';
 
 export const CANDIDATE_STATUS_OPTIONS = [
@@ -17,38 +19,18 @@ export const CANDIDATE_STATUS_OPTIONS = [
 ];
 
 const EDUCATION_OPTIONS = [
-  { value: 'Đại học', label: 'Đại học / Sinh viên Đại học' },
-  { value: 'Cao đẳng', label: 'Cao đẳng / Trung cấp' },
+  { value: 'Đại học / Cao đẳng', label: 'Đại học / Cao đẳng (1 điểm)' },
+  { value: 'Không đi học chỉ đi làm', label: 'Không đi học chỉ đi làm (2 điểm)' },
   { value: 'THPT', label: 'Tốt nghiệp THPT (12/12)' },
-  { value: 'Đã nghỉ học chỉ đi làm', label: 'Đã nghỉ học — Chỉ đi làm tập trung' },
 ];
-
-const EMPLOYMENT_PREF_OPTIONS = [
-  { value: 'PART_TIME', label: 'Part-time (Xoay ca linh hoạt)' },
-  { value: 'FULL_TIME', label: 'Full-time (Toàn thời gian 8h)' },
-  { value: 'CA_CO_DINH', label: 'Ca cố định (Sáng / Chiều / Tối)' },
-];
-
-const ROTATE_BRANCH_OPTIONS = [
-  { value: 'Sẵn sàng hỗ trợ xoay ca chi nhánh khác khi cần', label: 'Sẵn sàng hỗ trợ xoay ca chi nhánh khác' },
-  { value: 'Chỉ làm cố định tại 1 chi nhánh đăng ký', label: 'Chỉ làm cố định tại 1 chi nhánh đăng ký' },
-];
-
-const COMMITMENT_OPTIONS = [
-  { value: 'Trên 6 tháng - 1 năm lâu dài', label: 'Từ 6 tháng – 1 năm trở lên' },
-  { value: 'Từ 3 - 6 tháng', label: 'Từ 3 – 6 tháng' },
-  { value: 'Dưới 3 tháng (Thời vụ)', label: 'Dưới 3 tháng (Ngắn hạn)' },
-];
-
-const UNIFORM_CONSENT_OPTIONS = [
-  { value: 'Đồng ý mặc đồng phục áo hồng và điểm danh GPS trên Web', label: 'Đồng ý mặc đồng phục & điểm danh GPS' },
-  { value: 'Cần trao đổi thêm khi phỏng vấn', label: 'Cần trao đổi thêm khi phỏng vấn' },
-];
-
+const EMPLOYMENT_PREF_OPTIONS = [{ value: 'PART_TIME', label: 'Part-time (Xoay ca linh hoạt)' }, { value: 'FULL_TIME', label: 'Full-time (Toàn thời gian 8h)' }, { value: 'CA_CO_DINH', label: 'Ca cố định (Sáng / Chiều / Tối)' }];
+const ROTATE_BRANCH_OPTIONS = [{ value: 'Sẵn sàng hỗ trợ xoay ca chi nhánh khác khi cần', label: 'Sẵn sàng hỗ trợ xoay ca chi nhánh khác' }, { value: 'Chỉ làm cố định tại 1 chi nhánh đăng ký', label: 'Chỉ làm cố định tại 1 chi nhánh đăng ký' }];
+const COMMITMENT_OPTIONS = [{ value: 'Trên 6 tháng - 1 năm lâu dài', label: 'Từ 6 tháng – 1 năm trở lên' }, { value: 'Từ 3 - 6 tháng', label: 'Từ 3 – 6 tháng' }, { value: 'Dưới 3 tháng (Thời vụ)', label: 'Dưới 3 tháng (Ngắn hạn)' }];
+const UNIFORM_CONSENT_OPTIONS = [{ value: 'Đồng ý mặc đồng phục áo hồng và điểm danh GPS trên Web', label: 'Đồng ý mặc đồng phục & điểm danh GPS' }, { value: 'Cần trao đổi thêm khi phỏng vấn', label: 'Cần trao đổi thêm khi phỏng vấn' }];
 const SOURCE_CHANNEL_OPTIONS = [
-  { value: 'GOOGLE_FORM', label: 'Biểu mẫu ứng tuyển trực tuyến' },
-  { value: 'Quảng cáo FB, Tiktok, Instagram...', label: 'Mạng xã hội (Facebook, TikTok, Instagram)' },
-  { value: 'Bạn bè / Nhân viên giới thiệu', label: 'Bạn bè / Nhân viên nội bộ giới thiệu' },
+  { value: 'Facebook/Instagram/Tiktok', label: 'Facebook / Instagram / Tiktok (1 điểm)' },
+  { value: 'GOOGLE_FORM', label: 'Biểu mẫu ứng tuyển trực tuyến (1 điểm)' },
+  { value: 'Bạn bè người quen giới thiệu', label: 'Bạn bè người quen giới thiệu (LOẠI)' },
   { value: 'Nộp trực tiếp tại cửa hàng', label: 'Nộp trực tiếp tại cửa hàng' },
 ];
 
@@ -70,9 +52,9 @@ export function buildCandidateFormInitials(r?: Record<string, unknown> | null, d
     return {
       applied_position: 'BARISTA', applied_branch_id: defaultBranchId, shift_pref: 'CA_SANG',
       employment_type: 'PART_TIME', expected_salary_vnd: 6500000, birth_year: '2004', gender: 'Nữ',
-      education: 'Đại học', can_rotate_branch: 'Sẵn sàng hỗ trợ xoay ca chi nhánh khác khi cần',
+      education: 'Đại học / Cao đẳng', can_rotate_branch: 'Sẵn sàng hỗ trợ xoay ca chi nhánh khác khi cần',
       commitment_months: 'Trên 6 tháng - 1 năm lâu dài', uniform_gps_consent: 'Đồng ý mặc đồng phục áo hồng và điểm danh GPS trên Web',
-      source_channel: 'GOOGLE_FORM', status: 'NEW',
+      source_channel: 'Facebook/Instagram/Tiktok', status: 'NEW',
     };
   }
   const fp = (r.form_payload ?? r) as Record<string, unknown>;
@@ -88,18 +70,14 @@ export function buildCandidateFormInitials(r?: Record<string, unknown> | null, d
     expected_salary_vnd: Number(String(fp.expected_salary || '0').replace(/\D/g, '')) || 6500000,
     experience_note: r.experience_note || fp.experience_note || '', fnb_skills: fp.fnb_skills || r.fnb_skills || '',
     incident_answer: fp.incident_answer || r.incident_answer || '', uniform_gps_consent: fp.uniform_gps_consent || r.uniform_gps_consent || '',
-    source_channel: r.source_channel || fp.source_channel || 'GOOGLE_FORM', self_intro: fp.self_intro || r.self_intro || '',
+    source_channel: r.source_channel || fp.source_channel || 'Facebook/Instagram/Tiktok', self_intro: fp.self_intro || r.self_intro || '',
     status: r.status, hr_note: r.hr_note,
   };
 }
 
 export function resolveCandidateFieldTab(field: string): string {
-  if (['applied_branch_id', 'branch_pref', 'applied_position', 'staff_group', 'shift_pref', 'employment_type', 'can_rotate_branch', 'commitment_months', 'expected_salary_vnd', 'start_date_available', 'source_channel'].includes(field)) {
-    return 'job';
-  }
-  if (['experience_note', 'fnb_skills', 'incident_answer', 'uniform_gps_consent', 'self_intro', 'status', 'hr_note'].includes(field)) {
-    return 'experience';
-  }
+  if (['applied_branch_id', 'branch_pref', 'applied_position', 'staff_group', 'shift_pref', 'employment_type', 'can_rotate_branch', 'commitment_months', 'expected_salary_vnd', 'start_date_available', 'source_channel'].includes(field)) return 'job';
+  if (['experience_note', 'fnb_skills', 'incident_answer', 'uniform_gps_consent', 'self_intro', 'status', 'hr_note'].includes(field)) return 'experience';
   return 'personal';
 }
 
@@ -113,59 +91,76 @@ export function CandidateFormModal({
   onClose: () => void; onFinish: (values: Record<string, unknown>) => void;
 }) {
   const [innerTab, setInnerTab] = useState('personal');
+  const [preScreenScores, setPreScreenScores] = useState<Record<string, number>>({});
+  const [manualKeys, setManualKeys] = useState<Set<string>>(new Set());
   const activeTab = controlledTab ?? innerTab;
   const setActiveTab = (tab: string) => { setInnerTab(tab); onTabChange?.(tab); };
   const watchedStatus = Form.useWatch('status', form);
+  const eval14 = evaluatePreScreenScores14(preScreenScores);
 
   useEffect(() => {
-    if (open) setActiveTab('personal');
-  }, [open]);
+    if (!open) return;
+    if (!controlledTab) setInnerTab('personal');
+    const fp = (editingCand?.form_payload ?? editingCand ?? {}) as Record<string, unknown>;
+    const savedScores = (fp.criteria_scores ?? {}) as Record<string, number>;
+    const autoScores = computeAutoPreScreenScoresFromValues(form.getFieldsValue(true));
+    const merged: Record<string, number> = { ...autoScores };
+    const initManual = new Set<string>();
+    for (const c of PRE_SCREEN_CRITERIA_14) {
+      if (savedScores[c.key] !== undefined && !Number.isNaN(Number(savedScores[c.key]))) {
+        merged[c.key] = Number(savedScores[c.key]);
+        if (merged[c.key] < 0) initManual.add(c.key);
+      }
+    }
+    setPreScreenScores(merged);
+    setManualKeys(initManual);
+  }, [open, editingCand]);
 
   return (
     <Modal
-      width={780} style={{ maxWidth: 'calc(100vw - 24px)' }} open={open} forceRender destroyOnHidden
-      title={editingCand ? `Chỉnh sửa Hồ sơ Ứng viên: ${String(editingCand.full_name)}` : 'Tiếp nhận Hồ sơ Ứng viên mới'}
+      width={1140} style={{ maxWidth: 'calc(100vw - 32px)', top: 16 }} open={open} forceRender destroyOnHidden
+      title={editingCand ? `Chỉnh sửa Hồ sơ & Chấm điểm Sơ loại: ${String(editingCand.full_name)}` : 'Tiếp nhận Hồ sơ & Chấm điểm Sơ loại Ứng viên'}
       okText={editingCand ? 'Lưu cập nhật' : 'Thêm ứng viên'} cancelText="Hủy bỏ"
-      okButtonProps={{ icon: editingCand ? <SaveOutlined /> : <PlusOutlined />, loading }}
-      cancelButtonProps={{ icon: <CloseOutlined /> }}
+      okButtonProps={{ icon: editingCand ? <SaveOutlined /> : <PlusOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }}
       onCancel={onClose} onOk={() => form.submit()}
     >
       <Form
-        form={form} layout="vertical" onFinish={onFinish}
-        onValuesChange={(changed) => clearChangedFieldErrors(form, changed)}
-        onFinishFailed={({ errorFields }) => {
-          const firstField = String(errorFields[0]?.name?.[0] ?? '');
-          setActiveTab(resolveCandidateFieldTab(firstField));
+        form={form} layout="vertical"
+        onFinish={(values) => onFinish({ ...values, criteria_scores: preScreenScores })}
+        onValuesChange={(changed, all) => {
+          clearChangedFieldErrors(form, changed);
+          const auto = computeAutoPreScreenScoresFromValues(all);
+          setPreScreenScores((prev) => {
+            const next = { ...prev };
+            for (const c of PRE_SCREEN_CRITERIA_14) { if (!manualKeys.has(c.key)) next[c.key] = auto[c.key] ?? 0; }
+            return next;
+          });
         }}
+        onFinishFailed={({ errorFields }) => setActiveTab(resolveCandidateFieldTab(String(errorFields[0]?.name?.[0] ?? '')))}
       >
         <Tabs
-          activeKey={activeTab}
-          onChange={setActiveTab}
+          activeKey={activeTab} onChange={setActiveTab}
           items={[
             {
-              key: 'personal',
-              forceRender: true,
-              label: <span><UserOutlined /> Thông tin cá nhân & Liên hệ</span>,
+              key: 'personal', forceRender: true, label: <span><UserOutlined /> Thông tin cá nhân & Liên hệ</span>,
               children: (
                 <Row gutter={12}>
-                  <Col xs={24} md={10}><Form.Item name="full_name" label="Họ và tên" rules={[{ required: true, message: 'Vui lòng nhập họ tên ứng viên' }]}><Input placeholder="Nguyễn Thị Ngọc Hân" /></Form.Item></Col>
-                  <Col xs={12} md={7}><Form.Item name="phone" label="Số điện thoại (Zalo)" rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}><Input placeholder="0909888777" /></Form.Item></Col>
+                  <Col xs={24} md={10}><Form.Item name="full_name" label="1. Tên Bạn là? (Họ và tên đầy đủ)" rules={[{ required: true, message: 'Vui lòng nhập họ tên ứng viên' }]}><Input placeholder="Nguyễn Thị Ngọc Hân" /></Form.Item></Col>
+                  <Col xs={12} md={7}><Form.Item name="phone" label="4. Số điện thoại (Zalo liên hệ)" rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}><Input placeholder="0909888777" /></Form.Item></Col>
                   <Col xs={12} md={7}><Form.Item name="citizen_id" label="Số CCCD"><Input placeholder="079204001234" /></Form.Item></Col>
-                  <Col xs={12} md={5}><Form.Item name="birth_year" label="Năm sinh"><Input placeholder="2004" /></Form.Item></Col>
+                  <Col xs={12} md={5}><Form.Item name="birth_year" label="2. Năm sinh"><Input placeholder="2004" /></Form.Item></Col>
                   <Col xs={12} md={5}><Form.Item name="gender" label="Giới tính"><Select options={[{ value: 'Nữ', label: 'Nữ' }, { value: 'Nam', label: 'Nam' }, { value: 'Khác', label: 'Khác' }]} /></Form.Item></Col>
                   <Col xs={24} md={14}><Form.Item name="email" label="Địa chỉ Email"><Input placeholder="ungvien@gmail.com" /></Form.Item></Col>
-                  <Col xs={24} md={12}><Form.Item name="education" label="Trình độ học vấn"><Select allowClear options={EDUCATION_OPTIONS} placeholder="Chọn trình độ học vấn" /></Form.Item></Col>
+                  <Col xs={24} md={12}><Form.Item name="education" label="5. Trình độ học vấn"><Select allowClear options={EDUCATION_OPTIONS} placeholder="Chọn trình độ học vấn" /></Form.Item></Col>
                   <Col xs={24} md={12}><Form.Item name="school_or_major" label="Trường theo học / Chuyên ngành"><Input placeholder="Ví dụ: ĐH Công Thương — Quản trị nhà hàng" /></Form.Item></Col>
-                  <Col xs={24} md={12}><Form.Item name="hometown" label="Quê quán"><Input placeholder="Ví dụ: Quảng Ngãi / Bến Tre / TP.HCM" /></Form.Item></Col>
+                  <Col xs={24} md={12}><Form.Item name="hometown" label="3. Quê quán theo CCCD"><Input placeholder="Ví dụ: TP.HCM / Bến Tre / Tiền Giang" /></Form.Item></Col>
                   <Col xs={24} md={12}><Form.Item name="current_address" label="Địa chỉ nơi ở hiện tại"><Input placeholder="Số nhà, đường, phường/xã, quận/huyện..." /></Form.Item></Col>
-                  <Col xs={24}><Form.Item name="facebook_link" label="Liên kết mạng xã hội (Facebook cá nhân)" style={{ marginBottom: 0 }}><Input placeholder="https://www.facebook.com/..." /></Form.Item></Col>
+                  <Col xs={24}><Form.Item name="facebook_link" label="9. Link Facebook cá nhân" style={{ marginBottom: 0 }}><Input placeholder="https://www.facebook.com/..." /></Form.Item></Col>
                 </Row>
               ),
             },
             {
-              key: 'job',
-              forceRender: true,
-              label: <span><CalendarOutlined /> Nguyện vọng & Ca làm việc</span>,
+              key: 'job', forceRender: true, label: <span><CalendarOutlined /> Nguyện vọng & Ca làm việc</span>,
               children: (
                 <Row gutter={12}>
                   <Col xs={24} md={12}><Form.Item name="applied_branch_id" label="Chi nhánh nguyện vọng" rules={[{ required: true, message: 'Vui lòng chọn chi nhánh' }]}><Select options={branches} placeholder="Chọn chi nhánh" /></Form.Item></Col>
@@ -176,32 +171,40 @@ export function CandidateFormModal({
                   <Col xs={24} md={8}><Form.Item name="commitment_months" label="Cam kết thời gian gắn bó"><Select allowClear options={COMMITMENT_OPTIONS} /></Form.Item></Col>
                   <Col xs={12} md={8}><Form.Item name="expected_salary_vnd" label="Mức lương mong muốn"><InputNumber min={0} step={500000} style={{ width: '100%' }} suffix="đ" {...MONEY_INPUT_PROPS} /></Form.Item></Col>
                   <Col xs={12} md={8}><Form.Item name="start_date_available" label="Ngày có thể bắt đầu"><Input placeholder="Ví dụ: Đi làm ngay / 05/11" /></Form.Item></Col>
-                  <Col xs={24} md={8}><Form.Item name="source_channel" label="Nguồn biết tin ứng tuyển" style={{ marginBottom: 0 }}><Select options={SOURCE_CHANNEL_OPTIONS} /></Form.Item></Col>
+                  <Col xs={24} md={8}><Form.Item name="source_channel" label="7. Biết tin ứng tuyển qua hình thức nào?" style={{ marginBottom: 0 }}><Select options={SOURCE_CHANNEL_OPTIONS} /></Form.Item></Col>
                 </Row>
               ),
             },
             {
-              key: 'experience',
-              forceRender: true,
-              label: <span><SolutionOutlined /> Kinh nghiệm & Đánh giá HR</span>,
+              key: 'experience', forceRender: true, label: <span><SolutionOutlined /> Kinh nghiệm & Đánh giá HR</span>,
               children: (
                 <Row gutter={12}>
-                  <Col xs={24} md={12}><Form.Item name="experience_note" label="Kinh nghiệm làm việc"><Input placeholder="Ví dụ: 1 năm pha chế trà sữa / thu ngân..." /></Form.Item></Col>
+                  <Col xs={24} md={12}><Form.Item name="experience_note" label="6. Kinh nghiệm làm việc"><Input placeholder="Ví dụ: 1 năm pha chế trà sữa / thu ngân F&B..." /></Form.Item></Col>
                   <Col xs={24} md={12}><Form.Item name="fnb_skills" label="Kỹ năng chuyên môn / F&B"><Input placeholder="Ví dụ: Pha chế, đứng máy POS, kiểm kho..." /></Form.Item></Col>
-                  <Col xs={24} md={14}><Form.Item name="incident_answer" label="Cách xử lý khi có việc đột xuất trùng lịch ca trực"><Input placeholder="Ví dụ: Báo trước cho quản lý và nhờ đồng nghiệp đổi ca hỗ trợ..." /></Form.Item></Col>
+                  <Col xs={24} md={14}><Form.Item name="incident_answer" label="8. Hướng xử lý khi có việc đột xuất trùng lịch ca trực"><Input placeholder="Ví dụ: Báo trước cho quản lý và nhờ đồng nghiệp đổi ca hỗ trợ..." /></Form.Item></Col>
                   <Col xs={24} md={10}><Form.Item name="uniform_gps_consent" label="Cam kết đồng phục & chấm công GPS"><Select allowClear options={UNIFORM_CONSENT_OPTIONS} /></Form.Item></Col>
                   <Col xs={24} md={16}><Form.Item name="self_intro" label="Giới thiệu ngắn gọn bản thân"><Input placeholder="Tính cách hòa đồng, trung thực, chủ động học hỏi..." /></Form.Item></Col>
                   <Col xs={24} md={8}><Form.Item name="status" label="Trạng thái xử lý hồ sơ"><Select options={CANDIDATE_STATUS_OPTIONS.filter((o) => o.value !== 'ALL')} /></Form.Item></Col>
-                  <Col xs={24}>
-                    <Form.Item
-                      name="hr_note" style={{ marginBottom: 0 }}
-                      label={watchedStatus === 'REJECTED' ? 'Lý do từ chối hồ sơ ứng viên' : 'Ghi chú sàng lọc HR'}
-                      rules={watchedStatus === 'REJECTED' ? [{ required: true, min: 3, message: 'Vui lòng nhập lý do từ chối hồ sơ ứng viên (tối thiểu 3 ký tự)' }] : undefined}
-                    >
-                      <Input.TextArea rows={2} placeholder={watchedStatus === 'REJECTED' ? 'Nhập lý do từ chối hồ sơ ứng viên...' : 'Nhập ghi chú sàng lọc HR...'} />
-                    </Form.Item>
-                  </Col>
+                  <Col xs={24}><Form.Item name="hr_note" style={{ marginBottom: 0 }} label={watchedStatus === 'REJECTED' ? 'Lý do từ chối hồ sơ ứng viên' : 'Nhận xét sơ loại của HR'} rules={watchedStatus === 'REJECTED' ? [{ required: true, min: 3, message: 'Vui lòng nhập lý do từ chối hồ sơ ứng viên (tối thiểu 3 ký tự)' }] : undefined}><Input.TextArea rows={2} placeholder={watchedStatus === 'REJECTED' ? 'Nhập lý do từ chối hồ sơ ứng viên...' : 'Nhập nhận xét sơ loại HR...'} /></Form.Item></Col>
                 </Row>
+              ),
+            },
+            {
+              key: 'prescreen', forceRender: true,
+              label: <span><TrophyOutlined /> Chấm điểm sơ loại <Tag color={eval14.redFlagReason ? 'error' : eval14.qualified ? 'success' : 'warning'} style={{ margin: '0 0 0 4px', fontWeight: 700 }}>{eval14.redFlagReason ? 'LOẠI' : `${eval14.totalScore14}/14đ`}</Tag></span>,
+              children: (
+                <CandidatePreScreenPane
+                  scores={preScreenScores}
+                  onChangeScore={(key, points, rejectReason) => {
+                    setManualKeys((prev) => new Set(prev).add(key));
+                    const next = { ...preScreenScores, [key]: points };
+                    setPreScreenScores(next);
+                    if (points < 0 && rejectReason) {
+                      form.setFieldValue('status', 'REJECTED');
+                      if (!form.getFieldValue('hr_note')) form.setFieldValue('hr_note', rejectReason);
+                    }
+                  }}
+                />
               ),
             },
           ]}

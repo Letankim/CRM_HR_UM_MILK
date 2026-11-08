@@ -55,14 +55,14 @@ export function buildQuickDetailSpec(kind: QuickDetailKind, raw: unknown): Quick
       const tabs = Array.isArray(r.tabs) ? (r.tabs as string[]) : [];
       return {
         title: `Chi tiết Phân vùng Dữ liệu — ${s(r.label)}`,
-        externalLink: r.webViewLink ? { label: 'Mở tệp Google Sheets trên Drive', href: String(r.webViewLink) } : undefined,
+        externalLink: r.webViewLink ? { label: 'Mở tệp dữ liệu', href: String(r.webViewLink) } : undefined,
         fields: [
           { label: 'Kỳ phân vùng', value: <Typography.Text strong>{s(r.label)}</Typography.Text> },
           { label: 'Trạng thái vận hành', value: r.isActive ? <Tag color="green">Đang ghi & đọc chính thức</Tag> : <Tag>Lưu trữ lịch sử</Tag> },
-          { label: 'Chế độ tệp lưu trữ', value: r.mode === 'MONTHLY_FILE' ? 'Tệp Google Sheets độc lập theo tháng' : 'Tệp Google Sheets gốc mặc định' },
+          { label: 'Chế độ tệp lưu trữ', value: r.mode === 'MONTHLY_FILE' ? 'Tệp dữ liệu độc lập theo tháng' : 'Tệp dữ liệu gốc mặc định' },
           { label: 'Thời điểm khởi tạo', value: dt(r.createdAt) },
-          { label: 'Tên tệp trên Google Drive', value: s(r.fileName, 'Tệp mặc định hệ thống'), span: 2 },
-          { label: 'Thư mục lưu trữ Drive', value: s(r.folderPath, 'Thư mục gốc hệ thống'), span: 2 },
+          { label: 'Tên tệp lưu trữ', value: s(r.fileName, 'Tệp mặc định hệ thống'), span: 2 },
+          { label: 'Thư mục lưu trữ', value: s(r.folderPath, 'Thư mục gốc hệ thống'), span: 2 },
           {
             label: 'Các bảng dữ liệu trong tệp',
             value: tabs.length ? (

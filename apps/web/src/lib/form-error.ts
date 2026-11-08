@@ -126,13 +126,37 @@ export function clearChangedFieldErrors(form: FormInstance, changedValues: Recor
     if (val && typeof val === 'object' && !Array.isArray(val)) {
       for (const subKey of Object.keys(val as Record<string, unknown>)) {
         const path = [key, subKey];
-        if (form.getFieldError(path).length > 0) clears.push({ name: path, errors: [] });
+        if (form.getFieldError(path).length > 0) clears.push({ name: path, errors: undefined as unknown as string[] });
       }
     } else if (form.getFieldError(key).length > 0) {
-      clears.push({ name: key, errors: [] });
+      clears.push({ name: key, errors: undefined as unknown as string[] });
     }
   }
   if (clears.length > 0) {
     form.setFields(clears as never);
+  }
+}
+
+/**
+ * Đặt giá trị cho 1 hoặc nhiều trường trên Form và chỉ xóa mảng `errors` khi trường đó thực sự đang có lỗi.
+ * Tránh lỗi `Warning: There may be circular references` của `rc-util/isEqual` khi so sánh `EMPTY_ERRORS` dùng chung.
+ */
+export function setFormFieldClean(form: FormInstance, name: string | string[], value: unknown): void {
+  form.setFieldValue(name as never, value);
+  if (form.getFieldError(name as never).length > 0) {
+    form.setFields([{ name: name as never, errors: undefined as unknown as string[] }]);
+  }
+}
+
+export function setFormFieldsClean(form: FormInstance, entries: { name: string | string[]; value: unknown }[]): void {
+  const errorClears: { name: string | string[]; errors: string[] }[] = [];
+  for (const entry of entries) {
+    form.setFieldValue(entry.name as never, entry.value);
+    if (form.getFieldError(entry.name as never).length > 0) {
+      errorClears.push({ name: entry.name, errors: undefined as unknown as string[] });
+    }
+  }
+  if (errorClears.length > 0) {
+    form.setFields(errorClears as never);
   }
 }

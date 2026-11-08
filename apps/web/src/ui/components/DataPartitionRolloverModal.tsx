@@ -74,7 +74,7 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
     onMutate: (body) => markLocalPartitionSwitch(body.month_key),
     onSuccess: async (data) => {
       setResult(data);
-      message.success(`Đã tạo tệp Google Sheets ${data.label || monthKeyLabel(data.monthKey)} và đồng bộ trực tuyến tới toàn bộ hệ thống`);
+      message.success(`Đã khởi tạo tệp dữ liệu ${data.label || monthKeyLabel(data.monthKey)} và đồng bộ trực tuyến tới toàn bộ hệ thống`);
       await qc.invalidateQueries();
     },
     onError: (e: unknown) => {
@@ -83,7 +83,7 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
         setFieldError(d ? d.message : null);
         message.error(e.message);
       } else {
-        message.error('Không thể khởi tạo tệp Google Sheets tháng mới, vui lòng thử lại');
+        message.error('Không thể khởi tạo tệp dữ liệu tháng mới, vui lòng thử lại');
       }
     },
   });
@@ -116,7 +116,7 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
           <Space>
             {canOpenDrive && (
               <Button icon={<ExportOutlined />} href={result.file!.webViewLink} target="_blank" rel="noreferrer">
-                Mở trên Google Sheets
+                Mở tệp dữ liệu
               </Button>
             )}
             <Button type="primary" icon={<CheckCircleOutlined />} onClick={handleClose}>Hoàn tất</Button>
@@ -136,8 +136,8 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
           <Alert
             type="success"
             showIcon
-            message={`Đã kích hoạt tệp Google Sheets riêng cho ${result.label || monthKeyLabel(result.monthKey)}`}
-            description={<span><FolderOpenOutlined /> Tệp dữ liệu của <strong>{result.label || monthKeyLabel(result.monthKey)}</strong> đã được lưu gọn trong thư mục tháng trên Google Drive.</span>}
+            message={`Đã kích hoạt tệp dữ liệu riêng cho ${result.label || monthKeyLabel(result.monthKey)}`}
+            description={<span><FolderOpenOutlined /> Tệp dữ liệu của <strong>{result.label || monthKeyLabel(result.monthKey)}</strong> đã được khởi tạo và lưu trữ theo kỳ tháng.</span>}
           />
           <Descriptions
             size="small" bordered column={1}
@@ -159,8 +159,8 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
         <Form layout="vertical">
           <Alert
             type="info" showIcon style={{ marginBottom: 14 }}
-            message="Tự động tạo tệp dữ liệu Google Sheets riêng theo từng tháng"
-            description="Mỗi tháng là một tệp Google Sheets riêng biệt chứa đầy đủ Lịch phân ca, Đơn nghỉ OFF, Đổi ca / Nhường ca, Chấm công Vào/Ra và Phiếu bổ sung công, lưu gọn theo thư mục tháng trên Google Drive. Khuyến nghị chốt xong kỳ lương tháng cũ trước khi chuyển sang tháng mới."
+            message="Tự động tạo tệp dữ liệu riêng theo từng tháng"
+            description="Mỗi tháng là một tệp dữ liệu riêng biệt chứa đầy đủ Lịch phân ca, Đơn nghỉ OFF, Đổi ca / Nhường ca, Chấm công Vào/Ra và Phiếu bổ sung công. Khuyến nghị chốt xong kỳ lương tháng cũ trước khi chuyển sang tháng mới."
           />
           <Form.Item
             label={

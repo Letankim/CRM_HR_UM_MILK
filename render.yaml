@@ -14,6 +14,12 @@ services:
         value: production
       - key: DATA_BACKEND
         value: google
+      - key: DATABASE_URL
+        sync: false # Điền URI Aiven PostgreSQL: postgres://avnadmin:...@....aivencloud.com:27819/defaultdb?sslmode=require
+      - key: POSTGRES_POOL_MAX
+        value: "8"
+      - key: POSTGRES_SYNC_INTERVAL_MS
+        value: "1200"
       - key: API_PORT
         value: 4000
       - key: COOKIE_SECURE

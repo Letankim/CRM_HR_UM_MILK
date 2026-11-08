@@ -28,6 +28,7 @@ const zGoogleFormExtra = {
   commitment_months: optStr, expected_salary: z.union([z.string(), z.number()]).optional(),
   expected_salary_vnd: z.coerce.number().optional(), start_date_available: optStr, facebook_link: optStr,
   uniform_gps_consent: optStr, self_intro: optStr, form_payload: z.record(z.unknown()).optional(),
+  criteria_scores: z.record(z.coerce.number()).optional(),
 };
 
 const zCreateCandidateBody = z.object({

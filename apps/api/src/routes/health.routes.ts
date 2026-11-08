@@ -93,10 +93,11 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext) {
       };
       const values = Object.values(checks).map((c) => c.status);
       const status = values.includes('down') ? 'down' : values.includes('degraded') ? 'degraded' : 'ok';
+      const postgresSync = (await ctx.db.gateway.postgresStatus?.().catch(() => null)) ?? null;
 
       return sendSuccess(request, 'Lấy trạng thái tích hợp và đồng bộ thành công', {
         status, version: ctx.version, time: nowIso(), checks,
-        data: { ...stats, recentSagas, recentEmails: ctx.email.recent(15), emailQueueStats: ctx.email.queueStats() },
+        data: { ...stats, postgresSync, recentSagas, recentEmails: ctx.email.recent(15), emailQueueStats: ctx.email.queueStats() },
       });
     },
   );

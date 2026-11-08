@@ -9,6 +9,7 @@ import { isEmployeeRole, PIN_REGEX, type Role } from '@umbm/shared';
 import { api } from '@/lib/api';
 import { useCan } from '@/lib/auth';
 import { generateAccountSecret, generatePin6, generateUsername } from '@/lib/auto-generate';
+import { setFormFieldClean, setFormFieldsClean } from '@/lib/form-error';
 import { applyAccountDiffsToEmployeeForm, computeAccountToEmployeeDiffs } from '@/lib/linked-entity-sync';
 import { useLinkedEntityDetail } from '../hooks/useLinkedEntityDetail';
 import { StatusTag } from '../StatusTag';
@@ -91,13 +92,13 @@ export function EmployeeAccountLinkFields({ form, editing, branches = [], modalO
   const handleSelectLinkedAccount = async (nextUserId?: string) => {
     const acc = await fetchFresh(nextUserId);
     if (!acc) {
-      form.setFields([{ name: 'initial_pin', value: '', errors: [] }]);
+      setFormFieldClean(form, 'initial_pin', '');
       return;
     }
     const curPin = String(form.getFieldValue('initial_pin') ?? '');
     const nextIsEmp = isEmployeeRole(acc.role);
     const syncedPin = !curPin ? '' : nextIsEmp ? (PIN_REGEX.test(curPin) ? curPin : generatePin6()) : !PIN_REGEX.test(curPin) && curPin.length >= 6 ? curPin : generateAccountSecret(acc.role);
-    form.setFields([{ name: 'initial_pin', value: syncedPin, errors: [] }]);
+    setFormFieldClean(form, 'initial_pin', syncedPin);
 
     const diffs = computeAccountToEmployeeDiffs(acc, form.getFieldsValue(true) as Record<string, unknown>, branches, !!editing);
     const warningText = acc.employeeId && acc.employeeId !== editing?.employeeCode
@@ -144,9 +145,9 @@ export function EmployeeAccountLinkFields({ form, editing, branches = [], modalO
           onChange={(ev) => {
             const nextMode = ev.target.value as EmployeeAccountMode;
             const curPin = String(form.getFieldValue('initial_pin') ?? '');
-            form.setFields([
-              { name: 'initial_pin', value: nextMode === 'AUTO_CREATE' ? (PIN_REGEX.test(curPin) ? curPin : generatePin6()) : '', errors: [] },
-              { name: 'link_user_id', value: form.getFieldValue('link_user_id'), errors: [] },
+            setFormFieldsClean(form, [
+              { name: 'initial_pin', value: nextMode === 'AUTO_CREATE' ? (PIN_REGEX.test(curPin) ? curPin : generatePin6()) : '' },
+              { name: 'link_user_id', value: form.getFieldValue('link_user_id') },
             ]);
           }}
         >
@@ -163,7 +164,7 @@ export function EmployeeAccountLinkFields({ form, editing, branches = [], modalO
               <Form.Item label="Tên đăng nhập">
                 <Space.Compact style={{ width: '100%' }}>
                   <Form.Item name="username" noStyle><Input prefix={<UserOutlined />} placeholder="Để trống tự sinh theo mã NV" /></Form.Item>
-                  <Button icon={<ThunderboltOutlined />} onClick={() => form.setFields([{ name: 'username', value: generateUsername(fullName, empCode, form.getFieldValue('username')), errors: [] }])}>Tự sinh</Button>
+                  <Button icon={<ThunderboltOutlined />} onClick={() => setFormFieldClean(form, 'username', generateUsername(fullName, empCode, form.getFieldValue('username')))}>Tự sinh</Button>
                 </Space.Compact>
               </Form.Item>
             </Col>
@@ -173,7 +174,7 @@ export function EmployeeAccountLinkFields({ form, editing, branches = [], modalO
                   <Form.Item name="initial_pin" noStyle rules={[{ validator: validateInitialPin }]} normalize={(v) => (typeof v === 'string' ? v.replace(/\D/g, '').slice(0, 6) : v)}>
                     <Input.Password prefix={<KeyOutlined />} inputMode="numeric" maxLength={6} visibilityToggle={{ visible: showPin, onVisibleChange: setShowPin }} placeholder="Nhập 6 chữ số" />
                   </Form.Item>
-                  <Button icon={<ThunderboltOutlined />} onClick={() => { setShowPin(true); form.setFields([{ name: 'initial_pin', value: generatePin6(), errors: [] }]); }}>Tự sinh PIN</Button>
+                  <Button icon={<ThunderboltOutlined />} onClick={() => { setShowPin(true); setFormFieldClean(form, 'initial_pin', generatePin6()); }}>Tự sinh PIN</Button>
                 </Space.Compact>
               </Form.Item>
             </Col>
@@ -196,7 +197,7 @@ export function EmployeeAccountLinkFields({ form, editing, branches = [], modalO
                   <Form.Item name="initial_pin" noStyle rules={[{ validator: validateInitialPin }]} normalize={(v) => (isLinkedEmployee && typeof v === 'string' ? v.replace(/\D/g, '').slice(0, 6) : v)}>
                     <Input.Password prefix={<KeyOutlined />} inputMode={isLinkedEmployee ? 'numeric' : 'text'} maxLength={isLinkedEmployee ? 6 : undefined} visibilityToggle={{ visible: showPin, onVisibleChange: setShowPin }} placeholder="Để trống nếu giữ nguyên" />
                   </Form.Item>
-                  <Button icon={<ThunderboltOutlined />} onClick={() => { setShowPin(true); form.setFields([{ name: 'initial_pin', value: isLinkedEmployee ? generatePin6() : generateAccountSecret(linkedRole), errors: [] }]); }}>{isLinkedEmployee ? 'Tự sinh PIN' : 'Tự sinh MK'}</Button>
+                  <Button icon={<ThunderboltOutlined />} onClick={() => { setShowPin(true); setFormFieldClean(form, 'initial_pin', isLinkedEmployee ? generatePin6() : generateAccountSecret(linkedRole)); }}>{isLinkedEmployee ? 'Tự sinh PIN' : 'Tự sinh MK'}</Button>
                 </Space.Compact>
               </Form.Item>
             </Col>

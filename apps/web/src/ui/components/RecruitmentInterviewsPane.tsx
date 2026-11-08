@@ -2,8 +2,8 @@
 
 import { App, Button, Descriptions, Space, Tag } from 'antd';
 import {
-  BankOutlined, BellOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined,
-  CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, MessageOutlined, ShopOutlined, TrophyOutlined, VideoCameraOutlined,
+  BellOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined,
+  CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, MessageOutlined, TrophyOutlined, VideoCameraOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -31,7 +31,7 @@ const INTERVIEW_STATUS_OPTIONS = [
 ];
 const DECISION_OPTIONS = [
   { value: 'ALL', label: 'Tất cả quyết định HR' }, { value: 'PENDING', label: 'Chờ kết quả phỏng vấn' },
-  { value: 'PASS', label: 'Đạt phỏng vấn (>= 12/13đ)' }, { value: 'HOLD', label: 'Cân nhắc thêm' }, { value: 'FAIL', label: 'Chưa phù hợp / REJECTED' },
+  { value: 'PASS', label: 'PASS — Đạt phỏng vấn (>= 12/13đ)' }, { value: 'HOLD', label: 'Cân nhắc đậu (10, 11đ)' }, { value: 'FAIL', label: 'FAIL — Dưới 10đ / Loại' },
 ];
 const TRACK_OPTIONS = [{ value: 'ALL', label: 'Tất cả nhóm kinh nghiệm' }, { value: 'INEXPERIENCED', label: INTERVIEW_EXPERIENCE_TRACK_LABELS.INEXPERIENCED }, { value: 'EXPERIENCED', label: INTERVIEW_EXPERIENCE_TRACK_LABELS.EXPERIENCED }];
 const PASS_SUGGESTIONS = ['Đạt yêu cầu phỏng vấn (>= 12/13 điểm Rubric), thái độ tốt, mời nhận việc thử việc 12 ngày'];
@@ -175,11 +175,11 @@ export function RecruitmentInterviewsPane({
         pagination={{ current: page, pageSize: perPage, total: ivQ.data?.meta.pagination.total ?? rows.length, showSizeChanger: true, pageSizeOptions: ['10', '12', '20', '50', '100'], showTotal: (t) => `Tổng ${t} lịch phỏng vấn`, onChange: (p, ps) => { setPage(ps !== perPage ? 1 : p); setPerPage(ps); } }}
         dataSource={rows}
         columns={[
-          { title: 'Ứng viên', dataIndex: 'candidateName', ellipsis: true, render: (v: string, r) => <Space size={4} wrap><span style={{ fontWeight: 600 }}>{v} {r.candidateCode ? `(${String(r.candidateCode)})` : ''}</span><Tag color={r.rubric_block === 'OFFICE' ? 'geekblue' : 'blue'} icon={r.rubric_block === 'OFFICE' ? <BankOutlined /> : <ShopOutlined />} style={{ margin: 0 }}>{r.rubric_block === 'OFFICE' ? 'VP (7 TC)' : 'CH (9 TC)'}</Tag><Tag color={getTrack(r) === 'EXPERIENCED' ? 'purple' : 'cyan'} style={{ margin: 0 }}>{INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS[getTrack(r)]}</Tag></Space> },
+          { title: 'Ứng viên', dataIndex: 'candidateName', ellipsis: true, render: (v: string, r) => <Space size={4} wrap><span style={{ fontWeight: 600 }}>{v} {r.candidateCode ? `(${String(r.candidateCode)})` : ''}</span><Tag color={getTrack(r) === 'EXPERIENCED' ? 'purple' : 'cyan'} style={{ margin: 0 }}>{INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS[getTrack(r)]} ({getTrack(r) === 'EXPERIENCED' ? '9 câu' : '7 câu'})</Tag></Space> },
           { title: 'Chi nhánh', dataIndex: 'branchName', width: 145, ellipsis: true },
           { title: 'Người phỏng vấn', dataIndex: 'interviewerLabel', width: 150, ellipsis: true, render: (v: string, r) => v || String(r.interviewer_id ?? '') },
           { title: 'Thời gian phỏng vấn', dataIndex: 'scheduled_at', width: 225, render: (v: string, r) => { const tm = r.decision === 'PENDING' && r.status !== 'COMPLETED' ? computeInterviewTimingNotice(String(r.start_at || v || '')) : { status: null, shortLabel: '', color: 'blue' as const }; return <Space size={4} wrap onClick={(e) => { if (tm.status === 'PAST' || tm.status === 'SOON') { e.stopPropagation(); if (canManageRec) setReschedTarget(r); } }}><span className="num" style={{ fontWeight: 600 }}>{String(v).slice(0, 16).replace('T', ' ')} ({String(r.duration_minutes ?? 30)}p)</span>{(tm.status === 'PAST' || tm.status === 'SOON') && <Tag color={tm.color} icon={<ClockCircleOutlined />} style={{ margin: 0, cursor: canManageRec ? 'pointer' : 'default' }}>{tm.shortLabel}</Tag>}</Space>; } },
-          { title: 'Xác nhận & Nhắc Zalo', dataIndex: 'status', width: 205, render: (_, r) => <Space size={4} style={{ whiteSpace: 'nowrap' }}>{r.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />} style={{ margin: 0 }}>Cần đổi lịch</Tag> : r.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã xác nhận</Tag> : <Tag color="default" style={{ margin: 0 }}>Chờ xác nhận</Tag>}{r.zalo_reminder_sent_at ? <Tag color="blue" icon={<BellOutlined />} style={{ margin: 0 }}>Đã nhắc Zalo</Tag> : r.candidate_confirmed ? <Tag color="cyan" style={{ margin: 0 }}>Tự nhắc Zalo</Tag> : null}</Space> },
+          { title: 'Xác nhận & Nhắc Zalo', dataIndex: 'status', width: 230, render: (_, r) => { const isDone = r.status === 'COMPLETED' || Boolean(r.decision && r.decision !== 'PENDING'); return <Space size={4} wrap>{isDone ? <Tag color="success" icon={<CheckCircleOutlined />} style={{ margin: 0, whiteSpace: 'nowrap', fontWeight: 600 }}>Đã hoàn tất PV</Tag> : r.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />} style={{ margin: 0, whiteSpace: 'nowrap', fontWeight: 600 }}>Cần đổi lịch</Tag> : r.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />} style={{ margin: 0, whiteSpace: 'nowrap', fontWeight: 600 }}>Đã xác nhận</Tag> : r.status === 'NO_SHOW' ? <Tag color="error" icon={<CloseCircleOutlined />} style={{ margin: 0, whiteSpace: 'nowrap', fontWeight: 600 }}>Vắng mặt</Tag> : <Tag color="default" style={{ margin: 0, whiteSpace: 'nowrap' }}>Chờ xác nhận</Tag>}{r.zalo_reminder_sent_at ? <Tag color="blue" icon={<BellOutlined />} style={{ margin: 0, whiteSpace: 'nowrap' }}>Đã nhắc Zalo</Tag> : !isDone && r.candidate_confirmed ? <Tag color="cyan" style={{ margin: 0, whiteSpace: 'nowrap' }}>Tự nhắc Zalo</Tag> : null}</Space>; } },
           {
             title: 'Kết quả & Chấm điểm', dataIndex: 'decision', width: 235,
             render: (v: string, r) => (

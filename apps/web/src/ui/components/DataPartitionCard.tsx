@@ -61,7 +61,7 @@ export function DataPartitionCard() {
       const fresh = await api.get<PartitionListing>('/admin/data-partitions?refresh=1');
       qc.setQueryData(['data-partitions'], fresh);
       await qc.invalidateQueries();
-      message.success('Đã đồng bộ dữ liệu mới nhất trực tiếp từ Google Sheets');
+      message.success('Đã đồng bộ dữ liệu theo tháng mới nhất thành công');
     } catch (e) {
       message.error(e instanceof ApiClientError ? e.message : 'Không thể làm mới dữ liệu tháng');
     } finally { setRefreshing(false); }
@@ -76,7 +76,7 @@ export function DataPartitionCard() {
 
   return (
     <Card
-      size="small" title={<span><DatabaseOutlined /> Quản lý dữ liệu theo tháng (Google Sheets)</span>}
+      size="small" title={<span><DatabaseOutlined /> Quản lý dữ liệu theo tháng</span>}
       extra={
         <Space size={8} wrap>
           <Button size="small" icon={<ReloadOutlined />} loading={refreshing || (q.isFetching && !q.isLoading)} onClick={handleRefresh}>Làm mới</Button>
@@ -106,7 +106,7 @@ export function DataPartitionCard() {
             </Flex>
             <Flex align="center" gap={8} wrap="wrap">
               {canOpenExternalLink(activeItem) && (
-                <Button size="small" icon={<ExportOutlined />} href={activeItem!.webViewLink} target="_blank" rel="noreferrer">Mở Google Sheets</Button>
+                <Button size="small" icon={<ExportOutlined />} href={activeItem!.webViewLink} target="_blank" rel="noreferrer">Mở tệp dữ liệu</Button>
               )}
               {canEdit && (
                 <>
@@ -161,7 +161,7 @@ export function DataPartitionCard() {
                         </Tag>
                       </Flex>
                       <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
-                        {r.monthKey ? `Lưu trong thư mục ${v || monthKeyLabel(r.monthKey)} trên Google Drive` : 'Tệp dữ liệu mặc định ban đầu'}
+                        {r.monthKey ? `Phân vùng lưu trữ kỳ ${v || monthKeyLabel(r.monthKey)}` : 'Tệp dữ liệu mặc định ban đầu'}
                       </div>
                     </div>
                   ),
@@ -183,7 +183,7 @@ export function DataPartitionCard() {
                   title: 'Thao tác', width: 210, align: 'right',
                   render: (_, r) => (
                     <Space size={6}>
-                      {canOpenExternalLink(r) && <Button size="small" icon={<ExportOutlined />} href={r.webViewLink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>Mở Sheet</Button>}
+                      {canOpenExternalLink(r) && <Button size="small" icon={<ExportOutlined />} href={r.webViewLink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>Mở tệp</Button>}
                       {r.isActive ? (
                         <Button size="small" disabled icon={<CheckCircleOutlined />}>Đang dùng</Button>
                       ) : canEdit ? (

@@ -7,6 +7,7 @@ import type { Rule } from 'antd/es/form';
 import { KeyOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { isEmployeeRole, PIN_REGEX, type Role } from '@umbm/shared';
 import { generateAccountSecret } from '@/lib/auto-generate';
+import { setFormFieldClean } from '@/lib/form-error';
 
 export interface AccountSecretFieldProps {
   form: FormInstance;
@@ -22,12 +23,12 @@ export function syncAccountSecretForRole(form: FormInstance, nextRole: Role, edi
   const cur = String(form.getFieldValue('secret') ?? '');
   const nextIsEmp = isEmployeeRole(nextRole);
   if (editing && !cur) {
-    form.setFields([{ name: 'secret', value: '', errors: [] }]);
+    setFormFieldClean(form, 'secret', '');
     return;
   }
   const needRegen = !cur || (nextIsEmp ? !PIN_REGEX.test(cur) : PIN_REGEX.test(cur) || cur.length < 6);
   const nextVal = needRegen ? generateAccountSecret(nextRole) : cur;
-  form.setFields([{ name: 'secret', value: nextVal, errors: [] }]);
+  setFormFieldClean(form, 'secret', nextVal);
 }
 
 /**
@@ -99,7 +100,7 @@ export function AccountSecretField({ form, open, editing, role }: AccountSecretF
             onClick={() => {
               setShowSecret(true);
               const liveRole = (form.getFieldValue('role') as Role | undefined) ?? role;
-              form.setFields([{ name: 'secret', value: generateAccountSecret(liveRole), errors: [] }]);
+              setFormFieldClean(form, 'secret', generateAccountSecret(liveRole));
             }}
           >
             {isEmployee ? 'Tự sinh PIN' : 'Tự sinh MK'}

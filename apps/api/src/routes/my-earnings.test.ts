@@ -94,12 +94,12 @@ describe('GET /api/me/earnings — Theo dõi Ca đã làm & Thu nhập hiện t�
       shift_code: 'CA_SANG', type: 'CHECK_OUT', server_time: '2027-05-03T12:02:00+07:00', scheduled_time: '12:00',
     }, emp.id);
 
-    // Ca 2 (2027-05-04): Ca nhận đổi ca + đã duyệt phiếu bổ sung công (5 giờ + phụ cấp đổi ca 30.000đ)
+    // Ca 2 (2027-05-04): Ca nhận làm thay khẩn cấp + đã duyệt phiếu bổ sung công (5 giờ + phụ cấp làm thay 30.000đ)
     const s2 = await t.db.shiftAssignments.insert({
       schedule_week_id: 'WK-TEST-EARN', employee_id: emp.id, branch_id: branchId, work_date: '2027-05-04',
       shift_template_id: '', start_at: '12:00', end_at: '17:00', status: 'PUBLISHED', source: 'MANUAL',
       employee_stage: 'OFFICIAL', day_type: 'WORK', shift_code: 'CA_CHIEU', scheduled_hours: 5,
-      swapped_from_employee_id: 'NV0009', replacement_for_employee_id: '', published_at: '', note: '', linked_assignment_id: '',
+      swapped_from_employee_id: 'NV0009', replacement_for_employee_id: 'NV0009', published_at: '', note: '', linked_assignment_id: '',
     }, 'admin');
     await t.db.attendanceAdjustments.insert({
       adjustment_code: 'ADJ-EARN-1', event_id: '', assignment_id: s2.id, employee_id: emp.id, branch_id: branchId,

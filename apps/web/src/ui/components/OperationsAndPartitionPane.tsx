@@ -33,7 +33,7 @@ export function OperationsAndPartitionPane() {
             label: (
               <Space size={6}>
                 <DatabaseOutlined />
-                <span>Quản lý dữ liệu theo tháng (Google Sheets)</span>
+                <span>Quản lý dữ liệu theo tháng</span>
               </Space>
             ),
             children: <DataPartitionCard />,

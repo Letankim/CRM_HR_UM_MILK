@@ -7,7 +7,8 @@ import {
 } from '@ant-design/icons';
 import {
   INTERVIEW_RED_FLAGS, INTERVIEW_RUBRIC_13_MAX, INTERVIEW_RUBRIC_13_PASS_THRESHOLD,
-  INTERVIEW_RUBRIC_BLOCK_LABELS, INTERVIEW_RUBRICS, OFFICE_RUBRIC_CRITERIA_13, STORE_RUBRIC_CRITERIA_13,
+  INTERVIEW_RUBRIC_BLOCK_LABELS, INTERVIEW_RUBRICS, OFFICE_RUBRIC_CRITERIA_13,
+  PRE_SCREEN_CRITERIA_14, STORE_RUBRIC_CRITERIA_13,
   type InterviewExperienceTrack, type InterviewRubricBlock,
 } from '@umbm/shared';
 import { StatusTag } from '../StatusTag';
@@ -16,14 +17,6 @@ import { CANDIDATE_STATUS_OPTIONS, CandidateFormModal } from './CandidateFormMod
 import { GuardButton } from './GuardButton';
 
 export { CANDIDATE_STATUS_OPTIONS, CandidateFormModal };
-
-const AI_CRITERIA_LABELS: { key: string; label: string; max: number }[] = [
-  { key: 'age_valid', label: 'Độ tuổi (18–45)', max: 2 }, { key: 'zalo_phone', label: 'SĐT Zalo hợp lệ', max: 1 },
-  { key: 'shift_flexibility', label: 'Đáp ứng khung ca', max: 2 }, { key: 'fixed_branch', label: 'Chi nhánh cố định', max: 1 },
-  { key: 'fnb_experience', label: 'Kinh nghiệm F&B', max: 2 }, { key: 'incident_handling', label: 'Xử lý việc đột xuất', max: 2 },
-  { key: 'education_commitment', label: 'Học vấn & Cam kết', max: 2 }, { key: 'facebook_link', label: 'Liên kết mạng xã hội', max: 1 },
-  { key: 'hometown_cccd', label: 'Quê quán / CCCD', max: 1 },
-];
 
 export function CandidateDetailDrawer({
   candidate, hasInterview, onClose, onScheduleInterview, onEdit, onMarkContacted, onReject, onOpenZaloNotify,
@@ -112,14 +105,23 @@ export function CandidateDetailDrawer({
                 ),
               },
               {
-                key: 'scoring', label: <span><TrophyOutlined /> Điểm sàng lọc ({aiScore}/14đ)</span>,
+                key: 'scoring', label: <span><TrophyOutlined /> Chấm điểm sơ loại ({redFlag ? 'LOẠI' : `${aiScore}/14đ`})</span>,
                 children: (
-                  <Descriptions size="small" bordered column={2}>
-                    {AI_CRITERIA_LABELS.map((c) => (
-                      <Descriptions.Item key={c.key} label={c.label}>
-                        <Tag color={(criteriaScores[c.key] ?? 0) > 0 ? 'blue' : 'default'} style={{ margin: 0, fontWeight: 600 }}>{criteriaScores[c.key] ?? 0} / {c.max} điểm</Tag>
-                      </Descriptions.Item>
-                    ))}
+                  <Descriptions size="small" bordered column={1}>
+                    {PRE_SCREEN_CRITERIA_14.map((c) => {
+                      const val = Number(criteriaScores[c.key] ?? 0);
+                      const chosenOpt = c.options.find((o) => o.points === val);
+                      return (
+                        <Descriptions.Item key={c.key} label={`${c.stt}. ${c.question}`}>
+                          <Space size={8} wrap>
+                            <Tag color={val < 0 ? 'error' : val > 0 ? 'blue' : 'default'} style={{ margin: 0, fontWeight: 600 }}>
+                              {val < 0 ? 'LOẠI' : `${val} / ${c.maxPoints} điểm`}
+                            </Tag>
+                            {chosenOpt && <span style={{ fontSize: 12, color: val < 0 ? '#DC2626' : '#475569' }}>{chosenOpt.label}</span>}
+                          </Space>
+                        </Descriptions.Item>
+                      );
+                    })}
                   </Descriptions>
                 ),
               },
@@ -168,23 +170,23 @@ export function InterviewDetailDrawer({
             <Descriptions.Item label="Ứng viên">{String(interview.candidateName)} {interview.candidateCode ? <Tag color="geekblue">{String(interview.candidateCode)}</Tag> : null}</Descriptions.Item>
             <Descriptions.Item label="Số điện thoại / ID Zalo">{String(interview.candidatePhone || '—')} · <Tag color="blue">{String(interview.candidate_zalo_id || interview.candidatePhone || '—')}</Tag></Descriptions.Item>
             <Descriptions.Item label="TK Zalo HR nhắc lịch">{String(interview.zaloAccountName || 'Mặc định HR')}</Descriptions.Item>
-            <Descriptions.Item label="Nhắc lịch Zalo tự động">{interview.zalo_reminder_sent_at ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã nhắc lúc {String(interview.zalo_reminder_sent_at).slice(0, 16).replace('T', ' ')}</Tag> : interview.candidate_confirmed ? <Tag color="processing" icon={<BellOutlined />}>Tự nhắc trước 5–15p</Tag> : <Tag>Chờ xác nhận</Tag>}</Descriptions.Item>
+            <Descriptions.Item label="Nhắc lịch Zalo tự động">{interview.zalo_reminder_sent_at ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã nhắc lúc {String(interview.zalo_reminder_sent_at).slice(0, 16).replace('T', ' ')}</Tag> : interview.status === 'COMPLETED' || (interview.decision && interview.decision !== 'PENDING') ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã hoàn tất PV</Tag> : interview.candidate_confirmed ? <Tag color="processing" icon={<BellOutlined />}>Tự nhắc trước 5–15p</Tag> : <Tag>Chờ xác nhận</Tag>}</Descriptions.Item>
             <Descriptions.Item label="Vị trí & Chi nhánh">{String(interview.positionLabel || '—')} · <b>{String(interview.branchName || '—')}</b></Descriptions.Item>
             <Descriptions.Item label="Thời gian phỏng vấn">{String(interview.scheduled_at || '').slice(0, 16).replace('T', ' ')} ({String(interview.duration_minutes ?? 30)} phút)</Descriptions.Item>
             <Descriptions.Item label="Hội đồng phỏng vấn">{String(interview.interviewerLabel || interview.interviewer_id || '—')}</Descriptions.Item>
-            <Descriptions.Item label="Trạng thái xác nhận">{interview.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />}>Cần đổi lịch</Tag> : interview.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã xác nhận lịch</Tag> : <Tag>Chờ xác nhận</Tag>}</Descriptions.Item>
-            <Descriptions.Item label="Khối đánh giá & Kinh nghiệm" span={2}><Space size={6} wrap><Tag color="blue" icon={block === 'OFFICE' ? <BankOutlined /> : <ShopOutlined />} style={{ margin: 0, fontWeight: 600 }}>{INTERVIEW_RUBRIC_BLOCK_LABELS[block]}</Tag><Tag color={track === 'EXPERIENCED' ? 'purple' : 'cyan'} style={{ margin: 0 }}>{rubric.label}</Tag></Space></Descriptions.Item>
+            <Descriptions.Item label="Trạng thái xác nhận">{interview.status === 'COMPLETED' || (interview.decision && interview.decision !== 'PENDING') ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã hoàn tất phỏng vấn</Tag> : interview.reschedule_requested ? <Tag color="warning" icon={<ClockCircleOutlined />}>Cần đổi lịch</Tag> : interview.candidate_confirmed ? <Tag color="success" icon={<CheckCircleOutlined />}>Đã xác nhận lịch</Tag> : <Tag>Chờ xác nhận</Tag>}</Descriptions.Item>
+            <Descriptions.Item label="Bộ tiêu chí phỏng vấn" span={2}><Space size={6} wrap><Tag color="blue" icon={block === 'OFFICE' ? <BankOutlined /> : <ShopOutlined />} style={{ margin: 0, fontWeight: 600 }}>{INTERVIEW_RUBRIC_BLOCK_LABELS[block]}</Tag><Tag color={track === 'EXPERIENCED' ? 'purple' : 'cyan'} style={{ margin: 0 }}>{rubric.label}</Tag></Space></Descriptions.Item>
             <Descriptions.Item label="Kết quả & Quyết định HR" span={2}>
               <Space size={8} wrap>
                 <StatusTag value={String(interview.decision)} />
-                {interview.decision !== 'PENDING' && <Tag color={score13 >= INTERVIEW_RUBRIC_13_PASS_THRESHOLD ? 'success' : 'error'} icon={score13 === INTERVIEW_RUBRIC_13_MAX ? <TrophyOutlined /> : undefined} style={{ fontWeight: 700, margin: 0 }}>Điểm Rubric: {score13 > 0 ? `${score13}/${INTERVIEW_RUBRIC_13_MAX} điểm` : `${interview.score}/100đ`} (Chuẩn đạt: &gt;= {INTERVIEW_RUBRIC_13_PASS_THRESHOLD}/13đ)</Tag>}
+                {interview.decision !== 'PENDING' && <Tag color={score13 >= INTERVIEW_RUBRIC_13_PASS_THRESHOLD ? 'success' : score13 >= 10 ? 'warning' : 'error'} icon={score13 === INTERVIEW_RUBRIC_13_MAX ? <TrophyOutlined /> : undefined} style={{ fontWeight: 700, margin: 0 }}>Điểm phỏng vấn: {score13 > 0 ? `${score13}/${INTERVIEW_RUBRIC_13_MAX} điểm` : `${interview.score}/100đ`} (PASS: &gt;= {INTERVIEW_RUBRIC_13_PASS_THRESHOLD}/13đ · Cân nhắc đậu: 10, 11đ)</Tag>}
                 {Boolean(interview.onboardedEmployeeCode) && <Tag color="geekblue" style={{ fontWeight: 700, margin: 0 }}>Mã NV khởi tạo: {String(interview.onboardedEmployeeCode)}</Tag>}
               </Space>
             </Descriptions.Item>
-            <Descriptions.Item label={`Chi tiết tiêu chí (${block === 'OFFICE' ? 'Khối Văn phòng' : 'Khối Cửa hàng'})`} span={2}>
+            <Descriptions.Item label={`Chi tiết từng câu hỏi (${block === 'OFFICE' ? 'Chưa có KN — 7 câu' : 'Đã có KN — 9 câu'})`} span={2}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {criteriaList.map((c) => { const val = parsedRubric.scores?.[c.key]; return <Tag key={c.key} color={val !== undefined ? (val >= c.maxPoints ? 'success' : val > 0 ? 'blue' : 'error') : 'default'} style={{ margin: 0 }}>{c.label}: <b>{val !== undefined ? val : c.maxPoints}/{c.maxPoints}đ</b></Tag>; })}
-                {redFlagKeys.map((rf) => <Tag key={rf} color="error" icon={<FlagOutlined />} style={{ margin: 0 }}>Red Flag: {INTERVIEW_RED_FLAGS.find((x) => x.key === rf)?.label ?? rf}</Tag>)}
+                {criteriaList.map((c) => { const val = parsedRubric.scores?.[c.key]; return <Tag key={c.key} color={val !== undefined ? (val < 0 ? 'error' : val >= c.maxPoints ? 'success' : val > 0 ? 'blue' : 'default') : 'default'} style={{ margin: 0 }}>{c.label}: <b>{val !== undefined ? (val < 0 ? 'LOẠI' : `${val}/${c.maxPoints}đ`) : `${c.maxPoints}/${c.maxPoints}đ`}</b></Tag>; })}
+                {redFlagKeys.map((rf) => <Tag key={rf} color="error" icon={<FlagOutlined />} style={{ margin: 0 }}>Loại trực tiếp: {INTERVIEW_RED_FLAGS.find((x) => x.key === rf)?.label ?? rf}</Tag>)}
               </div>
             </Descriptions.Item>
             <Descriptions.Item label="Nhận xét của HR" span={2}>{String(interview.comment || 'Chưa có nhận xét đánh giá')}</Descriptions.Item>
