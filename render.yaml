@@ -17,9 +17,13 @@ services:
       - key: DATABASE_URL
         sync: false # Điền URI Aiven PostgreSQL: postgres://avnadmin:...@....aivencloud.com:27819/defaultdb?sslmode=require
       - key: POSTGRES_POOL_MAX
-        value: "8"
+        value: "5"
       - key: POSTGRES_SYNC_INTERVAL_MS
         value: "1200"
+      - key: POSTGRES_MAX_STORAGE_MB
+        value: "1024"
+      - key: DEV_MONITOR_KEY
+        value: "umbm-dev-monitor-2026"
       - key: API_PORT
         value: 4000
       - key: COOKIE_SECURE

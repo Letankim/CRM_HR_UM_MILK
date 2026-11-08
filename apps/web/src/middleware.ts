@@ -11,7 +11,15 @@ export function middleware(req: NextRequest) {
   const isEmployee = pathname === '/nv' || pathname.startsWith('/nv/');
   const loginUrl = isEmployee ? '/nv/login' : '/login';
 
-  if (pathname === '/login' || pathname === '/nv/login' || pathname === '/rsvp' || pathname.startsWith('/rsvp/')) {
+  if (
+    pathname === '/login' ||
+    pathname === '/nv/login' ||
+    pathname === '/rsvp' ||
+    pathname.startsWith('/rsvp/') ||
+    pathname === '/dev' ||
+    pathname === '/dev-monitor' ||
+    pathname.startsWith('/dev-monitor/')
+  ) {
     return NextResponse.next();
   }
 

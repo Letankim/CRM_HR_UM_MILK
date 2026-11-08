@@ -20,9 +20,10 @@ export interface PostgresConnectionConfig {
  * 1) Chuỗi Key-Value: "Host=localhost;Port=5432;Database=umbm_db;Username=postgres;Password=sa"
  * 2) Chuỗi URI chuẩn: "postgresql://postgres:sa@localhost:5432/umbm_db"
  */
-export function parsePostgresConfig(raw: string): PostgresConnectionConfig | null {
+export function parsePostgresConfig(raw: string, poolMaxOverride?: number): PostgresConnectionConfig | null {
   const trimmed = String(raw ?? '').trim();
   if (!trimmed) return null;
+  const resolvedMax = Math.max(1, Math.min(20, Number(poolMaxOverride || process.env.POSTGRES_POOL_MAX || 5)));
 
   if (/^postgres(ql)?:\/\//i.test(trimmed)) {
     const url = new URL(trimmed);
@@ -38,8 +39,8 @@ export function parsePostgresConfig(raw: string): PostgresConnectionConfig | nul
       password: decodeURIComponent(url.password || ''),
       ...(needSsl ? { ssl: { rejectUnauthorized: false } } : {}),
       connectionTimeoutMillis: isLocal ? 2500 : 12000,
-      idleTimeoutMillis: 30000,
-      max: Number(process.env.POSTGRES_POOL_MAX || 8),
+      idleTimeoutMillis: 15000,
+      max: resolvedMax,
     };
   }
 
@@ -66,8 +67,8 @@ export function parsePostgresConfig(raw: string): PostgresConnectionConfig | nul
       password,
       ...(needSsl ? { ssl: { rejectUnauthorized: false } } : {}),
       connectionTimeoutMillis: isLocal ? 2500 : 12000,
-      idleTimeoutMillis: 30000,
-      max: Number(process.env.POSTGRES_POOL_MAX || 8),
+      idleTimeoutMillis: 15000,
+      max: resolvedMax,
     };
   }
   return null;

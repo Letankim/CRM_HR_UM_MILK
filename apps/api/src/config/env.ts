@@ -8,8 +8,12 @@ const zEnv = z.object({
   DATA_BACKEND: z.enum(['google', 'memory']).default('google'),
   /** Chuỗi kết nối PostgreSQL (URI hoặc Host=...;Port=...;Database=...;Username=...;Password=...). */
   DATABASE_URL: z.string().default(''),
-  POSTGRES_POOL_MAX: z.coerce.number().int().min(1).max(20).default(8),
+  POSTGRES_POOL_MAX: z.coerce.number().int().min(1).max(20).default(5),
   POSTGRES_SYNC_INTERVAL_MS: z.coerce.number().int().min(100).default(1200),
+  /** Dung lượng lưu trữ tối đa của gói PostgreSQL tính theo MB (mặc định 1024 MB = 1 GB Aiven Free). */
+  POSTGRES_MAX_STORAGE_MB: z.coerce.number().int().min(64).default(1024),
+  /** Mã khóa bảo mật mặc định để truy cập trang Giám sát Kỹ thuật (/dev-monitor), xác thực phía Backend. */
+  DEV_MONITOR_KEY: z.string().trim().min(6, 'DEV_MONITOR_KEY phải dài tối thiểu 6 ký tự').default('umbm-dev-monitor-2026'),
   PORT: z.coerce.number().int().optional(),
   API_PORT: z.coerce.number().int().default(4000),
   API_PUBLIC_ORIGIN: z

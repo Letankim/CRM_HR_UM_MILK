@@ -12,6 +12,7 @@ import { accountRoutes } from './routes/accounts.routes.js';
 import { auditRoutes } from './routes/audit.routes.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { branchRoutes } from './routes/branches.routes.js';
+import { devMonitorRoutes } from './routes/dev-monitor.routes.js';
 import { employeeRoutes } from './routes/employees.routes.js';
 import { employeeAvatarRoutes } from './routes/employee-avatar.routes.js';
 import { healthRoutes } from './routes/health.routes.js';
@@ -52,7 +53,7 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
         ? false
         : {
             level: isDev ? 'debug' : 'info',
-            redact: ['req.headers.cookie', 'req.headers["x-internal-token"]', 'res.headers["set-cookie"]'],
+            redact: ['req.headers.cookie', 'req.headers["x-internal-token"]', 'req.headers["x-dev-monitor-key"]', 'res.headers["set-cookie"]'],
             transport: isDev ? { target: 'pino-pretty', options: { translateTime: 'SYS:HH:MM:ss' } } : undefined,
           },
   });
@@ -71,7 +72,7 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
       reply.header('Access-Control-Allow-Origin', origin);
       reply.header('Access-Control-Allow-Credentials', 'true');
       reply.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-      reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-umbm-client, x-umbm-origin, x-internal-token');
+      reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-umbm-client, x-umbm-origin, x-internal-token, x-dev-monitor-key');
     }
     if (request.method === 'OPTIONS') {
       return reply.code(204).send();
@@ -90,7 +91,7 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
 
   app.addHook('preHandler', async (request) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return;
-    if (request.url.startsWith('/api/auth/') || request.url.startsWith('/api/internal/')) return;
+    if (request.url.startsWith('/api/auth/') || request.url.startsWith('/api/internal/') || request.url.startsWith('/api/dev/')) return;
     const mnt = ctx.db.maintenance.all()[0];
     if (mnt?.enabled && request.auth && request.auth.user.role !== 'ADMIN') {
       throw Errors.badRequest(mnt.message || 'Hệ thống đang trong chế độ bảo trì định kỳ, tạm thời khóa thao tác ghi dữ liệu mới.');
@@ -155,6 +156,7 @@ export async function buildApp(ctx: AppContext, opts: { logger?: boolean } = {})
   await app.register(async (i) => payrollRoutes(i, ctx));
   await app.register(async (i) => auditRoutes(i, ctx));
   await app.register(async (i) => internalRoutes(i, ctx));
+  await app.register(async (i) => devMonitorRoutes(i, ctx));
 
   return app;
 }

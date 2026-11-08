@@ -5,9 +5,7 @@ import { TableStore, type BaseRecord } from '../sheets/table-store.js';
 import type { WriteQueue } from '../sheets/write-queue.js';
 import { zAuditRow, zBackupLogRow, zDeadLetterRow, zOperationJournalRow, type AuditRow, type BackupLogRow, type DeadLetterRow, type OperationJournalRow } from './system-schemas.js';
 
-export interface SpreadsheetIds {
-  CORE: string; HR: string; SCHEDULE: string; ATTENDANCE: string; PAYROLL: string; COMMS: string; SYSTEM: string;
-}
+export interface SpreadsheetIds { CORE: string; HR: string; SCHEDULE: string; ATTENDANCE: string; PAYROLL: string; COMMS: string; SYSTEM: string; }
 interface Logger { info: (obj: object, msg?: string) => void; warn: (obj: object, msg?: string) => void; error: (obj: object, msg?: string) => void }
 
 export class Database {
@@ -209,12 +207,12 @@ export class Database {
   }
 
   stopAutoRefresh(): void { if (this.timer) clearInterval(this.timer); this.timer = null; }
+  allStores(): readonly TableStore<BaseRecord>[] { return this.stores as unknown as readonly TableStore<BaseRecord>[]; }
   async flushAllWrites(): Promise<void> {
     await Promise.all(this.stores.map((s) => s.flushPending()));
     await this.queue.drain();
     await this.gateway.flushOutbox?.();
   }
-
   stats() {
     return { ready: this.ready, lastRefreshError: this.lastRefreshError, queue: this.queue.stats(), tables: this.stores.map((s) => s.stats()), unresolvedDeadLetters: this.deadLetters.filter((d) => !d.resolved_at).length };
   }

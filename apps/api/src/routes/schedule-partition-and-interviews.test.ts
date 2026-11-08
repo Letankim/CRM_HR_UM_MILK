@@ -182,7 +182,7 @@ describe('Cảnh báo OFF trùng ngày, Lịch sử 4 tuần xuyên Sheet tháng
 
     const filterExp = await t.app.inject({ method: 'GET', url: '/api/admin/interviews?experience_track=EXPERIENCED', headers: hrH });
     expect(filterExp.json().data.find((x: { id: string }) => x.id === ivSoonId)).toMatchObject({
-      score: 77, experience_track: 'EXPERIENCED', experienceTrackLabel: 'Ứng viên đã có kinh nghiệm', experienceTrackShortLabel: 'Đã có kinh nghiệm',
+      score: 77, experience_track: 'EXPERIENCED', experienceTrackLabel: 'Ứng viên đã có kinh nghiệm (9 câu — 13đ)', experienceTrackShortLabel: 'Đã có kinh nghiệm',
     });
   });
 });
