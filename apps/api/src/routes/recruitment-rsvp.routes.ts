@@ -145,7 +145,8 @@ export async function recruitmentRsvpRoutes(app: FastifyInstance, ctx: AppContex
     const finalDecision = eval13.hasRedFlag ? 'FAIL' : hasRubric13 && !body.decision ? eval13.autoDecision : (body.decision === 'PASSED' || body.decision === 'PASS' ? 'PASS' : body.decision === 'HOLD' ? 'HOLD' : body.decision === 'FAIL' || body.decision === 'FAILED' ? 'FAIL' : eval13.autoDecision);
 
     const updated = await ctx.db.interviews.update(id, body.version ?? before.version, {
-      status: 'COMPLETED', experience_track: track, rubric_block: block, score_13: hasRubric13 ? eval13.totalScore13 : before.score_13,
+      status: 'COMPLETED', candidate_confirmed: true, reschedule_requested: false,
+      experience_track: track, rubric_block: block, score_13: hasRubric13 ? eval13.totalScore13 : before.score_13,
       score: weighted100, appearance_score: appScore, attitude_score: attScore, skill_score: sklScore,
       decision: finalDecision, comment: body.comment ?? before.comment, decided_at: nowIso(),
       rubric_details_json: JSON.stringify({ block, scores: body.rubric_scores ?? {}, redFlags, totalScore13: eval13.totalScore13, isPerfect13: eval13.isPerfect13 }),

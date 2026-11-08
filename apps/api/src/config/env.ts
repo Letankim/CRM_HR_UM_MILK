@@ -8,6 +8,7 @@ const zEnv = z.object({
   DATA_BACKEND: z.enum(['google', 'memory']).default('google'),
   /** Chuỗi kết nối PostgreSQL (URI hoặc Host=...;Port=...;Database=...;Username=...;Password=...). */
   DATABASE_URL: z.string().default(''),
+  POSTGRES_POOL_MAX: z.coerce.number().int().min(1).max(20).default(8),
   POSTGRES_SYNC_INTERVAL_MS: z.coerce.number().int().min(100).default(1200),
   PORT: z.coerce.number().int().optional(),
   API_PORT: z.coerce.number().int().default(4000),

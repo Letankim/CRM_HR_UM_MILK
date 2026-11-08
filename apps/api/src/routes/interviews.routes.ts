@@ -64,8 +64,10 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
       const rsvp = ensureInterviewRsvpUrl(ctx, iv.id, cand?.id ?? iv.candidate_id, iv.rsvp_token, { originOverride: reqOrigin });
       const onboardedEmp = cand ? ctx.db.employees.find((e) => e.candidate_id === cand.id || Boolean(cand.phone && e.phone === cand.phone)) : undefined;
       const inferredBlock: InterviewRubricBlock = iv.rubric_block === 'OFFICE' || cand?.staff_group === 'OFFICE' ? 'OFFICE' : 'STORE';
+      const isEvaluated = Boolean(iv.decision && iv.decision !== 'PENDING');
       return {
-        ...iv, rubric_block: inferredBlock, experience_track: track, experienceTrackLabel: INTERVIEW_EXPERIENCE_TRACK_LABELS[track], experienceTrackShortLabel: INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS[track],
+        ...iv, status: isEvaluated ? 'COMPLETED' : iv.status, reschedule_requested: isEvaluated ? false : iv.reschedule_requested,
+        candidate_confirmed: isEvaluated ? true : iv.candidate_confirmed, rubric_block: inferredBlock, experience_track: track, experienceTrackLabel: INTERVIEW_EXPERIENCE_TRACK_LABELS[track], experienceTrackShortLabel: INTERVIEW_EXPERIENCE_TRACK_SHORT_LABELS[track],
         candidateExperienceNote: cand?.experience_note ?? '', branch_id: branchId, branchName: branch?.name ?? (branchId || 'Chưa phân chi nhánh'), scheduled_at: iv.start_at,
         candidateName: cand?.full_name ?? iv.candidate_id, candidateCode: cand?.candidate_code ?? '', candidatePhone: cand?.phone ?? '', candidateEmail: cand?.email ?? '',
         positionLabel: cand ? resolveStaffGroupLabel(ctx, cand.staff_group, cand.position) : '', interviewerLabel: resolveInterviewerLabel(ctx, iv.interviewer_id), interviewerUserIds: resolvedUserIds,
@@ -188,7 +190,8 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     const recalcScore = body.experience_track ? computeInterviewWeightedScore(body.experience_track, body.appearance_score, body.attitude_score, body.skill_score) : Number(((body.appearance_score + body.attitude_score + body.skill_score) / 3).toFixed(1));
     const computedScore = eval13 && !hasComponentScores ? eval13.normalizedScore100 : hasComponentScores ? recalcScore : (body.score ?? recalcScore);
     const updated = await ctx.db.interviews.update(id, effVersion, {
-      status: 'COMPLETED', experience_track: track, rubric_block: block, score_13: eval13 ? eval13.totalScore13 : before.score_13,
+      status: 'COMPLETED', candidate_confirmed: true, reschedule_requested: false,
+      experience_track: track, rubric_block: block, score_13: eval13 ? eval13.totalScore13 : before.score_13,
       rubric_details_json: eval13 ? JSON.stringify({ block, scores: body.rubric_scores ?? {}, redFlags: body.red_flags ?? [], totalScore13: eval13.totalScore13, isPerfect13: eval13.isPerfect13 }) : before.rubric_details_json,
       score: computedScore, appearance_score: body.appearance_score, attitude_score: body.attitude_score, skill_score: body.skill_score,
       decision: normalizedDecision, comment: body.comment || body.result_note || '', decided_at: nowIso(),
@@ -197,9 +200,7 @@ export async function interviewRoutes(app: FastifyInstance, ctx: AppContext) {
     const onboarding = cand && normalizedDecision === 'PASS' ? await autoOnboardPassedCandidate(ctx, { candidate: cand, interview: updated, actorId }) : null;
     await ctx.audit.record(auditContext(request), { action: 'interview.evaluate', entity: 'INTERVIEWS', entityId: id, before: { decision: before.decision }, after: { decision: updated.decision, score: updated.score, onboarded: onboarding?.employee_code } });
     const trackLabel = INTERVIEW_EXPERIENCE_TRACK_LABELS[track];
-    const passMsg = onboarding
-      ? `Đã chấm ĐẠT phỏng vấn (${eval13 ? `${eval13.totalScore13}/13 điểm` : `${computedScore} điểm`}) — Tự động khởi tạo Mã NV ${onboarding.employee_code}, Tài khoản ACTIVE, Mã PIN 6 số tạm thời (${onboarding.temporary_pin}) và kích hoạt thử việc 12 ngày`
-      : `Đã chấm ĐẠT phỏng vấn (${trackLabel} · ${computedScore} điểm) và chuyển ứng viên sang bước Tiếp nhận thử việc`;
+    const passMsg = onboarding ? `Đã chấm ĐẠT phỏng vấn (${eval13 ? `${eval13.totalScore13}/13 điểm` : `${computedScore} điểm`}) — Tự động khởi tạo Mã NV ${onboarding.employee_code}, Tài khoản ACTIVE, Mã PIN 6 số tạm thời (${onboarding.temporary_pin}) và kích hoạt thử việc 12 ngày` : `Đã chấm ĐẠT phỏng vấn (${trackLabel} · ${computedScore} điểm) và chuyển ứng viên sang bước Tiếp nhận thử việc`;
     return sendSuccess(request, normalizedDecision === 'PASS' ? passMsg : normalizedDecision === 'HOLD' ? `Đã lưu kết quả phỏng vấn (${trackLabel} · ${computedScore} điểm) ở trạng thái Cân nhắc thêm` : `Đã cập nhật kết quả phỏng vấn (${trackLabel} · ${computedScore} điểm): Không đạt`, {
       ...updated, isPerfect13: eval13?.isPerfect13 ?? false, hasRedFlag: eval13?.hasRedFlag ?? false,
       onboarding, suggested_employee_code: onboarding?.employee_code ?? '', onboarded_employee_code: onboarding?.employee_code ?? '', temporary_pin: onboarding?.temporary_pin ?? '',

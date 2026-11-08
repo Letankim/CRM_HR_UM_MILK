@@ -10,6 +10,7 @@ export interface PostgresConnectionConfig {
   password: string;
   ssl?: boolean | { rejectUnauthorized: boolean };
   connectionTimeoutMillis?: number;
+  idleTimeoutMillis?: number;
   max?: number;
 }
 
@@ -25,17 +26,20 @@ export function parsePostgresConfig(raw: string): PostgresConnectionConfig | nul
 
   if (/^postgres(ql)?:\/\//i.test(trimmed)) {
     const url = new URL(trimmed);
+    const host = url.hostname || 'localhost';
+    const isLocal = ['localhost', '127.0.0.1'].includes(host);
     const sslMode = url.searchParams.get('sslmode') || '';
-    const needSsl = sslMode === 'require' || (!['localhost', '127.0.0.1'].includes(url.hostname) && sslMode !== 'disable');
+    const needSsl = sslMode === 'require' || (!isLocal && sslMode !== 'disable');
     return {
-      host: url.hostname || 'localhost',
+      host,
       port: Number(url.port || 5432),
       database: decodeURIComponent(url.pathname.replace(/^\/+/, '')) || 'umbm_db',
       user: decodeURIComponent(url.username || 'postgres'),
       password: decodeURIComponent(url.password || ''),
       ...(needSsl ? { ssl: { rejectUnauthorized: false } } : {}),
-      connectionTimeoutMillis: 2500,
-      max: 12,
+      connectionTimeoutMillis: isLocal ? 2500 : 12000,
+      idleTimeoutMillis: 30000,
+      max: Number(process.env.POSTGRES_POOL_MAX || 8),
     };
   }
 
@@ -47,12 +51,13 @@ export function parsePostgresConfig(raw: string): PostgresConnectionConfig | nul
       kv.set(part.slice(0, idx).trim().toLowerCase(), part.slice(idx + 1).trim());
     }
     const host = kv.get('host') || kv.get('server') || 'localhost';
+    const isLocal = ['localhost', '127.0.0.1'].includes(host);
     const port = Number(kv.get('port') || 5432);
     const database = kv.get('database') || kv.get('initial catalog') || 'umbm_db';
     const user = kv.get('username') || kv.get('user id') || kv.get('uid') || kv.get('user') || 'postgres';
     const password = kv.get('password') || kv.get('pwd') || '';
     const sslMode = (kv.get('ssl mode') || kv.get('sslmode') || '').toLowerCase();
-    const needSsl = sslMode === 'require' || (!['localhost', '127.0.0.1'].includes(host) && sslMode !== 'disable' && sslMode !== '');
+    const needSsl = sslMode === 'require' || (!isLocal && sslMode !== 'disable' && sslMode !== '');
     return {
       host,
       port,
@@ -60,8 +65,9 @@ export function parsePostgresConfig(raw: string): PostgresConnectionConfig | nul
       user,
       password,
       ...(needSsl ? { ssl: { rejectUnauthorized: false } } : {}),
-      connectionTimeoutMillis: 2500,
-      max: 12,
+      connectionTimeoutMillis: isLocal ? 2500 : 12000,
+      idleTimeoutMillis: 30000,
+      max: Number(process.env.POSTGRES_POOL_MAX || 8),
     };
   }
   return null;
