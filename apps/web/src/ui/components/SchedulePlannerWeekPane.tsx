@@ -32,7 +32,11 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
 
   const params = new URLSearchParams({ branch_id: branchId });
   if (weekStart) params.set('week_start', weekStart);
-  const q = useQuery({ queryKey: ['schedule-planner-week', weekStart, branchId], queryFn: () => api.get<PlannerWeekData>(`/admin/schedule-planner/week?${params.toString()}`) });
+  const q = useQuery({
+    queryKey: ['schedule-planner-week', weekStart, branchId],
+    queryFn: () => api.get<PlannerWeekData>(`/admin/schedule-planner/week?${params.toString()}`),
+    staleTime: 30_000,
+  });
   const data = q.data, effWeek = weekStart ?? data?.weekStart ?? null;
   const allowOffDecision = canDecide && !data?.isLocked;
 

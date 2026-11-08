@@ -47,7 +47,7 @@ export function PlannerWeekPreviewModal({
       return api.get<PlannerWeekData>(`/admin/schedule-planner/week?${p.toString()}`);
     },
     enabled: open && Boolean(weekStart),
-    staleTime: 0,
+    staleTime: 30_000,
   });
 
   useEffect(() => { if (q.data?.branchStatuses?.length) setLastStatuses(q.data.branchStatuses); }, [q.data?.branchStatuses]);
@@ -108,9 +108,9 @@ export function PlannerWeekPreviewModal({
 
   return (
     <Modal
-      open={open} onCancel={onClose} destroyOnHidden centered width="98vw"
-      style={{ maxWidth: '98vw', top: 8, paddingBottom: 0 }}
-      styles={{ body: { height: 'calc(100vh - 156px)', overflowY: 'auto', paddingTop: 8 } }}
+      open={open} onCancel={onClose} destroyOnHidden centered={false} width="98vw"
+      style={{ maxWidth: '98vw', top: 16, margin: '0 auto', paddingBottom: 16 }}
+      styles={{ body: { maxHeight: 'calc(100vh - 170px)', overflowY: 'auto', paddingTop: 8 } }}
       title={
         <Space size={8} wrap>
           <ScheduleOutlined style={{ color: '#2563EB' }} />

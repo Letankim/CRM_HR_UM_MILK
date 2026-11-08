@@ -101,9 +101,11 @@ export async function loadShiftsAcrossPartitions(
   const { db } = ctx;
   const force = Boolean(opts?.forceRefresh);
   const activeKey = `${db.shiftAssignments.spreadsheetId}::${db.shiftAssignments.tab}`;
-  const monthKeys = listMonthKeysInRange(fromDate, toDate);
-
   const registry = readPartitionRegistry(db);
+  if (registry.length === 0 && db.partitionMonth === '') {
+    return db.shiftAssignments.all().filter((a) => a.work_date >= fromDate && a.work_date <= toDate);
+  }
+  const monthKeys = listMonthKeysInRange(fromDate, toDate);
   const regMap = new Map(registry.map((r) => [r.monthKey, r]));
   const targets = new Map<string, { spreadsheetId: string; tab: string }>();
   const addTarget = (spreadsheetId: string, tab: string) => {
