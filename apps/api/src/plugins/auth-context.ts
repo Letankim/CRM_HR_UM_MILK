@@ -31,7 +31,7 @@ export function registerAuthContext(app: FastifyInstance, tokens: TokenService, 
   app.addHook('onRequest', async (request) => {
     // CSRF: request thay đổi dữ liệu phải có header tùy chỉnh. Trình duyệt không thể
     // gửi header này từ site khác mà không qua CORS preflight (đã bị từ chối).
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && !request.url.startsWith('/api/internal/')) {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && !request.url.startsWith('/api/internal/') && !request.url.startsWith('/api/dev/')) {
       if (request.headers['x-umbm-client'] !== 'web') throw Errors.forbidden('Thiếu header bảo mật x-umbm-client');
     }
 

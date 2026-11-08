@@ -11,10 +11,11 @@ export interface PostgresSyncStatus {
   enabled: boolean; mode: DualStorageMode; database: string; host: string;
   dirtyFallbackTabs: number; lastFallbackReason: string | null; lastRecoveredAt: string | null; outbox: OutboxStats;
 }
+export interface PostgresKeepAlivePing {
+  enabled: boolean; alive: boolean; mode: DualStorageMode; latency_ms: number | null; checked_at: string;
+}
 
-/**
- * Cổng lưu trữ Kép (PostgreSQL Primary + Google Sheets Async Mirror + Tự động Failover 2 chiều).
- */
+/** Cổng lưu trữ Kép (PostgreSQL Primary + Google Sheets Async Mirror + Tự động Failover 2 chiều). */
 export class PostgresSyncedSheetsGateway implements SheetsGateway {
   readonly pool: pg.Pool;
   readonly worker: PostgresOutboxWorker;
@@ -32,8 +33,8 @@ export class PostgresSyncedSheetsGateway implements SheetsGateway {
     this.worker = new PostgresOutboxWorker(this.pool, this.remote, () => this.mode === 'PG_PRIMARY' && !this.simulatedOffline, outboxIntervalMs);
   }
 
-  static async connectOrFallback(remote: SheetsGateway, connectionString: string, outboxIntervalMs = 1200): Promise<PostgresSyncedSheetsGateway | null> {
-    const cfg = parsePostgresConfig(connectionString);
+  static async connectOrFallback(remote: SheetsGateway, connectionString: string, outboxIntervalMs = 1200, poolMax?: number): Promise<PostgresSyncedSheetsGateway | null> {
+    const cfg = parsePostgresConfig(connectionString, poolMax);
     if (!cfg) return null;
     const gw = new PostgresSyncedSheetsGateway(remote, cfg, outboxIntervalMs);
     try {
@@ -100,52 +101,33 @@ export class PostgresSyncedSheetsGateway implements SheetsGateway {
       if (isWrite && sid && tab) this.dirtyTabs.add(`${sid}::${tab}`);
       return fallbackTask();
     }
-    try {
-      return await pgTask();
-    } catch (err) {
+    try { return await pgTask(); } catch (err) {
       this.enterFallback(err);
       if (isWrite && sid && tab) this.dirtyTabs.add(`${sid}::${tab}`);
       return fallbackTask();
     }
   }
 
-  readTab(spreadsheetId: string, tab: string): Promise<string[][]> {
-    return this.runWithFailover(spreadsheetId, tab, false, () => pgReadTab(this.pool, this.remote, spreadsheetId, tab), () => this.remote.readTab(spreadsheetId, tab));
+  readTab(sid: string, tab: string): Promise<string[][]> {
+    return this.runWithFailover(sid, tab, false, () => pgReadTab(this.pool, this.remote, sid, tab), () => this.remote.readTab(sid, tab));
   }
-
-  readRow(spreadsheetId: string, tab: string, row: number, width: number): Promise<string[]> {
-    return this.runWithFailover(spreadsheetId, tab, false, () => pgReadRow(this.pool, this.remote, spreadsheetId, tab, row, width), () => this.remote.readRow(spreadsheetId, tab, row, width));
+  readRow(sid: string, tab: string, row: number, width: number): Promise<string[]> {
+    return this.runWithFailover(sid, tab, false, () => pgReadRow(this.pool, this.remote, sid, tab, row, width), () => this.remote.readRow(sid, tab, row, width));
   }
-
-  async ensureTab(spreadsheetId: string, tab: string, headers: readonly string[]): Promise<void> {
-    return this.runWithFailover(spreadsheetId, tab, true, async () => {
-      if (await pgEnsureTab(this.pool, spreadsheetId, tab, headers)) this.worker.wake();
-    }, () => this.remote.ensureTab(spreadsheetId, tab, headers));
+  async ensureTab(sid: string, tab: string, headers: readonly string[]): Promise<void> {
+    return this.runWithFailover(sid, tab, true, async () => { if (await pgEnsureTab(this.pool, sid, tab, headers)) this.worker.wake(); }, () => this.remote.ensureTab(sid, tab, headers));
   }
-
-  async appendRows(spreadsheetId: string, tab: string, rows: string[][]): Promise<number> {
+  async appendRows(sid: string, tab: string, rows: string[][]): Promise<number> {
     if (rows.length === 0) return 2;
-    return this.runWithFailover(spreadsheetId, tab, true, async () => {
-      const firstRow = await pgAppendRows(this.pool, spreadsheetId, tab, rows);
-      this.worker.wake();
-      return firstRow;
-    }, () => this.remote.appendRows(spreadsheetId, tab, rows));
+    return this.runWithFailover(sid, tab, true, async () => { const r = await pgAppendRows(this.pool, sid, tab, rows); this.worker.wake(); return r; }, () => this.remote.appendRows(sid, tab, rows));
   }
-
-  async updateRow(spreadsheetId: string, tab: string, row: number, values: string[]): Promise<void> {
+  async updateRow(sid: string, tab: string, row: number, values: string[]): Promise<void> {
     const clean = values.map((v) => String(v ?? ''));
-    return this.runWithFailover(spreadsheetId, tab, true, async () => {
-      await pgUpdateRow(this.pool, spreadsheetId, tab, row, clean);
-      this.worker.wake();
-    }, () => this.remote.updateRow(spreadsheetId, tab, row, clean));
+    return this.runWithFailover(sid, tab, true, async () => { await pgUpdateRow(this.pool, sid, tab, row, clean); this.worker.wake(); }, () => this.remote.updateRow(sid, tab, row, clean));
   }
-
-  async batchUpdateRows(spreadsheetId: string, tab: string, items: { row: number; values: string[] }[]): Promise<void> {
+  async batchUpdateRows(sid: string, tab: string, items: { row: number; values: string[] }[]): Promise<void> {
     if (items.length === 0) return;
-    return this.runWithFailover(spreadsheetId, tab, true, async () => {
-      await pgBatchUpdateRows(this.pool, spreadsheetId, tab, items);
-      this.worker.wake();
-    }, () => this.remote.batchUpdateRows(spreadsheetId, tab, items));
+    return this.runWithFailover(sid, tab, true, async () => { await pgBatchUpdateRows(this.pool, sid, tab, items); this.worker.wake(); }, () => this.remote.batchUpdateRows(sid, tab, items));
   }
 
   async listTabs(spreadsheetId: string): Promise<string[]> {
@@ -166,6 +148,23 @@ export class PostgresSyncedSheetsGateway implements SheetsGateway {
   flushOutbox(): Promise<number> { return this.worker.flushAll(); }
   reconcileParity(): Promise<PostgresParityReport> { return this.flushAndReconcileAll(); }
   postgresStatus(): Promise<PostgresSyncStatus> { return this.status(); }
+
+  async pingPostgres(timeoutMs = 3500): Promise<PostgresKeepAlivePing> {
+    const t0 = performance.now();
+    if (this.simulatedOffline) return { enabled: true, alive: false, mode: this.mode, latency_ms: 0, checked_at: new Date().toISOString() };
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        this.pool.query('SELECT 1 AS alive'),
+        new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error('PostgreSQL ping timeout')), timeoutMs); timer.unref?.(); }),
+      ]);
+      if (this.mode !== 'PG_PRIMARY') void this.tryRecoverNow().catch(() => undefined);
+      return { enabled: true, alive: true, mode: this.mode, latency_ms: Math.round((performance.now() - t0) * 100) / 100, checked_at: new Date().toISOString() };
+    } catch (err) {
+      this.enterFallback(err);
+      return { enabled: true, alive: false, mode: this.mode, latency_ms: Math.round((performance.now() - t0) * 100) / 100, checked_at: new Date().toISOString() };
+    } finally { if (timer) clearTimeout(timer); }
+  }
 
   async flushAndReconcileAll(): Promise<PostgresParityReport> {
     if (this.mode !== 'PG_PRIMARY') await this.tryRecoverNow();

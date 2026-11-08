@@ -128,7 +128,7 @@ async function main() {
   }
 
   const pgGateway = env.DATABASE_URL.trim()
-    ? await PostgresSyncedSheetsGateway.connectOrFallback(gateway, env.DATABASE_URL, env.POSTGRES_SYNC_INTERVAL_MS)
+    ? await PostgresSyncedSheetsGateway.connectOrFallback(gateway, env.DATABASE_URL, env.POSTGRES_SYNC_INTERVAL_MS, env.POSTGRES_POOL_MAX)
     : null;
   if (pgGateway) gateway = pgGateway;
 

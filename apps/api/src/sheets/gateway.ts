@@ -17,6 +17,7 @@ export interface SheetsGateway {
   flushOutbox?: () => Promise<number>;
   reconcileParity?: () => Promise<unknown>;
   postgresStatus?: () => Promise<unknown>;
+  pingPostgres?: (timeoutMs?: number) => Promise<{ enabled: boolean; alive: boolean; mode: string; latency_ms: number | null; checked_at: string }>;
 }
 
 const quoteTab = (tab: string) => `'${tab.replace(/'/g, "''")}'`;

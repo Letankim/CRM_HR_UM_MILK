@@ -77,7 +77,7 @@ function handleUnauthorizedRedirect(): void {
   markSessionActive(false);
   if (typeof window === 'undefined' || redirectingToLogin) return;
   const pathname = window.location.pathname;
-  if (pathname === '/login' || pathname === '/nv/login' || pathname === '/rsvp' || pathname.startsWith('/rsvp/')) return;
+  if (pathname === '/login' || pathname === '/nv/login' || pathname === '/rsvp' || pathname.startsWith('/rsvp/') || pathname === '/dev' || pathname === '/dev-monitor' || pathname.startsWith('/dev-monitor/')) return;
 
   redirectingToLogin = true;
   void fetch(`${BASE}/auth/logout`, {

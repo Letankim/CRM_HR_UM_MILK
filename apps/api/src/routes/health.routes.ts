@@ -36,13 +36,17 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext) {
     });
   });
 
-  /** Health công khai: chỉ trạng thái tổng, không lộ chi tiết nội bộ. */
+  /** Health công khai + Keep-Alive kết nối trực tiếp PostgreSQL (ngăn Cloud PostgreSQL ngủ đông khi gọi từ Uptime/Cron). */
   app.get('/api/health', { logLevel: 'silent' }, async (request) => {
     const ready = ctx.db.isReady();
+    const checkedAt = nowIso();
+    const postgres = ctx.db.gateway.pingPostgres
+      ? await ctx.db.gateway.pingPostgres(3500)
+      : { enabled: false, alive: false, mode: 'DISABLED', latency_ms: null, checked_at: checkedAt };
     return sendSuccess(
       request,
       ready ? 'Hệ thống hoạt động ổn định' : 'Hệ thống đang nạp dữ liệu khởi tạo',
-      { status: ready ? 'ok' : 'warming_up', ready, version: ctx.version, time: nowIso() },
+      { status: ready ? 'ok' : 'warming_up', ready, version: ctx.version, time: checkedAt, postgres },
     );
   });
 
