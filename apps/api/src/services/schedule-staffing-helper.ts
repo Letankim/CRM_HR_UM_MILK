@@ -7,16 +7,13 @@ import { parseHm } from '../routes/attendance-helpers.js';
 import { getVnNowDateAndHm } from './shift-absent-scanner.js';
 
 import { getCheckoutGraceMinutes } from './checkout-grace.js';
+import { isDisallowedProbationShiftCode, isProbationShift } from './schedule-rules.js';
 export { formatGraceLabel, getCheckoutGraceMinutes, setCheckoutGraceMinutes } from './checkout-grace.js';
 export { assertApprovedShiftNoteOnlyPatch } from './schedule-rules.js';
 
 export interface ShiftCheckoutWindow {
-  isPastEnd: boolean;
-  isWithinCheckoutGrace: boolean;
-  isCheckoutLocked: boolean;
-  graceDeadlineHm: string;
-  lateCheckInMinutes: number;
-  earlyLeaveMinutes: number;
+  isPastEnd: boolean; isWithinCheckoutGrace: boolean; isCheckoutLocked: boolean;
+  graceDeadlineHm: string; lateCheckInMinutes: number; earlyLeaveMinutes: number;
 }
 
 export function getShiftCheckoutWindow(
@@ -152,6 +149,7 @@ export function evaluateBranchShiftCapacity(
       && a.shift_code === params.shiftCode
       && a.day_type !== 'OFF'
       && a.status !== 'ON_LEAVE'
+      && !isProbationShift(ctx, a)
       && resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id) === canonicalBranchId,
   );
   const approvedCount = branchShiftRows.filter((a) => a.status === 'PUBLISHED' || a.status === 'COMPLETED').length;
@@ -159,7 +157,9 @@ export function evaluateBranchShiftCapacity(
   const rule = resolveApplicableStaffingRule(ctx, canonicalBranchId, params.shiftCode);
   const minStaff = rule?.min_staff ?? 1;
   const maxStaff = rule?.max_staff ?? 1;
-  const isFullOrExceeded = approvedCount >= maxStaff;
+  const isProbationEmp = params.emp?.stage === 'PROBATION';
+  const disallowedProbationShift = isProbationEmp && isDisallowedProbationShiftCode(params.shiftCode, tpl);
+  const isFullOrExceeded = !isProbationEmp && approvedCount >= maxStaff;
 
   const empConflict = params.emp
     ? findEmployeeShiftConflictOnDate(ctx, { emp: params.emp, workDate: params.workDate, shiftCode: params.shiftCode, startAt, endAt })
@@ -168,26 +168,31 @@ export function evaluateBranchShiftCapacity(
   const hasOverlappingShift = empConflict?.kind === 'OVERLAP_SHIFT';
   const dateVi = dayjs(params.workDate).format('DD/MM/YYYY');
 
-  let message = `${shiftLabel} ngày ${dateVi} tại ${branchName}: Hiện có ${approvedCount} nhân sự đã duyệt.`;
-  if (empConflict) {
+  let message = `${shiftLabel} ngày ${dateVi} tại ${branchName}: Hiện có ${approvedCount} nhân sự chính thức đã duyệt.`;
+  if (disallowedProbationShift) {
+    message = 'Nhân viên thử việc chỉ được phép đăng ký các ca cửa hàng (Ca Sáng, Ca Chiều, Ca Tối), không được đăng ký Ca Hành chính.';
+  } else if (empConflict) {
     message = empConflict.message.replace(`Nhân sự ${params.emp!.full_name} (${params.emp!.employee_code})`, 'Bạn');
+  } else if (isProbationEmp) {
+    message = `${shiftLabel} ngày ${dateVi} tại ${branchName}: Nhân viên thử việc được phép đăng ký học việc cùng nhân sự chính thức (không tính vào định biên ${approvedCount}/${maxStaff} người).`;
   } else if (isFullOrExceeded) {
-    message = `${shiftLabel} ngày ${dateVi} tại ${branchName} đã đủ ${approvedCount}/${maxStaff} nhân sự theo định biên (mỗi ca chỉ bố trí đúng ${maxStaff} người), không thể xếp thêm.`;
+    message = `${shiftLabel} ngày ${dateVi} tại ${branchName} đã đủ ${approvedCount}/${maxStaff} nhân sự chính thức theo định biên (mỗi ca chỉ bố trí đúng ${maxStaff} người), không thể xếp thêm.`;
   } else {
-    message = `${shiftLabel} ngày ${dateVi} tại ${branchName}: Đã duyệt ${approvedCount}/${maxStaff} nhân sự (còn nhận tối đa ${Math.max(0, maxStaff - approvedCount)} suất).`;
+    message = `${shiftLabel} ngày ${dateVi} tại ${branchName}: Đã duyệt ${approvedCount}/${maxStaff} nhân sự chính thức (còn nhận tối đa ${Math.max(0, maxStaff - approvedCount)} suất).`;
   }
 
   return {
     branchId: canonicalBranchId, branchName, workDate: params.workDate, shiftCode: params.shiftCode, shiftLabel,
     approvedCount, pendingDraftCount, minStaff, maxStaff, isFullOrExceeded,
-    alreadyHasShift, hasOverlappingShift, canRegister: !isFullOrExceeded && !empConflict, message,
+    alreadyHasShift, hasOverlappingShift, canRegister: !disallowedProbationShift && !isFullOrExceeded && !empConflict, message,
   };
 }
 
 export function assertBranchShiftCapacityAvailable(
   ctx: AppContext,
-  params: { branchId: string; workDate: string; shiftCode: string; excludeIds?: string[]; extraCount?: number; field?: string },
+  params: { branchId: string; workDate: string; shiftCode: string; excludeIds?: string[]; extraCount?: number; field?: string; isProbation?: boolean },
 ): void {
+  if (params.isProbation) return;
   const branch = ctx.db.branches.get(params.branchId) ?? ctx.db.branches.find((b) => b.code === params.branchId);
   const canonicalBranchId = branch?.id ?? params.branchId;
   const branchName = branch ? `${branch.code} — ${branch.name}` : params.branchId;
@@ -197,6 +202,7 @@ export function assertBranchShiftCapacityAvailable(
   const approvedCount = ctx.db.shiftAssignments.filter(
     (a) => !skip.has(a.id) && a.work_date === params.workDate && a.shift_code === params.shiftCode
       && a.day_type !== 'OFF' && (a.status === 'PUBLISHED' || a.status === 'COMPLETED')
+      && !isProbationShift(ctx, a)
       && resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id) === canonicalBranchId,
   ).length + (params.extraCount ?? 0);
   const maxStaff = resolveApplicableStaffingRule(ctx, canonicalBranchId, params.shiftCode)?.max_staff ?? 1;
@@ -204,7 +210,7 @@ export function assertBranchShiftCapacityAvailable(
     const dateVi = dayjs(params.workDate).format('DD/MM/YYYY');
     throw Errors.fieldValidation(
       params.field ?? 'shift_code', 'OUT_OF_RANGE',
-      `${shiftLabel} ngày ${dateVi} tại ${branchName} đã đủ ${approvedCount}/${maxStaff} nhân sự theo quy định (mỗi ca chỉ có ${maxStaff} người, không thể xếp nhiều hơn).`,
+      `${shiftLabel} ngày ${dateVi} tại ${branchName} đã đủ ${approvedCount}/${maxStaff} nhân sự chính thức theo quy định (mỗi ca chỉ có ${maxStaff} người chính thức, không thể xếp nhiều hơn).`,
       params.shiftCode,
     );
   }

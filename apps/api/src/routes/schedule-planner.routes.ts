@@ -14,7 +14,7 @@ import { getOperationSettings } from '../services/operations-settings.service.js
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { planOfficialWeek, planProbationCycle, type PlannedShift, type PlanIssue, type PlanResult } from '../services/schedule-auto-planner.js';
 import { summarizeOfficialEmployeeWeekLoads } from '../services/schedule-fairness.js';
-import { findProbationLock, findWeekLock, isCountedWorkShift, matchEmp, probationLockCode, resolveProbationCycle, weekLockCode } from '../services/schedule-rules.js';
+import { findProbationLock, findWeekLock, isCountedWorkShift, isProbationShift, matchEmp, probationLockCode, resolveProbationCycle, weekLockCode } from '../services/schedule-rules.js';
 import { clearShiftAttendanceOnWorkflowOverride, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { executeSchedulePlannerCleanup, type CleanupAction } from '../services/weekly-off-gate.service.js';
 import { emitScheduleRealtime, findBranchShiftTemplate, resolveEmployeeBranchId } from './account-employee-sync.js';
@@ -100,10 +100,10 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
     const plannedRaw: PlannedShift[] = [], issues: PlanIssue[] = [], offRaw: LeaveRequest[] = [], existingRaw: ShiftAssignment[] = [];
 
     for (const b of targetBranches) {
-      const bLocked = Boolean(findWeekLock(ctx, b.id, weekStart)), bEmps = ctx.db.employees.filter((e) => e.branch_id === b.id);
+      const bLocked = Boolean(findWeekLock(ctx, b.id, weekStart)), bEmps = ctx.db.employees.filter((e) => e.branch_id === b.id && e.stage !== 'PROBATION');
       const bOffs = ctx.db.leaveRequests.filter((l) => OFF_ACTIVE.has(l.status) && l.leave_date >= weekStart && l.leave_date <= weekEnd && bEmps.some((e) => matchEmp(e)(l.employee_id)));
       offRaw.push(...bOffs);
-      const bShifts = ctx.db.shiftAssignments.filter((a) => a.work_date >= weekStart && a.work_date <= weekEnd && a.status !== 'DRAFT' && isCountedWorkShift(a) && resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id) === b.id);
+      const bShifts = ctx.db.shiftAssignments.filter((a) => a.work_date >= weekStart && a.work_date <= weekEnd && a.status !== 'DRAFT' && !isProbationShift(ctx, a) && isCountedWorkShift(a) && resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id) === b.id);
       if (bLocked) existingRaw.push(...bShifts);
       else {
         const bPlan = planOfficialWeek(ctx, { weekStart, branchId: b.id, historicalShifts });

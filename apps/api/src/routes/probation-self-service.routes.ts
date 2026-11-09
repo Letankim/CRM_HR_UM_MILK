@@ -13,13 +13,8 @@ import { getOperationSettings } from '../services/operations-settings.service.js
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import {
-  assertMaxShiftsPerDay,
-  assertShiftNotInPast,
-  employeeShiftsOnDate,
-  isCountedWorkShift,
-  matchEmp,
-  probationLockCode,
-  resolveProbationCycle,
+  assertMaxShiftsPerDay, assertShiftNotInPast, employeeShiftsOnDate, isCountedWorkShift,
+  isDisallowedProbationShiftCode, matchEmp, probationLockCode, resolveProbationCycle,
 } from '../services/schedule-rules.js';
 import { assertNoDuplicateOrOverlappingEmployeeShift } from '../services/schedule-staffing-helper.js';
 import { getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
@@ -179,28 +174,41 @@ export function registerProbationSelfServiceRoutes(app: FastifyInstance, ctx: Ap
     const user = request.auth!.user, body = zProbationExtraBody.parse(request.body ?? {});
     const emp = await ensurePersonalProfile(ctx, user);
     if (emp.stage !== 'PROBATION') throw Errors.forbidden('Chức năng đăng ký thêm ca đẩy nhanh chỉ dành cho Nhân viên thử việc');
-    const { todayStr } = getVnNowDateAndHm(), settings = getOperationSettings(ctx.db), cycle = resolveProbationCycle(emp, todayStr);
+    const { todayStr, nowHm } = getVnNowDateAndHm(), settings = getOperationSettings(ctx.db), cycle = resolveProbationCycle(emp, todayStr);
+    if (body.work_date < todayStr) throw Errors.fieldValidation('work_date', 'OUT_OF_RANGE', `Không được đăng ký ca cho ngày đã qua (${vi(body.work_date)})`, body.work_date);
     if (!cycle.dates.includes(body.work_date)) throw Errors.fieldValidation('work_date', 'OUT_OF_RANGE', `Chỉ được đăng ký thêm ca trong chu kỳ thử việc ${vi(cycle.start)} – ${vi(cycle.end)}`, body.work_date);
     assertDateNotLockedByPayroll(ctx.db, body.work_date, 'đăng ký thêm ca thử việc');
-    assertMaxShiftsPerDay(ctx, { emp, workDate: body.work_date, maxPerDay: settings.maxShiftsPerDay, field: 'work_date', isSelf: true });
     const tpl = findBranchShiftTemplate(ctx, body.shift_code, emp.branch_id);
+    if (isDisallowedProbationShiftCode(body.shift_code, tpl)) {
+      throw Errors.fieldValidation('shift_code', 'INVALID_VALUE', 'Nhân viên thử việc chỉ được phép đăng ký các ca cửa hàng (Ca Sáng, Ca Chiều, Ca Tối), không được đăng ký Ca Hành chính.', body.shift_code);
+    }
     const startAt = tpl?.start_time || '07:00', endAt = tpl?.end_time || '12:00';
-    assertShiftNotInPast(body.work_date, startAt);
+    if (body.work_date === todayStr && nowHm >= endAt) {
+      throw Errors.fieldValidation('shift_code', 'OUT_OF_RANGE', `Khung ca ${startAt} – ${endAt} hôm nay đã kết thúc, vui lòng chọn ca khác hoặc ngày khác.`, body.shift_code);
+    }
+    assertMaxShiftsPerDay(ctx, { emp, workDate: body.work_date, maxPerDay: settings.maxShiftsPerDay, field: 'work_date', isSelf: true });
     assertNoDuplicateOrOverlappingEmployeeShift(ctx, { emp, workDate: body.work_date, shiftCode: body.shift_code, startAt, endAt });
 
-    const isEmp = matchEmp(emp);
-    const cycleShifts = ctx.db.shiftAssignments.filter((a) => isEmp(a.employee_id) && cycle.dates.includes(a.work_date) && isCountedWorkShift(a));
-    const lastLater = cycleShifts.length >= cycle.workRequired
-      ? cycleShifts.filter((a) => `${a.work_date} ${a.start_at}` > `${body.work_date} ${startAt}` && a.status !== 'COMPLETED' && !ctx.db.attendanceEvents.find((e) => e.assignment_id === a.id))
-          .sort((a, b) => `${b.work_date} ${b.start_at}`.localeCompare(`${a.work_date} ${a.start_at}`))[0]
-      : undefined;
+    const isEmp = matchEmp(emp), now = nowIso();
+    const allEmpShifts = ctx.db.shiftAssignments.filter((a) => isEmp(a.employee_id) && isCountedWorkShift(a));
+    const lastLater = allEmpShifts
+      .filter((a) => `${a.work_date} ${a.start_at}` > `${body.work_date} ${startAt}` && a.status !== 'COMPLETED' && !ctx.db.attendanceEvents.find((e) => e.assignment_id === a.id))
+      .sort((a, b) => `${b.work_date} ${b.start_at}`.localeCompare(`${a.work_date} ${a.start_at}`))[0];
     if (lastLater) await ctx.db.shiftAssignments.softDelete(lastLater.id, lastLater.version, user.id);
+    const activeLeaveOnTarget = ctx.db.leaveRequests.find((l) => isEmp(l.employee_id) && l.leave_date === body.work_date && l.status !== 'REJECTED' && l.status !== 'CANCELLED');
+    if (activeLeaveOnTarget) {
+      if (lastLater && lastLater.work_date !== body.work_date && employeeShiftsOnDate(ctx, emp, lastLater.work_date).length === 0 && !ctx.db.leaveRequests.find((l) => isEmp(l.employee_id) && l.leave_date === lastLater.work_date && l.status !== 'REJECTED' && l.status !== 'CANCELLED')) {
+        await ctx.db.leaveRequests.update(activeLeaveOnTarget.id, activeLeaveOnTarget.version, { leave_date: lastLater.work_date, reason: `Tự động chuyển ngày OFF sang ${vi(lastLater.work_date)} khi đăng ký thêm ca ngày ${vi(body.work_date)}`, decided_at: now }, user.id);
+      } else {
+        await ctx.db.leaveRequests.softDelete(activeLeaveOnTarget.id, activeLeaveOnTarget.version, user.id);
+      }
+    }
     const created = await ctx.db.shiftAssignments.insert({
       schedule_week_id: probationLockCode(emp.employee_code, cycle.start, ctx.db.partitionMonth),
       employee_id: emp.id, branch_id: emp.branch_id, work_date: body.work_date, shift_template_id: tpl?.id ?? '',
       start_at: startAt, end_at: endAt, status: 'PUBLISHED', source: 'PROBATION_EXTRA', employee_stage: 'PROBATION',
       day_type: 'WORK', shift_code: body.shift_code, scheduled_hours: tpl?.standard_hours || 5,
-      swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: nowIso(),
+      swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now,
       note: lastLater ? `${body.note} (Đã tự động rút ngắn ca cuối ngày ${vi(lastLater.work_date)})` : body.note, linked_assignment_id: lastLater?.id ?? '',
     }, user.id);
     reply.code(201);

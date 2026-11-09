@@ -139,12 +139,13 @@ describe('Audit 10 Business Fixes (MKT, HR, Schedules, Staffing, Attendance 3h G
 
   it('7 & 10. Shift registration blocks when branch max_staff is reached, and Check-out allows 3h grace after end_at', async () => {
     const adminHeaders = await loginHeaders('admin');
-    const empUser = db.users.find((u) => u.status === 'ACTIVE' && (u.role === 'CHINH_THUC' || u.role === 'THU_VIEC'))!;
+    const hrHeaders = await loginHeaders('hr');
+    const empUser = db.users.find((u) => u.status === 'ACTIVE' && u.role === 'THU_VIEC') ?? db.users.find((u) => u.status === 'ACTIVE' && u.role === 'CHINH_THUC')!;
     const nvLogin = await t.login(empUser.phone || empUser.username, DEMO_PIN, 'employee');
     const nvHeaders = { cookie: nvLogin.cookie, 'x-umbm-client': 'web' };
     const myData = (await app.inject({ method: 'GET', url: '/api/my-attendance', headers: nvHeaders })).json().data;
     const nvEmp = db.employees.get(myData.profile.employeeId)!;
-    const peerEmp = db.employees.find((e) => e.id !== nvEmp.id && e.branch_id === nvEmp.branch_id) ?? db.employees.find((e) => e.id !== nvEmp.id)!;
+    const peerEmp = db.employees.find((e) => e.id !== nvEmp.id && e.stage === 'OFFICIAL' && e.branch_id === nvEmp.branch_id) ?? db.employees.find((e) => e.id !== nvEmp.id && e.stage === 'OFFICIAL')!;
 
     // Set strict max_staff = 1 rule for nvEmp's branch on CA_TOI via API
     const createRuleRes = await app.inject({
@@ -152,21 +153,34 @@ describe('Audit 10 Business Fixes (MKT, HR, Schedules, Staffing, Attendance 3h G
       payload: { branch_id: nvEmp.branch_id, shift_template_id: 'CA_TOI', min_staff: 1, max_staff: 1 },
     });
     expect(createRuleRes.statusCode).toBe(201);
-    const futureDate = dayjs(getVnNowDateAndHm().todayStr).add(10, 'day').format('YYYY-MM-DD');
+    const futureDate = dayjs(getVnNowDateAndHm().todayStr).add(5, 'day').format('YYYY-MM-DD');
     await db.shiftAssignments.insert({
       schedule_week_id: `WK-${futureDate.slice(0, 7)}`, employee_id: peerEmp.id, branch_id: nvEmp.branch_id,
       work_date: futureDate, shift_template_id: '', start_at: '17:00', end_at: '22:00', status: 'PUBLISHED',
-      source: 'HR_ASSIGN', employee_stage: peerEmp.stage, day_type: 'WORK', shift_code: 'CA_TOI', scheduled_hours: 5,
+      source: 'HR_ASSIGN', employee_stage: 'OFFICIAL', day_type: 'WORK', shift_code: 'CA_TOI', scheduled_hours: 5,
       swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: '', note: '',
     }, 'admin');
 
+    // Probation is NOT counted in official staffing quota -> canRegister is true for store shifts (CA_TOI), but false/400 for HANH_CHINH
     const availRes = await app.inject({ method: 'GET', url: `/api/my-attendance/shift-availability?work_date=${futureDate}&shift_code=CA_TOI`, headers: nvHeaders });
     expect(availRes.statusCode).toBe(200);
-    expect(availRes.json().data.isFullOrExceeded).toBe(true);
-    expect(availRes.json().data.canRegister).toBe(false);
+    expect(availRes.json().data.approvedCount).toBe(1);
+    expect(availRes.json().data.canRegister).toBe(true);
 
-    const regBlocked = await app.inject({ method: 'POST', url: '/api/my-attendance/shifts', headers: nvHeaders, payload: { work_date: futureDate, shift_code: 'CA_TOI', note: 'Đăng ký vượt định biên' } });
-    expect(regBlocked.statusCode).toBe(400);
+    const officeAvailRes = await app.inject({ method: 'GET', url: `/api/my-attendance/shift-availability?work_date=${futureDate}&shift_code=HANH_CHINH`, headers: nvHeaders });
+    expect(officeAvailRes.statusCode).toBe(200);
+    expect(officeAvailRes.json().data.canRegister).toBe(false);
+
+    const officeRegBlocked = await app.inject({ method: 'POST', url: '/api/my-attendance/shifts', headers: nvHeaders, payload: { work_date: futureDate, shift_code: 'HANH_CHINH', note: 'Thử việc đăng ký ca hành chính' } });
+    expect(officeRegBlocked.statusCode).toBe(400);
+
+    // Official employee exceeding max_staff = 1 is strictly blocked
+    const secondOfficial = db.employees.find((e) => e.id !== peerEmp.id && e.id !== nvEmp.id && e.stage === 'OFFICIAL') ?? peerEmp;
+    const officialOverStaff = await app.inject({
+      method: 'POST', url: '/api/admin/schedules', headers: hrHeaders,
+      payload: { employee_id: secondOfficial.id, branch_id: nvEmp.branch_id, work_date: futureDate, shift_code: 'CA_TOI', status: 'PUBLISHED' },
+    });
+    expect(officialOverStaff.statusCode).toBe(400);
 
     // Item 7: 3-hour Check-out grace window test (configurable)
     const { todayStr, nowHm } = getVnNowDateAndHm();

@@ -40,6 +40,24 @@ export function isCountedWorkShift(a: ShiftAssignment): boolean {
   return a.day_type !== 'OFF' && a.status !== 'ON_LEAVE' && a.status !== 'SWAPPED';
 }
 
+/** Kiểm tra một phân ca thuộc nhân sự thử việc (không tính vào định biên chính thức của cửa hàng). */
+export function isProbationShift(ctx: AppContext, a: ShiftAssignment): boolean {
+  if (a.employee_stage === 'PROBATION') return true;
+  const emp = ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === a.employee_id);
+  return emp?.stage === 'PROBATION';
+}
+
+/** Nhân viên thử việc chỉ được đăng ký các ca cửa hàng (Sáng, Chiều, Tối), tuyệt đối không được đăng ký Ca Hành chính. */
+export function isDisallowedProbationShiftCode(
+  shiftCode: string,
+  tpl?: { shift_group?: string; standard_hours?: number } | null,
+): boolean {
+  const upper = (shiftCode || '').trim().toUpperCase();
+  if (upper.includes('HANH_CHINH') || upper.includes('OFFICE')) return true;
+  if (tpl && ((tpl.shift_group || '').toUpperCase() === 'OFFICE' || Number(tpl.standard_hours || 5) >= 7.5)) return true;
+  return false;
+}
+
 export function employeeShiftsOnDate(ctx: AppContext, emp: Pick<Employee, 'id' | 'employee_code'>, workDate: string, excludeIds: string[] = []): ShiftAssignment[] {
   const isEmp = matchEmp(emp), skip = new Set(excludeIds);
   return ctx.db.shiftAssignments.filter((a) => !skip.has(a.id) && isEmp(a.employee_id) && a.work_date === workDate && isCountedWorkShift(a));
@@ -67,7 +85,10 @@ export interface ProbationCycle { start: string; end: string; dates: string[]; w
 /** Chu kỳ thử việc mặc định 12 ngày: Cửa hàng tối đa 5 ngày OFF (7 ca làm); Khối văn phòng tối đa 2 ngày OFF (10 ca làm). */
 export function resolveProbationCycle(emp: Employee, fallbackStart?: string): ProbationCycle {
   const days = emp.probation_cycle_days || 12;
-  const start = emp.probation_start || fallbackStart || dayjs().format('YYYY-MM-DD');
+  let start = emp.probation_start || fallbackStart || dayjs().format('YYYY-MM-DD');
+  if (emp.stage === 'PROBATION' && fallbackStart && addDaysYmd(start, days - 1) < fallbackStart) {
+    start = fallbackStart;
+  }
   const dates = Array.from({ length: days }, (_, i) => addDaysYmd(start, i));
   const isOffice = isOfficeEmployeeSpec(emp);
   const defaultOff = isOffice ? 2 : 5;

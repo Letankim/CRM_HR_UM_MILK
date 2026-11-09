@@ -77,6 +77,9 @@ export function resolveApplicableBranchRule(
   return best;
 }
 
+const isProbationAssignment = (a: ScheduleAssignmentItem) =>
+  (a.employeeStage || (a as { stage?: string }).stage) === 'PROBATION';
+
 export function computePerBranchStaffingBadges(params: {
   cellItems: ScheduleAssignmentItem[];
   rules: StaffingRuleItem[];
@@ -87,7 +90,7 @@ export function computePerBranchStaffingBadges(params: {
   suppressShortage?: boolean;
 }): BranchStaffingWarningBadge[] {
   const { cellItems, rules, branchCodeById, selectedBranchId = 'ALL', shiftCode, shiftShortLabel, suppressShortage = false } = params;
-  const workItems = cellItems.filter((a) => a.dayType !== 'OFF' && a.status !== 'ON_LEAVE');
+  const workItems = cellItems.filter((a) => a.dayType !== 'OFF' && a.status !== 'ON_LEAVE' && !isProbationAssignment(a));
   if (workItems.length === 0 || rules.length === 0) return [];
 
   const grouped = new Map<string, { branchName: string; count: number; approvedCount: number; draftCount: number }>();
@@ -152,7 +155,7 @@ export function collectSurplusBranchAlerts(params: {
   if (assignments.length === 0 || rules.length === 0) return [];
   const buckets = new Map<string, { workDate: string; shiftCode: string; shiftLabel: string; branchId: string; branchName: string; count: number; approvedCount: number; draftCount: number }>();
   for (const a of assignments) {
-    if (a.dayType === 'OFF' || a.status === 'ON_LEAVE' || !a.branchId) continue;
+    if (a.dayType === 'OFF' || a.status === 'ON_LEAVE' || !a.branchId || isProbationAssignment(a)) continue;
     if (selectedBranchId !== 'ALL' && a.branchId !== selectedBranchId) continue;
     const k = `${a.workDate}__${a.shiftCode}__${a.branchId}`;
     const cur = buckets.get(k) ?? { workDate: a.workDate, shiftCode: a.shiftCode, shiftLabel: a.shiftLabel, branchId: a.branchId, branchName: a.branchName, count: 0, approvedCount: 0, draftCount: 0 };
@@ -191,7 +194,7 @@ export function evaluateBranchShiftSurplusPreview(params: {
   const rule = resolveApplicableBranchRule(rules, branchId, shiftCode, knownCode);
   if (!rule) return null;
   const minStaff = Number(rule.min_staff), maxStaff = Number(rule.max_staff);
-  const sameSlot = assignments.filter((a) => a.branchId === branchId && a.workDate === workDate && a.shiftCode === shiftCode && a.dayType !== 'OFF' && a.status !== 'ON_LEAVE');
+  const sameSlot = assignments.filter((a) => a.branchId === branchId && a.workDate === workDate && a.shiftCode === shiftCode && a.dayType !== 'OFF' && a.status !== 'ON_LEAVE' && !isProbationAssignment(a));
   const othersCount = sameSlot.filter((a) => a.id !== editingId).length;
   const projectedCount = othersCount + 1;
   if (projectedCount <= maxStaff) return null;

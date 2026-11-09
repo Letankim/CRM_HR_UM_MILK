@@ -33,7 +33,10 @@ export function MyShiftRegisterModal({
   const { message } = App.useApp();
   const qc = useQueryClient();
   const [form] = Form.useForm();
-  const { options: shiftOptions, endTimeMap } = useShiftTemplates();
+  const { options: rawShiftOptions, endTimeMap } = useShiftTemplates();
+  const shiftOptions = rawShiftOptions.filter(
+    (opt) => !opt.value.toUpperCase().includes('HANH_CHINH') && !opt.value.toUpperCase().includes('OFFICE') && Number(opt.standardHours || 5) < 7.5,
+  );
   const watchedDate = String(Form.useWatch('work_date', form) || todayDate);
   const watchedShift = String(Form.useWatch('shift_code', form) || '');
   const nowHm = dayjs().format('HH:mm');
@@ -43,7 +46,7 @@ export function MyShiftRegisterModal({
   const minDate = cycle && cycle.start > todayDate ? cycle.start : todayDate;
   const maxDate = cycle?.end;
   const clampDate = (d: string) => (d < minDate ? minDate : maxDate && d > maxDate ? maxDate : d);
-  const cycleBlocked = cycle ? (cycle.isLocked ? 'Chu kỳ thử việc đã được HR chốt lịch, không thể đăng ký thêm ca.' : maxDate && minDate > maxDate ? 'Chu kỳ thử việc hiện tại đã kết thúc.' : '') : '';
+  const cycleBlocked = cycle && maxDate && minDate > maxDate ? 'Chu kỳ thử việc hiện tại đã kết thúc.' : '';
 
   const shiftOptionsForDate = shiftOptions.map((opt) => {
     const endHm = endTimeMap[opt.value] || '12:00';
@@ -93,13 +96,16 @@ export function MyShiftRegisterModal({
       shift_code: firstFreeShift?.value ?? firstValidToday?.value ?? (shiftOptions[0]?.value || 'CA_SANG'),
       note: 'Đăng ký làm thêm ca trong chu kỳ thử việc',
     });
-  }, [open, todayDate, shiftOptions, endTimeMap, form, minDate, maxDate]);
+  }, [open, todayDate, shiftOptions.length, endTimeMap, form, minDate, maxDate]);
 
   const createShiftMut = useMutation({
-    mutationFn: (body: unknown) => api.post<{ id: string }>('/my-attendance/shifts', body),
+    mutationFn: (body: unknown) => api.post<{ id: string; linkedAssignmentId?: string | null }>('/my-attendance/shifts', body),
     onSuccess: (created) => {
-      message.success('Đã gửi đăng ký làm thêm ca (Chờ HR duyệt)');
+      message.success(created?.linkedAssignmentId ? 'Đã đăng ký thêm ca thành công và tự động dời ca cuối chu kỳ' : 'Đã đăng ký thêm ca thành công');
       void qc.invalidateQueries({ queryKey: ['shift-availability'] });
+      void qc.invalidateQueries({ queryKey: ['my-attendance'] });
+      void qc.invalidateQueries({ queryKey: ['schedules'] });
+      void qc.invalidateQueries({ queryKey: ['schedule-planner-probation'] });
       onCreated(created?.id ? String(created.id) : undefined);
       onClose();
     },
@@ -115,15 +121,15 @@ export function MyShiftRegisterModal({
 
   return (
     <Modal
-      width={640} open={open} forceRender destroyOnHidden title="Đăng ký làm thêm ca"
-      onCancel={onClose} onOk={() => form.submit()} okText="Gửi đăng ký ca" cancelText="Hủy bỏ"
+      width={640} open={open} forceRender destroyOnHidden title="Đăng ký làm thêm ca (Nhân viên thử việc)"
+      onCancel={onClose} onOk={() => form.submit()} okText="Xác nhận đăng ký ca" cancelText="Hủy bỏ"
       okButtonProps={{ icon: <PlusOutlined />, loading: createShiftMut.isPending || availQ.isFetching, disabled: isSubmitBlocked }}
       cancelButtonProps={{ icon: <CloseOutlined /> }}
     >
       <Alert
         type={cycleBlocked ? 'warning' : 'info'} showIcon style={{ marginBottom: 10 }}
         message={cycle ? `Chu kỳ thử việc: ${dayjs(cycle.start).format('DD/MM/YYYY')} – ${dayjs(cycle.end).format('DD/MM/YYYY')} · Đã xếp ${cycle.scheduledCount}/${cycle.workRequired} ca` : 'Đăng ký làm thêm ca trong chu kỳ thử việc'}
-        description={cycleBlocked || 'Tối đa 2 ca/ngày. Nếu đã đủ 7 ca, ca cuối chu kỳ sẽ được dời lên ca này khi HR duyệt.'}
+        description={cycleBlocked || 'Chỉ áp dụng cho Ca Sáng, Ca Chiều, Ca Tối (tối đa 2 ca/ngày, không đăng ký Ca Hành chính). Khi xác nhận, hệ thống tự động thêm ca mới và xóa ca cuối từ dưới lên của bạn.'}
       />
       {isTodaySelected && availableToday.length === 0 && (
         <Alert type="warning" showIcon style={{ marginBottom: 10 }} message={`Tất cả các khung ca trong ngày hôm nay (${dayjs(todayDate).format('DD/MM/YYYY')}) đã trôi qua (hiện tại ${nowHm}). Vui lòng chọn ngày làm việc từ ngày mai trở đi.`} />

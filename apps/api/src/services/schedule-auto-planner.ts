@@ -5,7 +5,7 @@ import { findBranchShiftTemplate, resolveEmployeeBranchId } from '../routes/acco
 import { isOfficialSwapEligibleEmployee } from '../routes/employee-mapper.js';
 import { getOperationSettings } from './operations-settings.service.js';
 import { buildShiftGroupFairnessMap, compareFairShiftCandidates } from './schedule-fairness.js';
-import { employeeShiftsOnDate, isCountedWorkShift, matchEmp, resolveProbationCycle } from './schedule-rules.js';
+import { employeeShiftsOnDate, isCountedWorkShift, isProbationShift, matchEmp, resolveProbationCycle } from './schedule-rules.js';
 import { findEmployeeShiftConflictOnDate, resolveApplicableStaffingRule, toMinuteSpan } from './schedule-staffing-helper.js';
 import { listBranchStoreShiftTemplates } from './staffing-one-per-shift.service.js';
 
@@ -23,12 +23,13 @@ export const MONTHLY_WORK_DAYS_TARGET = { min: 10, max: 12 } as const;
 const OFF_ACTIVE = new Set(['PENDING', 'DRAFT', 'APPROVED']);
 const vi = (d: string) => dayjs(d).format('DD/MM/YYYY');
 
-/** Bộ đếm sức chứa ca theo chi nhánh / ngày / khung ca (mặc định quy tắc chuẩn: 1 ca = đúng 1 người, không thiếu không thừa). */
+/** Bộ đếm sức chứa ca theo chi nhánh / ngày / khung ca (chỉ tính Nhân viên chính thức: 1 ca = đúng 1 người chính thức, ca thử việc không tính vào định biên). */
 function createCapacityTracker(ctx: AppContext, ignoredAssignmentIds: Set<string> = new Set()) {
   const planned = new Map<string, number>();
   const key = (b: string, d: string, s: string) => `${b}|${d}|${s}`;
   const existing = (b: string, d: string, s: string) => ctx.db.shiftAssignments.filter((a) =>
     !ignoredAssignmentIds.has(a.id) && a.work_date === d && a.shift_code === s && a.status !== 'DRAFT'
+    && !isProbationShift(ctx, a)
     && isCountedWorkShift(a) && resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id) === b).length;
   return {
     count: (b: string, d: string, s: string) => existing(b, d, s) + (planned.get(key(b, d, s)) ?? 0),
@@ -161,8 +162,7 @@ export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; b
  */
 export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: string, historicalShifts?: ShiftAssignment[]): PlanResult & { cycle: ReturnType<typeof resolveProbationCycle>; existingCount: number } {
   const settings = getOperationSettings(ctx.db), cycle = resolveProbationCycle(emp, todayStr);
-  const ignoredIds = collectOffBlockedAssignmentIds(ctx, cycle.start, cycle.end);
-  const tracker = createCapacityTracker(ctx, ignoredIds), isEmp = matchEmp(emp);
+  const ignoredIds = collectOffBlockedAssignmentIds(ctx, cycle.start, cycle.end), isEmp = matchEmp(emp);
   const offRequests = ctx.db.leaveRequests.filter((l) => isEmp(l.employee_id) && OFF_ACTIVE.has(l.status) && cycle.dates.includes(l.leave_date));
   const issues: PlanIssue[] = [], dayIssues: PlanIssue[] = [], planned: PlannedShift[] = [];
   const empName = `${emp.full_name} (${emp.employee_code})`;
@@ -190,7 +190,6 @@ export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: str
     }
     let picked: ShiftTemplate | null = null;
     for (const tpl of candidateTpls) {
-      if (tracker.count(emp.branch_id, workDate, tpl.code) >= tracker.capacity(emp.branch_id, tpl.code)) continue;
       if (findEmployeeShiftConflictOnDate(ctx, { emp, workDate, shiftCode: tpl.code, startAt: tpl.start_time, endAt: tpl.end_time })) continue;
       picked = tpl;
       break;
@@ -201,10 +200,9 @@ export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: str
         workDate, shiftCode: picked.code, shiftLabel: picked.name, startAt: picked.start_time, endAt: picked.end_time,
         hours: picked.standard_hours || 5, templateId: picked.id, isCoverShift: false,
       });
-      tracker.add(emp.branch_id, workDate, picked.code);
       total++;
     } else {
-      dayIssues.push({ kind: 'CAPACITY_FULL', employeeId: emp.id, employeeName: empName, workDate, shiftCode: defCode, message: `Khung ca mặc định ngày ${vi(workDate)} tại ${branchName} đã đủ 1/1 người theo định biên — chưa thể xếp ${empName}.` });
+      dayIssues.push({ kind: 'CONFLICT', employeeId: emp.id, employeeName: empName, workDate, shiftCode: defCode, message: `Khung ca mặc định ngày ${vi(workDate)} tại ${branchName} bị trùng giờ với ca đã có của ${empName}.` });
     }
   }
   if (total < cycle.workRequired) {

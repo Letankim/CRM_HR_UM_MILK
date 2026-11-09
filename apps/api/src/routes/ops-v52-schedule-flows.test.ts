@@ -50,6 +50,19 @@ describe('Ops V5.2 — Chốt lịch tuần & tự động sắp ca theo ca mặ
     expect(pv.planned.length).toBe(21);
     expect(pv.issues.length).toBe(0);
 
+    // Ca của nhân viên thử việc KHÔNG được tính vào định biên 1 người/ca của nhân viên chính thức khi chốt lịch tuần
+    const probAtBranch = t.db.employees.find((e) => e.stage === 'PROBATION' && e.branch_id === branchId)!;
+    const probShiftInWeek = await t.db.shiftAssignments.insert({
+      schedule_week_id: `PB-TEST-${weekStart}`, employee_id: probAtBranch.id, branch_id: branchId,
+      work_date: weekStart, shift_template_id: '', start_at: '07:00', end_at: '12:00', status: 'PUBLISHED',
+      source: 'PROBATION_AUTO', employee_stage: 'PROBATION', day_type: 'WORK', shift_code: 'CA_SANG', scheduled_hours: 5,
+      swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: '', note: 'Ca thử việc học việc',
+    }, 'test');
+    const previewWithProb = (await t.app.inject({ method: 'GET', url: `/api/admin/schedule-planner/week?week_start=${weekStart}&branch_id=${branchId}`, headers: hr })).json().data;
+    expect(previewWithProb.planned.length).toBe(21);
+    expect(previewWithProb.existingShifts.some((s: { id: string }) => s.id === probShiftInWeek.id)).toBe(false);
+    await t.db.shiftAssignments.softDelete(probShiftInWeek.id, probShiftInWeek.version, 'test');
+
     const store = await t.loginHeaders('store1');
     expect((await t.app.inject({ method: 'POST', url: '/api/admin/schedule-planner/week/lock', headers: store, payload: { week_start: weekStart, branch_id: branchId } })).statusCode).toBe(403);
     const lock = await t.app.inject({ method: 'POST', url: '/api/admin/schedule-planner/week/lock', headers: hr, payload: { week_start: weekStart, branch_id: branchId } });
@@ -91,14 +104,19 @@ describe('Ops V5.2 — Chốt lịch tuần & tự động sắp ca theo ca mặ
     const extraCode = myShifts[0]!.shift_code === 'CA_CHIEU' ? 'CA_TOI' : 'CA_CHIEU';
     const extra = await t.app.inject({ method: 'POST', url: '/api/my-attendance/shifts', headers: nv1, payload: { work_date: firstDay, shift_code: extraCode } });
     expect(extra.statusCode).toBe(201);
+    expect(extra.json().data.status).toBe('PUBLISHED');
     expect(extra.json().data.linkedAssignmentId).toBe(lastShift.id);
     expect(extra.json().message).toContain('dời ca cuối');
+    expect(t.db.shiftAssignments.get(lastShift.id)).toBeUndefined();
     const third = await t.app.inject({ method: 'POST', url: '/api/my-attendance/shifts', headers: nv1, payload: { work_date: firstDay, shift_code: extraCode === 'CA_TOI' ? 'CA_SANG' : 'CA_TOI' } });
     expect(third.statusCode).toBe(400);
+    const officeDenied = await t.app.inject({ method: 'POST', url: '/api/my-attendance/shifts', headers: nv1, payload: { work_date: day(2), shift_code: 'HANH_CHINH' } });
+    expect(officeDenied.statusCode).toBe(400);
 
-    const approve = await t.app.inject({ method: 'PUT', url: `/api/admin/schedules/${extra.json().data.id}`, headers: hr, payload: { version: extra.json().data.version, status: 'PUBLISHED' } });
-    expect(approve.statusCode).toBe(200);
-    expect(t.db.shiftAssignments.get(lastShift.id)).toBeUndefined();
+    // Đăng ký thêm ca vào ngày đang không có ca (ngày OFF day(2)) cũng tự động thêm ca mới và xóa tiếp ca cuối từ dưới lên
+    const offDayShift = await t.app.inject({ method: 'POST', url: '/api/my-attendance/shifts', headers: nv1, payload: { work_date: day(2), shift_code: 'CA_TOI' } });
+    expect(offDayShift.statusCode).toBe(201);
+    expect(offDayShift.json().data.status).toBe('PUBLISHED');
     const sevenShifts = t.db.shiftAssignments.filter((a) => a.employee_id === prob.id && a.status === 'PUBLISHED');
     expect(sevenShifts.length).toBe(7);
 
