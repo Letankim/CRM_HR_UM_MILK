@@ -151,7 +151,9 @@ export async function normalizeOnePersonPerShiftAndDefaults(
     }
     const groups = new Map<string, ShiftAssignment[]>();
     for (const a of ctx.db.shiftAssignments.all()) {
-      if (a.work_date <= todayStr || a.day_type === 'OFF' || a.status === 'ON_LEAVE' || a.status === 'SWAPPED') continue;
+      if (a.work_date <= todayStr || a.day_type === 'OFF' || a.status === 'ON_LEAVE' || a.status === 'SWAPPED' || a.employee_stage === 'PROBATION') continue;
+      const emp = ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === a.employee_id);
+      if (emp?.stage === 'PROBATION') continue;
       const bId = resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id);
       const gk = `${bId}|${a.work_date}|${a.shift_code}`;
       const arr = groups.get(gk) ?? [];

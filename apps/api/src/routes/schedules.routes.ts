@@ -114,7 +114,7 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
     assertNoDuplicateOrOverlappingEmployeeShift(ctx, { emp, workDate: body.work_date, shiftCode: body.shift_code, startAt, endAt, dayType: body.day_type, status: body.status });
     if (body.day_type !== 'OFF' && body.status !== 'ON_LEAVE') {
       assertMaxShiftsPerDay(ctx, { emp, workDate: body.work_date, maxPerDay: getOperationSettings(ctx.db).maxShiftsPerDay });
-      if (body.status === 'PUBLISHED' || body.status === 'COMPLETED') assertBranchShiftCapacityAvailable(ctx, { branchId, workDate: body.work_date, shiftCode: body.shift_code });
+      if (body.status === 'PUBLISHED' || body.status === 'COMPLETED') assertBranchShiftCapacityAvailable(ctx, { branchId, workDate: body.work_date, shiftCode: body.shift_code, isProbation: emp.stage === 'PROBATION' });
     }
     const created = await ctx.db.shiftAssignments.insert({
       schedule_week_id: `WK-${body.work_date.slice(0, 7)}`, employee_id: emp.id, branch_id: branchId, work_date: body.work_date, shift_template_id: tpl?.id ?? '',
@@ -161,7 +161,7 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
       assertNoDuplicateOrOverlappingEmployeeShift(ctx, { emp: origEmp, workDate: targetDate, shiftCode: nextShiftCode, startAt: tpl?.start_time ?? before.start_at, endAt: tpl?.end_time ?? before.end_at, dayType: nextDayType, status: nextStatus, excludeId: id });
       if (nextDayType !== 'OFF') assertMaxShiftsPerDay(ctx, { emp: origEmp, workDate: targetDate, maxPerDay: getOperationSettings(ctx.db).maxShiftsPerDay, excludeIds: [id, before.linked_assignment_id].filter(Boolean) });
     }
-    if (nextDayType !== 'OFF' && (nextStatus === 'PUBLISHED' || nextStatus === 'COMPLETED')) assertBranchShiftCapacityAvailable(ctx, { branchId: effBranchId, workDate: targetDate, shiftCode: nextShiftCode, excludeIds: [id, before.linked_assignment_id].filter(Boolean) });
+    if (nextDayType !== 'OFF' && (nextStatus === 'PUBLISHED' || nextStatus === 'COMPLETED')) assertBranchShiftCapacityAvailable(ctx, { branchId: effBranchId, workDate: targetDate, shiftCode: nextShiftCode, excludeIds: [id, before.linked_assignment_id].filter(Boolean), isProbation: origEmp?.stage === 'PROBATION' || before.employee_stage === 'PROBATION' });
     const updated = await ctx.db.shiftAssignments.update(id, version, { ...patch, ...(tpl ? { start_at: tpl.start_time, end_at: tpl.end_time, shift_template_id: tpl.id } : {}), ...(patch.status === 'PUBLISHED' && !before.published_at ? { published_at: nowIso() } : {}) }, request.auth!.user.id);
     if (before.status === 'DRAFT' && updated.status === 'PUBLISHED') await applyProbationExtraApproval(ctx, updated, request.auth!.user.id);
     if (updated.status === 'COMPLETED') emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: updated.branch_id, employeeIds: [updated.employee_id], kind: 'SHIFT_COMPLETED', actorId: request.auth!.user.id });
@@ -194,9 +194,10 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
       assertBranchAccess(request, lastBranchId);
       assertDateNotLockedByPayroll(ctx.db, a.work_date, body.action === 'DELETE' ? 'xóa ca làm việc' : 'duyệt ca làm việc');
       if (body.action === 'PUBLISH' && a.day_type !== 'OFF' && a.status !== 'PUBLISHED' && a.status !== 'COMPLETED') {
+        const isProb = a.employee_stage === 'PROBATION' || (ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === a.employee_id))?.stage === 'PROBATION';
         const sk = `${lastBranchId}|${a.work_date}|${a.shift_code}`;
-        assertBranchShiftCapacityAvailable(ctx, { branchId: lastBranchId, workDate: a.work_date, shiftCode: a.shift_code, excludeIds: [a.id, a.linked_assignment_id].filter(Boolean), extraCount: slotExtra.get(sk) ?? 0 });
-        slotExtra.set(sk, (slotExtra.get(sk) ?? 0) + 1);
+        assertBranchShiftCapacityAvailable(ctx, { branchId: lastBranchId, workDate: a.work_date, shiftCode: a.shift_code, excludeIds: [a.id, a.linked_assignment_id].filter(Boolean), extraCount: slotExtra.get(sk) ?? 0, isProbation: isProb });
+        if (!isProb) slotExtra.set(sk, (slotExtra.get(sk) ?? 0) + 1);
       }
       const nextNote = body.note ? mergeShiftDecisionNote(a.note, body.note, body.action === 'DELETE' ? 'Từ chối' : 'Duyệt') : a.note;
       patches.push({ id: a.id, expectedVersion: a.version, patch: body.action === 'DELETE' ? { is_deleted: true, note: nextNote } : { status: 'PUBLISHED', published_at: pubAt, note: nextNote } });
