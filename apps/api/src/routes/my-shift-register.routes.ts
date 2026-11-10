@@ -61,8 +61,8 @@ export function registerMyShiftRegisterRoute(app: FastifyInstance, ctx: AppConte
       throw Errors.fieldValidation('shift_code', 'INVALID_VALUE', 'Nhân viên thử việc chỉ được phép đăng ký các ca cửa hàng (Ca Sáng, Ca Chiều, Ca Tối), không được đăng ký Ca Hành chính.', body.shift_code);
     }
     if (!tpl) throw Errors.fieldValidation('shift_code', 'INVALID_VALUE', 'Khung ca không tồn tại tại chi nhánh của bạn', body.shift_code);
-    if (body.work_date === todayStr && nowHm >= tpl.end_time) {
-      throw Errors.fieldValidation('shift_code', 'OUT_OF_RANGE', `Khung ca ${tpl.start_time} – ${tpl.end_time} hôm nay đã kết thúc, vui lòng chọn ca khác hoặc ngày khác.`, body.shift_code);
+    if (body.work_date === todayStr && nowHm >= tpl.start_time) {
+      throw Errors.fieldValidation('shift_code', 'OUT_OF_RANGE', `Khung ca ${tpl.name || body.shift_code} (${tpl.start_time} – ${tpl.end_time}) hôm nay đã qua giờ bắt đầu (${tpl.start_time}), không thể đăng ký thêm ca này. Vui lòng chọn ca khác hoặc ngày tiếp theo.`, body.shift_code);
     }
     assertMaxShiftsPerDay(ctx, { emp, workDate: body.work_date, maxPerDay: settings.maxShiftsPerDay, field: 'work_date', isSelf: true });
     assertNoDuplicateOrOverlappingEmployeeShift(ctx, { emp, workDate: body.work_date, shiftCode: body.shift_code, startAt: tpl.start_time, endAt: tpl.end_time });

@@ -136,40 +136,37 @@ export function evaluateBranchShiftCapacity(
   params: { branchId: string; workDate: string; shiftCode: string; startAt?: string; endAt?: string; emp?: Employee },
 ) {
   const branch = ctx.db.branches.get(params.branchId) ?? ctx.db.branches.find((b) => b.code === params.branchId);
-  const canonicalBranchId = branch?.id ?? params.branchId;
-  const branchName = branch ? `${branch.code} — ${branch.name}` : params.branchId;
+  const canonicalBranchId = branch?.id ?? params.branchId, branchName = branch ? `${branch.code} — ${branch.name}` : params.branchId;
   const tpl = findBranchShiftTemplate(ctx, params.shiftCode, canonicalBranchId);
   const shiftLabel = tpl?.name ?? DEFAULT_SHIFT_LABELS[params.shiftCode as keyof typeof DEFAULT_SHIFT_LABELS] ?? params.shiftCode;
-  const startAt = params.startAt || tpl?.start_time || '07:00';
-  const endAt = params.endAt || tpl?.end_time || '12:00';
+  const startAt = params.startAt || tpl?.start_time || '07:00', endAt = params.endAt || tpl?.end_time || '12:00';
 
   const branchShiftRows = ctx.db.shiftAssignments.filter(
-    (a) =>
-      a.work_date === params.workDate
-      && a.shift_code === params.shiftCode
-      && a.day_type !== 'OFF'
-      && a.status !== 'ON_LEAVE'
-      && !isProbationShift(ctx, a)
-      && resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id) === canonicalBranchId,
+    (a) => a.work_date === params.workDate && a.shift_code === params.shiftCode && a.day_type !== 'OFF' && a.status !== 'ON_LEAVE' && !isProbationShift(ctx, a) && resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id) === canonicalBranchId,
   );
   const approvedCount = branchShiftRows.filter((a) => a.status === 'PUBLISHED' || a.status === 'COMPLETED').length;
   const pendingDraftCount = branchShiftRows.filter((a) => a.status === 'DRAFT').length;
   const rule = resolveApplicableStaffingRule(ctx, canonicalBranchId, params.shiftCode);
-  const minStaff = rule?.min_staff ?? 1;
-  const maxStaff = rule?.max_staff ?? 1;
+  const minStaff = rule?.min_staff ?? 1, maxStaff = rule?.max_staff ?? 1;
   const isProbationEmp = params.emp?.stage === 'PROBATION';
   const disallowedProbationShift = isProbationEmp && isDisallowedProbationShiftCode(params.shiftCode, tpl);
   const isFullOrExceeded = !isProbationEmp && approvedCount >= maxStaff;
+  const { todayStr, nowHm } = getVnNowDateAndHm();
+  const isPastDate = params.workDate < todayStr;
+  const isPastStartToday = params.workDate === todayStr && nowHm >= startAt;
 
   const empConflict = params.emp
     ? findEmployeeShiftConflictOnDate(ctx, { emp: params.emp, workDate: params.workDate, shiftCode: params.shiftCode, startAt, endAt })
     : null;
-  const alreadyHasShift = empConflict?.kind === 'SAME_SHIFT';
-  const hasOverlappingShift = empConflict?.kind === 'OVERLAP_SHIFT';
+  const alreadyHasShift = empConflict?.kind === 'SAME_SHIFT', hasOverlappingShift = empConflict?.kind === 'OVERLAP_SHIFT';
   const dateVi = dayjs(params.workDate).format('DD/MM/YYYY');
 
   let message = `${shiftLabel} ngày ${dateVi} tại ${branchName}: Hiện có ${approvedCount} nhân sự chính thức đã duyệt.`;
-  if (disallowedProbationShift) {
+  if (isPastDate) {
+    message = `Không thể đăng ký ca cho ngày đã qua trong quá khứ (${dateVi}).`;
+  } else if (isPastStartToday) {
+    message = `Khung ca ${shiftLabel} (${startAt} – ${endAt}) hôm nay đã qua giờ bắt đầu (${startAt}), không thể đăng ký thêm ca này. Vui lòng chọn ca khác hoặc ngày tiếp theo.`;
+  } else if (disallowedProbationShift) {
     message = 'Nhân viên thử việc chỉ được phép đăng ký các ca cửa hàng (Ca Sáng, Ca Chiều, Ca Tối), không được đăng ký Ca Hành chính.';
   } else if (empConflict) {
     message = empConflict.message.replace(`Nhân sự ${params.emp!.full_name} (${params.emp!.employee_code})`, 'Bạn');
@@ -184,7 +181,9 @@ export function evaluateBranchShiftCapacity(
   return {
     branchId: canonicalBranchId, branchName, workDate: params.workDate, shiftCode: params.shiftCode, shiftLabel,
     approvedCount, pendingDraftCount, minStaff, maxStaff, isFullOrExceeded,
-    alreadyHasShift, hasOverlappingShift, canRegister: !disallowedProbationShift && !isFullOrExceeded && !empConflict, message,
+    alreadyHasShift, hasOverlappingShift,
+    canRegister: !isPastDate && !isPastStartToday && !disallowedProbationShift && !isFullOrExceeded && !empConflict,
+    message,
   };
 }
 
@@ -194,8 +193,7 @@ export function assertBranchShiftCapacityAvailable(
 ): void {
   if (params.isProbation) return;
   const branch = ctx.db.branches.get(params.branchId) ?? ctx.db.branches.find((b) => b.code === params.branchId);
-  const canonicalBranchId = branch?.id ?? params.branchId;
-  const branchName = branch ? `${branch.code} — ${branch.name}` : params.branchId;
+  const canonicalBranchId = branch?.id ?? params.branchId, branchName = branch ? `${branch.code} — ${branch.name}` : params.branchId;
   const tpl = findBranchShiftTemplate(ctx, params.shiftCode, canonicalBranchId);
   const shiftLabel = tpl?.name ?? DEFAULT_SHIFT_LABELS[params.shiftCode as keyof typeof DEFAULT_SHIFT_LABELS] ?? params.shiftCode;
   const skip = new Set((params.excludeIds ?? []).filter(Boolean));
