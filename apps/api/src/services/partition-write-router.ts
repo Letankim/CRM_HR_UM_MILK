@@ -28,9 +28,9 @@ export function resolveTargetMonthForRecord(
   record: Record<string, unknown>,
   dateHint?: string | null,
 ): string {
-  if (!db.partitionMonth) {
-    return '';
-  }
+  const registry = readPartitionRegistry(db);
+  const hasPartitions = Boolean(db.partitionMonth) || registry.length > 0;
+  if (!hasPartitions) return '';
   if (dateHint) {
     const k = extractMonthKeyFromDate(dateHint);
     if (k) return k;

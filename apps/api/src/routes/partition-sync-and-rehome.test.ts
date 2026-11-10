@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { ShiftAssignment } from '@umbm/shared';
+import type { AttendanceAdjustment, ShiftAssignment } from '@umbm/shared';
 import { DEMO_PIN } from '../data/memory-seed.js';
 import { collectDevDomainAndRuntimeTelemetry } from '../services/dev-domain-telemetry.js';
 import { rehomeMisplacedPartitionRecords } from '../services/partition-rehome.service.js';
@@ -168,5 +168,26 @@ describe('Đồng bộ Lưu trữ Đúng Phân vùng Tháng & Tự động Di d�
     const telem = await collectDevDomainAndRuntimeTelemetry(t.ctx);
     expect(telem.runtime.memory.heapTotalMb).toBeGreaterThan(0);
     expect(telem.runtime.memory.heapUsagePercent).toBeLessThan(90);
+  });
+
+  it('HR ở Tháng 11 vẫn thấy phiếu bổ sung công ở tệp gốc và tự động đồng bộ về tháng 11', async () => {
+    const hr = await t.loginHeaders('hr');
+    const admin = await t.loginHeaders('admin');
+    await t.app.inject({ method: 'POST', url: '/api/admin/data-partitions/rollover', headers: admin, payload: { month_key: '2026_11', carry_forward: false } });
+    expect(t.db.partitionMonth).toBe('2026_11');
+
+    const rootStore = await getPartitionStore<AttendanceAdjustment>(t.db, 'ATTENDANCE_ADJUSTMENTS', '');
+    const seededRootAdj = await rootStore.insert({
+      adjustment_code: 'ADJ-9999', event_id: '', assignment_id: 'SH-NOV-ROOT', employee_id: 'emp-1', branch_id: 'br-1',
+      work_date: '2026-11-10', shift_code: 'CA_SANG', kind: 'FORGOT_CHECK_IN', punch_type: 'FULL_SHIFT', requested_time: '07:00',
+      requested_check_in_at: '07:00', requested_check_out_at: '12:00', requested_hours: 5, reason: 'Tạo ở tệp gốc test đồng bộ',
+      evidence_file_id: '', exception_source: 'EMPLOYEE', status: 'PENDING', store_confirmed_by: '', store_confirmed_at: '', store_note: '',
+      hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
+    }, 'test');
+
+    const listRes = await t.app.inject({ method: 'GET', url: '/api/admin/attendance/adjustments', headers: hr });
+    expect(listRes.statusCode).toBe(200);
+    const items = listRes.json().data;
+    expect(items.some((a: { id: string }) => a.id === seededRootAdj.id)).toBe(true);
   });
 });

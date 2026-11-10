@@ -166,6 +166,7 @@ export async function switchPartition(db: Database, monthKey: string, actorId: s
     db.partitionMonth = monthKey;
     invalidateHistoricalShiftsCache(db);
     await persistActiveMonth(db, monthKey, actorId);
+    void import('./partition-rehome.service.js').then((m) => m.rehomeMisplacedPartitionRecords(db, actorId)).catch(() => undefined);
   });
 }
 

@@ -18,6 +18,7 @@ import {
 } from '../services/schedule-rules.js';
 import { assertNoDuplicateOrOverlappingEmployeeShift } from '../services/schedule-staffing-helper.js';
 import { getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
+import { insertPartitionAwareRecord, updatePartitionAwareRecord } from '../services/partition-write-router.js';
 import { emitScheduleRealtime, findBranchShiftTemplate } from './account-employee-sync.js';
 import { ensurePersonalProfile } from './my-attendance.routes.js';
 import { mapShiftAssignment } from './schedules.routes.js';
@@ -80,27 +81,27 @@ export function registerProbationSelfServiceRoutes(app: FastifyInstance, ctx: Ap
     const createdLeaves: LeaveRequest[] = [];
     for (let i = 0; i < uniqueOffDates.length; i++) {
       const offDate = uniqueOffDates[i]!;
-      const lv = await ctx.db.leaveRequests.insert({
+      const lv = await insertPartitionAwareRecord<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', {
         request_code: `POFF-${String(baseLeaveSeq + i + 1).padStart(4, '0')}`,
         employee_id: emp.id, branch_id: emp.branch_id, leave_date: offDate, kind: 'PROBATION_OFF',
         shift_code: shiftCode, reason: body.reason, status: 'APPROVED', employee_stage: 'PROBATION',
         schedule_week_id: lockCode, assignment_id: '', quota_cycle_used: i + 1, quota_cycle_limit: cycle.offLimit,
         staffing_after_leave: 1, min_staff_required: 1, submitted_at: now, store_reviewed_by: '', store_reviewed_at: '',
         decided_by: user.id, decision_reason: 'Tự động duyệt 5 ngày OFF chu kỳ thử việc 12 ngày', decided_at: now,
-      }, user.id);
+      }, offDate, user.id);
       createdLeaves.push(lv);
     }
 
     const workDates = cycle.dates.filter((d) => !uniqueOffDates.includes(d)).slice(0, cycle.workRequired);
     const createdShifts: ShiftAssignment[] = [];
     for (const workDate of workDates) {
-      const sh = await ctx.db.shiftAssignments.insert({
+      const sh = await insertPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', {
         schedule_week_id: lockCode, employee_id: emp.id, branch_id: emp.branch_id, work_date: workDate,
         shift_template_id: tpl?.id ?? '', start_at: startAt, end_at: endAt, status: 'PUBLISHED',
         source: 'PROBATION_AUTO', employee_stage: 'PROBATION', day_type: 'WORK', shift_code: shiftCode,
         scheduled_hours: hours, swapped_from_employee_id: '', replacement_for_employee_id: '',
         published_at: now, note: 'Tự động phát hành 7 ca thử việc từ đăng ký 5 ngày OFF', linked_assignment_id: '',
-      }, user.id);
+      }, workDate, user.id);
       createdShifts.push(sh);
     }
 
@@ -203,14 +204,14 @@ export function registerProbationSelfServiceRoutes(app: FastifyInstance, ctx: Ap
         await ctx.db.leaveRequests.softDelete(activeLeaveOnTarget.id, activeLeaveOnTarget.version, user.id);
       }
     }
-    const created = await ctx.db.shiftAssignments.insert({
+    const created = await insertPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', {
       schedule_week_id: probationLockCode(emp.employee_code, cycle.start, ctx.db.partitionMonth),
       employee_id: emp.id, branch_id: emp.branch_id, work_date: body.work_date, shift_template_id: tpl?.id ?? '',
       start_at: startAt, end_at: endAt, status: 'PUBLISHED', source: 'PROBATION_EXTRA', employee_stage: 'PROBATION',
       day_type: 'WORK', shift_code: body.shift_code, scheduled_hours: tpl?.standard_hours || 5,
       swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now,
       note: lastLater ? `${body.note} (Đã tự động rút ngắn ca cuối ngày ${vi(lastLater.work_date)})` : body.note, linked_assignment_id: lastLater?.id ?? '',
-    }, user.id);
+    }, body.work_date, user.id);
     reply.code(201);
     return sendSuccess(request, `Đã đăng ký thêm ca ngày ${vi(body.work_date)}${lastLater ? ` và tự động dời ca cuối ngày ${vi(lastLater.work_date)}` : ''}`, {
       shift: mapShiftAssignment(created, ctx), removedTailShiftId: lastLater?.id ?? null, removedTailWorkDate: lastLater?.work_date ?? null,

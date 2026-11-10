@@ -8,6 +8,8 @@ import {
 import type { AppContext } from '../context.js';
 import { parseSheetRows } from '../sheets/table-store-codec.js';
 import { readPartitionRegistry } from './data-partition.service.js';
+import { extractMonthKeyFromDate } from './partition-write-router.js';
+import { rehomeMisplacedPartitionRecords } from './partition-rehome.service.js';
 
 type TargetRef = { spreadsheetId: string; tab: string };
 
@@ -37,24 +39,26 @@ export async function loadCrossPartitionEmployeeAdjustments(
   const activeAdjustments = ctx.db.attendanceAdjustments
     .filter((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && !a.is_deleted);
 
-  const currentMonthKey = todayStr.slice(0, 7).replace('-', '_');
-  if (!ctx.db.partitionMonth || ctx.db.partitionMonth === currentMonthKey) {
-    return activeAdjustments.reverse();
-  }
+  const adjMap = new Map<string, AttendanceAdjustment>();
+  for (const a of activeAdjustments) adjMap.set(a.id, a);
 
   const registry = readPartitionRegistry(ctx.db);
-  const reg = registry.find((r) => r.monthKey === currentMonthKey);
   const targets: TargetRef[] = [];
-  if (reg?.mode === 'MONTHLY_FILE') {
-    targets.push({ spreadsheetId: reg.spreadsheetId, tab: 'ATTENDANCE_ADJUSTMENTS' });
-  } else if (reg?.mode === 'LEGACY_TAB') {
-    targets.push({ spreadsheetId: ctx.db.ids.ATTENDANCE, tab: partitionTabName('ATTENDANCE_ADJUSTMENTS', currentMonthKey) });
-  }
   if (ctx.db.partitionMonth !== '') {
     targets.push({ spreadsheetId: ctx.db.ids.ATTENDANCE, tab: 'ATTENDANCE_ADJUSTMENTS' });
   }
+  const curKey = todayStr.slice(0, 7).replace('-', '_');
+  for (const reg of registry) {
+    if (reg.monthKey === ctx.db.partitionMonth) continue;
+    if (reg.monthKey === curKey || !ctx.db.partitionMonth) {
+      if (reg.mode === 'MONTHLY_FILE') {
+        targets.push({ spreadsheetId: reg.spreadsheetId, tab: 'ATTENDANCE_ADJUSTMENTS' });
+      } else if (reg.mode === 'LEGACY_TAB') {
+        targets.push({ spreadsheetId: ctx.db.ids.ATTENDANCE, tab: partitionTabName('ATTENDANCE_ADJUSTMENTS', reg.monthKey) });
+      }
+    }
+  }
 
-  const adjMap = new Map<string, AttendanceAdjustment>();
   for (const t of targets) {
     const rows = await readHistoricalAdjustmentsTarget(ctx, t);
     for (const r of rows) {
@@ -63,15 +67,12 @@ export async function loadCrossPartitionEmployeeAdjustments(
       }
     }
   }
-  for (const a of activeAdjustments) {
-    adjMap.set(a.id, a);
-  }
   return Array.from(adjMap.values()).reverse();
 }
 
 /**
  * Tải danh sách phiếu bổ sung công cho Quản trị viên (HR), tự động gộp các phiếu đang chờ duyệt
- * (PENDING, STORE_CONFIRMED) từ tháng hiện hành và các tháng liên quan để HR không bao giờ bị sót phiếu.
+ * (PENDING, STORE_CONFIRMED) từ tháng hiện hành, tệp gốc và các tháng liên quan để HR không bao giờ bị sót phiếu.
  */
 export async function loadCrossPartitionBackofficeAdjustments(
   ctx: AppContext,
@@ -79,39 +80,43 @@ export async function loadCrossPartitionBackofficeAdjustments(
   queryQ?: string,
 ): Promise<AttendanceAdjustment[]> {
   const activeAdjustments = ctx.db.attendanceAdjustments.all();
-  if (!ctx.db.partitionMonth) {
-    return activeAdjustments;
-  }
-  const currentMonthKey = todayStr.slice(0, 7).replace('-', '_');
-  if (ctx.db.partitionMonth === currentMonthKey) {
-    return activeAdjustments;
-  }
   const adjMap = new Map<string, AttendanceAdjustment>();
-
-  for (const a of activeAdjustments) {
-    if (!a.is_deleted) adjMap.set(a.id, a);
-  }
+  for (const a of activeAdjustments) if (!a.is_deleted) adjMap.set(a.id, a);
 
   const registry = readPartitionRegistry(ctx.db);
-  const reg = registry.find((r) => r.monthKey === currentMonthKey);
   const targets: TargetRef[] = [];
-  if (reg?.mode === 'MONTHLY_FILE') {
-    targets.push({ spreadsheetId: reg.spreadsheetId, tab: 'ATTENDANCE_ADJUSTMENTS' });
-  } else if (reg?.mode === 'LEGACY_TAB') {
-    targets.push({ spreadsheetId: ctx.db.ids.ATTENDANCE, tab: partitionTabName('ATTENDANCE_ADJUSTMENTS', currentMonthKey) });
+  if (ctx.db.partitionMonth !== '') {
+    targets.push({ spreadsheetId: ctx.db.ids.ATTENDANCE, tab: 'ATTENDANCE_ADJUSTMENTS' });
+  }
+  for (const reg of registry) {
+    if (reg.monthKey === ctx.db.partitionMonth) continue;
+    if (reg.mode === 'MONTHLY_FILE') {
+      targets.push({ spreadsheetId: reg.spreadsheetId, tab: 'ATTENDANCE_ADJUSTMENTS' });
+    } else if (reg.mode === 'LEGACY_TAB') {
+      targets.push({ spreadsheetId: ctx.db.ids.ATTENDANCE, tab: partitionTabName('ATTENDANCE_ADJUSTMENTS', reg.monthKey) });
+    }
   }
 
   const qLower = (queryQ || '').trim().toLowerCase();
+  const activeMonthKey = ctx.db.partitionMonth;
+  let hasMisplaced = false;
+
   for (const t of targets) {
     const rows = await readHistoricalAdjustmentsTarget(ctx, t);
     for (const r of rows) {
       if (r.is_deleted) continue;
       const isPending = r.status === 'PENDING' || r.status === 'STORE_CONFIRMED';
-      const matchesQ = qLower && (r.adjustment_code.toLowerCase().includes(qLower) || r.employee_id.toLowerCase().includes(qLower));
-      if (isPending || matchesQ) {
+      const matchesQ = Boolean(qLower && (r.adjustment_code.toLowerCase().includes(qLower) || r.employee_id.toLowerCase().includes(qLower)));
+      const matchesActiveMonth = Boolean(activeMonthKey && r.work_date && extractMonthKeyFromDate(r.work_date) === activeMonthKey);
+      if (matchesActiveMonth) hasMisplaced = true;
+      if (isPending || matchesQ || matchesActiveMonth) {
         if (!adjMap.has(r.id)) adjMap.set(r.id, r);
       }
     }
+  }
+
+  if (hasMisplaced) {
+    void rehomeMisplacedPartitionRecords(ctx.db).catch(() => undefined);
   }
 
   return Array.from(adjMap.values());
