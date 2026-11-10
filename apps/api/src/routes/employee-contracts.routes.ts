@@ -58,6 +58,10 @@ export async function cleanupProbationShiftsAfterOfficial(ctx: AppContext, emp: 
     await ctx.db.shiftAssignments.softDelete(s.id, s.version, actorId);
     removed++;
   }
+  const staleLeaves = ctx.db.leaveRequests.filter((l) => isEmp(l.employee_id) && l.employee_stage === 'PROBATION' && l.leave_date >= officialFrom && (l.status === 'APPROVED' || l.status === 'PENDING'));
+  for (const l of staleLeaves) {
+    await ctx.db.leaveRequests.softDelete(l.id, l.version, actorId);
+  }
   return removed;
 }
 
