@@ -93,6 +93,12 @@ export function useShiftTemplates(branchId?: string, enabled = true) {
     return list;
   }, [shifts]);
 
+  const startTimeMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const o of options) map[o.value] = o.startTime;
+    return map;
+  }, [options]);
+
   const endTimeMap = useMemo(() => {
     const map: Record<string, string> = {};
     for (const o of options) map[o.value] = o.endTime;
@@ -109,6 +115,7 @@ export function useShiftTemplates(branchId?: string, enabled = true) {
     allShifts: activeAll,
     shifts,
     options,
+    startTimeMap,
     endTimeMap,
     hoursMap,
     isLoading: q.isLoading,

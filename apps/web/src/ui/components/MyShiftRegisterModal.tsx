@@ -33,7 +33,7 @@ export function MyShiftRegisterModal({
   const { message } = App.useApp();
   const qc = useQueryClient();
   const [form] = Form.useForm();
-  const { options: rawShiftOptions, endTimeMap } = useShiftTemplates();
+  const { options: rawShiftOptions, startTimeMap } = useShiftTemplates();
   const shiftOptions = rawShiftOptions.filter(
     (opt) => !opt.value.toUpperCase().includes('HANH_CHINH') && !opt.value.toUpperCase().includes('OFFICE') && Number(opt.standardHours || 5) < 7.5,
   );
@@ -49,8 +49,8 @@ export function MyShiftRegisterModal({
   const cycleBlocked = cycle && maxDate && minDate > maxDate ? 'Chu kỳ thử việc hiện tại đã kết thúc.' : '';
 
   const shiftOptionsForDate = shiftOptions.map((opt) => {
-    const endHm = endTimeMap[opt.value] || '12:00';
-    const isPassed = isTodaySelected && nowHm >= endHm;
+    const startHm = startTimeMap[opt.value] || opt.startTime || '07:00';
+    const isPassed = isTodaySelected && nowHm >= startHm;
     const existing = cachedShifts.find(
       (s) => String(s.workDate || s.work_date) === watchedDate && String(s.shiftCode || s.shift_code) === opt.value,
     );
@@ -58,11 +58,11 @@ export function MyShiftRegisterModal({
     const suffix = existing
       ? ` — Đã đăng ký (${existing.status === 'DRAFT' ? 'Chờ duyệt' : 'Đã phân ca'})`
       : isPassed
-        ? ' — Đã qua giờ ca hôm nay'
+        ? ` — Đã qua giờ bắt đầu (${startHm})`
         : '';
     return { value: opt.value, disabled, label: `${opt.label}${suffix}` };
   });
-  const availableToday = shiftOptions.filter((opt) => nowHm < (endTimeMap[opt.value] || '12:00'));
+  const availableToday = shiftOptions.filter((opt) => nowHm < (startTimeMap[opt.value] || opt.startTime || '07:00'));
 
   const availQ = useQuery({
     queryKey: ['shift-availability', watchedDate, watchedShift],
@@ -85,10 +85,10 @@ export function MyShiftRegisterModal({
   useEffect(() => {
     if (!open || shiftOptions.length === 0) return;
     const currentHm = dayjs().format('HH:mm');
-    const firstValidToday = shiftOptions.find((opt) => currentHm < (endTimeMap[opt.value] || '12:00'));
+    const firstValidToday = shiftOptions.find((opt) => currentHm < (startTimeMap[opt.value] || opt.startTime || '07:00'));
     const initDate = clampDate(firstValidToday ? todayDate : dayjs(todayDate).add(1, 'day').format('YYYY-MM-DD'));
     const firstFreeShift = shiftOptions.find((opt) => {
-      if (initDate === todayDate && currentHm >= (endTimeMap[opt.value] || '12:00')) return false;
+      if (initDate === todayDate && currentHm >= (startTimeMap[opt.value] || opt.startTime || '07:00')) return false;
       return !cachedShifts.some((s) => String(s.workDate || s.work_date) === initDate && String(s.shiftCode || s.shift_code) === opt.value);
     });
     form.setFieldsValue({
@@ -96,7 +96,7 @@ export function MyShiftRegisterModal({
       shift_code: firstFreeShift?.value ?? firstValidToday?.value ?? (shiftOptions[0]?.value || 'CA_SANG'),
       note: 'Đăng ký làm thêm ca trong chu kỳ thử việc',
     });
-  }, [open, todayDate, shiftOptions.length, endTimeMap, form, minDate, maxDate]);
+  }, [open, todayDate, shiftOptions.length, startTimeMap, form, minDate, maxDate]);
 
   const createShiftMut = useMutation({
     mutationFn: (body: unknown) => api.post<{ id: string; linkedAssignmentId?: string | null }>('/my-attendance/shifts', body),
@@ -132,7 +132,7 @@ export function MyShiftRegisterModal({
         description={cycleBlocked || 'Chỉ áp dụng cho Ca Sáng, Ca Chiều, Ca Tối (tối đa 2 ca/ngày, không đăng ký Ca Hành chính). Khi xác nhận, hệ thống tự động thêm ca mới và xóa ca cuối từ dưới lên của bạn.'}
       />
       {isTodaySelected && availableToday.length === 0 && (
-        <Alert type="warning" showIcon style={{ marginBottom: 10 }} message={`Tất cả các khung ca trong ngày hôm nay (${dayjs(todayDate).format('DD/MM/YYYY')}) đã trôi qua (hiện tại ${nowHm}). Vui lòng chọn ngày làm việc từ ngày mai trở đi.`} />
+        <Alert type="warning" showIcon style={{ marginBottom: 10 }} message={`Tất cả các khung ca trong ngày hôm nay (${dayjs(todayDate).format('DD/MM/YYYY')}) đã qua giờ bắt đầu (hiện tại ${nowHm}). Vui lòng chọn ngày làm việc từ ngày mai trở đi.`} />
       )}
       {avail && (
         <Alert
@@ -146,13 +146,13 @@ export function MyShiftRegisterModal({
         form={form} layout="vertical" style={{ marginTop: 8 }} onFinish={(v) => createShiftMut.mutate(v)}
         onValuesChange={(changed) => {
           if (changed.work_date === todayDate) {
-            const firstOk = shiftOptions.find((opt) => dayjs().format('HH:mm') < (endTimeMap[opt.value] || '12:00'));
+            const firstOk = shiftOptions.find((opt) => dayjs().format('HH:mm') < (startTimeMap[opt.value] || opt.startTime || '07:00'));
             if (firstOk) form.setFieldValue('shift_code', firstOk.value);
           }
         }}
       >
         <Form.Item name="work_date" label="Ngày đăng ký làm việc" rules={[{ required: true, message: 'Vui lòng chọn ngày làm việc' }]}><BoundedDateStringPicker minDate={minDate} maxDate={maxDate} disabled={Boolean(cycleBlocked)} /></Form.Item>
-        <Form.Item name="shift_code" label="Khung ca đăng ký" rules={[{ required: true, message: 'Vui lòng chọn khung ca' }, { validator: async (_, val) => { const endHm = endTimeMap[String(val)] || '12:00'; if (form.getFieldValue('work_date') === todayDate && dayjs().format('HH:mm') >= endHm) throw new Error(`Khung ca này trong ngày hôm nay đã kết thúc lúc ${endHm}, vui lòng chọn ca khác hoặc ngày tiếp theo`); } }]}><Select options={shiftOptionsForDate} /></Form.Item>
+        <Form.Item name="shift_code" label="Khung ca đăng ký" rules={[{ required: true, message: 'Vui lòng chọn khung ca' }, { validator: async (_, val) => { const startHm = startTimeMap[String(val)] || '07:00'; if (form.getFieldValue('work_date') === todayDate && dayjs().format('HH:mm') >= startHm) throw new Error(`Khung ca này hôm nay đã qua giờ bắt đầu (${startHm}), không thể đăng ký thêm ca này. Vui lòng chọn ca khác hoặc ngày tiếp theo.`); } }]}><Select options={shiftOptionsForDate} /></Form.Item>
         <Form.Item name="note" label="Ghi chú ca làm việc"><Input placeholder="Ví dụ: Trực quản lý cửa hàng, ca sáng..." /></Form.Item>
       </Form>
     </Modal>
