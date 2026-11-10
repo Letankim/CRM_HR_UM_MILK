@@ -21,6 +21,7 @@ import { getOperationSettings } from '../services/operations-settings.service.js
 import { mapShiftAssignment } from './schedules.routes.js';
 import { mapShiftSwapRecord } from './shift-swap-helpers.js'; import { sweepExpiredShiftSwaps } from '../services/shift-swap-sweep.service.js';
 import { ensureOfficeShiftTemplate } from './branches.routes.js';
+import { loadCrossPartitionEmployeeAdjustments } from '../services/data-partition-adjustments.helper.js';
 import { loadCrossPartitionEmployeeEvents, loadCrossPartitionEmployeeShifts } from '../services/data-partition-employee.helper.js';
 
 const SHIFT_DEFAULT_HOURS: Record<string, { start: string; end: string; hours: number }> = {
@@ -165,7 +166,7 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       .filter((e) => e.id !== emp.id && e.branch_id === emp.branch_id && isOfficialSwapEligibleEmployee(ctx, e) && (!findLinkedUserForEmployee(e, ctx) || findLinkedUserForEmployee(e, ctx)?.status === 'ACTIVE'))
       .map((e) => ({ id: e.id, employeeCode: e.employee_code, fullName: e.full_name, stage: e.stage, positionTitle: resolveStaffGroupLabel(ctx, e.staff_group, e.position_title), branchName: ctx.db.branches.get(e.branch_id)?.name ?? '', busyShiftsByDate: { ...(peerBusyByEmp.get(e.employee_code) ?? {}), ...(peerBusyByEmp.get(e.id) ?? {}) } }));
 
-    const adjustments = ctx.db.attendanceAdjustments.filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code).reverse();
+    const adjustments = await loadCrossPartitionEmployeeAdjustments(ctx, emp, todayStr);
     const cycleDays = emp.probation_cycle_days || 12;
     const rawDiff = emp.probation_start ? dayjs(todayStr).diff(dayjs(emp.probation_start), 'day') + 1 : (emp.probation_work_days || 7);
     const probationDaysPassed = Math.min(cycleDays, Math.max(1, rawDiff > cycleDays ? (emp.probation_work_days || 7) : rawDiff));

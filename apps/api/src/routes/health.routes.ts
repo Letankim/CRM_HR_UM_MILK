@@ -12,6 +12,7 @@ import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { auditContext, requirePermission } from '../plugins/auth-context.js';
+import { rehomeMisplacedPartitionRecords } from '../services/partition-rehome.service.js';
 
 const zPreviewQuery = z.object({
   template: z.enum(EMAIL_TEMPLATE_CODES).default('ACCOUNT_ACTIVATED'),
@@ -195,4 +196,11 @@ export async function healthRoutes(app: FastifyInstance, ctx: AppContext) {
       return sendSuccess(request, `Đã thực thi sao lưu dữ liệu (${BACKUP_KIND_LABELS[log.kind as keyof typeof BACKUP_KIND_LABELS] ?? log.kind}) thành công`, log);
     },
   );
+
+  /** Quét và di dời các bản ghi lưu nhầm phân vùng tháng về đúng tệp Google Sheets độc lập. */
+  app.post('/api/admin/integrations/rehome-partitions', { preHandler: requirePermission('integration.read') }, async (request) => {
+    const actorId = request.auth!.user.id;
+    const res = await rehomeMisplacedPartitionRecords(ctx.db, actorId);
+    return sendSuccess(request, `Đã rà soát và di dời ${res.rehomedCount} bản ghi về đúng phân vùng tháng Google Sheets`, res);
+  });
 }

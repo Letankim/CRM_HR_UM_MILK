@@ -15,6 +15,7 @@ import { getOperationSettings } from '../services/operations-settings.service.js
 import { runBackgroundSideEffect } from '../services/background-write.js';
 import { clearShiftAttendanceOnWorkflowOverride, formatPendingAdjustmentLabel, resolveShiftActiveRequests } from '../services/shift-absent-scanner.js';
 import { queueScheduleShiftEmail } from '../services/action-email-dispatcher.js';
+import { insertPartitionAwareRecord } from '../services/partition-write-router.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { emitScheduleRealtime, findBranchShiftTemplate, healBranchConsistency, resolveEmployeeBranchId } from './account-employee-sync.js';
 import { describePunctuality, parseHm } from './attendance-helpers.js';
@@ -116,12 +117,12 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext) {
       assertMaxShiftsPerDay(ctx, { emp, workDate: body.work_date, maxPerDay: getOperationSettings(ctx.db).maxShiftsPerDay });
       if (body.status === 'PUBLISHED' || body.status === 'COMPLETED') assertBranchShiftCapacityAvailable(ctx, { branchId, workDate: body.work_date, shiftCode: body.shift_code, isProbation: emp.stage === 'PROBATION' });
     }
-    const created = await ctx.db.shiftAssignments.insert({
+    const created = await insertPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', {
       schedule_week_id: `WK-${body.work_date.slice(0, 7)}`, employee_id: emp.id, branch_id: branchId, work_date: body.work_date, shift_template_id: tpl?.id ?? '',
       start_at: startAt, end_at: endAt, status: body.status, source: 'MANUAL', employee_stage: emp.stage, day_type: body.day_type, shift_code: body.shift_code,
       scheduled_hours: body.scheduled_hours ?? (body.day_type === 'OFF' ? 0 : tpl?.standard_hours ?? 5),
       swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: body.status === 'PUBLISHED' ? nowIso() : '', note: body.note, linked_assignment_id: '',
-    }, request.auth!.user.id);
+    }, body.work_date, request.auth!.user.id);
     if (created.status === 'PUBLISHED') queueScheduleShiftEmail(ctx, { empId: emp.id, shiftLabel: tpl?.name ?? created.shift_code, workDate: created.work_date, startAt: created.start_at, endAt: created.end_at, branchId, code: `SHF-${created.id.slice(0, 6)}` }, request.auth!.user.id);
     await runBackgroundSideEffect(async () => { await ctx.audit.record(auditContext(request), { action: 'schedule.create', entity: 'SHIFT_ASSIGNMENTS', entityId: created.id, after: { employee_id: emp.employee_code, work_date: created.work_date, shift_code: created.shift_code, status: created.status } }); await ensureSyncedNotifications(ctx); });
     const isDraft = created.status === 'DRAFT';

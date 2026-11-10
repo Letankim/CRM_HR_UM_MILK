@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { isOfficeEmployeeSpec, type Employee } from '@umbm/shared';
+import { isOfficeEmployeeSpec, type Employee, type ShiftAssignment } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
@@ -16,6 +16,7 @@ import { assertDateNotLockedByPayroll } from '../services/salary-profile.service
 import { assertMaxShiftsPerDay, employeeShiftsOnDate, findProbationLock, isCountedWorkShift, isDisallowedProbationShiftCode, matchEmp, probationLockCode, resolveProbationCycle } from '../services/schedule-rules.js';
 import { assertNoDuplicateOrOverlappingEmployeeShift } from '../services/schedule-staffing-helper.js';
 import { getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
+import { insertPartitionAwareRecord } from '../services/partition-write-router.js';
 import { emitScheduleRealtime, findBranchShiftTemplate } from './account-employee-sync.js';
 import { ensurePersonalProfile } from './my-attendance.routes.js';
 import { registerProbationSelfServiceRoutes } from './probation-self-service.routes.js';
@@ -95,12 +96,12 @@ export function registerMyShiftRegisterRoute(app: FastifyInstance, ctx: AppConte
     }
 
     const pullNote = lastLater ? ` — đã tự động dời ca cuối ngày ${vi(lastLater.work_date)} (${lastLater.start_at} – ${lastLater.end_at}) sang ca này` : '';
-    const created = await ctx.db.shiftAssignments.insert({
+    const created = await insertPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', {
       schedule_week_id: probationLockCode(emp.employee_code, cycle.start, ctx.db.partitionMonth), employee_id: emp.id, branch_id: emp.branch_id, work_date: body.work_date,
       shift_template_id: tpl.id, start_at: tpl.start_time, end_at: tpl.end_time, status: 'PUBLISHED', source: 'PROBATION_EXTRA',
       employee_stage: emp.stage, day_type: 'WORK', shift_code: body.shift_code, scheduled_hours: tpl.standard_hours || 5,
       swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now, note: `${body.note}${pullNote}`.slice(0, 300), linked_assignment_id: lastLater?.id ?? '',
-    }, user.id);
+    }, body.work_date, user.id);
     queueShiftRegisteredEmail(ctx, created, user.id);
     const reqAudit = auditContext(request);
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'SHIFT_APPROVED', message: `${emp.full_name} đăng ký thêm ca ngày ${vi(created.work_date)}${pullNote}`, actorId: user.id });

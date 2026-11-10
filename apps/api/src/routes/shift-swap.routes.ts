@@ -15,6 +15,7 @@ import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js'
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { cancelDispatchAnnouncement, publishDispatchAnnouncement } from '../services/shift-dispatch.service.js';
 import { applySwapToSchedule, evaluateSwapRequest, findEmp } from '../services/shift-swap-rules.js';
+import { insertPartitionAwareRecord } from '../services/partition-write-router.js';
 import { emitScheduleRealtime, resolveEmployeeBranchId } from './account-employee-sync.js';
 import { findLinkedEmployeeForUser } from './employee-mapper.js';
 import { auditOutOfWeekSwaps, enrichSwapKindLabel, registerShiftSwapAllowanceRoute, resolveSwapAllowance, zDecideSwapBody } from './shift-swap-helpers.js';
@@ -80,7 +81,7 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
       assertBranchAccess(request, branchId);
       assertDateNotLockedByPayroll(ctx.db, workDate, 'điều phối ca');
       const requester = (body.requester_id || from?.employee_id) ? findEmp(ctx, body.requester_id || from!.employee_id) : undefined;
-      const created = await ctx.db.shiftSwaps.insert({
+      const created = await insertPartitionAwareRecord<ShiftSwap>(ctx.db, 'SHIFT_SWAPS', {
         swap_code: `DSP-${String(ctx.db.shiftSwaps.all(true).length + 1).padStart(4, '0')}`,
         kind: 'HR_DISPATCH', requires_hr_approval: false, requester_id: requester?.id ?? from?.employee_id ?? '', peer_id: '',
         from_assignment_id: from?.id ?? '', to_assignment_id: '', branch_id: branchId, target_branch_id: branchId,
@@ -88,7 +89,7 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
         reason: body.reason, status: 'PENDING_PEER', has_conflict: false, staffing_valid: true, requested_at: nowIso(),
         peer_responded_at: '', peer_note: '', decided_by: '', decision_reason: '', decided_at: '',
         allowance_eligible: true, allowance_amount_vnd: SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd,
-      }, actor.id);
+      }, workDate, actor.id);
       await publishDispatchAnnouncement(ctx, created, { branch_id: branchId, work_date: workDate, shift_code: shiftCode, start_at: from?.start_at, end_at: from?.end_at }, actor);
       await ensureSyncedNotifications(ctx);
       queueSwapEventEmail(ctx, created, 'CREATED', actor.id);
@@ -111,13 +112,13 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     const dup = ctx.db.shiftSwaps.find((s) => ACTIVE.has(s.status) && [s.from_assignment_id, s.to_assignment_id].some((id) => id && (id === from.id || id === to?.id)));
     if (dup) throw Errors.fieldValidation('from_assignment_id', 'DUPLICATE_VALUE', `Ca làm việc này đang có yêu cầu ${dup.swap_code} chờ xử lý`, from.id);
     const evalRes = evaluateSwapRequest(ctx, { kind: body.kind, requester, peer, from, to: body.kind === 'SWAP' ? to : undefined }), isSwap = body.kind === 'SWAP';
-    const created = await ctx.db.shiftSwaps.insert({
+    const created = await insertPartitionAwareRecord<ShiftSwap>(ctx.db, 'SHIFT_SWAPS', {
       swap_code: `${isSwap ? 'DCA' : 'NCA'}-${String(ctx.db.shiftSwaps.all(true).length + 1).padStart(4, '0')}`, kind: body.kind, requires_hr_approval: evalRes.requiresHr,
       requester_id: requester.id, peer_id: peer.id, from_assignment_id: from.id, to_assignment_id: isSwap ? to!.id : '', branch_id: from.branch_id, target_branch_id: '',
       from_work_date: from.work_date, from_shift_code: from.shift_code, to_work_date: isSwap ? to!.work_date : from.work_date, to_shift_code: isSwap ? to!.shift_code : from.shift_code,
       reason: body.reason, status: 'PENDING_PEER', has_conflict: false, staffing_valid: true, requested_at: nowIso(), peer_responded_at: '', peer_note: '',
       decided_by: '', decision_reason: '', decided_at: '', allowance_eligible: false, allowance_amount_vnd: 0,
-    }, actor.id);
+    }, from.work_date, actor.id);
     const reqAudit = auditContext(request);
     await notify(request, created, 'CREATED', `${requester.full_name} gửi yêu cầu ${isSwap ? 'đổi ca' : 'nhường ca'} (${created.swap_code}) cho bạn`, [peer.id], () => ctx.audit.record(reqAudit, { action: 'swap.create', entity: 'SHIFT_SWAPS', entityId: created.id, after: { swap_code: created.swap_code, kind: created.kind, requires_hr_approval: created.requires_hr_approval } }));
     reply.code(201);

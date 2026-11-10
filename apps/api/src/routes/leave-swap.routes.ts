@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { evaluateOffWindow, isEmployeeRole, mondayOfWeek, REQUEST_STATUS_LABELS, zListQueryBase, type Employee } from '@umbm/shared';
+import { evaluateOffWindow, isEmployeeRole, mondayOfWeek, REQUEST_STATUS_LABELS, zListQueryBase, type Employee, type LeaveRequest } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
@@ -18,6 +18,7 @@ import { findProbationLock, findWeekLock, matchEmp, resolveProbationCycle, weekL
 import { resolveApplicableStaffingRule } from '../services/schedule-staffing-helper.js';
 import { assertNoDuplicateShiftWorkflow, clearShiftAttendanceOnWorkflowOverride, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { isVipOffWindowActive } from '../services/weekly-off-gate.service.js';
+import { insertPartitionAwareRecord } from '../services/partition-write-router.js';
 import { emitScheduleRealtime, healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { findLinkedEmployeeForUser } from './employee-mapper.js';
 import { assertEmergencyLeaveAllowed, completeEmergencyLeaveSideEffects, registerLeaveRequestGateRoutes } from './leave-requests.routes.js';
@@ -130,7 +131,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     for (let i = 0; i < dates.length; i++) {
       const d = dates[i]!, exShift = ctx.db.shiftAssignments.find((a) => isEmp(a.employee_id) && a.work_date === d && a.day_type !== 'OFF');
       const shiftCode = exShift?.shift_code || emp.default_shift_code || body.shift_code;
-      const item = await ctx.db.leaveRequests.insert({
+      const item = await insertPartitionAwareRecord<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', {
         request_code: `OFF-${String(ctx.db.leaveRequests.all(true).length + 1).padStart(4, '0')}`, employee_id: emp.id, branch_id: emp.branch_id,
         leave_date: d, kind: effectiveKind, shift_code: shiftCode, reason: body.reason, status: targetStatus, employee_stage: emp.stage,
         schedule_week_id: weekLockCode(emp.branch_id, mondayOfWeek(d), ctx.db.partitionMonth), assignment_id: exShift?.id ?? '',
@@ -139,7 +140,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
         decided_by: targetStatus === 'APPROVED' ? actor.id : '',
         decision_reason: targetStatus === 'APPROVED' ? 'Tự động duyệt ngay theo cơ chế đăng ký sớm (Ai đăng ký trước được trước)' : '',
         decided_at: targetStatus === 'APPROVED' ? now : '',
-      }, actor.id);
+      }, d, actor.id);
       if (isEmergency) await completeEmergencyLeaveSideEffects(ctx, emp, item, actor.id);
       else if (targetStatus === 'APPROVED') {
         for (const a of ctx.db.shiftAssignments.filter((x) => isEmp(x.employee_id) && x.work_date === d && x.day_type !== 'OFF')) {

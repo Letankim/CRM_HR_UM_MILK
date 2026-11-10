@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { SYSTEM_CONFIG, computeLateFine, isEmployeeRole, zListQueryBase } from '@umbm/shared';
+import { SYSTEM_CONFIG, computeLateFine, isEmployeeRole, zListQueryBase, type AttendanceEvent } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { AppError, Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
@@ -16,6 +16,7 @@ import { buildPaginatedAttendanceSessions, buildShiftFolderName, calculateHavers
 import { registerShiftAttendanceDetailRoute } from './attendance-shift-detail.js';
 import { registerAttendanceAdjustmentRoutes } from './attendance-adjustments.routes.js';
 import { findShiftAcrossPartitions } from '../services/data-partition-employee.helper.js';
+import { insertPartitionAwareRecord, updatePartitionAwareRecord } from '../services/partition-write-router.js';
 export { calculateHaversineMeters } from './attendance-helpers.js';
 const inFlightChecksByCtx = new WeakMap<AppContext, Set<string>>();
 
@@ -168,15 +169,15 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     const shiftMeta = resolveShiftTimeDetails(ctx, assign.shift_code, assign.id, branch.id);
     const uploadedPhoto = await persistAttendancePhoto(ctx, { base64: body.photo_base64, employeeCode: empRecord.employee_code, checkType, workDate: assign.work_date, shiftFolder: buildShiftFolderName(shiftMeta.shiftLabel, assign.shift_code, assign.start_at, assign.end_at) });
 
-    const created = await ctx.db.attendanceEvents.insert({
+    const created = await insertPartitionAwareRecord<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', {
       idempotency_key: body.idempotency_key || `chk_${assign.id}_${checkType}_${Date.now()}`, employee_id: assign.employee_id, assignment_id: assign.id, branch_id: branch.id, type: checkType, server_time: serverNow,
       lat: body.lat, lng: body.lng, accuracy_m: body.accuracy_m, distance_m: distanceM, within_radius: withinRadius, photo_id: `photo_${Date.now()}`, photo_sha256: uploadedPhoto.sha256, device_info: body.device_info, result,
       work_date: assign.work_date, shift_code: assign.shift_code, scheduled_time: schedTime, late_minutes: lateMinutes, late_fine_tier: fine.tier, late_fine_vnd: fine.fineVnd, early_leave_minutes: earlyLeaveMinutes,
       pink_ratio_percent: body.pink_ratio_percent ?? 100, uniform_verified: body.uniform_verified ?? true, allowed_radius_m: branch.radius_m, gps_status: accuracyOk && withinRadius ? 'OK' : 'WARNING',
       photo_drive_file_id: uploadedPhoto.fileId, ip_address: request.ip, anomaly_flags_json: '[]', note: `${punc.punctualityLabel}${fineNote} · Khoảng cách GPS ${distanceM}m`,
-    }, request.auth!.user.id);
+    }, assign.work_date, request.auth!.user.id);
     uploadedPhoto.syncDrive?.(async (driveFileId) => { queueAttendancePhotoDrivePatch(ctx, created.id, driveFileId); });
-    if (checkType === 'CHECK_OUT' && assign.status !== 'COMPLETED') await ctx.db.shiftAssignments.update(assign.id, assign.version, { status: 'COMPLETED' }, request.auth!.user.id);
+    if (checkType === 'CHECK_OUT' && assign.status !== 'COMPLETED') await updatePartitionAwareRecord(ctx.db, 'SHIFT_ASSIGNMENTS', assign.id, assign.version, { status: 'COMPLETED' }, assign.work_date, request.auth!.user.id);
     if (checkType === 'CHECK_OUT' && result === 'VALID') {
       const curEmp = ctx.db.employees.get(empRecord.id);
       if (curEmp) await ctx.db.employees.update(curEmp.id, curEmp.version, { attendance_credit_points: (curEmp.attendance_credit_points ?? 0) + SYSTEM_CONFIG.defaults.adjustmentCreditPerValidShift }, request.auth!.user.id);

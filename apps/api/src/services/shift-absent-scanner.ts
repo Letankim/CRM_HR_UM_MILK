@@ -1,8 +1,9 @@
-import type { Employee, ShiftAssignment } from '@umbm/shared';
+import type { AttendanceAdjustment, Employee, ShiftAssignment } from '@umbm/shared';
 import type { Database } from '../data/database.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs } from '../lib/time.js';
 import { singleFlight, tolerantWrite } from './background-write.js';
+import { extractMonthKeyFromDate, findPartitionAwareRecord, getCachedPartitionStore, insertPartitionAwareRecord, updatePartitionAwareRecord } from './partition-write-router.js';
 import { findLockedPayrollPeriodForDate } from './salary-profile.service.js';
 
 type SweepResult = { markedAbsent: number; restoredCompleted: number };
@@ -118,32 +119,31 @@ async function runSweep(
  * - FULL_SHIFT: xác nhận hoàn thành cả ca với số giờ đề nghị.
  */
 export async function applyApprovedAdjustmentToShift(db: Database, adjustmentId: string, actorId: string): Promise<string> {
-  const adj = db.attendanceAdjustments.get(adjustmentId);
+  const adjFound = await findPartitionAwareRecord<AttendanceAdjustment>(db, 'ATTENDANCE_ADJUSTMENTS', adjustmentId);
+  const adj = adjFound?.record ?? db.attendanceAdjustments.get(adjustmentId);
   if (!adj) return '';
   const emp = db.employees.get(adj.employee_id) ?? db.employees.find((e) => e.employee_code === adj.employee_id);
   const matchEmp = (eid: string) => eid === adj.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
-  const targetShift = (adj.assignment_id ? db.shiftAssignments.get(adj.assignment_id) : undefined) ?? db.shiftAssignments.find((a) => matchEmp(a.employee_id) && a.work_date === adj.work_date && a.shift_code === adj.shift_code);
+  let targetShift = adj.assignment_id ? (await findPartitionAwareRecord<ShiftAssignment>(db, 'SHIFT_ASSIGNMENTS', adj.assignment_id, adj.work_date))?.record : undefined;
+  if (!targetShift) targetShift = db.shiftAssignments.find((a) => matchEmp(a.employee_id) && a.work_date === adj.work_date && a.shift_code === adj.shift_code);
   if (!targetShift) return '';
   if (adj.punch_type === 'CHECK_IN' || adj.punch_type === 'CHECK_OUT') {
     const type = adj.punch_type, hm = type === 'CHECK_IN' ? (adj.requested_check_in_at || targetShift.start_at) : (adj.requested_check_out_at || targetShift.end_at);
-    const exists = db.attendanceEvents.find((e) => e.assignment_id === targetShift.id && e.type === type);
     const branch = db.branches.get(targetShift.branch_id) ?? (emp ? db.branches.get(emp.branch_id) : undefined);
-    if (!exists) {
-      await db.attendanceEvents.insert({
-        idempotency_key: `adj_${adj.id}_${type}`, employee_id: targetShift.employee_id, assignment_id: targetShift.id, branch_id: targetShift.branch_id, type,
-        server_time: `${targetShift.work_date}T${hm || '07:00'}:00+07:00`, lat: branch?.lat ?? 0, lng: branch?.lng ?? 0, accuracy_m: 0, distance_m: 0, within_radius: false,
-        photo_id: adj.evidence_file_id ? `evidence_${adj.id}` : '', photo_sha256: '', device_info: 'Phiếu bổ sung công (HR phê duyệt minh chứng)', result: 'VALID',
-        work_date: targetShift.work_date, shift_code: targetShift.shift_code, scheduled_time: type === 'CHECK_IN' ? targetShift.start_at : targetShift.end_at,
-        late_minutes: 0, early_leave_minutes: 0, allowed_radius_m: branch?.radius_m ?? 100, gps_status: 'OUT_OF_RADIUS', photo_drive_file_id: adj.evidence_file_id,
-        ip_address: '', anomaly_flags_json: JSON.stringify(['HR_APPROVED_EVIDENCE']), note: `${type === 'CHECK_IN' ? 'Vào ca' : 'Ra ca'} được bù bởi HR theo phiếu ${adj.adjustment_code} (HR duyệt minh chứng)`,
-      }, actorId);
-    }
-    const fresh = db.shiftAssignments.get(targetShift.id) ?? targetShift;
-    if (type === 'CHECK_OUT') await db.shiftAssignments.update(fresh.id, fresh.version, { status: 'COMPLETED', note: `Hoàn thành ca theo phiếu ${adj.adjustment_code}` }, actorId);
-    else if (fresh.status === 'ABSENT') await db.shiftAssignments.update(fresh.id, fresh.version, { status: 'PUBLISHED', note: `Đã xác nhận Vào ca theo phiếu ${adj.adjustment_code}` }, actorId);
+    await insertPartitionAwareRecord(db, 'ATTENDANCE_EVENTS', {
+      idempotency_key: `adj_${adj.id}_${type}`, employee_id: targetShift.employee_id, assignment_id: targetShift.id, branch_id: targetShift.branch_id, type,
+      server_time: `${targetShift.work_date}T${hm || '07:00'}:00+07:00`, lat: branch?.lat ?? 0, lng: branch?.lng ?? 0, accuracy_m: 0, distance_m: 0, within_radius: false,
+      photo_id: adj.evidence_file_id ? `evidence_${adj.id}` : '', photo_sha256: '', device_info: 'Phiếu bổ sung công (HR phê duyệt minh chứng)', result: 'VALID',
+      work_date: targetShift.work_date, shift_code: targetShift.shift_code, scheduled_time: type === 'CHECK_IN' ? targetShift.start_at : targetShift.end_at,
+      late_minutes: 0, early_leave_minutes: 0, allowed_radius_m: branch?.radius_m ?? 100, gps_status: 'OUT_OF_RADIUS', photo_drive_file_id: adj.evidence_file_id,
+      ip_address: '', anomaly_flags_json: JSON.stringify(['HR_APPROVED_EVIDENCE']), note: `${type === 'CHECK_IN' ? 'Vào ca' : 'Ra ca'} được bù bởi HR theo phiếu ${adj.adjustment_code} (HR duyệt minh chứng)`,
+    }, targetShift.work_date, actorId);
+    const fresh = (await findPartitionAwareRecord<ShiftAssignment>(db, 'SHIFT_ASSIGNMENTS', targetShift.id, targetShift.work_date))?.record ?? targetShift;
+    const patch = type === 'CHECK_OUT' ? { status: 'COMPLETED' as const, note: `Hoàn thành ca theo phiếu ${adj.adjustment_code}` } : (fresh.status === 'ABSENT' ? { status: 'PUBLISHED' as const, note: `Đã xác nhận Vào ca theo phiếu ${adj.adjustment_code}` } : {});
+    if (Object.keys(patch).length > 0) await updatePartitionAwareRecord(db, 'SHIFT_ASSIGNMENTS', fresh.id, fresh.version, patch, fresh.work_date, actorId);
     return targetShift.id;
   }
-  await db.shiftAssignments.update(targetShift.id, targetShift.version, { status: 'COMPLETED', scheduled_hours: adj.requested_hours || targetShift.scheduled_hours, note: `Đã bù công theo phiếu bổ sung ${adj.adjustment_code}` }, actorId);
+  await updatePartitionAwareRecord(db, 'SHIFT_ASSIGNMENTS', targetShift.id, targetShift.version, { status: 'COMPLETED', scheduled_hours: adj.requested_hours || targetShift.scheduled_hours, note: `Đã bù công theo phiếu bổ sung ${adj.adjustment_code}` }, targetShift.work_date, actorId);
   return targetShift.id;
 }
 export function formatPendingAdjustmentLabel(code: string, punchType?: string | null): string {
@@ -154,7 +154,10 @@ export function formatPendingAdjustmentLabel(code: string, punchType?: string | 
 
 export function resolveShiftActiveRequests(db: Database, shift: ShiftAssignment, emp?: Employee) {
   const matchEmp = (eid: string) => eid === shift.employee_id || Boolean(emp && (eid === emp.id || eid === emp.employee_code));
-  const shiftAdjs = db.attendanceAdjustments.filter((a) => (shift.id && a.assignment_id === shift.id) || (matchEmp(a.employee_id) && a.work_date === shift.work_date && a.shift_code === shift.shift_code)).reverse();
+  const shiftMonth = extractMonthKeyFromDate(shift.work_date);
+  const partStore = (shiftMonth && db.partitionMonth && shiftMonth !== db.partitionMonth) ? getCachedPartitionStore<AttendanceAdjustment>(db, 'ATTENDANCE_ADJUSTMENTS', shiftMonth) : undefined;
+  const sources = partStore && partStore !== db.attendanceAdjustments ? [db.attendanceAdjustments, partStore] : [db.attendanceAdjustments];
+  const shiftAdjs = sources.flatMap((s) => s.filter((a) => (shift.id && a.assignment_id === shift.id) || (matchEmp(a.employee_id) && a.work_date === shift.work_date && a.shift_code === shift.shift_code))).reverse();
   const approvedAdj = shiftAdjs.find((a) => a.status === 'APPROVED' && a.punch_type !== 'CHECK_IN');
   const pendingAdj = shiftAdjs.find((a) => a.status === 'PENDING' || a.status === 'STORE_CONFIRMED');
   const rejectedAdj = !pendingAdj && !approvedAdj ? shiftAdjs.find((a) => a.status === 'REJECTED') : undefined;

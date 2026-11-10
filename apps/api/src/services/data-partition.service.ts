@@ -130,7 +130,7 @@ async function createAndRegisterMonthlyFile(db: Database, monthKey: string, acto
   return { mode: 'MONTHLY_FILE' as const, entry, targetFor: (m: MonthlyStoreDesc) => ({ spreadsheetId: entry.spreadsheetId, tab: m.base }) };
 }
 
-async function ensureMonthlyTarget(db: Database, monthKey: string, actorId: string, forceMonthlyFile = false) {
+export async function ensureMonthlyTarget(db: Database, monthKey: string, actorId: string, forceMonthlyFile = false) {
   if (!monthKey) {
     return { mode: 'ROOT_FILE' as const, entry: null, targetFor: (m: MonthlyStoreDesc) => ({ spreadsheetId: m.defaultSpreadsheetId, tab: m.base }) };
   }
@@ -166,6 +166,7 @@ export async function switchPartition(db: Database, monthKey: string, actorId: s
     db.partitionMonth = monthKey;
     invalidateHistoricalShiftsCache(db);
     await persistActiveMonth(db, monthKey, actorId);
+    void import('./partition-rehome.service.js').then((m) => m.rehomeMisplacedPartitionRecords(db, actorId)).catch(() => undefined);
   });
 }
 
