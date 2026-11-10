@@ -91,17 +91,35 @@ describe('Đồng bộ Lưu trữ Đúng Phân vùng Tháng & Tự động Di d�
     // Phân vùng 2026_10 (đang active trong db) KHÔNG chứa phiếu tháng 11
     expect(t.db.attendanceAdjustments.get(createdAdj.id)).toBeUndefined();
 
-    // 5. Backoffice dù đang đứng ở 2026_10 nhưng khi gọi danh sách adjustments vẫn thấy phiếu chờ duyệt
-    const boListRes = await t.app.inject({
+    // 5. Backoffice đang đứng ở 2026_10 KHÔNG hiển thị phiếu của tháng 11 (cách ly phân vùng nghiêm ngặt)
+    const boListOct = await t.app.inject({
       method: 'GET',
       url: '/api/admin/attendance/adjustments',
       headers: hr,
     });
-    expect(boListRes.statusCode).toBe(200);
-    const boItems = boListRes.json().data;
-    expect(boItems.some((a: { id: string }) => a.id === createdAdj.id)).toBe(true);
+    expect(boListOct.statusCode).toBe(200);
+    const octItems = boListOct.json().data;
+    expect(octItems.some((a: { id: string }) => a.id === createdAdj.id)).toBe(false);
 
-    // 6. HR phê duyệt phiếu bổ sung công: ca tháng 11 được cập nhật sang COMPLETED
+    // 6. Chuyển Backoffice sang Tháng 11 (2026_11) -> chỉ thấy phiếu thuộc tháng 11
+    await t.app.inject({
+      method: 'PUT',
+      url: '/api/admin/data-partitions/active',
+      headers: admin,
+      payload: { month_key: '2026_11' },
+    });
+    expect(t.db.partitionMonth).toBe('2026_11');
+
+    const boListNov = await t.app.inject({
+      method: 'GET',
+      url: '/api/admin/attendance/adjustments',
+      headers: hr,
+    });
+    expect(boListNov.statusCode).toBe(200);
+    const novItems = boListNov.json().data;
+    expect(novItems.some((a: { id: string }) => a.id === createdAdj.id)).toBe(true);
+
+    // 7. HR phê duyệt phiếu bổ sung công tại Tháng 11: ca tháng 11 được cập nhật sang COMPLETED
     const decideRes = await t.app.inject({
       method: 'POST',
       url: `/api/admin/attendance/adjustments/${createdAdj.id}/decide`,
@@ -111,9 +129,6 @@ describe('Đồng bộ Lưu trữ Đúng Phân vùng Tháng & Tự động Di d�
         decision_reason: 'Duyệt bù công hợp lệ',
       },
     });
-    if (decideRes.statusCode !== 200) {
-      console.log('decideRes failed:', decideRes.statusCode, decideRes.json());
-    }
     expect(decideRes.statusCode).toBe(200);
 
     const shiftStoreNov = await getPartitionStore<ShiftAssignment>(t.db, 'SHIFT_ASSIGNMENTS', '2026_11');
@@ -170,10 +185,10 @@ describe('Đồng bộ Lưu trữ Đúng Phân vùng Tháng & Tự động Di d�
     expect(telem.runtime.memory.heapUsagePercent).toBeLessThan(90);
   });
 
-  it('HR ở Tháng 11 vẫn thấy phiếu bổ sung công ở tệp gốc và tự động đồng bộ về tháng 11', async () => {
+  it('tự động di dời phiếu bổ sung công lưu nhầm ở tệp gốc về đúng Tháng 11 khi rehome', async () => {
     const hr = await t.loginHeaders('hr');
     const admin = await t.loginHeaders('admin');
-    await t.app.inject({ method: 'POST', url: '/api/admin/data-partitions/rollover', headers: admin, payload: { month_key: '2026_11', carry_forward: false } });
+    await t.app.inject({ method: 'PUT', url: '/api/admin/data-partitions/active', headers: admin, payload: { month_key: '2026_11' } });
     expect(t.db.partitionMonth).toBe('2026_11');
 
     const rootStore = await getPartitionStore<AttendanceAdjustment>(t.db, 'ATTENDANCE_ADJUSTMENTS', '');
@@ -185,9 +200,20 @@ describe('Đồng bộ Lưu trữ Đúng Phân vùng Tháng & Tự động Di d�
       hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
     }, 'test');
 
-    const listRes = await t.app.inject({ method: 'GET', url: '/api/admin/attendance/adjustments', headers: hr });
-    expect(listRes.statusCode).toBe(200);
-    const items = listRes.json().data;
-    expect(items.some((a: { id: string }) => a.id === seededRootAdj.id)).toBe(true);
+    // Trước khi rehome: Backoffice Tháng 11 không thấy phiếu ở tệp gốc (cách ly nghiêm ngặt)
+    const listBefore = await t.app.inject({ method: 'GET', url: '/api/admin/attendance/adjustments', headers: hr });
+    expect(listBefore.statusCode).toBe(200);
+    expect(listBefore.json().data.some((a: { id: string }) => a.id === seededRootAdj.id)).toBe(false);
+
+    // Chạy rehome di dời bản ghi lưu sai tệp
+    await rehomeMisplacedPartitionRecords(t.db, 'tester');
+
+    // Sau khi rehome: Phiếu đã chuyển sang store Tháng 11 và Backoffice Tháng 11 hiển thị
+    const storeNov = await getPartitionStore<AttendanceAdjustment>(t.db, 'ATTENDANCE_ADJUSTMENTS', '2026_11');
+    expect(storeNov.get(seededRootAdj.id)).toBeDefined();
+
+    const listAfter = await t.app.inject({ method: 'GET', url: '/api/admin/attendance/adjustments', headers: hr });
+    expect(listAfter.statusCode).toBe(200);
+    expect(listAfter.json().data.some((a: { id: string }) => a.id === seededRootAdj.id)).toBe(true);
   });
 });

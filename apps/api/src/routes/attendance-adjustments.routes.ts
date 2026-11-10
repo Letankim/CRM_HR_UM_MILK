@@ -10,10 +10,9 @@ import { assertBranchAccess, auditContext, filterByBranch, requireAuth, requireP
 import { SocketEvents } from '../realtime/realtime.js';
 import { queueAttendanceAdjustmentCreatedEmail, queueAttendanceAdjustmentDecidedEmails } from '../services/action-email-dispatcher.js';
 import { runBackgroundSideEffect } from '../services/background-write.js';
-import { loadCrossPartitionBackofficeAdjustments } from '../services/data-partition-adjustments.helper.js';
 import { findShiftAcrossPartitions } from '../services/data-partition-employee.helper.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
-import { findPartitionAwareRecord, insertPartitionAwareRecord, updatePartitionAwareRecord } from '../services/partition-write-router.js';
+import { extractMonthKeyFromDate, findPartitionAwareRecord, insertPartitionAwareRecord, updatePartitionAwareRecord } from '../services/partition-write-router.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { applyApprovedAdjustmentToShift, assertNoDuplicateAdjustment } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
@@ -72,9 +71,11 @@ export async function sweepExpiredAttendanceAdjustments(ctx: AppContext, actorId
 export function registerAttendanceAdjustmentRoutes(app: FastifyInstance, ctx: AppContext): void {
   const handleGetAdjustments = async (request: Parameters<typeof sendPaginated>[0]) => {
     const query = zListQueryBase.extend({ branch_id: z.string().trim().optional(), status: z.string().trim().optional() }).parse(request.query ?? {});
-    const todayStr = dayjs().format('YYYY-MM-DD');
-    const allAdjs = await loadCrossPartitionBackofficeAdjustments(ctx, todayStr, query.q);
-    const scoped = filterByBranch(request, allAdjs, (a) => resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id));
+    const activeMonth = ctx.db.partitionMonth;
+    let scoped = filterByBranch(request, ctx.db.attendanceAdjustments.all(), (a) => resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id));
+    if (activeMonth) {
+      scoped = scoped.filter((a) => !a.work_date || extractMonthKeyFromDate(a.work_date) === activeMonth);
+    }
     const mapped = scoped.map((a) => mapAdjustmentRecord(ctx, a)).filter((a) => (!query.branch_id || query.branch_id === 'ALL' || a.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || a.status === query.status));
     return sendPaginated(request, 'Lấy danh sách phiếu bổ sung và điều chỉnh công thành công', paginateAndSort(mapped, { page: query.page, perPage: query.per_page, defaultSortBy: 'created_at', defaultSortOrder: 'desc', allowedSortFields: ['created_at', 'work_date', 'status'], q: query.q, searchExtractor: (i) => [i.adjustment_code, i.employeeCode, i.employeeName, i.reason, i.work_date], filters: { branch_id: query.branch_id, status: query.status } }));
   };
