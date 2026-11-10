@@ -23,7 +23,7 @@ interface Props { branchOptions: { value: string; label: string }[] }
 export function SchedulePlannerWeekPane({ branchOptions }: Props) {
   const can = useCan(), me = useMe().data?.user;
   const isFinance = me?.role === 'FINANCE', canPublish = !isFinance && can('schedule.publish'), canDecide = !isFinance && can('leave.approve');
-  const [weekStart, setWeekStart] = useState<string | null>(null);
+  const [weekStart, setWeekStart] = useState<string | null>(() => mondayOfWeek(dayjs().format('YYYY-MM-DD')));
   const [branchId, setBranchId] = useState('ALL');
   const [issuesOpen, setIssuesOpen] = useState(false);
   const [preview, setPreview] = useState<{ open: boolean; seq: number; branchId: string }>({ open: false, seq: 0, branchId: 'ALL' });

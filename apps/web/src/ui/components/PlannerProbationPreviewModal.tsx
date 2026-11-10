@@ -89,9 +89,9 @@ export function PlannerProbationPreviewModal({
 
   return (
     <Modal
-      open={open} onCancel={onClose} destroyOnHidden centered={false} width="98vw"
-      style={{ maxWidth: '98vw', top: 16, margin: '0 auto', paddingBottom: 16 }}
-      styles={{ body: { maxHeight: 'calc(100vh - 170px)', overflowY: 'auto', paddingTop: 8 } }}
+      open={open} onCancel={onClose} destroyOnHidden centered width="98vw"
+      style={{ maxWidth: '98vw', margin: '0 auto' }}
+      styles={{ body: { maxHeight: 'calc(100vh - 190px)', overflowY: 'auto', paddingTop: 8 } }}
       title={
         <Space size={8} wrap>
           <ScheduleOutlined style={{ color: '#2563EB' }} />

@@ -21,6 +21,7 @@ import { getOperationSettings } from '../services/operations-settings.service.js
 import { mapShiftAssignment } from './schedules.routes.js';
 import { mapShiftSwapRecord } from './shift-swap-helpers.js'; import { sweepExpiredShiftSwaps } from '../services/shift-swap-sweep.service.js';
 import { ensureOfficeShiftTemplate } from './branches.routes.js';
+import { loadCrossPartitionEmployeeEvents, loadCrossPartitionEmployeeShifts } from '../services/data-partition-employee.helper.js';
 
 const SHIFT_DEFAULT_HOURS: Record<string, { start: string; end: string; hours: number }> = {
   CA_SANG: { start: '07:00', end: '12:00', hours: 5 }, CA_CHIEU: { start: '12:00', end: '17:00', hours: 5 },
@@ -72,10 +73,10 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
     const branch = ctx.db.branches.get(emp.branch_id) ?? ctx.db.branches.all()[0];
     const { todayStr, nowHm } = getVnDateAndHm();
 
-    const myRawEvents = ctx.db.attendanceEvents.filter((e) => e.employee_id === emp.id || e.employee_id === emp.employee_code).reverse();
+    const myRawEvents = await loadCrossPartitionEmployeeEvents(ctx, emp, todayStr);
     const events = myRawEvents.map((e) => mapAttendanceEvent(e, ctx));
 
-    const myRawShifts = ctx.db.shiftAssignments.filter((a) => a.employee_id === emp.id || a.employee_id === emp.employee_code).reverse();
+    const myRawShifts = await loadCrossPartitionEmployeeShifts(ctx, emp, todayStr);
     const isOffice = isOfficeEmployeeSpec(emp, user.role);
     const isOfficeOrMgr = isOffice || emp.staff_group === 'STORE_MANAGER' || user.role === 'STORE';
     if (isOfficeOrMgr && !myRawShifts.some((a) => a.work_date === todayStr && !a.is_deleted)) {
