@@ -356,6 +356,26 @@ html body {
   line-height: 1.35 !important;
 }
 
+/* Đảm bảo popup Modal centered luôn căn giữa hoàn hảo trên cả Desktop lẫn Mobile, triệt tiêu lỗi rớt baseline/nhảy xuống đáy */
+.ant-modal-wrap.ant-modal-centered {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  padding: 12px !important;
+  overflow-y: auto !important;
+}
+
+.ant-modal-wrap.ant-modal-centered::before {
+  display: none !important;
+}
+
+.ant-modal-wrap.ant-modal-centered .ant-modal {
+  top: 0 !important;
+  margin: 0 auto !important;
+  padding-bottom: 0 !important;
+}
+
 .ant-card-extra,
 .ant-drawer-extra {
   margin-inline-start: auto;

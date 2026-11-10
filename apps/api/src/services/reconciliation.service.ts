@@ -1,9 +1,10 @@
-import type { SagaStatus } from '@umbm/shared';
+import { RECONCILIATION_ISSUE_LABELS, type SagaStatus } from '@umbm/shared';
 import type { Database } from '../data/database.js';
 import { nowIso } from '../lib/time.js';
 import { runBackgroundSideEffect } from './background-write.js';
 import { scanUniqueKeys, scanUserInvariants, type ReconciliationIssue, type ReconciliationReport } from './reconciliation-scan.js';
 import { scanSystemTables } from './reconciliation-system-scan.js';
+import { rehomeMisplacedPartitionRecords } from './partition-rehome.service.js';
 
 export type { ReconciliationIssue, ReconciliationReport } from './reconciliation-scan.js';
 
@@ -126,6 +127,21 @@ export class ReconciliationService {
       ...(await scanUniqueKeys(this.db, { autoFix, actorId })),
       ...(await scanUserInvariants(this.db, { autoFix, actorId, now })),
     ];
+    if (autoFix) {
+      const rehome = await rehomeMisplacedPartitionRecords(this.db, actorId).catch(() => ({ rehomedCount: 0, details: [] }));
+      for (const d of rehome.details) {
+        issues.push({
+          id: `rehome_${d.id}`,
+          code: 'STATE_INVARIANT_VIOLATION',
+          label: RECONCILIATION_ISSUE_LABELS.STATE_INVARIANT_VIOLATION,
+          severity: 'warning',
+          table: d.table,
+          recordId: d.id,
+          message: `Bản ghi ${d.table} (${d.code || d.id}) nằm sai phân vùng ${d.fromMonth}, đã tự động di dời về ${d.toMonth}`,
+          autoRepaired: true,
+        });
+      }
+    }
     const system = scanSystemTables(this.db);
     issues.push(...system.issues);
 

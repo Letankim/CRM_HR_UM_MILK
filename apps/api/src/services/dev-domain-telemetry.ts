@@ -1,4 +1,5 @@
 import os from 'node:os';
+import v8 from 'node:v8';
 import { ACCOUNT_STATUSES, ACCOUNT_STATUS_LABELS, BACKUP_STATUS_LABELS, EMPLOYEE_STAGES, EMPLOYEE_STAGE_LABELS, PAY_PERIOD_STATUSES, PAY_PERIOD_STATUS_LABELS, ROLES, ROLE_LABELS, TABLE_DISPLAY_LABELS } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { nowIso } from '../lib/time.js';
@@ -169,13 +170,18 @@ export async function collectDevDomainAndRuntimeTelemetry(ctx: AppContext) {
       startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
       serverTime: nowIso(),
       timezone: process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Ho_Chi_Minh',
-      memory: {
-        rssMb: round2(mem.rss / (1024 * 1024)),
-        heapUsedMb: round2(mem.heapUsed / (1024 * 1024)),
-        heapTotalMb: round2(mem.heapTotal / (1024 * 1024)),
-        externalMb: round2(mem.external / (1024 * 1024)),
-        heapUsagePercent: mem.heapTotal > 0 ? round2((mem.heapUsed / mem.heapTotal) * 100) : 0,
-      },
+      memory: (() => {
+        const v8Stats = v8.getHeapStatistics?.() ?? { heap_size_limit: 0 };
+        const heapLimit = v8Stats.heap_size_limit > 0 ? v8Stats.heap_size_limit : mem.heapTotal;
+        return {
+          rssMb: round2(mem.rss / (1024 * 1024)),
+          heapUsedMb: round2(mem.heapUsed / (1024 * 1024)),
+          heapTotalMb: round2(heapLimit / (1024 * 1024)),
+          allocatedMb: round2(mem.heapTotal / (1024 * 1024)),
+          externalMb: round2(mem.external / (1024 * 1024)),
+          heapUsagePercent: heapLimit > 0 ? round2((mem.heapUsed / heapLimit) * 100) : 0,
+        };
+      })(),
       os: {
         cpuModel: cpus[0]?.model?.trim() || 'CPU Server',
         cpuCores: cpus.length,
