@@ -18,7 +18,7 @@ import { BaseDetailDrawer } from './BaseDetailDrawer';
 import { ContractPreviewModal, downloadEmployeeContractDirect } from './ContractPreviewModal';
 import { DataTableCard } from './DataTableCard';
 import { ContractUploadModal, EmployeeContractStorePanel } from './EmployeeContractStorePanel';
-import { PromoteOfficialModal } from './EmployeeDossierHistoryTab';
+import { EmployeePromoteOfficialModal } from './EmployeePromoteOfficialModal';
 import type { EmployeeRowItem } from './employee-table-columns';
 import { FilterToolbar } from './FilterToolbar';
 import { useJobPositions } from './JobPositionsManagerModal';
@@ -65,14 +65,7 @@ export function ContractsAndProbationPane({ branches }: { branches: { value: str
 
   const liveDetailEmp = detailEmp ? (allRows.find((x) => x.id === detailEmp.id) ?? detailEmp) : null;
   const employeeOptions = useMemo(() => allRows.map((r) => ({ value: r.id, label: `${r.employeeCode} — ${r.fullName} (${r.branchName})`, stage: r.stage })), [allRows]);
-  const refreshAll = () => ['employees', 'employee-contracts', 'employee-contract-detail', 'accounts'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
-
-  const promoteSingle = useMutation({
-    mutationFn: (input: { row: EmployeeRowItem; official_from: string; evaluation_summary: string }) =>
-      api.post<EmployeeRowItem>(`/admin/employees/${input.row.id}/promote-official`, { version: input.row.version, official_from: input.official_from, evaluation_summary: input.evaluation_summary }),
-    onSuccess: (updated) => { message.success(`Đã chuyển chính thức cho ${updated.fullName} (${updated.employeeCode})`); setPromotingRow(null); refreshAll(); },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Chuyển chính thức thất bại'),
-  });
+  const refreshAll = () => ['employees', 'employee-contracts', 'employee-contract-detail', 'accounts', 'schedules', 'schedule-planner-probation'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
 
   const exportRows = (list: EmployeeRowItem[]) =>
     exportToExcel({
@@ -201,7 +194,22 @@ export function ContractsAndProbationPane({ branches }: { branches: { value: str
 
       <ContractPreviewModal open={Boolean(previewTarget)} employee={previewTarget?.emp ?? null} contractItem={previewTarget?.item ?? null} onClose={() => setPreviewTarget(null)} />
       <ContractUploadModal open={uploadModalOpen} presetEmployee={uploadPresetEmp} employeeOptions={employeeOptions} onClose={() => { setUploadModalOpen(false); setUploadPresetEmp(null); }} />
-      <PromoteOfficialModal employee={promotingRow} loading={promoteSingle.isPending} onClose={() => setPromotingRow(null)} onConfirm={(v) => promotingRow && promoteSingle.mutate({ row: promotingRow, ...v })} />
+      <EmployeePromoteOfficialModal
+        open={Boolean(promotingRow)}
+        employee={promotingRow ? {
+          id: promotingRow.id,
+          employeeCode: promotingRow.employeeCode,
+          fullName: promotingRow.fullName,
+          branchId: promotingRow.branchId,
+          branchName: promotingRow.branchName,
+          version: promotingRow.version,
+        } : null}
+        onClose={() => setPromotingRow(null)}
+        onSuccess={() => {
+          setPromotingRow(null);
+          refreshAll();
+        }}
+      />
       {decisionModalElement}
     </Space>
   );

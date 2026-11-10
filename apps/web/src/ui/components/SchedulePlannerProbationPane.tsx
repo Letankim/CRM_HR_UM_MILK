@@ -1,50 +1,27 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Alert, App, Button, Card, Flex, Segmented, Select, Space, Table, Tag, Tooltip } from 'antd';
+import { Alert, Button, Card, Flex, Segmented, Select, Space, Table, Tag, Tooltip } from 'antd';
 import {
   BarChartOutlined, CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, LockOutlined,
   ReloadOutlined, ScheduleOutlined, TableOutlined, TrophyOutlined, UnlockOutlined,
 } from '@ant-design/icons';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import dayjs from 'dayjs';
-import { api, ApiClientError } from '@/lib/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
 import { buildClickableRowProps } from './BulkActionBar';
-import { DateStringPicker } from './DateTimePickers';
+import { EmployeePromoteOfficialModal } from './EmployeePromoteOfficialModal';
 import { PlannerProbationPreviewModal } from './PlannerProbationPreviewModal';
 import { useQuickDetail } from './RecordQuickDetailModal';
 import { PlannerIssuesAlert, PlannerOffTable } from './SchedulePlannerShared';
 import { SchedulePlannerProbationGantt, sortProbationNewestFirst } from './SchedulePlannerProbationGantt';
 import { fmtDm, fmtTs, type PlannerProbationItem } from './schedule-planner-types';
 import { useInvalidatePlanner, usePlannerOffDecision } from './usePlannerOffDecision';
-import { useWorkflowDecisionModal } from './WorkflowDecisionModal';
 
 interface Props { branchOptions: { value: string; label: string }[] }
 
-function PromoteOfficialDateField({ initialDate, onChange }: { initialDate: string; onChange: (val: string) => void }) {
-  const [val, setVal] = useState(initialDate);
-  return (
-    <div>
-      <div style={{ fontWeight: 600, fontSize: 13, color: '#0F172A', marginBottom: 6 }}>
-        Ngày hiệu lực chuyển Nhân viên chính thức
-      </div>
-      <DateStringPicker
-        value={val}
-        placeholder="Chọn ngày hiệu lực chính thức (DD/MM/YYYY)"
-        onChange={(next) => {
-          const resolved = next || initialDate;
-          setVal(resolved);
-          onChange(resolved);
-        }}
-      />
-    </div>
-  );
-}
-
 /** Chốt lịch chu kỳ thử việc 12 ngày (7 ca làm + tối đa 5 ngày OFF) và duyệt chuyển chính thức khi hoàn thành đủ 7 ca. */
 export function SchedulePlannerProbationPane({ branchOptions }: Props) {
-  const { message } = App.useApp();
   const showDetail = useQuickDetail();
   const qc = useQueryClient();
   const can = useCan(), me = useMe().data?.user, isFinance = me?.role === 'FINANCE';
@@ -52,11 +29,10 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
   const canPromote = !isFinance && can('employee.promote');
   const canDecideOff = !isFinance && can('leave.approve');
   const [branchId, setBranchId] = useState('ALL');
-  const [promoteBusyId, setPromoteBusyId] = useState<string | null>(null);
+  const [promoteTarget, setPromoteTarget] = useState<PlannerProbationItem | null>(null);
   const [preview, setPreview] = useState<{ open: boolean; seq: number; employeeId: string | null }>({ open: false, seq: 0, employeeId: null });
   const invalidate = useInvalidatePlanner();
   const offDecision = usePlannerOffDecision();
-  const { promptDecision, decisionModalElement: promoteModalElement } = useWorkflowDecisionModal();
 
   const q = useQuery({
     queryKey: ['schedule-planner-probation', branchId],
@@ -67,41 +43,8 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
   const [viewMode, setViewMode] = useState<'table' | 'gantt'>('table');
   const readyRows = rows.filter((r) => r.readyForOfficial);
 
-  const promoteMut = useMutation({
-    mutationFn: ({ row, official_from, evaluation_summary }: { row: PlannerProbationItem; official_from: string; evaluation_summary: string }) =>
-      api.post(`/admin/employees/${row.employeeId}/promote-official`, {
-        version: row.employeeVersion,
-        official_from,
-        evaluation_summary,
-      }),
-    onMutate: ({ row }) => setPromoteBusyId(row.employeeId),
-    onSuccess: (_, { row }) => {
-      message.success(`Đã duyệt chuyển Nhân viên chính thức cho ${row.employeeName} (${row.employeeCode})`);
-      invalidate();
-      ['employees', 'dashboard-employees', 'notifications'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
-    },
-    onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Duyệt chuyển chính thức thất bại'),
-    onSettled: () => setPromoteBusyId(null),
-  });
-
   const openPromoteModal = (row: PlannerProbationItem) => {
-    let selectedDate = dayjs().format('YYYY-MM-DD');
-    promptDecision({
-      title: 'Duyệt chuyển Nhân viên chính thức',
-      subtitle: `${row.employeeName} (${row.employeeCode}) · ${row.branchName} · Đã hoàn thành ${row.completedCount}/${row.workRequired} ca thử việc`,
-      extraNode: <PromoteOfficialDateField initialDate={selectedDate} onChange={(v) => { selectedDate = v; }} />,
-      noteLabel: 'Đánh giá của HR & Điều kiện phê duyệt',
-      placeholder: 'Nhập nhận xét đánh giá năng lực, tác phong và điều kiện đạt thử việc...',
-      required: true,
-      okText: 'Duyệt chính thức',
-      suggestions: [
-        `Hoàn thành đủ ${row.completedCount}/${row.workRequired} ca thử việc và đạt yêu cầu nghiệp vụ tại cửa hàng`,
-        'Đạt tiêu chuẩn tác phong, kỹ năng pha chế SOP và nội quy vận hành',
-      ],
-      onConfirm: async (note) => {
-        await promoteMut.mutateAsync({ row, official_from: selectedDate, evaluation_summary: note });
-      },
-    });
+    setPromoteTarget(row);
   };
 
   const openProbationDetail = (item: PlannerProbationItem) =>
@@ -184,7 +127,7 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
             render: (_: unknown, r: PlannerProbationItem) => (
               <Flex justify="flex-end" align="center" gap={6} wrap={false} style={{ width: '100%', whiteSpace: 'nowrap' }}>
                 {canPromote && r.readyForOfficial && (
-                  <Button size="small" type="primary" icon={<TrophyOutlined />} loading={promoteBusyId === r.employeeId} onClick={() => openPromoteModal(r)}>
+                  <Button size="small" type="primary" icon={<TrophyOutlined />} loading={promoteTarget?.employeeId === r.employeeId} onClick={() => openPromoteModal(r)}>
                     Duyệt chính thức
                   </Button>
                 )}
@@ -203,7 +146,22 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
         ]}
       />}
       {offDecision.decisionModalElement}
-      {promoteModalElement}
+      <EmployeePromoteOfficialModal
+        open={Boolean(promoteTarget)}
+        employee={promoteTarget ? {
+          id: promoteTarget.employeeId,
+          employeeCode: promoteTarget.employeeCode,
+          fullName: promoteTarget.employeeName,
+          branchId: promoteTarget.branchId,
+          branchName: promoteTarget.branchName,
+          version: promoteTarget.employeeVersion,
+        } : null}
+        onClose={() => setPromoteTarget(null)}
+        onSuccess={() => {
+          setPromoteTarget(null);
+          invalidate();
+        }}
+      />
       <PlannerProbationPreviewModal
         open={preview.open} openSeq={preview.seq} employeeId={preview.employeeId}
         branchId={branchId} canPublish={canPublish}
