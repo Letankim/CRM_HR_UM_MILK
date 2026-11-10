@@ -464,6 +464,20 @@ html body {
   .ant-modal-footer > .ant-space {
     justify-content: center !important;
   }
+
+  /* Đảm bảo popup Modal luôn căn giữa màn hình cả trên Mobile lẫn Desktop, tuyệt đối không bị trôi/nhảy xuống đáy */
+  .ant-modal-wrap.ant-modal-centered {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 8px !important;
+  }
+
+  .ant-modal-wrap.ant-modal-centered .ant-modal {
+    top: 0 !important;
+    margin: 0 auto !important;
+    padding-bottom: 0 !important;
+  }
   .ant-drawer-right .ant-drawer-content-wrapper,
   .ant-drawer-bottom .ant-drawer-content-wrapper {
     width: 100vw !important;

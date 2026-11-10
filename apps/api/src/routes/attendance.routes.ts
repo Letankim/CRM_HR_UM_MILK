@@ -15,6 +15,7 @@ import { healBranchConsistency, resolveEmployeeBranchId, resolveShiftTimeDetails
 import { buildPaginatedAttendanceSessions, buildShiftFolderName, calculateHaversineMeters, describePunctuality, formatLateFineTierLabel, loadAttendancePhotoBuffer, mapAttendanceEvent, migrateLegacyBase64Photos, parseHm, persistAttendancePhoto, queueAttendancePhotoDrivePatch, resolveShiftBasePayVnd } from './attendance-helpers.js';
 import { registerShiftAttendanceDetailRoute } from './attendance-shift-detail.js';
 import { registerAttendanceAdjustmentRoutes } from './attendance-adjustments.routes.js';
+import { findShiftAcrossPartitions } from '../services/data-partition-employee.helper.js';
 export { calculateHaversineMeters } from './attendance-helpers.js';
 const inFlightChecksByCtx = new WeakMap<AppContext, Set<string>>();
 
@@ -81,7 +82,7 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       inFlightSet.add(lockKey);
     }
     try {
-    const assign = ctx.db.shiftAssignments.get(body.assignment_id);
+    const assign = ctx.db.shiftAssignments.get(body.assignment_id) ?? (await findShiftAcrossPartitions(ctx, body.assignment_id, getVnNowDateAndHm().todayStr));
     if (!assign) throw Errors.fieldValidation('assignment_id', 'INVALID_VALUE', 'Không tìm thấy ca phân công', body.assignment_id);
     if (assign.status === 'ABSENT') throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'} ngày ${dayjs(assign.work_date).format('DD/MM/YYYY')}) đã quá giờ kết thúc ca mà chưa điểm danh vào ca nên đã bị khóa và chuyển sang trạng thái Vắng mặt. Nếu muốn bù công, vui lòng gửi Phiếu bổ sung công.`);
     if (assign.status !== 'PUBLISHED' && assign.status !== 'COMPLETED') throw Errors.badRequest('Ca đăng ký này đang ở trạng thái Chờ duyệt. Phải được Quản lý cửa hàng (chi nhánh trực thuộc) hoặc HR duyệt sang Đã phân ca chính thức thì mới được phép chấm công Vào/Ra ca.');

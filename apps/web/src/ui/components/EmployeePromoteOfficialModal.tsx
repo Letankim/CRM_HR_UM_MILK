@@ -163,7 +163,7 @@ export function EmployeePromoteOfficialModal({ open, employee, onClose, onSucces
 
   return (
     <Modal
-      width={780} open={open} forceRender destroyOnHidden centered={false} style={{ top: 16 }}
+      width={780} open={open} forceRender destroyOnHidden centered
       title={<Space><UserSwitchOutlined style={{ color: '#2563EB' }} /><span>Duyệt chuyển Nhân viên chính thức & Sắp xếp lịch</span></Space>}
       onCancel={onClose}
       footer={[
