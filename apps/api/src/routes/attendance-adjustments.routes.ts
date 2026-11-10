@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { ADJUSTMENT_PUNCH_TYPE_LABELS, SYSTEM_CONFIG, isEmployeeRole, zListQueryBase, type AttendanceAdjustment } from '@umbm/shared';
+import { ADJUSTMENT_PUNCH_TYPE_LABELS, SYSTEM_CONFIG, isEmployeeRole, zListQueryBase, type AttendanceAdjustment, type AttendanceEvent, type ShiftAssignment } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
@@ -12,7 +12,7 @@ import { queueAttendanceAdjustmentCreatedEmail, queueAttendanceAdjustmentDecided
 import { runBackgroundSideEffect } from '../services/background-write.js';
 import { findShiftAcrossPartitions } from '../services/data-partition-employee.helper.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
-import { extractMonthKeyFromDate, findPartitionAwareRecord, insertPartitionAwareRecord, updatePartitionAwareRecord } from '../services/partition-write-router.js';
+import { extractMonthKeyFromDate, findPartitionAwareRecord, getPartitionStore, insertPartitionAwareRecord, nextPartitionCode, resolveTargetMonthForRecord, updatePartitionAwareRecord } from '../services/partition-write-router.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { applyApprovedAdjustmentToShift, assertNoDuplicateAdjustment } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
@@ -96,16 +96,21 @@ export function registerAttendanceAdjustmentRoutes(app: FastifyInstance, ctx: Ap
     const punchType = body.punch_type ?? inferPunchType(body.kind);
     const hasEvidence = /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(body.evidence_photo_base64);
     if (isSelfEmp && isEmployeeRole(caller.role) && !hasEvidence) throw Errors.fieldValidation('evidence_photo_base64', 'REQUIRED_FIELD', 'Vui lòng chụp hoặc tải lên ảnh minh chứng để HR xem xét phiếu chấm công lỗi', '');
+    const hintMonth = resolveTargetMonthForRecord(ctx.db, 'ATTENDANCE_ADJUSTMENTS', { work_date: body.work_date, assignment_id: body.assignment_id }, body.work_date);
+    const shiftStoreForMonth = await getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', hintMonth, caller.id);
     const matchedShift = (body.assignment_id ? (await findShiftAcrossPartitions(ctx, body.assignment_id, body.work_date)) : undefined)
+      ?? shiftStoreForMonth.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.shift_code === body.shift_code)
       ?? ctx.db.shiftAssignments.find((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.work_date === body.work_date && a.shift_code === body.shift_code);
     const effectiveBranchId = resolveEmployeeBranchId(ctx, emp.id, matchedShift?.branch_id || emp.branch_id);
     assertBranchAccess(request, effectiveBranchId);
     const workDate = matchedShift?.work_date ?? body.work_date, shiftCode = matchedShift?.shift_code ?? body.shift_code;
     assertDateNotLockedByPayroll(ctx.db, workDate, 'tạo phiếu bổ sung công');
-    assertNoDuplicateAdjustment(ctx.db, emp, matchedShift?.id ?? body.assignment_id, workDate, shiftCode, punchType);
+    const targetMonth = resolveTargetMonthForRecord(ctx.db, 'ATTENDANCE_ADJUSTMENTS', { work_date: workDate, assignment_id: matchedShift?.id ?? body.assignment_id }, workDate);
+    const targetAdjStore = await getPartitionStore<AttendanceAdjustment>(ctx.db, 'ATTENDANCE_ADJUSTMENTS', targetMonth, caller.id);
+    assertNoDuplicateAdjustment(ctx.db, emp, matchedShift?.id ?? body.assignment_id, workDate, shiftCode, punchType, targetAdjStore);
     if (body.enforce_weekly_limit || isMeRoute) {
       const weekMonday = getWeekMonday(workDate);
-      const weekExisting = ctx.db.attendanceAdjustments.filter((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.status !== 'REJECTED' && getWeekMonday(a.work_date) === weekMonday);
+      const weekExisting = targetAdjStore.filter((a) => (a.employee_id === emp.id || a.employee_id === emp.employee_code) && a.status !== 'REJECTED' && getWeekMonday(a.work_date) === weekMonday);
       if (weekExisting.length >= SYSTEM_CONFIG.defaults.adjustmentWeeklyMaxCount) {
         throw Errors.badRequest(`Mỗi nhân viên chỉ được gửi tối đa ${SYSTEM_CONFIG.defaults.adjustmentWeeklyMaxCount} phiếu bổ sung công trong 1 tuần (tuần bắt đầu ${weekMonday})`);
       }
@@ -123,7 +128,7 @@ export function registerAttendanceAdjustmentRoutes(app: FastifyInstance, ctx: Ap
     const meta = resolveShiftTimeDetails(ctx, shiftCode, matchedShift?.id ?? '', effectiveBranchId);
     const evidence = hasEvidence ? await persistAttendancePhoto(ctx, { base64: body.evidence_photo_base64, employeeCode: emp.employee_code, checkType: 'EVIDENCE', workDate, shiftFolder: buildShiftFolderName(meta.shiftLabel, shiftCode, shiftStart, shiftEnd), rootFolder: 'EVIDENCE' }) : null;
     const created = await insertPartitionAwareRecord<AttendanceAdjustment>(ctx.db, 'ATTENDANCE_ADJUSTMENTS', {
-      adjustment_code: `ADJ-${String(ctx.db.attendanceAdjustments.all(true).length + 1).padStart(4, '0')}`, event_id: body.event_id, assignment_id: matchedShift?.id ?? body.assignment_id, employee_id: emp.id, branch_id: effectiveBranchId,
+      adjustment_code: nextPartitionCode(targetAdjStore, 'ADJ-', 'adjustment_code'), event_id: body.event_id, assignment_id: matchedShift?.id ?? body.assignment_id, employee_id: emp.id, branch_id: effectiveBranchId,
       work_date: workDate, shift_code: shiftCode, kind: body.kind, punch_type: punchType, requested_time: punchType === 'CHECK_IN' ? shiftStart : shiftEnd,
       requested_check_in_at: punchType === 'CHECK_OUT' ? shiftStart : (body.requested_check_in_at || shiftStart), requested_check_out_at: punchType === 'CHECK_IN' ? shiftEnd : (body.requested_check_out_at || shiftEnd), requested_hours: shiftHours,
       reason: body.reason, evidence_file_id: evidence?.fileId ?? '', exception_source: isSelfEmp ? 'EMPLOYEE' : 'MANAGER', status: 'PENDING', store_confirmed_by: '', store_confirmed_at: '', store_note: '', hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
@@ -156,7 +161,8 @@ export function registerAttendanceAdjustmentRoutes(app: FastifyInstance, ctx: Ap
     if (action === 'HR_APPROVE') {
       await applyApprovedAdjustmentToShift(ctx.db, id, actorId);
       const emp = ctx.db.employees.get(updated.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === updated.employee_id);
-      const shiftEvents = ctx.db.attendanceEvents.filter((e) => (updated.assignment_id && e.assignment_id === updated.assignment_id) || ((e.employee_id === updated.employee_id || Boolean(emp && (e.employee_id === emp.id || e.employee_id === emp.employee_code))) && e.work_date === updated.work_date && e.shift_code === updated.shift_code));
+      const eventStore = await getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', resolveTargetMonthForRecord(ctx.db, 'ATTENDANCE_EVENTS', { work_date: updated.work_date }, updated.work_date), actorId);
+      const shiftEvents = eventStore.filter((e) => (updated.assignment_id && e.assignment_id === updated.assignment_id) || ((e.employee_id === updated.employee_id || Boolean(emp && (e.employee_id === emp.id || e.employee_id === emp.employee_code))) && e.work_date === updated.work_date && e.shift_code === updated.shift_code));
       for (const ev of shiftEvents) {
         if ((ev.late_fine_vnd ?? 0) > 0 || (ev.late_fine_tier && ev.late_fine_tier !== 'NONE')) {
           await updatePartitionAwareRecord(ctx.db, 'ATTENDANCE_EVENTS', ev.id, ev.version, { late_fine_vnd: 0, late_fine_tier: 'NONE' }, ev.work_date, actorId);

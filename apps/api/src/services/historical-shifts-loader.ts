@@ -88,9 +88,9 @@ function canonicalEmpId(ctx: AppContext, empIdOrCode: string): string {
 }
 
 /**
- * Đọc gộp ca làm việc xuyên các tệp Google Sheets phân vùng theo tháng (kèm tệp gốc) trong khoảng [fromDate, toDate].
- * Đảm bảo khi qua tháng mới & chuyển sang Sheet tháng mới, thống kê "4 tuần trước" và thuật toán xoay vòng công bằng
- * vẫn giữ nguyên đầy đủ lịch sử ca của tháng trước mà không bị về 0 ca.
+ * Đọc gộp ca làm việc xuyên các tệp Google Sheets phân vùng theo tháng trong khoảng [fromDate, toDate].
+ * Nếu tháng nào đã có tệp riêng trong DATA_PARTITIONS_REGISTRY thì chỉ lấy dữ liệu của tháng đó từ tệp riêng,
+ * tuyệt đối không lấy dữ liệu mẫu trùng tháng từ Tệp gốc.
  */
 export async function loadShiftsAcrossPartitions(
   ctx: AppContext,
@@ -107,13 +107,14 @@ export async function loadShiftsAcrossPartitions(
   }
   const monthKeys = listMonthKeysInRange(fromDate, toDate);
   const regMap = new Map(registry.map((r) => [r.monthKey, r]));
-  const targets = new Map<string, { spreadsheetId: string; tab: string }>();
-  const addTarget = (spreadsheetId: string, tab: string) => {
+  const targets = new Map<string, { spreadsheetId: string; tab: string; filterUncoveredMonthsOnly?: boolean }>();
+  const addTarget = (spreadsheetId: string, tab: string, filterUncoveredMonthsOnly = false) => {
     const k = `${spreadsheetId}::${tab}`;
-    if (spreadsheetId && tab && k !== activeKey) targets.set(k, { spreadsheetId, tab });
+    if (spreadsheetId && tab && k !== activeKey) targets.set(k, { spreadsheetId, tab, filterUncoveredMonthsOnly });
   };
 
   let rootTabs: Set<string> | null = null;
+  let hasUncoveredMonth = false;
   for (const mk of monthKeys) {
     if (!PARTITION_MONTH_REGEX.test(mk) || mk === db.partitionMonth) continue;
     const reg = regMap.get(mk);
@@ -125,10 +126,11 @@ export async function loadShiftsAcrossPartitions(
       rootTabs = rootTabs ?? (await getScheduleRootTabs(db, force));
       const legacyTab = partitionTabName('SHIFT_ASSIGNMENTS', mk);
       if (rootTabs.has(legacyTab)) addTarget(db.ids.SCHEDULE, legacyTab);
+      else hasUncoveredMonth = true;
     }
   }
-  if (db.partitionMonth !== '') {
-    addTarget(db.ids.SCHEDULE, 'SHIFT_ASSIGNMENTS');
+  if (db.partitionMonth !== '' && hasUncoveredMonth) {
+    addTarget(db.ids.SCHEDULE, 'SHIFT_ASSIGNMENTS', true);
   }
 
   const activeAll = db.shiftAssignments.all(true);
@@ -144,12 +146,17 @@ export async function loadShiftsAcrossPartitions(
 
   if (targets.size === 0) return merged;
 
-  const extraBatches = await Promise.all(
-    Array.from(targets.values()).map((t) => readHistoricalShiftTarget(db, t, force)),
-  );
-  for (const batch of extraBatches) {
+  const targetEntries = Array.from(targets.values());
+  const extraBatches = await Promise.all(targetEntries.map((t) => readHistoricalShiftTarget(db, t, force)));
+  for (let i = 0; i < extraBatches.length; i++) {
+    const batch = extraBatches[i]!;
+    const targetInfo = targetEntries[i]!;
     for (const row of batch) {
       if (row.work_date < fromDate || row.work_date > toDate) continue;
+      if (targetInfo.filterUncoveredMonthsOnly) {
+        const rowMonth = `${row.work_date.slice(0, 4)}_${row.work_date.slice(5, 7)}`;
+        if (regMap.has(rowMonth)) continue;
+      }
       if (seenIds.has(row.id)) continue;
       const semKey = `${canonicalEmpId(ctx, row.employee_id)}|${row.work_date}|${row.shift_code.toUpperCase()}`;
       if (seenSemantic.has(semKey)) continue;
