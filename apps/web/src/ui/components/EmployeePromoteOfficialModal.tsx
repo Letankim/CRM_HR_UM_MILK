@@ -72,7 +72,7 @@ export function EmployeePromoteOfficialModal({ open, employee, onClose, onSucces
         evaluation_summary: 'Hoàn thành tốt chu kỳ thử việc, đạt chuẩn tác phong và nội quy cửa hàng',
       });
     }
-  }, [open, employee, form]);
+  }, [open, employee?.id, form]);
 
   useEffect(() => {
     if (preview?.suggestedShifts) {
@@ -163,7 +163,7 @@ export function EmployeePromoteOfficialModal({ open, employee, onClose, onSucces
 
   return (
     <Modal
-      width={780} open={open} forceRender destroyOnHidden centered
+      width={780} open={open && Boolean(employee)} forceRender centered
       title={<Space><UserSwitchOutlined style={{ color: '#2563EB' }} /><span>Duyệt chuyển Nhân viên chính thức & Sắp xếp lịch</span></Space>}
       onCancel={onClose}
       footer={[

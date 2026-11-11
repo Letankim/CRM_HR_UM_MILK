@@ -5,6 +5,7 @@ import { Col, Form, Input, InputNumber, Modal, Row, Select, Space, Tag } from 'a
 import { CloseOutlined, FileAddOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useShiftTemplates } from '../hooks/useShiftTemplates';
+import { AdjustmentEvidenceFields, kindFromPunchType } from './AdjustmentEvidenceFields';
 import { DateStringPicker, TimeStringPicker } from './DateTimePickers';
 import { WorkflowSwapCreateModal } from './WorkflowSwapCreateModal';
 
@@ -107,7 +108,7 @@ export function ScheduleWorkflowModals({
         <Form
           form={adjForm} layout="vertical"
           initialValues={{ kind: 'FORGOT_CHECK_IN', punch_type: 'FULL_SHIFT', reason: 'Bổ sung công bù ca Vắng mặt do nhân sự quên điểm danh đúng giờ' }}
-          onFinish={(v) => { if (submitting) return; onSubmitAction('/admin/attendance/adjustments', { ...v, punch_type: 'FULL_SHIFT' }); onCloseAdj(); }}
+          onFinish={(v) => { if (submitting) return; onSubmitAction('/admin/attendance/adjustments', { ...v, punch_type: v.punch_type || 'FULL_SHIFT' }); onCloseAdj(); }}
           onValuesChange={(changed) => {
             if (changed.employee_id) {
               const empAbsents = assignments
@@ -119,6 +120,8 @@ export function ScheduleWorkflowModals({
               const found = empAbsentAssignments.find((a) => a.id === String(changed.assignment_id));
               if (found) applyAssignToAdjForm(found);
               else adjForm.setFieldsValue({ work_date: undefined, shift_code: undefined, requested_check_in_at: undefined, requested_check_out_at: undefined, requested_hours: undefined });
+            } else if (changed.punch_type) {
+              adjForm.setFieldValue('kind', kindFromPunchType(changed.punch_type));
             }
           }}
         >
@@ -148,6 +151,7 @@ export function ScheduleWorkflowModals({
             <Col xs={24} md={8}><Form.Item name="shift_code" label="Khung ca" rules={[{ required: true }]}><Select options={allShiftOptions} disabled placeholder="Theo ca đã chọn" /></Form.Item></Col>
             <Col xs={24} md={8}><Form.Item name="kind" label="Phân loại" rules={[{ required: true }]}><Select options={KIND_OPTIONS} /></Form.Item></Col>
           </Row>
+          <AdjustmentEvidenceFields evidenceRequired />
           <Row gutter={12}>
             <Col xs={12} md={8}><Form.Item name="requested_check_in_at" label="Giờ vào ca"><TimeStringPicker disabled /></Form.Item></Col>
             <Col xs={12} md={8}><Form.Item name="requested_check_out_at" label="Giờ ra ca"><TimeStringPicker disabled /></Form.Item></Col>

@@ -56,7 +56,7 @@ export function evaluateShiftPunctuality(kind: 'CHECK_IN' | 'CHECK_OUT', nowHm: 
 export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onConfirm }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null), streamRef = useRef<MediaStream | null>(null);
   const [photoDataUrl, setPhotoDataUrl] = useState<string>(''), [pinkResult, setPinkResult] = useState<PinkUniformAnalysisResult | null>(null);
-  const [uniformConfirmed, setUniformConfirmed] = useState(true), [cameraReady, setCameraReady] = useState(false);
+  const [uniformConfirmed, setUniformConfirmed] = useState(true), [cameraReady, setCameraReady] = useState(false), [cameraError, setCameraError] = useState<string | null>(null);
   const [coords, setCoords] = useState<AccurateCoords | null>(null), [locating, setLocating] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null), [nowStr, setNowStr] = useState(() => dayjs().format('HH:mm:ss'));
 
@@ -82,13 +82,20 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
 
   const startCamera = useCallback(async () => {
     stopStream();
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return;
+    setCameraError(null);
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Trình duyệt hiện tại không hỗ trợ Camera trực tiếp. Chấm công bắt buộc phải chụp trực tiếp qua Camera (không cho phép tải ảnh từ máy).');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 720 } }, audio: false });
       streamRef.current = stream;
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play().catch(() => undefined); }
       setCameraReady(true);
-    } catch { setCameraReady(false); }
+    } catch {
+      setCameraReady(false);
+      setCameraError('Chưa cấp quyền Camera trên trình duyệt. Điểm danh bắt buộc phải chụp ảnh trực tiếp qua Camera (không cho phép chọn ảnh từ thiết bị). Vui lòng cho phép quyền Camera rồi bấm "Cấp quyền & Mở lại Camera".');
+    }
   }, [stopStream]);
 
   const locateGps = useCallback(async (bLat?: number | null, bLng?: number | null, bRad?: number) => {
@@ -104,7 +111,7 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
 
   useEffect(() => {
     if (!open) { stopStream(); return; }
-    setPhotoDataUrl(''); setPinkResult(null); setUniformConfirmed(true);
+    setPhotoDataUrl(''); setPinkResult(null); setUniformConfirmed(true); setCameraError(null);
     void startCamera(); void locateGps(); void liveQ.refetch();
     const timer = setInterval(() => setNowStr(dayjs().format('HH:mm:ss')), 1000);
     return () => { clearInterval(timer); stopStream(); };
@@ -116,22 +123,15 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
   }, [open, branchLat, branchLng, branchRadiusM, coords, locateGps]);
 
   const handleCapture = () => {
+    if (!videoRef.current || !cameraReady || videoRef.current.videoWidth <= 0) return;
     const canvas = document.createElement('canvas');
     canvas.width = 720; canvas.height = 540;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-    if (videoRef.current && cameraReady && videoRef.current.videoWidth > 0) {
-      const vw = videoRef.current.videoWidth, vh = videoRef.current.videoHeight, targetRatio = canvas.width / canvas.height, videoRatio = vw / vh;
-      const sw = videoRatio > targetRatio ? vh * targetRatio : vw, sh = videoRatio > targetRatio ? vh : vw / targetRatio;
-      ctx.drawImage(videoRef.current, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, canvas.width, canvas.height);
-    } else {
-      ctx.fillStyle = '#0F172A'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#EC4899'; ctx.fillRect(210, 260, 300, 190);
-      ctx.fillStyle = '#1E293B'; ctx.beginPath(); ctx.arc(360, 185, 68, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#FFFFFF'; ctx.font = '600 20px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText(String(activeShift?.employeeName ?? 'Nhân sự Ụm Bò Milk'), 360, 336);
-    }
+    const vw = videoRef.current.videoWidth, vh = videoRef.current.videoHeight, targetRatio = canvas.width / canvas.height, videoRatio = vw / vh;
+    const sw = videoRatio > targetRatio ? vh * targetRatio : vw, sh = videoRatio > targetRatio ? vh : vw / targetRatio;
+    ctx.drawImage(videoRef.current, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, canvas.width, canvas.height);
     ctx.fillStyle = 'rgba(15, 23, 42, 0.84)'; ctx.fillRect(0, 456, canvas.width, 84);
     ctx.fillStyle = '#FFFFFF'; ctx.textAlign = 'left'; ctx.font = '600 18px sans-serif';
     const cleanShift = String(activeShift?.shiftLabel ?? 'Ca làm việc').replace(/\s*\([^)]*\)\s*/g, '').trim();
@@ -182,15 +182,22 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
           </Descriptions>
           {branchMismatch && <Alert type="error" showIcon message={`Bạn thuộc "${String(activeShift?.employeeBranchName)}", không được phép Vào/Ra ca tại "${branchName}".`} style={{ marginTop: 10 }} />}
           {gpsError && <Alert type="error" showIcon message={gpsError} style={{ marginTop: 10 }} />}
+          {cameraError && <Alert type="error" showIcon message={cameraError} style={{ marginTop: 10 }} />}
         </Col>
         <Col xs={24} md={11}>
           <div style={{ position: 'relative', width: '100%', height: 235, background: '#0F172A', borderRadius: 4, overflow: 'hidden', marginBottom: 10, border: '1px solid #CBD5E1' }}>
             {photoDataUrl ? <FancyboxImage src={photoDataUrl} alt="Ảnh chụp điểm danh" caption={`${kind === 'CHECK_IN' ? 'Ảnh Vào ca' : 'Ảnh Ra ca'} — ${branchName}`} height={235} /> : <video ref={videoRef} autoPlay playsInline muted style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: cameraReady ? 'block' : 'none' }} />}
-            {!photoDataUrl && !cameraReady && <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', textAlign: 'center', padding: 12 }}><CameraOutlined style={{ fontSize: 30, marginBottom: 6 }} /><Typography.Text style={{ color: '#E2E8F0', fontSize: 12 }}>Khung chụp ảnh xác thực Camera trực tiếp</Typography.Text></div>}
+            {!photoDataUrl && !cameraReady && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', textAlign: 'center', padding: 12, gap: 8 }}>
+                <CameraOutlined style={{ fontSize: 30 }} />
+                <Typography.Text style={{ color: '#E2E8F0', fontSize: 12 }}>Bắt buộc chụp ảnh trực tiếp từ Camera thiết bị (không cho phép tải ảnh từ máy)</Typography.Text>
+                <Button size="small" type="primary" icon={<ReloadOutlined />} onClick={() => void startCamera()}>Cấp quyền &amp; Mở lại Camera</Button>
+              </div>
+            )}
           </div>
           {!photoDataUrl ? (
-            <Button type="primary" icon={<CameraOutlined />} block disabled={!coords || !withinRadius || branchMismatch || locating} onClick={handleCapture}>
-              {!coords ? 'Vui lòng lấy vị trí GPS trước khi chụp ảnh' : !withinRadius ? `Ngoài bán kính (${formatDistanceVi(distanceM!)} / ${branchRadiusM}m)` : (isOffice ? 'Chụp ảnh khuôn mặt xác thực' : 'Chụp ảnh khuôn mặt & Đồng phục')}
+            <Button type="primary" icon={<CameraOutlined />} block disabled={!cameraReady || !coords || !withinRadius || branchMismatch || locating} onClick={handleCapture}>
+              {!cameraReady ? 'Vui lòng cấp quyền Camera trực tiếp để chụp ảnh' : !coords ? 'Vui lòng lấy vị trí GPS trước khi chụp ảnh' : !withinRadius ? `Ngoài bán kính (${formatDistanceVi(distanceM!)} / ${branchRadiusM}m)` : (isOffice ? 'Chụp ảnh khuôn mặt xác thực' : 'Chụp ảnh khuôn mặt & Đồng phục')}
             </Button>
           ) : (
             <Space direction="vertical" size={8} style={{ width: '100%' }}>

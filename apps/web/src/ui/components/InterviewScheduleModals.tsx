@@ -53,7 +53,7 @@ export function InterviewCreateModal({
   [open, existingInterviews, selectedDate, selectedSlot, selectedDuration, selectedInterviewers, interviewerOptions]);
 
   return (
-    <Modal width={680} open={open} forceRender destroyOnHidden title="Đặt lịch phỏng vấn & Google Meet"
+    <Modal width={680} open={open} forceRender title="Đặt lịch phỏng vấn & Google Meet"
       okText="Đặt lịch phỏng vấn" cancelText="Hủy bỏ"
       okButtonProps={{ icon: <CalendarOutlined />, loading, disabled: overlap.interviewerConflicts.length > 0 }}
       cancelButtonProps={{ icon: <CloseOutlined /> }} onCancel={onCancel} onOk={() => form.submit()}>
@@ -165,7 +165,7 @@ export function InterviewRescheduleModal({
   [target, existingInterviews, reschedDate, reschedSlot, reschedDuration, reschedInterviewers, interviewerOptions]);
 
   return (
-    <Modal width={680} open={Boolean(target)} forceRender destroyOnHidden
+    <Modal width={680} open={Boolean(target)} forceRender
       title={target ? `Chỉnh sửa / Đổi lịch Phỏng vấn: ${String(target.candidateName)}` : 'Chỉnh sửa lịch phỏng vấn'}
       okText="Lưu cập nhật" cancelText="Hủy bỏ"
       okButtonProps={{ icon: <SaveOutlined />, loading, disabled: overlap.interviewerConflicts.length > 0 }}

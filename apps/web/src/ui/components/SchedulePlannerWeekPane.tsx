@@ -144,18 +144,22 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
       </Card>
 
       {decision.decisionModalElement}
-      <PlannerWeekPreviewModal
-        open={preview.open} openSeq={preview.seq} weekStart={effWeek} branchId={preview.branchId}
-        branchOptions={branchOptions} canPublish={canPublish}
-        onBranchChange={(next) => setPreview((p) => ({ ...p, branchId: next }))}
-        onClose={() => setPreview((p) => ({ ...p, open: false }))}
-      />
-      <OfficeShiftPublishModal
-        open={officeModalOpen}
-        onClose={() => setOfficeModalOpen(false)}
-        weekStart={effWeek ?? ''}
-        branchId={branchId}
-      />
+      {preview.open && (
+        <PlannerWeekPreviewModal
+          open={preview.open} openSeq={preview.seq} weekStart={effWeek} branchId={preview.branchId}
+          branchOptions={branchOptions} canPublish={canPublish}
+          onBranchChange={(next) => setPreview((p) => ({ ...p, branchId: next }))}
+          onClose={() => setPreview((p) => ({ ...p, open: false }))}
+        />
+      )}
+      {officeModalOpen && (
+        <OfficeShiftPublishModal
+          open={officeModalOpen}
+          onClose={() => setOfficeModalOpen(false)}
+          weekStart={effWeek ?? ''}
+          branchId={branchId}
+        />
+      )}
     </Space>
   );
 }
