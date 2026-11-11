@@ -112,7 +112,7 @@ export function PlannerProbationPreviewModal({
                 ? 'Chu kỳ thử việc đã chốt lịch — Chế độ xem trước dữ liệu đã lưu, không cho phép chỉnh sửa hoặc sinh lại lịch.'
                 : 'Chế độ xem trước lịch chu kỳ thử việc — Chỉ bộ phận Nhân sự (HR) thực hiện chốt lịch & tự động sinh lịch.'}
             </span>
-            <Button type="primary" icon={<CloseOutlined />} onClick={onClose}>Đóng xem trước</Button>
+            <Button type="primary" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
           </Flex>
         ) : (
           <Flex justify="space-between" align="center" wrap gap={12} style={{ width: '100%' }}>

@@ -77,11 +77,11 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
                 disabled={!effWeek}
                 onClick={() => setPreview((p) => ({ open: true, seq: p.seq + 1, branchId }))}
               >
-                {data?.isLocked ? 'Xem lại lưới lịch đã chốt' : data?.offWindow?.isOpen ? 'Xem trước lưới tuần (Cổng OFF đang mở)' : 'Chốt lịch & Tự động sắp ca'}
+                {data?.isLocked ? 'Xem lại lưới lịch đã chốt' : data?.offWindow?.isOpen ? 'Xem trước lịch' : 'Chốt lịch & Tự động sắp ca'}
               </Button>
             ) : !isFinance ? (
               <Button icon={<EyeOutlined />} disabled={!effWeek} onClick={() => setPreview((p) => ({ open: true, seq: p.seq + 1, branchId }))}>
-                Xem trước lưới lịch tuần
+                Xem trước lịch
               </Button>
             ) : null}
           </Space>

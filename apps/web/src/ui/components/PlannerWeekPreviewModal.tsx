@@ -131,7 +131,7 @@ export function PlannerWeekPreviewModal({
                 ? 'Cổng đăng ký nghỉ OFF đang mở — Chế độ xem trước, chỉ được phép chốt lịch và tự động sắp ca sau khi cổng đóng.'
                 : 'Chế độ xem trước lưới lịch tuần dự kiến — Chỉ bộ phận Nhân sự (HR) thực hiện chốt lịch & tự động sinh lịch.'}
             </span>
-            <Button type="primary" icon={<CloseOutlined />} onClick={onClose}>Đóng xem trước</Button>
+            <Button type="primary" icon={<CloseOutlined />} onClick={onClose}>Đóng</Button>
           </Flex>
         ) : (
           <Flex justify="space-between" align="center" wrap gap={12} style={{ width: '100%' }}>
