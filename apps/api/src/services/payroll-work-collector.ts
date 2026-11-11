@@ -2,6 +2,7 @@ import { DEFAULT_SHIFT_LABELS, PAYROLL_WORK_SOURCE_LABELS, SYSTEM_CONFIG, type E
 import type { AppContext } from '../context.js';
 import { dayjs } from '../lib/time.js';
 import { parseHm } from '../routes/attendance-helpers.js';
+import { resolveWorkCollectorStores } from './data-partition-employee.helper.js';
 import type { WorkEntry } from './payroll-calculator.js';
 import { getVnNowDateAndHm } from './shift-absent-scanner.js';
 
@@ -61,28 +62,31 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
   const empCode = emp?.employee_code ?? '';
   const isEmp = (val?: string) => Boolean(val && (val === empId || (empCode && val === empCode)));
 
-  const deletedShifts = ctx.db.shiftAssignments.all(true).filter((a) => a.is_deleted && isEmp(a.employee_id) && a.work_date >= from && a.work_date <= to);
+  const stores = resolveWorkCollectorStores(ctx, from, to);
+  const activeShifts = stores.shiftsAll(false);
+  const deletedShifts = stores.shiftsAll(true).filter((a) => a.is_deleted && isEmp(a.employee_id) && a.work_date >= from && a.work_date <= to);
   const isDeletedRef = (assignId?: string, workDate?: string, shiftCode?: string) => {
-    if (assignId) return !ctx.db.shiftAssignments.get(assignId);
+    if (assignId) return !stores.getShift(assignId);
     if (workDate && shiftCode) {
-      const hasActive = Boolean(ctx.db.shiftAssignments.find((a) => isEmp(a.employee_id) && a.work_date === workDate && a.shift_code === shiftCode));
+      const hasActive = activeShifts.some((a) => isEmp(a.employee_id) && a.work_date === workDate && a.shift_code === shiftCode);
       if (!hasActive && deletedShifts.some((a) => a.work_date === workDate && a.shift_code === shiftCode)) return true;
     }
     return false;
   };
 
-  const approvedLeaves = ctx.db.leaveRequests.filter((l) => isEmp(l.employee_id) && l.leave_date >= from && l.leave_date <= to && l.status === 'APPROVED');
+  const approvedLeaves = stores.leaves().filter((l) => isEmp(l.employee_id) && l.leave_date >= from && l.leave_date <= to && l.status === 'APPROVED');
   const approvedLeaveDates = new Set(approvedLeaves.map((l) => l.leave_date));
-  const swapsGivenOut = ctx.db.shiftSwaps.filter((s) => isEmp(s.requester_id) && !isEmp(s.peer_id) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && (s.kind === 'HR_SUPPORT' ? Boolean(s.from_assignment_id && s.from_assignment_id !== s.to_assignment_id) : s.kind === 'HR_DISPATCH' ? Boolean(s.from_assignment_id) : true) && !isDeletedRef(s.from_assignment_id, s.from_work_date, s.from_shift_code));
-  const swapsReceived = ctx.db.shiftSwaps.filter((s) => (s.kind === 'HR_SUPPORT' ? (isEmp(s.requester_id) || isEmp(s.peer_id)) : (isEmp(s.peer_id) && !isEmp(s.requester_id))) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && !isDeletedRef(s.to_assignment_id || s.from_assignment_id, s.from_work_date, s.from_shift_code));
+  const allSwaps = stores.swaps();
+  const swapsGivenOut = allSwaps.filter((s) => isEmp(s.requester_id) && !isEmp(s.peer_id) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && (s.kind === 'HR_SUPPORT' ? Boolean(s.from_assignment_id && s.from_assignment_id !== s.to_assignment_id) : s.kind === 'HR_DISPATCH' ? Boolean(s.from_assignment_id) : true) && !isDeletedRef(s.from_assignment_id, s.from_work_date, s.from_shift_code));
+  const swapsReceived = allSwaps.filter((s) => (s.kind === 'HR_SUPPORT' ? (isEmp(s.requester_id) || isEmp(s.peer_id)) : (isEmp(s.peer_id) && !isEmp(s.requester_id))) && s.from_work_date >= from && s.from_work_date <= to && s.status === 'APPROVED' && !isDeletedRef(s.to_assignment_id || s.from_assignment_id, s.from_work_date, s.from_shift_code));
   const receivedSwapAssignIds = new Set(swapsReceived.flatMap((s) => [s.to_assignment_id, s.from_assignment_id]).filter(Boolean));
 
-  const empEvents = ctx.db.attendanceEvents.filter((e) => isEmp(e.employee_id) && e.work_date >= from && e.work_date <= to && !isDeletedRef(e.assignment_id, e.work_date, e.shift_code));
-  const empAdjsAll = ctx.db.attendanceAdjustments.filter((a) => isEmp(a.employee_id) && a.work_date >= from && a.work_date <= to && !isDeletedRef(a.assignment_id, a.work_date, a.shift_code));
+  const empEvents = stores.events().filter((e) => isEmp(e.employee_id) && e.work_date >= from && e.work_date <= to && !isDeletedRef(e.assignment_id, e.work_date, e.shift_code));
+  const empAdjsAll = stores.adjustments().filter((a) => isEmp(a.employee_id) && a.work_date >= from && a.work_date <= to && !isDeletedRef(a.assignment_id, a.work_date, a.shift_code));
   const approvedAdjs = empAdjsAll.filter((a) => a.status === 'APPROVED' && a.punch_type !== 'CHECK_IN');
   const pendingAdjs = empAdjsAll.filter((a) => a.status === 'PENDING' || a.status === 'STORE_CONFIRMED');
 
-  const inRange = ctx.db.shiftAssignments.filter(
+  const inRange = activeShifts.filter(
     (a) => (isEmp(a.employee_id) || receivedSwapAssignIds.has(a.id)) && a.work_date >= from && a.work_date <= to,
   );
 
@@ -131,7 +135,7 @@ export function collectWorkEntries(ctx: AppContext, empOrId: Employee | string, 
     if (!COUNTED_STATUSES.has(a.status) && !checkIn && !checkOut && !adj && !receivedSwapAssignIds.has(a.id)) continue;
 
     const isEmgRep = Boolean(a.replacement_for_employee_id) || a.source === 'HR_DISPATCH' || a.source === 'HR_SUPPORT';
-    const matchedSwap = swapIn ?? ctx.db.shiftSwaps.find((s) => s.status === 'APPROVED' && (s.to_assignment_id === a.id || s.from_assignment_id === a.id || (s.from_work_date === a.work_date && s.from_shift_code === a.shift_code && (isEmp(s.peer_id) || (s.kind === 'HR_SUPPORT' && isEmp(s.requester_id))))));
+    const matchedSwap = swapIn ?? allSwaps.find((s) => s.status === 'APPROVED' && (s.to_assignment_id === a.id || s.from_assignment_id === a.id || (s.from_work_date === a.work_date && s.from_shift_code === a.shift_code && (isEmp(s.peer_id) || (s.kind === 'HR_SUPPORT' && isEmp(s.requester_id))))));
     const isSwap = Boolean(matchedSwap || a.swapped_from_employee_id || isEmgRep);
     const swapAllowanceVnd = !isSwap ? 0 : matchedSwap ? (matchedSwap.allowance_eligible ? Math.max(0, Math.round(Number(matchedSwap.allowance_amount_vnd ?? 0))) : 0) : (isEmgRep ? SYSTEM_CONFIG.defaults.shiftSwapAllowanceVnd : 0);
 

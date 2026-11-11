@@ -18,6 +18,7 @@ import {
   WEEKDAY_LABELS,
 } from './my-earnings-helpers.js';
 import { collectWorkEntries } from './payroll-work-collector.js';
+import { preloadEmployeePartitionStores } from './partition-write-router.js';
 import {
   currentProfile,
   ensureLegacySalaryProfiles,
@@ -30,7 +31,7 @@ import { getVnNowDateAndHm, sweepExpiredShiftsAndMarkAbsent } from './shift-abse
 export type { ShiftEarningCategory } from './my-earnings-helpers.js';
 
 export async function buildMyEarningsSummary(ctx: AppContext, emp: Employee, fromDate: string, toDate: string, actorId: string) {
-  await Promise.all([sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId), ensureLegacySalaryProfiles(ctx.db, actorId)]);
+  await Promise.all([preloadEmployeePartitionStores(ctx.db), sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId), ensureLegacySalaryProfiles(ctx.db, actorId)]);
   const { todayStr } = getVnNowDateAndHm();
   const profiles = profilesOf(ctx.db, emp.id);
   const activeProfile = resolveProfileAt(profiles, toDate) ?? currentProfile(profiles);

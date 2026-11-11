@@ -5,6 +5,7 @@ import { nowIso } from '../lib/time.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
 import { getOperationSettings } from './operations-settings.service.js';
+import { preloadEmployeePartitionStores } from './partition-write-router.js';
 import { computeEmployeePayroll } from './payroll-calculator.js';
 import { collectWorkEntries } from './payroll-work-collector.js';
 import { ensureLegacySalaryProfiles, profilesOf } from './salary-profile.service.js';
@@ -72,7 +73,7 @@ function shouldPreserveOtherPartitionSnapshot(ctx: AppContext, period: PayPeriod
 }
 
 async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, actorId: string, force = false): Promise<PayPeriod> {
-  await Promise.all([sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId), ensureLegacySalaryProfiles(ctx.db, actorId)]);
+  await Promise.all([preloadEmployeePartitionStores(ctx.db), sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId), ensureLegacySalaryProfiles(ctx.db, actorId)]);
   let sigMap = periodSigByDb.get(ctx.db);
   if (!sigMap) { sigMap = new Map(); periodSigByDb.set(ctx.db, sigMap); }
   const existingSnaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === period.id);

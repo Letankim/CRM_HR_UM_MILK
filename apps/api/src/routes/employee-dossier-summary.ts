@@ -1,5 +1,7 @@
-import { CONTRACT_TYPE_LABELS, EMPLOYEE_STAGE_LABELS, ROLE_LABELS, type Employee, type EmployeeContractItem } from '@umbm/shared';
+import { CONTRACT_TYPE_LABELS, EMPLOYEE_STAGE_LABELS, ROLE_LABELS, type Employee, type EmployeeContractItem, type LeaveRequest, type ShiftAssignment, type ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
+import { readPartitionRegistry } from '../services/data-partition.service.js';
+import { getCachedPartitionStore } from '../services/partition-write-router.js';
 import { resolveShiftLabel } from './employee-mapper.js';
 
 function parseContractsSafe(raw?: string | null): EmployeeContractItem[] {
@@ -48,8 +50,22 @@ function resolveActorInfo(ctx: AppContext, rawActor: string, fallbackName = '') 
 
 export function buildEmployeeDossierSummary(e: Employee, ctx: AppContext) {
   const isEmp = (eid: string) => eid === e.id || eid === e.employee_code;
+  const regMonths = readPartitionRegistry(ctx.db).map((r) => r.monthKey);
+  const monthsToRead = regMonths.length > 0 ? Array.from(new Set([...regMonths, ...(ctx.db.partitionMonth ? [ctx.db.partitionMonth] : [])])) : [ctx.db.partitionMonth];
 
-  const assignments = ctx.db.shiftAssignments.filter((a) => isEmp(a.employee_id) && a.day_type !== 'OFF');
+  const assignMap = new Map<string, ShiftAssignment>();
+  const leaveMap = new Map<string, LeaveRequest>();
+  const swapMap = new Map<string, ShiftSwap>();
+  for (const mk of monthsToRead) {
+    const sStore = getCachedPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.shiftAssignments : undefined);
+    if (sStore) for (const a of sStore.all()) if (isEmp(a.employee_id) && a.day_type !== 'OFF' && !assignMap.has(a.id)) assignMap.set(a.id, a);
+    const lStore = getCachedPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.leaveRequests : undefined);
+    if (lStore) for (const l of lStore.all()) if (isEmp(l.employee_id) && !leaveMap.has(l.id)) leaveMap.set(l.id, l);
+    const swStore = getCachedPartitionStore<ShiftSwap>(ctx.db, 'SHIFT_SWAPS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.shiftSwaps : undefined);
+    if (swStore) for (const s of swStore.all()) if ((isEmp(s.requester_id) || isEmp(s.peer_id)) && !swapMap.has(s.id)) swapMap.set(s.id, s);
+  }
+
+  const assignments = Array.from(assignMap.values());
   const completedOrPublished = assignments.filter((a) => a.status === 'PUBLISHED' || a.status === 'COMPLETED');
   const probationHoursCompleted = completedOrPublished.reduce((sum, a) => sum + (Number(a.scheduled_hours) || 5), 0);
   const recentShifts = assignments
@@ -112,8 +128,8 @@ export function buildEmployeeDossierSummary(e: Employee, ctx: AppContext) {
       };
     });
 
-  const leaveRequestsCount = ctx.db.leaveRequests.filter((l) => isEmp(l.employee_id)).length;
-  const swapRequestsCount = ctx.db.shiftSwaps.filter((s) => isEmp(s.requester_id) || isEmp(s.peer_id)).length;
+  const leaveRequestsCount = leaveMap.size;
+  const swapRequestsCount = swapMap.size;
   const contracts = parseContractsSafe(e.contracts_json).map((c) => ({
     ...c,
     contractTypeLabel: CONTRACT_TYPE_LABELS[c.contractType] ?? c.contractType,

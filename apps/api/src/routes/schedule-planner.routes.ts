@@ -11,6 +11,7 @@ import { loadShiftsAcrossPartitions } from '../services/historical-shifts-loader
 import { evaluateLeaveRequestConflict, summarizeWeekOffConflicts } from '../services/leave-conflict-detector.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { getOperationSettings } from '../services/operations-settings.service.js';
+import { insertPartitionAwareRecord, preloadEmployeePartitionStores, updatePartitionAwareRecord } from '../services/partition-write-router.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { planOfficialWeek, planProbationCycle, type PlannedShift, type PlanIssue, type PlanResult } from '../services/schedule-auto-planner.js';
 import { summarizeOfficialEmployeeWeekLoads } from '../services/schedule-fairness.js';
@@ -36,22 +37,18 @@ function mapExistingShift(ctx: AppContext, a: ShiftAssignment) {
   const bId = resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id), br = ctx.db.branches.get(bId);
   const tpl = (a.shift_template_id ? ctx.db.shiftTemplates.get(a.shift_template_id) : undefined) ?? findBranchShiftTemplate(ctx, a.shift_code, bId);
   const stage = (emp?.stage ?? a.employee_stage) as EmployeeStage;
-  return {
-    id: a.id, employeeId: emp?.id ?? a.employee_id, employeeCode: emp?.employee_code ?? a.employee_id, employeeName: emp?.full_name ?? 'Nhân sự', stage, stageLabel: EMPLOYEE_STAGE_LABELS[stage] ?? 'Nhân sự', branchId: bId, branchCode: br?.code ?? '', branchName: br?.name ?? 'Chi nhánh',
-    workDate: a.work_date, shiftCode: a.shift_code, shiftLabel: tpl?.name ?? DEFAULT_SHIFT_LABELS[a.shift_code as DefaultShiftCode] ?? a.shift_code, startAt: a.start_at || tpl?.start_time || '07:00', endAt: a.end_at || tpl?.end_time || '12:00', hours: a.scheduled_hours || tpl?.standard_hours || 5,
-    status: a.status, statusLabel: STATUS_VISUAL_MAP[a.status]?.label ?? a.status, source: a.source, note: a.note ?? '',
-  };
+  return { id: a.id, employeeId: emp?.id ?? a.employee_id, employeeCode: emp?.employee_code ?? a.employee_id, employeeName: emp?.full_name ?? 'Nhân sự', stage, stageLabel: EMPLOYEE_STAGE_LABELS[stage] ?? 'Nhân sự', branchId: bId, branchCode: br?.code ?? '', branchName: br?.name ?? 'Chi nhánh', workDate: a.work_date, shiftCode: a.shift_code, shiftLabel: tpl?.name ?? DEFAULT_SHIFT_LABELS[a.shift_code as DefaultShiftCode] ?? a.shift_code, startAt: a.start_at || tpl?.start_time || '07:00', endAt: a.end_at || tpl?.end_time || '12:00', hours: a.scheduled_hours || tpl?.standard_hours || 5, status: a.status, statusLabel: STATUS_VISUAL_MAP[a.status]?.label ?? a.status, source: a.source, note: a.note ?? '' };
 }
-
-function enrichPlanned(ctx: AppContext, list: PlannedShift[]) {
-  return list.map((p) => ({ ...p, branchCode: ctx.db.branches.get(p.branchId)?.code ?? '', branchName: p.branchName ?? ctx.db.branches.get(p.branchId)?.name ?? 'Chi nhánh', stageLabel: EMPLOYEE_STAGE_LABELS[p.stage] ?? 'Nhân sự' }));
-}
+const enrichPlanned = (ctx: AppContext, list: PlannedShift[]) =>
+  list.map((p) => ({ ...p, branchCode: ctx.db.branches.get(p.branchId)?.code ?? '', branchName: p.branchName ?? ctx.db.branches.get(p.branchId)?.name ?? 'Chi nhánh', stageLabel: EMPLOYEE_STAGE_LABELS[p.stage] ?? 'Nhân sự' }));
 
 async function applyPlan(ctx: AppContext, plan: PlanResult, lock: { code: string; branchId: string; weekStart: string; weekEnd: string; kind: 'WEEKLY' | 'PROBATION_12_DAYS'; note: string }, actorId: string) {
   const now = nowIso(), pendingOffs = plan.offRequests.filter((l) => l.status === 'PENDING' || l.status === 'DRAFT'), totalApprovedOffs = plan.offRequests.filter((l) => OFF_ACTIVE.has(l.status)).length;
   if (pendingOffs.length > 0) {
     const offDecisionNote = lock.note ? `Đã duyệt khi HR chốt lịch: ${lock.note}` : 'Đã duyệt khi HR chốt lịch & tự động sắp ca';
-    await ctx.db.leaveRequests.batchUpdate(pendingOffs.map((l) => ({ id: l.id, expectedVersion: l.version, patch: { status: 'APPROVED' as const, decided_by: actorId, decided_at: now, decision_reason: offDecisionNote } })), actorId);
+    for (const l of pendingOffs) {
+      await updatePartitionAwareRecord<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', l.id, l.version, { status: 'APPROVED', decided_by: actorId, decided_at: now, decision_reason: offDecisionNote }, l.leave_date, actorId);
+    }
   }
   for (const off of plan.offRequests) {
     const emp = ctx.db.employees.get(off.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === off.employee_id);
@@ -65,10 +62,10 @@ async function applyPlan(ctx: AppContext, plan: PlanResult, lock: { code: string
     const staleDrafts = ctx.db.shiftAssignments.filter((a) => a.status === 'DRAFT' && a.work_date === p.workDate && a.shift_code === p.shiftCode && resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id) === p.branchId);
     for (const d of staleDrafts) await ctx.db.shiftAssignments.softDelete(d.id, d.version, actorId);
   }
-  const created = await Promise.all(plan.planned.map((p) => ctx.db.shiftAssignments.insert({
+  const created = await Promise.all(plan.planned.map((p) => insertPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', {
     schedule_week_id: lock.code, employee_id: p.employeeId, branch_id: p.branchId, work_date: p.workDate, shift_template_id: p.templateId, start_at: p.startAt, end_at: p.endAt, status: 'PUBLISHED', source: 'AUTO_PLAN', employee_stage: p.stage, day_type: 'WORK', shift_code: p.shiftCode,
     scheduled_hours: p.hours, swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now, note: p.isCoverShift ? 'Tự động điều phối bù ca OFF để đủ 1 người/ca khi HR chốt lịch' : 'Tự động sắp ca theo ca mặc định (1 người/ca) khi HR chốt lịch', linked_assignment_id: '',
-  }, actorId)));
+  }, p.workDate, actorId)));
   const existing = ctx.db.scheduleWeeks.find((w) => w.code === lock.code);
   const record = { branch_id: lock.branchId, week_start: lock.weekStart, week_end: lock.weekEnd, status: 'PUBLISHED' as const, published_by: actorId, published_at: now, code: lock.code, schedule_kind: lock.kind, store_confirmed_by: '', store_confirmed_at: '', locked_at: now, note: lock.note || `Đã xếp ${created.length} ca · Duyệt ${totalApprovedOffs} đơn OFF · ${plan.issues.length} cảnh báo` };
   if (existing) await ctx.db.scheduleWeeks.update(existing.id, existing.version, record, actorId);
@@ -176,6 +173,7 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
   });
 
   app.get('/api/admin/schedule-planner/probation', { preHandler: readPerms }, async (request) => {
+    await preloadEmployeePartitionStores(ctx.db);
     const branchId = z.string().trim().optional().default('ALL').parse((request.query as { branch_id?: string } | undefined)?.branch_id);
     const { todayStr } = getVnNowDateAndHm();
     const emps = filterByBranch(request, ctx.db.employees.filter((e) => e.status === 'ACTIVE' && e.stage === 'PROBATION' && (branchId === 'ALL' || e.branch_id === branchId)), (e) => e.branch_id);
@@ -198,6 +196,7 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
   });
 
   app.post('/api/admin/schedule-planner/probation/lock', { preHandler: requirePermission('schedule.publish') }, async (request) => {
+    await preloadEmployeePartitionStores(ctx.db);
     const body = zProbationLockBody.parse(request.body ?? {});
     const emp = ctx.db.employees.get(body.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === body.employee_id);
     if (!emp) throw Errors.fieldValidation('employee_id', 'INVALID_VALUE', 'Không tìm thấy hồ sơ nhân viên', body.employee_id);

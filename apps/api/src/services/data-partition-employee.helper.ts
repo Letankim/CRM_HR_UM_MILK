@@ -1,5 +1,6 @@
 import {
   addDaysYmd,
+  type AttendanceAdjustment,
   type AttendanceEvent,
   type Employee,
   type LeaveRequest,
@@ -7,25 +8,31 @@ import {
   type ShiftSwap,
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
+import type { BaseRecord } from '../sheets/table-store.js';
 import { readPartitionRegistry } from './data-partition.service.js';
 import { loadShiftsAcrossPartitions } from './historical-shifts-loader.js';
-import { extractMonthKeyFromDate, getPartitionStore, preloadEmployeePartitionStores } from './partition-write-router.js';
+import {
+  getCachedPartitionStore,
+  getPartitionStore,
+  preloadEmployeePartitionStores,
+  resolveTargetMonthForRecord,
+  type MonthlyTableName,
+} from './partition-write-router.js';
 
 /**
  * Xác định danh sách phân vùng tháng dành cho Cổng Nhân Viên dựa trên DATA_PARTITIONS_REGISTRY.
- * Khi tháng hiện tại đã có trong DATA_PARTITIONS_REGISTRY (ví dụ: 2026_11, 2026_10),
- * nhân viên chỉ làm việc trên các tệp tháng chính thức này và không bị trộn dữ liệu mẫu từ Tệp gốc,
- * bất kể Quản trị viên Backoffice đang chuyển sang xem tệp nào.
+ * Khi hệ thống đã có tệp phân vùng tháng trong DATA_PARTITIONS_REGISTRY (ví dụ: 2026_11, 2026_10),
+ * nhân viên luôn làm việc trên các tệp tháng chính thức này (kể cả những ngày đầu tháng mới khi Admin chưa tạo sheet mới)
+ * và không bị trộn dữ liệu mẫu từ Tệp gốc, bất kể Quản trị viên Backoffice đang chuyển sang xem tệp nào.
  */
-export function getEmployeePartitionMonths(ctx: AppContext, todayStr?: string): string[] {
+export function getEmployeePartitionMonths(ctx: AppContext, _todayStr?: string): string[] {
   const registry = readPartitionRegistry(ctx.db);
   const regMonths = registry.map((r) => r.monthKey).filter(Boolean);
   if (regMonths.length === 0 && !ctx.db.partitionMonth) return [''];
-  const curKey = todayStr ? extractMonthKeyFromDate(todayStr) : '';
-  if (regMonths.length > 0 && (!curKey || regMonths.includes(curKey))) {
+  if (regMonths.length > 0) {
     return Array.from(new Set(regMonths));
   }
-  return Array.from(new Set(['', ...regMonths, ...(ctx.db.partitionMonth ? [ctx.db.partitionMonth] : [])]));
+  return Array.from(new Set(['', ...(ctx.db.partitionMonth ? [ctx.db.partitionMonth] : [])]));
 }
 
 /**
@@ -136,4 +143,50 @@ export async function loadCrossPartitionEmployeeSwaps(
     }
   }
   return Array.from(swapMap.values()).reverse();
+}
+
+export function resolveWorkCollectorStores(ctx: AppContext, from: string, to: string) {
+  const reg = readPartitionRegistry(ctx.db);
+  if (reg.length === 0) {
+    return {
+      shiftsAll: (includeDeleted = false) => ctx.db.shiftAssignments.all(includeDeleted),
+      getShift: (id: string) => ctx.db.shiftAssignments.get(id),
+      leaves: () => ctx.db.leaveRequests.all(),
+      swaps: () => ctx.db.shiftSwaps.all(),
+      events: () => ctx.db.attendanceEvents.all(),
+      adjustments: () => ctx.db.attendanceAdjustments.all(),
+    };
+  }
+  const mFrom = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', {}, from);
+  const mTo = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', {}, to);
+  const overlapReg = reg.map((r) => r.monthKey).filter((mk) => {
+    const ym = mk.replace('_', '-');
+    return from <= `${ym}-31` && to >= `${ym}-01`;
+  });
+  const months = Array.from(new Set([mFrom, mTo, ...overlapReg]));
+  const collectTable = <T extends BaseRecord>(table: MonthlyTableName, fallback: readonly T[], includeDeleted = false): T[] => {
+    const map = new Map<string, T>();
+    let foundStore = false;
+    for (const mk of months) {
+      const st = getCachedPartitionStore<T>(ctx.db, table, mk);
+      if (!st) continue;
+      foundStore = true;
+      for (const r of st.all(includeDeleted)) map.set(r.id, r);
+    }
+    return foundStore ? Array.from(map.values()) : [...fallback];
+  };
+  return {
+    shiftsAll: (includeDeleted = false) => collectTable('SHIFT_ASSIGNMENTS', ctx.db.shiftAssignments.all(includeDeleted), includeDeleted),
+    getShift: (id: string) => {
+      for (const mk of months) {
+        const found = getCachedPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk)?.get(id);
+        if (found && !found.is_deleted) return found;
+      }
+      return ctx.db.shiftAssignments.get(id);
+    },
+    leaves: () => collectTable('LEAVE_REQUESTS', ctx.db.leaveRequests.all()),
+    swaps: () => collectTable('SHIFT_SWAPS', ctx.db.shiftSwaps.all()),
+    events: () => collectTable('ATTENDANCE_EVENTS', ctx.db.attendanceEvents.all()),
+    adjustments: () => collectTable<AttendanceAdjustment>('ATTENDANCE_ADJUSTMENTS', ctx.db.attendanceAdjustments.all()),
+  };
 }

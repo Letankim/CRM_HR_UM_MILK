@@ -4,6 +4,7 @@ import { dayjs } from '../lib/time.js';
 import { findBranchShiftTemplate, resolveEmployeeBranchId } from '../routes/account-employee-sync.js';
 import { isOfficialSwapEligibleEmployee } from '../routes/employee-mapper.js';
 import { getOperationSettings } from './operations-settings.service.js';
+import { getCachedPartitionStore, resolveTargetMonthForRecord } from './partition-write-router.js';
 import { buildShiftGroupFairnessMap, compareFairShiftCandidates } from './schedule-fairness.js';
 import { employeeShiftsOnDate, isCountedWorkShift, isProbationShift, matchEmp, resolveProbationCycle } from './schedule-rules.js';
 import { findEmployeeShiftConflictOnDate, resolveApplicableStaffingRule, toMinuteSpan } from './schedule-staffing-helper.js';
@@ -23,6 +24,17 @@ export const MONTHLY_WORK_DAYS_TARGET = { min: 10, max: 12 } as const;
 const OFF_ACTIVE = new Set(['PENDING', 'DRAFT', 'APPROVED']);
 const vi = (d: string) => dayjs(d).format('DD/MM/YYYY');
 
+function collectLeavesInRangeAcrossPartitions(ctx: AppContext, dates: string[]): LeaveRequest[] {
+  const mks = Array.from(new Set([ctx.db.partitionMonth, ...dates.map((d) => resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: d }, d))]));
+  const map = new Map<string, LeaveRequest>();
+  for (const mk of mks) {
+    const store = getCachedPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.leaveRequests : undefined);
+    if (!store) continue;
+    for (const l of store.all()) if (!map.has(l.id)) map.set(l.id, l);
+  }
+  return Array.from(map.values());
+}
+
 /** Bộ đếm sức chứa ca theo chi nhánh / ngày / khung ca (chỉ tính Nhân viên chính thức: 1 ca = đúng 1 người chính thức, ca thử việc không tính vào định biên). */
 function createCapacityTracker(ctx: AppContext, ignoredAssignmentIds: Set<string> = new Set()) {
   const planned = new Map<string, number>();
@@ -40,7 +52,8 @@ function createCapacityTracker(ctx: AppContext, ignoredAssignmentIds: Set<string
 }
 
 function collectOffBlockedAssignmentIds(ctx: AppContext, fromDate: string, toDate: string): Set<string> {
-  const activeLeaves = ctx.db.leaveRequests.filter((l) => OFF_ACTIVE.has(l.status) && l.leave_date >= fromDate && l.leave_date <= toDate);
+  const allLeaves = collectLeavesInRangeAcrossPartitions(ctx, [fromDate, toDate]);
+  const activeLeaves = allLeaves.filter((l) => OFF_ACTIVE.has(l.status) && l.leave_date >= fromDate && l.leave_date <= toDate);
   const blocked = new Set<string>();
   for (const l of activeLeaves) {
     const emp = ctx.db.employees.get(l.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === l.employee_id);
@@ -163,7 +176,8 @@ export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; b
 export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: string, historicalShifts?: ShiftAssignment[]): PlanResult & { cycle: ReturnType<typeof resolveProbationCycle>; existingCount: number } {
   const settings = getOperationSettings(ctx.db), cycle = resolveProbationCycle(emp, todayStr);
   const ignoredIds = collectOffBlockedAssignmentIds(ctx, cycle.start, cycle.end), isEmp = matchEmp(emp);
-  const offRequests = ctx.db.leaveRequests.filter((l) => isEmp(l.employee_id) && OFF_ACTIVE.has(l.status) && cycle.dates.includes(l.leave_date));
+  const allCycleLeaves = collectLeavesInRangeAcrossPartitions(ctx, cycle.dates);
+  const offRequests = allCycleLeaves.filter((l) => isEmp(l.employee_id) && OFF_ACTIVE.has(l.status) && cycle.dates.includes(l.leave_date));
   const issues: PlanIssue[] = [], dayIssues: PlanIssue[] = [], planned: PlannedShift[] = [];
   const empName = `${emp.full_name} (${emp.employee_code})`;
   if (offRequests.length > cycle.offLimit) {
@@ -190,16 +204,10 @@ export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: str
     }
     let picked: ShiftTemplate | null = null;
     for (const tpl of candidateTpls) {
-      if (findEmployeeShiftConflictOnDate(ctx, { emp, workDate, shiftCode: tpl.code, startAt: tpl.start_time, endAt: tpl.end_time })) continue;
-      picked = tpl;
-      break;
+      if (!findEmployeeShiftConflictOnDate(ctx, { emp, workDate, shiftCode: tpl.code, startAt: tpl.start_time, endAt: tpl.end_time })) { picked = tpl; break; }
     }
     if (picked) {
-      planned.push({
-        employeeId: emp.id, employeeCode: emp.employee_code, employeeName: emp.full_name, stage: emp.stage, branchId: emp.branch_id, branchName,
-        workDate, shiftCode: picked.code, shiftLabel: picked.name, startAt: picked.start_time, endAt: picked.end_time,
-        hours: picked.standard_hours || 5, templateId: picked.id, isCoverShift: false,
-      });
+      planned.push({ employeeId: emp.id, employeeCode: emp.employee_code, employeeName: emp.full_name, stage: emp.stage, branchId: emp.branch_id, branchName, workDate, shiftCode: picked.code, shiftLabel: picked.name, startAt: picked.start_time, endAt: picked.end_time, hours: picked.standard_hours || 5, templateId: picked.id, isCoverShift: false });
       total++;
     } else {
       dayIssues.push({ kind: 'CONFLICT', employeeId: emp.id, employeeName: empName, workDate, shiftCode: defCode, message: `Khung ca mặc định ngày ${vi(workDate)} tại ${branchName} bị trùng giờ với ca đã có của ${empName}.` });

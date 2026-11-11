@@ -16,7 +16,7 @@ import { assertDateNotLockedByPayroll } from '../services/salary-profile.service
 import { assertMaxShiftsPerDay, employeeShiftsOnDate, findProbationLock, isCountedWorkShift, isDisallowedProbationShiftCode, matchEmp, probationLockCode, resolveProbationCycle } from '../services/schedule-rules.js';
 import { assertNoDuplicateOrOverlappingEmployeeShift } from '../services/schedule-staffing-helper.js';
 import { getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
-import { extractMonthKeyFromDate, getCachedPartitionStore, getPartitionStore, insertPartitionAwareRecord, preloadEmployeePartitionStores, resolveTargetMonthForRecord } from '../services/partition-write-router.js';
+import { getCachedPartitionStore, getPartitionStore, insertPartitionAwareRecord, preloadEmployeePartitionStores, resolveTargetMonthForRecord } from '../services/partition-write-router.js';
 import { emitScheduleRealtime, findBranchShiftTemplate } from './account-employee-sync.js';
 import { ensurePersonalProfile } from './my-attendance.routes.js';
 import { registerProbationSelfServiceRoutes } from './probation-self-service.routes.js';
@@ -32,9 +32,18 @@ const vi = (d: string) => dayjs(d).format('DD/MM/YYYY');
 export function buildProbationCycleSummary(ctx: AppContext, emp: Employee, todayStr: string) {
   const cycle = resolveProbationCycle(emp, todayStr), isEmp = matchEmp(emp);
   const scheduledCount = cycle.dates.reduce((sum, d) => sum + employeeShiftsOnDate(ctx, emp, d).length, 0);
-  const mk = extractMonthKeyFromDate(cycle.start);
-  const lvStore = (mk ? getCachedPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk) : undefined) ?? ctx.db.leaveRequests;
-  const offCount = lvStore.filter((l) => isEmp(l.employee_id) && l.status !== 'REJECTED' && l.status !== 'CANCELLED' && cycle.dates.includes(l.leave_date)).length;
+  const cycleMonths = Array.from(new Set(cycle.dates.map((d) => resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: d }, d))));
+  const seenLeaveIds = new Set<string>();
+  let offCount = 0;
+  for (const mk of cycleMonths) {
+    const lvStore = getCachedPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk) ?? ctx.db.leaveRequests;
+    for (const l of lvStore.all()) {
+      if (!seenLeaveIds.has(l.id) && isEmp(l.employee_id) && l.status !== 'REJECTED' && l.status !== 'CANCELLED' && cycle.dates.includes(l.leave_date)) {
+        seenLeaveIds.add(l.id);
+        offCount++;
+      }
+    }
+  }
   return { start: cycle.start, end: cycle.end, workRequired: cycle.workRequired, offLimit: cycle.offLimit, scheduledCount, offCount, isLocked: Boolean(findProbationLock(ctx, emp, cycle.start)) };
 }
 
@@ -65,35 +74,40 @@ export function registerMyShiftRegisterRoute(app: FastifyInstance, ctx: AppConte
     assertMaxShiftsPerDay(ctx, { emp, workDate: body.work_date, maxPerDay: settings.maxShiftsPerDay, field: 'work_date', isSelf: true });
     assertNoDuplicateOrOverlappingEmployeeShift(ctx, { emp, workDate: body.work_date, shiftCode: body.shift_code, startAt: tpl.start_time, endAt: tpl.end_time });
 
-    const isEmp = matchEmp(emp), now = nowIso();
+    const isEmp = matchEmp(emp), now = nowIso(), newKey = `${body.work_date} ${tpl.start_time}`;
     const targetMonth = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: body.work_date }, body.work_date);
-    const shStore = await getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', targetMonth, user.id);
-    const evStore = await getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', targetMonth, user.id);
     const lvStore = await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', targetMonth, user.id);
 
-    const allEmpShifts = shStore.filter((a) => isEmp(a.employee_id) && isCountedWorkShift(a));
-    const newKey = `${body.work_date} ${tpl.start_time}`;
-    const lastLater = allEmpShifts
-      .filter((a) => `${a.work_date} ${a.start_at}` > newKey && a.status !== 'COMPLETED' && !evStore.find((e) => e.assignment_id === a.id))
-      .sort((a, b) => `${b.work_date} ${b.start_at}`.localeCompare(`${a.work_date} ${a.start_at}`))[0];
-    if (lastLater) {
-      await shStore.softDelete(lastLater.id, lastLater.version, user.id);
+    const cycleMonths = Array.from(new Set(cycle.dates.map((d) => resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: d }, d))));
+    const candidates: { shift: ShiftAssignment; shStore: Awaited<ReturnType<typeof getPartitionStore<ShiftAssignment>>>; mk: string }[] = [];
+    for (const mk of cycleMonths) {
+      const sStore = await getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk, user.id);
+      const eStore = await getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', mk, user.id);
+      for (const a of sStore.filter((x) => isEmp(x.employee_id) && isCountedWorkShift(x))) {
+        if (`${a.work_date} ${a.start_at}` > newKey && a.status !== 'COMPLETED' && !eStore.find((e) => e.assignment_id === a.id)) {
+          candidates.push({ shift: a, shStore: sStore, mk });
+        }
+      }
     }
+    candidates.sort((a, b) => `${b.shift.work_date} ${b.shift.start_at}`.localeCompare(`${a.shift.work_date} ${a.shift.start_at}`));
+    const lastLaterEntry = candidates[0];
+    const lastLater = lastLaterEntry?.shift;
+    if (lastLaterEntry) await lastLaterEntry.shStore.softDelete(lastLaterEntry.shift.id, lastLaterEntry.shift.version, user.id);
 
     const activeLeaveOnTarget = lvStore.find((l) => isEmp(l.employee_id) && l.leave_date === body.work_date && l.status !== 'REJECTED' && l.status !== 'CANCELLED');
     if (activeLeaveOnTarget) {
+      const tailLvStore = lastLaterEntry ? await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', lastLaterEntry.mk, user.id) : lvStore;
       const canMoveToTail = Boolean(
-        lastLater
-        && lastLater.work_date !== body.work_date
+        lastLater && lastLater.work_date !== body.work_date
         && employeeShiftsOnDate(ctx, emp, lastLater.work_date).length === 0
-        && !lvStore.find((l) => isEmp(l.employee_id) && l.leave_date === lastLater.work_date && l.status !== 'REJECTED' && l.status !== 'CANCELLED'),
+        && !tailLvStore.find((l) => isEmp(l.employee_id) && l.leave_date === lastLater.work_date && l.status !== 'REJECTED' && l.status !== 'CANCELLED'),
       );
+      await lvStore.softDelete(activeLeaveOnTarget.id, activeLeaveOnTarget.version, user.id);
       if (canMoveToTail && lastLater) {
-        await lvStore.update(activeLeaveOnTarget.id, activeLeaveOnTarget.version, {
-          leave_date: lastLater.work_date, reason: `Tự động chuyển ngày OFF sang ${vi(lastLater.work_date)} khi đăng ký ca ngày ${vi(body.work_date)}`, decided_at: now,
-        }, user.id);
-      } else {
-        await lvStore.softDelete(activeLeaveOnTarget.id, activeLeaveOnTarget.version, user.id);
+        const { id: _id, version: _v, is_deleted: _d, ...restLeave } = activeLeaveOnTarget;
+        await insertPartitionAwareRecord<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', {
+          ...restLeave, leave_date: lastLater.work_date, reason: `Tự động chuyển ngày OFF sang ${vi(lastLater.work_date)} khi đăng ký ca ngày ${vi(body.work_date)}`, decided_at: now,
+        }, lastLater.work_date, user.id);
       }
     }
 

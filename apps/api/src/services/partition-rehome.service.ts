@@ -28,8 +28,8 @@ const DATE_FIELD: Record<MonthlyTableName, string> = {
 
 /**
  * Tự động quét và di dời các bản ghi lưu sai phân vùng tháng về đúng tệp Google Spreadsheet tháng chuẩn xác.
- * Tuyệt đối bảo toàn dữ liệu mẫu gốc trong Tệp gốc (ROOT), chỉ di dời khỏi Tệp gốc những phiếu phát sinh
- * mà ca làm việc gốc (assignment_id) không thuộc Tệp gốc và tháng đích nằm trong DATA_PARTITIONS_REGISTRY.
+ * Tuyệt đối bảo toàn dữ liệu mẫu gốc trong Tệp gốc (ROOT) và giữ nguyên các bản ghi tháng kế tiếp
+ * đang nằm trong tệp tháng mới nhất khi Admin chưa khởi tạo tệp tháng mới.
  */
 export async function rehomeMisplacedPartitionRecords(
   db: Database,
@@ -37,6 +37,7 @@ export async function rehomeMisplacedPartitionRecords(
 ): Promise<RehomeReport> {
   const registry = readPartitionRegistry(db);
   const regMap = new Map(registry.map((r) => [r.monthKey, r]));
+  const latestMonth = registry.length > 0 ? [...registry].sort((a, b) => b.monthKey.localeCompare(a.monthKey))[0]!.monthKey : '';
   const allMonths = new Set<string>(registry.map((r) => r.monthKey));
   if (db.partitionMonth) allMonths.add(db.partitionMonth);
   if (allMonths.size > 0) allMonths.add('');
@@ -59,11 +60,16 @@ export async function rehomeMisplacedPartitionRecords(
 
       for (const row of rows) {
         const dateVal = String(row[dateField] ?? '');
-        const targetMonth = extractMonthKeyFromDate(dateVal);
-        if (!targetMonth || !PARTITION_MONTH_REGEX.test(targetMonth) || monthKey === targetMonth) continue;
+        const rawMonth = extractMonthKeyFromDate(dateVal);
+        if (!rawMonth || !PARTITION_MONTH_REGEX.test(rawMonth)) continue;
+        const targetMonth = regMap.has(rawMonth)
+          ? rawMonth
+          : latestMonth && rawMonth > latestMonth
+            ? latestMonth
+            : '';
+        if (!targetMonth || monthKey === targetMonth) continue;
 
         if (monthKey === '') {
-          if (!regMap.has(targetMonth)) continue;
           const creator = String(row.created_by ?? '');
           if (creator === 'seed-realistic' || creator === 'seed' || creator === 'system-rehome') continue;
           const linkedShiftId = String(row.assignment_id || row.from_assignment_id || '').trim();
