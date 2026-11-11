@@ -132,6 +132,8 @@ export function EvidenceCameraModal({ open, watermarkTitle, onClose, onCapture }
     setPreviewUrl(canvas.toDataURL('image/jpeg', 0.89));
   };
 
+  if (!open) return null;
+
   return (
     <Modal
       open={open}

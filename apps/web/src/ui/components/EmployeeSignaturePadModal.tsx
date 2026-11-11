@@ -122,6 +122,8 @@ export function EmployeeSignaturePadModal({
     onConfirmSign(pngDataUrl);
   };
 
+  if (!open) return null;
+
   return (
     <Modal
       width={720}

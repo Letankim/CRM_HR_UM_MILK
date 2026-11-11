@@ -63,8 +63,8 @@ export function QuickDetailProvider({ children }: { children: ReactNode }) {
   return (
     <QuickDetailContext.Provider value={showDetail}>
       {children}
-      <Modal
-        open={Boolean(spec)}
+      {spec && <Modal
+        open
         onCancel={handleClose}
         destroyOnHidden
         centered
@@ -166,7 +166,7 @@ export function QuickDetailProvider({ children }: { children: ReactNode }) {
             ))}
           </Descriptions>
         )}
-      </Modal>
+      </Modal>}
     </QuickDetailContext.Provider>
   );
 }

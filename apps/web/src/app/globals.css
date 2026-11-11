@@ -357,8 +357,9 @@ html body {
 }
 
 /* Đảm bảo popup Modal centered luôn căn giữa hoàn hảo trên cả Desktop lẫn Mobile, triệt tiêu lỗi rớt baseline/nhảy xuống đáy */
-.ant-modal-wrap.ant-modal-centered {
-  display: flex !important;
+.ant-modal-wrap[style*="display: none"], .ant-modal-wrap[style*="display:none"], .ant-modal-wrap:has(> .ant-modal[style*="display: none"]), .ant-modal-wrap:has(> .ant-modal[style*="display:none"]), .ant-modal-wrap:not(:has(.ant-modal)), .ant-modal-wrap:empty, .ant-modal-mask-hidden, .ant-drawer-content-wrapper-hidden { display: none !important; pointer-events: none !important; }
+.ant-modal-wrap.ant-modal-centered:not([style*="display: none"]):not([style*="display:none"]) {
+  display: flex;
   align-items: center !important;
   justify-content: center !important;
   text-align: center !important;
@@ -486,8 +487,9 @@ html body {
   }
 
   /* Đảm bảo popup Modal luôn căn giữa màn hình cả trên Mobile lẫn Desktop, tuyệt đối không bị trôi/nhảy xuống đáy */
-  .ant-modal-wrap.ant-modal-centered {
-    display: flex !important;
+  .ant-modal-wrap[style*="display: none"], .ant-modal-wrap[style*="display:none"], .ant-modal-wrap:has(> .ant-modal[style*="display: none"]), .ant-modal-wrap:has(> .ant-modal[style*="display:none"]), .ant-modal-wrap:not(:has(.ant-modal)), .ant-modal-wrap:empty, .ant-modal-mask-hidden, .ant-drawer-content-wrapper-hidden { display: none !important; pointer-events: none !important; }
+.ant-modal-wrap.ant-modal-centered:not([style*="display: none"]):not([style*="display:none"]) {
+    display: flex;
     align-items: center !important;
     justify-content: center !important;
     padding: 8px !important;

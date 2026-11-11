@@ -151,6 +151,8 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
   const canSubmit = Boolean(photoDataUrl && activeShift && coords && withinRadius && !branchMismatch && !locating && (isExemptUniform || uniformConfirmed));
   const liveMapPoints: MapPointMarker[] = coords ? [{ lat: coords.lat, lng: coords.lng, kind, label: `Vị trí hiện tại của bạn (${kind === 'CHECK_IN' ? 'Vào ca' : 'Ra ca'})`, subLabel: `Sai số ±${coords.accuracy}m`, distanceM, withinRadius }] : [];
 
+  if (!open) return null;
+
   return (
     <Modal
       open={open} onCancel={onClose} width={860} style={{ top: 12, maxWidth: '98vw' }} destroyOnHidden
@@ -203,16 +205,9 @@ export function AttendanceCameraModal({ open, kind, shift, loading, onClose, onC
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
               <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap><Tag color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>Đã chụp ảnh xác thực</Tag><Button size="small" icon={<ReloadOutlined />} onClick={() => { setPhotoDataUrl(''); setPinkResult(null); void startCamera(); }}>Chụp lại ảnh</Button></Space>
               <div style={{ padding: '8px 10px', background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4 }}>
-                {isOffice ? (
-                  <Tag color="blue" icon={<SafetyCertificateOutlined />} style={{ margin: 0 }}>Khối Văn phòng / Quản lý: Trang phục công sở, miễn trừ kiểm tra áo hồng</Tag>
-                ) : isProbation ? (
-                  <Tag color="gold" icon={<SafetyCertificateOutlined />} style={{ margin: 0 }}>Nhân viên thử việc: Miễn trừ kiểm tra tỷ lệ màu áo hồng</Tag>
-                ) : (
-                  <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                    <Tag color={pinkResult?.passed ? 'magenta' : 'warning'} icon={<SafetyCertificateOutlined />} style={{ margin: 0 }}>Tỷ lệ đồng phục áo hồng: {(pinkResult?.pinkRatioPercent ?? 0).toFixed(1)}% — {pinkResult?.passed ? 'Đạt chuẩn >= 10%' : 'Cảnh báo < 10% khung hình'}</Tag>
-                    <Checkbox checked={uniformConfirmed} onChange={(e) => setUniformConfirmed(e.target.checked)} style={{ fontSize: 12 }}>Tôi xác nhận đang mặc đồng phục áo hồng &amp; đeo bảng tên đúng quy định</Checkbox>
-                  </Space>
-                )}
+                {isOffice ? <Tag color="blue" icon={<SafetyCertificateOutlined />} style={{ margin: 0 }}>Khối Văn phòng / Quản lý: Trang phục công sở, miễn trừ kiểm tra áo hồng</Tag>
+                  : isProbation ? <Tag color="gold" icon={<SafetyCertificateOutlined />} style={{ margin: 0 }}>Nhân viên thử việc: Miễn trừ kiểm tra tỷ lệ màu áo hồng</Tag>
+                  : <Space direction="vertical" size={6} style={{ width: '100%' }}><Tag color={pinkResult?.passed ? 'magenta' : 'warning'} icon={<SafetyCertificateOutlined />} style={{ margin: 0 }}>Tỷ lệ đồng phục áo hồng: {(pinkResult?.pinkRatioPercent ?? 0).toFixed(1)}% — {pinkResult?.passed ? 'Đạt chuẩn >= 10%' : 'Cảnh báo < 10% khung hình'}</Tag><Checkbox checked={uniformConfirmed} onChange={(e) => setUniformConfirmed(e.target.checked)} style={{ fontSize: 12 }}>Tôi xác nhận đang mặc đồng phục áo hồng &amp; đeo bảng tên đúng quy định</Checkbox></Space>}
               </div>
             </Space>
           )}

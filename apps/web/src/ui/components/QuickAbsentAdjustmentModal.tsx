@@ -111,6 +111,8 @@ export function QuickAbsentAdjustmentModal({
     }
   };
 
+  if (!open || !shift) return null;
+
   return (
     <Modal
       width="min(840px, 94vw)"

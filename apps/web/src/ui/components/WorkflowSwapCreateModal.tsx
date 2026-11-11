@@ -112,9 +112,11 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
   });
   const toOptions = useMemo(() => assignments.filter((a) => a.employeeId === peerId && isFree(a)).map((a) => ({ value: a.id, label: fmtShift(a) })), [assignments, peerId]);
 
+  if (!open) return null;
+
   return (
     <Modal
-      width="min(760px, 94vw)" open={open} forceRender
+      width="min(760px, 94vw)" open={open} destroyOnHidden
       title={isSupport ? 'Điều phối hỗ trợ liên chi nhánh' : isDispatch ? 'Phát lệnh điều phối khẩn cấp' : 'Tạo yêu cầu đổi ca / nhường ca'}
       okText={isSupport ? 'Tạo phiếu điều động' : isDispatch ? 'Phát lệnh điều phối (+30k)' : 'Gửi yêu cầu'}
       cancelText="Hủy bỏ" confirmLoading={submitting}
@@ -124,13 +126,7 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
         form={form} layout="vertical" initialValues={{ kind: 'GIVE', shift_code: 'CA_SANG', work_date: todayStr }}
         onFinish={(v) => {
           if (submitting) return;
-          onSubmit({
-            ...v,
-            from_assignment_id: isSupport ? '' : (v.from_assignment_id || ''),
-            to_assignment_id: v.kind === 'SWAP' ? v.to_assignment_id : '',
-            peer_id: isDispatchOrSupport ? '' : v.peer_id,
-            target_branch_id: v.kind === 'HR_SUPPORT' ? v.target_branch_id : (v.kind === 'HR_DISPATCH' ? v.branch_id : ''),
-          });
+          onSubmit({ ...v, from_assignment_id: isSupport ? '' : (v.from_assignment_id || ''), to_assignment_id: v.kind === 'SWAP' ? v.to_assignment_id : '', peer_id: isDispatchOrSupport ? '' : v.peer_id, target_branch_id: v.kind === 'HR_SUPPORT' ? v.target_branch_id : (v.kind === 'HR_DISPATCH' ? v.branch_id : '') });
           form.resetFields(); onClose();
         }}
         onValuesChange={(changed) => {
@@ -139,7 +135,7 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
             if (found) form.setFieldsValue({ requester_id: found.employeeId, branch_id: found.branchId || form.getFieldValue('branch_id'), work_date: found.workDate, shift_code: found.shiftCode, peer_id: undefined, to_assignment_id: undefined });
           }
           if (changed.branch_id && isDispatch) form.setFieldsValue({ from_assignment_id: undefined, requester_id: undefined });
-          if (changed.target_branch_id || changed.work_date || changed.shift_code) { if (isSupport) form.setFieldValue('requester_id', undefined); }
+          if ((changed.target_branch_id || changed.work_date || changed.shift_code) && isSupport) form.setFieldValue('requester_id', undefined);
           if (changed.work_date) {
             if (isDispatch && fromAssign && fromAssign.workDate !== changed.work_date) form.setFieldsValue({ from_assignment_id: undefined, requester_id: undefined });
             const cur = shiftOptions.find((o) => o.value === form.getFieldValue('shift_code')), now = dayjs().format('HH:mm');
@@ -182,24 +178,12 @@ export function WorkflowSwapCreateModal({ open, employees, assignments, branches
         {isDispatch && (
           <>
             <Row gutter={12}>
-              <Col span={12}>
-                <Form.Item name="branch_id" label="1. Chi nhánh cần điều phối khẩn cấp" rules={[{ required: true, message: 'Vui lòng chọn chi nhánh phát lệnh' }]}>
-                  <Select showSearch optionFilterProp="label" placeholder="Chọn chi nhánh" options={storeBranches} />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item name="work_date" label="2. Ngày làm việc cần điều phối" rules={dateRangeRules}><DateStringPicker disabledDate={disableInvalidDispatchDate} /></Form.Item>
-              </Col>
+              <Col span={12}><Form.Item name="branch_id" label="1. Chi nhánh cần điều phối khẩn cấp" rules={[{ required: true, message: 'Vui lòng chọn chi nhánh phát lệnh' }]}><Select showSearch optionFilterProp="label" placeholder="Chọn chi nhánh" options={storeBranches} /></Form.Item></Col>
+              <Col span={12}><Form.Item name="work_date" label="2. Ngày làm việc cần điều phối" rules={dateRangeRules}><DateStringPicker disabledDate={disableInvalidDispatchDate} /></Form.Item></Col>
             </Row>
             <Row gutter={12}>
-              <Col span={14}>
-                <Form.Item name="from_assignment_id" label="3. Ca làm việc cần người thay thế (người nhận sẽ thay ca này)">
-                  <Select allowClear showSearch optionFilterProp="label" placeholder="Chọn ca của nhân sự cần người thay thế..." options={fromOptions} notFoundContent="Không có ca phân công trong ngày này" />
-                </Form.Item>
-              </Col>
-              <Col span={10}>
-                <Form.Item name="shift_code" label="4. Khung ca (+30.000đ)" rules={shiftCodeRules}><Select options={processedShiftOptions} disabled={Boolean(fromAssign)} placeholder="Chọn khung ca" /></Form.Item>
-              </Col>
+              <Col span={14}><Form.Item name="from_assignment_id" label="3. Ca làm việc cần người thay thế (người nhận sẽ thay ca này)"><Select allowClear showSearch optionFilterProp="label" placeholder="Chọn ca của nhân sự cần người thay thế..." options={fromOptions} notFoundContent="Không có ca phân công trong ngày này" /></Form.Item></Col>
+              <Col span={10}><Form.Item name="shift_code" label="4. Khung ca (+30.000đ)" rules={shiftCodeRules}><Select options={processedShiftOptions} disabled={Boolean(fromAssign)} placeholder="Chọn khung ca" /></Form.Item></Col>
             </Row>
           </>
         )}

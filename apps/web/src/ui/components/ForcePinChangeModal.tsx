@@ -68,10 +68,12 @@ export function ForcePinChangeModal({ app }: ForcePinChangeModalProps) {
 
   const reason = user?.pinChangeReason ?? null;
 
+  if (!open) return null;
+
   return (
     <Modal
       rootClassName="umbm-force-secret-modal"
-      open={open}
+      open
       closable={false}
       maskClosable={false}
       keyboard={false}
