@@ -19,7 +19,8 @@ import { findPartitionAwareRecord, getPartitionStore, insertPartitionAwareRecord
 import { emitScheduleRealtime, resolveEmployeeBranchId } from './account-employee-sync.js';
 import { findLinkedEmployeeForUser } from './employee-mapper.js';
 import { auditOutOfWeekSwaps, enrichSwapKindLabel, registerShiftSwapAllowanceRoute, resolveSwapAllowance, zDecideSwapBody } from './shift-swap-helpers.js';
-import { executeHrDispatchClaim, executeHrSupportDispatch, revertSwapSchedule } from '../services/shift-swap-audit.service.js'; import { sweepExpiredShiftSwaps } from '../services/shift-swap-sweep.service.js';
+import { executeHrDispatchClaim, executeHrSupportDispatch, revertSwapSchedule } from '../services/shift-swap-audit.service.js';
+import { sweepExpiredShiftSwaps } from '../services/shift-swap-sweep.service.js';
 
 const zCreateSwapBody = z.object({
   kind: z.enum(['SWAP', 'GIVE', 'HR_DISPATCH', 'HR_SUPPORT'], { errorMap: () => ({ message: 'Loại yêu cầu phải là Đổi ca 2 chiều, Nhường ca, Điều phối khẩn cấp hoặc Hỗ trợ liên chi nhánh' }) }).default('GIVE'),
@@ -55,7 +56,7 @@ export async function shiftSwapRoutes(app: FastifyInstance, ctx: AppContext) {
   };
 
   app.get('/api/admin/shift-swaps', { preHandler: requirePermission('schedule.read', 'swap.approve', 'self.swap') }, async (request) => {
-    await sweepExpiredShiftSwaps(ctx);
+    await runBackgroundSideEffect(() => sweepExpiredShiftSwaps(ctx));
     const query = zWorkflowQuery.parse(request.query ?? {});
     const scoped = filterByBranch(request, ctx.db.shiftSwaps.all(), (s) => resolveEmployeeBranchId(ctx, s.requester_id, s.branch_id));
     const mapped = scoped.map((s) => enrichSwapKindLabel(ctx, s)).filter((s) => (!query.branch_id || query.branch_id === 'ALL' || s.branch_id === query.branch_id) && (!query.status || query.status === 'ALL' || s.status === query.status) && (!query.kind || query.kind === 'ALL' || s.kind === query.kind));

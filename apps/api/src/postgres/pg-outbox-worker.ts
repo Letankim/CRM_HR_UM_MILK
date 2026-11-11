@@ -108,19 +108,26 @@ export class PostgresOutboxWorker {
 
     let i = 0;
     const syncedIds: number[] = [];
+    const failedTabs = new Set<string>();
 
     while (i < items.length) {
       const cur = items[i]!;
-      const sid = cur.spreadsheet_id, tab = cur.tab_name, desc = resolvePgTableDescriptor(tab);
+      const sid = cur.spreadsheet_id, tab = cur.tab_name, tabKey = `${sid}::${tab}`, desc = resolvePgTableDescriptor(tab);
+      if (failedTabs.has(tabKey)) {
+        i++;
+        continue;
+      }
+      let batchSeqIds: number[] = [Number(cur.seq_id)];
       try {
         if (cur.op_type === 'ENSURE_TAB') {
-          await this.remote.ensureTab(sid, tab, cur.payload_json.headers ?? []);
-          syncedIds.push(Number(cur.seq_id));
           i++;
+          await this.remote.ensureTab(sid, tab, cur.payload_json.headers ?? []);
+          syncedIds.push(...batchSeqIds);
           continue;
         }
         if (cur.op_type === 'APPEND_ROWS') {
-          const combinedRows: string[][] = [], batchSeqIds: number[] = [];
+          const combinedRows: string[][] = [];
+          batchSeqIds = [];
           while (i < items.length && items[i]!.op_type === 'APPEND_ROWS' && items[i]!.spreadsheet_id === sid && items[i]!.tab_name === tab && combinedRows.length < 200) {
             const item = items[i]!;
             for (const r of item.payload_json.rows ?? []) combinedRows.push(r);
@@ -141,7 +148,8 @@ export class PostgresOutboxWorker {
           continue;
         }
         if (cur.op_type === 'UPDATE_ROW' || cur.op_type === 'BATCH_UPDATE_ROWS') {
-          const coalescedByRow = new Map<number, string[]>(), batchSeqIds: number[] = [];
+          const coalescedByRow = new Map<number, string[]>();
+          batchSeqIds = [];
           while (i < items.length && (items[i]!.op_type === 'UPDATE_ROW' || items[i]!.op_type === 'BATCH_UPDATE_ROWS') && items[i]!.spreadsheet_id === sid && items[i]!.tab_name === tab) {
             const item = items[i]!;
             if (item.op_type === 'UPDATE_ROW' && item.payload_json.row && item.payload_json.values) {
@@ -163,16 +171,16 @@ export class PostgresOutboxWorker {
           syncedIds.push(...batchSeqIds);
           continue;
         }
-        syncedIds.push(Number(cur.seq_id));
         i++;
+        syncedIds.push(...batchSeqIds);
       } catch (err) {
+        failedTabs.add(tabKey);
         const msg = (err as Error)?.message || String(err);
         this.lastError = msg;
         await this.pool.query(
-          `UPDATE umbm_sheet_outbox SET attempts = attempts + 1, last_error = $2, status = CASE WHEN attempts + 1 >= 8 THEN 'FAILED' ELSE 'PENDING' END WHERE seq_id = $1`,
-          [Number(cur.seq_id), msg.slice(0, 1000)],
+          `UPDATE umbm_sheet_outbox SET attempts = attempts + 1, last_error = $2, status = CASE WHEN attempts + 1 >= 8 THEN 'FAILED' ELSE 'PENDING' END WHERE seq_id = ANY($1::bigint[])`,
+          [batchSeqIds, msg.slice(0, 1000)],
         );
-        i++;
       }
     }
 
@@ -194,8 +202,7 @@ export class PostgresOutboxWorker {
       const res = await this.pool.query<{ status: string; cnt: string }>(
         `SELECT status, COUNT(*)::text AS cnt FROM umbm_sheet_outbox GROUP BY status`,
       );
-      let pending = 0;
-      let failed = 0;
+      let pending = 0, failed = 0;
       for (const r of res.rows) {
         if (r.status === 'PENDING') pending += Number(r.cnt);
         if (r.status === 'FAILED') failed += Number(r.cnt);

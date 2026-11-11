@@ -2,7 +2,8 @@ import type { ZodType, ZodTypeDef } from 'zod';
 import { PARTITION_MONTH_REGEX } from '@umbm/shared';
 import type { Database } from '../data/database.js';
 import { TableStore, type BaseRecord } from '../sheets/table-store.js';
-import { ensureMonthlyTarget, readPartitionRegistry } from './data-partition.service.js';
+import { readPartitionRegistry } from './data-partition-helpers.js';
+import { ensureMonthlyTarget } from './data-partition.service.js';
 import { invalidateHistoricalShiftsCache } from './historical-shifts-loader.js';
 
 export type MonthlyTableName = 'SHIFT_ASSIGNMENTS' | 'LEAVE_REQUESTS' | 'SHIFT_SWAPS' | 'ATTENDANCE_EVENTS' | 'ATTENDANCE_ADJUSTMENTS';
@@ -47,6 +48,8 @@ export function resolveTargetMonthForRecord(db: Database, tableName: MonthlyTabl
     for (const reg of registry) {
       if (getCachedPartitionStore(db, 'SHIFT_ASSIGNMENTS', reg.monthKey)?.get(linkedShiftId)) return reg.monthKey;
     }
+    if (db.shiftAssignments.get(linkedShiftId)) return db.partitionMonth;
+    if (getCachedPartitionStore(db, 'SHIFT_ASSIGNMENTS', '')?.get(linkedShiftId)) return '';
   }
 
   const dateField = tableName === 'LEAVE_REQUESTS' ? 'leave_date' : tableName === 'SHIFT_SWAPS' ? 'from_work_date' : 'work_date';
@@ -59,11 +62,14 @@ export function resolveTargetMonthForRecord(db: Database, tableName: MonthlyTabl
   }
   if (registry.some((r) => r.monthKey === candidate)) return candidate;
   if (registry.length > 0) {
-    const latestMonth = [...registry].sort((a, b) => b.monthKey.localeCompare(a.monthKey))[0]!.monthKey;
+    const sorted = [...registry].sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+    const earliestMonth = sorted[0]!.monthKey, latestMonth = sorted[sorted.length - 1]!.monthKey;
     if (candidate >= latestMonth) return latestMonth;
+    if (candidate < earliestMonth || getCachedPartitionStore(db, tableName, '')) return '';
+    return '';
   }
   if (candidate === db.partitionMonth) return candidate;
-  if (linkedShiftId && db.shiftAssignments.get(linkedShiftId)) return db.partitionMonth;
+  if (db.partitionMonth && candidate < db.partitionMonth) return '';
   return db.partitionMonth;
 }
 
@@ -138,10 +144,7 @@ export async function getPartitionStore<T extends BaseRecord>(
 
 export async function preloadEmployeePartitionStores(db: Database): Promise<string[]> {
   const registry = readPartitionRegistry(db);
-  const months = registry.length > 0
-    ? Array.from(new Set([db.partitionMonth, ...registry.map((r) => r.monthKey)].filter(Boolean)))
-    : Array.from(new Set(['', db.partitionMonth]));
-  if (months.length === 0) return [''];
+  const months = Array.from(new Set(['', db.partitionMonth, ...registry.map((r) => r.monthKey)]));
   const tables: MonthlyTableName[] = ['SHIFT_ASSIGNMENTS', 'LEAVE_REQUESTS', 'SHIFT_SWAPS', 'ATTENDANCE_EVENTS', 'ATTENDANCE_ADJUSTMENTS'];
   await Promise.all(
     months.flatMap((mk) =>
@@ -174,29 +177,23 @@ export async function findPartitionAwareRecord<T extends BaseRecord = PartitionR
   dateHint?: string | null,
 ): Promise<{ record: T; monthKey: string; store: TableStore<T> } | undefined> {
   const desc = getStoreDescriptor(db, tableName);
-  const targetMonth = dateHint ? resolveTargetMonthForRecord(db, tableName, {}, dateHint) : '';
-  if (targetMonth && targetMonth !== db.partitionMonth) {
-    const store = await getPartitionStore<T>(db, tableName, targetMonth);
-    const r = store.get(id);
-    if (r && !r.is_deleted) return { record: r, monthKey: targetMonth, store };
-  }
-  const activeRecord = (desc.store as unknown as TableStore<T>).get(id);
-  if (activeRecord && !activeRecord.is_deleted) {
-    return { record: activeRecord, monthKey: db.partitionMonth, store: desc.store as unknown as TableStore<T> };
-  }
+  const hasHint = Boolean(dateHint && dateHint.trim());
+  const targetMonth = hasHint ? resolveTargetMonthForRecord(db, tableName, {}, dateHint) : db.partitionMonth;
   const registry = readPartitionRegistry(db);
-  for (const reg of registry) {
-    if (reg.monthKey === db.partitionMonth || reg.monthKey === targetMonth) continue;
-    const store = await getPartitionStore<T>(db, tableName, reg.monthKey);
+  const candidateMonths = Array.from(new Set([...(hasHint ? [targetMonth] : []), db.partitionMonth, ...registry.map((r) => r.monthKey), '']));
+  for (const mk of candidateMonths) {
+    const cached = getCachedPartitionStore<T>(db, tableName, mk), r = cached?.get(id);
+    if (r && !r.is_deleted && cached) return { record: r, monthKey: mk, store: cached };
+  }
+  for (const mk of candidateMonths) {
+    if (getCachedPartitionStore<T>(db, tableName, mk)) continue;
+    const store = await getPartitionStore<T>(db, tableName, mk);
     const r = store.get(id);
-    if (r && !r.is_deleted) return { record: r, monthKey: reg.monthKey, store };
+    if (r && !r.is_deleted) return { record: r, monthKey: mk, store };
   }
-  if (db.partitionMonth !== '') {
-    const rootStore = await getPartitionStore<T>(db, tableName, '');
-    const r = rootStore.get(id);
-    if (r && !r.is_deleted) return { record: r, monthKey: '', store: rootStore };
-  }
-  return undefined;
+  const activeStore = desc.store as unknown as TableStore<T>;
+  const activeRecord = activeStore.get(id);
+  return activeRecord && !activeRecord.is_deleted ? { record: activeRecord, monthKey: db.partitionMonth, store: activeStore } : undefined;
 }
 
 export async function updatePartitionAwareRecord<T extends BaseRecord = PartitionRecord>(

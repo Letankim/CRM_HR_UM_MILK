@@ -141,11 +141,12 @@ export function useRealtime(app: AppKind, enabled: boolean, socketToken?: string
       if (isOutOfBranchOrDup('sched', payload)) return;
       queueInvalidate([
         ['notifications'], ['schedules'], ['my-attendance'], ['my-earnings'], ['leave-requests'], ['shift-swaps'], ['shift-registrations'],
-        ['branches'], ['shift-templates'], ['staffing-rules'], ['employees'],
-        ['schedule-planner-week'], ['schedule-planner-probation'], ['attendance-adjustments'], ['attendance-sessions'], ['attendance-sessions-count'],
+        ['employees'], ['attendance-adjustments'], ['attendance-sessions'], ['attendance-sessions-count'],
         ['nv-schedules'], ['nv-swaps'], ['dashboard-schedules'], ['dashboard-leaves'], ['dashboard-swaps'], ['dashboard-attendance-adjustments'],
-        ['payroll-periods'], ['payroll-periods-report'], ['payroll-snapshots'], ['payroll-reconcile'],
       ]);
+      for (const queryKey of [['schedule-planner-week'], ['schedule-planner-probation'], ['payroll-periods'], ['payroll-periods-report'], ['payroll-snapshots'], ['payroll-reconcile']]) {
+        void qc.invalidateQueries({ queryKey, refetchType: 'none' });
+      }
     };
     const onAccountPending = () => queueInvalidate([['accounts'], ['notifications']]);
     const onPayrollUpdated = () => queueInvalidate([

@@ -8,7 +8,7 @@ import { resolveNotificationEventTime } from './notification-time.js';
 import { syncPayslipConfirmNotifications } from './payslip.service.js';
 import { healOpenPayslipDisputesToTickets, syncSupportTicketBellNotifications } from './ticket-notification.service.js';
 
-const syncInFlight = new WeakMap<object, Promise<void>>(), lastSyncSig = new WeakMap<object, string>();
+const syncInFlight = new WeakMap<object, Promise<void>>(), lastSyncSig = new WeakMap<object, string>(), lastSyncAt = new WeakMap<object, number>();
 function computeSyncSig(ctx: AppContext): string {
   const sumV = (rows: { version: number }[]) => rows.reduce((acc, r) => acc + r.version, rows.length * 97);
   return [ctx.db.announcements, ctx.db.users, ctx.db.employees, ctx.db.shiftAssignments, ctx.db.leaveRequests, ctx.db.shiftSwaps, ctx.db.attendanceAdjustments, ctx.db.payPeriods, ctx.db.payslips, ctx.db.supportTickets].map((s) => sumV(s.all())).join(':');
@@ -18,14 +18,16 @@ function activePlusRecent<T extends { id: string }>(rows: T[], isActive: (r: T) 
   return [...active, ...rows.slice(-recentLimit).filter((r) => !seen.has(r.id))];
 }
 export function ensureSyncedNotifications(ctx: AppContext): Promise<void> {
-  return lastSyncSig.get(ctx.db) === computeSyncSig(ctx) ? Promise.resolve() : singleFlight(syncInFlight, ctx.db, () => runSyncNotifications(ctx));
+  const now = Date.now(), sig = computeSyncSig(ctx);
+  return sig === lastSyncSig.get(ctx.db) && now - (lastSyncAt.get(ctx.db) ?? 0) < 30_000 ? Promise.resolve() : singleFlight(syncInFlight, ctx.db, () => runSyncNotifications(ctx));
 }
 
 async function runSyncNotifications(ctx: AppContext): Promise<void> {
+  const sigBefore = computeSyncSig(ctx), now = Date.now();
+  if (sigBefore === lastSyncSig.get(ctx.db) && now - (lastSyncAt.get(ctx.db) ?? 0) < 30_000) return;
   await healOpenPayslipDisputesToTickets(ctx);
-  const sigBefore = computeSyncSig(ctx);
-  if (lastSyncSig.get(ctx.db) === sigBefore) return;
   await deduplicateAdjustmentsAndNotifications(ctx);
+  const sigPostHeal = computeSyncSig(ctx);
   const users = ctx.db.users.all(), seenKeys = new Set<string>();
   for (const n of ctx.db.notifications.all(true)) {
     if (!n.is_deleted) {
@@ -34,7 +36,8 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
     }
   }
   const hasKey = (type: string, id: string) => seenKeys.has(`${type}:${id}`);
-  const findEmp = (empId: string) => { const t = (empId || '').trim(); return t ? (ctx.db.employees.get(t) ?? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === t.toUpperCase())) : undefined; };
+  const empByKey = new Map(ctx.db.employees.all().flatMap((e) => [[e.id, e] as const, [e.employee_code.trim().toUpperCase(), e] as const]));
+  const findEmp = (empId: string) => { const t = (empId || '').trim(); return t ? (empByKey.get(t) ?? empByKey.get(t.toUpperCase())) : undefined; };
   const findUserByEmp = (empId: string) => { const emp = findEmp(empId); return (emp ? findLinkedUserForEmployee(emp, ctx) : undefined) ?? users.find((u) => Boolean(empId && u.employee_id.trim().toUpperCase() === empId.trim().toUpperCase())); };
   const isBoOrHr = (emp?: { staff_group?: string }, empUser?: { role?: string }, creatorId?: string) => emp?.staff_group === 'BACKOFFICE' || ['ADMIN', 'HR', 'FINANCE', 'MKT', 'STORE'].includes(empUser?.role ?? '') || ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(ctx.db.users.get(creatorId || '')?.role ?? '');
   const shiftLabel = (code: string) => (DEFAULT_SHIFT_LABELS as Record<string, string>)[code] ?? code;
@@ -152,12 +155,13 @@ async function runSyncNotifications(ctx: AppContext): Promise<void> {
   await syncPayslipConfirmNotifications(ctx, ins); await syncSupportTicketBellNotifications(ctx, ins);
   if (pendingInserts.length > 0) await Promise.all(pendingInserts);
   const sigAfter = computeSyncSig(ctx);
-  if (sigAfter !== sigBefore) return runSyncNotifications(ctx);
+  if (sigAfter !== sigPostHeal) return runSyncNotifications(ctx);
+  lastSyncAt.set(ctx.db, Date.now());
   lastSyncSig.set(ctx.db, sigAfter);
 }
 
-export function isNotificationCreatedByOrSelfAction(ctx: AppContext, n: NotificationRow, userId: string): boolean {
-  const meUser = ctx.db.users.get(userId), myEmp = ctx.db.employees.find((e) => e.user_id === userId || Boolean(meUser?.employee_id && (e.id === meUser.employee_id || e.employee_code === meUser.employee_id)));
+export function isNotificationCreatedByOrSelfAction(ctx: AppContext, n: NotificationRow, userId: string, myEmpPreResolved?: { id: string; employee_code: string } | null): boolean {
+  const meUser = myEmpPreResolved === undefined ? ctx.db.users.get(userId) : undefined, myEmp = myEmpPreResolved !== undefined ? myEmpPreResolved : ctx.db.employees.find((e) => e.user_id === userId || Boolean(meUser?.employee_id && (e.id === meUser.employee_id || e.employee_code === meUser.employee_id)));
   const isMyEmp = (eid?: string) => Boolean(eid && myEmp && (eid === myEmp.id || eid === myEmp.employee_code));
   const rawId = (n.entity_id || '').replace(/_(PUBLISHED|APPROVED|REJECTED|PENDING|STORE_CONFIRMED|PENDING_PEER|PEER_ACCEPTED|PEER_DECLINED|ESCALATED|RESOLVED|REPLACEMENT_FOUND)$/, '');
   const recipientUserIds = (n.recipient_user_id || '').split(',').map((s) => s.trim()).filter(Boolean);

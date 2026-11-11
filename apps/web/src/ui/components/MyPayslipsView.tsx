@@ -49,11 +49,13 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
     try {
       qc.setQueryData(['me', 'payslips'], await api.get<MyPayslip[]>('/me/payslips?refresh=1'));
       message.success('Đã đồng bộ danh sách phiếu lương cá nhân mới nhất');
-    } catch (e) {
-      message.error(e instanceof ApiClientError ? e.message : 'Đồng bộ phiếu lương thất bại');
-    } finally {
-      setRefreshing(false);
-    }
+    } catch (e) { message.error(e instanceof ApiClientError ? e.message : 'Đồng bộ phiếu lương thất bại'); }
+    finally { setRefreshing(false); }
+  };
+
+  const invalidatePayslipRelated = () => {
+    ['tickets', 'payroll-snapshots', 'payroll-periods', 'notifications'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
+    void qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
   };
 
   const signMut = useMutation({
@@ -62,22 +64,18 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
     onSuccess: () => {
       message.success('Đã ký tay trực tiếp xác nhận phiếu lương thành công. Bộ phận Kế toán đã nhận thông báo để chuyển khoản thanh toán.');
       setSignModal(false);
-      ['tickets', 'payroll-snapshots', 'payroll-periods', 'notifications'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
-      void qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
+      invalidatePayslipRelated();
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Ký xác nhận phiếu lương thất bại'),
   });
 
   const disputeMut = useMutation({
     mutationFn: (payload: { id: string; reason: string; target_department: TicketDepartment; assignee_user_id: string }) =>
-      api.post<MyPayslip>(`/me/payslips/${payload.id}/dispute`, {
-        reason: payload.reason, target_department: payload.target_department, assignee_user_id: payload.assignee_user_id,
-      }),
+      api.post<MyPayslip>(`/me/payslips/${payload.id}/dispute`, payload),
     onSuccess: (updated) => {
       message.success(`Đã tạo phiếu hỗ trợ ${updated.linkedTicket?.ticketCode || ''} và gửi tới ${updated.linkedTicket?.departmentLabel || 'bộ phận phụ trách'}`);
       setDisputeModal(false);
-      ['tickets', 'payroll-snapshots', 'payroll-periods', 'notifications'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
-      void qc.invalidateQueries({ queryKey: ['me', 'payslips'] });
+      invalidatePayslipRelated();
     },
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Gửi thắc mắc thất bại'),
   });
@@ -88,43 +86,26 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
       const out = await api.get<ExportFilePayload>(`/me/payslips/${slipId}/export-pdf`);
       downloadBase64File(out.base64, out.fileName, out.mimeType);
       message.success(`Đã tải tệp PDF phiếu lương: ${out.fileName}`);
-    } catch (e) {
-      message.error(e instanceof ApiClientError ? e.message : 'Tải PDF phiếu lương thất bại');
-    } finally {
-      setDownloadingPdf(false);
-    }
+    } catch (e) { message.error(e instanceof ApiClientError ? e.message : 'Tải PDF phiếu lương thất bại'); }
+    finally { setDownloadingPdf(false); }
   };
 
-  const items = query.data ?? [];
-  const open = openId ? items.find((x) => x.id === openId) ?? null : null;
-  const isConfirmed = Boolean(open?.employeeConfirmedAt);
-  const isPaid = open?.status === 'PAID';
+  const items = query.data ?? [], open = openId ? items.find((x) => x.id === openId) ?? null : null;
+  const isConfirmed = Boolean(open?.employeeConfirmedAt), isPaid = open?.status === 'PAID';
   const pendingRev = open?.pendingRevision ?? open?.breakdown?.pendingRevision ?? null;
   const hasActiveTicket = Boolean(open?.linkedTicket && open.linkedTicket.status !== 'CLOSED');
   const deptAssignees = (assigneesQ.data ?? []).filter((a) => !selectedDept || a.department === selectedDept);
 
-  const enrichedSnap: PayrollSnapshotItem | null = open
-    ? {
-        ...open.breakdown,
-        payslipCode: open.payslipCode,
-        payslipRevision: open.revision,
-        payslipStatus: open.status,
-        grossVnd: open.grossVnd ?? open.breakdown?.grossVnd ?? 0,
-        netVnd: open.netVnd ?? open.breakdown?.netVnd ?? 0,
-        approvedHours: open.approvedHours ?? open.breakdown?.approvedHours ?? 0,
-        totalShiftsCount: open.totalShiftsCount ?? open.breakdown?.totalShiftsCount ?? 0,
-        adminSignatureUrl: open.adminSignatureUrl ?? open.breakdown?.adminSignatureUrl,
-        adminSignedBy: open.adminSignedBy ?? open.breakdown?.adminSignedBy,
-        adminSignedAt: open.adminSignedAt ?? open.breakdown?.adminSignedAt,
-        financeSignatureUrl: open.financeSignatureUrl ?? open.breakdown?.financeSignatureUrl,
-        financeSignedBy: open.financeSignedBy ?? open.breakdown?.financeSignedBy,
-        financeSignedAt: open.financeSignedAt ?? open.breakdown?.financeSignedAt,
-        employeeSignatureUrl: open.employeeSignatureUrl ?? open.breakdown?.employeeSignatureUrl,
-        employeeConfirmedAt: open.employeeConfirmedAt ?? open.breakdown?.employeeConfirmedAt,
-        revisions: open.revisions ?? open.breakdown?.revisions ?? [],
-        pendingRevision: pendingRev,
-      }
-    : null;
+  const enrichedSnap: PayrollSnapshotItem | null = open ? {
+    ...open.breakdown,
+    payslipCode: open.payslipCode, payslipRevision: open.revision, payslipStatus: open.status,
+    grossVnd: open.grossVnd ?? open.breakdown?.grossVnd ?? 0, netVnd: open.netVnd ?? open.breakdown?.netVnd ?? 0,
+    approvedHours: open.approvedHours ?? open.breakdown?.approvedHours ?? 0, totalShiftsCount: open.totalShiftsCount ?? open.breakdown?.totalShiftsCount ?? 0,
+    adminSignatureUrl: open.adminSignatureUrl ?? open.breakdown?.adminSignatureUrl, adminSignedBy: open.adminSignedBy ?? open.breakdown?.adminSignedBy, adminSignedAt: open.adminSignedAt ?? open.breakdown?.adminSignedAt,
+    financeSignatureUrl: open.financeSignatureUrl ?? open.breakdown?.financeSignatureUrl, financeSignedBy: open.financeSignedBy ?? open.breakdown?.financeSignedBy, financeSignedAt: open.financeSignedAt ?? open.breakdown?.financeSignedAt,
+    employeeSignatureUrl: open.employeeSignatureUrl ?? open.breakdown?.employeeSignatureUrl, employeeConfirmedAt: open.employeeConfirmedAt ?? open.breakdown?.employeeConfirmedAt,
+    revisions: open.revisions ?? open.breakdown?.revisions ?? [], pendingRevision: pendingRev,
+  } : null;
 
   const content = query.isLoading ? (
     <div style={{ padding: 24, textAlign: 'center' }}><Spin /></div>
@@ -148,15 +129,10 @@ export function MyPayslipsView({ embedded = false }: { embedded?: boolean }) {
                   <span style={{ fontWeight: 600 }}>{p.periodName}</span>
                   <StatusTag value={p.status || 'PUBLISHED'} label={p.statusLabel} />
                   {p.revision > 1 && <Tag color="blue" style={{ margin: 0, borderRadius: 2 }}>Điều chỉnh lần #{p.revision}</Tag>}
-                  {pPending ? (
-                    <Tag color="orange" icon={<ClockCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>Chờ Quản trị duyệt điều chỉnh ({pPending.delta_vnd >= 0 ? '+' : ''}{fmtVnd(pPending.delta_vnd)})</Tag>
-                  ) : p.employeeConfirmedAt ? (
-                    <Tag color="green" style={{ margin: 0, borderRadius: 2 }}>Đã ký xác nhận</Tag>
-                  ) : p.disputeStatus === 'OPEN' ? (
-                    <Tag color="volcano" style={{ margin: 0, borderRadius: 2 }}>Đang thắc mắc{p.linkedTicket ? ` (${p.linkedTicket.ticketCode})` : ''}</Tag>
-                  ) : (
-                    <Tag color="gold" style={{ margin: 0, borderRadius: 2 }}>Chờ bạn ký xác nhận</Tag>
-                  )}
+                  {pPending ? <Tag color="orange" icon={<ClockCircleOutlined />} style={{ margin: 0, borderRadius: 2 }}>Chờ Quản trị duyệt điều chỉnh ({pPending.delta_vnd >= 0 ? '+' : ''}{fmtVnd(pPending.delta_vnd)})</Tag>
+                    : p.employeeConfirmedAt ? <Tag color="green" style={{ margin: 0, borderRadius: 2 }}>Đã ký xác nhận</Tag>
+                    : p.disputeStatus === 'OPEN' ? <Tag color="volcano" style={{ margin: 0, borderRadius: 2 }}>Đang thắc mắc{p.linkedTicket ? ` (${p.linkedTicket.ticketCode})` : ''}</Tag>
+                    : <Tag color="gold" style={{ margin: 0, borderRadius: 2 }}>Chờ bạn ký xác nhận</Tag>}
                 </Space>
               }
               description={

@@ -127,10 +127,7 @@ export function EmployeeSwapsTable({
   return (
     <>
       {openDispatches.length > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px',
-          background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 4, marginBottom: 12,
-        }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 4, marginBottom: 12 }}>
           <ExclamationCircleFilled style={{ fontSize: 16, color: '#D97706', flexShrink: 0, marginTop: 2 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 13, color: '#92400E', lineHeight: '1.4' }}>
@@ -140,13 +137,7 @@ export function EmployeeSwapsTable({
               Nhân viên nhận ca làm thêm theo diện HR Dispatch sẽ được hệ thống tự động tạo ca mới trên lịch và cộng thêm phụ cấp thưởng <strong>+30.000đ/ca</strong> vào bảng lương kỳ đó. Bấm &apos;Nhận ca (+30k)&apos; để nhận ca ngay.
             </div>
             <div style={{ marginTop: 8 }}>
-              <Button
-                size="small" type="primary"
-                icon={<CheckCircleOutlined />}
-                loading={busy}
-                onClick={() => handleRespond([openDispatches[0]!], true)}
-                style={{ background: '#D97706', borderColor: '#D97706', fontSize: 12 }}
-              >
+              <Button size="small" type="primary" icon={<CheckCircleOutlined />} loading={busy} onClick={() => handleRespond([openDispatches[0]!], true)} style={{ background: '#D97706', borderColor: '#D97706', fontSize: 12 }}>
                 Nhận ca (+30k)
               </Button>
             </div>

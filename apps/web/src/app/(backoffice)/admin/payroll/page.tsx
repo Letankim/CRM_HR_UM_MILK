@@ -72,7 +72,7 @@ function PayrollView() {
   };
   const handleExportSheet = async () => {
     if (!currentPeriod) return;
-    const res = await api.get<{ period: PayPeriodRow; snapshots: PayrollSnapshotItem[] }>(`/admin/payroll/periods/${currentPeriod.id}/snapshots`);
+    const res = await api.get<{ period: PayPeriodRow; snapshots: PayrollSnapshotItem[] }>(`/admin/payroll/periods/${currentPeriod.id}/snapshots?page=1&per_page=500`);
     exportPayrollSheet(currentPeriod, res.snapshots);
   };
 

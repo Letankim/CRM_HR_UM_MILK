@@ -2,6 +2,7 @@ import { DEFAULT_SHIFT_LABELS, REQUEST_STATUS_LABELS, type DefaultShiftCode, typ
 import type { AppContext } from '../context.js';
 import { dayjs } from '../lib/time.js';
 import { findBranchShiftTemplate, resolveEmployeeBranchId } from '../routes/account-employee-sync.js';
+import { collectLeavesInRangeAcrossPartitions, getShiftStoreForDate } from './schedule-auto-planner.js';
 import { isCountedWorkShift, isProbationShift, matchEmp } from './schedule-rules.js';
 import { resolveApplicableStaffingRule } from './schedule-staffing-helper.js';
 
@@ -55,7 +56,7 @@ function resolveEmp(ctx: AppContext, empIdOrCode: string): Employee | undefined 
 
 function resolveLeaveShift(ctx: AppContext, req: LeaveRequest, emp?: Employee, branchId?: string) {
   const bId = branchId || emp?.branch_id || req.branch_id;
-  const assigned = ctx.db.shiftAssignments.find(
+  const assigned = getShiftStoreForDate(ctx, req.leave_date).find(
     (a) => a.work_date === req.leave_date && isCountedWorkShift(a) && (a.employee_id === req.employee_id || Boolean(emp && matchEmp(emp)(a.employee_id))),
   );
   const code = (assigned?.shift_code || emp?.default_shift_code || req.shift_code || 'CA_SANG').toUpperCase();
@@ -93,7 +94,7 @@ export function evaluateLeaveRequestConflict(ctx: AppContext, target: LeaveReque
     };
   }
 
-  const peerLeaves = ctx.db.leaveRequests.filter(
+  const peerLeaves = collectLeavesInRangeAcrossPartitions(ctx, [target.leave_date]).filter(
     (l) => l.id !== target.id && l.employee_stage !== 'PROBATION' && ACTIVE_OFF.has(l.status) && l.leave_date === target.leave_date && resolveEmployeeBranchId(ctx, l.employee_id, l.branch_id) === branchId
       && resolveEmp(ctx, l.employee_id)?.stage !== 'PROBATION',
   );
@@ -117,7 +118,7 @@ export function evaluateLeaveRequestConflict(ctx: AppContext, target: LeaveReque
     return e ? matchEmp(e) : (x: string) => x === id;
   });
   const availableGroupStaff = groupEmps.filter((ge) => !offEmpCheckers.some((fn) => fn(ge.id))).length;
-  const publishedOtherShifts = ctx.db.shiftAssignments.filter(
+  const publishedOtherShifts = getShiftStoreForDate(ctx, target.leave_date).filter(
     (a) => a.work_date === target.leave_date && a.shift_code.toUpperCase() === shift.code && a.status !== 'DRAFT'
       && !isProbationShift(ctx, a)
       && isCountedWorkShift(a) && resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id) === branchId
@@ -168,7 +169,7 @@ export function summarizeWeekOffConflicts(
   params: { weekStart: string; weekEnd: string; branchIds: string[] },
 ): PlannerOffConflictGroup[] {
   const branchSet = new Set(params.branchIds);
-  const leaves = ctx.db.leaveRequests.filter((l) => {
+  const leaves = collectLeavesInRangeAcrossPartitions(ctx, [params.weekStart, params.weekEnd]).filter((l) => {
     if (!ACTIVE_OFF.has(l.status) || l.employee_stage === 'PROBATION' || l.leave_date < params.weekStart || l.leave_date > params.weekEnd) return false;
     if (resolveEmp(ctx, l.employee_id)?.stage === 'PROBATION') return false;
     return branchSet.has(resolveEmployeeBranchId(ctx, l.employee_id, l.branch_id));

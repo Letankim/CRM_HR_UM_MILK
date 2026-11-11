@@ -1,5 +1,12 @@
 import type { ZodType, ZodTypeDef } from 'zod';
-import { addDaysYmd, mondayOfWeek, type MonthlyPartitionRegistryEntry, type ShiftAssignment } from '@umbm/shared';
+import {
+  OPERATION_SETTING_KEYS,
+  addDaysYmd,
+  mondayOfWeek,
+  parsePartitionRegistry,
+  type MonthlyPartitionRegistryEntry,
+  type ShiftAssignment,
+} from '@umbm/shared';
 import type { Database } from '../data/database.js';
 import { nowIso } from '../lib/time.js';
 import { TableStore, type BaseRecord } from '../sheets/table-store.js';
@@ -10,6 +17,20 @@ export type AnyStore = TableStore<AnyRecord>;
 export type MonthlyStoreDesc = ReturnType<Database['monthlyStores']>[number];
 
 const partitionLocks = new WeakMap<Database, Promise<void>>();
+const registryCache = new WeakMap<Database, { ver: number; updatedAt: string; raw: string; entries: MonthlyPartitionRegistryEntry[] }>();
+
+/** Đọc sổ đăng ký phân vùng tháng có bộ nhớ đệm theo version + updated_at để tránh JSON.parse lặp lại hàng nghìn lần. */
+export function readPartitionRegistry(db: Database): MonthlyPartitionRegistryEntry[] {
+  const row = db.systemSettings.find((s) => s.key === OPERATION_SETTING_KEYS.DATA_PARTITIONS_REGISTRY);
+  if (!row || !row.value) return [];
+  const hit = registryCache.get(db);
+  if (hit && hit.ver === row.version && hit.updatedAt === row.updated_at && hit.raw === row.value) {
+    return hit.entries;
+  }
+  const entries = parsePartitionRegistry(row.value);
+  registryCache.set(db, { ver: row.version, updatedAt: row.updated_at, raw: row.value, entries });
+  return entries;
+}
 
 /** Tuần tự hóa mọi thao tác chuyển đổi hoặc tạo mới tệp dữ liệu tháng để tránh tranh chấp ghi/đọc song song. */
 export async function runPartitionExclusive<T>(db: Database, fn: () => Promise<T>): Promise<T> {

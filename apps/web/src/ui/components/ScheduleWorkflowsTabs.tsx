@@ -42,7 +42,7 @@ export function ScheduleWorkflowsTabs({ employees, assignments }: Props) {
 
   const mkParams = (tabKey: string) => {
     const p = new URLSearchParams({ page: String(resolvedTab === tabKey ? page : 1), per_page: String(perPage) });
-    if (debouncedQ) p.set('q', debouncedQ);
+    if (resolvedTab === tabKey && debouncedQ) p.set('q', debouncedQ);
     if (branchFilter !== 'ALL') p.set('branch_id', branchFilter);
     if (resolvedTab === tabKey && statusFilter !== 'ALL') p.set('status', statusFilter);
     if (tabKey === 'swap' && kindFilter !== 'ALL') p.set('kind', kindFilter);

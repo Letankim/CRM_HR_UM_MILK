@@ -4,7 +4,7 @@ import { AppError, Errors } from '../lib/errors.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { resolveEmployeeBranchId } from '../routes/account-employee-sync.js';
 import { getOperationSettings } from './operations-settings.service.js';
-import { getCachedPartitionStore, getPartitionStore, insertPartitionAwareRecord, nextPartitionCode, preloadEmployeePartitionStores, resolveTargetMonthForRecord } from './partition-write-router.js';
+import { extractMonthKeyFromDate, getCachedPartitionStore, getPartitionStore, insertPartitionAwareRecord, nextPartitionCode, preloadEmployeePartitionStores, resolveTargetMonthForRecord } from './partition-write-router.js';
 import { assertDateNotLockedByPayroll } from './salary-profile.service.js';
 import { planOfficialWeek } from './schedule-auto-planner.js';
 import { findWeekLock, isCountedWorkShift, matchEmp, weekLockCode } from './schedule-rules.js';
@@ -26,26 +26,23 @@ export interface WeeklyOffGateStatus {
 
 export function evaluateEmployeeWeeklyOffGate(ctx: AppContext, emp: Employee): WeeklyOffGateStatus {
   const settings = getOperationSettings(ctx.db), { todayStr, nowHm } = getVnNowDateAndHm();
-  const win = evaluateOffWindow(settings, todayStr, nowHm);
-  const vipWindowActive = isVipOffWindowActive(emp), isEmp = matchEmp(emp);
+  const win = evaluateOffWindow(settings, todayStr, nowHm), vipWindowActive = isVipOffWindowActive(emp), isEmp = matchEmp(emp);
   const startMonth = resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: win.targetWeekStart }, win.targetWeekStart);
   const endMonth = resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: win.targetWeekEnd }, win.targetWeekEnd);
-  const weekMonths = Array.from(new Set([startMonth, endMonth]));
-  const activeInWeek: LeaveRequest[] = [];
-  const seenIds = new Set<string>();
+  const weekMonths = Array.from(new Set([startMonth, endMonth, extractMonthKeyFromDate(win.targetWeekStart), extractMonthKeyFromDate(win.targetWeekEnd)]));
+  const activeInWeek: LeaveRequest[] = [], seenIds = new Set<string>();
   for (const mk of weekMonths) {
-    const lvStore = getCachedPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk) ?? ctx.db.leaveRequests;
+    const lvStore = getCachedPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.leaveRequests : undefined);
+    if (!lvStore) continue;
     for (const l of lvStore.all()) {
       if (!seenIds.has(l.id) && isEmp(l.employee_id) && ACTIVE_LEAVE(l.status) && l.leave_date >= win.targetWeekStart && l.leave_date <= win.targetWeekEnd) {
-        seenIds.add(l.id);
-        activeInWeek.push(l);
+        seenIds.add(l.id); activeInWeek.push(l);
       }
     }
   }
   const registeredDates = Array.from(new Set(activeInWeek.map((l) => l.leave_date))).sort();
   const registeredCount = registeredDates.length, requiredCount = settings.officialWeeklyOffLimit || 2;
-  const weekLocked = Boolean(findWeekLock(ctx, emp.branch_id, win.targetWeekStart));
-  const isOpen = (win.isOpen || vipWindowActive) && !weekLocked;
+  const weekLocked = Boolean(findWeekLock(ctx, emp.branch_id, win.targetWeekStart)), isOpen = (win.isOpen || vipWindowActive) && !weekLocked;
   const isBackofficeOrManager = emp.staff_group === 'BACKOFFICE' || emp.staff_group === 'STORE_MANAGER';
   const gateLocked = emp.stage === 'OFFICIAL' && !isBackofficeOrManager && isOpen && registeredCount < requiredCount;
   const message = gateLocked
@@ -68,24 +65,14 @@ export async function submitWeeklyOffBatch(
   const { emp, actorId } = params;
   if (emp.stage !== 'OFFICIAL') throw Errors.forbidden('Cổng đăng ký 2 ngày OFF hàng tuần chỉ áp dụng cho Nhân viên chính thức');
   const uniqueDates = Array.from(new Set(params.leaveDates)).sort(), gate = evaluateEmployeeWeeklyOffGate(ctx, emp);
-  if (uniqueDates.length !== gate.requiredCount) {
-    throw Errors.fieldValidation('leave_dates', 'INVALID_VALUE', `Nhân viên chính thức bắt buộc chọn đúng ${gate.requiredCount} ngày nghỉ OFF khác nhau trong tuần`, params.leaveDates);
-  }
-  if (!params.skipWindowCheck && !gate.isOpen && !gate.vipWindowActive) {
-    throw Errors.fieldValidation('leave_dates', 'OUT_OF_RANGE', gate.message, uniqueDates);
-  }
+  if (uniqueDates.length !== gate.requiredCount) throw Errors.fieldValidation('leave_dates', 'INVALID_VALUE', `Nhân viên chính thức bắt buộc chọn đúng ${gate.requiredCount} ngày nghỉ OFF khác nhau trong tuần`, params.leaveDates);
+  if (!params.skipWindowCheck && !gate.isOpen && !gate.vipWindowActive) throw Errors.fieldValidation('leave_dates', 'OUT_OF_RANGE', gate.message, uniqueDates);
   const d0 = uniqueDates[0]!, d1 = uniqueDates[1]!;
-  if (mondayOfWeek(d0) !== mondayOfWeek(d1)) {
-    throw Errors.fieldValidation('leave_dates', 'OUT_OF_RANGE', 'Hai ngày nghỉ OFF phải nằm trong cùng một tuần làm việc', uniqueDates);
-  }
+  if (mondayOfWeek(d0) !== mondayOfWeek(d1)) throw Errors.fieldValidation('leave_dates', 'OUT_OF_RANGE', 'Hai ngày nghỉ OFF phải nằm trong cùng một tuần làm việc', uniqueDates);
   const inTargetWeek = d0 >= gate.targetWeekStart && d1 <= gate.targetWeekEnd;
-  if (!inTargetWeek && !gate.vipWindowActive && !params.skipWindowCheck) {
-    throw Errors.fieldValidation('leave_dates', 'OUT_OF_RANGE', `Chỉ được đăng ký nghỉ OFF cho tuần mục tiêu (${vi(gate.targetWeekStart)} – ${vi(gate.targetWeekEnd)})`, uniqueDates);
-  }
+  if (!inTargetWeek && !gate.vipWindowActive && !params.skipWindowCheck) throw Errors.fieldValidation('leave_dates', 'OUT_OF_RANGE', `Chỉ được đăng ký nghỉ OFF cho tuần mục tiêu (${vi(gate.targetWeekStart)} – ${vi(gate.targetWeekEnd)})`, uniqueDates);
   const weekStart = inTargetWeek ? gate.targetWeekStart : mondayOfWeek(d0), weekEnd = addDaysYmd(weekStart, 6);
-  if (findWeekLock(ctx, emp.branch_id, weekStart)) {
-    throw Errors.fieldValidation('leave_dates', 'OUT_OF_RANGE', 'HR đã chốt lịch tuần này, không thể thay đổi ngày nghỉ OFF', uniqueDates);
-  }
+  if (findWeekLock(ctx, emp.branch_id, weekStart)) throw Errors.fieldValidation('leave_dates', 'OUT_OF_RANGE', 'HR đã chốt lịch tuần này, không thể thay đổi ngày nghỉ OFF', uniqueDates);
   for (const d of uniqueDates) assertDateNotLockedByPayroll(ctx.db, d, 'đăng ký 2 ngày OFF hàng tuần');
 
   const shiftCode = (emp.default_shift_code || 'CA_SANG').toUpperCase(), isEmp = matchEmp(emp);
@@ -109,33 +96,25 @@ export async function submitWeeklyOffBatch(
     }
   }
 
-  const weekMonths = Array.from(new Set([
-    resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: weekStart }, weekStart),
-    resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: weekEnd }, weekEnd),
-  ]));
+  const weekMonths = Array.from(new Set([resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: weekStart }, weekStart), resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: weekEnd }, weekEnd)]));
   let replacedCount = 0;
   for (const mk of weekMonths) {
     const lvStore = await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk, actorId);
-    const existingInWeek = lvStore.filter((l) => isEmp(l.employee_id) && ACTIVE_LEAVE(l.status) && l.leave_date >= weekStart && l.leave_date <= weekEnd);
-    for (const old of existingInWeek) {
-      await lvStore.softDelete(old.id, old.version, actorId);
-      replacedCount++;
+    for (const old of lvStore.filter((l) => isEmp(l.employee_id) && ACTIVE_LEAVE(l.status) && l.leave_date >= weekStart && l.leave_date <= weekEnd)) {
+      await lvStore.softDelete(old.id, old.version, actorId); replacedCount++;
     }
   }
 
   const now = nowIso(), created: LeaveRequest[] = [];
   for (let i = 0; i < uniqueDates.length; i++) {
-    const d = uniqueDates[i]!;
-    const dMonth = resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: d }, d);
+    const d = uniqueDates[i]!, dMonth = resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: d }, d);
     const dLvStore = await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', dMonth, actorId);
     const lv = await insertPartitionAwareRecord<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', {
-      request_code: nextPartitionCode(dLvStore, 'OFF-', 'request_code'),
-      employee_id: emp.id, branch_id: emp.branch_id, leave_date: d, kind: 'WEEKLY_OFF',
-      shift_code: shiftCode, reason: params.reason || 'Đăng ký 2 ngày OFF định kỳ hàng tuần',
-      status: 'APPROVED', employee_stage: emp.stage, schedule_week_id: weekLockCode(emp.branch_id, weekStart, dMonth), assignment_id: '',
-      quota_cycle_used: i + 1, quota_cycle_limit: gate.requiredCount,
-      staffing_after_leave: Math.max(1, sameShiftOfficials.length - 1), min_staff_required: minStaff,
-      submitted_at: now, store_reviewed_by: '', store_reviewed_at: '', decided_by: actorId, decision_reason: 'Tự động duyệt ngay theo cơ chế đăng ký sớm (Ai đăng ký trước được trước)', decided_at: now,
+      request_code: nextPartitionCode(dLvStore, 'OFF-', 'request_code'), employee_id: emp.id, branch_id: emp.branch_id, leave_date: d, kind: 'WEEKLY_OFF',
+      shift_code: shiftCode, reason: params.reason || 'Đăng ký 2 ngày OFF định kỳ hàng tuần', status: 'APPROVED', employee_stage: emp.stage,
+      schedule_week_id: weekLockCode(emp.branch_id, weekStart, dMonth), assignment_id: '', quota_cycle_used: i + 1, quota_cycle_limit: gate.requiredCount,
+      staffing_after_leave: Math.max(1, sameShiftOfficials.length - 1), min_staff_required: minStaff, submitted_at: now, store_reviewed_by: '', store_reviewed_at: '',
+      decided_by: actorId, decision_reason: 'Tự động duyệt ngay theo cơ chế đăng ký sớm (Ai đăng ký trước được trước)', decided_at: now,
     }, d, actorId);
     created.push(lv);
   }
@@ -164,35 +143,34 @@ export async function executeSchedulePlannerCleanup(
 ) {
   const weekStart = mondayOfWeek(params.weekStart), weekEnd = addDaysYmd(weekStart, 6);
   const branchSet = new Set(params.branchIds), actSet = new Set(params.actions);
+  const weekMonths = Array.from(new Set([resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: weekStart }, weekStart), resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: weekEnd }, weekEnd)]));
+  const shiftStores = await Promise.all(weekMonths.map((mk) => getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk, params.actorId)));
   let cleanedDraftCount = 0, dedupedCount = 0, backfilledCount = 0;
   const createdIds: string[] = [];
 
   if (actSet.has('CLEAN_STALE_DRAFTS')) {
-    const staleDrafts = ctx.db.shiftAssignments.filter(
-      (a) => a.status === 'DRAFT' && a.work_date >= weekStart && a.work_date <= weekEnd && branchSet.has(resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id)),
-    );
-    for (const d of staleDrafts) {
-      await ctx.db.shiftAssignments.softDelete(d.id, d.version, params.actorId);
-      cleanedDraftCount++;
+    for (const shStore of shiftStores) {
+      for (const d of shStore.filter((a) => a.status === 'DRAFT' && a.work_date >= weekStart && a.work_date <= weekEnd && branchSet.has(resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id)))) {
+        await shStore.softDelete(d.id, d.version, params.actorId); cleanedDraftCount++;
+      }
     }
   }
 
   if (actSet.has('DEDUPE_SHIFTS')) {
     const rank = (s: ShiftAssignment['status']) => (s === 'COMPLETED' ? 3 : s === 'PUBLISHED' ? 2 : 1);
-    const groups = new Map<string, ShiftAssignment[]>();
-    for (const a of ctx.db.shiftAssignments.all()) {
-      if (a.work_date < weekStart || a.work_date > weekEnd || !isCountedWorkShift(a)) continue;
-      if (!branchSet.has(resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id))) continue;
-      const emp = ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === a.employee_id);
-      const k = `${emp?.id ?? a.employee_id}|${a.work_date}|${a.shift_code.toUpperCase()}`;
-      groups.set(k, [...(groups.get(k) ?? []), a]);
+    const groups = new Map<string, { row: ShiftAssignment; store: (typeof shiftStores)[number] }[]>();
+    for (const shStore of shiftStores) {
+      for (const a of shStore.all()) {
+        if (a.work_date < weekStart || a.work_date > weekEnd || !isCountedWorkShift(a) || !branchSet.has(resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id))) continue;
+        const emp = ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === a.employee_id);
+        const k = `${emp?.id ?? a.employee_id}|${a.work_date}|${a.shift_code.toUpperCase()}`;
+        groups.set(k, [...(groups.get(k) ?? []), { row: a, store: shStore }]);
+      }
     }
     for (const list of groups.values()) {
       if (list.length <= 1) continue;
-      const sorted = [...list].sort((x, y) => rank(y.status) - rank(x.status));
-      for (const dup of sorted.slice(1)) {
-        await ctx.db.shiftAssignments.softDelete(dup.id, dup.version, params.actorId);
-        dedupedCount++;
+      for (const dup of [...list].sort((x, y) => rank(y.row.status) - rank(x.row.status)).slice(1)) {
+        await dup.store.softDelete(dup.row.id, dup.row.version, params.actorId); dedupedCount++;
       }
     }
   }
@@ -209,8 +187,7 @@ export async function executeSchedulePlannerCleanup(
           scheduled_hours: p.hours, swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now,
           note: 'Bổ sung ca tự động cho nhân sự chính thức khi dọn lịch tuần', linked_assignment_id: '',
         }, p.workDate, params.actorId);
-        createdIds.push(ins.id);
-        backfilledCount++;
+        createdIds.push(ins.id); backfilledCount++;
       }
     }
   }

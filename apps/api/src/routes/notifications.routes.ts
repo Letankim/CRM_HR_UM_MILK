@@ -45,11 +45,7 @@ function resolveNotificationLinkForRole(n: NotificationRow, role: Role): string 
   return raw || '/admin/notifications';
 }
 
-export const NOTIFICATION_CATEGORY_LABELS: Record<string, string> = {
-  ANNOUNCEMENT: 'Bản tin truyền thông nội bộ', WORKFLOW: 'Lịch ca, Nghỉ phép & Đổi ca',
-  ATTENDANCE: 'Điểm danh GPS & Bổ sung công', PAYROLL: 'Kỳ lương & Phiếu lương',
-  HR: 'Nhân sự, Tuyển dụng & Đào tạo', SYSTEM: 'Hệ thống & Tài khoản', ACCOUNT: 'Hệ thống & Tài khoản',
-};
+export const NOTIFICATION_CATEGORY_LABELS: Record<string, string> = { ANNOUNCEMENT: 'Bản tin truyền thông nội bộ', WORKFLOW: 'Lịch ca, Nghỉ phép & Đổi ca', ATTENDANCE: 'Điểm danh GPS & Bổ sung công', PAYROLL: 'Kỳ lương & Phiếu lương', HR: 'Nhân sự, Tuyển dụng & Đào tạo', SYSTEM: 'Hệ thống & Tài khoản', ACCOUNT: 'Hệ thống & Tài khoản' };
 export const NOTIFICATION_SEVERITY_LABELS: Record<string, string> = { INFO: 'Thông thường', WARNING: 'Quan trọng', CRITICAL: 'Khẩn cấp' };
 
 function parseReadMap(raw: string): Record<string, string> {
@@ -64,13 +60,14 @@ const zBulkIdsBody = z.object({ ids: z.array(z.string()).optional() });
 export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get('/api/notifications/recipients', { preHandler: requireAuth() }, async (request) => {
     const scope = request.auth!.branchScope;
+    const empByKey = new Map(ctx.db.employees.all().flatMap((e) => [[e.id, e] as const, [e.employee_code, e] as const, ...(e.user_id ? [[`u:${e.user_id}`, e] as const] : [])]));
     const items = ctx.db.users.all().filter((u) => {
       if (u.status !== 'ACTIVE') return false;
       if (scope === 'ALL' || u.branch_scope === 'ALL') return true;
       const uBranches = (u.branch_scope || '').split(',').map((s) => s.trim()).filter(Boolean);
       return uBranches.some((b) => scope.includes(b));
     }).map((u) => {
-      const emp = (u.employee_id ? (ctx.db.employees.get(u.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === u.employee_id)) : undefined) ?? ctx.db.employees.find((e) => e.user_id === u.id);
+      const emp = (u.employee_id ? empByKey.get(u.employee_id) : undefined) ?? empByKey.get(`u:${u.id}`);
       return { id: u.id, username: u.username, displayName: emp?.full_name || u.display_name || u.username, role: u.role, roleLabel: ROLE_LABELS[u.role as Role] ?? u.role, employeeId: emp?.id || '', employeeCode: emp?.employee_code || '' };
     });
     return sendSuccess(request, 'Lấy danh sách người nhận thông báo thành công', items);
@@ -83,6 +80,8 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
 
     const usersMap = new Map(ctx.db.users.all().map((u) => [u.id, u]));
     const ancsMap = new Map(ctx.db.announcements.all().map((a) => [a.id, a]));
+    const empByKey = new Map(ctx.db.employees.all().flatMap((e) => [[e.id, e] as const, [e.employee_code, e] as const, ...(e.user_id ? [[`u:${e.user_id}`, e] as const] : [])]));
+    const myEmp = (user.employee_id ? empByKey.get(user.employee_id) : undefined) ?? empByKey.get(`u:${user.id}`) ?? null;
     const splitCsv = (raw: string) => (raw || '').split(',').map((s) => s.trim()).filter(Boolean);
 
     const seenVisibleKeys = new Set<string>();
@@ -90,23 +89,23 @@ export async function notificationRoutes(app: FastifyInstance, ctx: AppContext) 
     const resolveNotifMeta = (n: NotificationRow): { branchId: string; isBoOrHr: boolean } => {
       const rawId = (n.entity_id || '').replace(/_(STORE_CONFIRMED|APPROVED|REJECTED|PENDING_PEER|PEER_ACCEPTED|ESCALATED)$/, '');
       const checkEmp = (eid?: string, fb = '', creatorId = '') => {
-        const emp = eid ? (ctx.db.employees.get(eid) ?? ctx.db.employees.find((e) => e.employee_code === eid)) : undefined;
-        const creatorRole = creatorId ? ctx.db.users.get(creatorId)?.role : undefined;
-        const empUserRole = emp?.user_id ? ctx.db.users.get(emp.user_id)?.role : undefined;
+        const emp = eid ? empByKey.get(eid) : undefined;
+        const creatorRole = creatorId ? usersMap.get(creatorId)?.role : undefined;
+        const empUserRole = emp?.user_id ? usersMap.get(emp.user_id)?.role : undefined;
         const isBoOrHr = emp?.staff_group === 'BACKOFFICE' || ['ADMIN', 'HR', 'FINANCE', 'MKT', 'STORE'].includes(empUserRole || '') || ['ADMIN', 'HR', 'FINANCE', 'MKT'].includes(creatorRole || '');
-        return { branchId: (eid ? resolveEmployeeBranchId(ctx, eid, fb || n.branch_id) : fb || n.branch_id) || 'ALL', isBoOrHr };
+        return { branchId: (emp?.branch_id || (eid ? resolveEmployeeBranchId(ctx, eid, fb || n.branch_id) : fb || n.branch_id)) || 'ALL', isBoOrHr };
       };
       if (n.entity_type === 'ATT_ADJ_HR') { const adj = ctx.db.attendanceAdjustments.get(rawId); return checkEmp(adj?.employee_id, adj?.branch_id, adj?.created_by); }
       if (n.entity_type === 'LEAVE_ROLE') { const l = ctx.db.leaveRequests.get(rawId); return checkEmp(l?.employee_id, l?.branch_id, l?.created_by); }
       if (n.entity_type === 'SHIFT_DRAFT_ROLE') { const a = ctx.db.shiftAssignments.get(rawId); return checkEmp(a?.employee_id, a?.branch_id, a?.created_by); }
       if (n.entity_type === 'SWAP_STORE') { const s = ctx.db.shiftSwaps.get(rawId); return checkEmp(s?.requester_id, s?.branch_id, s?.created_by); }
-        return { branchId: n.branch_id || 'ALL', isBoOrHr: false };
+      return { branchId: n.branch_id || 'ALL', isBoOrHr: false };
     };
     const allRows = ctx.db.notifications.all();
     const dedupNewest: { row: NotificationRow; sheetIdx: number; eventTime: string; eventMs: number }[] = [];
     for (let sheetIdx = allRows.length - 1; sheetIdx >= 0; sheetIdx--) {
       const n = allRows[sheetIdx]!;
-      if (isNotificationCreatedByOrSelfAction(ctx, n, user.id)) continue;
+      if (isNotificationCreatedByOrSelfAction(ctx, n, user.id, myEmp)) continue;
       if (n.entity_type === 'MANUAL' && n.created_by === user.id && !splitCsv(n.recipient_user_id).includes(user.id)) continue;
 
       let matched = false;

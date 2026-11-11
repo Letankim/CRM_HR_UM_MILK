@@ -24,15 +24,9 @@ export function sweepExpiredShiftsAndMarkAbsent(
   return singleFlight(sweepsInFlight, db, () => runSweep(db, actorId));
 }
 
-async function runSweep(
-  db: Database,
-  actorId: string,
-  options?: { nowDate?: string; nowHm?: string; includeSeedInTests?: boolean },
-): Promise<SweepResult> {
-  const vn = getVnNowDateAndHm();
-  const todayStr = options?.nowDate ?? vn.todayStr, nowHm = options?.nowHm ?? vn.nowHm;
+async function runSweep(db: Database, actorId: string, options?: { nowDate?: string; nowHm?: string; includeSeedInTests?: boolean }): Promise<SweepResult> {
+  const vn = getVnNowDateAndHm(), todayStr = options?.nowDate ?? vn.todayStr, nowHm = options?.nowHm ?? vn.nowHm;
   const isVitest = Boolean(process.env.VITEST) && !options?.includeSeedInTests;
-
   const allEvents = db.attendanceEvents.all(), allAdjustments = db.attendanceAdjustments.all();
   const empByCode = new Map(db.employees.all().map((e) => [e.employee_code, e]));
   const resolveCanonicalEmpId = (rawId: string) => db.employees.get(rawId)?.id ?? empByCode.get(rawId)?.id ?? rawId;
@@ -63,11 +57,7 @@ async function runSweep(
     if ((a.status === 'ABSENT' || a.status === 'PUBLISHED') && (approvedAdj || (hasIn && hasOut))) {
       patches.push({
         id: a.id, expectedVersion: a.version,
-        patch: {
-          status: 'COMPLETED',
-          scheduled_hours: approvedAdj?.requested_hours ?? a.scheduled_hours,
-          note: approvedAdj ? `Đã bù công theo phiếu ${approvedAdj.adjustment_code}` : (a.note || 'Đã hoàn thành điểm danh Vào/Ra ca'),
-        },
+        patch: { status: 'COMPLETED', scheduled_hours: approvedAdj?.requested_hours ?? a.scheduled_hours, note: approvedAdj ? `Đã bù công theo phiếu ${approvedAdj.adjustment_code}` : (a.note || 'Đã hoàn thành điểm danh Vào/Ra ca') },
       });
       restoredCompleted++;
       continue;
@@ -78,10 +68,7 @@ async function runSweep(
     if (a.work_date < todayStr || (a.work_date === todayStr && nowHm > endAt)) {
       patches.push({
         id: a.id, expectedVersion: a.version,
-        patch: {
-          status: 'ABSENT',
-          note: a.note ? (a.note.includes('Vắng mặt') ? a.note : `${a.note} (Quá giờ — Tự động chuyển Vắng mặt)`) : 'Quá giờ kết thúc ca chưa điểm danh — Tự động chuyển Vắng mặt',
-        },
+        patch: { status: 'ABSENT', note: a.note ? (a.note.includes('Vắng mặt') ? a.note : `${a.note} (Quá giờ — Tự động chuyển Vắng mặt)`) : 'Quá giờ kết thúc ca chưa điểm danh — Tự động chuyển Vắng mặt' },
       });
       markedAbsent++;
     }
@@ -117,7 +104,10 @@ export async function applyApprovedAdjustmentToShift(db: Database, adjustmentId:
       ip_address: '', anomaly_flags_json: JSON.stringify(['HR_APPROVED_EVIDENCE']), note: `${type === 'CHECK_IN' ? 'Vào ca' : 'Ra ca'} được bù bởi HR theo phiếu ${adj.adjustment_code} (HR duyệt minh chứng)`,
     }, targetShift.work_date, actorId);
     const fresh = (await findPartitionAwareRecord<ShiftAssignment>(db, 'SHIFT_ASSIGNMENTS', targetShift.id, targetShift.work_date))?.record ?? targetShift;
-    const patch = type === 'CHECK_OUT' ? { status: 'COMPLETED' as const, note: `Hoàn thành ca theo phiếu ${adj.adjustment_code}` } : (fresh.status === 'ABSENT' ? { status: 'PUBLISHED' as const, note: `Đã xác nhận Vào ca theo phiếu ${adj.adjustment_code}` } : {});
+    const evMk = extractMonthKeyFromDate(fresh.work_date);
+    const evStore = (evMk && evMk !== db.partitionMonth ? getCachedPartitionStore<AttendanceEvent>(db, 'ATTENDANCE_EVENTS', evMk) : undefined) ?? db.attendanceEvents;
+    const hasOut = type === 'CHECK_IN' && evStore.all().some((e) => e.type === 'CHECK_OUT' && (e.assignment_id === fresh.id || (matchEmp(e.employee_id) && e.work_date === fresh.work_date && e.shift_code === fresh.shift_code)));
+    const patch = (type === 'CHECK_OUT' || hasOut) ? { status: 'COMPLETED' as const, note: `Hoàn thành ca theo phiếu ${adj.adjustment_code}` } : (fresh.status === 'ABSENT' ? { status: 'PUBLISHED' as const, note: `Đã xác nhận Vào ca theo phiếu ${adj.adjustment_code}` } : {});
     if (Object.keys(patch).length > 0) await updatePartitionAwareRecord(db, 'SHIFT_ASSIGNMENTS', fresh.id, fresh.version, patch, fresh.work_date, actorId);
     return targetShift.id;
   }
@@ -166,15 +156,12 @@ export function assertNoDuplicateAdjustment(db: Database, emp: Employee, assignm
 }
 
 export function assertNoDuplicateShiftWorkflow(db: Database, emp: Employee, field: string, assignmentId: string, workDate: string, shiftCode: string): void {
-  const isEmp = (eid: string) => eid === emp.id || eid === emp.employee_code;
-  const shiftMonth = extractMonthKeyFromDate(workDate);
+  const isEmp = (eid: string) => eid === emp.id || eid === emp.employee_code, shiftMonth = extractMonthKeyFromDate(workDate);
   const leavePart = shiftMonth !== db.partitionMonth ? getCachedPartitionStore<LeaveRequest>(db, 'LEAVE_REQUESTS', shiftMonth) : undefined;
   const swapPart = shiftMonth !== db.partitionMonth ? getCachedPartitionStore<ShiftSwap>(db, 'SHIFT_SWAPS', shiftMonth) : undefined;
-  const leavePred = (l: LeaveRequest) => isEmp(l.employee_id) && l.leave_date === workDate && l.status !== 'REJECTED' && l.status !== 'CANCELLED';
-  const dupLeave = (leavePart ?? db.leaveRequests).find(leavePred);
+  const dupLeave = (leavePart ?? db.leaveRequests).find((l: LeaveRequest) => isEmp(l.employee_id) && l.leave_date === workDate && l.status !== 'REJECTED' && l.status !== 'CANCELLED');
   if (dupLeave) throw Errors.fieldValidation(field, 'DUPLICATE_VALUE', `Ngày ${workDate} đã có Đơn xin nghỉ OFF (${dupLeave.request_code}) đang chờ duyệt hoặc đã được duyệt, không được phép gửi thêm yêu cầu.`, workDate);
-  const swapPred = (s: ShiftSwap) => (s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED') && (Boolean(assignmentId && s.from_assignment_id === assignmentId) || (isEmp(s.requester_id) && s.from_work_date === workDate && s.from_shift_code === shiftCode));
-  const dupSwap = (swapPart ?? db.shiftSwaps).find(swapPred);
+  const dupSwap = (swapPart ?? db.shiftSwaps).find((s: ShiftSwap) => (s.status === 'PENDING_PEER' || s.status === 'PEER_ACCEPTED') && (Boolean(assignmentId && s.from_assignment_id === assignmentId) || (isEmp(s.requester_id) && s.from_work_date === workDate && s.from_shift_code === shiftCode)));
   if (dupSwap) throw Errors.fieldValidation(field, 'DUPLICATE_VALUE', `Ca làm việc ngày ${workDate} đang có Yêu cầu đổi ca (${dupSwap.swap_code}) chờ duyệt, không được phép gửi trùng yêu cầu.`, assignmentId || workDate);
 }
 

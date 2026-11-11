@@ -11,6 +11,7 @@ import { dayjs } from '../lib/time.js';
 import { assertBranchAccess, auditContext, filterByBranch, requirePermission } from '../plugins/auth-context.js';
 import { queueEmployeeOnboardedEmail } from '../services/action-email-dispatcher.js';
 import { runBackgroundSideEffect } from '../services/background-write.js';
+import { preloadEmployeePartitionStores } from '../services/partition-write-router.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { today } from '../services/salary-profile.service.js';
 import { assertAmountInRange, newProfileRow } from '../services/salary-profile.writer.js';
@@ -86,6 +87,7 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
     } else {
       await runBackgroundSideEffect(() => healBranchConsistency(ctx));
     }
+    await preloadEmployeePartitionStores(ctx.db);
     const perms = request.auth!.permissions;
     const canSeeSalary = perms.has('payroll.read') || perms.has('employee.manage') || perms.has('system.config');
     const canSeePersonal = perms.has('employee.manage') || perms.has('system.config');
@@ -104,6 +106,7 @@ export async function employeeRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.get<{ Params: { id: string } }>('/api/admin/employees/:id', { preHandler: requirePermission(...READ_PERMS) }, async (request) => {
+    await preloadEmployeePartitionStores(ctx.db);
     const rawId = request.params.id.trim();
     const emp = ctx.db.employees.get(rawId) ?? ctx.db.employees.find((e) => e.employee_code.trim().toUpperCase() === rawId.toUpperCase());
     if (!emp) throw Errors.notFound('Hồ sơ nhân sự', rawId);

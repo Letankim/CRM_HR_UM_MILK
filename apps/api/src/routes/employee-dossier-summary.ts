@@ -1,6 +1,6 @@
 import { CONTRACT_TYPE_LABELS, EMPLOYEE_STAGE_LABELS, ROLE_LABELS, type Employee, type EmployeeContractItem, type LeaveRequest, type ShiftAssignment, type ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
-import { readPartitionRegistry } from '../services/data-partition.service.js';
+import { readPartitionRegistry } from '../services/data-partition-helpers.js';
 import { getCachedPartitionStore } from '../services/partition-write-router.js';
 import { resolveShiftLabel } from './employee-mapper.js';
 
@@ -54,21 +54,25 @@ export function invalidateEmployeeDossierCache(): void {
   dossierCache.clear();
 }
 
+function getDossierMonths(ctx: AppContext): string[] {
+  const regMonths = readPartitionRegistry(ctx.db).map((r) => r.monthKey);
+  return Array.from(new Set(['', ctx.db.partitionMonth, ...regMonths]));
+}
+
 function computeEmployeeDossierSummary(e: Employee, ctx: AppContext) {
   const isEmp = (eid: string) => eid === e.id || eid === e.employee_code;
-  const regMonths = readPartitionRegistry(ctx.db).map((r) => r.monthKey);
-  const monthsToRead = regMonths.length > 0 ? Array.from(new Set([...regMonths, ...(ctx.db.partitionMonth ? [ctx.db.partitionMonth] : [])])) : [ctx.db.partitionMonth];
+  const monthsToRead = getDossierMonths(ctx);
 
   const assignMap = new Map<string, ShiftAssignment>();
   const leaveMap = new Map<string, LeaveRequest>();
   const swapMap = new Map<string, ShiftSwap>();
   for (const mk of monthsToRead) {
     const sStore = getCachedPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.shiftAssignments : undefined);
-    if (sStore) for (const a of sStore.all()) if (isEmp(a.employee_id) && a.day_type !== 'OFF' && !assignMap.has(a.id)) assignMap.set(a.id, a);
+    if (sStore) for (const a of sStore.all()) if (isEmp(a.employee_id) && a.day_type !== 'OFF') assignMap.set(a.id, a);
     const lStore = getCachedPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.leaveRequests : undefined);
-    if (lStore) for (const l of lStore.all()) if (isEmp(l.employee_id) && !leaveMap.has(l.id)) leaveMap.set(l.id, l);
+    if (lStore) for (const l of lStore.all()) if (isEmp(l.employee_id)) leaveMap.set(l.id, l);
     const swStore = getCachedPartitionStore<ShiftSwap>(ctx.db, 'SHIFT_SWAPS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.shiftSwaps : undefined);
-    if (swStore) for (const s of swStore.all()) if ((isEmp(s.requester_id) || isEmp(s.peer_id)) && !swapMap.has(s.id)) swapMap.set(s.id, s);
+    if (swStore) for (const s of swStore.all()) if (isEmp(s.requester_id) || isEmp(s.peer_id)) swapMap.set(s.id, s);
   }
 
   const assignments = Array.from(assignMap.values());
@@ -168,8 +172,27 @@ function computeEmployeeDossierSummary(e: Employee, ctx: AppContext) {
 
 export type EmployeeDossierSummary = ReturnType<typeof computeEmployeeDossierSummary>;
 
+function sumVer(rows: readonly { version: number }[] | undefined): number {
+  if (!rows) return -1;
+  let v = rows.length * 31;
+  for (const r of rows) v += r.version;
+  return v;
+}
+
 export function buildEmployeeDossierSummary(e: Employee, ctx: AppContext): EmployeeDossierSummary {
-  const sig = `${e.id}:${e.version}:${ctx.db.partitionMonth}:${ctx.db.shiftAssignments.all(true).length}:${ctx.db.leaveRequests.all(true).length}:${ctx.db.shiftSwaps.all(true).length}:${ctx.db.employeeStageHistory.all(true).length}`;
+  const parts: (string | number)[] = [
+    e.id, e.version, ctx.db.partitionMonth,
+    sumVer(ctx.db.employeeStageHistory.all(true)),
+    sumVer(ctx.db.testAssignments.all(true)),
+    sumVer(ctx.db.testAttempts.all(true)),
+  ];
+  for (const mk of getDossierMonths(ctx)) {
+    const s = getCachedPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.shiftAssignments : undefined);
+    const l = getCachedPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.leaveRequests : undefined);
+    const sw = getCachedPartitionStore<ShiftSwap>(ctx.db, 'SHIFT_SWAPS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.shiftSwaps : undefined);
+    parts.push(mk, sumVer(s?.all(true)), sumVer(l?.all(true)), sumVer(sw?.all(true)));
+  }
+  const sig = parts.join(':');
   const hit = dossierCache.get(e.id);
   if (hit && hit.sig === sig) return hit.data as EmployeeDossierSummary;
   const summary = computeEmployeeDossierSummary(e, ctx);

@@ -57,7 +57,7 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
     const allowBgSync = !throttle || (Date.now() - (lastPeriodsListSyncAt.get(ctx) ?? 0) >= 45_000 && ctx.db.queue.isIdle(ctx.db.attendanceEvents.spreadsheetId));
     if (allowBgSync) lastPeriodsListSyncAt.set(ctx, Date.now());
     for (const p of ctx.db.payPeriods.all()) {
-      if ((p.status === 'DRAFT' || p.status === 'RECONCILE') && (allowBgSync || !ctx.db.payrollSnapshots.find((s) => s.period_id === p.id))) {
+      if (p.status === 'DRAFT' || p.status === 'RECONCILE') {
         await recalculatePeriodSnapshots(ctx, p, actorId, force);
       }
     }
@@ -169,7 +169,7 @@ export async function payrollPeriodRoutes(app: FastifyInstance, ctx: AppContext)
     const actorId = request.auth!.user.id;
     let current = before;
     if (body.target_status === 'RECONCILE' || body.target_status === 'APPROVED') {
-      if (before.status === 'DRAFT' || before.status === 'RECONCILE') current = await recalculatePeriodSnapshots(ctx, before, actorId);
+      if (before.status === 'DRAFT' || before.status === 'RECONCILE') current = await recalculatePeriodSnapshots(ctx, before, actorId, true);
       if (body.target_status === 'APPROVED' && current.unreconciled_records_count > 0) {
         throw Errors.badRequest(`Còn ${current.unreconciled_records_count} nhân sự có công nhưng chưa thiết lập hồ sơ lương hợp lệ. Vui lòng thiết lập lương trước khi phê duyệt.`);
       }

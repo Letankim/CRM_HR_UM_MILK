@@ -9,7 +9,7 @@ import type { AppContext } from '../context.js';
 import type { Database } from '../data/database.js';
 import { dayjs } from '../lib/time.js';
 import { parseSheetRows } from '../sheets/table-store-codec.js';
-import { readPartitionRegistry } from './data-partition.service.js';
+import { readPartitionRegistry } from './data-partition-helpers.js';
 import { getCachedPartitionStore } from './partition-write-router.js';
 
 interface CachedPartitionShifts {

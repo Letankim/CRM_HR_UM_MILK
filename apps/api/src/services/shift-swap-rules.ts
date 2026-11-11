@@ -3,6 +3,7 @@ import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs } from '../lib/time.js';
 import { isOfficialSwapEligibleEmployee } from '../routes/employee-mapper.js';
+import { invalidateHistoricalShiftsCache } from './historical-shifts-loader.js';
 import { getOperationSettings } from './operations-settings.service.js';
 import { extractMonthKeyFromDate, findPartitionAwareRecord, getCachedPartitionStore } from './partition-write-router.js';
 import { employeeShiftsOnDate } from './schedule-rules.js';
@@ -78,9 +79,12 @@ export async function applySwapToSchedule(ctx: AppContext, swap: ShiftSwap, acto
     const toFound = swap.to_assignment_id ? await findPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', swap.to_assignment_id, swap.to_work_date) : undefined;
     const to = toFound?.record;
     if (!toFound || !to) throw Errors.badRequest('Ca của đồng nghiệp không còn trên lịch làm việc, không thể đổi ca');
+    await clearShiftAttendanceOnWorkflowOverride(ctx.db, to, actorId, `Chuyển ca theo yêu cầu ${swap.swap_code}`);
     await fromFound.store.update(from.id, from.version, { employee_id: swap.peer_id, employee_stage: stageOf(swap.peer_id), swapped_from_employee_id: swap.requester_id, note: `Đổi ca 2 chiều ${swap.swap_code}` }, actorId);
     await toFound.store.update(to.id, to.version, { employee_id: swap.requester_id, employee_stage: stageOf(swap.requester_id), swapped_from_employee_id: swap.peer_id, note: `Đổi ca 2 chiều ${swap.swap_code}` }, actorId);
+    invalidateHistoricalShiftsCache(ctx.db);
     return;
   }
   await fromFound.store.update(from.id, from.version, { employee_id: swap.peer_id, employee_stage: stageOf(swap.peer_id), swapped_from_employee_id: swap.requester_id, note: `Nhận ca được nhường ${swap.swap_code}` }, actorId);
+  invalidateHistoricalShiftsCache(ctx.db);
 }

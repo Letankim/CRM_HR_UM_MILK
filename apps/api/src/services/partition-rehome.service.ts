@@ -1,7 +1,7 @@
 import { PARTITION_MONTH_REGEX } from '@umbm/shared';
 import type { Database } from '../data/database.js';
 import type { BaseRecord } from '../sheets/table-store.js';
-import { readPartitionRegistry } from './data-partition.service.js';
+import { readPartitionRegistry } from './data-partition-helpers.js';
 import { extractMonthKeyFromDate, getPartitionStore, type MonthlyTableName } from './partition-write-router.js';
 
 export interface RehomeDetail {

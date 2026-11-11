@@ -13,6 +13,7 @@ import { runBackgroundSideEffect } from '../services/background-write.js';
 import { findShiftAcrossPartitions } from '../services/data-partition-employee.helper.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { extractMonthKeyFromDate, findPartitionAwareRecord, getPartitionStore, insertPartitionAwareRecord, nextPartitionCode, resolveTargetMonthForRecord, updatePartitionAwareRecord } from '../services/partition-write-router.js';
+import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
 import { applyApprovedAdjustmentToShift, assertNoDuplicateAdjustment } from '../services/shift-absent-scanner.js';
 import { emitScheduleRealtime, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
@@ -35,8 +36,17 @@ const zDecideAdjustmentBody = z.object({
   decision_reason: z.string().trim().max(300).optional().default(''),
 });
 
+const CREDIT_TAG = '[Sử dụng 100 điểm uy tín]';
 const inferPunchType = (kind: string): 'CHECK_IN' | 'CHECK_OUT' | 'FULL_SHIFT' => (kind === 'FORGOT_CHECK_IN' ? 'CHECK_IN' : kind === 'FORGOT_CHECK_OUT' ? 'CHECK_OUT' : 'FULL_SHIFT');
 const getWeekMonday = (d: string) => dayjs(d).subtract((dayjs(d).day() + 6) % 7, 'day').format('YYYY-MM-DD');
+
+async function refundCreditPointsIfUsed(ctx: AppContext, adj: AttendanceAdjustment, actorId: string) {
+  if (adj.punch_type !== 'FULL_SHIFT' || !adj.reason.includes(CREDIT_TAG)) return;
+  const emp = ctx.db.employees.get(adj.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === adj.employee_id);
+  if (!emp) return;
+  const nextPts = Math.min(200, (emp.attendance_credit_points ?? 0) + SYSTEM_CONFIG.defaults.adjustmentFullShiftCreditCost);
+  await ctx.db.employees.update(emp.id, emp.version, { attendance_credit_points: nextPts }, actorId);
+}
 
 export function mapAdjustmentRecord(ctx: AppContext, a: AttendanceAdjustment) {
   const emp = ctx.db.employees.get(a.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === a.employee_id), branch = (emp ? ctx.db.branches.get(emp.branch_id) : undefined) ?? ctx.db.branches.get(a.branch_id);
@@ -52,6 +62,7 @@ export async function sweepExpiredAttendanceAdjustments(ctx: AppContext, actorId
     if (adj.status === 'PENDING' && !Number.isNaN(createdMs) && nowMs - createdMs >= expireMs) {
       const reason = 'Tự động từ chối do quá hạn phê duyệt 30 phút';
       await ctx.db.attendanceAdjustments.update(adj.id, adj.version, { status: 'REJECTED', hr_decision: 'REJECTED', decided_by: actorId, decided_at: nowIso(), decision_reason: reason, applied_to_record: false }, actorId);
+      await refundCreditPointsIfUsed(ctx, adj, actorId);
       autoRejectedIds.push(adj.id);
       const emp = ctx.db.employees.get(adj.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === adj.employee_id);
       if (emp?.user_id) {
@@ -115,14 +126,15 @@ export function registerAttendanceAdjustmentRoutes(app: FastifyInstance, ctx: Ap
         throw Errors.badRequest(`Mỗi nhân viên chỉ được gửi tối đa ${SYSTEM_CONFIG.defaults.adjustmentWeeklyMaxCount} phiếu bổ sung công trong 1 tuần (tuần bắt đầu ${weekMonday})`);
       }
     }
-    if (punchType === 'FULL_SHIFT') {
+    const shouldUseCredit = (isMeRoute || body.use_credit_points === true || body.enforce_credit_points === true) && punchType === 'FULL_SHIFT';
+    let finalReason = body.reason;
+    if (shouldUseCredit) {
       const costPts = SYSTEM_CONFIG.defaults.adjustmentFullShiftCreditCost, curPts = emp.attendance_credit_points ?? 0;
-      if ((body.use_credit_points || body.enforce_credit_points || isMeRoute) && curPts < costPts) {
+      if (curPts < costPts) {
         throw Errors.badRequest(`Bạn cần tối thiểu ${costPts} điểm tích lũy chuyên cần để gửi phiếu bù công cả ngày (hiện có ${curPts} điểm)`);
       }
-      if (curPts >= costPts) {
-        await ctx.db.employees.update(emp.id, emp.version, { attendance_credit_points: curPts - costPts }, caller.id);
-      }
+      await ctx.db.employees.update(emp.id, emp.version, { attendance_credit_points: curPts - costPts }, caller.id);
+      if (!finalReason.includes(CREDIT_TAG)) finalReason = `${finalReason} ${CREDIT_TAG}`.slice(0, 300);
     }
     const shiftStart = matchedShift?.start_at || body.requested_check_in_at, shiftEnd = matchedShift?.end_at || body.requested_check_out_at, shiftHours = matchedShift?.scheduled_hours || body.requested_hours;
     const meta = resolveShiftTimeDetails(ctx, shiftCode, matchedShift?.id ?? '', effectiveBranchId);
@@ -131,7 +143,7 @@ export function registerAttendanceAdjustmentRoutes(app: FastifyInstance, ctx: Ap
       adjustment_code: nextPartitionCode(targetAdjStore, 'ADJ-', 'adjustment_code'), event_id: body.event_id, assignment_id: matchedShift?.id ?? body.assignment_id, employee_id: emp.id, branch_id: effectiveBranchId,
       work_date: workDate, shift_code: shiftCode, kind: body.kind, punch_type: punchType, requested_time: punchType === 'CHECK_IN' ? shiftStart : shiftEnd,
       requested_check_in_at: punchType === 'CHECK_OUT' ? shiftStart : (body.requested_check_in_at || shiftStart), requested_check_out_at: punchType === 'CHECK_IN' ? shiftEnd : (body.requested_check_out_at || shiftEnd), requested_hours: shiftHours,
-      reason: body.reason, evidence_file_id: evidence?.fileId ?? '', exception_source: isSelfEmp ? 'EMPLOYEE' : 'MANAGER', status: 'PENDING', store_confirmed_by: '', store_confirmed_at: '', store_note: '', hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
+      reason: finalReason, evidence_file_id: evidence?.fileId ?? '', exception_source: isSelfEmp ? 'EMPLOYEE' : 'MANAGER', status: 'PENDING', store_confirmed_by: '', store_confirmed_at: '', store_note: '', hr_decision: 'PENDING', decided_by: '', decision_reason: '', decided_at: '', record_id: '', applied_to_record: false,
     }, workDate, caller.id);
     evidence?.syncDrive?.(async (driveFileId) => { queueAdjustmentPhotoDrivePatch(ctx, created.id, driveFileId); });
     queueAttendanceAdjustmentCreatedEmail(ctx, created, caller.id);
@@ -158,14 +170,18 @@ export function registerAttendanceAdjustmentRoutes(app: FastifyInstance, ctx: Ap
     const action = body.action ?? (body.decision === 'STORE_CONFIRMED' ? 'STORE_CONFIRM' : body.decision === 'APPROVED' ? 'HR_APPROVE' : 'HR_REJECT');
     const patch = action === 'STORE_CONFIRM' ? { status: 'STORE_CONFIRMED' as const, store_confirmed_by: actorId, store_confirmed_at: nowIso(), store_note: body.decision_reason } : action === 'HR_APPROVE' ? { status: 'APPROVED' as const, hr_decision: 'APPROVED', decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), applied_to_record: true } : { status: 'REJECTED' as const, hr_decision: 'REJECTED', decided_by: actorId, decision_reason: body.decision_reason, decided_at: nowIso(), applied_to_record: false };
     const updated = await updatePartitionAwareRecord<AttendanceAdjustment>(ctx.db, 'ATTENDANCE_ADJUSTMENTS', id, body.version ?? before.version, patch, before.work_date, actorId);
+    if (action === 'HR_REJECT') await refundCreditPointsIfUsed(ctx, before, actorId);
     if (action === 'HR_APPROVE') {
+      const m = resolveTargetMonthForRecord(ctx.db, 'ATTENDANCE_EVENTS', { work_date: before.work_date, assignment_id: before.assignment_id }, before.work_date);
+      await Promise.all([getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', m, actorId), getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', m, actorId)]);
       await applyApprovedAdjustmentToShift(ctx.db, id, actorId);
       const emp = ctx.db.employees.get(updated.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === updated.employee_id);
-      const eventStore = await getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', resolveTargetMonthForRecord(ctx.db, 'ATTENDANCE_EVENTS', { work_date: updated.work_date }, updated.work_date), actorId);
+      const eventStore = await getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', m, actorId);
       const shiftEvents = eventStore.filter((e) => (updated.assignment_id && e.assignment_id === updated.assignment_id) || ((e.employee_id === updated.employee_id || Boolean(emp && (e.employee_id === emp.id || e.employee_id === emp.employee_code))) && e.work_date === updated.work_date && e.shift_code === updated.shift_code));
       for (const ev of shiftEvents) {
-        if ((ev.late_fine_vnd ?? 0) > 0 || (ev.late_fine_tier && ev.late_fine_tier !== 'NONE')) {
-          await updatePartitionAwareRecord(ctx.db, 'ATTENDANCE_EVENTS', ev.id, ev.version, { late_fine_vnd: 0, late_fine_tier: 'NONE' }, ev.work_date, actorId);
+        const clearLateMins = before.punch_type === 'CHECK_IN' && ev.type === 'CHECK_IN' && (ev.late_minutes ?? 0) > 0;
+        if ((ev.late_fine_vnd ?? 0) > 0 || (ev.late_fine_tier && ev.late_fine_tier !== 'NONE') || clearLateMins) {
+          await updatePartitionAwareRecord(ctx.db, 'ATTENDANCE_EVENTS', ev.id, ev.version, { late_fine_vnd: 0, late_fine_tier: 'NONE', ...(before.punch_type === 'CHECK_IN' && ev.type === 'CHECK_IN' ? { late_minutes: 0 } : {}) }, ev.work_date, actorId);
         }
       }
     }
@@ -173,6 +189,7 @@ export function registerAttendanceAdjustmentRoutes(app: FastifyInstance, ctx: Ap
     const reqAuditCtx = auditContext(request);
     emitScheduleRealtime(ctx, SocketEvents.ATTENDANCE, { branchId: before.branch_id, employeeIds: [before.employee_id], kind: action === 'STORE_CONFIRM' ? 'ADJUSTMENT_STORE_CONFIRMED' : 'ADJUSTMENT_DECIDED', message: `Phiếu bổ sung công ${updated.adjustment_code} ngày ${updated.work_date} đã ${action === 'STORE_CONFIRM' ? 'được Cửa hàng xác nhận' : action === 'HR_APPROVE' ? 'được HR phê duyệt' : 'bị từ chối'}`, actorId });
     await runBackgroundSideEffect(async () => {
+      if (action === 'HR_APPROVE') await recalculateOpenPeriods(ctx, actorId);
       await ensureSyncedNotifications(ctx);
       await ctx.audit.record(reqAuditCtx, { action: 'attendance.adjustment.decide', entity: 'ATTENDANCE_ADJUSTMENTS', entityId: id, before: { status: before.status }, after: { status: updated.status, hr_decision: updated.hr_decision } });
     });

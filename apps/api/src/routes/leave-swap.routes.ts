@@ -14,6 +14,7 @@ import { evaluateLeaveRequestConflict } from '../services/leave-conflict-detecto
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
+import { collectLeavesInRangeAcrossPartitions } from '../services/schedule-auto-planner.js';
 import { findProbationLock, findWeekLock, matchEmp, resolveProbationCycle, weekLockCode } from '../services/schedule-rules.js';
 import { resolveApplicableStaffingRule } from '../services/schedule-staffing-helper.js';
 import { assertNoDuplicateShiftWorkflow, clearShiftAttendanceOnWorkflowOverride, getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
@@ -38,14 +39,13 @@ const vi = (d: string) => dayjs(d).format('DD/MM/YYYY');
 
 function assertSelfLeaveAllowed(ctx: AppContext, emp: Employee, leaveDate: string): { limit: number; used: number } {
   const settings = getOperationSettings(ctx.db), { todayStr, nowHm } = getVnNowDateAndHm(), isEmp = matchEmp(emp);
-  const mk = extractMonthKeyFromDate(leaveDate);
-  const lvStore = (mk ? getCachedPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk) : undefined) ?? ctx.db.leaveRequests;
   if (leaveDate < todayStr) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', `Không thể đăng ký nghỉ OFF cho ngày đã qua (${vi(leaveDate)})`, leaveDate);
   if (emp.stage === 'PROBATION') {
     const cycle = resolveProbationCycle(emp, todayStr);
     if (!cycle.dates.includes(leaveDate)) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', `Ngày nghỉ phải nằm trong chu kỳ thử việc ${vi(cycle.start)} – ${vi(cycle.end)}`, leaveDate);
     if (findProbationLock(ctx, emp, cycle.start)) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', 'HR đã chốt lịch chu kỳ thử việc của bạn, không thể đăng ký thêm ngày OFF', leaveDate);
-    const used = lvStore.filter((l) => isEmp(l.employee_id) && ACTIVE_LEAVE(l.status) && cycle.dates.includes(l.leave_date)).length;
+    const leavesInCycle = collectLeavesInRangeAcrossPartitions(ctx, [cycle.start, cycle.end]);
+    const used = leavesInCycle.filter((l) => isEmp(l.employee_id) && ACTIVE_LEAVE(l.status) && cycle.dates.includes(l.leave_date)).length;
     if (used >= cycle.offLimit) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', `Bạn đã đăng ký đủ ${cycle.offLimit} ngày OFF trong chu kỳ thử việc`, leaveDate);
     return { limit: cycle.offLimit, used };
   }
@@ -53,7 +53,8 @@ function assertSelfLeaveAllowed(ctx: AppContext, emp: Employee, leaveDate: strin
   if (!win.isOpen && !vipOpen) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', win.message, leaveDate);
   if (leaveDate < win.targetWeekStart || leaveDate > win.targetWeekEnd) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', `Chỉ được đăng ký nghỉ OFF cho tuần kế tiếp (${vi(win.targetWeekStart)} – ${vi(win.targetWeekEnd)})`, leaveDate);
   if (findWeekLock(ctx, emp.branch_id, win.targetWeekStart)) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', 'HR đã chốt lịch tuần này, không thể đăng ký thêm ngày OFF', leaveDate);
-  const used = lvStore.filter((l) => isEmp(l.employee_id) && ACTIVE_LEAVE(l.status) && l.leave_date >= win.targetWeekStart && l.leave_date <= win.targetWeekEnd).length;
+  const leavesInWeek = collectLeavesInRangeAcrossPartitions(ctx, [win.targetWeekStart, win.targetWeekEnd]);
+  const used = leavesInWeek.filter((l) => isEmp(l.employee_id) && ACTIVE_LEAVE(l.status) && l.leave_date >= win.targetWeekStart && l.leave_date <= win.targetWeekEnd).length;
   if (used >= settings.officialWeeklyOffLimit) throw Errors.fieldValidation('leave_date', 'OUT_OF_RANGE', `Bạn đã đăng ký đủ ${settings.officialWeeklyOffLimit} ngày OFF cho tuần này`, leaveDate);
   return { limit: settings.officialWeeklyOffLimit, used };
 }
@@ -68,7 +69,7 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     return { staffing_after_leave: activeShifts.filter((a) => a.employee_id !== empId).length, min_staff_required: rule?.min_staff ?? 1 };
   };
   app.get('/api/admin/leave-requests', { preHandler: requirePermission('schedule.read', 'leave.approve', 'self.leave') }, async (request) => {
-    await healBranchConsistency(ctx);
+    await runBackgroundSideEffect(() => healBranchConsistency(ctx));
     const query = zWorkflowQuery.parse(request.query ?? {}), scoped = filterByBranch(request, ctx.db.leaveRequests.all(), (r) => resolveEmployeeBranchId(ctx, r.employee_id, r.branch_id));
     const mapped = scoped.map((r) => {
       const emp = ctx.db.employees.get(r.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === r.employee_id);
@@ -97,6 +98,10 @@ export async function leaveSwapRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!isSelf) assertBranchAccess(request, emp.branch_id);
     const isEmergency = body.kind === 'DOT_XUAT';
     if (isEmergency) assertEmergencyLeaveAllowed(emp);
+    if (isSelf && !isEmergency) {
+      const rangeDates = emp.stage === 'PROBATION' ? [resolveProbationCycle(emp, getVnNowDateAndHm().todayStr).start, resolveProbationCycle(emp, getVnNowDateAndHm().todayStr).end] : [evaluateOffWindow(getOperationSettings(ctx.db), getVnNowDateAndHm().todayStr, getVnNowDateAndHm().nowHm).targetWeekStart, evaluateOffWindow(getOperationSettings(ctx.db), getVnNowDateAndHm().todayStr, getVnNowDateAndHm().nowHm).targetWeekEnd];
+      for (const rd of rangeDates) await getPartitionStore(ctx.db, 'LEAVE_REQUESTS', resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: rd }, rd), actor.id);
+    }
     const quota = isSelf && !isEmergency ? assertSelfLeaveAllowed(ctx, emp, dates[0]!) : { limit: emp.stage === 'PROBATION' ? emp.probation_off_days || 5 : getOperationSettings(ctx.db).officialWeeklyOffLimit, used: 0 };
     if (isSelf && !isEmergency) {
       for (const d of dates.slice(1)) assertSelfLeaveAllowed(ctx, emp, d);

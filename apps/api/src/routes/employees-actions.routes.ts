@@ -11,6 +11,7 @@ import { assertBranchAccess, auditContext, requirePermission } from '../plugins/
 import { SocketEvents } from '../realtime/realtime.js';
 import { queueAccountCreatedEmail, queueAccountUpdatedEmail, queuePromotionOfficialEmail } from '../services/action-email-dispatcher.js';
 import { runBackgroundSideEffect } from '../services/background-write.js';
+import { preloadEmployeePartitionStores } from '../services/partition-write-router.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { currentProfile, isProfileLocked, profilesOf, today } from '../services/salary-profile.service.js';
 import { assertAmountInRange, createSalaryProfile } from '../services/salary-profile.writer.js';
@@ -137,6 +138,7 @@ export async function employeeActionRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.post('/api/admin/employees/bulk-action', { preHandler: requirePermission('employee.promote', 'employee.manage') }, async (request) => {
+    await preloadEmployeePartitionStores(ctx.db);
     const body = zBulkEmployeeActionBody.parse(request.body), effectiveDate = body.official_from || dayjs().format('YYYY-MM-DD');
     const actorId = request.auth!.user.id, actorName = request.auth!.user.username, processed: string[] = [], skipped: { id: string; reason: string }[] = [], promotedBefore: Employee[] = [];
     const empPatches: Parameters<typeof ctx.db.employees.batchUpdate>[0] = [], userPatches: Parameters<typeof ctx.db.users.batchUpdate>[0] = [];
