@@ -76,9 +76,9 @@ function SchedulesView() {
   const query = useQuery({
     queryKey: ['schedules', viewMode, branchId, shiftCode, status, q, page, dateRangeParams.from, dateRangeParams.to, dateRangeParams.limit],
     queryFn: () => api.list<ScheduleAssignmentItem>(buildUrl(false)),
-    enabled: viewMode !== 'ATTENDANCE',
+    enabled: section === 'schedules' && viewMode !== 'ATTENDANCE',
   });
-  const needFullScope = viewMode !== 'ATTENDANCE' && (viewMode === 'TABLE' || Boolean(q.trim()) || status !== 'ALL');
+  const needFullScope = section === 'schedules' && viewMode !== 'ATTENDANCE' && (viewMode === 'TABLE' || Boolean(q.trim()) || status !== 'ALL');
   const scopeFrom = dateRangeParams.from || weekStart.format('YYYY-MM-DD'), scopeTo = dateRangeParams.to || weekStart.add(6, 'day').format('YYYY-MM-DD');
   const staffingScopeQ = useQuery({ queryKey: ['schedules', 'STAFFING_SCOPE', branchId, scopeFrom, scopeTo], queryFn: () => api.list<ScheduleAssignmentItem>(`/admin/schedules?page=1&per_page=1000&from_date=${scopeFrom}&to_date=${scopeTo}${branchId !== 'ALL' ? `&branch_id=${branchId}` : ''}`), enabled: needFullScope, staleTime: 15_000 });
 

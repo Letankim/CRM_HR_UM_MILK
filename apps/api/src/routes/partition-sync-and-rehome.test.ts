@@ -180,6 +180,23 @@ describe('Đồng bộ Lưu trữ Đúng Phân vùng Tháng, Chuyển tiếp Th�
     expect(summary.totalShiftsCount).toBeGreaterThanOrEqual(7);
   });
 
+  it('chặn chốt lịch và tự động sắp ca khi cổng đăng ký nghỉ OFF đang mở, chỉ cho phép chốt khi cổng đã đóng', async () => {
+    const admin = await t.loginHeaders('admin');
+    const hr = await t.loginHeaders('hr');
+    const { saveOperationSettings } = await import('../services/operations-settings.service.js');
+    // Mở cổng OFF: Thứ 1 đến Thứ 7 từ 00:00 đến 23:59 -> chắc chắn isOpen = true
+    await saveOperationSettings(t.db, { offWindowOpenWeekday: 1, offWindowOpenTime: '00:00', offWindowCloseWeekday: 7, offWindowCloseTime: '23:59' }, 'admin');
+    const lockBlocked = await t.app.inject({ method: 'POST', url: '/api/admin/schedule-planner/week/lock', headers: hr, payload: { week_start: '2026-11-09', branch_id: 'ALL' } });
+    expect(lockBlocked.statusCode).toBe(400);
+    expect(lockBlocked.json().message).toContain('Cổng đăng ký nghỉ OFF đang mở');
+
+    // Đóng cổng OFF: Giờ đóng là 00:01 sáng Thứ 2 -> chắc chắn hiện tại đã đóng
+    await saveOperationSettings(t.db, { offWindowOpenWeekday: 1, offWindowOpenTime: '00:00', offWindowCloseWeekday: 1, offWindowCloseTime: '00:01' }, 'admin');
+    const lockAllowed = await t.app.inject({ method: 'POST', url: '/api/admin/schedule-planner/week/lock', headers: hr, payload: { week_start: '2026-11-09', branch_id: 'ALL' } });
+    expect(lockAllowed.statusCode).toBe(200);
+    expect(lockAllowed.json().data.createdCount).toBeGreaterThanOrEqual(0);
+  });
+
   it('thông số V8 Heap trả về tỷ lệ phần trăm thực tế dựa trên giới hạn heap_size_limit', async () => {
     const telem = await collectDevDomainAndRuntimeTelemetry(t.ctx);
     expect(telem.runtime.memory.heapTotalMb).toBeGreaterThan(0);
