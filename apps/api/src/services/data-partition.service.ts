@@ -119,6 +119,9 @@ export async function ensureMonthlyTarget(db: Database, monthKey: string, actorI
   const registry = readPartitionRegistry(db);
   const existing = registry.find((r) => r.monthKey === monthKey);
   if (existing && existing.mode === 'MONTHLY_FILE') {
+    if (!forceMonthlyFile) {
+      return { mode: 'MONTHLY_FILE' as const, entry: existing, targetFor: (m: MonthlyStoreDesc) => ({ spreadsheetId: existing.spreadsheetId, tab: m.base }) };
+    }
     try {
       await db.gateway.listTabs(existing.spreadsheetId);
       return { mode: 'MONTHLY_FILE' as const, entry: existing, targetFor: (m: MonthlyStoreDesc) => ({ spreadsheetId: existing.spreadsheetId, tab: m.base }) };

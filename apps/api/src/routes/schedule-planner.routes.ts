@@ -109,10 +109,8 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
       }
     }
 
-    const directLock = findWeekLock(ctx, q.branch_id, weekStart);
-    const allLocked = Boolean(directLock) || (targetBranches.length > 0 && targetBranches.every((b) => Boolean(findWeekLock(ctx, b.id, weekStart))));
-    const firstLock = directLock ?? (allLocked ? targetBranches.map((b) => findWeekLock(ctx, b.id, weekStart)).find(Boolean) : undefined);
-    const targetBranchIds = targetBranches.map((b) => b.id);
+    const directLock = findWeekLock(ctx, q.branch_id, weekStart), allLocked = Boolean(directLock) || (targetBranches.length > 0 && targetBranches.every((b) => Boolean(findWeekLock(ctx, b.id, weekStart))));
+    const firstLock = directLock ?? (allLocked ? targetBranches.map((b) => findWeekLock(ctx, b.id, weekStart)).find(Boolean) : undefined), targetBranchIds = targetBranches.map((b) => b.id);
     const offRequests = offRaw.map((l) => mapOff(ctx, l)), existingShifts = existingRaw.map((a) => mapExistingShift(ctx, a)), planned = enrichPlanned(ctx, plannedRaw);
     const offConflicts = summarizeWeekOffConflicts(ctx, { weekStart, weekEnd, branchIds: targetBranchIds });
     const employeeLoads = summarizeOfficialEmployeeWeekLoads(ctx, { weekStart, weekEnd, branchIds: targetBranchIds, existingShifts: existingRaw, plannedShifts: planned, offEmployeeIdsByDate: offRequests, historicalShifts });
@@ -126,6 +124,11 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
   app.post('/api/admin/schedule-planner/week/lock', { preHandler: requirePermission('schedule.publish') }, async (request) => {
     const body = zWeekLockBody.parse(request.body ?? {});
     if (body.branch_id !== 'ALL') assertBranchAccess(request, body.branch_id);
+    const settings = getOperationSettings(ctx.db), { todayStr, nowHm } = getVnNowDateAndHm();
+    const offWindow = evaluateOffWindow(settings, todayStr, nowHm);
+    if (offWindow.isOpen) {
+      throw Errors.badRequest('Cổng đăng ký nghỉ OFF đang mở — chỉ được phép chốt lịch và tự động sắp ca sau khi cổng đăng ký nghỉ OFF đã đóng');
+    }
     const weekStart = mondayOfWeek(body.week_start), weekEnd = addDaysYmd(weekStart, 6), actorId = request.auth!.user.id;
     const { targets: targetBranches } = resolveTargetBranches(request, body.branch_id);
     const unlockedBranches = targetBranches.filter((b) => !findWeekLock(ctx, b.id, weekStart));
@@ -150,7 +153,6 @@ export async function schedulePlannerRoutes(app: FastifyInstance, ctx: AppContex
       if (exAll) await ctx.db.scheduleWeeks.update(exAll.id, exAll.version, rec, actorId);
       else await ctx.db.scheduleWeeks.insert(rec, actorId);
     }
-
     await recalculateOpenPeriods(ctx, actorId);
     await ensureSyncedNotifications(ctx);
     await ctx.audit.record(auditContext(request), { action: 'schedule.week.lock', entity: 'SCHEDULE_WEEKS', entityId: weekLockCode(body.branch_id, weekStart, ctx.db.partitionMonth), after: { createdCount, approvedOffCount, issues: allIssues.length } });

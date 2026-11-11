@@ -8,9 +8,11 @@ import { invalidateHistoricalShiftsCache } from './historical-shifts-loader.js';
 export type MonthlyTableName = 'SHIFT_ASSIGNMENTS' | 'LEAVE_REQUESTS' | 'SHIFT_SWAPS' | 'ATTENDANCE_EVENTS' | 'ATTENDANCE_ADJUSTMENTS';
 
 const partitionStoreCache = new WeakMap<Database, Map<string, TableStore<BaseRecord>>>();
+const partitionStoreInFlight = new WeakMap<Database, Map<string, Promise<TableStore<BaseRecord>>>>();
 
 export async function invalidatePartitionStoreCache(db: Database): Promise<void> {
   const cache = partitionStoreCache.get(db);
+  partitionStoreInFlight.delete(db);
   if (!cache) return;
   partitionStoreCache.delete(db);
   await Promise.all(Array.from(cache.values()).map((s) => s.flushPending().catch(() => undefined)));
@@ -104,24 +106,42 @@ export async function getPartitionStore<T extends BaseRecord>(
   const existing = cache.get(cacheKey);
   if (existing) return existing as unknown as TableStore<T>;
 
-  const target = await ensureMonthlyTarget(db, monthKey, actorId, false);
-  const targetRef = target.targetFor(desc);
-  const store = new TableStore<BaseRecord>(db.gateway, db.queue, {
-    spreadsheetKey: 'MONTHLY',
-    spreadsheetId: targetRef.spreadsheetId,
-    tab: targetRef.tab,
-    headers: desc.headers,
-    schema: desc.schema as unknown as ZodType<BaseRecord, ZodTypeDef, unknown>,
-  });
-  await store.load();
-  cache.set(cacheKey, store);
-  return store as unknown as TableStore<T>;
+  let inFlight = partitionStoreInFlight.get(db);
+  if (!inFlight) {
+    inFlight = new Map();
+    partitionStoreInFlight.set(db, inFlight);
+  }
+  const pending = inFlight.get(cacheKey);
+  if (pending) return pending as unknown as Promise<TableStore<T>>;
+
+  const promise = (async () => {
+    try {
+      const target = await ensureMonthlyTarget(db, monthKey, actorId, false);
+      const targetRef = target.targetFor(desc);
+      const store = new TableStore<BaseRecord>(db.gateway, db.queue, {
+        spreadsheetKey: 'MONTHLY',
+        spreadsheetId: targetRef.spreadsheetId,
+        tab: targetRef.tab,
+        headers: desc.headers,
+        schema: desc.schema as unknown as ZodType<BaseRecord, ZodTypeDef, unknown>,
+      });
+      await store.load();
+      cache.set(cacheKey, store);
+      return store;
+    } finally {
+      inFlight.delete(cacheKey);
+    }
+  })();
+  inFlight.set(cacheKey, promise);
+  return promise as unknown as Promise<TableStore<T>>;
 }
 
 export async function preloadEmployeePartitionStores(db: Database): Promise<string[]> {
   const registry = readPartitionRegistry(db);
-  const months = Array.from(new Set(['', db.partitionMonth, ...registry.map((r) => r.monthKey)]));
-  if (registry.length === 0 && !db.partitionMonth) return [''];
+  const months = registry.length > 0
+    ? Array.from(new Set([db.partitionMonth, ...registry.map((r) => r.monthKey)].filter(Boolean)))
+    : Array.from(new Set(['', db.partitionMonth]));
+  if (months.length === 0) return [''];
   const tables: MonthlyTableName[] = ['SHIFT_ASSIGNMENTS', 'LEAVE_REQUESTS', 'SHIFT_SWAPS', 'ATTENDANCE_EVENTS', 'ATTENDANCE_ADJUSTMENTS'];
   await Promise.all(
     months.flatMap((mk) =>

@@ -48,7 +48,7 @@ function PayrollView() {
   const periodsReportQuery = useQuery({
     queryKey: ['payroll-periods-report', perPageNum, perPageSize],
     queryFn: () => api.list<PayPeriodRow>(`/admin/payroll/periods?page=${perPageNum}&per_page=${perPageSize}`),
-    enabled: tab === 'REPORTS' && reportSubTab === 'periods',
+    enabled: tab === 'REPORTS',
   });
   const branchesQuery = useQuery({ queryKey: ['branches', 'select'], queryFn: () => api.list<{ id: string; code: string; name: string }>('/admin/branches?per_page=100') });
   const employeesQuery = useQuery({ queryKey: ['employees', 'payroll-select'], queryFn: () => api.list<{ id: string; employeeCode: string; fullName: string }>('/admin/employees?per_page=100&sort_by=employeeCode&sort_order=asc'), enabled: tab === 'ITEMS' || tab === 'SALARY' });

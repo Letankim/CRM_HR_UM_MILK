@@ -103,8 +103,9 @@ export function PlannerWeekPreviewModal({
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Tự động sinh lịch tuần thất bại'),
   });
 
+  const isGateOpen = Boolean(data?.offWindow?.isOpen) && !isLocked;
   const lockedInAll = branchId === 'ALL' ? statuses.filter((s) => s.isLocked) : [];
-  const readOnlyView = isLocked || !canPublish;
+  const readOnlyView = isLocked || !canPublish || isGateOpen;
 
   return (
     <Modal
@@ -123,9 +124,11 @@ export function PlannerWeekPreviewModal({
           <Flex justify="flex-end"><Button icon={<CloseOutlined />} onClick={onClose}>Đóng</Button></Flex>
         ) : readOnlyView ? (
           <Flex justify="space-between" align="center" wrap gap={10} style={{ width: '100%' }}>
-            <span style={{ color: isLocked ? '#15803D' : '#64748B', fontSize: 13, fontWeight: 500 }}>
+            <span style={{ color: isLocked ? '#15803D' : isGateOpen ? '#D97706' : '#64748B', fontSize: 13, fontWeight: 500 }}>
               {isLocked
                 ? 'Chi nhánh đã chốt lịch tuần này — Chế độ xem trước dữ liệu đã lưu, không cho phép chỉnh sửa hoặc sinh lại lịch.'
+                : isGateOpen
+                ? 'Cổng đăng ký nghỉ OFF đang mở — Chế độ xem trước, chỉ được phép chốt lịch và tự động sắp ca sau khi cổng đóng.'
                 : 'Chế độ xem trước lưới lịch tuần dự kiến — Chỉ bộ phận Nhân sự (HR) thực hiện chốt lịch & tự động sinh lịch.'}
             </span>
             <Button type="primary" icon={<CloseOutlined />} onClick={onClose}>Đóng xem trước</Button>
@@ -181,6 +184,13 @@ export function PlannerWeekPreviewModal({
           )}
         </div>
 
+        {isGateOpen && (
+          <Alert
+            type="warning" showIcon
+            message="Cổng đăng ký nghỉ OFF đang mở — Chỉ xem trước dữ liệu"
+            description="Nút xác nhận & tự động sinh lịch tạm khóa cho đến khi cổng đăng ký nghỉ OFF đóng lại, đảm bảo dữ liệu đăng ký của nhân viên được tập hợp đầy đủ."
+          />
+        )}
         {isLocked && (
           <Alert
             type="success" showIcon icon={<LockOutlined />}

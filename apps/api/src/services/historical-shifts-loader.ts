@@ -10,6 +10,7 @@ import type { Database } from '../data/database.js';
 import { dayjs } from '../lib/time.js';
 import { parseSheetRows } from '../sheets/table-store-codec.js';
 import { readPartitionRegistry } from './data-partition.service.js';
+import { getCachedPartitionStore } from './partition-write-router.js';
 
 interface CachedPartitionShifts {
   loadedAtMs: number;
@@ -113,13 +114,34 @@ export async function loadShiftsAcrossPartitions(
     if (spreadsheetId && tab && k !== activeKey) targets.set(k, { spreadsheetId, tab, filterUncoveredMonthsOnly });
   };
 
+  const activeAll = db.shiftAssignments.all(true);
+  const seenIds = new Set<string>(activeAll.map((a) => a.id));
+  const seenSemantic = new Set<string>();
+  const merged: ShiftAssignment[] = [];
+
+  for (const a of db.shiftAssignments.all()) {
+    if (a.work_date < fromDate || a.work_date > toDate) continue;
+    merged.push(a);
+    seenSemantic.add(`${canonicalEmpId(ctx, a.employee_id)}|${a.work_date}|${a.shift_code.toUpperCase()}`);
+  }
+
   let rootTabs: Set<string> | null = null;
   let hasUncoveredMonth = false;
   for (const mk of monthKeys) {
     if (!PARTITION_MONTH_REGEX.test(mk) || mk === db.partitionMonth) continue;
     const reg = regMap.get(mk);
     if (reg?.mode === 'MONTHLY_FILE') {
-      addTarget(reg.spreadsheetId, 'SHIFT_ASSIGNMENTS');
+      const cached = getCachedPartitionStore<ShiftAssignment>(db, 'SHIFT_ASSIGNMENTS', mk);
+      if (!force && cached) {
+        for (const row of cached.all()) {
+          if (row.work_date < fromDate || row.work_date > toDate || seenIds.has(row.id)) continue;
+          const semKey = `${canonicalEmpId(ctx, row.employee_id)}|${row.work_date}|${row.shift_code.toUpperCase()}`;
+          if (seenSemantic.has(semKey)) continue;
+          seenIds.add(row.id); seenSemantic.add(semKey); merged.push(row);
+        }
+      } else {
+        addTarget(reg.spreadsheetId, 'SHIFT_ASSIGNMENTS');
+      }
     } else if (reg?.mode === 'LEGACY_TAB') {
       addTarget(db.ids.SCHEDULE, partitionTabName('SHIFT_ASSIGNMENTS', mk));
     } else {
@@ -131,17 +153,6 @@ export async function loadShiftsAcrossPartitions(
   }
   if (db.partitionMonth !== '' && hasUncoveredMonth) {
     addTarget(db.ids.SCHEDULE, 'SHIFT_ASSIGNMENTS', true);
-  }
-
-  const activeAll = db.shiftAssignments.all(true);
-  const seenIds = new Set<string>(activeAll.map((a) => a.id));
-  const seenSemantic = new Set<string>();
-  const merged: ShiftAssignment[] = [];
-
-  for (const a of db.shiftAssignments.all()) {
-    if (a.work_date < fromDate || a.work_date > toDate) continue;
-    merged.push(a);
-    seenSemantic.add(`${canonicalEmpId(ctx, a.employee_id)}|${a.work_date}|${a.shift_code.toUpperCase()}`);
   }
 
   if (targets.size === 0) return merged;

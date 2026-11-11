@@ -48,7 +48,13 @@ function resolveActorInfo(ctx: AppContext, rawActor: string, fallbackName = '') 
   };
 }
 
-export function buildEmployeeDossierSummary(e: Employee, ctx: AppContext) {
+const dossierCache = new Map<string, { sig: string; data: unknown }>();
+
+export function invalidateEmployeeDossierCache(): void {
+  dossierCache.clear();
+}
+
+function computeEmployeeDossierSummary(e: Employee, ctx: AppContext) {
   const isEmp = (eid: string) => eid === e.id || eid === e.employee_code;
   const regMonths = readPartitionRegistry(ctx.db).map((r) => r.monthKey);
   const monthsToRead = regMonths.length > 0 ? Array.from(new Set([...regMonths, ...(ctx.db.partitionMonth ? [ctx.db.partitionMonth] : [])])) : [ctx.db.partitionMonth];
@@ -158,4 +164,15 @@ export function buildEmployeeDossierSummary(e: Employee, ctx: AppContext) {
     emergencyLeaveGrantCount: Number(e.emergency_leave_grant_count) || 0,
     emergency_leave_grant_count: Number(e.emergency_leave_grant_count) || 0,
   };
+}
+
+export type EmployeeDossierSummary = ReturnType<typeof computeEmployeeDossierSummary>;
+
+export function buildEmployeeDossierSummary(e: Employee, ctx: AppContext): EmployeeDossierSummary {
+  const sig = `${e.id}:${e.version}:${ctx.db.partitionMonth}:${ctx.db.shiftAssignments.all(true).length}:${ctx.db.leaveRequests.all(true).length}:${ctx.db.shiftSwaps.all(true).length}:${ctx.db.employeeStageHistory.all(true).length}`;
+  const hit = dossierCache.get(e.id);
+  if (hit && hit.sig === sig) return hit.data as EmployeeDossierSummary;
+  const summary = computeEmployeeDossierSummary(e, ctx);
+  dossierCache.set(e.id, { sig, data: summary });
+  return summary;
 }

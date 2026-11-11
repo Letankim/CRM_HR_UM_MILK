@@ -72,10 +72,12 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
             )}
             {canPublish ? (
               <Button
-                type="primary" icon={<ScheduleOutlined />} disabled={!effWeek}
+                type="primary"
+                icon={!data?.isLocked && data?.offWindow?.isOpen ? <EyeOutlined /> : <ScheduleOutlined />}
+                disabled={!effWeek}
                 onClick={() => setPreview((p) => ({ open: true, seq: p.seq + 1, branchId }))}
               >
-                {data?.isLocked ? 'Xem lại lưới lịch đã chốt' : 'Chốt lịch & Tự động sắp ca'}
+                {data?.isLocked ? 'Xem lại lưới lịch đã chốt' : data?.offWindow?.isOpen ? 'Xem trước lưới tuần (Cổng OFF đang mở)' : 'Chốt lịch & Tự động sắp ca'}
               </Button>
             ) : !isFinance ? (
               <Button icon={<EyeOutlined />} disabled={!effWeek} onClick={() => setPreview((p) => ({ open: true, seq: p.seq + 1, branchId }))}>
@@ -86,7 +88,15 @@ export function SchedulePlannerWeekPane({ branchOptions }: Props) {
         </Flex>
       </div>
 
-      {data?.offWindow && <Alert type={data.offWindow.isOpen ? 'success' : 'info'} showIcon icon={<CalendarOutlined />} message={data.offWindow.message} />}
+      {data?.offWindow && (
+        <Alert
+          type={data.offWindow.isOpen ? 'warning' : 'info'}
+          showIcon
+          icon={<CalendarOutlined />}
+          message={data.offWindow.message}
+          description={data.offWindow.isOpen ? 'Cổng đăng ký nghỉ OFF đang mở. Hệ thống cho phép xem trước lưới lịch tuần nhưng khóa thao tác chốt lịch & tự động sắp ca cho đến khi cổng đóng.' : undefined}
+        />
+      )}
       {data?.isLocked && data.lockNote && <Alert type="info" showIcon message={`Biên bản chốt lịch: ${data.lockNote}`} />}
 
       <Row gutter={[12, 12]}>
