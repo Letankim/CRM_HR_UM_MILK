@@ -34,11 +34,11 @@ function stampEvidenceWatermark(canvas: HTMLCanvasElement, watermarkTitle: strin
 
 /**
  * Hộp thoại chụp ảnh minh chứng trực tiếp qua Camera (tự động đóng dấu thời gian chụp & tọa độ GPS lên ảnh như điểm danh).
+ * Tuyệt đối không cho phép tải ảnh có sẵn từ máy tính hoặc thư viện thiết bị.
  */
 export function EvidenceCameraModal({ open, watermarkTitle, onClose, onCapture }: EvidenceCameraModalProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const nativeInputRef = useRef<HTMLInputElement | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState('');
@@ -71,7 +71,7 @@ export function EvidenceCameraModal({ open, watermarkTitle, onClose, onCapture }
     stopStream();
     setCameraError('');
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Trình duyệt hiện tại không hỗ trợ mở luồng Camera trực tiếp. Vui lòng bấm nút bên dưới để mở ứng dụng Camera của thiết bị và chụp trực tiếp.');
+      setCameraError('Trình duyệt hiện tại không hỗ trợ mở luồng Camera trực tiếp. Hệ thống bắt buộc chụp ảnh trực tiếp qua Camera (không cho phép tải ảnh từ máy), vui lòng mở hệ thống trên trình duyệt Chrome / Safari có hỗ trợ Camera.');
       return;
     }
     try {
@@ -91,7 +91,7 @@ export function EvidenceCameraModal({ open, watermarkTitle, onClose, onCapture }
       }
       setCameraReady(true);
     } catch {
-      setCameraError('Không mở được Camera (chưa cấp quyền Camera trên trình duyệt). Vui lòng cấp quyền Camera rồi thử lại hoặc mở Camera thiết bị để chụp trực tiếp.');
+      setCameraError('Chưa cấp quyền truy cập Camera trên trình duyệt. Chấm công và Bù công bắt buộc phải chụp ảnh trực tiếp qua Camera (tuyệt đối không cho phép tải ảnh có sẵn từ thiết bị). Vui lòng bấm vào biểu tượng ổ khóa trên thanh địa chỉ trình duyệt, bật quyền Camera rồi bấm nút bên dưới.');
     }
   }, [stopStream]);
 
@@ -114,7 +114,7 @@ export function EvidenceCameraModal({ open, watermarkTitle, onClose, onCapture }
 
   const handleSnap = () => {
     const video = videoRef.current;
-    if (!video || !cameraReady) return;
+    if (!video || !cameraReady || video.videoWidth <= 0) return;
     const rawW = video.videoWidth || 960;
     const rawH = video.videoHeight || 720;
     const scale = Math.min(1, 1280 / Math.max(rawW, rawH));
@@ -130,34 +130,6 @@ export function EvidenceCameraModal({ open, watermarkTitle, onClose, onCapture }
     ctx.drawImage(video, 0, 0, w, h);
     stampEvidenceWatermark(canvas, watermarkTitle || 'MINH CHỨNG BỔ SUNG CÔNG · CAMERA TRỰC TIẾP', coords);
     setPreviewUrl(canvas.toDataURL('image/jpeg', 0.89));
-  };
-
-  const handleNativeCameraFile = (file: File) => {
-    const srcUrl = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const scale = Math.min(1, 1280 / Math.max(img.naturalWidth || 960, img.naturalHeight || 720));
-        const w = Math.max(640, Math.round((img.naturalWidth || 960) * scale));
-        const h = Math.max(480, Math.round((img.naturalHeight || 720) * scale));
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, w, h);
-          stampEvidenceWatermark(canvas, watermarkTitle || 'MINH CHỨNG BỔ SUNG CÔNG · CAMERA TRỰC TIẾP', coords);
-          onCapture(canvas.toDataURL('image/jpeg', 0.89));
-          onClose();
-        }
-      } finally {
-        URL.revokeObjectURL(srcUrl);
-      }
-    };
-    img.onerror = () => URL.revokeObjectURL(srcUrl);
-    img.src = srcUrl;
   };
 
   return (
@@ -195,18 +167,6 @@ export function EvidenceCameraModal({ open, watermarkTitle, onClose, onCapture }
         </Flex>
       }
     >
-      <input
-        ref={nativeInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        style={{ display: 'none' }}
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          e.currentTarget.value = '';
-          if (file) handleNativeCameraFile(file);
-        }}
-      />
       <Space direction="vertical" size={10} style={{ width: '100%' }}>
         <Flex justify="space-between" align="center" wrap="wrap" gap={6} style={{ background: '#F8FAFC', border: '1px solid #E5E7EB', borderRadius: 4, padding: '6px 10px' }}>
           <Space size={6} wrap>
@@ -223,13 +183,10 @@ export function EvidenceCameraModal({ open, watermarkTitle, onClose, onCapture }
         </Flex>
         {cameraError ? (
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
-            <Alert type="warning" showIcon message={cameraError} />
-            <Space wrap>
-              <Button icon={<ReloadOutlined />} onClick={() => void startCamera(facingMode)}>Thử mở lại Camera</Button>
-              <Button type="primary" icon={<CameraOutlined />} onClick={() => nativeInputRef.current?.click()}>
-                Mở Camera thiết bị chụp trực tiếp
-              </Button>
-            </Space>
+            <Alert type="error" showIcon message={cameraError} />
+            <Button type="primary" icon={<ReloadOutlined />} onClick={() => void startCamera(facingMode)}>
+              Cấp quyền &amp; Mở lại Camera trực tiếp
+            </Button>
           </Space>
         ) : (
           <div style={{ background: '#0F172A', borderRadius: 4, overflow: 'hidden', border: '1px solid #E5E7EB', position: 'relative' }}>

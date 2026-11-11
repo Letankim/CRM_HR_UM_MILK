@@ -121,7 +121,7 @@ export function MyShiftRegisterModal({
 
   return (
     <Modal
-      width={640} open={open} forceRender destroyOnHidden title="Đăng ký làm thêm ca (Nhân viên thử việc)"
+      width={640} open={open} forceRender title="Đăng ký làm thêm ca (Nhân viên thử việc)"
       onCancel={onClose} onOk={() => form.submit()} okText="Xác nhận đăng ký ca" cancelText="Hủy bỏ"
       okButtonProps={{ icon: <PlusOutlined />, loading: createShiftMut.isPending || availQ.isFetching, disabled: isSubmitBlocked }}
       cancelButtonProps={{ icon: <CloseOutlined /> }}

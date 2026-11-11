@@ -162,7 +162,7 @@ export function QuickAbsentAdjustmentModal({
             </Descriptions.Item>
           </Descriptions>
           <Form form={form} layout="vertical">
-            <AdjustmentEvidenceFields evidenceRequired={isSelfSubmit} />
+            <AdjustmentEvidenceFields evidenceRequired />
             <Form.Item name="kind" label="Nguyên nhân sự cố" rules={[{ required: true, message: 'Vui lòng chọn nguyên nhân' }]}>
               <Select options={ADJUSTMENT_CAUSE_OPTIONS} />
             </Form.Item>

@@ -95,7 +95,7 @@ export function registerAttendanceAdjustmentRoutes(app: FastifyInstance, ctx: Ap
     }
     const punchType = body.punch_type ?? inferPunchType(body.kind);
     const hasEvidence = /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(body.evidence_photo_base64);
-    if (isSelfEmp && isEmployeeRole(caller.role) && !hasEvidence) throw Errors.fieldValidation('evidence_photo_base64', 'REQUIRED_FIELD', 'Vui lòng chụp hoặc tải lên ảnh minh chứng để HR xem xét phiếu chấm công lỗi', '');
+    if (isSelfEmp && isEmployeeRole(caller.role) && !hasEvidence) throw Errors.fieldValidation('evidence_photo_base64', 'REQUIRED_FIELD', 'Vui lòng chụp ảnh minh chứng trực tiếp từ Camera để HR xem xét phiếu chấm công lỗi (không cho phép tải ảnh từ thiết bị)', '');
     const hintMonth = resolveTargetMonthForRecord(ctx.db, 'ATTENDANCE_ADJUSTMENTS', { work_date: body.work_date, assignment_id: body.assignment_id }, body.work_date);
     const shiftStoreForMonth = await getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', hintMonth, caller.id);
     const matchedShift = (body.assignment_id ? (await findShiftAcrossPartitions(ctx, body.assignment_id, body.work_date)) : undefined)

@@ -118,7 +118,7 @@ export function CandidateFormModal({
 
   return (
     <Modal
-      width={1140} style={{ maxWidth: 'calc(100vw - 32px)', top: 16 }} open={open} forceRender destroyOnHidden
+      width={1140} style={{ maxWidth: 'calc(100vw - 32px)', top: 16 }} open={open} forceRender
       title={editingCand ? `Chỉnh sửa Hồ sơ & Chấm điểm Sơ loại: ${String(editingCand.full_name)}` : 'Tiếp nhận Hồ sơ & Chấm điểm Sơ loại Ứng viên'}
       okText={editingCand ? 'Lưu cập nhật' : 'Thêm ứng viên'} cancelText="Hủy bỏ"
       okButtonProps={{ icon: editingCand ? <SaveOutlined /> : <PlusOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }}

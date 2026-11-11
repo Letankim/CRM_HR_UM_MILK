@@ -101,7 +101,7 @@ export function InterviewEvaluateModal({ target, loading, onClose, onSubmit }: I
     <>
       <FireworksCanvasOverlay active={showFireworks} />
       <Modal
-        width={1180} style={{ maxWidth: 'calc(100vw - 32px)', top: 16 }} open={Boolean(target)} forceRender destroyOnHidden
+        width={1180} style={{ maxWidth: 'calc(100vw - 32px)', top: 16 }} open={Boolean(target)} forceRender
         title={<Space size={8} wrap><span>{isScored ? 'Cập nhật điểm phỏng vấn:' : 'Phiếu chấm điểm phỏng vấn:'} <strong>{String(target?.candidateName ?? '')}</strong></span>{Boolean(target?.candidateCode) && <Tag color="geekblue" style={{ margin: 0 }}>{String(target?.candidateCode)}</Tag>}</Space>}
         okText={isScored ? (eval13.passed && !hasEmp ? 'Lưu & Khởi tạo Nhân sự' : 'Lưu điểm phỏng vấn') : (eval13.passed ? 'Duyệt ĐẠT & Khởi tạo Nhân sự' : 'Lưu kết quả phỏng vấn')} cancelText="Hủy bỏ"
         okButtonProps={{ icon: eval13.passed && !hasEmp ? <UserAddOutlined /> : <SaveOutlined />, loading }} cancelButtonProps={{ icon: <CloseOutlined /> }}

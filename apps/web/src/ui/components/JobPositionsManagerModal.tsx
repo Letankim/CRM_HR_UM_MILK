@@ -162,7 +162,7 @@ export function JobPositionsTableCard({ canManage = true }: { canManage?: boolea
       </Modal>
 
       <Modal
-        width={680} open={formOpen} forceRender destroyOnHidden
+        width={680} open={formOpen} forceRender
         title={editing ? `Chỉnh sửa Vị trí Công việc — ${editing.label}` : 'Thêm Vị trí Công việc Mới'}
         okText={editing ? 'Lưu cập nhật' : 'Thêm vị trí'} cancelText="Hủy bỏ"
         okButtonProps={{ icon: editing ? <SaveOutlined /> : <PlusOutlined /> }} cancelButtonProps={{ icon: <CloseOutlined /> }}

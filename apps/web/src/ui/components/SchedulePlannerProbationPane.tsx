@@ -6,7 +6,7 @@ import {
   BarChartOutlined, CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, LockOutlined,
   ReloadOutlined, ScheduleOutlined, TableOutlined, TrophyOutlined, UnlockOutlined,
 } from '@ant-design/icons';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useCan, useMe } from '@/lib/auth';
 import { buildClickableRowProps } from './BulkActionBar';
@@ -23,7 +23,6 @@ interface Props { branchOptions: { value: string; label: string }[] }
 /** Chốt lịch chu kỳ thử việc 12 ngày (7 ca làm + tối đa 5 ngày OFF) và duyệt chuyển chính thức khi hoàn thành đủ 7 ca. */
 export function SchedulePlannerProbationPane({ branchOptions }: Props) {
   const showDetail = useQuickDetail();
-  const qc = useQueryClient();
   const can = useCan(), me = useMe().data?.user, isFinance = me?.role === 'FINANCE';
   const canPublish = !isFinance && can('schedule.publish');
   const canPromote = !isFinance && can('employee.promote');
@@ -146,27 +145,31 @@ export function SchedulePlannerProbationPane({ branchOptions }: Props) {
         ]}
       />}
       {offDecision.decisionModalElement}
-      <EmployeePromoteOfficialModal
-        open={Boolean(promoteTarget)}
-        employee={promoteTarget ? {
-          id: promoteTarget.employeeId,
-          employeeCode: promoteTarget.employeeCode,
-          fullName: promoteTarget.employeeName,
-          branchId: promoteTarget.branchId,
-          branchName: promoteTarget.branchName,
-          version: promoteTarget.employeeVersion,
-        } : null}
-        onClose={() => setPromoteTarget(null)}
-        onSuccess={() => {
-          setPromoteTarget(null);
-          invalidate();
-        }}
-      />
-      <PlannerProbationPreviewModal
-        open={preview.open} openSeq={preview.seq} employeeId={preview.employeeId}
-        branchId={branchId} canPublish={canPublish}
-        onClose={() => setPreview((p) => ({ ...p, open: false }))}
-      />
+      {promoteTarget && (
+        <EmployeePromoteOfficialModal
+          open
+          employee={{
+            id: promoteTarget.employeeId,
+            employeeCode: promoteTarget.employeeCode,
+            fullName: promoteTarget.employeeName,
+            branchId: promoteTarget.branchId,
+            branchName: promoteTarget.branchName,
+            version: promoteTarget.employeeVersion,
+          }}
+          onClose={() => setPromoteTarget(null)}
+          onSuccess={() => {
+            setPromoteTarget(null);
+            invalidate();
+          }}
+        />
+      )}
+      {preview.open && (
+        <PlannerProbationPreviewModal
+          open={preview.open} openSeq={preview.seq} employeeId={preview.employeeId}
+          branchId={branchId} canPublish={canPublish}
+          onClose={() => setPreview((p) => ({ ...p, open: false }))}
+        />
+      )}
     </Space>
   );
 }
