@@ -1,7 +1,8 @@
-import { DEFAULT_SHIFT_LABELS, type Employee, type EmployeeStage, type Role, type User } from '@umbm/shared';
+import { DEFAULT_SHIFT_LABELS, type Employee, type EmployeeStage, type Role, type ShiftAssignment, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { singleFlight, tolerantWrite } from '../services/background-write.js';
 import { ensureSyncedNotifications } from '../services/notification-sync.service.js';
+import { extractMonthKeyFromDate, getCachedPartitionStore } from '../services/partition-write-router.js';
 import { today } from '../services/salary-profile.service.js';
 import { resolveWorkflowShiftStatus, sweepExpiredShiftsAndMarkAbsent } from '../services/shift-absent-scanner.js';
 import { findLinkedEmployeeForUser, findLinkedUserForEmployee } from './employee-mapper.js';
@@ -22,7 +23,10 @@ export function findBranchShiftTemplate(ctx: AppContext, shiftCode: string, bran
 
 export function resolveShiftTimeDetails(ctx: AppContext, shiftCode: string, assignmentId = '', branchId = '', employeeId = '', workDate = '') {
   const st = resolveWorkflowShiftStatus(ctx.db, shiftCode, assignmentId, employeeId, workDate);
-  const assign = (st.shiftAssignmentId ? ctx.db.shiftAssignments.get(st.shiftAssignmentId) : undefined) ?? (assignmentId ? ctx.db.shiftAssignments.get(assignmentId) : undefined);
+  const mk = extractMonthKeyFromDate(workDate);
+  const shStore = (mk && mk !== ctx.db.partitionMonth ? getCachedPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk) : undefined) ?? ctx.db.shiftAssignments;
+  const assign = (st.shiftAssignmentId ? (shStore.get(st.shiftAssignmentId) ?? ctx.db.shiftAssignments.get(st.shiftAssignmentId)) : undefined)
+    ?? (assignmentId ? (shStore.get(assignmentId) ?? ctx.db.shiftAssignments.get(assignmentId)) : undefined);
   const tpl = findBranchShiftTemplate(ctx, shiftCode, branchId || assign?.branch_id || '');
   const fb = SHIFT_FALLBACK[shiftCode] ?? SHIFT_FALLBACK.CA_SANG!;
   const startAt = assign?.start_at || tpl?.start_time || fb.start, endAt = assign?.end_at || tpl?.end_time || fb.end;
@@ -60,22 +64,16 @@ export async function cascadeEmployeeBranchChange(ctx: AppContext, emp: Employee
   ]);
 }
 
-const healsInFlight = new WeakMap<object, Promise<void>>();
-const lastHealSig = new WeakMap<object, string>();
-
+const healsInFlight = new WeakMap<object, Promise<void>>(), lastHealSig = new WeakMap<object, string>();
 function computeHealSig(ctx: AppContext): string {
   const verSum = (rows: readonly { version: number }[]) => rows.reduce((s, r) => s + r.version, rows.length);
   return `${Math.floor(Date.now() / 60_000)}:${verSum(ctx.db.users.all())}:${verSum(ctx.db.employees.all())}:${verSum(ctx.db.shiftAssignments.all())}:${verSum(ctx.db.leaveRequests.all())}:${verSum(ctx.db.attendanceEvents.all())}:${verSum(ctx.db.attendanceAdjustments.all())}`;
 }
 
-/** Tự động đồng bộ & làm sạch lệch chi nhánh giữa Tài khoản <-> Hồ sơ nhân sự <-> Lịch phân ca & Điểm danh */
 export function healBranchConsistency(ctx: AppContext, actorId = 'system-sync'): Promise<void> {
   const sig = computeHealSig(ctx);
   if (lastHealSig.get(ctx.db) === sig) return Promise.resolve();
-  return singleFlight(healsInFlight, ctx.db, async () => {
-    await runHeal(ctx, actorId);
-    lastHealSig.set(ctx.db, computeHealSig(ctx));
-  });
+  return singleFlight(healsInFlight, ctx.db, async () => { await runHeal(ctx, actorId); lastHealSig.set(ctx.db, computeHealSig(ctx)); });
 }
 
 async function runHeal(ctx: AppContext, actorId: string): Promise<void> {
@@ -123,26 +121,19 @@ export interface SyncEmployeeFromAccountParams {
 
 export async function syncEmployeeFromAccount(ctx: AppContext, params: SyncEmployeeFromAccountParams): Promise<string> {
   const { userId, prevEmp, targetEmp, displayName, phone, email, role, branchScope, actorId } = params;
-  if (prevEmp && prevEmp.id !== targetEmp?.id && prevEmp.user_id === userId) {
-    await ctx.db.employees.update(prevEmp.id, prevEmp.version, { user_id: '' }, actorId);
-  }
+  if (prevEmp && prevEmp.id !== targetEmp?.id && prevEmp.user_id === userId) await ctx.db.employees.update(prevEmp.id, prevEmp.version, { user_id: '' }, actorId);
   if (!targetEmp) return '';
   if (targetEmp.user_id && targetEmp.user_id !== userId) {
     const oldUser = ctx.db.users.get(targetEmp.user_id);
     if (oldUser && oldUser.id !== userId) await ctx.db.users.update(oldUser.id, oldUser.version, { employee_id: '' }, actorId);
   }
-  const resolvedBranchId = resolveSingleBranchId(ctx, branchScope);
-  const empPatch: Record<string, unknown> = { user_id: userId };
+  const resolvedBranchId = resolveSingleBranchId(ctx, branchScope), empPatch: Record<string, unknown> = { user_id: userId };
   if (resolvedBranchId && resolvedBranchId !== targetEmp.branch_id) empPatch.branch_id = resolvedBranchId;
   if (displayName && displayName !== targetEmp.full_name) empPatch.full_name = displayName;
   if (phone !== undefined && phone !== '' && phone !== targetEmp.phone) empPatch.phone = phone;
   if (email !== undefined && email !== targetEmp.email) empPatch.email = email;
-  if (role === 'CHINH_THUC' && targetEmp.stage !== 'OFFICIAL') {
-    empPatch.stage = 'OFFICIAL';
-    if (!targetEmp.official_from) empPatch.official_from = today();
-  } else if (role === 'THU_VIEC' && targetEmp.stage !== 'PROBATION') {
-    empPatch.stage = 'PROBATION';
-  }
+  if (role === 'CHINH_THUC' && targetEmp.stage !== 'OFFICIAL') { empPatch.stage = 'OFFICIAL'; if (!targetEmp.official_from) empPatch.official_from = today(); }
+  else if (role === 'THU_VIEC' && targetEmp.stage !== 'PROBATION') empPatch.stage = 'PROBATION';
   const updatedEmp = await ctx.db.employees.update(targetEmp.id, targetEmp.version, empPatch, actorId);
   if (targetEmp.branch_id !== updatedEmp.branch_id) await cascadeEmployeeBranchChange(ctx, updatedEmp, updatedEmp.branch_id, actorId);
   return updatedEmp.employee_code;

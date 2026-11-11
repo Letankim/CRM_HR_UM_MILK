@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { SYSTEM_CONFIG, computeLateFine, isEmployeeRole, zListQueryBase, type AttendanceEvent } from '@umbm/shared';
+import { SYSTEM_CONFIG, computeLateFine, isEmployeeRole, zListQueryBase, type AttendanceAdjustment, type AttendanceEvent, type ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { AppError, Errors } from '../lib/errors.js';
 import { paginateAndSort } from '../lib/list-query.js';
@@ -16,7 +16,7 @@ import { buildPaginatedAttendanceSessions, buildShiftFolderName, calculateHavers
 import { registerShiftAttendanceDetailRoute } from './attendance-shift-detail.js';
 import { registerAttendanceAdjustmentRoutes } from './attendance-adjustments.routes.js';
 import { findShiftAcrossPartitions } from '../services/data-partition-employee.helper.js';
-import { insertPartitionAwareRecord, updatePartitionAwareRecord } from '../services/partition-write-router.js';
+import { getPartitionStore, insertPartitionAwareRecord, resolveTargetMonthForRecord, updatePartitionAwareRecord } from '../services/partition-write-router.js';
 export { calculateHaversineMeters } from './attendance-helpers.js';
 const inFlightChecksByCtx = new WeakMap<AppContext, Set<string>>();
 
@@ -69,10 +69,6 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.post('/api/attendance/check', { preHandler: requireAuth() }, async (request, reply) => {
     const body = zCheckInOutBody.parse(request.body);
-    if (body.idempotency_key) {
-      const existingByKey = ctx.db.attendanceEvents.find((e) => e.idempotency_key === body.idempotency_key);
-      if (existingByKey) return sendSuccess(request, `Điểm danh ${existingByKey.type === 'CHECK_IN' ? 'vào ca' : 'ra ca'} đã được ghi nhận trước đó`, mapAttendanceEvent(existingByKey, ctx));
-    }
     getOperationSettings(ctx.db);
     const checkType = body.type ?? body.kind ?? 'CHECK_IN';
     let inFlightSet = inFlightChecksByCtx.get(ctx);
@@ -85,6 +81,16 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     try {
     const assign = ctx.db.shiftAssignments.get(body.assignment_id) ?? (await findShiftAcrossPartitions(ctx, body.assignment_id, getVnNowDateAndHm().todayStr));
     if (!assign) throw Errors.fieldValidation('assignment_id', 'INVALID_VALUE', 'Không tìm thấy ca phân công', body.assignment_id);
+    const targetMonth = resolveTargetMonthForRecord(ctx.db, 'ATTENDANCE_EVENTS', { work_date: assign.work_date, assignment_id: assign.id }, assign.work_date);
+    const [eventStore, adjStore, swapStore] = await Promise.all([
+      getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', targetMonth, request.auth!.user.id),
+      getPartitionStore<AttendanceAdjustment>(ctx.db, 'ATTENDANCE_ADJUSTMENTS', targetMonth, request.auth!.user.id),
+      getPartitionStore<ShiftSwap>(ctx.db, 'SHIFT_SWAPS', targetMonth, request.auth!.user.id),
+    ]);
+    if (body.idempotency_key) {
+      const existingByKey = eventStore.find((e) => e.idempotency_key === body.idempotency_key) ?? ctx.db.attendanceEvents.find((e) => e.idempotency_key === body.idempotency_key);
+      if (existingByKey) return sendSuccess(request, `Điểm danh ${existingByKey.type === 'CHECK_IN' ? 'vào ca' : 'ra ca'} đã được ghi nhận trước đó`, mapAttendanceEvent(existingByKey, ctx));
+    }
     if (assign.status === 'ABSENT') throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'} ngày ${dayjs(assign.work_date).format('DD/MM/YYYY')}) đã quá giờ kết thúc ca mà chưa điểm danh vào ca nên đã bị khóa và chuyển sang trạng thái Vắng mặt. Nếu muốn bù công, vui lòng gửi Phiếu bổ sung công.`);
     if (assign.status !== 'PUBLISHED' && assign.status !== 'COMPLETED') throw Errors.badRequest('Ca đăng ký này đang ở trạng thái Chờ duyệt. Phải được Quản lý cửa hàng (chi nhánh trực thuộc) hoặc HR duyệt sang Đã phân ca chính thức thì mới được phép chấm công Vào/Ra ca.');
     const findBranch = (raw?: string) => raw ? (ctx.db.branches.get(raw) ?? ctx.db.branches.find((b) => b.code === raw)) : undefined;
@@ -92,16 +98,16 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!empRecord || !empRecord.branch_id) throw Errors.badRequest('Hồ sơ nhân sự chưa được gán thuộc chi nhánh làm việc nào nên không thể điểm danh Vào/Ra ca');
     const empBranch = findBranch(empRecord.branch_id);
     const branch = findBranch(assign.branch_id) ?? empBranch;
-    const isSupportShift = assign.source === 'HR_SUPPORT' || Boolean(ctx.db.shiftSwaps.find((s) => s.kind === 'HR_SUPPORT' && s.status === 'APPROVED' && s.to_assignment_id === assign.id));
+    const isSupportShift = assign.source === 'HR_SUPPORT' || Boolean(swapStore.find((s) => s.kind === 'HR_SUPPORT' && s.status === 'APPROVED' && s.to_assignment_id === assign.id)) || Boolean(ctx.db.shiftSwaps.find((s) => s.kind === 'HR_SUPPORT' && s.status === 'APPROVED' && s.to_assignment_id === assign.id));
     if (!branch || branch.status !== 'ACTIVE') throw Errors.notFound('Chi nhánh hoạt động', assign.branch_id || empRecord.branch_id);
     if (empBranch && empBranch.id !== branch.id && !isSupportShift) throw Errors.forbidden(`Nhân sự thuộc chi nhánh "${empBranch.name}", không được phép điểm danh Vào/Ra ca tại chi nhánh khác ("${branch.name}")`);
     if (body.enforce_shift_state || isEmployeeRole(request.auth!.user.role)) {
       const matchAssignEmp = (eid: string) => eid === assign.employee_id || eid === empRecord.id || eid === empRecord.employee_code;
-      const blockingAdj = ctx.db.attendanceAdjustments.find((a) =>
+      const adjPred = (a: AttendanceAdjustment) =>
         (a.status === 'PENDING' || a.status === 'STORE_CONFIRMED') &&
         (a.assignment_id === assign.id || (matchAssignEmp(a.employee_id) && a.work_date === assign.work_date && a.shift_code === assign.shift_code)) &&
-        (a.punch_type === 'FULL_SHIFT' || a.punch_type === checkType),
-      );
+        (a.punch_type === 'FULL_SHIFT' || a.punch_type === checkType);
+      const blockingAdj = adjStore.find(adjPred) ?? ctx.db.attendanceAdjustments.find(adjPred);
       if (blockingAdj) {
         const actionLabel = checkType === 'CHECK_IN' ? 'Vào ca' : 'Ra ca';
         throw Errors.badRequest(`Ca làm việc này đã gửi yêu cầu ${actionLabel} qua phiếu ${blockingAdj.adjustment_code} và đang chờ phê duyệt nên tạm khóa nút ${actionLabel}. Nếu phiếu bị từ chối khi vẫn còn trong khung giờ hợp lệ, hệ thống sẽ mở lại để bạn chấm công hoặc gửi lại minh chứng.`);
@@ -111,16 +117,17 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
     if (empRecord.stage === 'OFFICIAL' && body.pink_ratio_percent !== undefined && body.pink_ratio_percent < SYSTEM_CONFIG.defaults.pinkUniformMinRatioPercent) {
       throw new AppError(400, 'BUSINESS_RULE_VIOLATION', `Tỷ lệ nhận diện đồng phục áo hồng (${body.pink_ratio_percent}%) chưa đạt ngưỡng tối thiểu ${SYSTEM_CONFIG.defaults.pinkUniformMinRatioPercent}% khung hình theo quy định nhân sự chính thức`);
     }
+    const existingEvents = [...eventStore.filter((e) => e.assignment_id === assign.id), ...ctx.db.attendanceEvents.filter((e) => e.assignment_id === assign.id)];
     if (body.enforce_time_window || body.enforce_shift_state) {
       const { todayStr, nowHm } = getVnNowDateAndHm(), diffFromStart = parseHm(nowHm) - parseHm(assign.start_at || '07:00');
       if (checkType === 'CHECK_IN' && assign.work_date === todayStr) {
         if (diffFromStart < -SYSTEM_CONFIG.defaults.checkInOpenBeforeMinutes) {
           throw Errors.badRequest(`Chưa đến giờ mở cổng điểm danh vào ca (chỉ mở trước giờ vào ca ${SYSTEM_CONFIG.defaults.checkInOpenBeforeMinutes} phút)`);
         }
-        const hasInNow = Boolean(ctx.db.attendanceEvents.find((e) => e.assignment_id === assign.id && e.type === 'CHECK_IN'));
+        const hasInNow = existingEvents.some((e) => e.type === 'CHECK_IN');
         const isOffice = assign.shift_code === 'HANH_CHINH' || empRecord.staff_group === 'BACKOFFICE' || ['HR', 'FINANCE', 'MKT', 'ADMIN'].includes(request.auth!.user.role);
         if (!isOffice && !hasInNow && diffFromStart > SYSTEM_CONFIG.defaults.checkInAutoAbsentAfterHours * 60) {
-          await ctx.db.shiftAssignments.update(assign.id, assign.version, { status: 'ABSENT', note: 'Quá 3 giờ kể từ giờ bắt đầu ca chưa điểm danh — Tự động chuyển Vắng mặt' }, request.auth!.user.id);
+          await updatePartitionAwareRecord(ctx.db, 'SHIFT_ASSIGNMENTS', assign.id, assign.version, { status: 'ABSENT', note: 'Quá 3 giờ kể từ giờ bắt đầu ca chưa điểm danh — Tự động chuyển Vắng mặt' }, assign.work_date, request.auth!.user.id);
           throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'}) đã quá ${SYSTEM_CONFIG.defaults.checkInAutoAbsentAfterHours} giờ kể từ giờ bắt đầu mà chưa điểm danh vào ca nên đã tự động chuyển sang trạng thái Vắng mặt (ABSENT).`);
         }
       }
@@ -132,10 +139,9 @@ export async function attendanceRoutes(app: FastifyInstance, ctx: AppContext) {
       const myBranch = findBranch(myEmp.branch_id);
       if ((!myBranch || myBranch.id !== branch.id) && !isSupportShift) throw Errors.forbidden(`Bạn thuộc chi nhánh "${myBranch?.name ?? myEmp.branch_id}", chỉ được phép Vào/Ra ca tại đúng chi nhánh trực thuộc của mình`);
       const { todayStr, nowHm } = getVnNowDateAndHm(), win = getShiftCheckoutWindow(assign.work_date, assign.start_at || '07:00', assign.end_at || '12:00', todayStr, nowHm);
-      const existingEvents = ctx.db.attendanceEvents.filter((e) => e.assignment_id === assign.id);
       const hasIn = existingEvents.some((e) => e.type === 'CHECK_IN'), hasOut = existingEvents.some((e) => e.type === 'CHECK_OUT');
       if (checkType === 'CHECK_IN' && !hasIn && win.isPastEnd) {
-        await ctx.db.shiftAssignments.update(assign.id, assign.version, { status: 'ABSENT', note: 'Quá giờ kết thúc ca chưa điểm danh — Tự động chuyển Vắng mặt' }, user.id);
+        await updatePartitionAwareRecord(ctx.db, 'SHIFT_ASSIGNMENTS', assign.id, assign.version, { status: 'ABSENT', note: 'Quá giờ kết thúc ca chưa điểm danh — Tự động chuyển Vắng mặt' }, assign.work_date, user.id);
         throw Errors.badRequest(`Ca làm việc (${assign.start_at || '07:00'} – ${assign.end_at || '12:00'}) đã qua giờ kết thúc ca (hiện tại ${nowHm}) mà chưa vào ca nên hệ thống đã khóa điểm danh và chuyển sang Vắng mặt. Vui lòng làm Phiếu bổ sung công để bù ca.`);
       }
       if (checkType === 'CHECK_OUT' && hasIn && !hasOut && win.isCheckoutLocked) {

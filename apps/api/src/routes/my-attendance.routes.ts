@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { evaluateOffWindow, isOfficeEmployeeSpec, REQUEST_STATUS_LABELS, ROLE_LABELS, type Employee, type User } from '@umbm/shared';
+import { evaluateOffWindow, isOfficeEmployeeSpec, REQUEST_STATUS_LABELS, ROLE_LABELS, type AttendanceEvent, type Employee, type LeaveRequest, type ShiftAssignment, type User } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
@@ -22,12 +22,12 @@ import { mapShiftAssignment } from './schedules.routes.js';
 import { mapShiftSwapRecord } from './shift-swap-helpers.js'; import { sweepExpiredShiftSwaps } from '../services/shift-swap-sweep.service.js';
 import { ensureOfficeShiftTemplate } from './branches.routes.js';
 import { loadCrossPartitionEmployeeAdjustments } from '../services/data-partition-adjustments.helper.js';
-import { loadCrossPartitionEmployeeEvents, loadCrossPartitionEmployeeShifts } from '../services/data-partition-employee.helper.js';
+import { getEmployeePartitionMonths, loadCrossPartitionEmployeeEvents, loadCrossPartitionEmployeeLeaves, loadCrossPartitionEmployeeShifts, loadCrossPartitionEmployeeSwaps } from '../services/data-partition-employee.helper.js';
+import { findPartitionAwareRecord, getPartitionStore, insertPartitionAwareRecord } from '../services/partition-write-router.js';
 
 const SHIFT_DEFAULT_HOURS: Record<string, { start: string; end: string; hours: number }> = {
   CA_SANG: { start: '07:00', end: '12:00', hours: 5 }, CA_CHIEU: { start: '12:00', end: '17:00', hours: 5 },
-  CA_TOI: { start: '17:00', end: '22:00', hours: 5 }, CA_HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
-  HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
+  CA_TOI: { start: '17:00', end: '22:00', hours: 5 }, CA_HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 }, HANH_CHINH: { start: '08:00', end: '17:30', hours: 8 },
 };
 function getVnDateAndHm(): { todayStr: string; nowHm: string } {
   const vnNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
@@ -44,22 +44,18 @@ export async function ensurePersonalProfile(ctx: AppContext, user: User): Promis
     }
     return existing;
   }
-  const firstBranch = ctx.db.branches.all()[0];
-  const officeBranch = ctx.db.branches.find((b) => b.code === 'VAN_PHONG') ?? firstBranch;
+  const firstBranch = ctx.db.branches.all()[0], officeBranch = ctx.db.branches.find((b) => b.code === 'VAN_PHONG') ?? firstBranch;
   const isOfficeRole = user.role === 'HR' || user.role === 'FINANCE' || user.role === 'MKT' || user.role === 'ADMIN';
   const scopedBranchId = user.branch_scope && user.branch_scope !== 'ALL' ? user.branch_scope.split(',')[0]?.trim() || firstBranch?.id || '' : (isOfficeRole ? officeBranch?.id : firstBranch?.id) || '';
-  const nextCode = `NV${String(ctx.db.employees.all(true).length + 1).padStart(4, '0')}`;
-  const isProb = user.role === 'THU_VIEC';
+  const nextCode = `NV${String(ctx.db.employees.all(true).length + 1).padStart(4, '0')}`, isProb = user.role === 'THU_VIEC';
   const staffGroup = user.role === 'STORE' ? 'STORE_MANAGER' : (user.role === 'THU_VIEC' || user.role === 'CHINH_THUC' ? 'BARISTA' : 'BACKOFFICE');
-  const defaultShiftCode = isOfficeRole ? 'HANH_CHINH' : 'CA_SANG';
   const createdEmp = await ctx.db.employees.insert({
     employee_code: nextCode, candidate_id: '', user_id: user.id, full_name: user.display_name, phone: user.phone || '', email: user.email || '',
     date_of_birth: '1998-01-01', gender: 'Khác', citizen_id: '', citizen_issue_date: '', permanent_address: 'TP. Hồ Chí Minh', current_address: 'TP. Hồ Chí Minh',
     emergency_contact_name: '', emergency_contact_phone: '', branch_id: scopedBranchId, staff_group: staffGroup, position_title: ROLE_LABELS[user.role] || 'Nhân sự',
-    stage: isProb ? 'PROBATION' : 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: defaultShiftCode, probation_start: '2026-01-01', probation_end: '2026-01-12',
+    stage: isProb ? 'PROBATION' : 'OFFICIAL', employment_type: 'FULL_TIME', default_shift_code: isOfficeRole ? 'HANH_CHINH' : 'CA_SANG', probation_start: '2026-01-01', probation_end: '2026-01-12',
     probation_cycle_days: 12, probation_work_days: isOfficeRole ? 10 : 7, probation_off_days: isOfficeRole ? 2 : 5, official_from: '2026-01-13', resigned_at: '', resign_reason: '', status: 'ACTIVE',
-    base_hourly_rate_vnd: 0, bank_name: 'Techcombank', bank_account_number: '', bank_account_holder: user.display_name.toUpperCase(), tax_code: '',
-    note: 'Hồ sơ nhân sự liên kết tài khoản hệ thống',
+    base_hourly_rate_vnd: 0, bank_name: 'Techcombank', bank_account_number: '', bank_account_holder: user.display_name.toUpperCase(), tax_code: '', note: 'Hồ sơ nhân sự liên kết tài khoản hệ thống',
   }, user.id);
   await ctx.db.users.update(user.id, user.version, { employee_id: createdEmp.employee_code }, user.id);
   return createdEmp;
@@ -69,30 +65,21 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
   app.get('/api/my-attendance', { preHandler: requireAuth() }, async (request) => {
     void migrateLegacyBase64Photos(ctx);
     await runBackgroundSideEffect(() => healBranchConsistency(ctx));
-    const user = request.auth!.user, settings = getOperationSettings(ctx.db);
-    const emp = await ensurePersonalProfile(ctx, user);
-    const branch = ctx.db.branches.get(emp.branch_id) ?? ctx.db.branches.all()[0];
-    const { todayStr, nowHm } = getVnDateAndHm();
+    const user = request.auth!.user, settings = getOperationSettings(ctx.db), emp = await ensurePersonalProfile(ctx, user);
+    const branch = ctx.db.branches.get(emp.branch_id) ?? ctx.db.branches.all()[0], { todayStr, nowHm } = getVnDateAndHm();
 
-    const myRawEvents = await loadCrossPartitionEmployeeEvents(ctx, emp, todayStr);
-    const events = myRawEvents.map((e) => mapAttendanceEvent(e, ctx));
-
+    const myRawEvents = await loadCrossPartitionEmployeeEvents(ctx, emp, todayStr), events = myRawEvents.map((e) => mapAttendanceEvent(e, ctx));
     const myRawShifts = await loadCrossPartitionEmployeeShifts(ctx, emp, todayStr);
-    const isOffice = isOfficeEmployeeSpec(emp, user.role);
-    const isOfficeOrMgr = isOffice || emp.staff_group === 'STORE_MANAGER' || user.role === 'STORE';
+    const isOffice = isOfficeEmployeeSpec(emp, user.role), isOfficeOrMgr = isOffice || emp.staff_group === 'STORE_MANAGER' || user.role === 'STORE';
     if (isOfficeOrMgr && !myRawShifts.some((a) => a.work_date === todayStr && !a.is_deleted)) {
       await ensureOfficeShiftTemplate(ctx);
-      const officeBranch = ctx.db.branches.find((b) => b.code === 'VAN_PHONG') ?? branch;
-      const tpl = ctx.db.shiftTemplates.find((s) => s.code === 'HANH_CHINH');
-      const startAt = tpl?.start_time || '08:00', endAt = tpl?.end_time || '17:30', scheduledHours = Number(tpl?.standard_hours) || 8;
-      const autoShift = await ctx.db.shiftAssignments.insert({
-        schedule_week_id: `WK-${todayStr.slice(0, 7)}`, employee_id: emp.id,
-        branch_id: emp.branch_id || officeBranch?.id || '', work_date: todayStr,
-        shift_template_id: tpl?.id || '', shift_code: 'HANH_CHINH', start_at: startAt, end_at: endAt,
-        scheduled_hours: scheduledHours, status: 'PUBLISHED', source: 'AUTO_OFFICE',
-        employee_stage: emp.stage, day_type: 'WORK', published_at: nowIso(), note: 'Ca làm việc giờ hành chính',
-        swapped_from_employee_id: '', replacement_for_employee_id: '', linked_assignment_id: '',
-      }, user.id).catch(() => undefined);
+      const officeBranch = ctx.db.branches.find((b) => b.code === 'VAN_PHONG') ?? branch, tpl = ctx.db.shiftTemplates.find((s) => s.code === 'HANH_CHINH');
+      const autoShift = await insertPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', {
+        schedule_week_id: `WK-${todayStr.slice(0, 7)}`, employee_id: emp.id, branch_id: emp.branch_id || officeBranch?.id || '', work_date: todayStr,
+        shift_template_id: tpl?.id || '', shift_code: 'HANH_CHINH', start_at: tpl?.start_time || '08:00', end_at: tpl?.end_time || '17:30',
+        scheduled_hours: Number(tpl?.standard_hours) || 8, status: 'PUBLISHED', source: 'AUTO_OFFICE', employee_stage: emp.stage, day_type: 'WORK',
+        published_at: nowIso(), note: 'Ca làm việc giờ hành chính', swapped_from_employee_id: '', replacement_for_employee_id: '', linked_assignment_id: '',
+      }, todayStr, user.id).catch(() => undefined);
       if (autoShift) myRawShifts.unshift(autoShift);
     }
     const shifts = myRawShifts.map((a) => {
@@ -108,21 +95,14 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       const isToday = a.work_date === todayStr, isExpiredToday = isToday && !inEv && win.isPastEnd;
       const isAbsentShift = a.status === 'ABSENT' || (!inEv && a.status === 'PUBLISHED' && win.isPastEnd);
       const isPendingApproval = a.status === 'DRAFT', isDone = a.status === 'COMPLETED' || Boolean(inEv && outEv) || base.hasApprovedAdjustment;
-      const isForgotCheckout = Boolean(inEv && !outEv && !isDone && win.isCheckoutLocked);
-      const isWithinCheckoutGrace = Boolean(inEv && !outEv && !isDone && win.isWithinCheckoutGrace);
+      const isForgotCheckout = Boolean(inEv && !outEv && !isDone && win.isCheckoutLocked), isWithinCheckoutGrace = Boolean(inEv && !outEv && !isDone && win.isWithinCheckoutGrace);
       const canCheckOutNow = Boolean(inEv && !outEv && !isDone && !win.isCheckoutLocked && (isToday || win.isWithinCheckoutGrace));
       const effectiveStatus = isDone && (base.status === 'PUBLISHED' || base.status === 'ABSENT') ? 'COMPLETED' : base.status;
       const effectiveStatusLabel = effectiveStatus === 'COMPLETED' ? 'Đã hoàn thành' : base.statusLabel;
       const inTimeHm = inEv ? String(inEv.checkTimeFormatted || '').slice(0, 5) : '';
       const pendingLabel = base.pendingAdjustmentCode ? formatPendingAdjustmentLabel(base.pendingAdjustmentCode, base.pendingAdjustmentPunchType) : '';
       const hasRelevantRejection = !isDone && !pendingLabel && Boolean(base.rejectedAdjustmentCode) && !(inEv && base.rejectedAdjustmentPunchType === 'CHECK_IN');
-      const attendanceStatusLabel = isDone ? 'Đã hoàn thành ca'
-        : isPendingApproval ? 'Chờ CH / HR duyệt phân ca'
-        : pendingLabel ? pendingLabel
-        : isAbsentShift ? 'Vắng mặt'
-        : inEv ? (isForgotCheckout ? `Quên Ra ca (Vào ${inTimeHm} — Cần bổ sung công)` : isWithinCheckoutGrace ? `Đã vào ca (${inTimeHm} · Còn hạn Ra ca đến ${win.graceDeadlineHm})` : `Đã vào ca (${inTimeHm})`)
-        : base.pendingSwapCode ? `Chờ duyệt đổi ca (${base.pendingSwapCode})`
-        : base.pendingLeaveCode ? `Chờ duyệt nghỉ (${base.pendingLeaveCode})` : 'Chưa điểm danh';
+      const attendanceStatusLabel = isDone ? 'Đã hoàn thành ca' : isPendingApproval ? 'Chờ CH / HR duyệt phân ca' : pendingLabel ? pendingLabel : isAbsentShift ? 'Vắng mặt' : inEv ? (isForgotCheckout ? `Quên Ra ca (Vào ${inTimeHm} — Cần bổ sung công)` : isWithinCheckoutGrace ? `Đã vào ca (${inTimeHm} · Còn hạn Ra ca đến ${win.graceDeadlineHm})` : `Đã vào ca (${inTimeHm})`) : base.pendingSwapCode ? `Chờ duyệt đổi ca (${base.pendingSwapCode})` : base.pendingLeaveCode ? `Chờ duyệt nghỉ (${base.pendingLeaveCode})` : 'Chưa điểm danh';
       const attendanceStatusColor = isDone ? 'green' : isPendingApproval ? 'gold' : pendingLabel ? 'orange' : isAbsentShift ? 'red' : inEv ? (isForgotCheckout || inEv.punctualityStatus === 'LATE' ? 'volcano' : 'processing') : base.pendingSwapCode ? 'purple' : base.pendingLeaveCode ? 'gold' : 'default';
       return {
         ...base, status: effectiveStatus, statusLabel: effectiveStatusLabel, isToday, isExpiredToday, isAbsentShift: !isDone && isAbsentShift,
@@ -136,29 +116,35 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
       const rank = (s: { workDate: string; isToday: boolean; status: string; isAbsentShift: boolean; isExpiredToday: boolean; canCheckOutNow: boolean; checkInEvent: unknown; checkOutEvent: unknown }) =>
         s.canCheckOutNow ? 0 : s.isToday ? (s.status === 'PUBLISHED' && !s.isAbsentShift && !s.isExpiredToday && !s.checkInEvent ? 1 : s.status === 'PUBLISHED' ? 2 : 3) : s.workDate > todayStr ? 4 : 5;
       const ra = rank(a), rb = rank(b);
-      if (ra !== rb) return ra - rb;
-      return a.workDate >= todayStr ? a.workDate.localeCompare(b.workDate) || a.startAt.localeCompare(b.startAt) : b.workDate.localeCompare(a.workDate);
+      return ra !== rb ? ra - rb : (a.workDate >= todayStr ? a.workDate.localeCompare(b.workDate) || a.startAt.localeCompare(b.startAt) : b.workDate.localeCompare(a.workDate));
     });
 
     await sweepExpiredShiftSwaps(ctx);
     const canSwapShift = isOfficialSwapEligibleEmployee(ctx, emp), myShiftCode = (emp.default_shift_code || 'CA_SANG').toUpperCase();
-    const leaves = ctx.db.leaveRequests.filter((l) => l.employee_id === emp.id || l.employee_id === emp.employee_code).reverse().map((l) => ({ ...l, ...resolveShiftTimeDetails(ctx, l.shift_code, l.assignment_id, l.branch_id, l.employee_id, l.leave_date), branchName: ctx.db.branches.get(l.branch_id)?.name ?? branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[l.status] }));
+    const myRawLeaves = await loadCrossPartitionEmployeeLeaves(ctx, emp, todayStr);
+    const leaves = myRawLeaves.map((l) => ({ ...l, ...resolveShiftTimeDetails(ctx, l.shift_code, l.assignment_id, l.branch_id, l.employee_id, l.leave_date), branchName: ctx.db.branches.get(l.branch_id)?.name ?? branch?.name ?? 'Chi nhánh', statusLabel: REQUEST_STATUS_LABELS[l.status] }));
     const isMine = (id: string) => Boolean(id) && (id === emp.id || id === emp.employee_code);
     const isOpenBranchDispatch = (s: { kind: string; status: string; branch_id: string }) => canSwapShift && s.kind === 'HR_DISPATCH' && s.status === 'PENDING_PEER' && Boolean(emp.branch_id && s.branch_id === emp.branch_id);
-    const swaps = ctx.db.shiftSwaps.filter((s) => isMine(s.requester_id) || isMine(s.peer_id) || isOpenBranchDispatch(s)).reverse().map((s) => mapShiftSwapRecord(ctx, s, branch));
+    const myRawSwaps = await loadCrossPartitionEmployeeSwaps(ctx, (s) => isMine(s.requester_id) || isMine(s.peer_id) || isOpenBranchDispatch(s), todayStr);
+    const swaps = myRawSwaps.map((s) => mapShiftSwapRecord(ctx, s, branch));
+
     const peerBusyByEmp = new Map<string, Record<string, string>>(), takenOffByDate: Record<string, string> = {};
     const putBusy = (key: string, date: string, label: string) => { const map = peerBusyByEmp.get(key) ?? {}; peerBusyByEmp.set(key, map); map[date] = label; };
-    for (const a of ctx.db.shiftAssignments.all()) {
-      if (a.day_type === 'OFF' || a.status === 'ON_LEAVE' || a.status === 'ABSENT') continue;
-      const meta = resolveShiftTimeDetails(ctx, a.shift_code, a.id);
-      putBusy(a.employee_id, a.work_date, `${meta.shiftLabel} (${meta.shiftTimeRange})`);
-    }
-    for (const l of ctx.db.leaveRequests.all()) {
-      if (l.status === 'APPROVED' || l.status === 'PENDING') {
-        putBusy(l.employee_id, l.leave_date, 'Đang nghỉ OFF');
-        if (!isMine(l.employee_id)) {
-          const pEmp = ctx.db.employees.get(l.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === l.employee_id);
-          if (pEmp && pEmp.status === 'ACTIVE' && pEmp.branch_id === emp.branch_id && (pEmp.default_shift_code || l.shift_code || 'CA_SANG').toUpperCase() === myShiftCode) takenOffByDate[l.leave_date] = pEmp.full_name;
+    for (const mk of getEmployeePartitionMonths(ctx, todayStr)) {
+      const shStore = await getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk).catch(() => undefined);
+      for (const a of shStore?.all() ?? []) {
+        if (a.day_type === 'OFF' || a.status === 'ON_LEAVE' || a.status === 'ABSENT') continue;
+        const meta = resolveShiftTimeDetails(ctx, a.shift_code, a.id);
+        putBusy(a.employee_id, a.work_date, `${meta.shiftLabel} (${meta.shiftTimeRange})`);
+      }
+      const lvStore = await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk).catch(() => undefined);
+      for (const l of lvStore?.all() ?? []) {
+        if (l.status === 'APPROVED' || l.status === 'PENDING') {
+          putBusy(l.employee_id, l.leave_date, 'Đang nghỉ OFF');
+          if (!isMine(l.employee_id)) {
+            const pEmp = ctx.db.employees.get(l.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === l.employee_id);
+            if (pEmp && pEmp.status === 'ACTIVE' && pEmp.branch_id === emp.branch_id && (pEmp.default_shift_code || l.shift_code || 'CA_SANG').toUpperCase() === myShiftCode) takenOffByDate[l.leave_date] = pEmp.full_name;
+          }
         }
       }
     }
@@ -197,16 +183,18 @@ export async function myAttendanceRoutes(app: FastifyInstance, ctx: AppContext) 
   registerMyShiftRegisterRoute(app, ctx);
 
   app.delete('/api/my-attendance/shifts/:id', { preHandler: requireAuth() }, async (request) => {
-    const { id } = request.params as { id: string }, user = request.auth!.user, emp = await ensurePersonalProfile(ctx, user), shift = ctx.db.shiftAssignments.get(id);
-    if (!shift || (shift.employee_id !== emp.id && shift.employee_id !== emp.employee_code)) throw Errors.forbidden('Bạn chỉ được phép hủy ca làm việc của chính mình');
+    const { id } = request.params as { id: string }, user = request.auth!.user, emp = await ensurePersonalProfile(ctx, user);
+    const found = await findPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', id), shift = found?.record;
+    if (!found || !shift || (shift.employee_id !== emp.id && shift.employee_id !== emp.employee_code)) throw Errors.forbidden('Bạn chỉ được phép hủy ca làm việc của chính mình');
     assertDateNotLockedByPayroll(ctx.db, shift.work_date, 'hủy ca làm việc');
-    if (ctx.db.attendanceEvents.find((e) => e.assignment_id === shift.id)) throw Errors.badRequest('Ca làm việc này đã có dữ liệu điểm danh thực tế, không thể hủy ca');
+    const evStore = await getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', found.monthKey);
+    if (evStore.find((e) => e.assignment_id === shift.id)) throw Errors.badRequest('Ca làm việc này đã có dữ liệu điểm danh thực tế, không thể hủy ca');
     if (shift.status !== 'DRAFT') {
       throw Errors.badRequest(isOfficialSwapEligibleEmployee(ctx, emp)
         ? 'Ca làm việc này đã được Quản lý cửa hàng / HR duyệt phân ca chính thức. Nếu cần thay đổi, vui lòng dùng chức năng Đổi ca / Nhường ca.'
         : 'Ca làm việc này đã được Quản lý cửa hàng / HR duyệt phân ca chính thức, không thể tự hủy.');
     }
-    await ctx.db.shiftAssignments.softDelete(shift.id, shift.version, user.id);
+    await found.store.softDelete(shift.id, shift.version, user.id);
     await ensureSyncedNotifications(ctx);
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: shift.branch_id || emp.branch_id, employeeIds: [emp.id], kind: 'SHIFT_CANCELLED', actorId: user.id });
     return sendSuccess(request, 'Đã hủy đăng ký ca làm việc đang chờ duyệt', { id });

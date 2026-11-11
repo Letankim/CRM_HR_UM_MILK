@@ -11,6 +11,7 @@ import {
 } from './data-partition-helpers.js';
 import { invalidateHistoricalShiftsCache } from './historical-shifts-loader.js';
 import { saveOperationSettings } from './operations-settings.service.js';
+import { invalidatePartitionStoreCache } from './partition-write-router.js';
 
 export interface PartitionListItem {
   monthKey: string; label: string; isActive: boolean; mode: MonthlyPartitionMode;
@@ -159,11 +160,13 @@ export async function switchPartition(db: Database, monthKey: string, actorId: s
     throw Errors.fieldValidation('month_key', 'INVALID_FORMAT', 'Mã tháng phải theo định dạng YYYY_MM (ví dụ 2026_11)', monthKey);
   }
   return runPartitionExclusive(db, async () => {
+    await invalidatePartitionStoreCache(db);
     const target = await ensureMonthlyTarget(db, monthKey, actorId, false);
     const descs = db.monthlyStores();
     const prepared = await Promise.all(descs.map((m) => (m.store as unknown as AnyStore).prepareTarget(target.targetFor(m))));
     descs.forEach((m, idx) => (m.store as unknown as AnyStore).commitPreparedTarget(prepared[idx]!));
     db.partitionMonth = monthKey;
+    await invalidatePartitionStoreCache(db);
     invalidateHistoricalShiftsCache(db);
     await persistActiveMonth(db, monthKey, actorId);
   });
@@ -176,6 +179,7 @@ export async function rolloverToMonth(db: Database, monthKey: string, actorId: s
   }
   return runPartitionExclusive(db, async () => {
     if (monthKey === db.partitionMonth) throw Errors.badRequest(`Hệ thống đang dùng ${monthKeyLabel(monthKey)}`);
+    await invalidatePartitionStoreCache(db);
     const oldMonth = db.partitionMonth;
     const target = await ensureMonthlyTarget(db, monthKey, actorId, true);
     const monthStart = `${monthKey.slice(0, 4)}-${monthKey.slice(5, 7)}-01`;
@@ -205,6 +209,7 @@ export async function rolloverToMonth(db: Database, monthKey: string, actorId: s
     }
     snapshots.forEach((s, idx) => s.store.commitPreparedTarget(prepared[idx]!));
     db.partitionMonth = monthKey;
+    await invalidatePartitionStoreCache(db);
     invalidateHistoricalShiftsCache(db);
     await persistActiveMonth(db, monthKey, actorId);
     return { monthKey, label: monthKeyLabel(monthKey), file: target.entry, carried, pendingLeftBehind };

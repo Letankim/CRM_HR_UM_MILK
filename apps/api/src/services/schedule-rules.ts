@@ -3,6 +3,7 @@ import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs } from '../lib/time.js';
 import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
+import { extractMonthKeyFromDate, getCachedPartitionStore } from './partition-write-router.js';
 import { getVnNowDateAndHm } from './shift-absent-scanner.js';
 
 /**
@@ -29,10 +30,6 @@ export function assertShiftNotInPast(workDate: string, startAt = '', field = 'wo
   }
 }
 
-/**
- * Quy tắc lịch làm việc dùng chung: số ca tối đa / ngày, chu kỳ thử việc 12 ngày,
- * khóa sửa ca đã duyệt và kiểm tra tuần / chu kỳ đã được HR chốt lịch.
- */
 export const matchEmp = (emp: Pick<Employee, 'id' | 'employee_code'>) => (eid: string) => eid === emp.id || eid === emp.employee_code;
 
 /** Ca được tính vào số ca trong ngày của nhân viên (không tính ngày OFF / ca đã nghỉ phép / ca đã chuyển đi). */
@@ -60,7 +57,9 @@ export function isDisallowedProbationShiftCode(
 
 export function employeeShiftsOnDate(ctx: AppContext, emp: Pick<Employee, 'id' | 'employee_code'>, workDate: string, excludeIds: string[] = []): ShiftAssignment[] {
   const isEmp = matchEmp(emp), skip = new Set(excludeIds);
-  return ctx.db.shiftAssignments.filter((a) => !skip.has(a.id) && isEmp(a.employee_id) && a.work_date === workDate && isCountedWorkShift(a));
+  const mk = extractMonthKeyFromDate(workDate);
+  const store = (mk ? getCachedPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk) : undefined) ?? ctx.db.shiftAssignments;
+  return store.filter((a) => !skip.has(a.id) && isEmp(a.employee_id) && a.work_date === workDate && isCountedWorkShift(a));
 }
 
 /** Không nhân viên nào làm quá `maxPerDay` ca trong 1 ngày (mặc định 2 ca, Quản trị viên cấu hình). */
@@ -147,10 +146,6 @@ export function assertApprovedShiftNoteOnlyPatch(
   }
 }
 
-/**
- * Duyệt ca thử việc đăng ký thêm: dời ca cuối chu kỳ (đã liên kết khi đăng ký) lên ca vừa duyệt
- * để nhân viên vẫn làm đủ 7 ca bắt buộc. Chỉ xóa ca cuối khi ca đó chưa phát sinh chấm công.
- */
 export async function applyProbationExtraApproval(ctx: AppContext, approved: ShiftAssignment, actorId: string): Promise<ShiftAssignment | null> {
   if (!approved.linked_assignment_id) return null;
   const linked = ctx.db.shiftAssignments.get(approved.linked_assignment_id);

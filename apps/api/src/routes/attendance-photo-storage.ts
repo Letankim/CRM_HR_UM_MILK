@@ -1,16 +1,12 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AttendanceEvent } from '@umbm/shared';
+import type { AttendanceAdjustment, AttendanceEvent } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { dayjs } from '../lib/time.js';
 import { tolerantWrite } from '../services/background-write.js';
+import { findPartitionAwareRecord } from '../services/partition-write-router.js';
 
-/**
- * Lưu trữ ảnh Camera chấm công & ảnh minh chứng phiếu lỗi chấm công.
- * Cấu trúc thư mục Google Drive: 01_ATTENDANCE_PHOTOS / YYYY-MM / YYYY-MM-DD / <Ca làm việc>
- * (ảnh minh chứng: 03_ADJUSTMENT_EVIDENCE / YYYY-MM / YYYY-MM-DD / <Ca làm việc>).
- */
 function getLocalPhotosDir(ctx: AppContext): string {
   const dir = join(ctx.env.LOCAL_STORAGE_DIR || './storage', 'attendance-photos');
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -37,18 +33,32 @@ export async function flushCoalescedPhotoPatches(ctx: AppContext): Promise<void>
   if (b.timer) { clearTimeout(b.timer); b.timer = null; }
   if (b.events.size > 0) {
     const entries = [...b.events.entries()]; b.events.clear();
-    const items = entries.flatMap(([id, fid]) => { const c = ctx.db.attendanceEvents.get(id); return c ? [{ id, expectedVersion: c.version, patch: { photo_drive_file_id: fid } }] : []; });
-    if (items.length > 0) {
-      const ok = await tolerantWrite(() => ctx.db.attendanceEvents.batchUpdate(items, 'system-drive-sync'));
+    const activeItems = entries.flatMap(([id, fid]) => { const c = ctx.db.attendanceEvents.get(id); return c ? [{ id, expectedVersion: c.version, patch: { photo_drive_file_id: fid } }] : []; });
+    if (activeItems.length > 0) {
+      const ok = await tolerantWrite(() => ctx.db.attendanceEvents.batchUpdate(activeItems, 'system-drive-sync'));
       if (!ok) for (const [id, fid] of entries) await tolerantWrite(async () => { const c = ctx.db.attendanceEvents.get(id); if (c) await ctx.db.attendanceEvents.update(id, c.version, { photo_drive_file_id: fid }, 'system-drive-sync'); });
+    }
+    for (const [id, fid] of entries) {
+      if (ctx.db.attendanceEvents.get(id)) continue;
+      await tolerantWrite(async () => {
+        const found = await findPartitionAwareRecord<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', id);
+        if (found) await found.store.update(id, found.record.version, { photo_drive_file_id: fid }, 'system-drive-sync');
+      });
     }
   }
   if (b.adjustments.size > 0) {
     const entries = [...b.adjustments.entries()]; b.adjustments.clear();
-    const items = entries.flatMap(([id, fid]) => { const c = ctx.db.attendanceAdjustments.get(id); return c ? [{ id, expectedVersion: c.version, patch: { evidence_file_id: fid } }] : []; });
-    if (items.length > 0) {
-      const ok = await tolerantWrite(() => ctx.db.attendanceAdjustments.batchUpdate(items, 'system-drive-sync'));
+    const activeItems = entries.flatMap(([id, fid]) => { const c = ctx.db.attendanceAdjustments.get(id); return c ? [{ id, expectedVersion: c.version, patch: { evidence_file_id: fid } }] : []; });
+    if (activeItems.length > 0) {
+      const ok = await tolerantWrite(() => ctx.db.attendanceAdjustments.batchUpdate(activeItems, 'system-drive-sync'));
       if (!ok) for (const [id, fid] of entries) await tolerantWrite(async () => { const c = ctx.db.attendanceAdjustments.get(id); if (c) await ctx.db.attendanceAdjustments.update(id, c.version, { evidence_file_id: fid }, 'system-drive-sync'); });
+    }
+    for (const [id, fid] of entries) {
+      if (ctx.db.attendanceAdjustments.get(id)) continue;
+      await tolerantWrite(async () => {
+        const found = await findPartitionAwareRecord<AttendanceAdjustment>(ctx.db, 'ATTENDANCE_ADJUSTMENTS', id);
+        if (found) await found.store.update(id, found.record.version, { evidence_file_id: fid }, 'system-drive-sync');
+      });
     }
   }
 }
@@ -96,13 +106,11 @@ function enqueueDriveUpload(job: () => Promise<void>): void {
   pump();
 }
 
-/** Tên thư mục ca an toàn cho Google Drive, ví dụ "Ca Sáng (07h00-12h00)". */
 export function buildShiftFolderName(shiftLabel: string | undefined, shiftCode: string | undefined, startAt?: string, endAt?: string): string {
   const base = (shiftLabel || shiftCode || 'Ca lam viec').replace(/\s*\([^)]*\)\s*/g, '').replace(/[\\/:*?"<>|]/g, '-').trim() || 'Ca lam viec';
   return startAt && endAt ? `${base} (${startAt.replace(':', 'h')}-${endAt.replace(':', 'h')})` : base;
 }
 
-/** Danh sách thư mục con Tháng / Ngày / Ca cho một ngày công. */
 export function buildAttendanceFolderSegments(workDate: string, shiftFolder: string): string[] {
   const day = /^\d{4}-\d{2}-\d{2}$/.test(workDate) ? workDate : dayjs().format('YYYY-MM-DD');
   return [day.slice(0, 7), day, shiftFolder];
@@ -111,7 +119,6 @@ export function buildAttendanceFolderSegments(workDate: string, shiftFolder: str
 export interface PersistedPhotoResult {
   fileId: string;
   sha256: string;
-  /** Gọi sau khi đã insert bản ghi để đồng bộ fileId Google Drive chạy ngầm mà không chặn phản hồi HTTP. */
   syncDrive?: (onDriveFileId: (driveFileId: string) => Promise<unknown>) => void;
 }
 

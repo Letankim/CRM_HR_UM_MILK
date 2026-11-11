@@ -27,7 +27,7 @@ export class TableStore<T extends BaseRecord> {
   get tab(): string { return this.opts.tab; }
   get spreadsheetId(): string { return this.opts.spreadsheetId; }
   private get useEmployeeLive(): boolean {
-    return Boolean(isEmployeeRequestScope() && this.liveBaseline && (this.liveBaseline.spreadsheetId !== this.opts.spreadsheetId || this.liveBaseline.tab !== this.opts.tab));
+    return Boolean(isEmployeeRequestScope() && this.entries.size === 0 && this.liveBaseline && this.liveBaseline.entries.size > 0 && (this.liveBaseline.spreadsheetId !== this.opts.spreadsheetId || this.liveBaseline.tab !== this.opts.tab));
   }
 
   async flushPending(): Promise<void> {
@@ -100,7 +100,7 @@ export class TableStore<T extends BaseRecord> {
   }
 
   get(id: string): T | undefined {
-    const d = (this.useEmployeeLive ? this.liveBaseline?.entries.get(id)?.data : undefined) ?? this.entries.get(id)?.data ?? this.pendingEntries.get(id) ?? (isEmployeeRequestScope() ? this.liveBaseline?.entries.get(id)?.data : undefined);
+    const d = this.entries.get(id)?.data ?? this.pendingEntries.get(id) ?? (this.useEmployeeLive ? this.liveBaseline?.entries.get(id)?.data : undefined);
     return d && !d.is_deleted ? d : undefined;
   }
 
@@ -113,12 +113,11 @@ export class TableStore<T extends BaseRecord> {
   async insert(input: InsertInput<T>, actorId: string): Promise<T> {
     const now = nowIso(), createdAt = input.created_at || now, updatedAt = input.updated_at || createdAt;
     const record = this.validate({ ...input, id: input.id ?? newId(), created_at: createdAt, created_by: actorId, updated_at: updatedAt, updated_by: actorId, version: 1, is_deleted: false });
-    const activeMap = this.useEmployeeLive ? this.liveBaseline!.entries : this.entries;
-    if (activeMap.has(record.id) || this.pendingEntries.has(record.id)) {
+    if (this.entries.has(record.id) || this.pendingEntries.has(record.id)) {
       throw Errors.badRequest(`id ${record.id} đã tồn tại`);
     }
-    const targetSid = this.useEmployeeLive ? this.liveBaseline!.spreadsheetId : this.opts.spreadsheetId;
-    const targetTab = this.useEmployeeLive ? this.liveBaseline!.tab : this.opts.tab;
+    const targetSid = this.opts.spreadsheetId;
+    const targetTab = this.opts.tab;
     this.pendingEntries.set(record.id, record);
     return new Promise<T>((resolve, reject) => {
       this.insertBuffer.push({ record, spreadsheetId: targetSid, tab: targetTab, resolve, reject });
