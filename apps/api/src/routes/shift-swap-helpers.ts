@@ -1,16 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { mondayOfWeek, SHIFT_SWAP_KIND_LABELS, SHIFT_SWAP_STATUS_LABELS, SYSTEM_CONFIG, type Branch, type ShiftSwap } from '@umbm/shared';
+import { SHIFT_SWAP_KIND_LABELS, SHIFT_SWAP_STATUS_LABELS, SYSTEM_CONFIG, type Branch, type ShiftSwap } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
-import { nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, requirePermission } from '../plugins/auth-context.js';
 import { SocketEvents } from '../realtime/realtime.js';
+import { findPartitionAwareRecord, updatePartitionAwareRecord } from '../services/partition-write-router.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
-import { emitScheduleRealtime, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 import { auditOutOfWeekSwaps as auditOutOfWeekSwapsCore } from '../services/shift-swap-audit.service.js';
+import { emitScheduleRealtime, resolveEmployeeBranchId, resolveShiftTimeDetails } from './account-employee-sync.js';
 
 export const zDecideSwapBody = z.object({
   version: z.coerce.number().int().min(1, 'Phiên bản bản ghi không hợp lệ'),
@@ -113,14 +113,15 @@ export async function auditOutOfWeekSwaps(ctx: AppContext, actorId = 'system-aud
 
 export function registerShiftSwapAllowanceRoute(app: FastifyInstance, ctx: AppContext): void {
   app.put('/api/admin/shift-swaps/:id/allowance', { preHandler: requirePermission('swap.approve') }, async (request) => {
-    const { id } = request.params as { id: string }, body = zUpdateSwapAllowanceBody.parse(request.body), before = ctx.db.shiftSwaps.get(id);
+    const { id } = request.params as { id: string }, body = zUpdateSwapAllowanceBody.parse(request.body);
+    const found = await findPartitionAwareRecord<ShiftSwap>(ctx.db, 'SHIFT_SWAPS', id), before = found?.record ?? ctx.db.shiftSwaps.get(id);
     if (!before) throw Errors.notFound('Yêu cầu đổi ca', id);
     assertBranchAccess(request, resolveEmployeeBranchId(ctx, before.requester_id, before.branch_id));
     assertDateNotLockedByPayroll(ctx.db, before.from_work_date, 'cập nhật phụ cấp đổi ca');
     if (before.status !== 'APPROVED') throw Errors.badRequest('Chỉ được phép cập nhật phụ cấp đối với yêu cầu đổi / nhường ca đã cập nhật lịch');
     const actorId = request.auth!.user.id;
     const patch = resolveSwapAllowance({ decision: 'APPROVED', allowance_eligible: body.allowance_eligible, allowance_amount_vnd: body.allowance_amount_vnd });
-    const updated = await ctx.db.shiftSwaps.update(id, body.version, { ...patch, ...(body.decision_reason !== undefined ? { decision_reason: body.decision_reason } : {}) }, actorId);
+    const updated = await updatePartitionAwareRecord<ShiftSwap>(ctx.db, 'SHIFT_SWAPS', id, body.version, { ...patch, ...(body.decision_reason !== undefined ? { decision_reason: body.decision_reason } : {}) }, before.from_work_date, actorId);
     await recalculateOpenPeriods(ctx, actorId);
     await ctx.audit.record(auditContext(request), { action: 'swap.update_allowance', entity: 'SHIFT_SWAPS', entityId: id, before: { allowance_eligible: before.allowance_eligible, allowance_amount_vnd: before.allowance_amount_vnd }, after: { allowance_eligible: updated.allowance_eligible, allowance_amount_vnd: updated.allowance_amount_vnd } });
     emitScheduleRealtime(ctx, SocketEvents.SWAP_UPDATED, { branchId: before.branch_id, employeeIds: [before.requester_id, before.peer_id], kind: 'SWAP_ALLOWANCE_UPDATED', actorId });

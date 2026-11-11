@@ -38,13 +38,10 @@ async function persistConfirmedZaloSession(
   const prevSecret = matchedRow ? decryptZaloPayload(ctx, matchedRow.value) : null;
 
   const secret: StoredZaloAccountSecret = {
-    owner_user_id: owner.id,
-    zalo_name: params.zaloName || prevSecret?.zalo_name || `HR ${owner.display_name}`,
+    owner_user_id: owner.id, zalo_name: params.zaloName || prevSecret?.zalo_name || `HR ${owner.display_name}`,
     zalo_phone: params.zaloPhone || prevSecret?.zalo_phone || normalizePhone(owner.phone) || '0901000002',
     zalo_id: params.zaloId || prevSecret?.zalo_id || `zalo_${owner.username}`,
-    access_token: params.credentialsJson,
-    is_default: state.is_default,
-    status: 'ACTIVE',
+    access_token: params.credentialsJson, is_default: state.is_default, status: 'ACTIVE',
     greeting_template: prevSecret?.greeting_template || DEFAULT_ZALO_TEMPLATES.greeting,
     invite_template: prevSecret?.invite_template || DEFAULT_ZALO_TEMPLATES.invite,
     reminder_template: prevSecret?.reminder_template || DEFAULT_ZALO_TEMPLATES.reminder,

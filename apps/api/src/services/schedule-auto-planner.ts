@@ -3,8 +3,9 @@ import type { AppContext } from '../context.js';
 import { dayjs } from '../lib/time.js';
 import { findBranchShiftTemplate, resolveEmployeeBranchId } from '../routes/account-employee-sync.js';
 import { isOfficialSwapEligibleEmployee } from '../routes/employee-mapper.js';
+import { listMonthKeysInRange } from './historical-shifts-loader.js';
 import { getOperationSettings } from './operations-settings.service.js';
-import { getCachedPartitionStore, resolveTargetMonthForRecord } from './partition-write-router.js';
+import { extractMonthKeyFromDate, getCachedPartitionStore, resolveTargetMonthForRecord } from './partition-write-router.js';
 import { buildShiftGroupFairnessMap, compareFairShiftCandidates } from './schedule-fairness.js';
 import { employeeShiftsOnDate, isCountedWorkShift, isProbationShift, matchEmp, resolveProbationCycle } from './schedule-rules.js';
 import { findEmployeeShiftConflictOnDate, resolveApplicableStaffingRule, toMinuteSpan } from './schedule-staffing-helper.js';
@@ -24,8 +25,19 @@ export const MONTHLY_WORK_DAYS_TARGET = { min: 10, max: 12 } as const;
 const OFF_ACTIVE = new Set(['PENDING', 'DRAFT', 'APPROVED']);
 const vi = (d: string) => dayjs(d).format('DD/MM/YYYY');
 
-function collectLeavesInRangeAcrossPartitions(ctx: AppContext, dates: string[]): LeaveRequest[] {
-  const mks = Array.from(new Set([ctx.db.partitionMonth, ...dates.map((d) => resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: d }, d))]));
+export function getShiftStoreForDate(ctx: AppContext, workDate: string) {
+  const mk = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: workDate }, workDate);
+  return getCachedPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk) ?? ctx.db.shiftAssignments;
+}
+
+export function collectLeavesInRangeAcrossPartitions(ctx: AppContext, dates: string[]): LeaveRequest[] {
+  const sorted = [...dates].filter(Boolean).sort();
+  const rangeKeys = sorted.length >= 2 ? listMonthKeysInRange(sorted[0]!, sorted[sorted.length - 1]!) : [];
+  const mks = Array.from(new Set([
+    ctx.db.partitionMonth, ...rangeKeys,
+    ...dates.map((d) => extractMonthKeyFromDate(d)),
+    ...dates.map((d) => resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: d }, d)),
+  ]));
   const map = new Map<string, LeaveRequest>();
   for (const mk of mks) {
     const store = getCachedPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.leaveRequests : undefined);
@@ -37,12 +49,9 @@ function collectLeavesInRangeAcrossPartitions(ctx: AppContext, dates: string[]):
 
 /** Bộ đếm sức chứa ca theo chi nhánh / ngày / khung ca (chỉ tính Nhân viên chính thức: 1 ca = đúng 1 người chính thức, ca thử việc không tính vào định biên). */
 function createCapacityTracker(ctx: AppContext, ignoredAssignmentIds: Set<string> = new Set()) {
-  const planned = new Map<string, number>();
-  const key = (b: string, d: string, s: string) => `${b}|${d}|${s}`;
-  const existing = (b: string, d: string, s: string) => ctx.db.shiftAssignments.filter((a) =>
-    !ignoredAssignmentIds.has(a.id) && a.work_date === d && a.shift_code === s && a.status !== 'DRAFT'
-    && !isProbationShift(ctx, a)
-    && isCountedWorkShift(a) && resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id) === b).length;
+  const planned = new Map<string, number>(), key = (b: string, d: string, s: string) => `${b}|${d}|${s}`;
+  const existing = (b: string, d: string, s: string) => getShiftStoreForDate(ctx, d).filter((a) =>
+    !ignoredAssignmentIds.has(a.id) && a.work_date === d && a.shift_code === s && a.status !== 'DRAFT' && !isProbationShift(ctx, a) && isCountedWorkShift(a) && resolveEmployeeBranchId(ctx, a.employee_id, a.branch_id) === b).length;
   return {
     count: (b: string, d: string, s: string) => existing(b, d, s) + (planned.get(key(b, d, s)) ?? 0),
     capacity: (b: string, s: string) => resolveApplicableStaffingRule(ctx, b, s)?.max_staff ?? 1,
@@ -52,46 +61,37 @@ function createCapacityTracker(ctx: AppContext, ignoredAssignmentIds: Set<string
 }
 
 function collectOffBlockedAssignmentIds(ctx: AppContext, fromDate: string, toDate: string): Set<string> {
-  const allLeaves = collectLeavesInRangeAcrossPartitions(ctx, [fromDate, toDate]);
-  const activeLeaves = allLeaves.filter((l) => OFF_ACTIVE.has(l.status) && l.leave_date >= fromDate && l.leave_date <= toDate);
+  const activeLeaves = collectLeavesInRangeAcrossPartitions(ctx, [fromDate, toDate]).filter((l) => OFF_ACTIVE.has(l.status) && l.leave_date >= fromDate && l.leave_date <= toDate);
   const blocked = new Set<string>();
   for (const l of activeLeaves) {
     const emp = ctx.db.employees.get(l.employee_id) ?? ctx.db.employees.find((e) => e.employee_code === l.employee_id);
-    for (const a of ctx.db.shiftAssignments.all()) {
-      if (a.work_date !== l.leave_date || !isCountedWorkShift(a)) continue;
-      if (a.employee_id === l.employee_id || (emp && matchEmp(emp)(a.employee_id))) blocked.add(a.id);
+    for (const a of getShiftStoreForDate(ctx, l.leave_date).all()) {
+      if (a.work_date === l.leave_date && isCountedWorkShift(a) && (a.employee_id === l.employee_id || (emp && matchEmp(emp)(a.employee_id)))) blocked.add(a.id);
     }
   }
   return blocked;
 }
 
 /**
- * Lập kế hoạch tuần cho Nhân viên chính thức theo quy tắc 1 ca = đúng 1 người & xoay vòng công bằng trong nội bộ từng nhóm ca mặc định
- * (cân bằng mục tiêu 10–12 ngày công/tháng, khi thành viên cùng nhóm nghỉ OFF thì các thành viên còn lại tự động bù ca).
+ * Lập kế hoạch tuần cho Nhân viên chính thức theo quy tắc 1 ca = đúng 1 người & xoay vòng công bằng trong nội bộ từng nhóm ca mặc định.
  */
 export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; branchId?: string; historicalShifts?: ShiftAssignment[] }): PlanResult {
-  const settings = getOperationSettings(ctx.db), dates = weekDates(params.weekStart);
-  const ignoredIds = collectOffBlockedAssignmentIds(ctx, dates[0]!, dates[6]!);
+  const settings = getOperationSettings(ctx.db), dates = weekDates(params.weekStart), ignoredIds = collectOffBlockedAssignmentIds(ctx, dates[0]!, dates[6]!);
   const tracker = createCapacityTracker(ctx, ignoredIds);
-  const branches = ctx.db.branches.filter((b) => b.status === 'ACTIVE' && (!params.branchId || params.branchId === 'ALL' || b.id === params.branchId || b.code === params.branchId))
-    .sort((a, b) => a.code.localeCompare(b.code));
+  const branches = ctx.db.branches.filter((b) => b.status === 'ACTIVE' && (!params.branchId || params.branchId === 'ALL' || b.id === params.branchId || b.code === params.branchId)).sort((a, b) => a.code.localeCompare(b.code));
   const branchSet = new Set(branches.map((b) => b.id));
-  const emps = ctx.db.employees.filter((e) => isOfficialSwapEligibleEmployee(ctx, e) && branchSet.has(e.branch_id))
-    .sort((a, b) => a.employee_code.localeCompare(b.employee_code));
-  const offRequests = ctx.db.leaveRequests.filter((l) => OFF_ACTIVE.has(l.status) && l.leave_date >= dates[0]! && l.leave_date <= dates[6]! && emps.some((e) => matchEmp(e)(l.employee_id)));
+  const emps = ctx.db.employees.filter((e) => isOfficialSwapEligibleEmployee(ctx, e) && branchSet.has(e.branch_id)).sort((a, b) => a.employee_code.localeCompare(b.employee_code));
+  const offRequests = collectLeavesInRangeAcrossPartitions(ctx, dates).filter((l) => OFF_ACTIVE.has(l.status) && l.leave_date >= dates[0]! && l.leave_date <= dates[6]! && emps.some((e) => matchEmp(e)(l.employee_id)));
 
   const monthPrefix = params.weekStart.slice(0, 7);
-  const monthPool = (params.historicalShifts ?? ctx.db.shiftAssignments.all()).filter(
-    (a) => !ignoredIds.has(a.id) && a.work_date.startsWith(monthPrefix) && a.status !== 'DRAFT' && isCountedWorkShift(a),
-  );
+  const monthPool = (params.historicalShifts ?? getShiftStoreForDate(ctx, params.weekStart).all()).filter((a) => !ignoredIds.has(a.id) && a.work_date.startsWith(monthPrefix) && a.status !== 'DRAFT' && isCountedWorkShift(a));
   const weeklyCount = new Map<string, number>(), monthlyCount = new Map<string, number>();
   const dailySpans = new Map<string, [number, number][]>(), dailyCodes = new Map<string, Set<string>>();
   for (const emp of emps) {
     let wCount = 0;
     const isE = matchEmp(emp);
     for (const d of dates) {
-      const ek = `${emp.id}|${d}`;
-      const approvedRows = ctx.db.shiftAssignments.filter((a) => !ignoredIds.has(a.id) && a.work_date === d && isE(a.employee_id) && isCountedWorkShift(a) && a.status !== 'DRAFT');
+      const ek = `${emp.id}|${d}`, approvedRows = getShiftStoreForDate(ctx, d).filter((a) => !ignoredIds.has(a.id) && a.work_date === d && isE(a.employee_id) && isCountedWorkShift(a) && a.status !== 'DRAFT');
       wCount += approvedRows.length;
       dailySpans.set(ek, approvedRows.map((a) => toMinuteSpan(a.start_at, a.end_at)));
       dailyCodes.set(ek, new Set(approvedRows.map((a) => a.shift_code.toUpperCase())));
@@ -111,18 +111,12 @@ export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; b
 
   const planned: PlannedShift[] = [], issues: PlanIssue[] = [];
   const assign = (emp: Employee, branchName: string, d: string, tpl: ShiftTemplate, isCoverShift: boolean) => {
-    const ek = `${emp.id}|${d}`;
-    planned.push({
-      employeeId: emp.id, employeeCode: emp.employee_code, employeeName: emp.full_name, stage: emp.stage, branchId: emp.branch_id, branchName,
-      workDate: d, shiftCode: tpl.code, shiftLabel: tpl.name, startAt: tpl.start_time, endAt: tpl.end_time, hours: tpl.standard_hours || 5, templateId: tpl.id, isCoverShift,
-    });
+    const ek = `${emp.id}|${d}`, set = dailyCodes.get(ek) ?? new Set<string>();
+    planned.push({ employeeId: emp.id, employeeCode: emp.employee_code, employeeName: emp.full_name, stage: emp.stage, branchId: emp.branch_id, branchName, workDate: d, shiftCode: tpl.code, shiftLabel: tpl.name, startAt: tpl.start_time, endAt: tpl.end_time, hours: tpl.standard_hours || 5, templateId: tpl.id, isCoverShift });
     tracker.add(emp.branch_id, d, tpl.code);
     dailySpans.set(ek, [...(dailySpans.get(ek) ?? []), toMinuteSpan(tpl.start_time, tpl.end_time)]);
-    const set = dailyCodes.get(ek) ?? new Set<string>();
-    set.add(tpl.code.toUpperCase());
-    dailyCodes.set(ek, set);
-    weeklyCount.set(emp.id, (weeklyCount.get(emp.id) ?? 0) + 1);
-    monthlyCount.set(emp.id, (monthlyCount.get(emp.id) ?? 0) + 1);
+    set.add(tpl.code.toUpperCase()); dailyCodes.set(ek, set);
+    weeklyCount.set(emp.id, (weeklyCount.get(emp.id) ?? 0) + 1); monthlyCount.set(emp.id, (monthlyCount.get(emp.id) ?? 0) + 1);
   };
   const rankCandidates = (a: Employee, b: Employee, fairnessMap: ReturnType<typeof buildShiftGroupFairnessMap>) => {
     const ma = monthlyCount.get(a.id) ?? 0, mb = monthlyCount.get(b.id) ?? 0;
@@ -176,8 +170,7 @@ export function planOfficialWeek(ctx: AppContext, params: { weekStart: string; b
 export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: string, historicalShifts?: ShiftAssignment[]): PlanResult & { cycle: ReturnType<typeof resolveProbationCycle>; existingCount: number } {
   const settings = getOperationSettings(ctx.db), cycle = resolveProbationCycle(emp, todayStr);
   const ignoredIds = collectOffBlockedAssignmentIds(ctx, cycle.start, cycle.end), isEmp = matchEmp(emp);
-  const allCycleLeaves = collectLeavesInRangeAcrossPartitions(ctx, cycle.dates);
-  const offRequests = allCycleLeaves.filter((l) => isEmp(l.employee_id) && OFF_ACTIVE.has(l.status) && cycle.dates.includes(l.leave_date));
+  const offRequests = collectLeavesInRangeAcrossPartitions(ctx, cycle.dates).filter((l) => isEmp(l.employee_id) && OFF_ACTIVE.has(l.status) && cycle.dates.includes(l.leave_date));
   const issues: PlanIssue[] = [], dayIssues: PlanIssue[] = [], planned: PlannedShift[] = [];
   const empName = `${emp.full_name} (${emp.employee_code})`;
   if (offRequests.length > cycle.offLimit) {
@@ -188,10 +181,8 @@ export function planProbationCycle(ctx: AppContext, emp: Employee, todayStr: str
     : employeeShiftsOnDate(ctx, emp, d, [...ignoredIds]);
   const existingCount = cycle.dates.reduce((sum, d) => sum + shiftsOnDate(d).length, 0);
   let total = existingCount;
-  const defCode = (emp.default_shift_code || 'CA_SANG').toUpperCase();
-  const defTpl = findBranchShiftTemplate(ctx, defCode, emp.branch_id);
-  const candidateTpls = defTpl ? [defTpl] : [];
-  const branchName = ctx.db.branches.get(emp.branch_id)?.name ?? emp.branch_id;
+  const defCode = (emp.default_shift_code || 'CA_SANG').toUpperCase(), defTpl = findBranchShiftTemplate(ctx, defCode, emp.branch_id);
+  const candidateTpls = defTpl ? [defTpl] : [], branchName = ctx.db.branches.get(emp.branch_id)?.name ?? emp.branch_id;
 
   for (const workDate of cycle.dates) {
     if (total >= cycle.workRequired) break;

@@ -81,17 +81,11 @@ function recoverZaloPayloadFromRow(r: { key: string; label: string; note: string
   const rawName = (parts.length > 1 ? parts.slice(1).join(' — ') : r.label).replace(/\(\s*0\d{9}\s*\)\s*$/, '').trim();
   const phone = normalizePhone(phoneMatch?.[1] ?? '') ?? fallbackPhone;
   return {
-    owner_user_id: r.note || fallbackUserId,
-    zalo_name: rawName || `HR Tuyển Dụng ${SYSTEM_CONFIG.brandName}`,
-    zalo_phone: phone,
-    zalo_id: `zalo_${phone}`,
-    access_token: `zalo_recovered_${phone}`,
-    is_default: r.key.endsWith('_DEFAULT'),
-    status: 'ACTIVE',
-    greeting_template: DEFAULT_ZALO_TEMPLATES.greeting,
-    invite_template: DEFAULT_ZALO_TEMPLATES.invite,
-    reminder_template: DEFAULT_ZALO_TEMPLATES.reminder,
-    pass_template: DEFAULT_ZALO_TEMPLATES.pass,
+    owner_user_id: r.note || fallbackUserId, zalo_name: rawName || `HR Tuyển Dụng ${SYSTEM_CONFIG.brandName}`,
+    zalo_phone: phone, zalo_id: `zalo_${phone}`, access_token: `zalo_recovered_${phone}`,
+    is_default: r.key.endsWith('_DEFAULT'), status: 'ACTIVE',
+    greeting_template: DEFAULT_ZALO_TEMPLATES.greeting, invite_template: DEFAULT_ZALO_TEMPLATES.invite,
+    reminder_template: DEFAULT_ZALO_TEMPLATES.reminder, pass_template: DEFAULT_ZALO_TEMPLATES.pass,
   };
 }
 

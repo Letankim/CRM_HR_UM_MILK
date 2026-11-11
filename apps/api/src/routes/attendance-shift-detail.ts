@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { ADJUSTMENT_PUNCH_TYPE_LABELS, type AttendanceEvent } from '@umbm/shared';
+import { ADJUSTMENT_PUNCH_TYPE_LABELS, type AttendanceAdjustment, type AttendanceEvent, type ShiftAssignment } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { sendSuccess } from '../lib/response.js';
 import { assertBranchAccess, requirePermission } from '../plugins/auth-context.js';
+import { findPartitionAwareRecord, getPartitionStore, resolveTargetMonthForRecord } from '../services/partition-write-router.js';
 import { findBranchShiftTemplate, resolveEmployeeBranchId } from './account-employee-sync.js';
 import { mapAttendanceEvent, migrateLegacyBase64Photos } from './attendance-helpers.js';
 import { resolveShiftLabel } from './employee-mapper.js';
@@ -22,7 +23,8 @@ export function registerShiftAttendanceDetailRoute(app: FastifyInstance, ctx: Ap
     async (request) => {
       const { assignmentId } = request.params as { assignmentId: string };
       void migrateLegacyBase64Photos(ctx);
-      const assign = ctx.db.shiftAssignments.get(assignmentId);
+      const foundAssign = await findPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', assignmentId);
+      const assign = foundAssign?.record ?? ctx.db.shiftAssignments.get(assignmentId);
       if (!assign) throw Errors.notFound('Ca làm việc phân công', assignmentId);
 
       const emp = ctx.db.employees.get(assign.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === assign.employee_id);
@@ -36,18 +38,26 @@ export function registerShiftAttendanceDetailRoute(app: FastifyInstance, ctx: Ap
         assertBranchAccess(request, branchId);
       }
 
+      const targetMonth = foundAssign?.monthKey || resolveTargetMonthForRecord(ctx.db, 'ATTENDANCE_EVENTS', { work_date: assign.work_date, assignment_id: assign.id }, assign.work_date);
+      const [evStore, adjStore] = await Promise.all([
+        getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', targetMonth, caller.id),
+        getPartitionStore<AttendanceAdjustment>(ctx.db, 'ATTENDANCE_ADJUSTMENTS', targetMonth, caller.id),
+      ]);
+      const allEvents = evStore === ctx.db.attendanceEvents ? evStore.all() : Array.from(new Map([...evStore.all(), ...ctx.db.attendanceEvents.all()].map((e) => [e.id, e])).values());
+      const allAdjs = adjStore === ctx.db.attendanceAdjustments ? adjStore.all() : Array.from(new Map([...adjStore.all(), ...ctx.db.attendanceAdjustments.all()].map((a) => [a.id, a])).values());
+
       const isSameEmp = (empIdRaw: string) =>
         empIdRaw === assign.employee_id || Boolean(emp && (empIdRaw === emp.id || empIdRaw === emp.employee_code));
 
-      const directEvents = sortEventsLatestFirst(ctx.db.attendanceEvents.filter((e) => e.assignment_id === assign.id));
+      const directEvents = sortEventsLatestFirst(allEvents.filter((e) => e.assignment_id === assign.id));
       const fallbackEvents = sortEventsLatestFirst(
-        ctx.db.attendanceEvents.filter((e) => e.assignment_id !== assign.id && isSameEmp(e.employee_id) && e.work_date === assign.work_date && e.shift_code === assign.shift_code),
+        allEvents.filter((e) => e.assignment_id !== assign.id && isSameEmp(e.employee_id) && e.work_date === assign.work_date && e.shift_code === assign.shift_code),
       );
 
       const rawInEv = directEvents.find((e) => e.type === 'CHECK_IN') ?? fallbackEvents.find((e) => e.type === 'CHECK_IN') ?? null;
       const rawOutEv = directEvents.find((e) => e.type === 'CHECK_OUT') ?? fallbackEvents.find((e) => e.type === 'CHECK_OUT') ?? null;
 
-      const matchedAdjs = ctx.db.attendanceAdjustments.filter(
+      const matchedAdjs = allAdjs.filter(
         (adj) => adj.assignment_id === assign.id || (isSameEmp(adj.employee_id) && adj.work_date === assign.work_date && adj.shift_code === assign.shift_code),
       );
       const approvedCompletionAdj = matchedAdjs.find((a) => a.status === 'APPROVED' && a.punch_type !== 'CHECK_IN') ?? null;

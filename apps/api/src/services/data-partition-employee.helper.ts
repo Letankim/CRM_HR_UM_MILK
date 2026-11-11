@@ -9,7 +9,7 @@ import {
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import type { BaseRecord } from '../sheets/table-store.js';
-import { readPartitionRegistry } from './data-partition.service.js';
+import { readPartitionRegistry } from './data-partition-helpers.js';
 import { loadShiftsAcrossPartitions } from './historical-shifts-loader.js';
 import {
   getCachedPartitionStore,
@@ -147,7 +147,7 @@ export async function loadCrossPartitionEmployeeSwaps(
 
 export function resolveWorkCollectorStores(ctx: AppContext, from: string, to: string) {
   const reg = readPartitionRegistry(ctx.db);
-  if (reg.length === 0) {
+  if (reg.length === 0 && !ctx.db.partitionMonth) {
     return {
       shiftsAll: (includeDeleted = false) => ctx.db.shiftAssignments.all(includeDeleted),
       getShift: (id: string) => ctx.db.shiftAssignments.get(id),
@@ -163,7 +163,8 @@ export function resolveWorkCollectorStores(ctx: AppContext, from: string, to: st
     const ym = mk.replace('_', '-');
     return from <= `${ym}-31` && to >= `${ym}-01`;
   });
-  const months = Array.from(new Set([mFrom, mTo, ...overlapReg]));
+  const months = Array.from(new Set(['', mFrom, mTo, ...overlapReg]));
+  const lookupMonths = Array.from(new Set([mFrom, mTo, ...overlapReg, '']));
   const collectTable = <T extends BaseRecord>(table: MonthlyTableName, fallback: readonly T[], includeDeleted = false): T[] => {
     const map = new Map<string, T>();
     let foundStore = false;
@@ -171,14 +172,19 @@ export function resolveWorkCollectorStores(ctx: AppContext, from: string, to: st
       const st = getCachedPartitionStore<T>(ctx.db, table, mk);
       if (!st) continue;
       foundStore = true;
-      for (const r of st.all(includeDeleted)) map.set(r.id, r);
+      for (const r of st.all(includeDeleted)) {
+        const prev = map.get(r.id);
+        if (!prev || (prev.is_deleted && !r.is_deleted) || (!r.is_deleted && r.version >= prev.version)) {
+          map.set(r.id, r);
+        }
+      }
     }
     return foundStore ? Array.from(map.values()) : [...fallback];
   };
   return {
     shiftsAll: (includeDeleted = false) => collectTable('SHIFT_ASSIGNMENTS', ctx.db.shiftAssignments.all(includeDeleted), includeDeleted),
     getShift: (id: string) => {
-      for (const mk of months) {
+      for (const mk of lookupMonths) {
         const found = getCachedPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk)?.get(id);
         if (found && !found.is_deleted) return found;
       }

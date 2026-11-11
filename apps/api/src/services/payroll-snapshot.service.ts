@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
-import { OPERATION_SETTING_KEYS, PAYROLL_ITEM_TYPE_LABELS, SYSTEM_CONFIG, parsePartitionRegistry, type PayPeriod } from '@umbm/shared';
+import { PAYROLL_ITEM_TYPE_LABELS, SYSTEM_CONFIG, type PayPeriod } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { nowIso } from '../lib/time.js';
 import { SocketEvents } from '../realtime/realtime.js';
 import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
+import { resolveWorkCollectorStores } from './data-partition-employee.helper.js';
+import { readPartitionRegistry } from './data-partition-helpers.js';
 import { getOperationSettings } from './operations-settings.service.js';
 import { preloadEmployeePartitionStores } from './partition-write-router.js';
 import { computeEmployeePayroll } from './payroll-calculator.js';
@@ -16,7 +18,7 @@ export { collectWorkEntries } from './payroll-work-collector.js';
 const periodSigByDb = new WeakMap<object, Map<string, string>>();
 const periodInFlightByDb = new WeakMap<object, Map<string, Promise<PayPeriod>>>();
 
-function computePeriodDirtySig(ctx: AppContext, period: PayPeriod): string {
+function computePeriodDirtySig(ctx: AppContext, period: PayPeriod, workStores: ReturnType<typeof resolveWorkCollectorStores>): string {
   const sumVer = <T extends { version: number; updated_at: string }>(rows: readonly T[]) => {
     let v = rows.length, maxTs = '';
     for (const r of rows) { v += r.version; if (r.updated_at > maxTs) maxTs = r.updated_at; }
@@ -24,12 +26,13 @@ function computePeriodDirtySig(ctx: AppContext, period: PayPeriod): string {
   };
   const inRange = <T extends { work_date: string; version: number; updated_at: string }>(rows: readonly T[]) =>
     sumVer(rows.filter((r) => r.work_date >= period.from_date && r.work_date <= period.to_date));
+  const allShifts = workStores.shiftsAll(true);
   return [
-    'v5', ctx.db.partitionMonth, period.version, period.from_date, period.to_date,
-    sumVer(ctx.db.employees.all(true)), sumVer(ctx.db.payRates.all(true)),
-    inRange(ctx.db.shiftAssignments.all(true)), inRange(ctx.db.attendanceEvents.all(true)), inRange(ctx.db.attendanceAdjustments.all(true)),
-    sumVer(ctx.db.leaveRequests.all(true).filter((l) => l.leave_date >= period.from_date && l.leave_date <= period.to_date)),
-    sumVer(ctx.db.shiftSwaps.all(true)), sumVer(ctx.db.payrollItems.all(true).filter((i) => i.period_id === period.id)),
+    'v6', ctx.db.partitionMonth, period.version, period.from_date, period.to_date,
+    allShifts.length, sumVer(ctx.db.employees.all(true)), sumVer(ctx.db.payRates.all(true)),
+    inRange(allShifts), inRange(workStores.events()), inRange(workStores.adjustments()),
+    sumVer(workStores.leaves().filter((l) => l.leave_date >= period.from_date && l.leave_date <= period.to_date)),
+    sumVer(workStores.swaps()), sumVer(ctx.db.payrollItems.all(true).filter((i) => i.period_id === period.id)),
     sumVer(ctx.db.payrollSnapshots.all(true).filter((s) => s.period_id === period.id)),
   ].join('|');
 }
@@ -55,17 +58,21 @@ export async function recalculateOpenPeriods(ctx: AppContext, actorId: string): 
   ctx.realtime()?.toTargets({ roles: ['ADMIN', 'FINANCE', 'HR'] }, SocketEvents.PAYROLL_UPDATED, { actorId });
 }
 
-function shouldPreserveOtherPartitionSnapshot(ctx: AppContext, period: PayPeriod, existingSnaps: readonly { total_shifts_count: number; approved_hours: number }[]): boolean {
-  if (existingSnaps.length === 0) return false;
-  if (ctx.db.shiftAssignments.find((a) => a.work_date >= period.from_date && a.work_date <= period.to_date)) return false;
+function shouldPreserveOtherPartitionSnapshot(
+  ctx: AppContext,
+  period: PayPeriod,
+  existingSnaps: readonly { total_shifts_count: number; approved_hours: number }[],
+  shiftsInRangeCount: number,
+  force: boolean,
+): boolean {
+  if (force || existingSnaps.length === 0 || shiftsInRangeCount > 0) return false;
+  if (!existingSnaps.some((s) => s.total_shifts_count > 0 || s.approved_hours > 0)) return false;
   const pMonth = ctx.db.partitionMonth;
   if (pMonth) {
     const ym = `${pMonth.slice(0, 4)}-${pMonth.slice(5, 7)}`;
     if (!(period.from_date <= `${ym}-31` && period.to_date >= `${ym}-01`)) return true;
   }
-  if (!existingSnaps.some((s) => s.total_shifts_count > 0 || s.approved_hours > 0)) return false;
-  const reg = parsePartitionRegistry(ctx.db.systemSettings.find((s) => s.key === OPERATION_SETTING_KEYS.DATA_PARTITIONS_REGISTRY)?.value);
-  return reg.some((r) => {
+  return readPartitionRegistry(ctx.db).some((r) => {
     if (r.monthKey === pMonth) return false;
     const ym = `${r.monthKey.slice(0, 4)}-${r.monthKey.slice(5, 7)}`;
     return period.from_date <= `${ym}-31` && period.to_date >= `${ym}-01`;
@@ -73,22 +80,25 @@ function shouldPreserveOtherPartitionSnapshot(ctx: AppContext, period: PayPeriod
 }
 
 async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, actorId: string, force = false): Promise<PayPeriod> {
-  await Promise.all([preloadEmployeePartitionStores(ctx.db), sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId), ensureLegacySalaryProfiles(ctx.db, actorId)]);
+  await preloadEmployeePartitionStores(ctx.db);
+  const workStores = resolveWorkCollectorStores(ctx, period.from_date, period.to_date);
   let sigMap = periodSigByDb.get(ctx.db);
   if (!sigMap) { sigMap = new Map(); periodSigByDb.set(ctx.db, sigMap); }
   const existingSnaps = ctx.db.payrollSnapshots.filter((s) => s.period_id === period.id);
-  if (shouldPreserveOtherPartitionSnapshot(ctx, period, existingSnaps)) {
+  const currentSig = computePeriodDirtySig(ctx, period, workStores);
+  if (!force && existingSnaps.length > 0 && sigMap.get(period.id) === currentSig) {
     return ctx.db.payPeriods.get(period.id) ?? period;
   }
-  const currentSig = computePeriodDirtySig(ctx, period);
-  if (!force && existingSnaps.length > 0 && sigMap.get(period.id) === currentSig) {
+  await Promise.all([sweepExpiredShiftsAndMarkAbsent(ctx.db, actorId), ensureLegacySalaryProfiles(ctx.db, actorId)]);
+  const shiftsInPeriod = workStores.shiftsAll().filter((a) => a.work_date >= period.from_date && a.work_date <= period.to_date);
+  if (shouldPreserveOtherPartitionSnapshot(ctx, period, existingSnaps, shiftsInPeriod.length, force)) {
     return ctx.db.payPeriods.get(period.id) ?? period;
   }
 
   const opSettings = getOperationSettings(ctx.db);
   const periodItems = ctx.db.payrollItems.filter((i) => i.period_id === period.id && i.approval_status === 'APPROVED');
   const emps = ctx.db.employees.filter((e) => {
-    const hasShift = !!ctx.db.shiftAssignments.find((a) => (a.employee_id === e.id || a.employee_id === e.employee_code) && a.work_date >= period.from_date && a.work_date <= period.to_date);
+    const hasShift = shiftsInPeriod.some((a) => a.employee_id === e.id || a.employee_id === e.employee_code);
     if (e.note === 'Hồ sơ nhân sự liên kết tài khoản hệ thống' && findLinkedUserForEmployee(e, ctx)?.role === 'ADMIN' && profilesOf(ctx.db, e.id).length === 0 && !hasShift) {
       return false;
     }
@@ -195,21 +205,15 @@ async function doRecalculatePeriodSnapshots(ctx: AppContext, period: PayPeriod, 
   const finalPeriod = unchangedPeriod
     ? latest
     : await ctx.db.payPeriods.update(
-        period.id,
-        latest.version,
+        period.id, latest.version,
         {
-          total_employees: keepEmpIds.size,
-          total_approved_hours: totals.hours,
-          total_ot_hours: totals.ot,
-          total_gross_vnd: totals.gross,
-          total_deductions_vnd: totals.deduct,
-          total_net_vnd: totals.net,
-          unreconciled_records_count: totals.unreconciled,
-          snapshot_hash: nextSnapshotHash,
+          total_employees: keepEmpIds.size, total_approved_hours: totals.hours, total_ot_hours: totals.ot,
+          total_gross_vnd: totals.gross, total_deductions_vnd: totals.deduct, total_net_vnd: totals.net,
+          unreconciled_records_count: totals.unreconciled, snapshot_hash: nextSnapshotHash,
         },
         actorId,
       );
-  sigMap.set(period.id, computePeriodDirtySig(ctx, finalPeriod));
+  sigMap.set(period.id, computePeriodDirtySig(ctx, finalPeriod, workStores));
   return finalPeriod;
 }
 
