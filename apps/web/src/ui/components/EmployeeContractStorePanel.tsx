@@ -29,11 +29,12 @@ function fmtSizeKb(bytes: number): string {
   return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(2)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+const EMPTY_EMPLOYEE_OPTIONS: { value: string; label: string; stage?: string }[] = [];
+
 export function ContractUploadModal({
-  open, presetEmployee, employeeOptions = [], onClose, onSuccess,
+  open, presetEmployee, employeeOptions = EMPTY_EMPLOYEE_OPTIONS, onClose, onSuccess,
 }: {
-  open: boolean; presetEmployee?: EmployeeRowItem | null;
-  employeeOptions?: { value: string; label: string; stage?: string }[];
+  open: boolean; presetEmployee?: EmployeeRowItem | null; employeeOptions?: { value: string; label: string; stage?: string }[];
   onClose: () => void; onSuccess?: () => void;
 }) {
   const qc = useQueryClient(), { message } = App.useApp(), [form] = Form.useForm();
@@ -43,11 +44,8 @@ export function ContractUploadModal({
   useEffect(() => {
     if (!open) return;
     setSelectedFile(null); form.resetFields();
-    form.setFieldsValue({
-      employee_id: presetEmployee?.id ?? employeeOptions[0]?.value,
-      contract_type: presetEmployee?.stage === 'OFFICIAL' ? 'OFFICIAL_CONTRACT' : 'PROBATION_CONTRACT', note: '',
-    });
-  }, [open, presetEmployee, employeeOptions, form]);
+    form.setFieldsValue({ employee_id: presetEmployee?.id ?? employeeOptions[0]?.value, contract_type: presetEmployee?.stage === 'OFFICIAL' ? 'OFFICIAL_CONTRACT' : 'PROBATION_CONTRACT', note: '' });
+  }, [open, presetEmployee?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const uploadMut = useMutation({
     mutationFn: (v: { employee_id: string; contract_type: ContractType; note?: string }) => {
@@ -72,8 +70,12 @@ export function ContractUploadModal({
     if (file.size > CONTRACT_MAX_SIZE_BYTES) { message.error('Dung lượng tệp hợp đồng không được vượt quá 6MB'); return; }
     const buf = await file.arrayBuffer(), check = verifyContractMagicBytes(new Uint8Array(buf), file.name);
     if (!check.valid) { message.error(check.message); return; }
-    setSelectedFile({ file, dataUrl: await readFileAsDataUrl(file), mime: check.detectedMime || file.type });
+    const dataUrl = await readFileAsDataUrl(file);
+    setSelectedFile({ file, dataUrl, mime: check.detectedMime || file.type });
+    message.success(`Đã chọn tệp hợp đồng: ${file.name} (${fmtSizeKb(file.size)})`);
   };
+
+  if (!open) return null;
 
   return (
     <Modal
@@ -103,15 +105,15 @@ export function ContractUploadModal({
         </Row>
         <Form.Item label="Tệp văn bản hợp đồng (Hỗ trợ PDF, Word, Ảnh JPG/PNG tối đa 6MB)" required>
           <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" style={{ display: 'none' }} onChange={(e) => void handleChooseFile(e)} />
-          <div onClick={() => fileRef.current?.click()} style={{ border: '1px dashed #94A3B8', borderRadius: 4, background: '#F8FAFC', padding: '12px 14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div onClick={() => fileRef.current?.click()} style={{ border: selectedFile ? '1px solid #16A34A' : '1px dashed #94A3B8', borderRadius: 4, background: selectedFile ? '#F0FDF4' : '#F8FAFC', padding: '12px 14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
             <Space size={10}>
-              <FilePdfOutlined style={{ fontSize: 22, color: '#2563EB' }} />
+              {selectedFile ? <CheckCircleOutlined style={{ fontSize: 22, color: '#16A34A' }} /> : <FilePdfOutlined style={{ fontSize: 22, color: '#2563EB' }} />}
               <div>
-                <div style={{ fontWeight: 600, color: '#0F172A' }}>{selectedFile ? selectedFile.file.name : 'Nhấn vào đây để chọn tệp hợp đồng từ máy tính'}</div>
-                <div style={{ fontSize: 12, color: '#64748B' }}>{selectedFile ? `Dung lượng: ${fmtSizeKb(selectedFile.file.size)} · Đã kiểm tra định dạng hợp lệ` : 'Định dạng chuẩn: .pdf, .docx, .doc, .jpg, .png'}</div>
+                <div style={{ fontWeight: 600, color: selectedFile ? '#15803D' : '#0F172A' }}>{selectedFile ? selectedFile.file.name : 'Nhấn vào đây để chọn tệp hợp đồng từ máy tính'}</div>
+                <div style={{ fontSize: 12, color: selectedFile ? '#166534' : '#64748B' }}>{selectedFile ? `Đã chọn tệp · Dung lượng: ${fmtSizeKb(selectedFile.file.size)} · Định dạng hợp lệ` : 'Định dạng chuẩn: .pdf, .docx, .doc, .jpg, .png'}</div>
               </div>
             </Space>
-            <Button size="small" icon={<CloudUploadOutlined />}>{selectedFile ? 'Đổi tệp khác' : 'Chọn tệp'}</Button>
+            <Button size="small" type={selectedFile ? 'default' : 'primary'} ghost={!selectedFile} icon={<CloudUploadOutlined />}>{selectedFile ? 'Đổi tệp khác' : 'Chọn tệp'}</Button>
           </div>
         </Form.Item>
         <Form.Item name="note" label="Số hợp đồng / Ghi chú hiệu lực" style={{ marginBottom: 0 }}>

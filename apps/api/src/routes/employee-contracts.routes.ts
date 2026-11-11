@@ -85,7 +85,9 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
       const myEmp = findLinkedEmployeeForUser(user, ctx);
       if (!myEmp || myEmp.id !== emp.id) throw Errors.forbidden('Bạn chỉ được phép xem hợp đồng lao động của chính mình');
     } else assertBranchAccess(request, emp.branch_id);
-    const synced = await syncEmployeeContractsWithDrive(ctx, emp);
+    const localItems = parseEmployeeContracts(emp.contracts_json);
+    const synced = localItems.length > 0 ? localItems : await syncEmployeeContractsWithDrive(ctx, emp);
+    if (localItems.length > 0) void runBackgroundSideEffect(() => syncEmployeeContractsWithDrive(ctx, emp));
     const items = synced.map((c) => ({ ...c, contractTypeLabel: CONTRACT_TYPE_LABELS[c.contractType] ?? c.contractType }));
     return sendSuccess(request, 'Lấy danh sách hợp đồng lao động thành công', items);
   });
@@ -96,15 +98,20 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
       const myEmp = findLinkedEmployeeForUser(user, ctx);
       if (!myEmp || myEmp.id !== emp.id) throw Errors.forbidden('Bạn chỉ được phép xem hợp đồng lao động của chính mình');
     } else assertBranchAccess(request, emp.branch_id);
-    const items = await syncEmployeeContractsWithDrive(ctx, emp);
-    const target = contractId === 'electronic' ? (items[0] ?? null) : items.find((c) => c.id === contractId);
+    let items = parseEmployeeContracts(emp.contracts_json);
+    let target = contractId === 'electronic' ? (items[0] ?? null) : items.find((c) => c.id === contractId);
+    if (!target) {
+      items = await syncEmployeeContractsWithDrive(ctx, emp);
+      target = contractId === 'electronic' ? (items[0] ?? null) : items.find((c) => c.id === contractId);
+    }
     if (contractId !== 'electronic' && !target) throw Errors.notFound('Hợp đồng lao động', contractId);
     const { buffer, mime } = await resolveContractFileBuffer(ctx, emp, target);
     const dataUrl = `data:${mime};base64,${buffer.toString('base64')}`, cId = target?.id || 'electronic';
     return sendSuccess(request, 'Lấy chi tiết hợp đồng lao động thành công', {
       contract: target ? { ...target, mimeType: mime, contractTypeLabel: CONTRACT_TYPE_LABELS[target.contractType] ?? target.contractType } : null,
       actualMimeType: mime, dataUrl, fileUrl: `/api/admin/employees/${emp.id}/contracts/${cId}/file`,
-      downloadUrl: `/api/admin/employees/${emp.id}/contracts/${cId}/file?download=1`, employee: mapEmployeeRecord(emp, ctx),
+      downloadUrl: `/api/admin/employees/${emp.id}/contracts/${cId}/file?download=1`,
+      employee: { id: emp.id, employeeCode: emp.employee_code, fullName: emp.full_name, stage: emp.stage, branchId: emp.branch_id },
     });
   });
 
@@ -115,8 +122,12 @@ export function registerEmployeeContractRoutes(app: FastifyInstance, ctx: AppCon
       const myEmp = findLinkedEmployeeForUser(user, ctx);
       if (!myEmp || myEmp.id !== emp.id) throw Errors.forbidden('Bạn chỉ được phép tải hợp đồng lao động của chính mình');
     } else assertBranchAccess(request, emp.branch_id);
-    const items = await syncEmployeeContractsWithDrive(ctx, emp);
-    const target = contractId === 'electronic' ? (items[0] ?? null) : items.find((c) => c.id === contractId);
+    let items = parseEmployeeContracts(emp.contracts_json);
+    let target = contractId === 'electronic' ? (items[0] ?? null) : items.find((c) => c.id === contractId);
+    if (!target) {
+      items = await syncEmployeeContractsWithDrive(ctx, emp);
+      target = contractId === 'electronic' ? (items[0] ?? null) : items.find((c) => c.id === contractId);
+    }
     if (contractId !== 'electronic' && !target) throw Errors.notFound('Hợp đồng lao động', contractId);
     const { buffer, mime } = await resolveContractFileBuffer(ctx, emp, target);
     const fileName = target?.fileName || `${emp.employee_code}_Hop_dong_lao_dong.pdf`, disp = download === '1' || download === 'true' ? 'attachment' : 'inline';

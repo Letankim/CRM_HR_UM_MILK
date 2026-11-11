@@ -7,12 +7,14 @@ import { nowIso } from '../lib/time.js';
 import { detectBufferMimeType, extractGoogleDriveFileId, guessMimeByExtension } from '../services/mkt-media-storage.service.js';
 
 const contractRamCache = new Map<string, { buffer: Buffer; mime: string }>();
+const driveFolderSyncThrottle = new Map<string, number>();
+const DRIVE_SYNC_TTL_MS = 3 * 60_000;
 
 export function putContractCache(keys: (string | undefined)[], buffer: Buffer, mime: string): void {
   for (const k of keys) {
     if (!k) continue;
     contractRamCache.delete(k);
-    if (contractRamCache.size >= 60) {
+    if (contractRamCache.size >= 80) {
       const first = contractRamCache.keys().next().value;
       if (first) contractRamCache.delete(first);
     }
@@ -53,6 +55,9 @@ export async function syncEmployeeContractsWithDrive(ctx: AppContext, emp: Emplo
   if (!ctx.google.listDriveFolderFiles) return items;
   const needsHeal = items.length === 0 || items.some((c) => !c.driveFileId || c.driveFileId.startsWith('drv_ctr_'));
   if (!needsHeal) return items;
+  const now = Date.now(), lastSync = driveFolderSyncThrottle.get(emp.id) ?? 0;
+  if (now - lastSync < DRIVE_SYNC_TTL_MS) return items;
+  driveFolderSyncThrottle.set(emp.id, now);
 
   const safeCode = emp.employee_code.replace(/[^a-zA-Z0-9_-]/g, '');
   const rawDriveFiles = await ctx.google.listDriveFolderFiles({ rootFolder: DRIVE_FOLDERS.EMPLOYEE_DOCUMENTS, folderSegments: [safeCode] });
@@ -171,7 +176,7 @@ export async function resolveContractFileBuffer(ctx: AppContext, emp: Employee, 
       }
     }
     try {
-      const res = await fetch(`https://drive.usercontent.google.com/download?id=${encodeURIComponent(driveId)}&export=download&confirm=t`, { redirect: 'follow', signal: AbortSignal.timeout(12_000) });
+      const res = await fetch(`https://drive.usercontent.google.com/download?id=${encodeURIComponent(driveId)}&export=download&confirm=t`, { redirect: 'follow', signal: AbortSignal.timeout(3_500) });
       const ct = res.headers.get('content-type') || '';
       if (res.ok && !ct.includes('text/html')) {
         const driveBuf = Buffer.from(await res.arrayBuffer());
@@ -185,11 +190,12 @@ export async function resolveContractFileBuffer(ctx: AppContext, emp: Employee, 
     } catch { /* next */ }
   }
 
-  if (ctx.google.listDriveFolderFiles && ctx.google.downloadDriveFile) {
+  const now = Date.now(), lastFolderSearch = driveFolderSyncThrottle.get(`buf_${emp.id}`) ?? 0;
+  if (ctx.google.listDriveFolderFiles && ctx.google.downloadDriveFile && !rawDriveRef.startsWith('drv_ctr_') && now - lastFolderSearch >= DRIVE_SYNC_TTL_MS) {
+    driveFolderSyncThrottle.set(`buf_${emp.id}`, now);
     const folderFiles = await ctx.google.listDriveFolderFiles({ rootFolder: DRIVE_FOLDERS.EMPLOYEE_DOCUMENTS, folderSegments: [safeCode] });
     const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_').toLowerCase();
-    const matched = folderFiles.find((f) => safeName && f.name.toLowerCase().includes(safeName))
-      ?? (target?.driveFileId?.startsWith('drv_ctr_') ? folderFiles.find((f) => f.name.toUpperCase().includes(safeCode.toUpperCase())) : undefined);
+    const matched = folderFiles.find((f) => safeName && f.name.toLowerCase().includes(safeName));
     if (matched?.id) {
       const driveBuf = await ctx.google.downloadDriveFile(matched.id);
       if (driveBuf && driveBuf.length > 0) {
@@ -201,5 +207,7 @@ export async function resolveContractFileBuffer(ctx: AppContext, emp: Employee, 
     }
   }
 
-  return { buffer: buildFallbackContractPdf(emp, target), mime: 'application/pdf' };
+  const fallbackBuf = buildFallbackContractPdf(emp, target);
+  putContractCache([target?.id, target?.driveFileId], fallbackBuf, 'application/pdf');
+  return { buffer: fallbackBuf, mime: 'application/pdf' };
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { App, Button, Card, Descriptions, Modal, Space, Spin, Tag, Typography } from 'antd';
 import { CloseOutlined, DownloadOutlined, ExportOutlined, FileImageOutlined, FilePdfOutlined, FileWordOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
@@ -98,30 +98,29 @@ export function ContractPreviewModal({
 
   const detailQ = useQuery({
     queryKey: ['employee-contract-detail', employee?.id, targetId, contractItem?.fileName, contractItem?.uploadedAt],
-    enabled: open && Boolean(employee?.id), retry: false, staleTime: 0,
+    enabled: open && Boolean(employee?.id), retry: false, staleTime: 5 * 60_000,
     queryFn: () => api.get<ContractDetailResponse>(`/admin/employees/${employee!.id}/contracts/${targetId}`),
   });
 
   const activeContract = detailQ.data?.contract ?? contractItem;
   const dataUrl = detailQ.data?.dataUrl ?? null;
-  const parsedPreview = dataUrl ? dataUrlToBlob(dataUrl, detailQ.data?.actualMimeType || activeContract?.mimeType || 'application/pdf') : null;
-  const actualMime = (parsedPreview?.mime || detailQ.data?.actualMimeType || activeContract?.mimeType || 'application/pdf').toLowerCase();
+  const fallbackMime = detailQ.data?.actualMimeType || activeContract?.mimeType || 'application/pdf';
+  const parsedPreview = useMemo(() => (dataUrl ? dataUrlToBlob(dataUrl, fallbackMime) : null), [dataUrl, fallbackMime]);
+  const actualMime = (parsedPreview?.mime || fallbackMime).toLowerCase();
   const rawFileName = activeContract?.fileName || `${employee?.employeeCode || 'NV'}_Hop_dong_lao_dong.pdf`;
   const fileName = ensureFileExtensionForMime(rawFileName, actualMime);
   const isImage = actualMime.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(fileName);
   const isWord = actualMime.includes('word') || /\.(doc|docx)$/i.test(fileName);
 
   useEffect(() => {
-    if (!open || !dataUrl || isImage || isWord) { setPdfBlobUrl(null); return; }
-    const parsed = dataUrlToBlob(dataUrl, actualMime);
-    if (!parsed) { setPdfBlobUrl(null); return; }
-    const url = URL.createObjectURL(parsed.blob);
+    if (!open || !parsedPreview || isImage || isWord) { setPdfBlobUrl(null); return; }
+    const url = URL.createObjectURL(parsedPreview.blob);
     setPdfBlobUrl(url);
     return () => { window.setTimeout(() => URL.revokeObjectURL(url), 30_000); };
-  }, [open, dataUrl, actualMime, isImage, isWord]);
+  }, [open, parsedPreview, isImage, isWord]);
 
   const handleDownloadFile = () => {
-    if (!dataUrl) { message.warning('Đang tải tệp hợp đồng từ Google Drive, vui lòng đợi giây lát'); return; }
+    if (!dataUrl) { message.warning('Đang tải tệp hợp đồng, vui lòng đợi giây lát'); return; }
     const saved = triggerContractBlobDownload(dataUrl, rawFileName, actualMime);
     if (saved) message.success(`Đã tải về tệp hợp đồng: ${saved}`);
   };
@@ -131,13 +130,13 @@ export function ContractPreviewModal({
   }, [open, autoDownload, dataUrl]);
 
   const handleOpenNewTab = () => {
-    if (!dataUrl) { message.warning('Đang tải tệp hợp đồng từ Google Drive, vui lòng đợi giây lát'); return; }
-    const parsed = dataUrlToBlob(dataUrl, actualMime);
-    if (!parsed) return;
-    const tabUrl = URL.createObjectURL(parsed.blob);
+    if (!parsedPreview) { message.warning('Đang tải tệp hợp đồng, vui lòng đợi giây lát'); return; }
+    const tabUrl = URL.createObjectURL(parsedPreview.blob);
     window.open(tabUrl, '_blank');
     window.setTimeout(() => URL.revokeObjectURL(tabUrl), 300_000);
   };
+
+  if (!open || !employee) return null;
 
   return (
     <Modal
