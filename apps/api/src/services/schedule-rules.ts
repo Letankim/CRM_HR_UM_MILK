@@ -1,9 +1,10 @@
-import { addDaysYmd, DEFAULT_SHIFT_LABELS, isOfficeEmployeeSpec, type Employee, type ShiftAssignment } from '@umbm/shared';
+import { addDaysYmd, DEFAULT_SHIFT_LABELS, isOfficeEmployeeSpec, type AttendanceEvent, type Employee, type ShiftAssignment } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
 import { dayjs } from '../lib/time.js';
 import { findLinkedUserForEmployee } from '../routes/employee-mapper.js';
-import { extractMonthKeyFromDate, getCachedPartitionStore } from './partition-write-router.js';
+import { readPartitionRegistry } from './data-partition.service.js';
+import { findPartitionAwareRecord, getCachedPartitionStore, resolveTargetMonthForRecord } from './partition-write-router.js';
 import { getVnNowDateAndHm } from './shift-absent-scanner.js';
 
 /**
@@ -57,8 +58,8 @@ export function isDisallowedProbationShiftCode(
 
 export function employeeShiftsOnDate(ctx: AppContext, emp: Pick<Employee, 'id' | 'employee_code'>, workDate: string, excludeIds: string[] = []): ShiftAssignment[] {
   const isEmp = matchEmp(emp), skip = new Set(excludeIds);
-  const mk = extractMonthKeyFromDate(workDate);
-  const store = (mk ? getCachedPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk) : undefined) ?? ctx.db.shiftAssignments;
+  const mk = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: workDate }, workDate);
+  const store = getCachedPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk) ?? ctx.db.shiftAssignments;
   return store.filter((a) => !skip.has(a.id) && isEmp(a.employee_id) && a.work_date === workDate && isCountedWorkShift(a));
 }
 
@@ -105,9 +106,14 @@ export const probationLockCode = (empCode: string, cycleStart: string, partition
 /** Tuần (theo chi nhánh hoặc toàn hệ thống) trên đúng tệp dữ liệu tháng đang hoạt động đã được HR chốt lịch hay chưa. */
 export function findWeekLock(ctx: AppContext, branchId: string, weekStart: string) {
   const pMonth = ctx.db.partitionMonth;
-  const scopedCodes = new Set([weekLockCode(branchId, weekStart, pMonth), weekLockCode('ALL', weekStart, pMonth)]);
-  const direct = ctx.db.scheduleWeeks.find((w) => scopedCodes.has(w.code) && w.status === 'PUBLISHED');
-  if (direct || !pMonth) return direct;
+  const targetMonth = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: weekStart }, weekStart);
+  const candidateMonths = Array.from(new Set([pMonth, targetMonth].filter((m) => m !== undefined)));
+  for (const m of candidateMonths) {
+    const scopedCodes = new Set([weekLockCode(branchId, weekStart, m), weekLockCode('ALL', weekStart, m)]);
+    const direct = ctx.db.scheduleWeeks.find((w) => scopedCodes.has(w.code) && w.status === 'PUBLISHED');
+    if (direct) return direct;
+  }
+  if (!pMonth) return undefined;
   const legacyCodes = new Set([weekLockCode(branchId, weekStart, ''), weekLockCode('ALL', weekStart, '')]);
   const legacy = ctx.db.scheduleWeeks.find((w) => legacyCodes.has(w.code) && w.status === 'PUBLISHED');
   if (!legacy) return undefined;
@@ -117,12 +123,18 @@ export function findWeekLock(ctx: AppContext, branchId: string, weekStart: strin
 
 export function findProbationLock(ctx: AppContext, emp: Employee, cycleStart: string) {
   const pMonth = ctx.db.partitionMonth;
-  const scopedCode = probationLockCode(emp.employee_code, cycleStart, pMonth);
-  const direct = ctx.db.scheduleWeeks.find((w) => w.code === scopedCode && w.status === 'PUBLISHED');
-  if (direct || !pMonth) return direct;
+  const targetMonth = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: cycleStart }, cycleStart);
+  const regMonths = readPartitionRegistry(ctx.db).map((r) => r.monthKey);
+  const candidateMonths = Array.from(new Set([pMonth, targetMonth, ...regMonths]));
+  for (const m of candidateMonths) {
+    const scopedCode = probationLockCode(emp.employee_code, cycleStart, m);
+    const direct = ctx.db.scheduleWeeks.find((w) => w.code === scopedCode && w.status === 'PUBLISHED');
+    if (direct) return direct;
+  }
   const legacyCode = probationLockCode(emp.employee_code, cycleStart, '');
   const legacy = ctx.db.scheduleWeeks.find((w) => w.code === legacyCode && w.status === 'PUBLISHED');
   if (!legacy) return undefined;
+  if (!pMonth && regMonths.length === 0) return legacy;
   return ctx.db.shiftAssignments.find((a) => a.schedule_week_id === legacyCode) ? legacy : undefined;
 }
 
@@ -148,10 +160,15 @@ export function assertApprovedShiftNoteOnlyPatch(
 
 export async function applyProbationExtraApproval(ctx: AppContext, approved: ShiftAssignment, actorId: string): Promise<ShiftAssignment | null> {
   if (!approved.linked_assignment_id) return null;
-  const linked = ctx.db.shiftAssignments.get(approved.linked_assignment_id);
+  const found = await findPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', approved.linked_assignment_id);
+  const linked = found?.record ?? ctx.db.shiftAssignments.get(approved.linked_assignment_id);
+  const store = found?.store ?? ctx.db.shiftAssignments;
   if (!linked || linked.id === approved.id || (linked.status !== 'PUBLISHED' && linked.status !== 'DRAFT')) return null;
-  if (ctx.db.attendanceEvents.find((e) => e.assignment_id === linked.id)) return null;
-  await ctx.db.shiftAssignments.softDelete(linked.id, linked.version, actorId);
+  const evStore = found?.monthKey !== undefined
+    ? (getCachedPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', found.monthKey) ?? ctx.db.attendanceEvents)
+    : ctx.db.attendanceEvents;
+  if (evStore.find((e) => e.assignment_id === linked.id)) return null;
+  await store.softDelete(linked.id, linked.version, actorId);
   return linked;
 }
 

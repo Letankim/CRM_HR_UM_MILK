@@ -1,5 +1,5 @@
 import type { ZodType, ZodTypeDef } from 'zod';
-import { addDaysYmd, mondayOfWeek, type ShiftAssignment } from '@umbm/shared';
+import { addDaysYmd, mondayOfWeek, type MonthlyPartitionRegistryEntry, type ShiftAssignment } from '@umbm/shared';
 import type { Database } from '../data/database.js';
 import { nowIso } from '../lib/time.js';
 import { TableStore, type BaseRecord } from '../sheets/table-store.js';
@@ -31,6 +31,55 @@ export function isMissingSpreadsheetError(err: unknown): boolean {
   return code === 404 || /not found|requested entity was not found|deleted|trashed|không tồn tại/i.test(msg);
 }
 
+export function isRowMatchingRolloverMonth(base: string, row: Record<string, unknown>, monthStart: string): boolean {
+  if (base === 'LEAVE_REQUESTS') return String(row.leave_date ?? '') >= monthStart;
+  if (base === 'SHIFT_SWAPS') {
+    return String(row.from_work_date ?? '') >= monthStart || String(row.to_work_date ?? '') >= monthStart;
+  }
+  return String(row.work_date ?? '') >= monthStart;
+}
+
+/**
+ * Thu thập các kho lưu trữ nguồn (gồm kho đang mở và các tệp tháng trước trong DATA_PARTITIONS_REGISTRY)
+ * để đảm bảo khi Admin tạo tệp tháng 12 trễ (ví dụ ngày 03/12), toàn bộ lịch/đơn/chấm công tháng 12
+ * đã nằm trong tệp tháng 11 đều được kéo đầy đủ sang tệp tháng 12, kể cả khi Admin đang mở xem tệp khác.
+ */
+export async function loadRolloverSourceStores(
+  db: Database,
+  desc: MonthlyStoreDesc,
+  newMonthKey: string,
+  registry: MonthlyPartitionRegistryEntry[],
+): Promise<{ monthKey: string; store: AnyStore }[]> {
+  const activeStore = desc.store as unknown as AnyStore;
+  const sources: { monthKey: string; store: AnyStore }[] = [];
+  const seenSpreadsheets = new Set<string>();
+
+  if (db.partitionMonth !== '' || registry.length === 0) {
+    sources.push({ monthKey: db.partitionMonth, store: activeStore });
+    seenSpreadsheets.add(`${activeStore.spreadsheetId}::${activeStore.tab}`);
+  }
+
+  const prevRegs = registry
+    .filter((r) => r.mode === 'MONTHLY_FILE' && r.monthKey < newMonthKey && r.monthKey !== db.partitionMonth)
+    .sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+
+  for (const reg of prevRegs) {
+    const key = `${reg.spreadsheetId}::${desc.base}`;
+    if (seenSpreadsheets.has(key)) continue;
+    seenSpreadsheets.add(key);
+    const prevStore = new TableStore<AnyRecord>(db.gateway, db.queue, {
+      spreadsheetKey: 'MONTHLY',
+      spreadsheetId: reg.spreadsheetId,
+      tab: desc.base,
+      headers: desc.headers,
+      schema: desc.schema as unknown as ZodType<AnyRecord, ZodTypeDef, unknown>,
+    });
+    await prevStore.load().catch(() => undefined);
+    sources.push({ monthKey: reg.monthKey, store: prevStore });
+  }
+  return sources;
+}
+
 /**
  * Ghi trước toàn bộ các dòng chuyển tiếp sang tệp Google Sheets tháng mới (giữ nguyên `id` khóa ngoại)
  * thông qua TableStore tạm độc lập trước khi chạm vào dữ liệu trên tệp cũ hay bộ nhớ đang phục vụ đọc.
@@ -58,8 +107,8 @@ export async function stageCarryRowsToTarget(
   for (const r of rowsToCarry) {
     const found = existingById.get(r.id);
     if (!found) {
-      const { version: _v, is_deleted: _d, created_by: _cb, updated_by: _ub, ...rest } = r;
-      ops.push(stageStore.insert(rest as never, actorId));
+      const { version: _v, is_deleted: _d, ...rest } = r;
+      ops.push(stageStore.insert(rest as never, String(r.created_by || actorId)));
       count++;
     } else if (found.is_deleted) {
       ops.push(stageStore.restore(found.id, found.version, actorId));
@@ -85,6 +134,11 @@ export async function carryScheduleLocksToMonth(
   if (!newMonth || carriedShifts.length === 0) return;
   const now = nowIso();
   const seenWeekPairs = new Set<string>();
+  const regMonths = new Set([oldMonth, '']);
+  for (const s of carriedShifts) {
+    const m = s.schedule_week_id.match(/^(?:WK|PB)@(\d{4}_\d{2})-/);
+    if (m?.[1]) regMonths.add(m[1]);
+  }
 
   for (const s of carriedShifts) {
     if (s.status === 'DRAFT' || s.day_type === 'OFF') continue;
@@ -94,12 +148,11 @@ export async function carryScheduleLocksToMonth(
     const pairKey = `${branchId}::${weekStart}`;
     if (branchId && !seenWeekPairs.has(pairKey)) {
       seenWeekPairs.add(pairKey);
-      const oldCodes = new Set([
-        weekLockCode(branchId, weekStart, oldMonth),
-        weekLockCode('ALL', weekStart, oldMonth),
-        weekLockCode(branchId, weekStart, ''),
-        weekLockCode('ALL', weekStart, ''),
-      ]);
+      const oldCodes = new Set<string>();
+      for (const mk of regMonths) {
+        oldCodes.add(weekLockCode(branchId, weekStart, mk));
+        oldCodes.add(weekLockCode('ALL', weekStart, mk));
+      }
       const srcLock = db.scheduleWeeks.find((w) => oldCodes.has(w.code) && w.status === 'PUBLISHED');
       if (srcLock) {
         const nextCode = weekLockCode(branchId, weekStart, newMonth);
@@ -119,7 +172,12 @@ export async function carryScheduleLocksToMonth(
     }
 
     if (emp && s.schedule_week_id.startsWith('PB')) {
-      const srcPb = db.scheduleWeeks.find((w) => w.code === s.schedule_week_id && w.status === 'PUBLISHED');
+      const srcPb = db.scheduleWeeks.find((w) =>
+        w.status === 'PUBLISHED' && (
+          w.code === s.schedule_week_id ||
+          (w.schedule_kind === 'PROBATION_12_DAYS' && w.code.includes(emp.employee_code) && s.work_date >= w.week_start && s.work_date <= w.week_end)
+        ),
+      );
       if (srcPb) {
         const nextPbCode = probationLockCode(emp.employee_code, srcPb.week_start, newMonth);
         if (!db.scheduleWeeks.find((w) => w.code === nextPbCode && w.status === 'PUBLISHED')) {

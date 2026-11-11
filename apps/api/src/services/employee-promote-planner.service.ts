@@ -1,11 +1,12 @@
 import {
-  addDaysYmd, DEFAULT_SHIFT_LABELS, mondayOfWeek, weekDates, type Employee, type LeaveRequest, type ShiftAssignment,
+   DEFAULT_SHIFT_LABELS, mondayOfWeek, weekDates, type AttendanceEvent, type Employee, type LeaveRequest, type ShiftAssignment,
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
-import { dayjs, nowIso } from '../lib/time.js';
-import { findBranchShiftTemplate, resolveEmployeeBranchId } from '../routes/account-employee-sync.js';
-import { isCountedWorkShift, matchEmp, weekLockCode } from './schedule-rules.js';
-import { assertShiftNotInPast } from './schedule-rules.js';
+import { nowIso } from '../lib/time.js';
+import { findBranchShiftTemplate } from '../routes/account-employee-sync.js';
+import { readPartitionRegistry } from './data-partition.service.js';
+import { getCachedPartitionStore, insertPartitionAwareRecord, resolveTargetMonthForRecord } from './partition-write-router.js';
+import { assertShiftNotInPast, isCountedWorkShift, matchEmp, weekLockCode } from './schedule-rules.js';
 import { evaluateBranchShiftCapacity } from './schedule-staffing-helper.js';
 import { getVnNowDateAndHm } from './shift-absent-scanner.js';
 
@@ -55,50 +56,59 @@ export function buildPromoteSchedulePreview(
   const defTpl = findBranchShiftTemplate(ctx, defCode, emp.branch_id);
   const defLabel = defTpl?.name ?? DEFAULT_SHIFT_LABELS[defCode as keyof typeof DEFAULT_SHIFT_LABELS] ?? defCode;
 
-  // 1. Tìm các ca thử việc cũ cần thu hồi (tô đỏ)
+  const regMonths = readPartitionRegistry(ctx.db).map((r) => r.monthKey);
+  const months = regMonths.length > 0 ? Array.from(new Set([...regMonths, ...(ctx.db.partitionMonth ? [ctx.db.partitionMonth] : [])])) : [ctx.db.partitionMonth];
+
   const staleShifts: PromoteSchedulePreviewItem[] = [];
-  const candidateStale = ctx.db.shiftAssignments.filter(
-    (a) => isEmp(a.employee_id) && a.employee_stage === 'PROBATION' && a.work_date >= officialFrom && a.status !== 'COMPLETED',
-  );
-  for (const s of candidateStale) {
-    if (ctx.db.attendanceEvents.find((e) => e.assignment_id === s.id)) continue;
-    const tpl = findBranchShiftTemplate(ctx, s.shift_code, emp.branch_id);
-    staleShifts.push({
-      id: s.id,
-      action: 'REMOVE',
-      workDate: s.work_date,
-      shiftCode: s.shift_code,
-      shiftLabel: tpl?.name ?? DEFAULT_SHIFT_LABELS[s.shift_code as keyof typeof DEFAULT_SHIFT_LABELS] ?? s.shift_code,
-      startAt: s.start_at || tpl?.start_time || '07:00',
-      endAt: s.end_at || tpl?.end_time || '12:00',
-      hours: s.scheduled_hours || tpl?.standard_hours || 5,
-      reason: 'Thu hồi ca thử việc cũ để tránh trùng định biên chính thức',
-    });
+  const seenShiftIds = new Set<string>();
+  const completedDates = new Set<string>();
+  for (const mk of months) {
+    const shStore = getCachedPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.shiftAssignments : undefined);
+    const evStore = getCachedPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.attendanceEvents : undefined);
+    if (!shStore) continue;
+    for (const s of shStore.all()) {
+      if (!isEmp(s.employee_id) || seenShiftIds.has(s.id)) continue;
+      seenShiftIds.add(s.id);
+      if (isCountedWorkShift(s) && s.status === 'COMPLETED') completedDates.add(s.work_date);
+      if (s.employee_stage !== 'PROBATION' || s.work_date < officialFrom || s.status === 'COMPLETED') continue;
+      if (evStore?.find((e) => e.assignment_id === s.id)) continue;
+      const tpl = findBranchShiftTemplate(ctx, s.shift_code, emp.branch_id);
+      staleShifts.push({
+        id: s.id,
+        action: 'REMOVE',
+        workDate: s.work_date,
+        shiftCode: s.shift_code,
+        shiftLabel: tpl?.name ?? DEFAULT_SHIFT_LABELS[s.shift_code as keyof typeof DEFAULT_SHIFT_LABELS] ?? s.shift_code,
+        startAt: s.start_at || tpl?.start_time || '07:00',
+        endAt: s.end_at || tpl?.end_time || '12:00',
+        hours: s.scheduled_hours || tpl?.standard_hours || 5,
+        reason: 'Thu hồi ca thử việc cũ để tránh trùng định biên chính thức',
+      });
+    }
   }
 
-  // 2. Tìm các đơn nghỉ OFF thử việc cũ cần thu hồi
-  const staleLeaves = ctx.db.leaveRequests
-    .filter((l) => isEmp(l.employee_id) && l.employee_stage === 'PROBATION' && l.leave_date >= officialFrom && (l.status === 'APPROVED' || l.status === 'PENDING'))
-    .map((l) => ({ id: l.id, requestCode: l.request_code, leaveDate: l.leave_date, reason: l.reason }));
+  const staleLeaves: { id: string; requestCode: string; leaveDate: string; reason: string }[] = [];
+  const seenLeaveIds = new Set<string>();
+  for (const mk of months) {
+    const lvStore = getCachedPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk) ?? (mk === ctx.db.partitionMonth ? ctx.db.leaveRequests : undefined);
+    if (!lvStore) continue;
+    for (const l of lvStore.all()) {
+      if (!isEmp(l.employee_id) || seenLeaveIds.has(l.id)) continue;
+      seenLeaveIds.add(l.id);
+      if (l.employee_stage === 'PROBATION' && l.leave_date >= officialFrom && (l.status === 'APPROVED' || l.status === 'PENDING')) {
+        staleLeaves.push({ id: l.id, requestCode: l.request_code, leaveDate: l.leave_date, reason: l.reason });
+      }
+    }
+  }
 
-  // 3. Dự kiến các ca chính thức bổ sung trong tuần hiện tại (tô xanh)
   const suggestedShifts: PromoteSchedulePreviewItem[] = [];
   if (defTpl) {
     const mon = mondayOfWeek(officialFrom);
     const weekDays = weekDates(mon);
-    const existingWorkDates = new Set(
-      ctx.db.shiftAssignments
-        .filter((a) => isEmp(a.employee_id) && isCountedWorkShift(a) && a.status === 'COMPLETED')
-        .map((a) => a.work_date),
-    );
-
     for (const d of weekDays) {
-      // TUYỆT ĐỐI KHÔNG TẠO LỊCH TRONG QUÁ KHỨ
       if (d < officialFrom || d < todayStr) continue;
-      if (d === todayStr && nowHm >= defTpl.start_time) continue; // Ca hôm nay đã bắt đầu hoặc kết thúc
-      if (existingWorkDates.has(d)) continue; // Ngày này đã có ca hoàn thành
-
-      // Kiểm tra định biên tại chi nhánh
+      if (d === todayStr && nowHm >= defTpl.start_time) continue;
+      if (completedDates.has(d)) continue;
       const cap = evaluateBranchShiftCapacity(ctx, {
         branchId: emp.branch_id,
         workDate: d,
@@ -107,8 +117,6 @@ export function buildPromoteSchedulePreview(
         endAt: defTpl.end_time,
         emp,
       });
-
-      // Chỉ đề xuất khi còn chỗ định biên chính thức và không trùng giờ
       if (!cap.isFullOrExceeded && !cap.hasOverlappingShift && !cap.alreadyHasShift) {
         suggestedShifts.push({
           action: 'CREATE',
@@ -154,7 +162,7 @@ export function buildPromoteSchedulePreview(
 export async function createPromoteOfficialShifts(
   ctx: AppContext,
   emp: Employee,
-  officialFrom: string,
+  _officialFrom: string,
   shiftsToCreate: { work_date: string; shift_code: string; note?: string }[],
   actorId: string,
 ): Promise<ShiftAssignment[]> {
@@ -163,10 +171,10 @@ export async function createPromoteOfficialShifts(
   for (const item of shiftsToCreate) {
     const tpl = findBranchShiftTemplate(ctx, item.shift_code, emp.branch_id);
     const startAt = tpl?.start_time || '07:00', endAt = tpl?.end_time || '12:00';
-    // Chặn nghiêm ngặt ca trong quá khứ
     assertShiftNotInPast(item.work_date, startAt);
-    const wkCode = weekLockCode(emp.branch_id, mondayOfWeek(item.work_date), ctx.db.partitionMonth);
-    const record = await ctx.db.shiftAssignments.insert({
+    const targetMonth = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: item.work_date }, item.work_date);
+    const wkCode = weekLockCode(emp.branch_id, mondayOfWeek(item.work_date), targetMonth);
+    const record = await insertPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', {
       schedule_week_id: wkCode,
       employee_id: emp.id,
       branch_id: emp.branch_id,
@@ -185,7 +193,7 @@ export async function createPromoteOfficialShifts(
       published_at: now,
       note: item.note || 'Tự động bổ sung ca làm việc chính thức khi chuyển chính thức',
       linked_assignment_id: '',
-    }, actorId);
+    }, item.work_date, actorId);
     created.push(record);
   }
   return created;

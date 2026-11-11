@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
   CONTRACT_MAX_SIZE_BYTES, CONTRACT_TYPE_LABELS, CONTRACT_TYPES, DRIVE_FOLDERS,
-  isEmployeeRole, verifyContractMagicBytes, type Employee, type EmployeeContractItem,
+  isEmployeeRole, verifyContractMagicBytes, type AttendanceEvent, type Employee, type EmployeeContractItem, type LeaveRequest, type ShiftAssignment,
 } from '@umbm/shared';
 import type { AppContext } from '../context.js';
 import { Errors } from '../lib/errors.js';
@@ -10,6 +10,8 @@ import { sendSuccess } from '../lib/response.js';
 import { nowIso } from '../lib/time.js';
 import { assertBranchAccess, auditContext, requireAuth, requirePermission } from '../plugins/auth-context.js';
 import { runBackgroundSideEffect, tolerantWrite } from '../services/background-write.js';
+import { readPartitionRegistry } from '../services/data-partition.service.js';
+import { getPartitionStore } from '../services/partition-write-router.js';
 import { findLinkedEmployeeForUser, mapEmployeeRecord } from './employee-mapper.js';
 import {
   deleteContractFromDisk,
@@ -51,16 +53,27 @@ function findEmployeeOrThrow(ctx: AppContext, idOrCode: string): Employee {
 
 export async function cleanupProbationShiftsAfterOfficial(ctx: AppContext, emp: Employee, officialFrom: string, actorId: string): Promise<number> {
   const isEmp = (eid: string) => eid === emp.id || eid === emp.employee_code;
-  const stale = ctx.db.shiftAssignments.filter((a) => isEmp(a.employee_id) && a.employee_stage === 'PROBATION' && a.work_date >= officialFrom && a.status !== 'COMPLETED');
+  const regMonths = readPartitionRegistry(ctx.db).map((r) => r.monthKey);
+  const months = regMonths.length > 0 ? Array.from(new Set([...regMonths, ...(ctx.db.partitionMonth ? [ctx.db.partitionMonth] : [])])) : [ctx.db.partitionMonth];
   let removed = 0;
-  for (const s of stale) {
-    if (ctx.db.attendanceEvents.find((e) => e.assignment_id === s.id)) continue;
-    await ctx.db.shiftAssignments.softDelete(s.id, s.version, actorId);
-    removed++;
-  }
-  const staleLeaves = ctx.db.leaveRequests.filter((l) => isEmp(l.employee_id) && l.employee_stage === 'PROBATION' && l.leave_date >= officialFrom && (l.status === 'APPROVED' || l.status === 'PENDING'));
-  for (const l of staleLeaves) {
-    await ctx.db.leaveRequests.softDelete(l.id, l.version, actorId);
+  for (const mk of months) {
+    const shStore = await getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk, actorId).catch(() => undefined);
+    const evStore = await getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', mk, actorId).catch(() => undefined);
+    const lvStore = await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk, actorId).catch(() => undefined);
+    if (shStore) {
+      const stale = shStore.filter((a) => isEmp(a.employee_id) && a.employee_stage === 'PROBATION' && a.work_date >= officialFrom && a.status !== 'COMPLETED');
+      for (const s of stale) {
+        if (evStore?.find((e) => e.assignment_id === s.id)) continue;
+        await shStore.softDelete(s.id, s.version, actorId);
+        removed++;
+      }
+    }
+    if (lvStore) {
+      const staleLeaves = lvStore.filter((l) => isEmp(l.employee_id) && l.employee_stage === 'PROBATION' && l.leave_date >= officialFrom && (l.status === 'APPROVED' || l.status === 'PENDING'));
+      for (const l of staleLeaves) {
+        await lvStore.softDelete(l.id, l.version, actorId);
+      }
+    }
   }
   return removed;
 }

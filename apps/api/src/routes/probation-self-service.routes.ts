@@ -12,10 +12,7 @@ import { ensureSyncedNotifications } from '../services/notification-sync.service
 import { getOperationSettings } from '../services/operations-settings.service.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { assertDateNotLockedByPayroll } from '../services/salary-profile.service.js';
-import {
-  assertMaxShiftsPerDay, assertShiftNotInPast, employeeShiftsOnDate, isCountedWorkShift,
-  isDisallowedProbationShiftCode, matchEmp, probationLockCode, resolveProbationCycle,
-} from '../services/schedule-rules.js';
+import { assertMaxShiftsPerDay, assertShiftNotInPast, employeeShiftsOnDate, isCountedWorkShift, isDisallowedProbationShiftCode, matchEmp, probationLockCode, resolveProbationCycle } from '../services/schedule-rules.js';
 import { assertNoDuplicateOrOverlappingEmployeeShift } from '../services/schedule-staffing-helper.js';
 import { getVnNowDateAndHm } from '../services/shift-absent-scanner.js';
 import { getPartitionStore, insertPartitionAwareRecord, nextPartitionCode, preloadEmployeePartitionStores, resolveTargetMonthForRecord } from '../services/partition-write-router.js';
@@ -25,7 +22,6 @@ import { mapShiftAssignment } from './schedules.routes.js';
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 const vi = (d: string) => dayjs(d).format('DD/MM/YYYY');
-
 const zProbationOffBatchBody = z.object({
   off_dates: z.array(z.string().regex(YMD_RE, 'Định dạng ngày nghỉ phải là YYYY-MM-DD')).optional(),
   leave_dates: z.array(z.string().regex(YMD_RE, 'Định dạng ngày nghỉ phải là YYYY-MM-DD')).optional(),
@@ -49,62 +45,56 @@ export function registerProbationSelfServiceRoutes(app: FastifyInstance, ctx: Ap
     if (emp.stage !== 'PROBATION') throw Errors.forbidden('Chức năng đăng ký 5 ngày OFF chu kỳ 12 ngày chỉ dành cho Nhân viên thử việc');
     const rawDates = body.off_dates ?? body.leave_dates ?? [], uniqueOffDates = Array.from(new Set(rawDates)).sort();
     const { todayStr } = getVnNowDateAndHm(), cycle = resolveProbationCycle(emp, todayStr);
-    if (uniqueOffDates.length !== cycle.offLimit) {
-      throw Errors.fieldValidation('off_dates', 'INVALID_VALUE', `Bắt buộc chọn đúng ${cycle.offLimit} ngày nghỉ OFF khác nhau trong chu kỳ 12 ngày thử việc`, rawDates);
-    }
-    for (const d of uniqueOffDates) {
-      if (!cycle.dates.includes(d)) throw Errors.fieldValidation('off_dates', 'OUT_OF_RANGE', `Ngày nghỉ ${vi(d)} nằm ngoài chu kỳ thử việc 12 ngày (${vi(cycle.start)} – ${vi(cycle.end)})`, d);
-    }
+    if (uniqueOffDates.length !== cycle.offLimit) throw Errors.fieldValidation('off_dates', 'INVALID_VALUE', `Bắt buộc chọn đúng ${cycle.offLimit} ngày nghỉ OFF khác nhau trong chu kỳ 12 ngày thử việc`, rawDates);
+    for (const d of uniqueOffDates) if (!cycle.dates.includes(d)) throw Errors.fieldValidation('off_dates', 'OUT_OF_RANGE', `Ngày nghỉ ${vi(d)} nằm ngoài chu kỳ thử việc 12 ngày (${vi(cycle.start)} – ${vi(cycle.end)})`, d);
     for (const d of cycle.dates) assertDateNotLockedByPayroll(ctx.db, d, 'đăng ký chu kỳ thử việc 12 ngày');
 
     const isEmp = matchEmp(emp), now = nowIso();
-    const targetMonth = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: cycle.start }, cycle.start);
-    const lvStore = await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', targetMonth, user.id);
-    const shStore = await getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', targetMonth, user.id);
-    const evStore = await getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', targetMonth, user.id);
-
-    const lockCode = probationLockCode(emp.employee_code, cycle.start, targetMonth);
-    for (const l of lvStore.filter((x) => isEmp(x.employee_id) && cycle.dates.includes(x.leave_date))) await lvStore.softDelete(l.id, l.version, user.id);
-    for (const s of shStore.filter((a) => isEmp(a.employee_id) && cycle.dates.includes(a.work_date) && a.status !== 'COMPLETED' && !evStore.find((e) => e.assignment_id === a.id))) {
-      await shStore.softDelete(s.id, s.version, user.id);
+    const cycleMonths = Array.from(new Set(cycle.dates.map((d) => resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: d }, d))));
+    for (const mk of cycleMonths) {
+      const [lvStore, shStore, evStore] = await Promise.all([
+        getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk, user.id),
+        getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk, user.id),
+        getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', mk, user.id),
+      ]);
+      for (const l of lvStore.filter((x) => isEmp(x.employee_id) && cycle.dates.includes(x.leave_date))) await lvStore.softDelete(l.id, l.version, user.id);
+      for (const s of shStore.filter((a) => isEmp(a.employee_id) && cycle.dates.includes(a.work_date) && a.status !== 'COMPLETED' && !evStore.find((e) => e.assignment_id === a.id))) {
+        await shStore.softDelete(s.id, s.version, user.id);
+      }
     }
 
+    const startMonth = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: cycle.start }, cycle.start);
+    const lockCode = probationLockCode(emp.employee_code, cycle.start, startMonth);
     const shiftCode = (emp.default_shift_code || 'CA_SANG').toUpperCase(), tpl = findBranchShiftTemplate(ctx, shiftCode, emp.branch_id);
     const startAt = tpl?.start_time || '07:00', endAt = tpl?.end_time || '12:00', hours = tpl?.standard_hours || 5;
     const createdLeaves: LeaveRequest[] = [];
     for (let i = 0; i < uniqueOffDates.length; i++) {
-      const offDate = uniqueOffDates[i]!;
+      const offDate = uniqueOffDates[i]!, offMonth = resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: offDate }, offDate);
+      const offLvStore = await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', offMonth, user.id);
       createdLeaves.push(await insertPartitionAwareRecord<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', {
-        request_code: nextPartitionCode(lvStore, 'POFF-', 'request_code'),
-        employee_id: emp.id, branch_id: emp.branch_id, leave_date: offDate, kind: 'PROBATION_OFF',
-        shift_code: shiftCode, reason: body.reason, status: 'APPROVED', employee_stage: 'PROBATION',
-        schedule_week_id: lockCode, assignment_id: '', quota_cycle_used: i + 1, quota_cycle_limit: cycle.offLimit,
-        staffing_after_leave: 1, min_staff_required: 1, submitted_at: now, store_reviewed_by: '', store_reviewed_at: '',
+        request_code: nextPartitionCode(offLvStore, 'POFF-', 'request_code'), employee_id: emp.id, branch_id: emp.branch_id, leave_date: offDate, kind: 'PROBATION_OFF',
+        shift_code: shiftCode, reason: body.reason, status: 'APPROVED', employee_stage: 'PROBATION', schedule_week_id: probationLockCode(emp.employee_code, cycle.start, offMonth),
+        assignment_id: '', quota_cycle_used: i + 1, quota_cycle_limit: cycle.offLimit, staffing_after_leave: 1, min_staff_required: 1, submitted_at: now, store_reviewed_by: '', store_reviewed_at: '',
         decided_by: user.id, decision_reason: 'Tự động duyệt 5 ngày OFF chu kỳ thử việc 12 ngày', decided_at: now,
       }, offDate, user.id));
     }
 
-    const workDates = cycle.dates.filter((d) => !uniqueOffDates.includes(d)).slice(0, cycle.workRequired);
-    const createdShifts: ShiftAssignment[] = [];
+    const workDates = cycle.dates.filter((d) => !uniqueOffDates.includes(d)).slice(0, cycle.workRequired), createdShifts: ShiftAssignment[] = [];
     for (const workDate of workDates) {
+      const wMonth = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: workDate }, workDate);
       createdShifts.push(await insertPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', {
-        schedule_week_id: lockCode, employee_id: emp.id, branch_id: emp.branch_id, work_date: workDate,
-        shift_template_id: tpl?.id ?? '', start_at: startAt, end_at: endAt, status: 'PUBLISHED',
-        source: 'PROBATION_AUTO', employee_stage: 'PROBATION', day_type: 'WORK', shift_code: shiftCode,
-        scheduled_hours: hours, swapped_from_employee_id: '', replacement_for_employee_id: '',
-        published_at: now, note: 'Tự động phát hành 7 ca thử việc từ đăng ký 5 ngày OFF', linked_assignment_id: '',
+        schedule_week_id: probationLockCode(emp.employee_code, cycle.start, wMonth), employee_id: emp.id, branch_id: emp.branch_id, work_date: workDate,
+        shift_template_id: tpl?.id ?? '', start_at: startAt, end_at: endAt, status: 'PUBLISHED', source: 'PROBATION_AUTO', employee_stage: 'PROBATION', day_type: 'WORK', shift_code: shiftCode,
+        scheduled_hours: hours, swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now, note: 'Tự động phát hành 7 ca thử việc từ đăng ký 5 ngày OFF', linked_assignment_id: '',
       }, workDate, user.id));
     }
 
-    const existingLock = ctx.db.scheduleWeeks.find((w) => w.code === lockCode);
-    const lockRec = {
-      branch_id: emp.branch_id, week_start: cycle.start, week_end: cycle.end, status: 'PUBLISHED' as const,
-      published_by: user.id, published_at: now, code: lockCode, schedule_kind: 'PROBATION_12_DAYS' as const,
-      store_confirmed_by: '', store_confirmed_at: '', locked_at: now,
-      note: `Tự động phát hành ${createdShifts.length} ca làm + ${createdLeaves.length} ngày OFF chu kỳ thử việc`,
-    };
-    if (existingLock) await ctx.db.scheduleWeeks.update(existingLock.id, existingLock.version, lockRec, user.id);
-    else await ctx.db.scheduleWeeks.insert(lockRec, user.id);
+    for (const mk of cycleMonths) {
+      const code = probationLockCode(emp.employee_code, cycle.start, mk), existingLock = ctx.db.scheduleWeeks.find((w) => w.code === code);
+      const lockRec = { branch_id: emp.branch_id, week_start: cycle.start, week_end: cycle.end, status: 'PUBLISHED' as const, published_by: user.id, published_at: now, code, schedule_kind: 'PROBATION_12_DAYS' as const, store_confirmed_by: '', store_confirmed_at: '', locked_at: now, note: `Tự động phát hành ${createdShifts.length} ca làm + ${createdLeaves.length} ngày OFF chu kỳ thử việc` };
+      if (existingLock) await ctx.db.scheduleWeeks.update(existingLock.id, existingLock.version, lockRec, user.id);
+      else await ctx.db.scheduleWeeks.insert(lockRec, user.id);
+    }
 
     const reqAudit = auditContext(request);
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'SHIFT_APPROVED', message: `${emp.full_name} đã hoàn tất đăng ký 5 ngày OFF và nhận 7 ca chính thức`, actorId: user.id });
@@ -114,9 +104,7 @@ export function registerProbationSelfServiceRoutes(app: FastifyInstance, ctx: Ap
     });
     reply.code(201);
     return sendSuccess(request, `Đã lưu ${createdLeaves.length} ngày nghỉ OFF và tự động phát hành ${createdShifts.length} ca làm việc chính thức`, {
-      cycleStart: cycle.start, cycleEnd: cycle.end, offDates: uniqueOffDates, workDates,
-      createdOffCount: createdLeaves.length, createdShiftCount: createdShifts.length,
-      leaves: createdLeaves, shifts: createdShifts.map((s) => mapShiftAssignment(s, ctx)),
+      cycleStart: cycle.start, cycleEnd: cycle.end, offDates: uniqueOffDates, workDates, createdOffCount: createdLeaves.length, createdShiftCount: createdShifts.length, leaves: createdLeaves, shifts: createdShifts.map((s) => mapShiftAssignment(s, ctx)),
     });
   });
 
@@ -131,13 +119,16 @@ export function registerProbationSelfServiceRoutes(app: FastifyInstance, ctx: Ap
     assertDateNotLockedByPayroll(ctx.db, body.work_date, 'đổi ngày làm thử việc');
     assertDateNotLockedByPayroll(ctx.db, body.off_date, 'đổi ngày làm thử việc');
 
-    const targetMonth = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: body.work_date }, body.work_date);
-    const shStore = await getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', targetMonth, user.id);
-    const lvStore = await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', targetMonth, user.id);
-    const evStore = await getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', targetMonth, user.id);
+    const workMonth = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: body.work_date }, body.work_date);
+    const offMonth = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: body.off_date }, body.off_date);
+    const [workShStore, workLvStore, offLvStore, evStore] = await Promise.all([
+      getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', workMonth, user.id),
+      getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', workMonth, user.id),
+      getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', offMonth, user.id),
+      getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', workMonth, user.id),
+    ]);
 
-    const shiftsOnWorkDate = employeeShiftsOnDate(ctx, emp, body.work_date);
-    const targetShift = shiftsOnWorkDate.find((s) => s.status !== 'COMPLETED' && !evStore.find((e) => e.assignment_id === s.id));
+    const targetShift = employeeShiftsOnDate(ctx, emp, body.work_date).find((s) => s.status !== 'COMPLETED' && !evStore.find((e) => e.assignment_id === s.id));
     if (!targetShift) throw Errors.fieldValidation('work_date', 'INVALID_VALUE', `Không tìm thấy ca làm việc chưa điểm danh vào ngày ${vi(body.work_date)} để hoán đổi`, body.work_date);
     assertShiftNotInPast(body.off_date, targetShift.start_at, 'off_date');
     if (employeeShiftsOnDate(ctx, emp, body.off_date).some((s) => s.shift_code === targetShift.shift_code)) {
@@ -145,24 +136,31 @@ export function registerProbationSelfServiceRoutes(app: FastifyInstance, ctx: Ap
     }
 
     const now = nowIso(), isEmp = matchEmp(emp);
-    const offLeave = lvStore.find((l) => isEmp(l.employee_id) && l.leave_date === body.off_date && l.status !== 'REJECTED' && l.status !== 'CANCELLED');
-    const updatedShift = await shStore.update(targetShift.id, targetShift.version, { work_date: body.off_date, status: 'PUBLISHED', published_at: now, note: body.reason }, user.id);
-    const updatedLeave = offLeave
-      ? await lvStore.update(offLeave.id, offLeave.version, { leave_date: body.work_date, status: 'APPROVED', reason: body.reason, decided_at: now }, user.id)
-      : await insertPartitionAwareRecord<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', {
-          request_code: nextPartitionCode(lvStore, 'POFF-', 'request_code'),
-          employee_id: emp.id, branch_id: emp.branch_id, leave_date: body.work_date, kind: 'PROBATION_OFF',
-          shift_code: targetShift.shift_code, reason: body.reason, status: 'APPROVED', employee_stage: 'PROBATION',
-          schedule_week_id: targetShift.schedule_week_id, assignment_id: '', quota_cycle_used: 1, quota_cycle_limit: cycle.offLimit,
-          staffing_after_leave: 1, min_staff_required: 1, submitted_at: now, store_reviewed_by: '', store_reviewed_at: '',
-          decided_by: user.id, decision_reason: 'Tự đổi ngày làm sang ngày OFF trong chu kỳ thử việc', decided_at: now,
-        }, body.work_date, user.id);
+    const offLeave = offLvStore.find((l) => isEmp(l.employee_id) && l.leave_date === body.off_date && l.status !== 'REJECTED' && l.status !== 'CANCELLED');
+    let updatedShift: ShiftAssignment;
+    if (workMonth === offMonth) {
+      updatedShift = await workShStore.update(targetShift.id, targetShift.version, { work_date: body.off_date, status: 'PUBLISHED', published_at: now, note: body.reason }, user.id);
+    } else {
+      await workShStore.softDelete(targetShift.id, targetShift.version, user.id);
+      const { id: _id, version: _v, is_deleted: _d, ...restShift } = targetShift;
+      updatedShift = await insertPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', { ...restShift, work_date: body.off_date, schedule_week_id: probationLockCode(emp.employee_code, cycle.start, offMonth), status: 'PUBLISHED', published_at: now, note: body.reason }, body.off_date, user.id);
+    }
+    let updatedLeave: LeaveRequest;
+    if (offLeave && workMonth === offMonth) {
+      updatedLeave = await offLvStore.update(offLeave.id, offLeave.version, { leave_date: body.work_date, status: 'APPROVED', reason: body.reason, decided_at: now }, user.id);
+    } else {
+      if (offLeave) await offLvStore.softDelete(offLeave.id, offLeave.version, user.id);
+      updatedLeave = await insertPartitionAwareRecord<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', {
+        request_code: nextPartitionCode(workLvStore, 'POFF-', 'request_code'), employee_id: emp.id, branch_id: emp.branch_id, leave_date: body.work_date, kind: 'PROBATION_OFF',
+        shift_code: targetShift.shift_code, reason: body.reason, status: 'APPROVED', employee_stage: 'PROBATION', schedule_week_id: probationLockCode(emp.employee_code, cycle.start, workMonth),
+        assignment_id: '', quota_cycle_used: 1, quota_cycle_limit: cycle.offLimit, staffing_after_leave: 1, min_staff_required: 1, submitted_at: now, store_reviewed_by: '', store_reviewed_at: '',
+        decided_by: user.id, decision_reason: 'Tự đổi ngày làm sang ngày OFF trong chu kỳ thử việc', decided_at: now,
+      }, body.work_date, user.id);
+    }
 
     await runBackgroundSideEffect(() => recalculateOpenPeriods(ctx, user.id));
     emitScheduleRealtime(ctx, SocketEvents.SCHEDULE_PUBLISHED, { branchId: emp.branch_id, employeeIds: [emp.id], kind: 'SHIFT_UPDATED', message: `${emp.full_name} tự đổi ngày làm ${vi(body.work_date)} sang ${vi(body.off_date)}`, actorId: user.id });
-    return sendSuccess(request, `Đã hoán đổi ca làm việc từ ngày ${vi(body.work_date)} sang ngày ${vi(body.off_date)} thành công`, {
-      shift: mapShiftAssignment(updatedShift, ctx), leave: updatedLeave, fromWorkDate: body.work_date, toWorkDate: body.off_date,
-    });
+    return sendSuccess(request, `Đã hoán đổi ca làm việc từ ngày ${vi(body.work_date)} sang ngày ${vi(body.off_date)} thành công`, { shift: mapShiftAssignment(updatedShift, ctx), leave: updatedLeave, fromWorkDate: body.work_date, toWorkDate: body.off_date });
   });
 
   app.post('/api/me/probation-extra-shift', { preHandler: requireAuth() }, async (request, reply) => {
@@ -174,9 +172,7 @@ export function registerProbationSelfServiceRoutes(app: FastifyInstance, ctx: Ap
     if (!cycle.dates.includes(body.work_date)) throw Errors.fieldValidation('work_date', 'OUT_OF_RANGE', `Chỉ được đăng ký thêm ca trong chu kỳ thử việc ${vi(cycle.start)} – ${vi(cycle.end)}`, body.work_date);
     assertDateNotLockedByPayroll(ctx.db, body.work_date, 'đăng ký thêm ca thử việc');
     const tpl = findBranchShiftTemplate(ctx, body.shift_code, emp.branch_id);
-    if (isDisallowedProbationShiftCode(body.shift_code, tpl)) {
-      throw Errors.fieldValidation('shift_code', 'INVALID_VALUE', 'Nhân viên thử việc chỉ được phép đăng ký các ca cửa hàng (Ca Sáng, Ca Chiều, Ca Tối), không được đăng ký Ca Hành chính.', body.shift_code);
-    }
+    if (isDisallowedProbationShiftCode(body.shift_code, tpl)) throw Errors.fieldValidation('shift_code', 'INVALID_VALUE', 'Nhân viên thử việc chỉ được phép đăng ký các ca cửa hàng (Ca Sáng, Ca Chiều, Ca Tối), không được đăng ký Ca Hành chính.', body.shift_code);
     const startAt = tpl?.start_time || '07:00', endAt = tpl?.end_time || '12:00';
     if (body.work_date === todayStr && nowHm >= startAt) {
       throw Errors.fieldValidation('shift_code', 'OUT_OF_RANGE', `Khung ca ${tpl?.name || body.shift_code} (${startAt} – ${endAt}) hôm nay đã qua giờ bắt đầu (${startAt}), không thể đăng ký thêm ca này. Vui lòng chọn ca khác hoặc ngày tiếp theo.`, body.shift_code);
@@ -184,36 +180,39 @@ export function registerProbationSelfServiceRoutes(app: FastifyInstance, ctx: Ap
     assertMaxShiftsPerDay(ctx, { emp, workDate: body.work_date, maxPerDay: settings.maxShiftsPerDay, field: 'work_date', isSelf: true });
     assertNoDuplicateOrOverlappingEmployeeShift(ctx, { emp, workDate: body.work_date, shiftCode: body.shift_code, startAt, endAt });
 
-    const isEmp = matchEmp(emp), now = nowIso();
+    const isEmp = matchEmp(emp), now = nowIso(), newKey = `${body.work_date} ${startAt}`;
     const targetMonth = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: body.work_date }, body.work_date);
-    const shStore = await getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', targetMonth, user.id);
     const lvStore = await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', targetMonth, user.id);
-    const evStore = await getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', targetMonth, user.id);
+    const cycleMonths = Array.from(new Set(cycle.dates.map((d) => resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: d }, d))));
+    const candidates: { shift: ShiftAssignment; shStore: Awaited<ReturnType<typeof getPartitionStore<ShiftAssignment>>>; mk: string }[] = [];
+    for (const mk of cycleMonths) {
+      const [sStore, eStore] = await Promise.all([
+        getPartitionStore<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', mk, user.id),
+        getPartitionStore<AttendanceEvent>(ctx.db, 'ATTENDANCE_EVENTS', mk, user.id),
+      ]);
+      for (const a of sStore.filter((x) => isEmp(x.employee_id) && isCountedWorkShift(x))) {
+        if (`${a.work_date} ${a.start_at}` > newKey && a.status !== 'COMPLETED' && !eStore.find((e) => e.assignment_id === a.id)) candidates.push({ shift: a, shStore: sStore, mk });
+      }
+    }
+    candidates.sort((a, b) => `${b.shift.work_date} ${b.shift.start_at}`.localeCompare(`${a.shift.work_date} ${a.shift.start_at}`));
+    const lastLaterEntry = candidates[0], lastLater = lastLaterEntry?.shift;
+    if (lastLaterEntry) await lastLaterEntry.shStore.softDelete(lastLaterEntry.shift.id, lastLaterEntry.shift.version, user.id);
 
-    const allEmpShifts = shStore.filter((a) => isEmp(a.employee_id) && isCountedWorkShift(a));
-    const lastLater = allEmpShifts
-      .filter((a) => `${a.work_date} ${a.start_at}` > `${body.work_date} ${startAt}` && a.status !== 'COMPLETED' && !evStore.find((e) => e.assignment_id === a.id))
-      .sort((a, b) => `${b.work_date} ${b.start_at}`.localeCompare(`${a.work_date} ${a.start_at}`))[0];
-    if (lastLater) await shStore.softDelete(lastLater.id, lastLater.version, user.id);
     const activeLeaveOnTarget = lvStore.find((l) => isEmp(l.employee_id) && l.leave_date === body.work_date && l.status !== 'REJECTED' && l.status !== 'CANCELLED');
     if (activeLeaveOnTarget) {
-      if (lastLater && lastLater.work_date !== body.work_date && employeeShiftsOnDate(ctx, emp, lastLater.work_date).length === 0 && !lvStore.find((l) => isEmp(l.employee_id) && l.leave_date === lastLater.work_date && l.status !== 'REJECTED' && l.status !== 'CANCELLED')) {
-        await lvStore.update(activeLeaveOnTarget.id, activeLeaveOnTarget.version, { leave_date: lastLater.work_date, reason: `Tự động chuyển ngày OFF sang ${vi(lastLater.work_date)} khi đăng ký thêm ca ngày ${vi(body.work_date)}`, decided_at: now }, user.id);
-      } else {
-        await lvStore.softDelete(activeLeaveOnTarget.id, activeLeaveOnTarget.version, user.id);
+      const tailLvStore = lastLaterEntry ? await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', lastLaterEntry.mk, user.id) : lvStore;
+      await lvStore.softDelete(activeLeaveOnTarget.id, activeLeaveOnTarget.version, user.id);
+      if (lastLater && lastLater.work_date !== body.work_date && employeeShiftsOnDate(ctx, emp, lastLater.work_date).length === 0 && !tailLvStore.find((l) => isEmp(l.employee_id) && l.leave_date === lastLater.work_date && l.status !== 'REJECTED' && l.status !== 'CANCELLED')) {
+        const { id: _id, version: _v, is_deleted: _d, ...restLeave } = activeLeaveOnTarget;
+        await insertPartitionAwareRecord<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', { ...restLeave, leave_date: lastLater.work_date, reason: `Tự động chuyển ngày OFF sang ${vi(lastLater.work_date)} khi đăng ký thêm ca ngày ${vi(body.work_date)}`, decided_at: now }, lastLater.work_date, user.id);
       }
     }
     const created = await insertPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', {
-      schedule_week_id: probationLockCode(emp.employee_code, cycle.start, targetMonth),
-      employee_id: emp.id, branch_id: emp.branch_id, work_date: body.work_date, shift_template_id: tpl?.id ?? '',
-      start_at: startAt, end_at: endAt, status: 'PUBLISHED', source: 'PROBATION_EXTRA', employee_stage: 'PROBATION',
-      day_type: 'WORK', shift_code: body.shift_code, scheduled_hours: tpl?.standard_hours || 5,
-      swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now,
-      note: lastLater ? `${body.note} (Đã tự động rút ngắn ca cuối ngày ${vi(lastLater.work_date)})` : body.note, linked_assignment_id: lastLater?.id ?? '',
+      schedule_week_id: probationLockCode(emp.employee_code, cycle.start, targetMonth), employee_id: emp.id, branch_id: emp.branch_id, work_date: body.work_date, shift_template_id: tpl?.id ?? '',
+      start_at: startAt, end_at: endAt, status: 'PUBLISHED', source: 'PROBATION_EXTRA', employee_stage: 'PROBATION', day_type: 'WORK', shift_code: body.shift_code, scheduled_hours: tpl?.standard_hours || 5,
+      swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now, note: lastLater ? `${body.note} (Đã tự động rút ngắn ca cuối ngày ${vi(lastLater.work_date)})` : body.note, linked_assignment_id: lastLater?.id ?? '',
     }, body.work_date, user.id);
     reply.code(201);
-    return sendSuccess(request, `Đã đăng ký thêm ca ngày ${vi(body.work_date)}${lastLater ? ` và tự động dời ca cuối ngày ${vi(lastLater.work_date)}` : ''}`, {
-      shift: mapShiftAssignment(created, ctx), removedTailShiftId: lastLater?.id ?? null, removedTailWorkDate: lastLater?.work_date ?? null,
-    });
+    return sendSuccess(request, `Đã đăng ký thêm ca ngày ${vi(body.work_date)}${lastLater ? ` và tự động dời ca cuối ngày ${vi(lastLater.work_date)}` : ''}`, { shift: mapShiftAssignment(created, ctx), removedTailShiftId: lastLater?.id ?? null, removedTailWorkDate: lastLater?.work_date ?? null });
   });
 }

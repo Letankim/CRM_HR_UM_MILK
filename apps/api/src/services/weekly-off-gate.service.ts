@@ -4,6 +4,7 @@ import { AppError, Errors } from '../lib/errors.js';
 import { dayjs, nowIso } from '../lib/time.js';
 import { resolveEmployeeBranchId } from '../routes/account-employee-sync.js';
 import { getOperationSettings } from './operations-settings.service.js';
+import { getCachedPartitionStore, getPartitionStore, insertPartitionAwareRecord, nextPartitionCode, preloadEmployeePartitionStores, resolveTargetMonthForRecord } from './partition-write-router.js';
 import { assertDateNotLockedByPayroll } from './salary-profile.service.js';
 import { planOfficialWeek } from './schedule-auto-planner.js';
 import { findWeekLock, isCountedWorkShift, matchEmp, weekLockCode } from './schedule-rules.js';
@@ -15,9 +16,7 @@ const vi = (d: string) => dayjs(d).format('DD/MM/YYYY');
 
 export function isVipOffWindowActive(emp: Pick<Employee, 'vip_off_window_until'>): boolean {
   const raw = (emp.vip_off_window_until || '').trim();
-  if (!raw) return false;
-  const parsed = dayjs(raw);
-  return parsed.isValid() && parsed.valueOf() > Date.now();
+  return Boolean(raw && dayjs(raw).isValid() && dayjs(raw).valueOf() > Date.now());
 }
 
 export interface WeeklyOffGateStatus {
@@ -29,7 +28,20 @@ export function evaluateEmployeeWeeklyOffGate(ctx: AppContext, emp: Employee): W
   const settings = getOperationSettings(ctx.db), { todayStr, nowHm } = getVnNowDateAndHm();
   const win = evaluateOffWindow(settings, todayStr, nowHm);
   const vipWindowActive = isVipOffWindowActive(emp), isEmp = matchEmp(emp);
-  const activeInWeek = ctx.db.leaveRequests.filter((l) => isEmp(l.employee_id) && ACTIVE_LEAVE(l.status) && l.leave_date >= win.targetWeekStart && l.leave_date <= win.targetWeekEnd);
+  const startMonth = resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: win.targetWeekStart }, win.targetWeekStart);
+  const endMonth = resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: win.targetWeekEnd }, win.targetWeekEnd);
+  const weekMonths = Array.from(new Set([startMonth, endMonth]));
+  const activeInWeek: LeaveRequest[] = [];
+  const seenIds = new Set<string>();
+  for (const mk of weekMonths) {
+    const lvStore = getCachedPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk) ?? ctx.db.leaveRequests;
+    for (const l of lvStore.all()) {
+      if (!seenIds.has(l.id) && isEmp(l.employee_id) && ACTIVE_LEAVE(l.status) && l.leave_date >= win.targetWeekStart && l.leave_date <= win.targetWeekEnd) {
+        seenIds.add(l.id);
+        activeInWeek.push(l);
+      }
+    }
+  }
   const registeredDates = Array.from(new Set(activeInWeek.map((l) => l.leave_date))).sort();
   const registeredCount = registeredDates.length, requiredCount = settings.officialWeeklyOffLimit || 2;
   const weekLocked = Boolean(findWeekLock(ctx, emp.branch_id, win.targetWeekStart));
@@ -52,6 +64,7 @@ export async function submitWeeklyOffBatch(
   ctx: AppContext,
   params: { emp: Employee; leaveDates: string[]; reason?: string; actorId: string; skipWindowCheck?: boolean },
 ): Promise<{ weekStart: string; weekEnd: string; leaveDates: string[]; replacedCount: number; created: LeaveRequest[]; gate: WeeklyOffGateStatus }> {
+  await preloadEmployeePartitionStores(ctx.db);
   const { emp, actorId } = params;
   if (emp.stage !== 'OFFICIAL') throw Errors.forbidden('Cổng đăng ký 2 ngày OFF hàng tuần chỉ áp dụng cho Nhân viên chính thức');
   const uniqueDates = Array.from(new Set(params.leaveDates)).sort(), gate = evaluateEmployeeWeeklyOffGate(ctx, emp);
@@ -80,7 +93,9 @@ export async function submitWeeklyOffBatch(
   const minStaff = resolveApplicableStaffingRule(ctx, emp.branch_id, shiftCode)?.min_staff ?? 1;
 
   for (const d of uniqueDates) {
-    const peerOffs = ctx.db.leaveRequests.filter((l) => {
+    const dMonth = resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: d }, d);
+    const dLvStore = await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', dMonth, actorId);
+    const peerOffs = dLvStore.filter((l) => {
       if (l.leave_date !== d || !ACTIVE_LEAVE(l.status) || isEmp(l.employee_id)) return false;
       const pEmp = ctx.db.employees.get(l.employee_id) ?? ctx.db.employees.find((x) => x.employee_code === l.employee_id);
       if (!pEmp || pEmp.status !== 'ACTIVE' || pEmp.stage !== 'OFFICIAL') return false;
@@ -94,24 +109,37 @@ export async function submitWeeklyOffBatch(
     }
   }
 
-  const existingInWeek = ctx.db.leaveRequests.filter((l) => isEmp(l.employee_id) && ACTIVE_LEAVE(l.status) && l.leave_date >= weekStart && l.leave_date <= weekEnd);
-  for (const old of existingInWeek) await ctx.db.leaveRequests.softDelete(old.id, old.version, actorId);
+  const weekMonths = Array.from(new Set([
+    resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: weekStart }, weekStart),
+    resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: weekEnd }, weekEnd),
+  ]));
+  let replacedCount = 0;
+  for (const mk of weekMonths) {
+    const lvStore = await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', mk, actorId);
+    const existingInWeek = lvStore.filter((l) => isEmp(l.employee_id) && ACTIVE_LEAVE(l.status) && l.leave_date >= weekStart && l.leave_date <= weekEnd);
+    for (const old of existingInWeek) {
+      await lvStore.softDelete(old.id, old.version, actorId);
+      replacedCount++;
+    }
+  }
 
-  const now = nowIso(), baseSeq = ctx.db.leaveRequests.all(true).length, wkCode = weekLockCode(emp.branch_id, weekStart, ctx.db.partitionMonth);
-  const created: LeaveRequest[] = [];
+  const now = nowIso(), created: LeaveRequest[] = [];
   for (let i = 0; i < uniqueDates.length; i++) {
-    const lv = await ctx.db.leaveRequests.insert({
-      request_code: `OFF-${String(baseSeq + i + 1).padStart(4, '0')}`,
-      employee_id: emp.id, branch_id: emp.branch_id, leave_date: uniqueDates[i]!, kind: 'WEEKLY_OFF',
+    const d = uniqueDates[i]!;
+    const dMonth = resolveTargetMonthForRecord(ctx.db, 'LEAVE_REQUESTS', { leave_date: d }, d);
+    const dLvStore = await getPartitionStore<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', dMonth, actorId);
+    const lv = await insertPartitionAwareRecord<LeaveRequest>(ctx.db, 'LEAVE_REQUESTS', {
+      request_code: nextPartitionCode(dLvStore, 'OFF-', 'request_code'),
+      employee_id: emp.id, branch_id: emp.branch_id, leave_date: d, kind: 'WEEKLY_OFF',
       shift_code: shiftCode, reason: params.reason || 'Đăng ký 2 ngày OFF định kỳ hàng tuần',
-      status: 'APPROVED', employee_stage: emp.stage, schedule_week_id: wkCode, assignment_id: '',
+      status: 'APPROVED', employee_stage: emp.stage, schedule_week_id: weekLockCode(emp.branch_id, weekStart, dMonth), assignment_id: '',
       quota_cycle_used: i + 1, quota_cycle_limit: gate.requiredCount,
       staffing_after_leave: Math.max(1, sameShiftOfficials.length - 1), min_staff_required: minStaff,
       submitted_at: now, store_reviewed_by: '', store_reviewed_at: '', decided_by: actorId, decision_reason: 'Tự động duyệt ngay theo cơ chế đăng ký sớm (Ai đăng ký trước được trước)', decided_at: now,
-    }, actorId);
+    }, d, actorId);
     created.push(lv);
   }
-  return { weekStart, weekEnd, leaveDates: uniqueDates, replacedCount: existingInWeek.length, created, gate: evaluateEmployeeWeeklyOffGate(ctx, emp) };
+  return { weekStart, weekEnd, leaveDates: uniqueDates, replacedCount, created, gate: evaluateEmployeeWeeklyOffGate(ctx, emp) };
 }
 
 export async function grantEmployeeVipOffWindow(
@@ -173,14 +201,14 @@ export async function executeSchedulePlannerCleanup(
     const now = nowIso();
     for (const bId of params.branchIds) {
       const plan = planOfficialWeek(ctx, { weekStart, branchId: bId, historicalShifts: params.historicalShifts });
-      const wkCode = weekLockCode(bId, weekStart, ctx.db.partitionMonth);
       for (const p of plan.planned) {
-        const ins = await ctx.db.shiftAssignments.insert({
-          schedule_week_id: wkCode, employee_id: p.employeeId, branch_id: p.branchId, work_date: p.workDate, shift_template_id: p.templateId,
+        const dMonth = resolveTargetMonthForRecord(ctx.db, 'SHIFT_ASSIGNMENTS', { work_date: p.workDate }, p.workDate);
+        const ins = await insertPartitionAwareRecord<ShiftAssignment>(ctx.db, 'SHIFT_ASSIGNMENTS', {
+          schedule_week_id: weekLockCode(bId, weekStart, dMonth), employee_id: p.employeeId, branch_id: p.branchId, work_date: p.workDate, shift_template_id: p.templateId,
           start_at: p.startAt, end_at: p.endAt, status: 'PUBLISHED', source: 'AUTO_PLAN', employee_stage: p.stage, day_type: 'WORK', shift_code: p.shiftCode,
           scheduled_hours: p.hours, swapped_from_employee_id: '', replacement_for_employee_id: '', published_at: now,
           note: 'Bổ sung ca tự động cho nhân sự chính thức khi dọn lịch tuần', linked_assignment_id: '',
-        }, params.actorId);
+        }, p.workDate, params.actorId);
         createdIds.push(ins.id);
         backfilledCount++;
       }

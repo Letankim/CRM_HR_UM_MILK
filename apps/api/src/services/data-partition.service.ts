@@ -6,8 +6,8 @@ import type { Database } from '../data/database.js';
 import { Errors } from '../lib/errors.js';
 import { nowIso } from '../lib/time.js';
 import {
-  carryScheduleLocksToMonth, isMissingSpreadsheetError, runPartitionExclusive,
-  stageCarryRowsToTarget, type AnyStore, type MonthlyStoreDesc,
+  carryScheduleLocksToMonth, isMissingSpreadsheetError, isRowMatchingRolloverMonth,
+  loadRolloverSourceStores, runPartitionExclusive, stageCarryRowsToTarget, type AnyRecord, type AnyStore, type MonthlyStoreDesc,
 } from './data-partition-helpers.js';
 import { invalidateHistoricalShiftsCache } from './historical-shifts-loader.js';
 import { saveOperationSettings } from './operations-settings.service.js';
@@ -18,40 +18,21 @@ export interface PartitionListItem {
   fileName: string; spreadsheetId: string; folderPath: string; webViewLink: string; createdAt: string; tabs: string[];
 }
 
-/** Trường ngày nghiệp vụ dùng để xác định bản ghi thuộc tháng nào khi chuyển sang file tháng mới. */
-const DATE_FIELD: Record<string, string> = {
-  SHIFT_ASSIGNMENTS: 'work_date', LEAVE_REQUESTS: 'leave_date', SHIFT_SWAPS: 'from_work_date',
-  ATTENDANCE_EVENTS: 'work_date', ATTENDANCE_ADJUSTMENTS: 'work_date',
-};
 const PENDING_STATUSES = new Set(['DRAFT', 'PENDING', 'STORE_CONFIRMED', 'PENDING_PEER', 'PEER_ACCEPTED']);
 
 export const monthKeyLabel = (monthKey: string) =>
   monthKey ? `Tháng ${monthKey.slice(5, 7)}/${monthKey.slice(0, 4)}` : 'Tệp gốc (Mặc định ban đầu)';
 export const monthlyFileName = (monthKey: string) => `UMBM_MONTHLY_${monthKey}`;
-export const monthlyFolderSegments = (monthKey: string) => [
-  DRIVE_FOLDERS.MONTHLY_DATABASES,
-  `${monthKey.slice(0, 4)}-${monthKey.slice(5, 7)}`,
-];
-
-export function readPartitionRegistry(db: Database): MonthlyPartitionRegistryEntry[] {
-  const row = db.systemSettings.find((s) => s.key === OPERATION_SETTING_KEYS.DATA_PARTITIONS_REGISTRY);
-  return parsePartitionRegistry(row?.value);
-}
+export const monthlyFolderSegments = (monthKey: string) => [DRIVE_FOLDERS.MONTHLY_DATABASES, `${monthKey.slice(0, 4)}-${monthKey.slice(5, 7)}`];
+export const readPartitionRegistry = (db: Database): MonthlyPartitionRegistryEntry[] =>
+  parsePartitionRegistry(db.systemSettings.find((s) => s.key === OPERATION_SETTING_KEYS.DATA_PARTITIONS_REGISTRY)?.value);
 
 async function upsertPartitionRegistry(db: Database, entry: MonthlyPartitionRegistryEntry, actorId: string): Promise<void> {
   const others = readPartitionRegistry(db).filter((r) => r.monthKey !== entry.monthKey);
-  const next = [entry, ...others].sort((a, b) => b.monthKey.localeCompare(a.monthKey));
-  const value = JSON.stringify(next);
+  const value = JSON.stringify([entry, ...others].sort((a, b) => b.monthKey.localeCompare(a.monthKey)));
   const existing = db.systemSettings.find((s) => s.key === OPERATION_SETTING_KEYS.DATA_PARTITIONS_REGISTRY);
-  if (existing) {
-    await db.systemSettings.update(existing.id, existing.version, { value }, actorId);
-  } else {
-    await db.systemSettings.insert({
-      key: OPERATION_SETTING_KEYS.DATA_PARTITIONS_REGISTRY, value,
-      label: 'Sổ đăng ký các file Google Sheets theo tháng', category: 'DATA', value_type: 'JSON',
-      note: 'Danh sách file Google Spreadsheet độc lập theo từng tháng lưu trên Google Drive',
-    }, actorId);
-  }
+  if (existing) await db.systemSettings.update(existing.id, existing.version, { value }, actorId);
+  else await db.systemSettings.insert({ key: OPERATION_SETTING_KEYS.DATA_PARTITIONS_REGISTRY, value, label: 'Sổ đăng ký các file Google Sheets theo tháng', category: 'DATA', value_type: 'JSON', note: 'Danh sách file Google Spreadsheet độc lập theo từng tháng lưu trên Google Drive' }, actorId);
 }
 
 async function discoverLegacyTabMonths(db: Database, registered: Set<string>): Promise<Set<string>> {
@@ -181,18 +162,31 @@ export async function rolloverToMonth(db: Database, monthKey: string, actorId: s
     if (monthKey === db.partitionMonth) throw Errors.badRequest(`Hệ thống đang dùng ${monthKeyLabel(monthKey)}`);
     await invalidatePartitionStoreCache(db);
     const oldMonth = db.partitionMonth;
+    const prevRegistry = readPartitionRegistry(db);
     const target = await ensureMonthlyTarget(db, monthKey, actorId, true);
     const monthStart = `${monthKey.slice(0, 4)}-${monthKey.slice(5, 7)}-01`;
     const carried: Record<string, number> = {};
     const pendingLeftBehind: Record<string, number> = {};
 
-    const snapshots = db.monthlyStores().map((m) => {
-      const store = m.store as unknown as AnyStore, field = DATE_FIELD[m.base]!;
-      const rows = store.all();
-      const toCarry = carryForward ? rows.filter((r) => String(r[field] ?? '') >= monthStart) : [];
-      pendingLeftBehind[m.base] = rows.filter((r) => String(r[field] ?? '') < monthStart && PENDING_STATUSES.has(String(r.status ?? ''))).length;
-      return { desc: m, base: m.base, store, toCarry };
-    });
+    const snapshots = await Promise.all(db.monthlyStores().map(async (m) => {
+      const activeStore = m.store as unknown as AnyStore;
+      const sourceStores = await loadRolloverSourceStores(db, m, monthKey, prevRegistry);
+      const toCarryMap = new Map<string, AnyRecord>();
+      const sourceCleanup: { store: AnyStore; rows: AnyRecord[] }[] = [];
+      let pendingLeft = 0;
+
+      for (const src of sourceStores) {
+        const rows = src.store.all();
+        const matching = carryForward ? rows.filter((r) => isRowMatchingRolloverMonth(m.base, r, monthStart)) : [];
+        if (matching.length > 0) {
+          sourceCleanup.push({ store: src.store, rows: matching });
+          for (const r of matching) if (!toCarryMap.has(r.id)) toCarryMap.set(r.id, r);
+        }
+        pendingLeft += rows.filter((r) => !isRowMatchingRolloverMonth(m.base, r, monthStart) && PENDING_STATUSES.has(String(r.status ?? ''))).length;
+      }
+      pendingLeftBehind[m.base] = pendingLeft;
+      return { desc: m, base: m.base, store: activeStore, toCarry: Array.from(toCarryMap.values()), sourceCleanup };
+    }));
 
     for (const s of snapshots) {
       carried[s.base] = await stageCarryRowsToTarget(db, s.desc, target.targetFor(s.desc), s.toCarry, actorId);
@@ -203,8 +197,8 @@ export async function rolloverToMonth(db: Database, monthKey: string, actorId: s
     }
     const prepared = await Promise.all(snapshots.map((s) => s.store.prepareTarget(target.targetFor(s.desc))));
     for (const s of snapshots) {
-      if (s.toCarry.length > 0) {
-        await s.store.batchUpdate(s.toCarry.map((r) => ({ id: r.id, expectedVersion: r.version, patch: { is_deleted: true } })), actorId);
+      for (const cl of s.sourceCleanup) {
+        await cl.store.batchUpdate(cl.rows.map((r) => ({ id: r.id, expectedVersion: r.version, patch: { is_deleted: true } })), actorId);
       }
     }
     snapshots.forEach((s, idx) => s.store.commitPreparedTarget(prepared[idx]!));

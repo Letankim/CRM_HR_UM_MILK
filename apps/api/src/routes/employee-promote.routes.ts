@@ -9,6 +9,7 @@ import { assertBranchAccess, auditContext, requirePermission } from '../plugins/
 import { queuePromotionOfficialEmail } from '../services/action-email-dispatcher.js';
 import { runBackgroundSideEffect } from '../services/background-write.js';
 import { buildPromoteSchedulePreview, createPromoteOfficialShifts } from '../services/employee-promote-planner.service.js';
+import { preloadEmployeePartitionStores } from '../services/partition-write-router.js';
 import { recalculateOpenPeriods } from '../services/payroll-snapshot.service.js';
 import { cleanupProbationShiftsAfterOfficial } from './employee-contracts.routes.js';
 import { buildEmployeeDossierSummary } from './employee-dossier-summary.js';
@@ -28,6 +29,7 @@ export const zPromoteOfficialBody = z.object({
 
 export function registerEmployeePromoteRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/admin/employees/:id/promote-preview', { preHandler: requirePermission('employee.promote') }, async (request) => {
+    await preloadEmployeePartitionStores(ctx.db);
     const { id } = request.params as { id: string };
     const emp = ctx.db.employees.get(id) ?? ctx.db.employees.find((e) => e.employee_code === id);
     if (!emp) throw Errors.notFound('Không tìm thấy hồ sơ nhân sự');
@@ -41,6 +43,7 @@ export function registerEmployeePromoteRoutes(app: FastifyInstance, ctx: AppCont
   });
 
   app.post('/api/admin/employees/:id/promote-official', { preHandler: requirePermission('employee.promote') }, async (request) => {
+    await preloadEmployeePartitionStores(ctx.db);
     const { id } = request.params as { id: string };
     const body = zPromoteOfficialBody.parse(request.body);
     const before = ctx.db.employees.get(id) ?? ctx.db.employees.find((e) => e.employee_code === id);
