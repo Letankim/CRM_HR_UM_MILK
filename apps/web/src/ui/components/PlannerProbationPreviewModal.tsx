@@ -87,6 +87,8 @@ export function PlannerProbationPreviewModal({
     onError: (e) => message.error(e instanceof ApiClientError ? e.message : 'Tự động sinh lịch chu kỳ thử việc thất bại'),
   });
 
+  if (!open) return null;
+
   return (
     <Modal
       open={open} onCancel={onClose} destroyOnHidden centered width="98vw"

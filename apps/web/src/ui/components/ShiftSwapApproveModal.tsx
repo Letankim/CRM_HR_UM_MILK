@@ -83,6 +83,8 @@ export function ShiftSwapApproveModal({
   const effectivePerShift = ticked ? Math.max(0, Math.round(watchedAmt || 0)) : 0;
   const suggestions = isEdit ? EDIT_SUGGESTIONS : APPROVE_SUGGESTIONS;
 
+  if (!target) return null;
+
   return (
     <Modal
       width="min(640px, 94vw)"

@@ -102,6 +102,8 @@ export function DataPartitionRolloverModal({ open, activeMonth = '', existingMon
   const pendingTotal = pendingEntries.reduce((sum, [, n]) => sum + Number(n), 0);
   const canOpenDrive = Boolean(result?.file?.webViewLink && !result.file.spreadsheetId?.startsWith('mem-'));
 
+  if (!open) return null;
+
   return (
     <Modal
       open={open}

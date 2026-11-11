@@ -63,6 +63,8 @@ export function EmailQueueDetailModal({ email, fallbackHtml, onClose }: EmailQue
     }
   };
 
+  if (!email) return null;
+
   return (
     <Modal
       open={Boolean(email)}

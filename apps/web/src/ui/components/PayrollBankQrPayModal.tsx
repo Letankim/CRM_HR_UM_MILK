@@ -76,6 +76,8 @@ export function PayrollBankQrPayModal({
     openFancyboxGallery([{ src: dynamicVietQrUrl, caption: `Mã QR thanh toán — ${row.fullName} (${row.employeeCode}) · ${fmtVnd(row.netVnd)}` }], 0);
   };
 
+  if (!row) return null;
+
   return (
     <Modal
       width={940} centered style={{ maxWidth: 'calc(100vw - 28px)' }} open={Boolean(row)}

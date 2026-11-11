@@ -107,6 +107,8 @@ export function PlannerWeekPreviewModal({
   const lockedInAll = branchId === 'ALL' ? statuses.filter((s) => s.isLocked) : [];
   const readOnlyView = isLocked || !canPublish || isGateOpen;
 
+  if (!open) return null;
+
   return (
     <Modal
       open={open} onCancel={onClose} destroyOnHidden centered width="98vw"
